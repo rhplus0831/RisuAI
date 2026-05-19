@@ -14,16 +14,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "src-python/*"
-    ],
+    "resources": ["src-python/*"],
     "targets": ["deb", "rpm", "appimage", "nsis", "app", "dmg"],
     "createUpdaterArtifacts": true,
     "fileAssociations": [
       {
-        "ext": [
-          "risum", "risup", "charx"
-        ]
+        "ext": ["risum", "risup", "charx"]
       }
     ]
   },
@@ -34,9 +30,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU2ODMzOTIxMDMxOTY1MUYKUldRZlpSa0RJVG1EVmx5Vm1WYlhFM29HMEJrUTRrYmg5dDQ0RFpvdUphNDdxQmVlWXJHVmV5TEYK",
-      "endpoints": [
-        "https://github.com/kwaroran/RisuAI/releases/latest/download/latest.json"
-      ],
+      "endpoints": ["https://github.com/kwaroran/RisuAI/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "passive"
       }
@@ -63,13 +57,7 @@
     ],
     "security": {
       "assetProtocol": {
-        "scope": [
-          "asset",
-          "$APPDATA",
-          "$APPDATA/*",
-          "$APPDATA/**/*",
-          "/data/**/*"
-        ],
+        "scope": ["asset", "$APPDATA", "$APPDATA/*", "$APPDATA/**/*", "/data/**/*"],
         "enable": true
       },
       "csp": null

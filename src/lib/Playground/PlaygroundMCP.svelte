@@ -1,19 +1,24 @@
 <script lang="ts">
-  import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
-    import Button from "../UI/GUI/Button.svelte";
-    import { type MCPToolWithURL, callMCPTool, getMCPMeta, getMCPTools, initializeMCPs } from "src/ts/process/mcp/mcp";
-    import { alertMd } from "src/ts/alert";
+  import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
+  import Button from '../UI/GUI/Button.svelte'
+  import {
+    type MCPToolWithURL,
+    callMCPTool,
+    getMCPMeta,
+    getMCPTools,
+    initializeMCPs,
+  } from 'src/ts/process/mcp/mcp'
+  import { alertMd } from 'src/ts/alert'
 
-    let metadatas = $state('')
-    let tools:MCPToolWithURL[] = $state([]);
-    let toolInputs:{[key:string]:string}= $state({});
+  let metadatas = $state('')
+  let tools: MCPToolWithURL[] = $state([])
+  let toolInputs: { [key: string]: string } = $state({})
 
-    async function refresh() {
-        await initializeMCPs()
-        metadatas = JSON.stringify(await getMCPMeta(), null, 4);
-        tools = await getMCPTools()
-    }
-
+  async function refresh() {
+    await initializeMCPs()
+    metadatas = JSON.stringify(await getMCPMeta(), null, 4)
+    tools = await getMCPTools()
+  }
 </script>
 
 <h2 class="text-4xl text-textcolor my-6 font-black relative">MCP</h2>
@@ -31,13 +36,16 @@
         <pre class="overflow-x-auto w-full">{JSON.stringify(tool.inputSchema, null, 2)}</pre>
       </div>
       <TextAreaInput bind:value={toolInputs[tool.name]} placeholder="Input for this tool" />
-      <Button onclick={async () => {
-        const x = await callMCPTool(tool.name, JSON.parse(toolInputs[tool.name]));
-        alertMd(`Tool ${tool.name} executed\n\nResponse:\n\`\`\`json\n${JSON.stringify(x, null, 2)}\n\`\`\``);
-      }}>Execute {tool.name}</Button>
+      <Button
+        onclick={async () => {
+          const x = await callMCPTool(tool.name, JSON.parse(toolInputs[tool.name]))
+          alertMd(
+            `Tool ${tool.name} executed\n\nResponse:\n\`\`\`json\n${JSON.stringify(x, null, 2)}\n\`\`\``,
+          )
+        }}>Execute {tool.name}</Button
+      >
     </div>
   {/each}
 </div>
-
 
 <Button onclick={refresh}>Refresh</Button>

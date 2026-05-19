@@ -1,54 +1,49 @@
 <script lang="ts">
-  import {
-    type SerializableHypaV3Data,
-    getCurrentHypaV3Preset,
-  } from "src/ts/process/memory/hypav3";
-  import { type Message } from "src/ts/storage/database.svelte";
-  import { DBState, selectedCharID } from "src/ts/stores.svelte";
-  import { language } from "src/lang";
-  import { getFirstMessage, processRegexScript } from "./utils";
+  import { type SerializableHypaV3Data, getCurrentHypaV3Preset } from 'src/ts/process/memory/hypav3'
+  import { type Message } from 'src/ts/storage/database.svelte'
+  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import { language } from 'src/lang'
+  import { getFirstMessage, processRegexScript } from './utils'
 
   interface Props {
-    hypaV3Data: SerializableHypaV3Data;
+    hypaV3Data: SerializableHypaV3Data
   }
 
-  let { hypaV3Data }: Props = $props();
+  let { hypaV3Data }: Props = $props()
 
   async function getNextSummarizationTarget(): Promise<Message | null> {
-    const char = DBState.db.characters[$selectedCharID];
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage];
-    const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript;
+    const char = DBState.db.characters[$selectedCharID]
+    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage]
+    const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript
 
     // Summaries exist
     if (hypaV3Data.summaries.length > 0) {
-      const lastSummary = hypaV3Data.summaries.at(-1);
+      const lastSummary = hypaV3Data.summaries.at(-1)
       const lastMessageIndex = chat.message.findIndex(
-        (m) => m.chatId === lastSummary.chatMemos.at(-1)
-      );
+        (m) => m.chatId === lastSummary.chatMemos.at(-1),
+      )
 
       if (lastMessageIndex !== -1) {
-        const next = chat.message[lastMessageIndex + 1] ?? null;
+        const next = chat.message[lastMessageIndex + 1] ?? null
 
-        return next && shouldProcess
-          ? await processRegexScript(next, lastMessageIndex + 1)
-          : next;
+        return next && shouldProcess ? await processRegexScript(next, lastMessageIndex + 1) : next
       }
     }
 
     // When no summaries exist OR couldn't find last connected message,
     // check if first message is available
-    const firstMessage = getFirstMessage();
+    const firstMessage = getFirstMessage()
 
     if (!firstMessage) {
-      const next = chat.message[0] ?? null;
+      const next = chat.message[0] ?? null
 
-      return next && shouldProcess ? await processRegexScript(next, 0) : next;
+      return next && shouldProcess ? await processRegexScript(next, 0) : next
     }
 
     // Will summarize first message
-    const next: Message = { role: "char", chatId: "first", data: firstMessage };
+    const next: Message = { role: 'char', chatId: 'first', data: firstMessage }
 
-    return shouldProcess ? await processRegexScript(next) : next;
+    return shouldProcess ? await processRegexScript(next) : next
   }
 </script>
 
@@ -57,13 +52,13 @@
   {#await getNextSummarizationTarget() then nextMessage}
     {#if nextMessage}
       {@const chatId =
-        nextMessage.chatId === "first"
+        nextMessage.chatId === 'first'
           ? language.hypaV3Modal.nextSummarizationFirstMessageLabel
           : nextMessage.chatId == null
             ? language.hypaV3Modal.nextSummarizationNoMessageIdLabel
             : nextMessage.chatId}
       <div class="mb-2 text-sm sm:mb-4 text-zinc-400">
-        {language.hypaV3Modal.nextSummarizationLabel.replace("{0}", chatId)}
+        {language.hypaV3Modal.nextSummarizationLabel.replace('{0}', chatId)}
       </div>
 
       <textarea
@@ -78,10 +73,7 @@
     {/if}
   {:catch error}
     <span class="text-sm text-red-400"
-      >{language.hypaV3Modal.nextSummarizationLoadingError.replace(
-        "{0}",
-        error.message
-      )}</span
+      >{language.hypaV3Modal.nextSummarizationLoadingError.replace('{0}', error.message)}</span
     >
   {/await}
 </div>
@@ -93,8 +85,6 @@
 
   <!-- No First Message -->
   {#if !getFirstMessage()}
-    <span class="text-sm text-red-400"
-      >{language.hypaV3Modal.emptySelectedFirstMessageLabel}</span
-    >
+    <span class="text-sm text-red-400">{language.hypaV3Modal.emptySelectedFirstMessageLabel}</span>
   {/if}
 </div>

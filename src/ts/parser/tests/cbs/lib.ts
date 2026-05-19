@@ -41,5 +41,5 @@ export const validCBSArgRegExp = /^[^#:{}\r\n]+$/
 /** {@link validCBSArgRegExp `validCBSArgRegExp`} */
 export const validCBSArgProp = fc.oneof(
   fc.stringMatching(validCBSArgRegExp),
-  fc.string({ unit: 'grapheme' }).filter((s) => validCBSArgRegExp.test(s))
+  fc.string({ unit: 'grapheme' }).filter((s) => validCBSArgRegExp.test(s)),
 )

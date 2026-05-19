@@ -106,7 +106,9 @@ test('<>', () => {
 const anythingNotClosing = fc
   .string()
   .filter(
-    (s) => !/{{\/.*}}/.test(s) && /* FIXME opening curly without its pair causes '<' prepended */ !s.includes('{'),
+    (s) =>
+      !/{{\/.*}}/.test(s) &&
+      /* FIXME opening curly without its pair causes '<' prepended */ !s.includes('{'),
   )
 
 test('#pure', () => {

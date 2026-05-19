@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { OctagonAlert, SaveIcon } from "@lucide/svelte";
-  import { alertMd } from "src/ts/alert";
-  import { saving } from "src/ts/globalApi.svelte";
-  import { AccountWarning } from "src/ts/storage/accountStorage";
-  import { DBState } from "src/ts/stores.svelte";
-
+  import { OctagonAlert, SaveIcon } from '@lucide/svelte'
+  import { alertMd } from 'src/ts/alert'
+  import { saving } from 'src/ts/globalApi.svelte'
+  import { AccountWarning } from 'src/ts/storage/accountStorage'
+  import { DBState } from 'src/ts/stores.svelte'
 </script>
 
 {#if DBState?.db?.showSavingIcon && saving.state}
@@ -14,10 +13,13 @@
     <SaveIcon size={24} />
   </div>
 {:else if $AccountWarning}
-  <button class="absolute top-3 right-3 z-10 text-white bg-red-800 hover:bg-red-600 p-2 rounded-sm" onclick={() =>{
+  <button
+    class="absolute top-3 right-3 z-10 text-white bg-red-800 hover:bg-red-600 p-2 rounded-sm"
+    onclick={() => {
       alertMd($AccountWarning)
       $AccountWarning = ''
-  }}>
-      <OctagonAlert size={24} />
+    }}
+  >
+    <OctagonAlert size={24} />
   </button>
 {/if}

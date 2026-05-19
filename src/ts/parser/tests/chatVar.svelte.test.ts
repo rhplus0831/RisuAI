@@ -14,7 +14,7 @@ vi.mock(
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
       getDatabase: () => ({}),
-    } as typeof import('../../storage/database.svelte'))
+    }) as typeof import('../../storage/database.svelte'),
 )
 
 vi.mock(import('../../globalApi.svelte'), () => ({
@@ -50,7 +50,9 @@ vi.mock(import('../../stores.svelte'), () => {
 
 //#endregion
 
-const anyValidDefaultVarKey = fc.string({ minLength: 1, unit: 'grapheme' }).filter((s) => !/[=\n]/.test(s))
+const anyValidDefaultVarKey = fc
+  .string({ minLength: 1, unit: 'grapheme' })
+  .filter((s) => !/[=\n]/.test(s))
 const anyValidDefaultVarValue = fc
   .anything()
   .map(JSON.stringify)
@@ -66,7 +68,7 @@ test('can get a character default variable', () => {
     fc.property(anyValidDefaultVarKey, anyValidDefaultVarValue, (key, value) => {
       DBState.db.characters[0].defaultVariables = `${key}=${value}`
       expect(getChatVar(key)).toBe(value)
-    })
+    }),
   )
 })
 
@@ -75,7 +77,7 @@ test('can get a template default variable', () => {
     fc.property(anyValidDefaultVarKey, anyValidDefaultVarValue, (key, value) => {
       DBState.db.templateDefaultVariables = `${key}=${value}`
       expect(getChatVar(key)).toBe(value)
-    })
+    }),
   )
 })
 
@@ -90,8 +92,8 @@ test('can set and get a chat variable', () => {
       (key, value) => {
         setChatVar(key, value)
         expect(getChatVar(key)).toBe(value)
-      }
-    )
+      },
+    ),
   )
 })
 
@@ -118,8 +120,8 @@ test('can get a global chat variable', () => {
         DBState.db.globalChatVariables[`toggle_${key}`] = value
 
         expect(getGlobalChatVar(`toggle_${key}`)).toBe(value)
-      }
-    )
+      },
+    ),
   )
 })
 
@@ -128,6 +130,6 @@ test('returns "null" for undefined variables', () => {
     fc.property(fc.string({ unit: 'grapheme' }), (key) => {
       expect(getChatVar(key)).toBe('null')
       expect(getGlobalChatVar(`toggle_${key}`)).toBe('null')
-    })
+    }),
   )
 })

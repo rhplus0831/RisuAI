@@ -8,12 +8,14 @@ const moduleNotFound = (id: string): RPCToolCallContent[] => [
   {
     type: 'text',
     text: `Error: Module with ID ${id} not found.`,
-  }
+  },
 ]
 
 export class ModuleHandler extends MCPToolHandler {
   private promptAccess(tool: string, action: string) {
-    return alertConfirm(language.mcpAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action))
+    return alertConfirm(
+      language.mcpAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action),
+    )
   }
 
   getTools(): MCPTool[] {
@@ -138,7 +140,8 @@ export class ModuleHandler extends MCPToolHandler {
         name: 'risu-get-module-lorebook',
       },
       {
-        description: 'Update an existing lorebook of a Risuai module, or create a new one if it does not exist.',
+        description:
+          'Update an existing lorebook of a Risuai module, or create a new one if it does not exist.',
         inputSchema: {
           properties: {
             alwaysActive: {
@@ -206,7 +209,8 @@ export class ModuleHandler extends MCPToolHandler {
         name: 'risu-get-module-regex-scripts',
       },
       {
-        description: 'Update an existing regex script in a Risuai module, or create a new one if it does not exist.',
+        description:
+          'Update an existing regex script in a Risuai module, or create a new one if it does not exist.',
         inputSchema: {
           properties: {
             ableFlag: {
@@ -315,7 +319,14 @@ export class ModuleHandler extends MCPToolHandler {
       case 'risu-get-module-lorebook':
         return await this.getModuleLorebook(args.id, args.names)
       case 'risu-set-module-lorebook':
-        return await this.setModuleLorebook(args.id, args.name, args.content, args.keys, args.newName, args.alwaysActive)
+        return await this.setModuleLorebook(
+          args.id,
+          args.name,
+          args.content,
+          args.keys,
+          args.newName,
+          args.alwaysActive,
+        )
       case 'risu-delete-module-lorebook':
         return await this.deleteModuleLorebook(args.id, args.name)
       case 'risu-get-module-regex-scripts':
@@ -329,7 +340,7 @@ export class ModuleHandler extends MCPToolHandler {
           args.out,
           args.type,
           args.flag,
-          args.ableFlag
+          args.ableFlag,
         )
       case 'risu-delete-module-regex-script':
         return await this.deleteModuleRegexScript(args.id, args.name)
@@ -421,7 +432,12 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    if (!(await this.promptAccess('risu-set-module-info', `modify module (${module.name}) information`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-set-module-info',
+        `modify module (${module.name}) information`,
+      ))
+    ) {
       return [
         {
           type: 'text',
@@ -464,7 +480,11 @@ export class ModuleHandler extends MCPToolHandler {
     ]
   }
 
-  async listModuleLorebooks(id: string, count: number = 100, offset: number = 0): Promise<RPCToolCallContent[]> {
+  async listModuleLorebooks(
+    id: string,
+    count: number = 100,
+    offset: number = 0,
+  ): Promise<RPCToolCallContent[]> {
     const module = DBState.db.modules.find((m) => m.id === id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
@@ -532,14 +552,19 @@ export class ModuleHandler extends MCPToolHandler {
     content?: string,
     keys?: string[],
     newName?: string,
-    alwaysActive?: boolean
+    alwaysActive?: boolean,
   ): Promise<RPCToolCallContent[]> {
     const module = DBState.db.modules.find((m) => m.id === id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-set-module-lorebook', `add/modify module (${module.name}) lorebook (${name})`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-set-module-lorebook',
+        `add/modify module (${module.name}) lorebook (${name})`,
+      ))
+    ) {
       return [
         {
           type: 'text',
@@ -609,7 +634,12 @@ export class ModuleHandler extends MCPToolHandler {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-delete-module-lorebook', `delete module (${module.name}) lorebook (${name})`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-delete-module-lorebook',
+        `delete module (${module.name}) lorebook (${name})`,
+      ))
+    ) {
       return [
         {
           type: 'text',
@@ -680,14 +710,19 @@ export class ModuleHandler extends MCPToolHandler {
     regexOut?: string,
     type?: string,
     flag?: string,
-    ableFlag?: boolean
+    ableFlag?: boolean,
   ): Promise<RPCToolCallContent[]> {
     const module = DBState.db.modules.find((m) => m.id === id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-set-module-regex-script', `add/modify module (${module.name}) regex script (${name})`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-set-module-regex-script',
+        `add/modify module (${module.name}) regex script (${name})`,
+      ))
+    ) {
       return [
         {
           type: 'text',
@@ -746,7 +781,12 @@ export class ModuleHandler extends MCPToolHandler {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-delete-module-regex-script', `delete module (${module.name}) regex script (${name})`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-delete-module-regex-script',
+        `delete module (${module.name}) regex script (${name})`,
+      ))
+    ) {
       return [
         {
           type: 'text',
@@ -790,7 +830,10 @@ export class ModuleHandler extends MCPToolHandler {
     }
 
     const firstTrigger = module.trigger?.[0]
-    if (firstTrigger?.effect?.[0]?.type === 'triggerlua' && firstTrigger.effect[0].code.trim().length > 0) {
+    if (
+      firstTrigger?.effect?.[0]?.type === 'triggerlua' &&
+      firstTrigger.effect[0].code.trim().length > 0
+    ) {
       return [
         {
           type: 'text',
@@ -813,7 +856,12 @@ export class ModuleHandler extends MCPToolHandler {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-set-module-lua-script', `modify module (${module.name}) lua script`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-set-module-lua-script',
+        `modify module (${module.name}) lua script`,
+      ))
+    ) {
       return [
         {
           type: 'text',

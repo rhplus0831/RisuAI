@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from "svelte";
+  import { tick, untrack } from 'svelte'
   import {
     LanguagesIcon,
     StarIcon,
@@ -11,19 +11,19 @@
     TagIcon,
     ChevronUpIcon,
     ChevronDownIcon,
-  } from "@lucide/svelte";
-  import { language } from "src/lang";
+  } from '@lucide/svelte'
+  import { language } from 'src/lang'
   import {
     type SerializableHypaV3Data,
     type SerializableSummary,
     summarize,
     getCurrentHypaV3Preset,
-  } from "src/ts/process/memory/hypav3";
-  import { type OpenAIChat } from "src/ts/process/index.svelte";
-  import { type Message } from "src/ts/storage/database.svelte";
-  import { translateHTML } from "src/ts/translator/translator";
-  import { alertConfirm } from "src/ts/alert";
-  import { DBState, selectedCharID } from "src/ts/stores.svelte";
+  } from 'src/ts/process/memory/hypav3'
+  import { type OpenAIChat } from 'src/ts/process/index.svelte'
+  import { type Message } from 'src/ts/storage/database.svelte'
+  import { translateHTML } from 'src/ts/translator/translator'
+  import { alertConfirm } from 'src/ts/alert'
+  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
   import type {
     SummaryItemState,
     ExpandedMessageState,
@@ -31,28 +31,28 @@
     Category,
     BulkEditState,
     UIState,
-  } from "./types";
+  } from './types'
   import {
     alertConfirmTwice,
     handleDualAction,
     getFirstMessage,
     processRegexScript,
     getCategoryName,
-  } from "./utils";
+  } from './utils'
 
   interface Props {
-    summaryIndex: number;
-    hypaV3Data: SerializableHypaV3Data;
-    summaryItemStateMap: WeakMap<SerializableSummary, SummaryItemState>;
-    expandedMessageState: ExpandedMessageState;
-    searchState: SearchState;
-    filterSelected: boolean;
-    categories: Category[];
-    bulkEditState?: BulkEditState;
-    uiState?: UIState;
-    onToggleSummarySelection?: (index: number) => void;
-    onOpenTagManager?: (index: number) => void;
-    onToggleCollapse?: (index: number) => void;
+    summaryIndex: number
+    hypaV3Data: SerializableHypaV3Data
+    summaryItemStateMap: WeakMap<SerializableSummary, SummaryItemState>
+    expandedMessageState: ExpandedMessageState
+    searchState: SearchState
+    filterSelected: boolean
+    categories: Category[]
+    bulkEditState?: BulkEditState
+    uiState?: UIState
+    onToggleSummarySelection?: (index: number) => void
+    onOpenTagManager?: (index: number) => void
+    onToggleCollapse?: (index: number) => void
   }
 
   let {
@@ -68,158 +68,149 @@
     onToggleSummarySelection,
     onOpenTagManager,
     onToggleCollapse,
-  }: Props = $props();
+  }: Props = $props()
 
-  const summary = $derived(hypaV3Data.summaries[summaryIndex]);
+  const summary = $derived(hypaV3Data.summaries[summaryIndex])
   const summaryItemState = $state<SummaryItemState>({
     originalRef: null,
     translationRef: null,
     rerolledTranslationRef: null,
     chatMemoRefs: null,
-  });
+  })
 
-  let isTranslating = $state(false);
-  let translation = $state<string | null>(null);
-  let isRerolling = $state(false);
-  let rerolled = $state<string | null>(null);
-  let isTranslatingRerolled = $state(false);
-  let rerolledTranslation = $state<string | null>(null);
-
-  $effect.pre(() => {
-    summaryItemStateMap.set(summary, summaryItemState);
-  });
+  let isTranslating = $state(false)
+  let translation = $state<string | null>(null)
+  let isRerolling = $state(false)
+  let rerolled = $state<string | null>(null)
+  let isTranslatingRerolled = $state(false)
+  let rerolledTranslation = $state<string | null>(null)
 
   $effect.pre(() => {
-    summary?.chatMemos?.length;
+    summaryItemStateMap.set(summary, summaryItemState)
+  })
+
+  $effect.pre(() => {
+    summary?.chatMemos?.length
 
     untrack(() => {
-      summaryItemState.chatMemoRefs = new Array(summary.chatMemos.length).fill(
-        null
-      );
+      summaryItemState.chatMemoRefs = new Array(summary.chatMemos.length).fill(null)
 
-      expandedMessageState = null;
-      searchState = null;
-    });
-  });
+      expandedMessageState = null
+      searchState = null
+    })
+  })
 
   async function toggleTranslate(regenerate: boolean): Promise<void> {
-    if (isTranslating) return;
+    if (isTranslating) return
 
     if (translation) {
-      translation = null;
-      return;
+      translation = null
+      return
     }
 
-    isTranslating = true;
-    translation = "Loading...";
+    isTranslating = true
+    translation = 'Loading...'
 
     // Focus on translation element after it's rendered
-    await tick();
+    await tick()
 
     if (summaryItemState.translationRef) {
-      summaryItemState.translationRef.focus();
+      summaryItemState.translationRef.focus()
       summaryItemState.translationRef.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
+        behavior: 'smooth',
+        block: 'nearest',
+      })
     }
 
     // Translate
-    const result = await translate(summary.text, regenerate);
+    const result = await translate(summary.text, regenerate)
 
-    translation = result;
-    isTranslating = false;
+    translation = result
+    isTranslating = false
   }
 
   async function translate(text: string, regenerate: boolean): Promise<string> {
     try {
-      return await translateHTML(text, false, "", -1, regenerate);
+      return await translateHTML(text, false, '', -1, regenerate)
     } catch (error) {
-      return `Translation failed: ${error}`;
+      return `Translation failed: ${error}`
     }
   }
 
   function toggleImportant(): void {
-    summary.isImportant = !summary.isImportant;
+    summary.isImportant = !summary.isImportant
   }
 
   function isOrphan(): boolean {
-    const char = DBState.db.characters[$selectedCharID];
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage];
+    const char = DBState.db.characters[$selectedCharID]
+    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage]
 
     for (const chatMemo of summary.chatMemos) {
       if (chatMemo == null) {
         // Check first message exists
-        if (!getFirstMessage()) return true;
+        if (!getFirstMessage()) return true
       } else {
-        if (chat.message.findIndex((m) => m.chatId === chatMemo) === -1)
-          return true;
+        if (chat.message.findIndex((m) => m.chatId === chatMemo) === -1) return true
       }
     }
 
-    return false;
+    return false
   }
 
   async function toggleReroll(): Promise<void> {
-    if (isRerolling) return;
-    if (isOrphan()) return;
+    if (isRerolling) return
+    if (isOrphan()) return
 
-    isRerolling = true;
-    rerolled = "Loading...";
+    isRerolling = true
+    rerolled = 'Loading...'
 
     try {
       const toSummarize: OpenAIChat[] = await Promise.all(
         summary.chatMemos.map(async (chatMemo) => {
-          const message = await getMessageFromChatMemo(chatMemo);
+          const message = await getMessageFromChatMemo(chatMemo)
 
           return {
-            role: (message.role === "char"
-              ? "assistant"
-              : message.role) as OpenAIChat["role"],
+            role: (message.role === 'char' ? 'assistant' : message.role) as OpenAIChat['role'],
             content: message.data,
-          };
-        })
-      );
+          }
+        }),
+      )
 
-      const summarizeResult = await summarize(toSummarize);
+      const summarizeResult = await summarize(toSummarize)
 
-      rerolled = summarizeResult;
+      rerolled = summarizeResult
     } catch (error) {
-      rerolled = "Reroll failed";
+      rerolled = 'Reroll failed'
     } finally {
-      isRerolling = false;
+      isRerolling = false
     }
   }
 
-  async function getMessageFromChatMemo(
-    chatMemo: string | null
-  ): Promise<Message | null> {
-    const char = DBState.db.characters[$selectedCharID];
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage];
-    const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript;
+  async function getMessageFromChatMemo(chatMemo: string | null): Promise<Message | null> {
+    const char = DBState.db.characters[$selectedCharID]
+    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage]
+    const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript
 
-    let msg = null;
-    let msgIndex = -1;
+    let msg = null
+    let msgIndex = -1
 
     if (chatMemo == null) {
-      const firstMessage = getFirstMessage();
+      const firstMessage = getFirstMessage()
 
-      if (!firstMessage) return null;
-      msg = { role: "char", data: firstMessage };
+      if (!firstMessage) return null
+      msg = { role: 'char', data: firstMessage }
     } else {
-      msgIndex = chat.message.findIndex((m) => m.chatId === chatMemo);
-      if (msgIndex === -1) return null;
-      msg = chat.message[msgIndex];
+      msgIndex = chat.message.findIndex((m) => m.chatId === chatMemo)
+      if (msgIndex === -1) return null
+      msg = chat.message[msgIndex]
     }
 
-    return shouldProcess ? await processRegexScript(msg, msgIndex) : msg;
+    return shouldProcess ? await processRegexScript(msg, msgIndex) : msg
   }
 
   async function deleteThis(): Promise<void> {
     if (await alertConfirm(language.hypaV3Modal.deleteThisConfirmMessage)) {
-      hypaV3Data.summaries = hypaV3Data.summaries.filter(
-        (_, i) => i !== summaryIndex
-      );
+      hypaV3Data.summaries = hypaV3Data.summaries.filter((_, i) => i !== summaryIndex)
     }
   }
 
@@ -227,100 +218,96 @@
     if (
       await alertConfirmTwice(
         language.hypaV3Modal.deleteAfterConfirmMessage,
-        language.hypaV3Modal.deleteAfterConfirmSecondMessage
+        language.hypaV3Modal.deleteAfterConfirmSecondMessage,
       )
     ) {
-      hypaV3Data.summaries.splice(summaryIndex + 1);
+      hypaV3Data.summaries.splice(summaryIndex + 1)
     }
   }
 
   async function toggleTranslateRerolled(regenerate: boolean): Promise<void> {
-    if (isTranslatingRerolled) return;
+    if (isTranslatingRerolled) return
 
     if (rerolledTranslation) {
-      rerolledTranslation = null;
-      return;
+      rerolledTranslation = null
+      return
     }
 
-    if (!rerolled) return;
+    if (!rerolled) return
 
-    isTranslatingRerolled = true;
-    rerolledTranslation = "Loading...";
+    isTranslatingRerolled = true
+    rerolledTranslation = 'Loading...'
 
     // Focus on rerolled translation element after it's rendered
-    await tick();
+    await tick()
 
     if (summaryItemState.rerolledTranslationRef) {
-      summaryItemState.rerolledTranslationRef.focus();
+      summaryItemState.rerolledTranslationRef.focus()
       summaryItemState.rerolledTranslationRef.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
+        behavior: 'smooth',
+        block: 'nearest',
+      })
     }
 
     // Translate
-    const result = await translate(rerolled, regenerate);
+    const result = await translate(rerolled, regenerate)
 
-    rerolledTranslation = result;
-    isTranslatingRerolled = false;
+    rerolledTranslation = result
+    isTranslatingRerolled = false
   }
 
   function cancelRerolled(): void {
-    rerolled = null;
-    rerolledTranslation = null;
+    rerolled = null
+    rerolledTranslation = null
   }
 
   function applyRerolled(): void {
-    summary.text = rerolled;
-    translation = null;
-    rerolled = null;
-    rerolledTranslation = null;
+    summary.text = rerolled
+    translation = null
+    rerolled = null
+    rerolledTranslation = null
   }
 
-  async function toggleTranslateExpandedMessage(
-    regenerate: boolean
-  ): Promise<void> {
-    if (!expandedMessageState || expandedMessageState.isTranslating) return;
+  async function toggleTranslateExpandedMessage(regenerate: boolean): Promise<void> {
+    if (!expandedMessageState || expandedMessageState.isTranslating) return
 
     if (expandedMessageState.translation) {
-      expandedMessageState.translation = null;
-      return;
+      expandedMessageState.translation = null
+      return
     }
 
-    const message = await getMessageFromChatMemo(
-      expandedMessageState.selectedChatMemo
-    );
+    const message = await getMessageFromChatMemo(expandedMessageState.selectedChatMemo)
 
-    if (!message) return;
+    if (!message) return
 
-    expandedMessageState.isTranslating = true;
-    expandedMessageState.translation = "Loading...";
+    expandedMessageState.isTranslating = true
+    expandedMessageState.translation = 'Loading...'
 
     // Focus on translation element after it's rendered
-    await tick();
+    await tick()
 
     if (expandedMessageState.translationRef) {
-      expandedMessageState.translationRef.focus();
+      expandedMessageState.translationRef.focus()
       expandedMessageState.translationRef.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
+        behavior: 'smooth',
+        block: 'nearest',
+      })
     }
 
     // Translate
-    const result = await translate(message.data, regenerate);
+    const result = await translate(message.data, regenerate)
 
-    expandedMessageState.translation = result;
-    expandedMessageState.isTranslating = false;
+    expandedMessageState.translation = result
+    expandedMessageState.isTranslating = false
   }
 
   function isMessageExpanded(chatMemo: string | null): boolean {
-    if (!expandedMessageState) return false;
+    if (!expandedMessageState) return false
 
     return (
       expandedMessageState.summaryIndex === summaryIndex &&
       expandedMessageState.selectedChatMemo === chatMemo
-    );
+    )
   }
 
   function toggleExpandMessage(chatMemo: string | null): void {
@@ -332,26 +319,28 @@
           isTranslating: false,
           translation: null,
           translationRef: null,
-        };
+        }
   }
 
   function toggleSummaryCollapse(): void {
     if (onToggleCollapse) {
-      onToggleCollapse(summaryIndex);
+      onToggleCollapse(summaryIndex)
     }
   }
 
   function isCollapsed(): boolean {
-    return uiState?.collapsedSummaries?.has(summaryIndex) ?? false;
+    return uiState?.collapsedSummaries?.has(summaryIndex) ?? false
   }
 
   function isSelected(): boolean {
-    return bulkEditState?.selectedSummaries?.has(summaryIndex) ?? false;
+    return bulkEditState?.selectedSummaries?.has(summaryIndex) ?? false
   }
 </script>
 
 <div
-  class="flex flex-col p-2 border rounded-lg sm:p-4 border-zinc-700 bg-zinc-800/50 {isSelected() ? 'ring-2 ring-blue-500' : ''}"
+  class="flex flex-col p-2 border rounded-lg sm:p-4 border-zinc-700 bg-zinc-800/50 {isSelected()
+    ? 'ring-2 ring-blue-500'
+    : ''}"
 >
   <!-- Original Summary Header -->
   <div class="flex items-center justify-between">
@@ -369,8 +358,8 @@
 
       <span class="text-sm text-zinc-400"
         >{language.hypaV3Modal.summaryNumberLabel.replace(
-          "{0}",
-          (summaryIndex + 1).toString()
+          '{0}',
+          (summaryIndex + 1).toString(),
         )}</span
       >
 
@@ -498,7 +487,7 @@
       bind:value={summary.text}
       onfocus={() => {
         if (searchState && !searchState.isNavigating) {
-          searchState.requestedSearchFromIndex = summaryIndex;
+          searchState.requestedSearchFromIndex = summaryIndex
         }
       }}
     >
@@ -526,9 +515,7 @@
     <!-- Rerolled Summary Header -->
     <div class="mt-2 sm:mt-4">
       <div class="flex items-center justify-between">
-        <span class="text-sm text-zinc-400"
-          >{language.hypaV3Modal.rerolledSummaryLabel}</span
-        >
+        <span class="text-sm text-zinc-400">{language.hypaV3Modal.rerolledSummaryLabel}</span>
         <div class="flex items-center gap-2">
           <!-- Translate Rerolled Button -->
           <button
@@ -604,10 +591,12 @@
         {:else}
           <ChevronUpIcon class="w-4 h-4" />
         {/if}
-        <span>{language.hypaV3Modal.connectedMessageCountLabel.replace(
-          "{0}",
-          summary.chatMemos.length.toString()
-        )}</span>
+        <span
+          >{language.hypaV3Modal.connectedMessageCountLabel.replace(
+            '{0}',
+            summary.chatMemos.length.toString(),
+          )}</span
+        >
       </button>
 
       <div class="flex items-center gap-2">
@@ -633,7 +622,7 @@
         {#each summary.chatMemos as chatMemo, memoIndex (chatMemo)}
           <button
             class="px-3 py-2 rounded-full text-xs text-zinc-200 hover:bg-zinc-700 transition-colors bg-zinc-900 {isMessageExpanded(
-              chatMemo
+              chatMemo,
             )
               ? 'ring-2 ring-zinc-500'
               : ''}"
@@ -641,9 +630,7 @@
             bind:this={summaryItemState.chatMemoRefs[memoIndex]}
             onclick={() => toggleExpandMessage(chatMemo)}
           >
-            {chatMemo == null
-              ? language.hypaV3Modal.connectedFirstMessageLabel
-              : chatMemo}
+            {chatMemo == null ? language.hypaV3Modal.connectedFirstMessageLabel : chatMemo}
           </button>
         {/each}
       {/key}
@@ -656,10 +643,7 @@
           {#if expandedMessage}
             <!-- Role -->
             <div class="mb-2 text-sm sm:mb-4 text-zinc-400">
-              {language.hypaV3Modal.connectedMessageRoleLabel.replace(
-                "{0}",
-                expandedMessage.role
-              )}
+              {language.hypaV3Modal.connectedMessageRoleLabel.replace('{0}', expandedMessage.role)}
             </div>
 
             <!-- Content -->
@@ -676,10 +660,7 @@
           {/if}
         {:catch error}
           <span class="text-sm text-red-400"
-            >{language.hypaV3Modal.connectedMessageLoadingError.replace(
-              "{0}",
-              error.message
-            )}</span
+            >{language.hypaV3Modal.connectedMessageLoadingError.replace('{0}', error.message)}</span
           >
         {/await}
       </div>
@@ -702,5 +683,4 @@
       {/if}
     {/if}
   {/if}
-
 </div>

@@ -1,93 +1,85 @@
 <script lang="ts">
-  import {
-    XIcon,
-    SquarePenIcon,
-    Trash2Icon,
-    CheckIcon,
-  } from "@lucide/svelte";
-  import { language } from "src/lang";
-  import { DBState, selectedCharID } from "src/ts/stores.svelte";
-  import type { TagManagerState } from "./types";
+  import { XIcon, SquarePenIcon, Trash2Icon, CheckIcon } from '@lucide/svelte'
+  import { language } from 'src/lang'
+  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import type { TagManagerState } from './types'
 
   interface Props {
-    tagManagerState: TagManagerState;
+    tagManagerState: TagManagerState
   }
 
-  let {
-    tagManagerState = $bindable(),
-  }: Props = $props();
+  let { tagManagerState = $bindable() }: Props = $props()
 
   const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[
-      DBState.db.characters[$selectedCharID].chatPage
-    ].hypaV3Data
-  );
+    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+      .hypaV3Data,
+  )
 
   function closeTagManager() {
-    tagManagerState.isOpen = false;
-    tagManagerState.currentSummaryIndex = -1;
-    tagManagerState.editingTag = "";
-    tagManagerState.editingTagIndex = -1;
+    tagManagerState.isOpen = false
+    tagManagerState.currentSummaryIndex = -1
+    tagManagerState.editingTag = ''
+    tagManagerState.editingTagIndex = -1
   }
 
   function addTag(summaryIndex: number, tagName: string) {
-    if (!tagName.trim()) return;
+    if (!tagName.trim()) return
 
-    const summary = hypaV3Data.summaries[summaryIndex];
+    const summary = hypaV3Data.summaries[summaryIndex]
     if (!summary.tags) {
-      summary.tags = [];
+      summary.tags = []
     }
 
     if (!summary.tags.includes(tagName.trim())) {
-      summary.tags.push(tagName.trim());
+      summary.tags.push(tagName.trim())
     }
   }
 
   function removeTag(summaryIndex: number, tagIndex: number) {
-    const summary = hypaV3Data.summaries[summaryIndex];
+    const summary = hypaV3Data.summaries[summaryIndex]
     if (summary.tags && tagIndex >= 0 && tagIndex < summary.tags.length) {
-      summary.tags.splice(tagIndex, 1);
+      summary.tags.splice(tagIndex, 1)
     }
   }
 
   function startEditTag(tagIndex: number, tagName: string) {
-    tagManagerState.editingTagIndex = tagIndex;
-    tagManagerState.editingTag = tagName;
+    tagManagerState.editingTagIndex = tagIndex
+    tagManagerState.editingTag = tagName
   }
 
   function saveEditingTag() {
-    if (tagManagerState.editingTagIndex === -1 || !tagManagerState.editingTag.trim()) return;
+    if (tagManagerState.editingTagIndex === -1 || !tagManagerState.editingTag.trim()) return
 
-    const summary = hypaV3Data.summaries[tagManagerState.currentSummaryIndex];
+    const summary = hypaV3Data.summaries[tagManagerState.currentSummaryIndex]
     if (summary.tags && tagManagerState.editingTagIndex < summary.tags.length) {
-      summary.tags[tagManagerState.editingTagIndex] = tagManagerState.editingTag.trim();
+      summary.tags[tagManagerState.editingTagIndex] = tagManagerState.editingTag.trim()
     }
 
-    tagManagerState.editingTag = "";
-    tagManagerState.editingTagIndex = -1;
+    tagManagerState.editingTag = ''
+    tagManagerState.editingTagIndex = -1
   }
 
   function cancelEditingTag() {
-    tagManagerState.editingTag = "";
-    tagManagerState.editingTagIndex = -1;
+    tagManagerState.editingTag = ''
+    tagManagerState.editingTagIndex = -1
   }
 
   function handleAddTagEnter() {
-    addTag(tagManagerState.currentSummaryIndex, tagManagerState.editingTag);
-    tagManagerState.editingTag = "";
+    addTag(tagManagerState.currentSummaryIndex, tagManagerState.editingTag)
+    tagManagerState.editingTag = ''
   }
 
   function handleEditTagKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
-      saveEditingTag();
+      saveEditingTag()
     } else if (e.key === 'Escape') {
-      cancelEditingTag();
+      cancelEditingTag()
     }
   }
 
   function handleAddTagKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
-      handleAddTagEnter();
+      handleAddTagEnter()
     }
   }
 </script>
@@ -98,7 +90,10 @@
     <div class="bg-zinc-900 rounded-lg p-6 w-full max-w-md">
       <div class="flex justify-between items-center mb-6">
         <h2 class="text-lg font-semibold text-zinc-300">
-          {language.hypaV3Modal.tagManagerTitle.replace("{0}", (tagManagerState.currentSummaryIndex + 1).toString())}
+          {language.hypaV3Modal.tagManagerTitle.replace(
+            '{0}',
+            (tagManagerState.currentSummaryIndex + 1).toString(),
+          )}
         </h2>
         <button
           class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -170,7 +165,7 @@
           {/each}
         {:else}
           <div class="text-center py-8 text-zinc-500 text-sm">
-            {language.hypaV3Modal.noTagsYet}<br>
+            {language.hypaV3Modal.noTagsYet}<br />
             <span class="text-xs">{language.hypaV3Modal.addNewTagHint}</span>
           </div>
         {/if}

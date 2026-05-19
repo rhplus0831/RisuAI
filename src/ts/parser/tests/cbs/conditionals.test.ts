@@ -84,9 +84,13 @@ describe('#if', () => {
 
     // Edge case: {{#if 1\s+.*}} also renders
     fc.assert(
-      fc.property(fc.constantFrom('1', 'true'), fc.stringMatching(/^ +[^#:{}\r\n]*$/), (truthy, tail) => {
-        expect(quickParse(`#if ${truthy}${tail}`, 'CBS')).toBe(`0 CBS 9`)
-      }),
+      fc.property(
+        fc.constantFrom('1', 'true'),
+        fc.stringMatching(/^ +[^#:{}\r\n]*$/),
+        (truthy, tail) => {
+          expect(quickParse(`#if ${truthy}${tail}`, 'CBS')).toBe(`0 CBS 9`)
+        },
+      ),
     )
   })
 
@@ -127,9 +131,13 @@ describe('#if_pure', () => {
 
     // Edge case: {{#if_pure 1\s+.*}} also renders
     fc.assert(
-      fc.property(fc.constantFrom('1', 'true'), fc.stringMatching(/^ +[^#:{}\r\n]*$/), (truthy, tail) => {
-        expect(quickParse(`#if_pure ${truthy}${tail}`, 'CBS')).toBe(`0 CBS 9`)
-      }),
+      fc.property(
+        fc.constantFrom('1', 'true'),
+        fc.stringMatching(/^ +[^#:{}\r\n]*$/),
+        (truthy, tail) => {
+          expect(quickParse(`#if_pure ${truthy}${tail}`, 'CBS')).toBe(`0 CBS 9`)
+        },
+      ),
     )
   })
 
@@ -156,7 +164,9 @@ describe('#if_pure', () => {
   })
 
   test('can be nested', () => {
-    expect(quickParse('#if_pure 1', template('#if_pure 1', indentedBody))).toBe(`0 0 ${indentedBody} 9 9`)
+    expect(quickParse('#if_pure 1', template('#if_pure 1', indentedBody))).toBe(
+      `0 0 ${indentedBody} 9 9`,
+    )
     expect(quickParse('#if_pure 1', template('#if_pure 0', indentedBody))).toBe(`0 0  9 9`)
     expect(quickParse('#if_pure 0', template('#if_pure 1', indentedBody))).toBe(`0  9`)
     expect(quickParse('#if_pure 0', template('#if_pure 0', indentedBody))).toBe(`0  9`)
@@ -184,7 +194,9 @@ describe('#when', () => {
   })
 
   test('removes line breaks at block start/end, preserves all other whitespaces', () => {
-    expect(quickParse('#when::1', indentedBody)).toBe(`0 ${indentedBody.replaceAll(/(^\n+|\n+$)/g, '')} 9`)
+    expect(quickParse('#when::1', indentedBody)).toBe(
+      `0 ${indentedBody.replaceAll(/(^\n+|\n+$)/g, '')} 9`,
+    )
   })
 
   test('can be nested', () => {

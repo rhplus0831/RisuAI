@@ -1,21 +1,15 @@
 <script lang="ts">
-  import {
-    PlusIcon,
-    XIcon,
-    SquarePenIcon,
-    Trash2Icon,
-    CheckIcon,
-  } from "@lucide/svelte";
-  import { language } from "src/lang";
-  import { DBState, selectedCharID } from "src/ts/stores.svelte";
-  import type { Category, CategoryManagerState, SearchState, FilterState } from "./types";
-  import { createCategoryId } from "./utils";
+  import { PlusIcon, XIcon, SquarePenIcon, Trash2Icon, CheckIcon } from '@lucide/svelte'
+  import { language } from 'src/lang'
+  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import type { Category, CategoryManagerState, SearchState, FilterState } from './types'
+  import { createCategoryId } from './utils'
 
   interface Props {
-    categoryManagerState: CategoryManagerState;
-    searchState: SearchState;
-    filterState?: FilterState;
-    onCategoryFilter?: (categoryId: string) => void;
+    categoryManagerState: CategoryManagerState
+    searchState: SearchState
+    filterState?: FilterState
+    onCategoryFilter?: (categoryId: string) => void
   }
 
   let {
@@ -23,101 +17,109 @@
     searchState = $bindable(),
     filterState,
     onCategoryFilter,
-  }: Props = $props();
+  }: Props = $props()
 
   const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[
-      DBState.db.characters[$selectedCharID].chatPage
-    ].hypaV3Data
-  );
+    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+      .hypaV3Data,
+  )
 
-  let categories = $derived((() => {
-    const savedCategories = hypaV3Data.categories || [];
-    const uncategorized = { id: "", name: language.hypaV3Modal.unclassified };
+  let categories = $derived(
+    (() => {
+      const savedCategories = hypaV3Data.categories || []
+      const uncategorized = { id: '', name: language.hypaV3Modal.unclassified }
 
-    const hasUncategorized = savedCategories.some(c => c.id === "");
+      const hasUncategorized = savedCategories.some((c) => c.id === '')
 
-    if (hasUncategorized) {
-      return [uncategorized, ...savedCategories.filter(c => c.id !== "")];
-    } else {
-      return [uncategorized, ...savedCategories];
-    }
-  })());
+      if (hasUncategorized) {
+        return [uncategorized, ...savedCategories.filter((c) => c.id !== '')]
+      } else {
+        return [uncategorized, ...savedCategories]
+      }
+    })(),
+  )
 
   function closeCategoryManager() {
-    categoryManagerState.isOpen = false;
-    categoryManagerState.editingCategory = null;
+    categoryManagerState.isOpen = false
+    categoryManagerState.editingCategory = null
   }
 
   function startEditCategory(category: Category) {
-    categoryManagerState.editingCategory = { ...category };
+    categoryManagerState.editingCategory = { ...category }
   }
 
   function startAddCategory() {
-    categoryManagerState.editingCategory = { id: "", name: "" };
+    categoryManagerState.editingCategory = { id: '', name: '' }
   }
 
   function saveEditingCategory() {
-    if (!categoryManagerState.editingCategory) return;
+    if (!categoryManagerState.editingCategory) return
 
-    if (categoryManagerState.editingCategory.id === "") {
-      addCategory(categoryManagerState.editingCategory.name);
+    if (categoryManagerState.editingCategory.id === '') {
+      addCategory(categoryManagerState.editingCategory.name)
     } else {
-      updateCategory(categoryManagerState.editingCategory.id, categoryManagerState.editingCategory.name);
+      updateCategory(
+        categoryManagerState.editingCategory.id,
+        categoryManagerState.editingCategory.name,
+      )
     }
 
-    categoryManagerState.editingCategory = null;
+    categoryManagerState.editingCategory = null
   }
 
   function cancelEditingCategory() {
-    categoryManagerState.editingCategory = null;
+    categoryManagerState.editingCategory = null
   }
 
   function addCategory(name: string) {
-    const id = createCategoryId();
-    const currentCategories = hypaV3Data.categories || [];
-    const uncategorized = { id: "", name: language.hypaV3Modal.unclassified };
+    const id = createCategoryId()
+    const currentCategories = hypaV3Data.categories || []
+    const uncategorized = { id: '', name: language.hypaV3Modal.unclassified }
 
-    const hasUncategorized = currentCategories.some(c => c.id === "");
-    const baseCategories = hasUncategorized ? currentCategories : [uncategorized, ...currentCategories];
+    const hasUncategorized = currentCategories.some((c) => c.id === '')
+    const baseCategories = hasUncategorized
+      ? currentCategories
+      : [uncategorized, ...currentCategories]
 
-    hypaV3Data.categories = [...baseCategories, { id, name }];
+    hypaV3Data.categories = [...baseCategories, { id, name }]
   }
 
   function updateCategory(id: string, name: string) {
-    hypaV3Data.categories = (hypaV3Data.categories || []).map(c => c.id === id ? { ...c, name } : c);
+    hypaV3Data.categories = (hypaV3Data.categories || []).map((c) =>
+      c.id === id ? { ...c, name } : c,
+    )
   }
 
   function deleteCategory(id: string) {
-    if (id === "") return;
+    if (id === '') return
 
     for (const summary of hypaV3Data.summaries) {
       if (summary.categoryId === id) {
-        summary.categoryId = undefined;
+        summary.categoryId = undefined
       }
     }
 
-    hypaV3Data.categories = (hypaV3Data.categories || []).filter(c => c.id !== id);
+    hypaV3Data.categories = (hypaV3Data.categories || []).filter((c) => c.id !== id)
 
     if (categoryManagerState.selectedCategoryFilter === id) {
-      categoryManagerState.selectedCategoryFilter = "all";
+      categoryManagerState.selectedCategoryFilter = 'all'
     }
     if (filterState?.selectedCategoryFilter === id && onCategoryFilter) {
-      onCategoryFilter("all");
+      onCategoryFilter('all')
     }
   }
 
   function selectCategory(categoryId: string) {
-    categoryManagerState.selectedCategoryFilter = categoryId;
+    categoryManagerState.selectedCategoryFilter = categoryId
     if (onCategoryFilter) {
-      onCategoryFilter(categoryId);
+      onCategoryFilter(categoryId)
     }
     if (searchState) {
-      searchState.query = '';
-      searchState.results = [];
-      searchState.currentResultIndex = -1;
+      searchState.query = ''
+      searchState.results = []
+      searchState.currentResultIndex = -1
     }
-    closeCategoryManager();
+    closeCategoryManager()
   }
 </script>
 
@@ -149,12 +151,15 @@
       <div class="space-y-2 max-h-80 overflow-y-auto">
         <!-- All Categories -->
         <button
-          class="w-full flex items-center gap-3 px-3 py-2.5 rounded transition-colors text-left {categoryManagerState.selectedCategoryFilter === 'all'
+          class="w-full flex items-center gap-3 px-3 py-2.5 rounded transition-colors text-left {categoryManagerState.selectedCategoryFilter ===
+          'all'
             ? 'bg-blue-600 text-white'
             : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}"
           onclick={() => selectCategory('all')}
         >
-          <span class="flex-1 text-sm">{language.hypaV3Modal.allCategories} ({hypaV3Data.summaries.length})</span>
+          <span class="flex-1 text-sm"
+            >{language.hypaV3Modal.allCategories} ({hypaV3Data.summaries.length})</span
+          >
           <!-- Spacer to match button height -->
           <div class="flex gap-1">
             <div class="p-1.5 w-8 h-8"></div>
@@ -163,9 +168,12 @@
         </button>
 
         {#each categories as category}
-          {@const count = hypaV3Data.summaries.filter(s => (s.categoryId || '') === category.id).length}
+          {@const count = hypaV3Data.summaries.filter(
+            (s) => (s.categoryId || '') === category.id,
+          ).length}
           <div
-            class="flex items-center gap-3 px-3 py-2.5 rounded transition-colors {categoryManagerState.selectedCategoryFilter === category.id
+            class="flex items-center gap-3 px-3 py-2.5 rounded transition-colors {categoryManagerState.selectedCategoryFilter ===
+            category.id
               ? 'bg-blue-600 text-white'
               : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}"
           >
@@ -189,13 +197,10 @@
                 <XIcon class="w-4 h-4" />
               </button>
             {:else}
-              <button
-                class="flex-1 text-sm text-left"
-                onclick={() => selectCategory(category.id)}
-              >
+              <button class="flex-1 text-sm text-left" onclick={() => selectCategory(category.id)}>
                 {category.name} ({count})
               </button>
-              {#if category.id !== ""}
+              {#if category.id !== ''}
                 <button
                   class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
                   onclick={() => startEditCategory(category)}
@@ -220,9 +225,9 @@
         {/each}
 
         <!-- Empty State -->
-        {#if categories.filter(c => c.id !== "").length === 0 && !categoryManagerState.editingCategory}
+        {#if categories.filter((c) => c.id !== '').length === 0 && !categoryManagerState.editingCategory}
           <div class="text-center py-8 text-zinc-500 text-sm">
-            {language.hypaV3Modal.noCategoriesYet}<br>
+            {language.hypaV3Modal.noCategoriesYet}<br />
             <span class="text-xs">{language.hypaV3Modal.addNewCategoryHint}</span>
           </div>
         {/if}

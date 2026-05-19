@@ -16,7 +16,7 @@ test('returns null if input does not start with <|im_start|>', () => {
     fc.property(anythingNotToken, (input) => {
       const result = parseChatML(input)
       expect(result).toBeNull()
-    })
+    }),
   )
 })
 
@@ -45,8 +45,8 @@ test('parses ChatML', () => {
             thoughts: [],
           },
         ])
-      }
-    )
+      },
+    ),
   )
 })
 
@@ -93,9 +93,9 @@ test.skip('parses ChatML without ending token', () => {
             thoughts: [],
           },
         ])
-      }
+      },
     ),
-    { seed: 1735332051, path: '22:0', endOnFailure: true }
+    { seed: 1735332051, path: '22:0', endOnFailure: true },
   )
 })
 
@@ -123,9 +123,9 @@ test('extracts thoughts', () => {
           content,
           thoughts: [thoughts],
         })
-      }
+      },
     ),
-    { seed: 409853665, path: '6:0', endOnFailure: true }
+    { seed: 409853665, path: '6:0', endOnFailure: true },
   )
 })
 
@@ -146,7 +146,9 @@ test.skip('extracts multiple thoughts', () => {
 test('defaults to user role if unknown prefix', () => {
   fc.assert(
     fc.property(
-      fc.string().filter((s) => s.trim().length > 0 && s !== 'assistant' && s !== 'system' && s !== 'user'),
+      fc
+        .string()
+        .filter((s) => s.trim().length > 0 && s !== 'assistant' && s !== 'system' && s !== 'user'),
       fc.string(),
       // No simple whitespace (ambiguous)
       fc.constantFrom('<|im_sep|>', '\n'),
@@ -161,8 +163,8 @@ test('defaults to user role if unknown prefix', () => {
           content: `${prefix}${sep}${content}`.trimStart(),
           thoughts: [],
         })
-      }
-    )
+      },
+    ),
   )
 })
 

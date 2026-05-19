@@ -13,7 +13,7 @@ vi.mock(
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
       getDatabase: () => ({}),
-    } as typeof import('../../../storage/database.svelte'))
+    }) as typeof import('../../../storage/database.svelte'),
 )
 
 vi.mock(import('../../../globalApi.svelte'), () => ({
@@ -30,8 +30,8 @@ const varStorage = vi.hoisted(
         get(_, prop) {
           return trimVarPrefix(prop)
         },
-      }
-    )
+      },
+    ),
 )
 
 vi.mock(import('../../../stores.svelte'), () => {
@@ -64,7 +64,8 @@ vi.mock(import('../../../stores.svelte'), () => {
 
 const validCBSArgPropLong = validCBSArgProp.filter((s) => s.length > 1)
 
-const quickParse = (op: string, ...args: (string | number)[]) => risuChatParser(cbs(op, ...args.map(String)))
+const quickParse = (op: string, ...args: (string | number)[]) =>
+  risuChatParser(cbs(op, ...args.map(String)))
 
 test('startswith, endswith, contains', () => {
   expect(quickParse('startswith', 'Hello World', 'Hello')).toBe('1')
@@ -85,7 +86,7 @@ test('startswith, endswith, contains', () => {
       expect(quickParse('contains', a, a.slice(-1))).toBe('1')
       expect(quickParse('contains', a, a)).toBe('1')
       expect(quickParse('contains', a, b)).toBe('0')
-    })
+    }),
   )
 })
 
@@ -101,7 +102,9 @@ test('replace', () => {
 })
 
 test('split', () => {
-  expect(quickParse('split', 'apple,banana,cherry', ',')).toBe(JSON.stringify(['apple', 'banana', 'cherry']))
+  expect(quickParse('split', 'apple,banana,cherry', ',')).toBe(
+    JSON.stringify(['apple', 'banana', 'cherry']),
+  )
 
   fc.assert(
     fc.property(fc.array(validCBSArgPropLong), validCBSArgProp, (arr, b) => {

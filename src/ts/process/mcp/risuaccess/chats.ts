@@ -7,7 +7,8 @@ export class ChatHandler extends MCPToolHandler {
     return [
       {
         name: 'risu-get-chat-history',
-        description: 'Get the chat history with user and a Risuai character. ordered by time, newest first.',
+        description:
+          'Get the chat history with user and a Risuai character. ordered by time, newest first.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -18,12 +19,14 @@ export class ChatHandler extends MCPToolHandler {
             },
             count: {
               type: 'integer',
-              description: 'The number of chat history entries to retrieve. maximum and default is 20.',
+              description:
+                'The number of chat history entries to retrieve. maximum and default is 20.',
               default: 20,
             },
             offset: {
               type: 'integer',
-              description: 'The offset to start retrieving chat history entries from. This is useful for pagination.',
+              description:
+                'The offset to start retrieving chat history entries from. This is useful for pagination.',
             },
           },
           required: ['id'],
@@ -39,7 +42,11 @@ export class ChatHandler extends MCPToolHandler {
     return null
   }
 
-  async getChatHistory(id: string, count: number = 20, offset: number = 0): Promise<RPCToolCallContent[]> {
+  async getChatHistory(
+    id: string,
+    count: number = 20,
+    offset: number = 0,
+  ): Promise<RPCToolCallContent[]> {
     const char: character | groupChat = getCharacter(id)
     if (!char) {
       return [

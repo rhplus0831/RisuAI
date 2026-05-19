@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick } from 'svelte'
   import {
     SearchIcon,
     StarIcon,
@@ -10,28 +10,30 @@
     XIcon,
     SquarePenIcon,
     TagIcon,
-  } from "@lucide/svelte";
-  import { language } from "src/lang";
-  import {
-    hypaV3ModalOpen,
-    settingsOpen,
-    SettingsMenuIndex,
-  } from "src/ts/stores.svelte";
-  import type { SearchState, BulkEditState, CategoryManagerState, FilterState, UIState } from "./types";
+  } from '@lucide/svelte'
+  import { language } from 'src/lang'
+  import { hypaV3ModalOpen, settingsOpen, SettingsMenuIndex } from 'src/ts/stores.svelte'
+  import type {
+    SearchState,
+    BulkEditState,
+    CategoryManagerState,
+    FilterState,
+    UIState,
+  } from './types'
 
   interface Props {
-    searchState: SearchState;
-    filterImportant: boolean;
-    dropdownOpen: boolean;
-    filterSelected: boolean;
-    bulkEditState?: BulkEditState;
-    categoryManagerState?: CategoryManagerState;
-    filterState?: FilterState;
-    uiState?: UIState;
-    hypaV3Data: any;
-    onResetData?: () => Promise<void>;
-    onToggleBulkEditMode?: () => void;
-    onOpenCategoryManager?: () => void;
+    searchState: SearchState
+    filterImportant: boolean
+    dropdownOpen: boolean
+    filterSelected: boolean
+    bulkEditState?: BulkEditState
+    categoryManagerState?: CategoryManagerState
+    filterState?: FilterState
+    uiState?: UIState
+    hypaV3Data: any
+    onResetData?: () => Promise<void>
+    onToggleBulkEditMode?: () => void
+    onOpenCategoryManager?: () => void
   }
 
   let {
@@ -47,69 +49,68 @@
     onResetData,
     onToggleBulkEditMode,
     onOpenCategoryManager,
-  }: Props = $props();
-
+  }: Props = $props()
 
   async function toggleSearch() {
     if (searchState === null) {
       searchState = {
         ref: null,
-        query: "",
+        query: '',
         results: [],
         currentResultIndex: -1,
         requestedSearchFromIndex: -1,
         isNavigating: false,
-      };
+      }
 
       // Focus on search element after it's rendered
-      await tick();
+      await tick()
 
       if (searchState.ref) {
-        searchState.ref.focus();
+        searchState.ref.focus()
       }
     } else {
-      searchState = null;
+      searchState = null
     }
   }
 
   function toggleFilterImportant() {
-    filterImportant = !filterImportant;
+    filterImportant = !filterImportant
   }
 
   function openGlobalSettings() {
-    $hypaV3ModalOpen = false;
-    $settingsOpen = true;
-    $SettingsMenuIndex = 2; // Other bot settings
+    $hypaV3ModalOpen = false
+    $settingsOpen = true
+    $SettingsMenuIndex = 2 // Other bot settings
   }
 
   function openDropdown(e: MouseEvent) {
-    e.stopPropagation();
-    dropdownOpen = true;
+    e.stopPropagation()
+    dropdownOpen = true
   }
 
   function toggleFilterSelected() {
-    filterSelected = !filterSelected;
+    filterSelected = !filterSelected
   }
 
   async function resetData() {
     if (onResetData) {
-      await onResetData();
+      await onResetData()
     }
   }
 
   function closeModal() {
-    $hypaV3ModalOpen = false;
+    $hypaV3ModalOpen = false
   }
 
   function toggleBulkEditMode() {
     if (onToggleBulkEditMode) {
-      onToggleBulkEditMode();
+      onToggleBulkEditMode()
     }
   }
 
   function openCategoryManager() {
     if (onOpenCategoryManager) {
-      onOpenCategoryManager();
+      onOpenCategoryManager()
     }
   }
 </script>

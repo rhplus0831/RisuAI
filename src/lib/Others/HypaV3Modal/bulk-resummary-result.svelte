@@ -1,29 +1,18 @@
 <script lang="ts">
-  import {
-    LanguagesIcon,
-    RefreshCw,
-    CheckIcon,
-    XIcon,
-  } from "@lucide/svelte";
-  import { language } from "src/lang";
-  import type { BulkResummaryState } from "./types";
-  import { handleDualAction } from "./utils";
+  import { LanguagesIcon, RefreshCw, CheckIcon, XIcon } from '@lucide/svelte'
+  import { language } from 'src/lang'
+  import type { BulkResummaryState } from './types'
+  import { handleDualAction } from './utils'
 
   interface Props {
-    bulkResummaryState: BulkResummaryState;
-    onToggleTranslation: (regenerate: boolean) => void;
-    onReroll: () => void;
-    onApply: () => void;
-    onCancel: () => void;
+    bulkResummaryState: BulkResummaryState
+    onToggleTranslation: (regenerate: boolean) => void
+    onReroll: () => void
+    onApply: () => void
+    onCancel: () => void
   }
 
-  let {
-    bulkResummaryState,
-    onToggleTranslation,
-    onReroll,
-    onApply,
-    onCancel,
-  }: Props = $props();
+  let { bulkResummaryState, onToggleTranslation, onReroll, onApply, onCancel }: Props = $props()
 </script>
 
 <!-- Bulk Resummarize Result Section -->
@@ -35,8 +24,9 @@
         <div class="flex items-center gap-2">
           <!-- Translate Button -->
           <button
-            class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors {bulkResummaryState.isProcessing || !bulkResummaryState.result 
-              ? 'opacity-50 cursor-not-allowed' 
+            class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors {bulkResummaryState.isProcessing ||
+            !bulkResummaryState.result
+              ? 'opacity-50 cursor-not-allowed'
               : ''}"
             disabled={bulkResummaryState.isProcessing || !bulkResummaryState.result}
             title={language.hypaV3Modal.translate}
@@ -47,11 +37,11 @@
           >
             <LanguagesIcon class="w-4 h-4" />
           </button>
-          
+
           <!-- Reroll Button -->
           <button
-            class="p-2 rounded transition-colors {bulkResummaryState.isProcessing 
-              ? 'text-zinc-600 cursor-not-allowed' 
+            class="p-2 rounded transition-colors {bulkResummaryState.isProcessing
+              ? 'text-zinc-600 cursor-not-allowed'
               : 'text-orange-400 hover:text-orange-300'}"
             onclick={onReroll}
             disabled={bulkResummaryState.isProcessing}
@@ -59,11 +49,12 @@
           >
             <RefreshCw class="w-4 h-4" />
           </button>
-          
+
           <!-- Apply Button -->
           <button
-            class="p-2 rounded transition-colors {bulkResummaryState.isProcessing || !bulkResummaryState.result 
-              ? 'text-zinc-600 cursor-not-allowed' 
+            class="p-2 rounded transition-colors {bulkResummaryState.isProcessing ||
+            !bulkResummaryState.result
+              ? 'text-zinc-600 cursor-not-allowed'
               : 'text-green-400 hover:text-green-300'}"
             onclick={onApply}
             disabled={bulkResummaryState.isProcessing || !bulkResummaryState.result}
@@ -71,7 +62,7 @@
           >
             <CheckIcon class="w-4 h-4" />
           </button>
-          
+
           <!-- Cancel Button -->
           <button
             class="p-2 rounded-sm transition-colors text-zinc-400 hover:text-zinc-200"
@@ -82,7 +73,7 @@
           </button>
         </div>
       </div>
-      
+
       <!-- Result Content -->
       {#if bulkResummaryState.isProcessing}
         <div class="text-center py-4 text-zinc-400">
@@ -95,7 +86,7 @@
           readonly
           value={bulkResummaryState.result}
         ></textarea>
-        
+
         <!-- Translation Result -->
         {#if bulkResummaryState.translation}
           <div class="mt-3">

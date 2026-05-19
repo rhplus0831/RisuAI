@@ -1,21 +1,21 @@
 <script lang="ts">
-  import { StarIcon } from "@lucide/svelte";
-  import { DBState, selectedCharID } from "src/ts/stores.svelte";
-  import type { BulkEditState, Category } from "./types";
-  import { language } from "src/lang";
+  import { StarIcon } from '@lucide/svelte'
+  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import type { BulkEditState, Category } from './types'
+  import { language } from 'src/lang'
 
   interface Props {
-    bulkEditState: BulkEditState;
-    categories: Category[];
-    showImportantOnly: boolean;
-    selectedCategoryFilter: string;
-    onResummarize: () => void;
-    onClearSelection: () => void;
-    onUpdateSelectedCategory: (categoryId: string) => void;
-    onUpdateBulkSelectInput: (input: string) => void;
-    onApplyCategory: () => void;
-    onToggleImportant: () => void;
-    onParseAndSelectSummaries: () => void;
+    bulkEditState: BulkEditState
+    categories: Category[]
+    showImportantOnly: boolean
+    selectedCategoryFilter: string
+    onResummarize: () => void
+    onClearSelection: () => void
+    onUpdateSelectedCategory: (categoryId: string) => void
+    onUpdateBulkSelectInput: (input: string) => void
+    onApplyCategory: () => void
+    onToggleImportant: () => void
+    onParseAndSelectSummaries: () => void
   }
 
   let {
@@ -30,43 +30,42 @@
     onApplyCategory,
     onToggleImportant,
     onParseAndSelectSummaries,
-  }: Props = $props();
+  }: Props = $props()
 
   const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[
-      DBState.db.characters[$selectedCharID].chatPage
-    ].hypaV3Data
-  );
+    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+      .hypaV3Data,
+  )
 
   function applyCategoryToSelected() {
-    onApplyCategory();
+    onApplyCategory()
   }
 
   function bulkToggleImportant() {
-    onToggleImportant();
+    onToggleImportant()
   }
 
   function parseAndSelectSummaries() {
-    onParseAndSelectSummaries();
+    onParseAndSelectSummaries()
   }
 
   function clearSelection() {
-    onClearSelection();
+    onClearSelection()
   }
 
   function handleCategoryChange(event: Event) {
-    const target = event.target as HTMLSelectElement;
-    onUpdateSelectedCategory(target.value);
+    const target = event.target as HTMLSelectElement
+    onUpdateSelectedCategory(target.value)
   }
 
   function handleBulkSelectInputChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    onUpdateBulkSelectInput(target.value);
+    const target = event.target as HTMLInputElement
+    onUpdateBulkSelectInput(target.value)
   }
 
   function handleBulkSelectKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
-      parseAndSelectSummaries();
+      parseAndSelectSummaries()
     }
   }
 </script>
@@ -79,8 +78,9 @@
       <div class="flex items-center gap-2">
         <!-- Resummarize Button -->
         <button
-          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState.selectedSummaries.size > 1 
-            ? 'bg-green-600 hover:bg-blue-700 text-white' 
+          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState
+            .selectedSummaries.size > 1
+            ? 'bg-green-600 hover:bg-blue-700 text-white'
             : 'bg-zinc-600 text-zinc-400 cursor-not-allowed'}"
           onclick={onResummarize}
           disabled={bulkEditState.selectedSummaries.size < 2}
@@ -88,7 +88,7 @@
           {language.hypaV3Modal.reSummarize}
         </button>
       </div>
-      
+
       <!-- Right Side: Category, Important, Bulk Select, Clear -->
       <div class="flex items-center gap-2">
         <!-- Category Selection -->
@@ -104,7 +104,8 @@
 
         <!-- Apply Category Button -->
         <button
-          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState.selectedSummaries.size > 0
+          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState
+            .selectedSummaries.size > 0
             ? 'bg-blue-600 hover:bg-blue-700 text-white'
             : 'bg-zinc-600 text-zinc-400 cursor-not-allowed'}"
           onclick={applyCategoryToSelected}
@@ -115,7 +116,10 @@
 
         <!-- Bulk Toggle Important Button -->
         <button
-          class="px-3 py-2 rounded-sm border border-yellow-600 hover:bg-yellow-700 text-yellow-300 text-sm transition-colors flex items-center gap-2 {bulkEditState.selectedSummaries.size === 0 ? 'opacity-50 cursor-not-allowed' : ''}"
+          class="px-3 py-2 rounded-sm border border-yellow-600 hover:bg-yellow-700 text-yellow-300 text-sm transition-colors flex items-center gap-2 {bulkEditState
+            .selectedSummaries.size === 0
+            ? 'opacity-50 cursor-not-allowed'
+            : ''}"
           onclick={bulkToggleImportant}
           disabled={bulkEditState.selectedSummaries.size === 0}
         >

@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @plugin '@tailwindcss/typography';
 
@@ -137,7 +137,7 @@
   }
 
   button:not(:disabled),
-  [role="button"]:not(:disabled) {
+  [role='button']:not(:disabled) {
     cursor: pointer;
   }
 
@@ -278,24 +278,24 @@ body {
   font-weight: bold;
 }
 
-.chattext mark[risu-mark="quote1"] {
+.chattext mark[risu-mark='quote1'] {
   background-color: transparent;
   color: var(--FontColorQuote1);
 }
 
-.chattext mark[risu-mark="quote2"] {
+.chattext mark[risu-mark='quote2'] {
   background-color: transparent;
   color: var(--FontColorQuote2);
 }
 
-.chattext mark[risu-mark="blockquote1"] {
+.chattext mark[risu-mark='blockquote1'] {
   border-left: 4px solid var(--FontColorQuote1);
   background-color: color-mix(in srgb, transparent 90%, var(--FontColorQuote1) 10%);
   padding: 0.5rem 1rem;
   color: var(--FontColorQuote1);
 }
 
-.chattext mark[risu-mark="blockquote2"] {
+.chattext mark[risu-mark='blockquote2'] {
   border-left: 4px solid var(--FontColorQuote2);
   background-color: color-mix(in srgb, transparent 90%, var(--FontColorQuote2) 10%);
   padding: 0.5rem 1rem;
@@ -304,7 +304,11 @@ body {
 
 .strokeme {
   color: #000;
-  text-shadow: -1px -1px 0 white, 1px -1px 0 white, -1px 1px 0 white, 1px 1px 0 white;
+  text-shadow:
+    -1px -1px 0 white,
+    1px -1px 0 white,
+    -1px 1px 0 white,
+    1px 1px 0 white;
 }
 
 ::-webkit-scrollbar {
@@ -330,7 +334,9 @@ body {
 .n-scroll::-webkit-scrollbar-thumb {
   visibility: hidden;
   opacity: 0;
-  transition: visibility 0.5s, opacity 0.5s linear;
+  transition:
+    visibility 0.5s,
+    opacity 0.5s linear;
 }
 
 .n-scroll:hover::-webkit-scrollbar-thumb {
@@ -435,15 +441,15 @@ body {
   font-family: inherit;
 }
 
-.prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::before {
-  content: "";
+.prose :where(code):not(:where([class~='not-prose'], [class~='not-prose'] *))::before {
+  content: '';
 }
 
-.prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::after {
-  content: "";
+.prose :where(code):not(:where([class~='not-prose'], [class~='not-prose'] *))::after {
+  content: '';
 }
 
-.prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *)):not(pre code) {
+.prose :where(code):not(:where([class~='not-prose'], [class~='not-prose'] *)):not(pre code) {
   background-color: var(--tw-prose-pre-bg);
   border-radius: 0.25rem;
   color: var(--tw-prose-pre-code);

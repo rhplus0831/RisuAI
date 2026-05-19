@@ -8,7 +8,9 @@ import { getCharacter } from './utils'
 
 export class CharacterHandler extends MCPToolHandler {
   private promptAccess(tool: string, action: string) {
-    return alertConfirm(language.mcpAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action))
+    return alertConfirm(
+      language.mcpAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action),
+    )
   }
 
   getTools(): MCPTool[] {
@@ -34,7 +36,8 @@ export class CharacterHandler extends MCPToolHandler {
               type: 'array',
             },
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
           },
@@ -53,7 +56,8 @@ export class CharacterHandler extends MCPToolHandler {
               type: 'integer',
             },
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
             offset: {
@@ -71,7 +75,8 @@ export class CharacterHandler extends MCPToolHandler {
         inputSchema: {
           properties: {
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
             names: {
@@ -105,7 +110,8 @@ export class CharacterHandler extends MCPToolHandler {
               type: 'object',
             },
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
           },
@@ -115,7 +121,8 @@ export class CharacterHandler extends MCPToolHandler {
         name: 'risu-set-character-info',
       },
       {
-        description: 'Update an existing lorebook of a Risuai character, or create a new one if it does not exist.',
+        description:
+          'Update an existing lorebook of a Risuai character, or create a new one if it does not exist.',
         inputSchema: {
           properties: {
             alwaysActive: {
@@ -128,7 +135,8 @@ export class CharacterHandler extends MCPToolHandler {
               type: 'string',
             },
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
             keys: {
@@ -155,7 +163,8 @@ export class CharacterHandler extends MCPToolHandler {
         inputSchema: {
           properties: {
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
             name: {
@@ -173,7 +182,8 @@ export class CharacterHandler extends MCPToolHandler {
         inputSchema: {
           properties: {
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
           },
@@ -183,7 +193,8 @@ export class CharacterHandler extends MCPToolHandler {
         name: 'risu-get-character-regex-scripts',
       },
       {
-        description: 'Update an existing regex script in a Risuai character, or create a new one if it does not exist.',
+        description:
+          'Update an existing regex script in a Risuai character, or create a new one if it does not exist.',
         inputSchema: {
           properties: {
             ableFlag: {
@@ -196,7 +207,8 @@ export class CharacterHandler extends MCPToolHandler {
               type: 'string',
             },
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
             in: {
@@ -231,7 +243,8 @@ export class CharacterHandler extends MCPToolHandler {
         inputSchema: {
           properties: {
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
             name: {
@@ -249,7 +262,8 @@ export class CharacterHandler extends MCPToolHandler {
         inputSchema: {
           properties: {
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
           },
@@ -263,7 +277,8 @@ export class CharacterHandler extends MCPToolHandler {
         inputSchema: {
           properties: {
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
           },
@@ -281,7 +296,8 @@ export class CharacterHandler extends MCPToolHandler {
               type: 'string',
             },
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
           },
@@ -299,7 +315,8 @@ export class CharacterHandler extends MCPToolHandler {
               type: 'string',
             },
             id: {
-              description: 'The ID or name of the character. Use an empty string for the currently selected character.',
+              description:
+                'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
           },
@@ -347,7 +364,7 @@ export class CharacterHandler extends MCPToolHandler {
           args.content,
           args.keys,
           args.newName,
-          args.alwaysActive
+          args.alwaysActive,
         )
       case 'risu-delete-character-lorebook':
         return await this.deleteCharacterLorebook(args.id, args.name)
@@ -362,7 +379,7 @@ export class CharacterHandler extends MCPToolHandler {
           args.out,
           args.type,
           args.flag,
-          args.ableFlag
+          args.ableFlag,
         )
       case 'risu-delete-character-regex-scripts':
         return await this.deleteCharacterRegexScripts(args.id, args.name)
@@ -433,7 +450,11 @@ export class CharacterHandler extends MCPToolHandler {
     ]
   }
 
-  async getCharacterLorebooks(id: string, count: number = 100, offset: number = 0): Promise<RPCToolCallContent[]> {
+  async getCharacterLorebooks(
+    id: string,
+    count: number = 100,
+    offset: number = 0,
+  ): Promise<RPCToolCallContent[]> {
     const char: character | groupChat = getCharacter(id)
     if (!char) {
       return [
@@ -540,7 +561,12 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    if (!(await this.promptAccess('risu-set-character-info', `modify character (${char.name}) information`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-set-character-info',
+        `modify character (${char.name}) information`,
+      ))
+    ) {
       return [
         {
           type: 'text',
@@ -587,7 +613,7 @@ export class CharacterHandler extends MCPToolHandler {
     content?: string,
     keys?: string[],
     newName?: string,
-    alwaysActive?: boolean
+    alwaysActive?: boolean,
   ): Promise<RPCToolCallContent[]> {
     const char: character | groupChat = getCharacter(id)
     if (!char) {
@@ -610,7 +636,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-set-character-lorebook',
-        `add/modify character (${char.name}) global lorebook (${name})`
+        `add/modify character (${char.name}) global lorebook (${name})`,
       ))
     ) {
       return [
@@ -693,7 +719,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-lorebook',
-        `delete character (${char.name}) global lorebook (${name})`
+        `delete character (${char.name}) global lorebook (${name})`,
       ))
     ) {
       return [
@@ -773,7 +799,7 @@ export class CharacterHandler extends MCPToolHandler {
     regexOut?: string,
     type?: string,
     flag?: string,
-    ableFlag?: boolean
+    ableFlag?: boolean,
   ): Promise<RPCToolCallContent[]> {
     const char: character | groupChat = getCharacter(id)
     if (!char) {
@@ -796,7 +822,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-set-character-regex-scripts',
-        `add/modify character (${char.name}) regex script (${name})`
+        `add/modify character (${char.name}) regex script (${name})`,
       ))
     ) {
       return [
@@ -873,7 +899,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-regex-scripts',
-        `delete character (${char.name}) regex script (${name})`
+        `delete character (${char.name}) regex script (${name})`,
       ))
     ) {
       return [
@@ -944,7 +970,10 @@ export class CharacterHandler extends MCPToolHandler {
     ]
   }
 
-  async deleteCharacterAdditionalAssets(id: string, assetName: string): Promise<RPCToolCallContent[]> {
+  async deleteCharacterAdditionalAssets(
+    id: string,
+    assetName: string,
+  ): Promise<RPCToolCallContent[]> {
     const char: character | groupChat = getCharacter(id)
     if (!char) {
       return [
@@ -966,7 +995,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-additional-assets',
-        `delete character (${char.name}) additional asset (${assetName})`
+        `delete character (${char.name}) additional asset (${assetName})`,
       ))
     ) {
       return [
@@ -1024,7 +1053,10 @@ export class CharacterHandler extends MCPToolHandler {
     }
 
     const firstTrigger = char.triggerscript?.[0]
-    if (firstTrigger?.effect?.[0]?.type === 'triggerlua' && firstTrigger.effect[0].code.trim().length > 0) {
+    if (
+      firstTrigger?.effect?.[0]?.type === 'triggerlua' &&
+      firstTrigger.effect[0].code.trim().length > 0
+    ) {
       return [
         {
           type: 'text',
@@ -1060,7 +1092,12 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    if (!(await this.promptAccess('risu-set-character-lua-script', `modify character (${char.name}) lua script`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-set-character-lua-script',
+        `modify character (${char.name}) lua script`,
+      ))
+    ) {
       return [
         {
           type: 'text',

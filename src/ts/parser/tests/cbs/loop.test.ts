@@ -71,23 +71,23 @@ describe('#each', () => {
     expect(
       quickParse(
         '#each::keep [[1, 2], [3, 4]] as x',
-        template(
-          '#each::keep {{slot::x}} as y',
-          '{{slot::y}}\n',
-        ),
+        template('#each::keep {{slot::x}} as y', '{{slot::y}}\n'),
       ),
     ).toBe('1\n2\n3\n4\n')
   })
 
   test('can loop over a 2D array literal', () => {
-    setChatVar('arr', JSON.stringify([[1, 2], [3, 4]]))
+    setChatVar(
+      'arr',
+      JSON.stringify([
+        [1, 2],
+        [3, 4],
+      ]),
+    )
     expect(
       quickParse(
         '#each::keep {{getvar::arr}} as x',
-        template(
-          '#each::keep {{slot::x}} as y',
-          '{{slot::y}}\n',
-        ),
+        template('#each::keep {{slot::x}} as y', '{{slot::y}}\n'),
       ),
     ).toBe('1\n2\n3\n4\n')
   })
@@ -102,7 +102,7 @@ describe('#each', () => {
     expect(quickParse('#each [1][2] as n', '{{slot::n}} ')).toBe('[1][2]')
   })
 
-  test('trimes whitespaces of its body', () =>{
+  test('trimes whitespaces of its body', () => {
     expect(quickParse('#each [1, 2, 3] as n', ' \n - {{slot::n}}\n  ')).toBe(`- 1- 2- 3`)
   })
 
@@ -110,10 +110,7 @@ describe('#each', () => {
     expect(
       quickParse(
         '#each::keep [1, 2] as x',
-        template(
-          '#each::keep [3, 4] as y',
-          '{{slot::x}}{{slot::y}}\n',
-        ),
+        template('#each::keep [3, 4] as y', '{{slot::x}}{{slot::y}}\n'),
       ),
     ).toBe('13\n14\n23\n24\n')
   })
@@ -127,7 +124,8 @@ describe('#each', () => {
       {{#each [3, 2, 1] as n}}{{slot::n}}{{/}}
     {{/}}
     */
-    const nestedTemplate = (a: string) => `{{#when ${a}}}\n{{#each [1, 2, 3] as n}}{{slot::n}}{{/}}\n{{:else}}\n{{#each [3, 2, 1] as n}}{{slot::n}}{{/}}\n{{/}}`
+    const nestedTemplate = (a: string) =>
+      `{{#when ${a}}}\n{{#each [1, 2, 3] as n}}{{slot::n}}{{/}}\n{{:else}}\n{{#each [3, 2, 1] as n}}{{slot::n}}{{/}}\n{{/}}`
 
     expect(risuChatParser(nestedTemplate('1'))).toBe('123')
     expect(risuChatParser(nestedTemplate('0'))).toBe('321')
@@ -140,7 +138,9 @@ describe('#each', () => {
 
   describe('Operators: whitespaces', () => {
     test('::keep preserves all whitespaces', () => {
-      expect(quickParse('#each::keep [1, 2, 3] as n', '  - {{slot::n}}\n')).toBe(`  - 1\n  - 2\n  - 3\n`)
+      expect(quickParse('#each::keep [1, 2, 3] as n', '  - {{slot::n}}\n')).toBe(
+        `  - 1\n  - 2\n  - 3\n`,
+      )
     })
   })
 })

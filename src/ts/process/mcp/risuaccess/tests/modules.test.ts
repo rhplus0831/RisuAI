@@ -126,14 +126,14 @@ test('retrieves bgEmbedding, toggles, description, id, enabled, low level access
               return ['enabled', DBState.db.enabledModules.includes(target.id)]
             }
             return [field, target[field]]
-          })
+          }),
         )
 
         expect(await instance.handle('risu-get-module-info', { fields, id: target.id })).toEqual(
-          makeToolResponse(expected)
+          makeToolResponse(expected),
         )
-      }
-    )
+      },
+    ),
   )
 })
 
@@ -148,13 +148,21 @@ test('lists lorebooks of a module with pagination', async () => {
   }
   DBState.db.modules = [module]
 
-  expect(await instance.handle('risu-list-module-lorebooks', { count: 3, id: 'A' })).toMatchSnapshot()
-  expect(await instance.handle('risu-list-module-lorebooks', { count: 3, offset: 3, id: 'A' })).toMatchSnapshot()
-  expect(await instance.handle('risu-list-module-lorebooks', { count: 3, offset: 10, id: 'A' })).toMatchSnapshot()
+  expect(
+    await instance.handle('risu-list-module-lorebooks', { count: 3, id: 'A' }),
+  ).toMatchSnapshot()
+  expect(
+    await instance.handle('risu-list-module-lorebooks', { count: 3, offset: 3, id: 'A' }),
+  ).toMatchSnapshot()
+  expect(
+    await instance.handle('risu-list-module-lorebooks', { count: 3, offset: 10, id: 'A' }),
+  ).toMatchSnapshot()
 
   module.lorebook = []
 
-  expect(await instance.handle('risu-list-module-lorebooks', { id: 'A' })).toEqual(makeToolResponse([]))
+  expect(await instance.handle('risu-list-module-lorebooks', { id: 'A' })).toEqual(
+    makeToolResponse([]),
+  )
 })
 
 test('retrieves fields of a lorebook', async () => {
@@ -168,7 +176,9 @@ test('retrieves fields of a lorebook', async () => {
   }
   DBState.db.modules = [module]
 
-  expect(await instance.handle('risu-get-module-lorebook', { id: 'A', names: ['0', '2', '99'] })).toMatchSnapshot()
+  expect(
+    await instance.handle('risu-get-module-lorebook', { id: 'A', names: ['0', '2', '99'] }),
+  ).toMatchSnapshot()
 })
 
 test('lists all regex scripts of a module', async () => {
@@ -186,7 +196,9 @@ test('lists all regex scripts of a module', async () => {
 
   module.regex = []
 
-  expect(await instance.handle('risu-get-module-regex-scripts', { id: 'A' })).toEqual(makeToolResponse([]))
+  expect(await instance.handle('risu-get-module-regex-scripts', { id: 'A' })).toEqual(
+    makeToolResponse([]),
+  )
 })
 
 test('retrieves a module Lua script', async () => {
@@ -198,17 +210,21 @@ test('retrieves a module Lua script', async () => {
       {
         comment: '',
         conditions: [],
-        effect: [{
-          code: 'print("hello")',
-          type: 'triggerlua'
-        }],
+        effect: [
+          {
+            code: 'print("hello")',
+            type: 'triggerlua',
+          },
+        ],
         type: 'manual',
-      }
-    ]
+      },
+    ],
   }
   DBState.db.modules = [module]
 
-  expect(await instance.handle('risu-get-module-lua-script', { id: 'A' })).toEqual(makeToolResponse('print("hello")'))
+  expect(await instance.handle('risu-get-module-lua-script', { id: 'A' })).toEqual(
+    makeToolResponse('print("hello")'),
+  )
 })
 
 test('errs retrieving a module Lua script if it is not using one', async () => {
@@ -216,7 +232,9 @@ test('errs retrieving a module Lua script if it is not using one', async () => {
 
   DBState.db.modules = [makeModule('A')]
 
-  expect(await instance.handle('risu-get-module-lua-script', { id: 'A' })).toEqual(makeToolResponse('Error: This module does not contain a Lua trigger.'))
+  expect(await instance.handle('risu-get-module-lua-script', { id: 'A' })).toEqual(
+    makeToolResponse('Error: This module does not contain a Lua trigger.'),
+  )
 })
 
 test('errs if module not found', async () => {
@@ -241,6 +259,9 @@ test('errs if module not found', async () => {
   expect(
     errors
       .map((responses) => responses[0])
-      .every((response) => (response as RPCToolCallTextContent).text === 'Error: Module with ID zzz not found.')
+      .every(
+        (response) =>
+          (response as RPCToolCallTextContent).text === 'Error: Module with ID zzz not found.',
+      ),
   ).toBe(true)
 })
