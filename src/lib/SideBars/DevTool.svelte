@@ -49,7 +49,6 @@
         '```json\n' +
         JSON.stringify(JSON.parse(previewBody), null, 2).replaceAll('```', '\\`\\`\\`') +
         '\n```\n'
-      $doingChat = false
       alertMd(md)
       return
     }
@@ -80,7 +79,6 @@
 
       md += '### Instruction\n'
       md += '```\n' + instructed.replaceAll('```', '\\`\\`\\`') + '\n```\n'
-      $doingChat = false
       alertMd(md)
       return
     }
@@ -103,7 +101,6 @@
 
       md += '```\n' + formated[i].content.replaceAll('```', '\\`\\`\\`') + '\n```\n'
     }
-    $doingChat = false
     alertMd(md)
   }
 
@@ -255,12 +252,10 @@
         }
         currentChar.chats[currentChar.chatPage] = currentChat
         db.characters[$selectedCharID] = currentChar
-        doingChat.set(false)
         await sendChat(i)
         currentChar = db.characters[$selectedCharID]
         currentChat = currentChar.chats[currentChar.chatPage]
       }
-      doingChat.set(false)
     }}>Run</Button
   >
 </Accordion>

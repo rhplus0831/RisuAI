@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { expect } from 'vitest'
 import { DBState, selectedCharID } from '../../stores.svelte'
 import type { Message } from '../../storage/database.svelte'
-import { chatProcessStage } from '../index.svelte'
+import { chatProcessStage, doingChat } from '../index.svelte'
 import { get } from 'svelte/store'
 import { getProviderCalls } from './providerFake'
 import { getSideEffectCalls, type SideEffectCall } from './sideEffects'
@@ -17,6 +17,7 @@ export interface FixtureSnapshot {
   stages: number[]
   sideEffects: SideEffectCall[]
   providerCalls: NormalizedProviderCall[]
+  doingChat: boolean
 }
 
 interface NormalizedProviderCall {
@@ -131,6 +132,7 @@ export function captureSnapshot(stages: number[]): FixtureSnapshot {
     stages,
     sideEffects: getSideEffectCalls(),
     providerCalls: getProviderCalls().map(normalizeProviderCall),
+    doingChat: get(doingChat),
   }
 }
 

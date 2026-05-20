@@ -11,5 +11,6 @@
     3
   ],
   "sideEffects": [],
-  "providerCalls": []
+  "providerCalls": [],
+  "doingChat": false
 }

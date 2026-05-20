@@ -1274,13 +1274,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         })
       }
 
-      try {
-        await processSendChat(-1, {})
-      } finally {
-        // Plugin API path does not pass through the UI unlock logic,
-        // so release doingChat here on both success and failure.
-        doingChat.set(false)
-      }
+      await processSendChat(-1, {})
 
       return true
     },

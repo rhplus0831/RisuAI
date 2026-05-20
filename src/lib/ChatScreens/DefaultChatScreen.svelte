@@ -403,7 +403,6 @@
       alertError(error)
     }
     lastCharId = $selectedCharID
-    $doingChat = false
     if (DBState.db.playMessage) {
       const audio = new Audio(sendSound)
       audio.play().catch(() => {})

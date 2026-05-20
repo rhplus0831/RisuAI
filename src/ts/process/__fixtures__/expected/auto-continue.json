@@ -149,5 +149,6 @@
       "chatId": "uuid-1",
       "useStreaming": true
     }
-  ]
+  ],
+  "doingChat": false
 }

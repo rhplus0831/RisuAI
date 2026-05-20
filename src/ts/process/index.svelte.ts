@@ -195,8 +195,13 @@ export async function sendChat(
       return false
     }
   }
-  doingChat.set(true)
+  let iOwnDoingChat = false
+  if (!isDoing) {
+    doingChat.set(true)
+    iOwnDoingChat = true
+  }
 
+  try {
   if (chatProcessIndex === -1 && DBState.db.presetChain) {
     const names = DBState.db.presetChain.split(',').map((v) => v.trim())
     const randomSelect = Math.floor(Math.random() * names.length)
@@ -836,7 +841,6 @@ export async function sendChat(
     ms = makeMs(currentChat)
     currentTokens += triggerResult.tokens
     if (triggerResult.stopSending) {
-      doingChat.set(false)
       return false
     }
   }
@@ -1742,7 +1746,10 @@ export async function sendChat(
   })
 
   if (shouldContinue) {
+    // Release the flag before the recursive call so the inner sendChat's
+    // entry guard does not refuse when chatProcessIndex === -1.
     doingChat.set(false)
+    iOwnDoingChat = false
     return await sendChat(chatProcessIndex, {
       chatAdditonalTokens: arg.chatAdditonalTokens,
       continue: true,
@@ -1799,7 +1806,10 @@ export async function sendChat(
       ].generationInfo = generationInfo
     }
 
+    // Release the flag before the recursive call so the inner sendChat's
+    // entry guard does not refuse when chatProcessIndex === -1.
     doingChat.set(false)
+    iOwnDoingChat = false
     return await sendChat(chatProcessIndex, {
       signal: abortSignal,
     })
@@ -2065,6 +2075,11 @@ export async function sendChat(
   }
 
   return true
+  } finally {
+    if (iOwnDoingChat) {
+      doingChat.set(false)
+    }
+  }
 }
 
 function systemizeChat(chat: OpenAIChat[]) {

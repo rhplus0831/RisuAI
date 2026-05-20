@@ -36,5 +36,6 @@
       "chatId": "uuid-0",
       "useStreaming": true
     }
-  ]
+  ],
+  "doingChat": false
 }

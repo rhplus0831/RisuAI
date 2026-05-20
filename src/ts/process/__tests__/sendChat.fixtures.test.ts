@@ -76,8 +76,9 @@ describe('sendChat fixtures', () => {
   beforeEach(() => {
     resetProviderState()
     resetSideEffectCalls()
-    // sendChat sets doingChat=true on entry and only resets it on certain exit
-    // paths. Reset it explicitly so each fixture runs in a clean state.
+    // sendChat now owns its own doingChat lifecycle (set on entry, cleared in
+    // a finally on every exit). Reset here defensively in case a fixture's
+    // expected-state snapshot needs to start from a clean baseline.
     doingChat.set(false)
     abortChat.set(false)
     chatProcessStage.set(0)
