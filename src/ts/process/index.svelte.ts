@@ -44,6 +44,7 @@ import { hypaMemoryV3 } from './memory/hypav3'
 import { getModuleAssets, getModuleToggles } from './modules'
 import { readImage } from '../globalApi.svelte'
 import { evaluateAutoContinue } from './autoContinue'
+import { reportSendChatError } from './sendChatErrors'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -137,55 +138,12 @@ export async function sendChat(
   }
 
   function throwError(error: string) {
-    if (!DBState?.db?.inlayErrorResponse) {
-      alertError(error)
-      return
-    }
-
-    try {
-      const db = DBState.db
-
-      // Prefer already-resolved selection, but fall back to current store/db pointers.
-      const sc = selectedChar >= 0 ? selectedChar : get(selectedCharID)
-      const charRoom = db.characters?.[sc]
-      if (!charRoom) {
-        alertError(error)
-        return
-      }
-      const st = selectedChat >= 0 ? selectedChat : charRoom.chatPage
-      const chatRoom = charRoom.chats?.[st]
-      if (!chatRoom || !Array.isArray(chatRoom.message)) {
-        alertError(error)
-        return
-      }
-
-      const messages = chatRoom.message
-      const last = messages[messages.length - 1]
-      const suffix = `\n\`\`\`risuerror\n${error}\n\`\`\``
-
-      if (last?.role === 'char') {
-        last.data += suffix
-        return
-      }
-
-      const m: Message = {
-        role: 'char',
-        data: `\`\`\`risuerror\n${error}\n\`\`\``,
-        time: Date.now(),
-      }
-      if (currentChar?.chaId) {
-        m.saying = currentChar.chaId
-      }
-      if (generationInfo) {
-        m.generationInfo = generationInfo
-      }
-      messages.push(m)
-      return
-    } catch (e) {
-      console.error(e)
-      alertError(error)
-      return
-    }
+    reportSendChatError(error, {
+      selectedChar,
+      selectedChat,
+      currentChar,
+      generationInfo,
+    })
   }
 
   let isDoing = get(doingChat)
