@@ -168,12 +168,55 @@ form.
 
 ### Backups
 
-- `GET /api/v1/backups` lists `backups/*/manifest.json`.
-- `POST /api/v1/backups` copies the current `db.json` and writes a
-  `manifest.json` listing the revision and referenced assets.
-- `POST /api/v1/backups/:id/restore` overwrites `db.json` with the
-  snapshot, bumps revision.
-- `DELETE /api/v1/backups/:id` removes the backup directory.
+All four routes are auth-gated unconditionally - backups contain the
+whole database, so they are not in the same "id-is-bearer" trust
+class as assets.
+
+- `POST /api/v1/backups` accepts optional `{ label }`. Snapshots
+  `db.json` into `data/backups/<id>/db.json`, writes a
+  `manifest.json` next to it, returns the manifest. Does **not**
+  bump revision - snapshots are reads, not mutations.
+- `GET /api/v1/backups` returns `{ backups: [...] }`, sorted
+  newest-first by `createdAt`.
+- `POST /api/v1/backups/:id/restore` replaces the live `db.json`
+  with the snapshot (tempfile + rename), bumps revision, returns
+  `{ revision }`.
+- `DELETE /api/v1/backups/:id` removes the backup directory,
+  returns `{ id }`. 404 on unknown id (not idempotent 204 -
+  explicit signal beats silent success).
+
+Manifest shape:
+
+```jsonc
+{
+  "_version": 1,
+  "id": "2026-05-20-17-30-42-a4f9c2",
+  "label": null,                         // or a string
+  "createdAt": "2026-05-20T17:30:42.000Z",
+  "revision": 7,
+  "assetCount": 12
+}
+```
+
+Backup ids match `^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[a-f0-9]{6}$`
+(UTC timestamp + 6 random hex). Sortable, readable, and the strict
+regex makes path-traversal attempts on `:id` fail at validation
+before they touch the filesystem.
+
+`assetCount` is `persisted.assets.length` - the count of *uploaded*
+assets at backup time, **not** assets referenced by the database.
+The referenced count requires walking the database for ids, which
+needs the encoding to be locked; that comes in a later slice
+together with the populated `assetReport`.
+
+Backups copy `db.json` only; the content-addressed asset blobs at
+`data/assets/<sha>.<ext>` are shared across backups. Since 2C ships
+no delete or GC, those blobs stay reachable. When asset GC lands,
+its sweep must walk all backups too - otherwise restoring an old
+backup could surface dangling references.
+
+Out of scope for 2D: retention/rotation, label edits, and
+snapshotting the asset blobs alongside the database.
 
 ### Bootstrap
 

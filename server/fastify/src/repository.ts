@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -165,4 +165,109 @@ export function missingAssetIds(dataDir: string, ids: string[]): string[] {
   const persisted = loadPersisted(dataDir)
   const present = new Set(persisted.assets.map((a) => a.id))
   return ids.filter((id) => !present.has(id))
+}
+
+export const BACKUP_MANIFEST_VERSION = 1
+
+export const BACKUP_ID_RE = /^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[a-f0-9]{6}$/
+
+export interface BackupManifest {
+  _version: number
+  id: string
+  label: string | null
+  createdAt: string
+  revision: number
+  assetCount: number
+}
+
+export function isValidBackupId(id: string): boolean {
+  return BACKUP_ID_RE.test(id)
+}
+
+export function generateBackupId(now: Date = new Date()): string {
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0')
+  const ts =
+    `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}` +
+    `-${pad(now.getUTCHours())}-${pad(now.getUTCMinutes())}-${pad(now.getUTCSeconds())}`
+  const suffix = randomBytes(3).toString('hex')
+  return `${ts}-${suffix}`
+}
+
+export function backupsDir(dataDir: string): string {
+  return path.join(dataDir, 'backups')
+}
+
+export function backupDir(dataDir: string, id: string): string {
+  return path.join(backupsDir(dataDir), id)
+}
+
+export function createBackup(
+  db: DatabaseSync,
+  dataDir: string,
+  label: string | null = null,
+): BackupManifest {
+  const persisted = loadPersisted(dataDir)
+  const { revision } = getSchemaState(db)
+  const id = generateBackupId()
+  const dir = backupDir(dataDir, id)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'db.json'), JSON.stringify(persisted))
+  const manifest: BackupManifest = {
+    _version: BACKUP_MANIFEST_VERSION,
+    id,
+    label,
+    createdAt: new Date().toISOString(),
+    revision,
+    assetCount: persisted.assets.length,
+  }
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest))
+  return manifest
+}
+
+export function listBackups(dataDir: string): BackupManifest[] {
+  const root = backupsDir(dataDir)
+  if (!fs.existsSync(root)) return []
+  const entries = fs.readdirSync(root)
+  const manifests: BackupManifest[] = []
+  for (const id of entries) {
+    if (!isValidBackupId(id)) continue
+    const manifestPath = path.join(root, id, 'manifest.json')
+    if (!fs.existsSync(manifestPath)) continue
+    const raw = fs.readFileSync(manifestPath, 'utf8')
+    const parsed = JSON.parse(raw) as BackupManifest
+    manifests.push(parsed)
+  }
+  manifests.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return manifests
+}
+
+export function restoreBackup(
+  db: DatabaseSync,
+  dataDir: string,
+  id: string,
+): { revision: number } {
+  if (!isValidBackupId(id)) {
+    throw new EntityNotFoundError(`Backup not found: ${id}`)
+  }
+  const snapshot = path.join(backupDir(dataDir, id), 'db.json')
+  if (!fs.existsSync(snapshot)) {
+    throw new EntityNotFoundError(`Backup not found: ${id}`)
+  }
+  const live = path.join(dataDir, 'db.json')
+  const tmp = `${live}.tmp`
+  fs.copyFileSync(snapshot, tmp)
+  fs.renameSync(tmp, live)
+  const revision = bumpRevision(db)
+  return { revision }
+}
+
+export function deleteBackup(dataDir: string, id: string): void {
+  if (!isValidBackupId(id)) {
+    throw new EntityNotFoundError(`Backup not found: ${id}`)
+  }
+  const dir = backupDir(dataDir, id)
+  if (!fs.existsSync(dir)) {
+    throw new EntityNotFoundError(`Backup not found: ${id}`)
+  }
+  fs.rmSync(dir, { recursive: true, force: true })
 }

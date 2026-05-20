@@ -5,6 +5,7 @@ import { createAuthState } from './auth.js'
 import { openDatabase } from './db.js'
 import { registerAssetsRoutes } from './routes/assets.js'
 import { registerAuthRoutes } from './routes/auth.js'
+import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerSaveRoutes } from './routes/save.js'
@@ -53,6 +54,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerBootstrapRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir)
   registerAssetsRoutes(app, db, authState, config.dataDir)
+  registerBackupRoutes(app, db, authState, config.dataDir)
 
   return { app, config }
 }

@@ -1,8 +1,8 @@
 import fs from 'node:fs'
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
-import { type AuthState, hasPassword, verifyAssertion } from '../auth.js'
-import { extractRisuAuth } from '../http.js'
+import type { AuthState } from '../auth.js'
+import { requireAuth } from '../http.js'
 import {
   ValidationError,
   addAsset,
@@ -16,25 +16,6 @@ const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
 
 interface ExistsBody {
   ids?: unknown
-}
-
-async function requireAuth(
-  state: AuthState,
-  req: FastifyRequest,
-  reply: FastifyReply,
-): Promise<boolean> {
-  if (!hasPassword(state)) return true
-  const token = extractRisuAuth(req)
-  if (!token) {
-    reply.code(401).send({ error: 'Auth required' })
-    return false
-  }
-  const result = await verifyAssertion(state, token)
-  if (!result.ok) {
-    reply.code(401).send({ error: 'Auth required' })
-    return false
-  }
-  return true
 }
 
 function applyAssetHeaders(reply: FastifyReply, contentType: string, size: number): void {
