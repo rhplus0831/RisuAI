@@ -1,6 +1,8 @@
-import { get } from 'svelte/store'
-import { CharEmotion } from '../../stores.svelte'
 import type { character } from '../../storage/database.svelte'
+import {
+  loadAndTrimCharEmotion,
+  pushCharEmotionEntry,
+} from './charEmotionStore'
 
 export interface ApplyEmotionFromResponseOptions {
   emotion: string | undefined
@@ -12,23 +14,18 @@ export function applyEmotionFromResponse(
 ): boolean {
   if (!opts.emotion) return false
 
-  const charemotions = get(CharEmotion)
-  const currentEmotion = opts.currentChar.emotionImages
+  const { tempEmotion, charemotions } = loadAndTrimCharEmotion(
+    opts.currentChar.chaId,
+  )
 
-  let tempEmotion = charemotions[opts.currentChar.chaId]
-  if (!tempEmotion) {
-    tempEmotion = []
-  }
-  if (tempEmotion.length > 4) {
-    tempEmotion.splice(0, 1)
-  }
-
-  for (const emo of currentEmotion) {
+  for (const emo of opts.currentChar.emotionImages) {
     if (emo[0] === opts.emotion) {
-      const emos: [string, string, number] = [emo[0], emo[1], Date.now()]
-      tempEmotion.push(emos)
-      charemotions[opts.currentChar.chaId] = tempEmotion
-      CharEmotion.set(charemotions)
+      pushCharEmotionEntry({
+        emoTuple: emo,
+        tempEmotion,
+        charemotions,
+        chaId: opts.currentChar.chaId,
+      })
       return true
     }
   }
