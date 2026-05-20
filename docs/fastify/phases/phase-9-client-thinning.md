@@ -70,6 +70,40 @@ Every command:
 - The `RISU_MASK_SERVER_KEYS=1` flag flips on once every provider
   in `model/modellist.ts` is server-routed.
 
+### Server-side `.risu` codec
+
+Phase 2 deliberately leaves `.risu` encode/decode in the client
+(`src/ts/storage/risuSave.ts`); the client owns a complete
+in-memory Database and can do the format conversion locally. Once
+this phase makes the client a projection, that approach stops
+working: the client no longer has the full Database to encode from,
+and a "save export" feature has to be served by the server.
+
+Phase 9 ships the codec server-side, designed against the
+end-state per-resource SQL schema instead of the Phase 2
+fat-Database shape. Concretely:
+
+- `server/fastify/src/risuCodec.ts` ports the format from
+  `src/ts/storage/risuSave.ts`, dropping the localforage-cache and
+  Tauri-remote-file branches (which never made sense on the
+  server) and adapting the encoder to read from per-resource
+  repository methods.
+- `GET /api/v1/export/risusave` returns the legacy single `.risu`
+  blob for hub compatibility.
+- `GET /api/v1/export/bundle` returns a ZIP with `save.risu`,
+  every referenced asset, and a manifest. By Phase 9 the
+  per-resource extraction has locked the asset-reference encoding,
+  so the bundle can walk for real references instead of
+  over-including.
+- `POST /api/v1/import/risusave` widens to also accept multipart
+  with a binary `.risu` blob + asset parts. The Phase 2 JSON path
+  can be retired here too, since the multipart form covers
+  imports of either origin.
+
+The client-side `risuSave.ts` is one of the modules `forageStorage`
+gating affects: web builds stop decoding/encoding locally, Tauri
+keeps doing so.
+
 ### Tauri
 
 Tauri keeps its current localForage path untouched. The build flag

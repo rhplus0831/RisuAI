@@ -130,8 +130,9 @@ import in 2B; single-asset uploads do not need it.
   client to skip uploading bytes it already knows the server has.
 - `POST /api/v1/assets/exists` (public, same trust model) accepts
   `{ ids: string[] }` and returns `{ missing: string[] }`. Lets a
-  client pre-flight many ids in one round-trip; rolls into the 2B
-  `.risu` import flow without an extra endpoint then.
+  client pre-flight many ids in one round-trip - useful when the
+  client is about to upload a batch of assets it decoded out of a
+  local `.risu` save.
 - Reference tracking and the populated `assetReport` ship in a
   later slice. 2C leaves `assetReport` at zeros, matching 2A.
 - No `DELETE /api/v1/assets/:id` in Phase 2. Without GC, delete is
@@ -141,30 +142,42 @@ import in 2B; single-asset uploads do not need it.
 
 ### Save import / export
 
-Slice 2A (bootstrap + JSON import):
+Phase 2 ships a JSON-only import. The binary `.risu` codec stays
+client-side until Phase 9 thins the client enough that it can no
+longer own a Database in memory; only then does the server have a
+real reason to learn the format.
 
 - `POST /api/v1/import/risusave` accepts a JSON body
   `{ database: <RisuSavedDatabase> }`. Replaces `db.json.database`,
   bumps revision, returns
   `{ revision, assetReport: { referencedCount, missingCount,
-  orphanedCount } }`. Asset counts are zero in 2A; they become
-  meaningful once asset upload lands.
+  orphanedCount } }`. Asset counts are zero - the populated
+  `assetReport` lands when reference walking does.
 
-Slice 2B (binary `.risu` + bundle):
+**No `.risu` decode, encode, or bundle in Phase 2.** Rationale and
+the consuming flows:
 
-- `POST /api/v1/import/risusave` widens to also accept multipart
-  with a binary `.risu` blob. The server decodes the magic-header
-  + msgpackr block format (mirroring `src/ts/storage/risuSave.ts`)
-  and applies the resulting database the same way 2A does.
-- `GET /api/v1/export/risusave` returns the legacy single `.risu`
-  blob, for compatibility with the Risu hub.
-- `GET /api/v1/export/bundle` returns a ZIP containing `save.risu`,
-  every referenced asset under `assets/<sha256>.<ext>`, and a
-  `manifest.json` with revision and asset counts.
+- **Save import.** The client decodes `legacy.risu` locally using
+  the existing `src/ts/storage/risuSave.ts`, then POSTs the
+  resulting database as JSON to the endpoint above. Asset blobs
+  inside the save are uploaded separately via `POST /api/v1/assets`
+  (pre-flighted with `POST /api/v1/assets/exists`).
+- **Save export.** The client calls `GET /api/v1/bootstrap`, then
+  encodes locally with the same `risuSave.ts`, and offers the
+  user a `.risu` download.
+- **Bundle download.** Same shape - client fetches bootstrap +
+  whichever asset blobs it wants, zips locally.
+- **Hub passthrough.** Phase 3's `/api/v1/hub/*` proxies bytes
+  unchanged; it never parses `.risu`.
 
-The endpoint name `/api/v1/import/risusave` is stable across both
-slices; 2A supports JSON only, 2B widens to the binary multipart
-form.
+This deferral is the same call as deferring SQL schema in Phase 2:
+a `.risu` codec written today would mirror the current fat-Database
+shape that Phase 9 reshapes. Building the codec once we know the
+end-state model is cheaper than building + reworking.
+
+The grep before deferring confirmed no existing client flow points
+at `/api/v1/import/risusave` with binary bytes - the endpoint
+remains JSON-only without breaking pre-existing behavior.
 
 ### Backups
 
@@ -275,25 +288,31 @@ no-live-users migration window.
 - **No legacy `/api/read` / `/api/write` / `/api/list` ports.** The
   Express server owns those during the migration; Fastify does not
   reimplement file-based saves.
+- **No server-side `.risu` codec.** Decode and encode stay
+  client-side (`src/ts/storage/risuSave.ts`) until Phase 9 forces
+  the move. The server is JSON-native through Phase 2.
+- **No bundle export endpoint.** Client assembles bundles locally
+  from `/api/v1/bootstrap` + asset GETs.
 - **No group-chat fields.** Removed in Phase 0.
 
 ## Exit criteria
 
 - `pnpm api:test` covers:
   - Bootstrap on a fresh data dir: returns
-    `{ revision: 0, schemaVersion: <phase-1 value>, database:
-    defaultDatabase(), assetBaseUrl: '/api/v1/assets' }`.
-  - Bootstrap round-trip: empty -> import a fixture `.risu` ->
-    bootstrap returns the imported database -> export returns a blob
-    equal to the import.
-  - Asset upload + bootstrap response references the new asset id.
-  - Backup create / restore / delete using a fixture database.
-  - Revision bumps on every mutation surface added in this phase
-    (import, backup restore).
-- A user can upload a `.risu` save through `/api/v1/import/risusave`
-  and the SPA boots against `/api/v1/bootstrap`. (The browser client
-  wiring lands incrementally; by end of Phase 2 it can at least
-  display the imported database.)
+    `{ revision: 0, schemaVersion: <phase-1 value>, database: null,
+    assetBaseUrl: '/api/v1/assets' }`.
+  - JSON import round-trip: import `{ database }` -> bootstrap
+    returns the same database.
+  - Asset upload + bootstrap response includes the new asset in
+    `db.json.assets`; HEAD and `/exists` see it; GET serves bytes.
+  - Backup create / restore / delete using a fixture database, with
+    a full A -> backup -> B -> restore -> A round-trip.
+  - Revision bumps on every mutation surface in this phase (import,
+    asset upload, backup restore). Backup *create* does not bump.
+- A user can hydrate the server from the Risu hub or from a
+  `legacy.risu` file: the client decodes locally, then uses the
+  JSON import + asset upload endpoints. The SPA boots against
+  `/api/v1/bootstrap` and displays the imported database.
 - The Docker image runs Fastify + serves the SPA, with `data/`
   persisted across restarts.
 - `pnpm check`, `pnpm test`, `pnpm build` green.

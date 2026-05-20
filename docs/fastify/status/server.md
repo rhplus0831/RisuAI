@@ -47,9 +47,10 @@ Root `package.json` has `pnpm runserver` for the Express server,
   endpoint, env loader, auth scaffold, DB connection, and Vite
   proxy `/api` -> Fastify.
 - **Phase 2.** `data/db.json` blob for domain state, repository
-  read/write, asset storage, Risu save import/export, backups.
-  Domain SQL tables are deferred to Phases 5-9, per resource. See
-  [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
+  read/write, asset storage, JSON save import, backups, container
+  switchover. Domain SQL tables are deferred to Phases 5-9, per
+  resource. Binary `.risu` codec stays client-side until Phase 9.
+  See [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
 - **Phase 3.** Provider proxy + hub passthrough + stream-job
   WebSocket. Express server is retired once Phase 3 closes.
 - **Phase 6.** Server-side LLM / translation / TTS / image /
