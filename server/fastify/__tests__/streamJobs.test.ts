@@ -1,0 +1,396 @@
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import {
+  JobRegistry,
+  PROXY_STREAM_DEFAULT_HEARTBEAT_SEC,
+  PROXY_STREAM_DEFAULT_TIMEOUT_MS,
+  PROXY_STREAM_DONE_GRACE_MS,
+  PROXY_STREAM_HEARTBEAT_MAX_SEC,
+  PROXY_STREAM_HEARTBEAT_MIN_SEC,
+  PROXY_STREAM_MAX_PENDING_BYTES,
+  PROXY_STREAM_MAX_PENDING_EVENTS,
+  PROXY_STREAM_MAX_TIMEOUT_MS,
+  type JobClient,
+  type StreamJob,
+  normalizeHeartbeatSec,
+  normalizeStreamTimeoutMs,
+  runStreamJob,
+  sanitizeLocalTargetUrl,
+} from '../src/streamJobs.js'
+
+interface FakeClient extends JobClient {
+  messages: string[]
+  closed: boolean
+}
+
+function fakeClient(): FakeClient {
+  const messages: string[] = []
+  let openFlag = true
+  return {
+    messages,
+    get open() {
+      return openFlag
+    },
+    get closed() {
+      return !openFlag
+    },
+    send(text) {
+      if (openFlag) messages.push(text)
+    },
+    close() {
+      openFlag = false
+    },
+  }
+}
+
+interface EchoServer {
+  url: string
+  requests: { method: string; url: string; headers: http.IncomingHttpHeaders; body: Buffer }[]
+  setResponder(
+    fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>,
+  ): void
+  close(): Promise<void>
+}
+
+function startEcho(): Promise<EchoServer> {
+  return new Promise((resolve) => {
+    const requests: EchoServer['requests'] = []
+    let responder: (
+      req: http.IncomingMessage,
+      res: http.ServerResponse,
+      body: Buffer,
+    ) => void | Promise<void> = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('ok')
+    }
+    const server = http.createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (c) => chunks.push(c))
+      req.on('end', () => {
+        const body = Buffer.concat(chunks)
+        requests.push({
+          method: req.method ?? '',
+          url: req.url ?? '',
+          headers: req.headers,
+          body,
+        })
+        void Promise.resolve(responder(req, res, body)).catch(() => {
+          if (!res.headersSent) res.writeHead(500)
+          res.end()
+        })
+      })
+    })
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address() as AddressInfo
+      resolve({
+        url: `http://127.0.0.1:${addr.port}`,
+        requests,
+        setResponder(fn) {
+          responder = fn
+        },
+        close() {
+          return new Promise((r) => server.close(() => r()))
+        },
+      })
+    })
+  })
+}
+
+describe('sanitizeLocalTargetUrl', () => {
+  const allowed = [
+    'http://127.0.0.1',
+    'http://127.0.0.1:8080/path?q=1',
+    'http://10.0.0.5',
+    'http://172.16.0.1',
+    'http://172.31.255.255',
+    'http://192.168.1.1',
+    'http://169.254.0.1',
+    'http://0.0.0.0',
+    'http://localhost',
+    'http://localhost:8000/',
+    'http://my-printer.local',
+    'http://LOCALHOST',
+    'https://127.0.0.1:443',
+    'http://[::1]',
+    'http://[::ffff:127.0.0.1]',
+    'http://[fc00::1]',
+    'http://[fd12::1]',
+    'http://[fe80::1]',
+  ]
+  for (const url of allowed) {
+    it(`accepts ${url}`, () => {
+      expect(sanitizeLocalTargetUrl(url)).not.toBeNull()
+    })
+  }
+
+  const rejected = [
+    'http://1.1.1.1',
+    'http://8.8.8.8',
+    'https://example.com',
+    'http://172.15.0.1',
+    'http://172.32.0.1',
+    'http://[2001:db8::1]',
+    'http://[::ffff:1.1.1.1]',
+    'ftp://127.0.0.1',
+    'file:///etc/passwd',
+    'http://',
+    'not-a-url',
+    '',
+  ]
+  for (const url of rejected) {
+    it(`rejects ${url}`, () => {
+      expect(sanitizeLocalTargetUrl(url)).toBeNull()
+    })
+  }
+
+  it('strips userinfo from the returned URL', () => {
+    expect(sanitizeLocalTargetUrl('http://user:pass@127.0.0.1/x')).toBe('http://127.0.0.1/x')
+  })
+
+  it('rejects non-string inputs', () => {
+    expect(sanitizeLocalTargetUrl(undefined)).toBeNull()
+    expect(sanitizeLocalTargetUrl(null)).toBeNull()
+    expect(sanitizeLocalTargetUrl(42)).toBeNull()
+    expect(sanitizeLocalTargetUrl({})).toBeNull()
+  })
+})
+
+describe('normalizeStreamTimeoutMs / normalizeHeartbeatSec', () => {
+  it('defaults the timeout on garbage input', () => {
+    expect(normalizeStreamTimeoutMs(undefined)).toBe(PROXY_STREAM_DEFAULT_TIMEOUT_MS)
+    expect(normalizeStreamTimeoutMs('not-a-number')).toBe(PROXY_STREAM_DEFAULT_TIMEOUT_MS)
+    expect(normalizeStreamTimeoutMs(0)).toBe(PROXY_STREAM_DEFAULT_TIMEOUT_MS)
+    expect(normalizeStreamTimeoutMs(-5)).toBe(PROXY_STREAM_DEFAULT_TIMEOUT_MS)
+  })
+
+  it('clamps the timeout to MAX_TIMEOUT_MS', () => {
+    expect(normalizeStreamTimeoutMs(PROXY_STREAM_MAX_TIMEOUT_MS + 1)).toBe(
+      PROXY_STREAM_MAX_TIMEOUT_MS,
+    )
+  })
+
+  it('floors positive fractional timeouts to at least 1 ms', () => {
+    expect(normalizeStreamTimeoutMs(0.5)).toBe(1)
+    expect(normalizeStreamTimeoutMs(1.9)).toBe(1)
+  })
+
+  it('clamps heartbeats into [MIN, MAX]', () => {
+    expect(normalizeHeartbeatSec(undefined)).toBe(PROXY_STREAM_DEFAULT_HEARTBEAT_SEC)
+    expect(normalizeHeartbeatSec(0)).toBe(PROXY_STREAM_HEARTBEAT_MIN_SEC)
+    expect(normalizeHeartbeatSec(120)).toBe(PROXY_STREAM_HEARTBEAT_MAX_SEC)
+    expect(normalizeHeartbeatSec(20)).toBe(20)
+  })
+})
+
+describe('JobRegistry buffering and lifecycle', () => {
+  it('buffers events when no client is attached, then flushes on attach', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+    reg.pushEvent(job, { type: 'chunk', dataBase64: 'BBBB' })
+    expect(job.pendingEvents).toHaveLength(2)
+
+    const client = fakeClient()
+    expect(reg.attach(job.id, client)).toBe(job)
+    expect(client.messages).toHaveLength(2)
+    expect(JSON.parse(client.messages[0])).toEqual({ type: 'chunk', dataBase64: 'AAAA' })
+    expect(JSON.parse(client.messages[1])).toEqual({ type: 'chunk', dataBase64: 'BBBB' })
+    expect(job.pendingEvents).toHaveLength(0)
+    expect(job.pendingBytes).toBe(0)
+  })
+
+  it('broadcasts to attached clients without buffering', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    const a = fakeClient()
+    const b = fakeClient()
+    reg.attach(job.id, a)
+    reg.attach(job.id, b)
+    reg.pushEvent(job, { type: 'done' })
+    expect(a.messages).toHaveLength(1)
+    expect(b.messages).toHaveLength(1)
+    expect(job.pendingEvents).toHaveLength(0)
+  })
+
+  it('caps the pending buffer at MAX_PENDING_EVENTS', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    for (let i = 0; i < PROXY_STREAM_MAX_PENDING_EVENTS + 5; i += 1) {
+      reg.pushEvent(job, { type: 'chunk', dataBase64: `x${i}` })
+    }
+    expect(job.pendingEvents.length).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_EVENTS)
+    expect(job.pendingBytes).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_BYTES)
+    const first = JSON.parse(job.pendingEvents[0])
+    expect(first.dataBase64).not.toBe('x0')
+  })
+
+  it('caps the pending buffer at MAX_PENDING_BYTES', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    const big = 'x'.repeat(256 * 1024)
+    for (let i = 0; i < 10; i += 1) {
+      reg.pushEvent(job, { type: 'chunk', dataBase64: big })
+    }
+    expect(job.pendingBytes).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_BYTES)
+  })
+
+  it('detach cleans the job up once it is done and the last client leaves', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    const client = fakeClient()
+    reg.attach(job.id, client)
+    reg.markDone(job)
+    expect(reg.has(job.id)).toBe(true)
+    reg.detach(job.id, client)
+    expect(reg.has(job.id)).toBe(false)
+  })
+
+  it('deleteJob aborts the controller and removes the job', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    const client = fakeClient()
+    reg.attach(job.id, client)
+    expect(reg.deleteJob(job.id)).toBe(true)
+    expect(reg.has(job.id)).toBe(false)
+    expect(job.abortController.signal.aborted).toBe(true)
+    expect(client.closed).toBe(true)
+  })
+
+  it('tickGc aborts past-deadline jobs and cleans up done jobs past the grace', () => {
+    const reg = new JobRegistry()
+    const now0 = 1_000_000
+    const job = reg.create({ timeoutMs: 1_000, heartbeatSec: 10, now: now0 })
+    reg.tickGc(now0 + 1_500)
+    expect(job.abortController.signal.aborted).toBe(true)
+
+    reg.markDone(job, now0 + 1_500)
+    reg.tickGc(now0 + 1_500 + PROXY_STREAM_DONE_GRACE_MS + 1)
+    expect(reg.has(job.id)).toBe(false)
+  })
+
+  it('tickGc cleans up stale jobs that have not been updated within 2x timeout', () => {
+    const reg = new JobRegistry()
+    const now0 = 1_000_000
+    const job = reg.create({ timeoutMs: 1_000, heartbeatSec: 10, now: now0 })
+    // 2x default timeout is the floor; advance past it.
+    reg.tickGc(now0 + PROXY_STREAM_DEFAULT_TIMEOUT_MS * 2 + 1)
+    expect(reg.has(job.id)).toBe(false)
+  })
+})
+
+describe('runStreamJob', () => {
+  let echo: EchoServer
+  beforeEach(async () => {
+    echo = await startEcho()
+  })
+  afterEach(async () => {
+    await echo.close()
+  })
+
+  async function runWith(
+    overrides: Partial<{
+      url: string
+      method: string
+      headers: Record<string, string>
+      body: Buffer
+    }>,
+  ): Promise<{ registry: JobRegistry; job: StreamJob; events: StreamJobEventLike[] }> {
+    const registry = new JobRegistry()
+    const job = registry.create({ timeoutMs: 30_000, heartbeatSec: 10 })
+    const client = fakeClient()
+    registry.attach(job.id, client)
+    await runStreamJob(registry, job, {
+      targetUrl: overrides.url ?? echo.url,
+      method: overrides.method ?? 'POST',
+      headers: overrides.headers ?? {},
+      bodyBuffer: overrides.body,
+      clientIp: '127.0.0.1',
+    })
+    return {
+      registry,
+      job,
+      events: client.messages.map((m) => JSON.parse(m) as StreamJobEventLike),
+    }
+  }
+
+  it('emits upstream_headers, chunk, and done for a successful upstream call', async () => {
+    echo.setResponder((_req, res) => {
+      res.writeHead(200, {
+        'content-type': 'text/plain',
+        'x-keep-me': 'yes',
+        'content-security-policy': "default-src 'none'",
+      })
+      res.end('hello world')
+    })
+
+    const { events } = await runWith({})
+    const types = events.map((e) => e.type)
+    expect(types).toEqual(['upstream_headers', 'chunk', 'done'])
+    const head = events[0] as { type: 'upstream_headers'; status: number; headers: Record<string, string> }
+    expect(head.status).toBe(200)
+    expect(head.headers['content-type']).toBe('text/plain')
+    expect(head.headers['x-keep-me']).toBe('yes')
+    expect(head.headers['content-security-policy']).toBeUndefined()
+    const chunk = events[1] as { type: 'chunk'; dataBase64: string }
+    expect(Buffer.from(chunk.dataBase64, 'base64').toString('utf8')).toBe('hello world')
+  })
+
+  it('emits an error event when the target URL is not local-network', async () => {
+    const { events } = await runWith({ url: 'http://1.1.1.1' })
+    expect(events).toHaveLength(1)
+    expect(events[0]).toEqual({
+      type: 'error',
+      status: 400,
+      message: 'Blocked non-local target URL',
+    })
+  })
+
+  it('forwards the POST body bytes upstream and adds x-forwarded-for', async () => {
+    const payload = Buffer.from(JSON.stringify({ hello: 'world' }))
+    await runWith({ body: payload, headers: { 'content-type': 'application/json' } })
+    expect(echo.requests).toHaveLength(1)
+    expect(echo.requests[0].method).toBe('POST')
+    expect(Buffer.compare(echo.requests[0].body, payload)).toBe(0)
+    expect(echo.requests[0].headers['content-type']).toBe('application/json')
+    expect(echo.requests[0].headers['x-forwarded-for']).toBe('127.0.0.1')
+  })
+
+  it('emits an error event when the job is aborted mid-stream', async () => {
+    let writes = 0
+    echo.setResponder((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      const interval = setInterval(() => {
+        writes += 1
+        if (writes > 50) {
+          clearInterval(interval)
+          res.end()
+          return
+        }
+        res.write('x')
+      }, 5)
+      res.on('close', () => clearInterval(interval))
+    })
+
+    const registry = new JobRegistry()
+    const job = registry.create({ timeoutMs: 30_000, heartbeatSec: 10 })
+    const client = fakeClient()
+    registry.attach(job.id, client)
+    const run = runStreamJob(registry, job, {
+      targetUrl: echo.url,
+      method: 'POST',
+      headers: {},
+      clientIp: '127.0.0.1',
+    })
+    setTimeout(() => job.abortController.abort(), 25)
+    await run
+    const events = client.messages.map((m) => JSON.parse(m) as StreamJobEventLike)
+    expect(events.at(-1)).toMatchObject({ type: 'error', status: 504 })
+  })
+})
+
+type StreamJobEventLike =
+  | { type: 'upstream_headers'; status: number; headers: Record<string, string> }
+  | { type: 'chunk'; dataBase64: string }
+  | { type: 'done' }
+  | { type: 'error'; status: number; message: string }

@@ -1,0 +1,339 @@
+import { randomUUID } from 'node:crypto'
+import net from 'node:net'
+import { Readable } from 'node:stream'
+import { normalizeForwardHeaders } from './proxy.js'
+
+export const PROXY_STREAM_DEFAULT_TIMEOUT_MS = 600_000
+export const PROXY_STREAM_MAX_TIMEOUT_MS = 3_600_000
+export const PROXY_STREAM_DEFAULT_HEARTBEAT_SEC = 15
+export const PROXY_STREAM_HEARTBEAT_MIN_SEC = 5
+export const PROXY_STREAM_HEARTBEAT_MAX_SEC = 60
+export const PROXY_STREAM_GC_INTERVAL_MS = 60_000
+export const PROXY_STREAM_DONE_GRACE_MS = 30_000
+export const PROXY_STREAM_MAX_ACTIVE_JOBS = 64
+export const PROXY_STREAM_MAX_PENDING_EVENTS = 512
+export const PROXY_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024
+export const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024
+
+const STRIP_STREAM_RESPONSE_HEADERS = new Set([
+  'content-security-policy',
+  'content-security-policy-report-only',
+  'clear-site-data',
+])
+
+export type StreamJobEvent =
+  | { type: 'job_accepted'; jobId: string }
+  | {
+      type: 'upstream_headers'
+      status: number
+      headers: Record<string, string>
+    }
+  | { type: 'chunk'; dataBase64: string }
+  | { type: 'done' }
+  | { type: 'error'; status: number; message: string }
+  | { type: 'ping'; ts: number }
+
+export interface JobClient {
+  send(text: string): void
+  close(): void
+  readonly open: boolean
+}
+
+export interface StreamJob {
+  id: string
+  createdAt: number
+  updatedAt: number
+  done: boolean
+  cleanupAt: number
+  clients: Set<JobClient>
+  pendingEvents: string[]
+  pendingBytes: number
+  abortController: AbortController
+  deadlineAt: number
+  heartbeatSec: number
+  timeoutMs: number
+}
+
+const PRIVATE_BLOCKS = (() => {
+  const list = new net.BlockList()
+  list.addRange('10.0.0.0', '10.255.255.255', 'ipv4')
+  list.addRange('127.0.0.0', '127.255.255.255', 'ipv4')
+  list.addRange('172.16.0.0', '172.31.255.255', 'ipv4')
+  list.addRange('192.168.0.0', '192.168.255.255', 'ipv4')
+  list.addRange('169.254.0.0', '169.254.255.255', 'ipv4')
+  list.addRange('0.0.0.0', '0.255.255.255', 'ipv4')
+  list.addAddress('::1', 'ipv6')
+  list.addRange('fc00::', 'fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', 'ipv6')
+  list.addRange('fe80::', 'febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff', 'ipv6')
+  // IPv4-mapped IPv6 forms of the private ranges (covers both the
+  // ::ffff:10.0.0.1 dotted and ::ffff:a00:1 hex canonical notations).
+  list.addRange('::ffff:10.0.0.0', '::ffff:10.255.255.255', 'ipv6')
+  list.addRange('::ffff:127.0.0.0', '::ffff:127.255.255.255', 'ipv6')
+  list.addRange('::ffff:172.16.0.0', '::ffff:172.31.255.255', 'ipv6')
+  list.addRange('::ffff:192.168.0.0', '::ffff:192.168.255.255', 'ipv6')
+  list.addRange('::ffff:169.254.0.0', '::ffff:169.254.255.255', 'ipv6')
+  list.addRange('::ffff:0.0.0.0', '::ffff:0.255.255.255', 'ipv6')
+  return list
+})()
+
+function isLocalNetworkHost(hostname: string): boolean {
+  if (typeof hostname !== 'string' || hostname.trim() === '') return false
+  let normalized = hostname.toLowerCase().replace(/\.$/, '').split('%')[0]
+  if (normalized.startsWith('[') && normalized.endsWith(']')) {
+    normalized = normalized.slice(1, -1)
+  }
+  if (normalized === 'localhost' || normalized.endsWith('.local')) {
+    return true
+  }
+  const family = net.isIP(normalized)
+  if (family === 4) return PRIVATE_BLOCKS.check(normalized, 'ipv4')
+  if (family === 6) return PRIVATE_BLOCKS.check(normalized, 'ipv6')
+  return false
+}
+
+export function sanitizeLocalTargetUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.trim() === '') return null
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    if (!isLocalNetworkHost(parsed.hostname)) return null
+    parsed.username = ''
+    parsed.password = ''
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+export function normalizeStreamTimeoutMs(raw: unknown): number {
+  const value = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw)
+  if (!Number.isFinite(value) || value <= 0) return PROXY_STREAM_DEFAULT_TIMEOUT_MS
+  const floored = Math.max(1, Math.floor(value))
+  return Math.min(PROXY_STREAM_MAX_TIMEOUT_MS, floored)
+}
+
+export function normalizeHeartbeatSec(raw: unknown): number {
+  const value = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw)
+  if (!Number.isFinite(value)) return PROXY_STREAM_DEFAULT_HEARTBEAT_SEC
+  return Math.min(
+    PROXY_STREAM_HEARTBEAT_MAX_SEC,
+    Math.max(PROXY_STREAM_HEARTBEAT_MIN_SEC, Math.floor(value)),
+  )
+}
+
+function filterStreamResponseHeaders(source: Headers): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of source.entries()) {
+    if (STRIP_STREAM_RESPONSE_HEADERS.has(k.toLowerCase())) continue
+    out[k] = v
+  }
+  return out
+}
+
+export interface CreateJobOptions {
+  timeoutMs: unknown
+  heartbeatSec: unknown
+  now?: number
+}
+
+export class JobRegistry {
+  private readonly jobs = new Map<string, StreamJob>()
+
+  size(): number {
+    return this.jobs.size
+  }
+
+  has(id: string): boolean {
+    return this.jobs.has(id)
+  }
+
+  get(id: string): StreamJob | undefined {
+    return this.jobs.get(id)
+  }
+
+  list(): StreamJob[] {
+    return Array.from(this.jobs.values())
+  }
+
+  create(opts: CreateJobOptions): StreamJob {
+    const timeoutMs = normalizeStreamTimeoutMs(opts.timeoutMs)
+    const heartbeatSec = normalizeHeartbeatSec(opts.heartbeatSec)
+    const createdAt = opts.now ?? Date.now()
+    const job: StreamJob = {
+      id: randomUUID(),
+      createdAt,
+      updatedAt: createdAt,
+      done: false,
+      cleanupAt: 0,
+      clients: new Set(),
+      pendingEvents: [],
+      pendingBytes: 0,
+      abortController: new AbortController(),
+      deadlineAt: createdAt + timeoutMs,
+      heartbeatSec,
+      timeoutMs,
+    }
+    this.jobs.set(job.id, job)
+    return job
+  }
+
+  pushEvent(job: StreamJob, event: StreamJobEvent, now?: number): void {
+    job.updatedAt = now ?? Date.now()
+    const text = JSON.stringify(event)
+    if (job.clients.size === 0) {
+      job.pendingEvents.push(text)
+      job.pendingBytes += Buffer.byteLength(text)
+      while (
+        job.pendingEvents.length > PROXY_STREAM_MAX_PENDING_EVENTS ||
+        job.pendingBytes > PROXY_STREAM_MAX_PENDING_BYTES
+      ) {
+        const removed = job.pendingEvents.shift()
+        if (!removed) break
+        job.pendingBytes -= Buffer.byteLength(removed)
+      }
+      return
+    }
+    for (const client of job.clients) {
+      if (client.open) client.send(text)
+    }
+  }
+
+  attach(jobId: string, client: JobClient): StreamJob | null {
+    const job = this.jobs.get(jobId)
+    if (!job) return null
+    job.clients.add(client)
+    for (const text of job.pendingEvents) {
+      if (client.open) client.send(text)
+    }
+    job.pendingEvents = []
+    job.pendingBytes = 0
+    return job
+  }
+
+  detach(jobId: string, client: JobClient): void {
+    const job = this.jobs.get(jobId)
+    if (!job) return
+    job.clients.delete(client)
+    if (job.done && job.clients.size === 0) {
+      this.cleanup(jobId)
+    }
+  }
+
+  markDone(job: StreamJob, now?: number): void {
+    if (job.done) return
+    job.done = true
+    job.cleanupAt = (now ?? Date.now()) + PROXY_STREAM_DONE_GRACE_MS
+  }
+
+  cleanup(jobId: string): void {
+    const job = this.jobs.get(jobId)
+    if (!job) return
+    for (const client of job.clients) {
+      try {
+        client.close()
+      } catch {
+        // ignore
+      }
+    }
+    this.jobs.delete(jobId)
+  }
+
+  deleteJob(jobId: string): boolean {
+    const job = this.jobs.get(jobId)
+    if (!job) return false
+    job.abortController.abort()
+    this.markDone(job)
+    this.cleanup(jobId)
+    return true
+  }
+
+  tickGc(now?: number): void {
+    const t = now ?? Date.now()
+    for (const [jobId, job] of this.jobs.entries()) {
+      if (!job.done && t >= job.deadlineAt && !job.abortController.signal.aborted) {
+        job.abortController.abort()
+      }
+      if (job.done && job.clients.size === 0 && job.cleanupAt > 0 && t >= job.cleanupAt) {
+        this.cleanup(jobId)
+        continue
+      }
+      if (
+        !job.done &&
+        t - job.updatedAt >
+          Math.max(PROXY_STREAM_DEFAULT_TIMEOUT_MS, job.timeoutMs * 2)
+      ) {
+        this.cleanup(jobId)
+      }
+    }
+  }
+}
+
+export interface RunStreamJobArg {
+  targetUrl: string
+  method: string
+  headers: Record<string, string>
+  bodyBuffer?: Buffer
+  clientIp: string
+}
+
+export async function runStreamJob(
+  registry: JobRegistry,
+  job: StreamJob,
+  arg: RunStreamJobArg,
+): Promise<void> {
+  const targetUrl = sanitizeLocalTargetUrl(arg.targetUrl)
+  if (!targetUrl) {
+    registry.pushEvent(job, {
+      type: 'error',
+      status: 400,
+      message: 'Blocked non-local target URL',
+    })
+    registry.markDone(job)
+    return
+  }
+
+  const headers = normalizeForwardHeaders(arg.headers)
+  if (!headers['x-forwarded-for']) {
+    headers['x-forwarded-for'] = arg.clientIp
+  }
+
+  try {
+    const upstream = await fetch(targetUrl, {
+      method: arg.method,
+      headers,
+      body: arg.bodyBuffer,
+      signal: job.abortController.signal,
+    })
+
+    registry.pushEvent(job, {
+      type: 'upstream_headers',
+      status: upstream.status,
+      headers: filterStreamResponseHeaders(upstream.headers),
+    })
+
+    if (upstream.body) {
+      const stream = Readable.fromWeb(
+        upstream.body as Parameters<typeof Readable.fromWeb>[0],
+      )
+      for await (const value of stream) {
+        if (job.abortController.signal.aborted) break
+        const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array)
+        if (chunk.length > 0) {
+          registry.pushEvent(job, {
+            type: 'chunk',
+            dataBase64: chunk.toString('base64'),
+          })
+        }
+      }
+    }
+
+    registry.pushEvent(job, { type: 'done' })
+    registry.markDone(job)
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    const message =
+      name === 'AbortError' ? 'Proxy stream job aborted' : `${err}`
+    registry.pushEvent(job, { type: 'error', status: 504, message })
+    registry.markDone(job)
+  }
+}
