@@ -12,26 +12,32 @@ one proxy slice or one `sendChat` extraction slice at a time.
    `server/node/server.cjs` to Fastify.
    - Phase 3A (`POST /api/v1/proxy/fetch`), Phase 3B (proxy
      stream-jobs HTTP+WS), and Phase 3C (hub passthrough at
-     `ANY /api/v1/hub/*`) all landed 2026-05-20. The surface
-     is anchored by helpers in `server/fastify/src/proxy.ts`
-     and `server/fastify/src/streamJobs.ts`, and by the hub
-     route in `server/fastify/src/routes/hub.ts` reading
-     `config.hubUrl` (`RISU_HUB_URL` env, default
-     `https://sv.risuai.xyz`).
-   - Phase 3D-Narrow landed 2026-05-21. The Fastify
-     static-serving path injects `globalThis.__FASTIFY__`, and
-     the SPA URL builders (`globalApi.svelte.ts`,
-     `characterCards.ts`) route through the new Fastify
-     endpoints when served by Fastify. Express-served and
-     Tauri / web modes are unchanged.
-   - Remaining slices, in order: Phase 3D-Broad (a
-     Fastify-aware `NodeStorage` shim hitting
-     `/api/v1/auth/*` and the bootstrap / assets API, plus
-     the save / load flow under Fastify), then Express
-     deletion + `runserver` removal.
-   - Keep the existing client contracts (`/proxy*`,
-     `/hub-proxy/*`, `/proxy-stream-jobs`) working until the
-     Fastify replacements are wired.
+     `ANY /api/v1/hub/*`) all landed 2026-05-20.
+   - Phase 3D-Narrow (proxy / hub URL switchover) and Phase
+     3D-Broad (legacy NodeStorage surface +
+     `/api/v1/auth/crypto` + `__NODE__` / `__FASTIFY__` index
+     injection) landed 2026-05-21. A Fastify-served SPA can
+     now sign in, persist the database, and use cold storage
+     end-to-end.
+   - Remaining: Express deletion + `runserver` removal. The
+     proxy, hub, stream-jobs, storage, auth, and crypto
+     surfaces on Express are all replicated on Fastify; the
+     SPA targets the Fastify paths when served by it. Confirm
+     no Express-only caller remains, then delete
+     `server/node/server.cjs` and the `runserver` script in a
+     single commit.
+   - Follow-up (not blocking Express deletion): the Fastify
+     hub route at `ANY /api/v1/hub/*` keeps `requireAuth`, so
+     on deployments with a password set, browser-loaded
+     resources (`<img src=hubURL/resource/...>`,
+     `<iframe src=hubURL/hub/login>`) will 401 because the
+     browser cannot send `risu-auth` on element-loaded
+     requests. The accepted resolution per the 3D-Broad
+     scoping decision is to leave the limitation in place
+     until a session-cookie auth path lands in a later slice;
+     unguarded deployments are unaffected. The Express
+     `/hub-proxy/*` is rate-limited but not auth-gated, so it
+     does not have this issue.
    - Do not port Sionyw / Account Sync branches; Phase 0 removed
      them.
    - Inventory and exit criteria live in
@@ -131,6 +137,45 @@ one proxy slice or one `sendChat` extraction slice at a time.
   PNG and stub `supportsInlayImage`. It also uses an
   `xcustom:::` model with `hasImageInput` + the `Unknown`
   tokenizer so token math runs offline.
+
+- **Phase 3D-Broad - Legacy NodeStorage surface on Fastify.**
+  Done 2026-05-21. Two commits (server + client) plus a docs
+  pass.
+
+  - Server-side: new
+    `server/fastify/src/routes/legacyStorage.ts` adds
+    `GET /api/v1/storage/list`, `GET /api/v1/storage/read`,
+    `POST /api/v1/storage/write`, and
+    `POST /api/v1/storage/remove`. Files live under
+    `${dataDir}/save/`, keys are hex-encoded utf-8 paths,
+    write bodies flow through a scoped catch-all
+    content-type parser as raw bytes. Adds
+    `POST /api/v1/auth/crypto` as the sha256 hex shim that
+    mirrors Express's `/api/crypto`. The Fastify
+    static-serving index injection now sets both
+    `globalThis.__NODE__ = true` and
+    `globalThis.__FASTIFY__ = true` so every SPA self-host
+    gate activates.
+  - Client-side: `src/ts/storage/nodeStorage.ts` picks its
+    endpoint set at module-load time based on
+    `platform.isFastifyServer` (Fastify family routes vs the
+    Express family). A `fetchAuthStatus` helper normalizes
+    the two different auth-status response shapes
+    (`{noPassword, authorized}` vs `{status}`) into the
+    existing `unset` / `incorrect` / `success` enum.
+    `removeItem` hex-encodes each key separately when on
+    Fastify so the server can validate every `$$`-joined
+    segment as hex.
+  - Tests in `server/fastify/__tests__/legacyStorage.test.ts`
+    cover auth gating, hex validation, write/read
+    round-trip, empty read for missing key, utf-8 list
+    decoding, single + many key removal, idempotent remove,
+    and the crypto endpoint. The Fastify static test now
+    asserts both flag injections.
+  - Known limitation accepted in scope (b): the Fastify hub
+    route keeps `requireAuth`, so browser-loaded resources
+    on password-protected deployments will 401. The follow-up
+    is in the Phase 3 entry above.
 
 - **Phase 3D-Narrow - Client proxy / hub URL switchover.** Done
   2026-05-21. Two commits.

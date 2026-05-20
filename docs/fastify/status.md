@@ -31,13 +31,16 @@ under [`status/`](status/).
   passthrough is now `ANY /api/v1/hub/*` reading
   `config.hubUrl` (`RISU_HUB_URL` env, default
   `https://sv.risuai.xyz`).
-- Phase 3D-Narrow landed on 2026-05-21. The Fastify
-  static-serving path injects `globalThis.__FASTIFY__ = true`,
-  and the SPA URL builders for proxy / stream-jobs / hub now
-  prefer the new `/api/v1/*` endpoints when served by Fastify.
-  Express-served (legacy) and Tauri / web modes are unchanged.
-  NodeStorage and the other `isNodeServer`-gated paths still
-  target Express; that migration is part of Phase 3D-Broad.
+- Phase 3D-Narrow and Phase 3D-Broad both landed on 2026-05-21.
+  The Fastify static-serving path now injects
+  `globalThis.__NODE__ = true; globalThis.__FASTIFY__ = true;`,
+  the SPA URL builders prefer `/api/v1/*` endpoints, and a
+  Fastify-served SPA can sign in, persist the database, and use
+  cold storage end-to-end (Fastify gained
+  `/api/v1/storage/{list,read,write,remove}` and
+  `/api/v1/auth/crypto` as the legacy key-value surface
+  `NodeStorage` targets). Express deletion is the only Phase 3
+  work that remains.
 - The Docker image and compose file now run Fastify on port 6002
   with `/app/data` persisted. `server/node/server.cjs` (Express)
   still remains for `pnpm runserver`, the legacy `/api/read|write|list`
@@ -58,10 +61,10 @@ See [`phases/phase-3-proxy.md`](phases/phase-3-proxy.md)
 for the proxy / hub scope and exit criteria. Phase 3A
 (`POST /api/v1/proxy/fetch`), Phase 3B (proxy stream-jobs
 HTTP+WS), and Phase 3C (hub passthrough) all landed
-2026-05-20; Phase 3D-Narrow (client URL switchover via the
-`__FASTIFY__` flag) landed 2026-05-21. Phase 3D-Broad
-(NodeStorage migration / Fastify-aware auth + save) and
-Express deletion are the remaining slices.
+2026-05-20; Phase 3D-Narrow (proxy / hub URL switchover) and
+Phase 3D-Broad (legacy NodeStorage / crypto surface) landed
+2026-05-21. Express deletion is the only Phase 3 work that
+remains.
 
 Phase 4 (`sendChat` characterization tests) closed 2026-05-20.
 The harness lives at `src/ts/process/__fixtures__/` and

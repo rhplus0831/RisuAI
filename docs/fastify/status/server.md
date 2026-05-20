@@ -6,8 +6,9 @@ Date: 2026-05-21
 
 Phase 1, the server-side Phase 2 storage slice, Phase 3A-C
 (generic provider proxy, stream-job WebSocket, hub passthrough),
-and Phase 3D-Narrow (client switchover for proxy / hub URLs)
-exist on the `fastify` branch:
+Phase 3D-Narrow (proxy / hub URL switchover), and Phase 3D-Broad
+(legacy NodeStorage surface on Fastify) all exist on the
+`fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -33,17 +34,19 @@ exist on the `fastify` branch:
   metadata only.
 - Routes currently implemented: `GET /api/v1/health`,
   `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`,
-  `POST /api/v1/auth/login`, `GET /api/v1/bootstrap`,
-  `POST /api/v1/import/risusave`, `POST /api/v1/assets`,
-  `GET/HEAD /api/v1/assets/:id`, `POST /api/v1/assets/exists`,
-  `GET /api/v1/backups`, `POST /api/v1/backups`,
-  `POST /api/v1/backups/:id/restore`,
+  `POST /api/v1/auth/login`, `POST /api/v1/auth/crypto`,
+  `GET /api/v1/bootstrap`, `POST /api/v1/import/risusave`,
+  `POST /api/v1/assets`, `GET/HEAD /api/v1/assets/:id`,
+  `POST /api/v1/assets/exists`, `GET /api/v1/backups`,
+  `POST /api/v1/backups`, `POST /api/v1/backups/:id/restore`,
   `DELETE /api/v1/backups/:id`, `POST /api/v1/proxy/fetch`,
   `POST /api/v1/proxy/stream-jobs`,
   `DELETE /api/v1/proxy/stream-jobs/:id`, the WebSocket upgrade
-  at `GET /api/v1/proxy/stream-jobs/:id/ws`, and
-  `ANY /api/v1/hub/*`.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub}.test.ts`
+  at `GET /api/v1/proxy/stream-jobs/:id/ws`,
+  `ANY /api/v1/hub/*`, `GET /api/v1/storage/list`,
+  `GET /api/v1/storage/read`, `POST /api/v1/storage/write`, and
+  `POST /api/v1/storage/remove`.
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage}.test.ts`
   cover the implemented Fastify routes and static serving through
   `pnpm api:test`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
@@ -72,20 +75,33 @@ exist on the `fastify` branch:
   `content-encoding` / `content-length` / `transfer-encoding`
   from upstream responses, and follows exactly one 3xx redirect
   manually.
-- Phase 3D-Narrow added `globalThis.__FASTIFY__ = true`
-  injection in the Fastify static-serving path so a Fastify-
-  served SPA can identify its host. `app.ts` reads
-  `dist/index.html` once at startup, injects the script tag
-  right after the opening `<head ...>`, and caches the result
-  for both `GET /` and the SPA-fallback `setNotFoundHandler`.
-  `@fastify/static`'s auto-index is disabled so the manual
-  `GET /` handler wins. Client-side, `platform.isFastifyServer`
-  is derived from the flag and used by `globalApi.svelte.ts`
-  and `characterCards.ts` to prefer the Fastify endpoints
-  (`/api/v1/proxy/fetch`, `/api/v1/proxy/stream-jobs/*`,
-  `/api/v1/hub`) over the legacy Express paths. `isWeb` now
-  also excludes Fastify deployments, so the SPA does not
-  mis-identify itself as the public web build.
+- Phase 3D-Narrow added the static-serving index.html injection
+  that gives the SPA `globalThis.__FASTIFY__ = true`. Phase
+  3D-Broad extends it to inject `globalThis.__NODE__ = true` as
+  well, so every existing self-host gate in the SPA
+  (NodeStorage, save flow, prefer-remote saves) activates under
+  Fastify too. Client-side, `platform.isFastifyServer` and the
+  long-standing `isNodeServer` both become true; URL builders
+  in `globalApi.svelte.ts` and `characterCards.ts` prefer
+  `/api/v1/*`; and `isWeb` correctly excludes Fastify deployments.
+- `server/fastify/src/routes/legacyStorage.ts` adds the
+  key-value storage surface the SPA's `NodeStorage` /
+  `AutoStorage` / cold-storage paths target:
+  `/api/v1/storage/{list,read,write,remove}` with the same
+  hex-key + raw-bytes shape as the legacy Express
+  `/api/{list,read,write,remove}` routes. Files live under
+  `${dataDir}/save/`. `POST /api/v1/auth/crypto` is the
+  matching sha256 hex shim for the password digest. Client-side,
+  `src/ts/storage/nodeStorage.ts` picks its endpoint set at
+  module-load time based on `isFastifyServer` and normalizes
+  the auth-status response shape (`{noPassword, authorized}` on
+  Fastify, `{status}` on Express) into the existing
+  unset / incorrect / success enum.
+- Known limitation: `ANY /api/v1/hub/*` keeps `requireAuth`, so
+  on password-protected deployments browser-loaded resources
+  (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401
+  because they cannot send `risu-auth`. Tracked as a follow-up
+  in [`next-steps.md`](next-steps.md).
 
 Other runtime servers still in tree:
 
@@ -127,10 +143,10 @@ Dockerfile runs `pnpm api:start`, exposes 6002, and persists
   Phase 3A (proxy fetch), Phase 3B (stream-job HTTP+WS), and
   Phase 3C (hub passthrough) landed 2026-05-20. Phase 3D-Narrow
   (client switchover for the proxy / hub URL builders + the
-  Fastify `__FASTIFY__` flag injection) landed 2026-05-21. The
-  remaining Phase 3 work is the Phase 3D-Broad slice
-  (Fastify-aware NodeStorage, login flow, save persistence) and
-  Express deletion.
+  Fastify `__FASTIFY__` flag injection) and Phase 3D-Broad
+  (legacy NodeStorage / crypto routes on Fastify + `__NODE__`
+  injection so all self-host gates fire) landed 2026-05-21.
+  Express deletion is the only remaining Phase 3 work.
 - **Phase 6.** Server-side LLM / translation / TTS / image /
   Stable Horde generation endpoints.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
