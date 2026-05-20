@@ -1,11 +1,12 @@
 # Server Status
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Current state
 
-Phase 1, the server-side Phase 2 storage slice, and Phase 3A-C
-(generic provider proxy, stream-job WebSocket, hub passthrough)
+Phase 1, the server-side Phase 2 storage slice, Phase 3A-C
+(generic provider proxy, stream-job WebSocket, hub passthrough),
+and Phase 3D-Narrow (client switchover for proxy / hub URLs)
 exist on the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
@@ -71,6 +72,20 @@ exist on the `fastify` branch:
   `content-encoding` / `content-length` / `transfer-encoding`
   from upstream responses, and follows exactly one 3xx redirect
   manually.
+- Phase 3D-Narrow added `globalThis.__FASTIFY__ = true`
+  injection in the Fastify static-serving path so a Fastify-
+  served SPA can identify its host. `app.ts` reads
+  `dist/index.html` once at startup, injects the script tag
+  right after the opening `<head ...>`, and caches the result
+  for both `GET /` and the SPA-fallback `setNotFoundHandler`.
+  `@fastify/static`'s auto-index is disabled so the manual
+  `GET /` handler wins. Client-side, `platform.isFastifyServer`
+  is derived from the flag and used by `globalApi.svelte.ts`
+  and `characterCards.ts` to prefer the Fastify endpoints
+  (`/api/v1/proxy/fetch`, `/api/v1/proxy/stream-jobs/*`,
+  `/api/v1/hub`) over the legacy Express paths. `isWeb` now
+  also excludes Fastify deployments, so the SPA does not
+  mis-identify itself as the public web build.
 
 Other runtime servers still in tree:
 
@@ -110,9 +125,12 @@ Dockerfile runs `pnpm api:start`, exposes 6002, and persists
 - **Phase 3.** Provider proxy + hub passthrough + stream-job
   WebSocket. Express server is retired once Phase 3 closes.
   Phase 3A (proxy fetch), Phase 3B (stream-job HTTP+WS), and
-  Phase 3C (hub passthrough) landed 2026-05-20. Client
-  rewiring (`globalApi.svelte.ts`) and Express deletion are the
-  remaining Phase 3 slices.
+  Phase 3C (hub passthrough) landed 2026-05-20. Phase 3D-Narrow
+  (client switchover for the proxy / hub URL builders + the
+  Fastify `__FASTIFY__` flag injection) landed 2026-05-21. The
+  remaining Phase 3 work is the Phase 3D-Broad slice
+  (Fastify-aware NodeStorage, login flow, save persistence) and
+  Express deletion.
 - **Phase 6.** Server-side LLM / translation / TTS / image /
   Stable Horde generation endpoints.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.

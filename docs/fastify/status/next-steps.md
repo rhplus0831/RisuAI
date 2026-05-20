@@ -1,6 +1,6 @@
 # Next Steps
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 Use this list to pick the next slice. Keep work batches narrow:
 one proxy slice or one `sendChat` extraction slice at a time.
@@ -18,11 +18,17 @@ one proxy slice or one `sendChat` extraction slice at a time.
      route in `server/fastify/src/routes/hub.ts` reading
      `config.hubUrl` (`RISU_HUB_URL` env, default
      `https://sv.risuai.xyz`).
-   - Remaining slices, in order: client rewiring
-     (`globalFetch` / `fetchNative` / the hub-proxy and
-     stream-job WS URL builders in `globalApi.svelte.ts` ->
-     the new Fastify endpoints), then Express deletion +
-     `runserver` removal.
+   - Phase 3D-Narrow landed 2026-05-21. The Fastify
+     static-serving path injects `globalThis.__FASTIFY__`, and
+     the SPA URL builders (`globalApi.svelte.ts`,
+     `characterCards.ts`) route through the new Fastify
+     endpoints when served by Fastify. Express-served and
+     Tauri / web modes are unchanged.
+   - Remaining slices, in order: Phase 3D-Broad (a
+     Fastify-aware `NodeStorage` shim hitting
+     `/api/v1/auth/*` and the bootstrap / assets API, plus
+     the save / load flow under Fastify), then Express
+     deletion + `runserver` removal.
    - Keep the existing client contracts (`/proxy*`,
      `/hub-proxy/*`, `/proxy-stream-jobs`) working until the
      Fastify replacements are wired.
@@ -125,6 +131,32 @@ one proxy slice or one `sendChat` extraction slice at a time.
   PNG and stub `supportsInlayImage`. It also uses an
   `xcustom:::` model with `hasImageInput` + the `Unknown`
   tokenizer so token math runs offline.
+
+- **Phase 3D-Narrow - Client proxy / hub URL switchover.** Done
+  2026-05-21. Two commits.
+
+  - Server-side: `server/fastify/src/app.ts` now reads
+    `dist/index.html` at startup, injects
+    `<script>globalThis.__FASTIFY__ = true;</script>` after the
+    opening `<head ...>` tag, and serves the cached result from
+    both `GET /` and the SPA fallback in
+    `setNotFoundHandler`. `@fastify/static`'s auto-index is
+    disabled. `static.test.ts` covers the injection.
+  - Client-side: `platform.isFastifyServer` is derived from
+    `globalThis.__FASTIFY__`; `platform.isWeb` now also
+    excludes Fastify deployments. `globalApi.svelte.ts` URL
+    builders prefer Fastify routes when `isFastifyServer` is
+    true: `getProxy2Url` -> `/api/v1/proxy/fetch`; new helpers
+    `getProxyStreamJobsCreateUrl` /
+    `getProxyStreamJobDeleteUrl` / `getProxyStreamJobWsPath`
+    replace the old `getProxyStreamJobBaseUrl` and target the
+    `/api/v1/proxy/stream-jobs` surface. `characterCards.ts`
+    `hubURL` becomes `/api/v1/hub`.
+  - Express (`isNodeServer`) and Tauri / web branches are
+    untouched; the scope is the proxy + hub URLs only.
+    `NodeStorage` and the other `isNodeServer`-gated paths
+    still target Express endpoints. Migrating those is Phase
+    3D-Broad / a later slice.
 
 - **Phase 3C - Hub passthrough on Fastify.** Done 2026-05-20.
   Adds `ANY /api/v1/hub/*` (`server/fastify/src/routes/hub.ts`)

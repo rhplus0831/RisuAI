@@ -1,6 +1,6 @@
 # Migration Status
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 This is the status router. Concrete inventories live in the shards
 under [`status/`](status/).
@@ -30,11 +30,14 @@ under [`status/`](status/).
   is live on top of an in-memory `JobRegistry`, and the hub
   passthrough is now `ANY /api/v1/hub/*` reading
   `config.hubUrl` (`RISU_HUB_URL` env, default
-  `https://sv.risuai.xyz`). The Express `/proxy*`,
-  `/proxy-stream-jobs`, and `/hub-proxy/*` routes stay live
-  until the client is rewired in a later Phase 3 slice. Client
-  rewiring and Express retirement are the remaining Phase 3
-  slices.
+  `https://sv.risuai.xyz`).
+- Phase 3D-Narrow landed on 2026-05-21. The Fastify
+  static-serving path injects `globalThis.__FASTIFY__ = true`,
+  and the SPA URL builders for proxy / stream-jobs / hub now
+  prefer the new `/api/v1/*` endpoints when served by Fastify.
+  Express-served (legacy) and Tauri / web modes are unchanged.
+  NodeStorage and the other `isNodeServer`-gated paths still
+  target Express; that migration is part of Phase 3D-Broad.
 - The Docker image and compose file now run Fastify on port 6002
   with `/app/data` persisted. `server/node/server.cjs` (Express)
   still remains for `pnpm runserver`, the legacy `/api/read|write|list`
@@ -53,10 +56,12 @@ under [`status/`](status/).
 
 See [`phases/phase-3-proxy.md`](phases/phase-3-proxy.md)
 for the proxy / hub scope and exit criteria. Phase 3A
-(generic `POST /api/v1/proxy/fetch`), Phase 3B (proxy
-stream-jobs HTTP+WS), and Phase 3C (hub passthrough) all
-landed 2026-05-20. Client rewiring and Express retirement
-are the remaining slices.
+(`POST /api/v1/proxy/fetch`), Phase 3B (proxy stream-jobs
+HTTP+WS), and Phase 3C (hub passthrough) all landed
+2026-05-20; Phase 3D-Narrow (client URL switchover via the
+`__FASTIFY__` flag) landed 2026-05-21. Phase 3D-Broad
+(NodeStorage migration / Fastify-aware auth + save) and
+Express deletion are the remaining slices.
 
 Phase 4 (`sendChat` characterization tests) closed 2026-05-20.
 The harness lives at `src/ts/process/__fixtures__/` and
