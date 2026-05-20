@@ -99,6 +99,7 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@fastify/websocket": "^11.2.0",
     "@rollup/plugin-strip": "^3.0.4",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@swc/core": "1.5.7",

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import Fastify, { type FastifyInstance } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
+import fastifyWebsocket from '@fastify/websocket'
 import { type AppConfig, loadConfig } from './config.js'
 import { createAuthState } from './auth.js'
 import { openDatabase } from './db.js'
@@ -12,7 +13,9 @@ import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
+import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES } from './repository.js'
+import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 
 export interface BuildAppOptions {
   config?: AppConfig
@@ -45,10 +48,21 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     },
   )
 
+  await app.register(fastifyWebsocket)
+
   const db = openDatabase(config.dataDir)
   const authState = createAuthState(config.dataDir)
+  const streamJobRegistry = new JobRegistry()
+  const gcTimer = setInterval(() => {
+    streamJobRegistry.tickGc()
+  }, PROXY_STREAM_GC_INTERVAL_MS)
+  gcTimer.unref()
 
   app.addHook('onClose', async () => {
+    clearInterval(gcTimer)
+    for (const job of streamJobRegistry.list()) {
+      streamJobRegistry.deleteJob(job.id)
+    }
     db.close()
   })
 
@@ -59,6 +73,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerAssetsRoutes(app, db, authState, config.dataDir)
   registerBackupRoutes(app, db, authState, config.dataDir)
   registerProxyRoutes(app, authState)
+  registerStreamJobRoutes(app, authState, streamJobRegistry)
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
     await app.register(fastifyStatic, {
