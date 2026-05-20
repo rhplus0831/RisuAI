@@ -54,13 +54,19 @@ enforces today. Retire the Express server once parity is proven.
 
 ### Auth
 
-- `POST /api/v1/proxy/fetch` accepts either the password header or
-  a valid ES256 assertion (`isAuthorizedProxyRequest`).
-- WebSocket upgrade accepts `risu-auth` as a query string parameter
-  so EventSource-style clients can attach.
-- Hub `/api/v1/hub/*` uses the normal authenticated route guard
-  before forwarding. The old `X-Node-Server-Auth` Sionyw token
-  injection path was removed in Phase 0 and must not be ported.
+- All authenticated proxy and hub routes use the standard Fastify
+  `requireAuth` guard, which accepts a valid ES256 assertion via
+  the `risu-auth` header. The password is only used during initial
+  setup (`POST /api/v1/auth/login`) to register a client public
+  key; it is not accepted as a header on later requests. Do not
+  port the Express `isAuthorizedRequest` / `checkProxyAuth`
+  password-header path.
+- WebSocket upgrade accepts the ES256 assertion as a `risu-auth`
+  query-string parameter so EventSource-style clients (which
+  cannot set custom headers) can still attach.
+- Hub `/api/v1/hub/*` uses the same `requireAuth` guard before
+  forwarding. The old `X-Node-Server-Auth` Sionyw token injection
+  path was removed in Phase 0 and must not be ported.
 
 ### Retirement of Express
 

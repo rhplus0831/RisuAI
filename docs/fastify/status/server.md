@@ -43,9 +43,8 @@ Phase 1, the server-side Phase 2 storage slice, and Phase 3A
   hold the Phase 3A generic-proxy surface. The route is scoped to
   its own plugin instance with a catch-all content-type parser so
   request bodies are forwarded as raw bytes regardless of
-  content-type. Auth uses the standard `requireAuth` (ES256 only);
-  the legacy `risu-auth: <password>` header path the Express proxy
-  accepts is intentionally not ported.
+  content-type. Auth uses the standard `requireAuth` (ES256 only,
+  consistent with every other Fastify route).
 
 Other runtime servers still in tree:
 

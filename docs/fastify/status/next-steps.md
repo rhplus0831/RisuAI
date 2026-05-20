@@ -12,9 +12,8 @@ one proxy slice or one `sendChat` extraction slice at a time.
    `server/node/server.cjs` to Fastify.
    - Phase 3A (`POST /api/v1/proxy/fetch`) landed 2026-05-20. It
      covers the generic single-request upstream fetch behind
-     `requireAuth` (ES256 only - the legacy password header path
-     was intentionally dropped to match the rest of the Fastify
-     surface). The request / response header sanitization helpers
+     `requireAuth` (ES256 only, matching every other Fastify
+     route). The request / response header sanitization helpers
      live in `server/fastify/src/proxy.ts` and are reused by the
      stream-job slice next.
    - Remaining slices, in order: stream-job WebSocket
@@ -134,9 +133,8 @@ one proxy slice or one `sendChat` extraction slice at a time.
   is scoped under `app.register` with a catch-all
   content-type parser so request bodies are forwarded as raw
   bytes for any content type. Auth uses the standard
-  `requireAuth` (ES256 only); the legacy password-header path
-  the Express proxy accepts was intentionally dropped to match
-  the Fastify surface. Tests in
+  `requireAuth` (ES256 only, consistent with every other
+  Fastify route). Tests in
   `server/fastify/__tests__/proxy.test.ts` cover auth gating,
   missing URL, status / body / filtered-header forward,
   request-side header stripping, `risu-header` JSON override,
@@ -169,6 +167,14 @@ in this file and updating the relevant phase doc:
 - No whole-state PUT in the Fastify API.
 - Only Hypa V3 survives. Do not write code that re-introduces
   Supa / Hypa V2 / Hanurai.
+- Fastify is ES256-only on authenticated routes. Do not add a
+  password-header acceptance path to `requireAuth` or to any
+  individual route. The password is only used during initial
+  setup to register a client public key; subsequent requests
+  authenticate via an ES256 assertion in the `risu-auth` header
+  (or the matching query-string parameter for WebSocket
+  upgrades). The Express proxy's `isAuthorizedRequest` /
+  `checkProxyAuth` password-header path is not ported.
 
 ## Verification before closing a slice
 
