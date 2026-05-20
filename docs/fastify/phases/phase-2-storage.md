@@ -106,17 +106,36 @@ repository adds:
 
 ### Assets
 
-- `POST /api/v1/assets` (multipart) writes the blob to
-  `data/assets/<sha256>.<ext>`, appends an entry to
-  `db.json.assets`, returns `{ assetId, sha256, size, contentType }`.
-- `GET /api/v1/assets/:id` serves the file with the right
-  `Content-Type` and a long cache header. Public (no auth) - ids are
-  SHA-256-derived and unguessable.
-- `DELETE /api/v1/assets/:id` removes the `db.json.assets` entry; the
-  on-disk file is left in place until GC.
-- Reference tracking is a JSON walk: `findReferences(db, assetId)`
-  scans the `RisuSavedDatabase` for the id. No `asset_references`
-  table.
+Uploads are raw-binary, not multipart. The request body is the asset
+bytes; `Content-Type` carries the format and must be in a small
+allowlist (`image/{png,jpeg,webp,gif,avif}`,
+`audio/{mpeg,wav,ogg,webm}`, `video/{mp4,webm}`). Unknown types are
+rejected with 415 by Fastify (no parser registered). Multipart
+uploads earn their keep only when one
+request carries multiple parts, which happens for the `.risu` bundle
+import in 2B; single-asset uploads do not need it.
+
+- `POST /api/v1/assets` (auth-gated): reads the raw body, computes
+  `sha256`, writes `data/assets/<sha256>.<ext>` if not already
+  present, appends to `db.json.assets`, bumps revision. Idempotent
+  by content: re-uploading the same bytes is a no-op and does not
+  bump revision. Returns `{ assetId, size, contentType }`.
+- `GET /api/v1/assets/:id` serves the file with the stored
+  `Content-Type` and `Cache-Control: public, max-age=31536000,
+  immutable`. Public (no auth) - ids are SHA-256-derived and
+  unguessable. Invalid id format (not 64 hex chars) returns 404.
+- `HEAD /api/v1/assets/:id` mirrors GET's headers with no body.
+  Same public policy as GET; the information overlap is total, so
+  auth-gating one without the other buys nothing. Used by the
+  client to skip uploading bytes it already knows the server has.
+- `POST /api/v1/assets/exists` (public, same trust model) accepts
+  `{ ids: string[] }` and returns `{ missing: string[] }`. Lets a
+  client pre-flight many ids in one round-trip; rolls into the 2B
+  `.risu` import flow without an extra endpoint then.
+- Reference tracking and the populated `assetReport` ship in a
+  later slice. 2C leaves `assetReport` at zeros, matching 2A.
+- No `DELETE /api/v1/assets/:id` in Phase 2. Without GC, delete is
+  an accountancy-only op; it lands when GC does.
 - Asset GC is **not shipped in Phase 2.** A `POST /api/v1/assets/gc`
   endpoint can be added later when orphan accumulation matters.
 
