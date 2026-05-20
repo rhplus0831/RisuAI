@@ -227,10 +227,32 @@ snapshotting the asset blobs alongside the database.
 
 ### Container changes
 
-- `Dockerfile` exposes `/app/data` as a volume.
-- `docker-compose.yml` mounts `risuai-data:/app/data`.
-- Fastify serves `dist/` via `@fastify/static` so a single container
-  can run API + SPA.
+The image's runtime stage switches from the Express server
+(`pnpm runserver`, port 6001, `save/` volume) to Fastify
+(`pnpm api:start`, port 6002, `data/` volume). The Express source
+files stay in the tree until Phase 3 retires them; the container
+just no longer runs them.
+
+- `Dockerfile`: `CMD pnpm api:start`, `EXPOSE 6002`,
+  `VOLUME /app/data`, env `RISU_API_DATA_DIR=/app/data` and
+  `RISU_API_STATIC_ROOT=/app/dist`.
+- `docker-compose.yml`: maps `6002:6002`, mounts
+  `risuai-data:/app/data`.
+- Fastify serves `dist/` via `@fastify/static` (registered with
+  `wildcard: false`) so a single container runs API + SPA. The
+  not-found handler returns `dist/index.html` for any GET that is
+  neither a registered API route nor a static file, giving the SPA
+  client-side router its catch-all. Non-GET and `/api/*` 404s are
+  passed through.
+- `RISU_API_STATIC_ROOT` defaults to `<repoRoot>/dist`. Set to
+  empty / `none` / `off` to disable static serving (handy in dev
+  and in the test harness when there is no SPA build).
+
+Once Phase 3 ports the proxy and hub, the container is again a
+single-process image with full functionality. During the gap
+between 2E and Phase 3, the image is missing provider proxy / hub
+passthrough / `/api/read|write|list` - acceptable under the
+no-live-users migration window.
 
 ## Boundaries
 

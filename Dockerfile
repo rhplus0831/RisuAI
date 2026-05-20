@@ -36,8 +36,12 @@ COPY --from=builder /app/server ./server
 COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
-EXPOSE 6001
+ENV RISU_API_DATA_DIR=/app/data
+ENV RISU_API_STATIC_ROOT=/app/dist
 
-CMD ["pnpm", "runserver"]
+VOLUME ["/app/data"]
+EXPOSE 6002
+
+CMD ["pnpm", "api:start"]
 
 # ------------------------------------------------------------------------------------------

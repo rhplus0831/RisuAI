@@ -7,6 +7,7 @@ export interface AppConfig {
   dataDir: string
   bodyLimit: number
   trustProxy: boolean | number | string
+  staticRoot?: string | null
 }
 
 function repoRoot(): string {
@@ -40,6 +41,14 @@ function parseTrustProxy(raw: string | undefined): boolean | number | string {
   return raw
 }
 
+function parseStaticRoot(raw: string | undefined, fallback: string): string | null {
+  if (raw === undefined) return fallback
+  if (raw === '' || raw.toLowerCase() === 'none' || raw.toLowerCase() === 'off') {
+    return null
+  }
+  return path.resolve(raw)
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const dataDir = env.RISU_API_DATA_DIR
     ? path.resolve(env.RISU_API_DATA_DIR)
@@ -51,5 +60,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dataDir,
     bodyLimit: parseBodyLimit(env.RISU_API_BODY_LIMIT, 100 * 1024 * 1024),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
+    staticRoot: parseStaticRoot(env.RISU_API_STATIC_ROOT, path.join(repoRoot(), 'dist')),
   }
 }

@@ -1,5 +1,7 @@
+import fs from 'node:fs'
 import Fastify, { type FastifyInstance } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
+import fastifyStatic from '@fastify/static'
 import { type AppConfig, loadConfig } from './config.js'
 import { createAuthState } from './auth.js'
 import { openDatabase } from './db.js'
@@ -55,6 +57,21 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerSaveRoutes(app, db, authState, config.dataDir)
   registerAssetsRoutes(app, db, authState, config.dataDir)
   registerBackupRoutes(app, db, authState, config.dataDir)
+
+  if (config.staticRoot && fs.existsSync(config.staticRoot)) {
+    await app.register(fastifyStatic, {
+      root: config.staticRoot,
+      prefix: '/',
+      wildcard: false,
+    })
+    app.setNotFoundHandler((req, reply) => {
+      if (req.method !== 'GET' || req.url.startsWith('/api/')) {
+        reply.code(404).send({ error: 'not found' })
+        return
+      }
+      reply.type('text/html').sendFile('index.html')
+    })
+  }
 
   return { app, config }
 }

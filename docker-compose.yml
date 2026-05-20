@@ -6,9 +6,9 @@ services:
     image: ghcr.io/kwaroran/risuai:latest
     restart: always
     ports:
-      - 6001:6001
+      - 6002:6002
     volumes:
-      - risuai-save:/app/save
+      - risuai-data:/app/data
 
 volumes:
-  risuai-save:
+  risuai-data:
