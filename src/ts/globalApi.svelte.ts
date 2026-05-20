@@ -73,7 +73,7 @@ import { initMobileGesture } from './hotkey'
 import { fetch as TauriHTTPFetch } from '@tauri-apps/plugin-http'
 import { moduleUpdate } from './process/modules'
 import { makeColdData } from './process/coldstorage.svelte'
-import { isTauri, isNodeServer } from './platform'
+import { isTauri, isNodeServer, isFastifyServer } from './platform'
 import { isLocalNetworkUrl } from './network/localNetwork'
 import {
   decodeProxyJobWsChunk,
@@ -572,11 +572,26 @@ const webLocalNetworkBlockedMessage =
 const defaultProxyJobHeartbeatSec = 15
 
 function getProxy2Url() {
+  if (isFastifyServer) return '/api/v1/proxy/fetch'
   return !isTauri && !isNodeServer ? `${hubURL}/proxy2` : `/proxy2`
 }
 
-function getProxyStreamJobBaseUrl() {
-  return isNodeServer ? '' : `${hubURL}`
+function getProxyStreamJobsCreateUrl() {
+  if (isFastifyServer) return '/api/v1/proxy/stream-jobs'
+  return isNodeServer ? '/proxy-stream-jobs' : `${hubURL}/proxy-stream-jobs`
+}
+
+function getProxyStreamJobDeleteUrl(jobId: string) {
+  const enc = encodeURIComponent(jobId)
+  if (isFastifyServer) return `/api/v1/proxy/stream-jobs/${enc}`
+  return isNodeServer ? `/proxy-stream-jobs/${enc}` : `${hubURL}/proxy-stream-jobs/${enc}`
+}
+
+function getProxyStreamJobWsPath(jobId: string) {
+  const enc = encodeURIComponent(jobId)
+  return isFastifyServer
+    ? `/api/v1/proxy/stream-jobs/${enc}/ws`
+    : `/proxy-stream-jobs/${enc}/ws`
 }
 
 function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
@@ -1574,10 +1589,9 @@ async function fetchViaProxyJobWs(
   const auth = await getNodeServerProxyAuth()
 
   const requestSignal = arg.signal
-  const baseUrl = getProxyStreamJobBaseUrl()
 
   let jobId = ''
-  const createRes = await fetch(`${baseUrl}/proxy-stream-jobs`, {
+  const createRes = await fetch(getProxyStreamJobsCreateUrl(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1606,7 +1620,7 @@ async function fetchViaProxyJobWs(
   jobId = created.jobId
 
   const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${wsProtocol}//${location.host}/proxy-stream-jobs/${encodeURIComponent(jobId)}/ws?risu-auth=${encodeURIComponent(auth)}`
+  const wsUrl = `${wsProtocol}//${location.host}${getProxyStreamJobWsPath(jobId)}?risu-auth=${encodeURIComponent(auth)}`
 
   let headersReady = false
   let status = 200
@@ -1721,7 +1735,7 @@ async function fetchViaProxyJobWs(
     if (streamController && !settled) {
       streamController.enqueue(encoder.encode('Aborted'))
     }
-    void fetch(`${baseUrl}/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
+    void fetch(getProxyStreamJobDeleteUrl(jobId), {
       method: 'DELETE',
       headers: {
         'risu-auth': auth,

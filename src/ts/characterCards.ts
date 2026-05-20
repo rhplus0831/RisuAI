@@ -41,7 +41,7 @@ import {
   saveAsset,
   VirtualWriter,
 } from './globalApi.svelte'
-import { isTauri, isNodeServer } from 'src/ts/platform'
+import { isTauri, isNodeServer, isFastifyServer } from 'src/ts/platform'
 import { compressImage, getImageType } from './media'
 import {
   DBState,
@@ -62,11 +62,14 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz'
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
-export const hubURL = isNodeServer
-  ? '/hub-proxy'
-  : window.location.hostname === 'nightly.risuai.xyz' || localStorage.getItem('hub') === 'nightly'
-    ? NIGHTLY_HUB_URL
-    : EXTERNAL_HUB_URL
+export const hubURL = isFastifyServer
+  ? '/api/v1/hub'
+  : isNodeServer
+    ? '/hub-proxy'
+    : window.location.hostname === 'nightly.risuai.xyz' ||
+        localStorage.getItem('hub') === 'nightly'
+      ? NIGHTLY_HUB_URL
+      : EXTERNAL_HUB_URL
 
 export async function importCharacter() {
   try {
