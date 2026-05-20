@@ -1,0 +1,147 @@
+# Phase 0 - Removals
+
+Date: 2026-05-20
+
+## Goal
+
+Delete Group chat, peer-to-peer multi-user chat, Risu Account Sync,
+Google Drive sync, and the Supa / Hypa V2 / Hanurai memory engines
+from the tree, so later phases port a smaller surface.
+
+## Preconditions
+
+None. Phase 0 is the start.
+
+## Scope
+
+Five removal targets. Land each as its own commit (or series of
+commits) so a bisect can isolate any regression. Status per target
+lives in [`../status/removals.md`](../status/removals.md).
+
+### 0.1 Group chat
+
+Delete:
+
+- `src/ts/process/group.ts`.
+- The `type === 'group'` branches under `src/ts/` (49 sites) and
+  `src/lib/` (~20 sites). Each branch either:
+  - was the only `'group'` user (delete the conditional), or
+  - left a now-impossible code path (delete the whole branch).
+- `groupOrder`, `addGroupChar`, `rmCharFromGroup` references.
+- Group-creation UI in
+  `src/lib/SideBars/CharConfig.svelte`,
+  `src/lib/Mobile/MobileCharacters.svelte`, and the group views
+  inside `src/lib/ChatScreens/{ChatScreen, BackgroundDom, Chats,
+AssetInput, Suggestion}.svelte`.
+- Group-only settings on the database / character types:
+  `groupOtherBotRole`, `characterTalks`, `characterActive`,
+  `characters`/`chats` arrays inside group rows, the
+  `'group'` literal type itself.
+
+Persisted databases that contain group rows should load. On load,
+treat group rows as inert (no UI surface) and let the next save
+drop them. Do not write a migration script - users either re-import
+or the rows sit unused.
+
+### 0.2 Peer multi-user chat
+
+Delete:
+
+- `src/ts/sync/multiuser.ts`.
+- Imports and call sites in
+  `src/ts/process/index.svelte.ts` (4 sites) and
+  `src/lib/{ChatScreens, SideBars, Playground}/*.svelte`.
+- `peerjs` from `package.json` dependencies and lockfile.
+- Language strings: `joinMultiUserRoom`, `multiuser*` keys (their
+  language files surface in `src/lang/*.ts`).
+
+### 0.3 Risu Account Sync
+
+Delete:
+
+- `src/ts/storage/accountStorage.ts`.
+- `src/ts/drive/accounter.ts`.
+- `src/ts/sionyw.ts`.
+- The "Risu Account" / "Sionyw" section of
+  `src/lib/Setting/Pages/UserSettings.svelte`.
+- OAuth handlers in `server/node/server.cjs`
+  (`/api/oauth_login`, `/api/oauth_callback`,
+  `getSionywAccessToken`, related caches and the
+  `__sionyw_client_data.json` write).
+- The "Account Save" / "Account Load" buttons in
+  `src/lib/Others/SavePopupIcon.svelte`.
+- `forageStorage.isAccount` branches in
+  `src/ts/globalApi.svelte.ts`,
+  `src/ts/storage/autoStorage.ts`,
+  `src/ts/characterCards.ts`,
+  `src/ts/bootstrap.ts`.
+
+Then audit `openid-client` use across the repo; remove it from
+`package.json` if and only if nothing else imports it.
+
+### 0.4 Google Drive sync
+
+Delete:
+
+- `src/ts/drive/drive.ts`.
+- `src/ts/drive/backuplocal.ts` (this file's helpers ride
+  alongside the Drive sync path).
+- "Save to Google Drive" / "Restore from Drive" UI entries.
+
+The replacement for backup workflows is the server-side bundle
+endpoint that lands in Phase 2. Phase 0 does not add a replacement;
+users keep `.risu` file export/import in the meantime, which already
+works through the Risu save bundle.
+
+### 0.5 Legacy memory engines
+
+Delete:
+
+- `src/ts/process/memory/supaMemory.ts`.
+- `src/ts/process/memory/hypav2.ts`.
+- `src/ts/process/memory/hanuraiMemory.ts`.
+- The selection branches in `src/ts/process/index.svelte.ts`
+  lines 1097-1142 that pick one of the four engines.
+- The settings UI control that lets a user pick a memory engine
+  (replace with a Hypa V3 on/off toggle if needed).
+- Persisted `supaMemory: true` reads silently as "memory enabled"
+  pointing at Hypa V3. Drop the field on next save without writing
+  a migration.
+
+## Boundaries
+
+- **Do not edit `sendChat`'s control flow beyond removing dead
+  branches.** Anything else that "looks refactorable" stays for
+  Phase 5.
+- **Do not add the Fastify server in this phase.** Phase 1 owns
+  scaffold.
+- **Do not migrate group data.** Old saves load; group rows are
+  inert. No conversion path.
+- **Do not delete Tauri-specific code.** It is out of migration
+  scope; only delete a Tauri file when it depends on a removed
+  feature and the dependency cannot be made optional.
+- **Do not remove the Express server.** It stays running until
+  Phase 3 retires it.
+
+## Exit criteria
+
+- `rg "type === 'group'" src/` returns no hits in production code.
+- `rg "peerjs|multiuser" src/` returns hits only in language files
+  scheduled for cleanup.
+- `rg "accountStorage|sionyw|RisuAccount" src/` returns no hits.
+- `src/ts/drive/` is empty (or only contains files unrelated to
+  Drive).
+- `src/ts/process/memory/` contains only Hypa V3 code.
+- `peerjs` is removed from `package.json`; `openid-client` is
+  removed if no consumer remains.
+- `pnpm check`, `pnpm test`, `pnpm build` are green.
+- The app still boots, chats with a non-group character, and shows
+  a clean settings page.
+
+## Reference
+
+- The `move-to-fastify` branch does not perform these removals; it
+  ports the features as-is, then masks them in the UI. We do the
+  opposite: delete first, port less.
+- `risuai-metatron` deleted peer sync entirely (see its
+  `phase-9-client-removal.md`: "PeerJS retirement"). Same direction.
