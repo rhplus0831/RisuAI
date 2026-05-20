@@ -4,8 +4,8 @@ Date: 2026-05-20
 
 ## Current state
 
-Phase 1 and the server-side Phase 2 storage slice exist on the
-`fastify` branch:
+Phase 1, the server-side Phase 2 storage slice, and Phase 3A
+(generic provider proxy) exist on the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -34,11 +34,18 @@ Phase 1 and the server-side Phase 2 storage slice exist on the
   `POST /api/v1/import/risusave`, `POST /api/v1/assets`,
   `GET/HEAD /api/v1/assets/:id`, `POST /api/v1/assets/exists`,
   `GET /api/v1/backups`, `POST /api/v1/backups`,
-  `POST /api/v1/backups/:id/restore`, and
-  `DELETE /api/v1/backups/:id`.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static}.test.ts`
+  `POST /api/v1/backups/:id/restore`,
+  `DELETE /api/v1/backups/:id`, and `POST /api/v1/proxy/fetch`.
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy}.test.ts`
   cover the implemented Fastify routes and static serving through
   `pnpm api:test`.
+- `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
+  hold the Phase 3A generic-proxy surface. The route is scoped to
+  its own plugin instance with a catch-all content-type parser so
+  request bodies are forwarded as raw bytes regardless of
+  content-type. Auth uses the standard `requireAuth` (ES256 only);
+  the legacy `risu-auth: <password>` header path the Express proxy
+  accepts is intentionally not ported.
 
 Other runtime servers still in tree:
 
@@ -47,7 +54,9 @@ Other runtime servers still in tree:
   endpoints (`/api/read`, `/api/write`, `/api/list`) plus
   `/proxy*`, `/hub-proxy/*`, and proxy stream-job WebSocket
   behavior until Phase 3 ports and retires it. The Docker runtime
-  no longer starts this server.
+  no longer starts this server. Phase 3A landed `POST /api/v1/proxy/fetch`
+  on Fastify; the Express `/proxy` / `/proxy2` routes stay live
+  until the client is rewired to call the Fastify endpoint.
 - `server/hono/` - small Hono scaffold with CSRF middleware,
   `Hello Hono!`, and Node / Bun / Cloudflare static-serving entry
   points. It is not on the Fastify migration path.
@@ -73,6 +82,9 @@ Dockerfile runs `pnpm api:start`, exposes 6002, and persists
   [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
 - **Phase 3.** Provider proxy + hub passthrough + stream-job
   WebSocket. Express server is retired once Phase 3 closes.
+  Phase 3A landed 2026-05-20: `POST /api/v1/proxy/fetch` is in
+  place behind `requireAuth`, with the request / response header
+  sanitization helpers reused by the upcoming stream-job slice.
 - **Phase 6.** Server-side LLM / translation / TTS / image /
   Stable Horde generation endpoints.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.

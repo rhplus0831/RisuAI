@@ -10,6 +10,19 @@ one proxy slice or one `sendChat` extraction slice at a time.
 1. **Phase 3 - Proxy migration.** Port provider proxy, hub
    passthrough, and stream-job WebSocket behavior from
    `server/node/server.cjs` to Fastify.
+   - Phase 3A (`POST /api/v1/proxy/fetch`) landed 2026-05-20. It
+     covers the generic single-request upstream fetch behind
+     `requireAuth` (ES256 only - the legacy password header path
+     was intentionally dropped to match the rest of the Fastify
+     surface). The request / response header sanitization helpers
+     live in `server/fastify/src/proxy.ts` and are reused by the
+     stream-job slice next.
+   - Remaining slices, in order: stream-job WebSocket
+     (`POST /api/v1/proxy/stream-jobs` + WS upgrade + DELETE), hub
+     passthrough (`ANY /api/v1/hub/*` with `x-risu-node-path`
+     override), client rewiring (`globalFetch` / `fetchNative` ->
+     the new Fastify endpoints), then Express deletion +
+     `runserver` removal.
    - Keep the existing client contracts (`/proxy*`,
      `/hub-proxy/*`, `/proxy-stream-jobs`) working until the
      Fastify replacements are wired.
@@ -112,6 +125,24 @@ one proxy slice or one `sendChat` extraction slice at a time.
   PNG and stub `supportsInlayImage`. It also uses an
   `xcustom:::` model with `hasImageInput` + the `Unknown`
   tokenizer so token math runs offline.
+
+- **Phase 3A - Generic provider proxy on Fastify.** Done
+  2026-05-20. Adds `POST /api/v1/proxy/fetch` plus pure helpers
+  in `server/fastify/src/proxy.ts` (timeout controller,
+  `decodeRisuUrl`, `parseRisuHeader`,
+  `normalizeForwardHeaders`, `filterResponseHeaders`). The route
+  is scoped under `app.register` with a catch-all
+  content-type parser so request bodies are forwarded as raw
+  bytes for any content type. Auth uses the standard
+  `requireAuth` (ES256 only); the legacy password-header path
+  the Express proxy accepts was intentionally dropped to match
+  the Fastify surface. Tests in
+  `server/fastify/__tests__/proxy.test.ts` cover auth gating,
+  missing URL, status / body / filtered-header forward,
+  request-side header stripping, `risu-header` JSON override,
+  `risu-timeout-ms` -> 504, and multi-chunk SSE streaming.
+  Express `/proxy` / `/proxy2` remain live; client rewiring is
+  a later slice.
 
 - **Phase 4 - memory + trigger close-out slice.** Done
   2026-05-20. Adds `hypav3-memory`, `editrequest-trigger`, and

@@ -23,6 +23,12 @@ under [`status/`](status/).
   per-fixture DB / upstream / expected files plus targeted
   `vi.mock`s for the heavy side-effect modules. Phase 5 can now
   refactor sendChat behind a real safety net.
+- Phase 3A landed on 2026-05-20. `POST /api/v1/proxy/fetch` is
+  in place on Fastify behind `requireAuth`, with reusable
+  request / response header sanitization helpers. The Express
+  `/proxy` / `/proxy2` routes stay live until the client is
+  rewired in a later Phase 3 slice. Stream-job WebSocket and
+  hub passthrough are the next two Phase 3 slices.
 - The Docker image and compose file now run Fastify on port 6002
   with `/app/data` persisted. `server/node/server.cjs` (Express)
   still remains for `pnpm runserver`, the legacy `/api/read|write|list`
@@ -37,10 +43,13 @@ under [`status/`](status/).
 
 ## Active phase
 
-**Phase 3 - Proxy migration**, not started.
+**Phase 3 - Proxy migration**, in progress.
 
 See [`phases/phase-3-proxy.md`](phases/phase-3-proxy.md)
-for the proxy / hub scope and exit criteria.
+for the proxy / hub scope and exit criteria. Phase 3A
+(generic `POST /api/v1/proxy/fetch` on Fastify) landed
+2026-05-20; stream-job WebSocket, hub passthrough, client
+rewiring, and Express retirement are the remaining slices.
 
 Phase 4 (`sendChat` characterization tests) closed 2026-05-20.
 The harness lives at `src/ts/process/__fixtures__/` and
