@@ -95,15 +95,26 @@ Conscious differences vs the `move-to-fastify` branch:
 
 ## Persistence
 
-- SQLite via `node:sqlite`, WAL mode, foreign keys on.
-- One file at `data/risu.db`. No multi-tenant split.
-- Phase 1 creates `schema_version(id, version, revision)`. Phase 2
-  adds the domain schema and migration runner; the repository asserts
-  schema version before accepting writes.
-- Assets are stored on disk as `data/assets/<sha256>.<ext>`. The DB
-  only stores metadata + a reference count.
-- Backups are stored as `.risu` blobs under `data/backups/<id>.risu`
-  with a row in `backups` for metadata.
+- SQLite via `node:sqlite`, WAL mode, foreign keys on. One file at
+  `data/risu.db`, no multi-tenant split. The Phase 1 schema lives
+  here: `schema_version(id, version, revision)` and (later) auth
+  metadata. **System state only.**
+- Domain state lives in a single JSON blob at `data/db.json` during
+  the migration window. Phase 2 ships this blob plus bootstrap,
+  import, export, assets, and backups against it. The blob carries a
+  top-level `_version` integer for shape evolution. See
+  [`phases/phase-2-storage.md`](phases/phase-2-storage.md) for the
+  rationale.
+- Per-resource SQL tables land in Phases 5-9, when an extracted API
+  defines the shape that resource actually needs. Each extraction
+  runs a one-time boot migration that moves the field out of
+  `db.json`. When `db.json` is empty, it is deleted.
+- Assets are stored on disk as `data/assets/<sha256>.<ext>`. Asset
+  metadata (size, contentType) lives in `db.json.assets` during
+  Phase 2 and moves into SQL when the asset API graduates.
+- Backups are stored under `data/backups/<id>/` as a `db.json`
+  snapshot plus a `manifest.json` listing the revision and
+  referenced assets.
 
 ## Auth
 

@@ -44,7 +44,10 @@ short form.
 
 - **Stack.** Fastify + TypeScript. Greenfield API surface, not a copy
   of the `move-to-fastify` branch.
-- **Storage.** SQLite via `node:sqlite` (Node 24+). Content-addressed
+- **Storage.** SQLite via `node:sqlite` (Node 24+) for system state
+  (schema version, revision, auth). Domain state lives in a single
+  `data/db.json` blob during the migration window; per-resource SQL
+  tables land in Phases 5-9 as APIs are carved out. Content-addressed
   assets on disk under `data/`.
 - **Sequence.** Remove first, then port. Phase 0 strips the deprecated
   features so the surface that gets ported is smaller.

@@ -70,8 +70,10 @@ rules. The headline order:
 1. **Foundation** - scaffold the Fastify server, decide auth shape,
    pick the persistence layout, ship the health check. Done
    2026-05-20.
-2. **Storage, import, export, assets** - SQLite schema, repository
-   API, content-addressed assets, Risu save import/export.
+2. **Storage, import, export, assets** - `data/db.json` blob for
+   domain state, repository API, content-addressed assets, Risu save
+   import/export, backups. No domain SQL schema yet; per-resource
+   tables land in Phases 5-9 as their APIs are carved out.
 3. **Proxy migration** - move provider proxy and Risu hub
    passthrough behind Fastify; keep the stream-job WebSocket
    contract.
