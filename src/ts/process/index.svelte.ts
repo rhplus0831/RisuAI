@@ -50,6 +50,7 @@ import { finalizeStage4 } from './postGeneration/stage4Finalize'
 import { applyEmotionFromResponse } from './postGeneration/emotionFromResponse'
 import { runImggenStableDiff } from './postGeneration/imggenStableDiff'
 import { runEmotionLlmFallback } from './postGeneration/emotionFallbackLlm'
+import { runEmotionEmbeddingFallback } from './postGeneration/emotionFallbackEmbedding'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1784,47 +1785,12 @@ export async function sendChat(
       }
 
       if (DBState.db.emotionProcesser === 'embedding') {
-        const hypaProcesser = new HypaProcesser()
-        await hypaProcesser.addText(emotionList.map((v) => 'emotion:' + v))
-        let searched = (await hypaProcesser.similaritySearchScored(result)).map((v) => {
-          v[0] = v[0].replace('emotion:', '')
-          return v
+        await runEmotionEmbeddingFallback({
+          result,
+          currentChar,
+          tempEmotion,
+          charemotions,
         })
-
-        //give panaltys
-        for (let i = 0; i < tempEmotion.length; i++) {
-          const emo = tempEmotion[i]
-          //give panalty index
-          const index = searched.findIndex((v) => {
-            return v[0] === emo[0]
-          })
-
-          const modifier = (5 - (tempEmotion.length - (i + 1))) / 200
-
-          if (index !== -1) {
-            searched[index][1] -= modifier
-          }
-        }
-
-        //make a sorted array by score
-        const emoresult = searched
-          .sort((a, b) => {
-            return b[1] - a[1]
-          })
-          .map((v) => {
-            return v[0]
-          })
-
-        for (const emo of currentEmotion) {
-          if (emo[0] === emoresult[0]) {
-            const emos: [string, string, number] = [emo[0], emo[1], Date.now()]
-            tempEmotion.push(emos)
-            charemotions[currentChar.chaId] = tempEmotion
-            CharEmotion.set(charemotions)
-            break
-          }
-        }
-
         return true
       }
 
