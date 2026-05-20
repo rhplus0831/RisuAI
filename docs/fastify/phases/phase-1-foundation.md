@@ -2,6 +2,10 @@
 
 Date: 2026-05-20
 
+Historical note: Phase 1 is closed. References below to the Express
+server describe the state during Phase 1; Phase 3 later deleted
+`server/node/` and the `runserver` script.
+
 ## Goal
 
 Stand up the Fastify + TypeScript server with the minimum surface
@@ -62,12 +66,12 @@ Test infrastructure:
 
 - **No SQL schema beyond the version table.** Phase 2 decides the
   migration-window storage layout; domain SQL tables remain deferred.
-- **No proxy routes.** That is Phase 3. The Express server still
-  owns `/proxy*`, `/hub-proxy/*`, and SPA serving during Phase 1.
+- **No proxy routes.** That is Phase 3. During Phase 1 the Express
+  server still owned `/proxy*`, `/hub-proxy/*`, and SPA serving.
 - **No SPA serving from Fastify.** Phase 2 wires `@fastify/static`
   to serve `dist/` only after we know we can persist data.
 - **No Fastify Docker runtime switch.** Phase 2 owns the persistence
-  volume and Fastify SPA serving; the container still runs Express
+  volume and Fastify SPA serving; the container still ran Express
   until then.
 
 ## Exit criteria
@@ -83,15 +87,15 @@ Test infrastructure:
 - `pnpm check`, `pnpm test`, `pnpm build` stay green.
 - At Phase 1 close, the Express server still booted and served the
   SPA. Phase 2 later moved the Docker runtime and static serving to
-  Fastify; full Express deletion is still Phase 3.
+  Fastify; Phase 3 later deleted Express.
 
 ## Reference
 
 - `move-to-fastify` foundation slice: commits `0c3de7de` (initial
   Fastify scaffold), `d430d31c` (runbook + Node 24 requirement),
   `e10499a2` (Docker + persistence smoke test).
-- Auth surface in `server/node/server.cjs` lines 614-742 is the
-  shape Phase 1 reproduces.
+- The legacy auth surface in `server/node/server.cjs` lines 614-742
+  was the shape Phase 1 reproduced before Phase 3 deleted Express.
 
 ## Status
 
@@ -103,9 +107,9 @@ Done 2026-05-20. Landed differences from the planned scope:
 - Root `vitest.config.ts` now excludes `server/**` so
   `pnpm test` (browser side) and `pnpm api:test` (server side)
   do not overlap.
-- `@fastify/cors` was not installed; same-origin dev proxy means
-  it is not yet needed. Add it in Phase 3 when proxy routes
-  move over.
+- `@fastify/cors` was not installed; same-origin dev proxy and
+  same-origin static serving mean it is still not needed after
+  Phase 3.
 - The smoke test sets `process.env.LOG_LEVEL = 'silent'` to keep
   test output clean; production boot stays at the default `info`
   level.

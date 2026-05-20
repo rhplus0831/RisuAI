@@ -57,21 +57,20 @@ under [`status/`](status/).
 
 ## Active phase
 
-**Phase 3 - Proxy migration**, closed 2026-05-21. Fastify owns
-the proxy / hub / stream-job / storage / auth / crypto surface
-and Express is deleted.
+No implementation phase is currently active in this branch. Phase 3
+closed on 2026-05-21; Fastify owns the proxy / hub / stream-job /
+storage / auth / crypto surface and Express is deleted.
 
 Phase 5 (`sendChat` extraction) is the natural next pickup
 behind the characterization-test safety net landed in Phase 4.
-Phase 6 (server-side LLM / translation / TTS / image
-generation) is the other major server-side workstream open for
-new work.
+Phase 6 (server-side LLM / translation / TTS / image generation)
+remains blocked on Phase 5.
 
 Phase 4 (`sendChat` characterization tests) closed 2026-05-20.
 The harness lives at `src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`; all 17
-target fixtures pin. Phase 5 (`sendChat` extraction) can now
-start in parallel with Phase 3.
+target fixtures pin. Phase 5 (`sendChat` extraction) can now start
+without waiting on proxy work.
 
 ## Start here
 

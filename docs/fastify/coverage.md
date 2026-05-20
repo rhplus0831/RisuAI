@@ -1,6 +1,6 @@
 # Test Coverage
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 This is the coverage router. Detail per area lives in the
 shards under [`coverage/`](coverage/).
@@ -20,8 +20,10 @@ shards under [`coverage/`](coverage/).
 - `server/fastify/__tests__/smoke.test.ts` covers the Phase 1
   Fastify foundation. `bootstrap.test.ts`, `assets.test.ts`,
   `backups.test.ts`, and `static.test.ts` cover the Phase 2
-  server storage routes and static SPA serving through
-  `pnpm api:test`.
+  server storage routes and static SPA serving. `proxy.test.ts`,
+  `streamJobs.test.ts`, `streamJobsRoutes.test.ts`, `hub.test.ts`,
+  and `legacyStorage.test.ts` cover the Phase 3 proxy / hub /
+  stream-job / legacy storage surface through `pnpm api:test`.
 
 ## Where to look
 

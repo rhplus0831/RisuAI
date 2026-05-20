@@ -1,6 +1,6 @@
 # Migration Plan
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Goal
 
@@ -27,26 +27,28 @@ End state:
 
 ## Current Baseline
 
-Where the codebase stands after the Phase 4 characterization slice
-on 2026-05-20:
+Where the codebase stands after the Phase 3 closeout on 2026-05-21
+and the Phase 4 characterization slice on 2026-05-20:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
   `GET /api/v1/health`, `GET /api/v1/auth/status`,
   `POST /api/v1/auth/setup`, `POST /api/v1/auth/login`,
   `GET /api/v1/bootstrap`, JSON `POST /api/v1/import/risusave`,
-  raw asset routes, backup routes, and optional static SPA serving.
+  raw asset routes, backup routes, `POST /api/v1/proxy/fetch`,
+  proxy stream-job HTTP + WebSocket routes, `ANY /api/v1/hub/*`,
+  versioned legacy storage routes, `POST /api/v1/auth/crypto`,
+  and optional static SPA serving.
 - `server/fastify/src/repository.ts` owns the migration-window
   `data/db.json` blob, content-addressed `data/assets/`, and
   `data/backups/`. `data/risu.db` still holds system metadata only:
   `schema_version(id, version, revision)`.
 - Root `package.json` has `api:dev`, `api:start`, and `api:test`
   for the Fastify server. The Docker image and compose file run
-  `pnpm api:start` on port 6002 with `/app/data` persisted.
-  `runserver` still starts `server/node/server.cjs` for the legacy
-  Node server and for unported proxy / hub / `/api/read|write|list`
-  surfaces until Phase 3. `server/hono/` remains a separate
-  static-serving scaffold and is not the migration path.
+  `pnpm api:start` on port 6002 with `/app/data` persisted. The
+  legacy `runserver` script and `server/node/` Express server have
+  been removed. `server/hono/` remains a separate static-serving
+  scaffold and is not the migration path.
 - `src/ts/process/index.svelte.ts` is **2090 lines** in a single
   `sendChat` function with explicit `stage1`-`stage4` timing markers.
 - `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
@@ -92,7 +94,8 @@ rules. The headline order:
    the server is JSON-native through Phase 2.
 3. **Proxy migration** - move provider proxy and Risu hub
    passthrough behind Fastify; keep the stream-job WebSocket
-   contract.
+   contract. Done 2026-05-21, including Fastify legacy storage /
+   crypto compatibility and Express deletion.
 4. **sendChat tests** - pin observable behavior of the current
    `sendChat` with fixtures and snapshots before any extraction.
    Done 2026-05-20 with 17 fixtures.

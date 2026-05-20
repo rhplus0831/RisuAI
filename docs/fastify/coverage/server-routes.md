@@ -1,10 +1,10 @@
 # Server Route Tests
 
-Date: 2026-05-20
+Date: 2026-05-21
 
-Status: Phase 1 and Phase 2 Fastify route tests exist under
-`server/fastify/__tests__/`. Later rows are the target test set per
-phase.
+Status: Phase 1, Phase 2, and Phase 3 Fastify route tests exist
+under `server/fastify/__tests__/`. Phase 6-9 rows are the target
+test set per phase.
 
 ## Phase 1: Foundation
 
@@ -43,19 +43,21 @@ stay client-side until Phase 9.
 
 | Route                                          | Pinned behavior                          | Status      |
 | ---------------------------------------------- | ---------------------------------------- | ----------- |
-| `POST /api/v1/proxy/fetch`                     | Forwards request; sanitizes headers.     | not started |
-| `POST /api/v1/proxy/fetch` (SSE)               | Streams chunks without buffering.        | not started |
-| `POST /api/v1/proxy/fetch` (timeout)           | Honors `risu-timeout-ms`.                | not started |
-| `POST /api/v1/proxy/fetch` (client abort)      | Aborts upstream when client disconnects. | not started |
-| `POST /api/v1/proxy/stream-jobs`               | Returns jobId + heartbeatSec.            | not started |
-| `GET /api/v1/proxy/stream-jobs/:id/ws`         | Sends accepted / headers / chunks / done.| not started |
-| `DELETE /api/v1/proxy/stream-jobs/:id`         | Cancels in-flight job.                   | not started |
-| `ANY /api/v1/hub/*`                            | Passes through to RISU_HUB_URL.          | not started |
-| `ANY /api/v1/hub/*` (x-risu-node-path)         | Honors the override header.              | not started |
-
-Plus: URL sanitization (blocked schemes, blocked external hosts
-on stream-jobs, IPv6 bracket handling), local-network host
-detection.
+| `POST /api/v1/proxy/fetch`                     | Auth-gated POST proxy forwards upstream status/body, raw body bytes, filtered response headers, sanitized request headers, and `risu-header` overrides. | covered by `server/fastify/__tests__/proxy.test.ts` |
+| `POST /api/v1/proxy/fetch` (SSE)               | Streams a multi-chunk `text/event-stream` upstream body through without route-level buffering. | covered by `server/fastify/__tests__/proxy.test.ts` |
+| `POST /api/v1/proxy/fetch` (timeout)           | Honors `risu-timeout-ms` and returns 504 on timeout. | covered by `server/fastify/__tests__/proxy.test.ts` |
+| `POST /api/v1/proxy/fetch` (client disconnect) | Direct request-close abort wiring is not separately implemented; hung upstreams are bounded by `risu-timeout-ms`. | known gap |
+| `POST /api/v1/proxy/stream-jobs`               | Auth-gated create returns `jobId` + normalized `heartbeatSec`; rejects non-local targets, disallowed methods, and oversized `bodyBase64`. | covered by `server/fastify/__tests__/streamJobsRoutes.test.ts` |
+| `GET /api/v1/proxy/stream-jobs/:id/ws`         | Sends `job_accepted`, flushed pending events, `upstream_headers`, `chunk`, `done`, and accepts `risu-auth` via header or query string. | covered by `server/fastify/__tests__/streamJobsRoutes.test.ts` |
+| `DELETE /api/v1/proxy/stream-jobs/:id`         | Cancels an existing in-flight job and returns success for unknown ids. | covered by `server/fastify/__tests__/streamJobsRoutes.test.ts` |
+| Stream-job lifecycle helpers                   | URL sanitization, private/local host detection, timeout/heartbeat normalization, pending-event caps, GC, delete abort, and mid-stream abort events. | covered by `server/fastify/__tests__/streamJobs.test.ts` |
+| `ANY /api/v1/hub/*`                            | Auth-gated hub passthrough forwards path/query and body to `RISU_HUB_URL`, strips hop-by-hop/auth headers, rewrites origin, strips unsafe response headers, follows one redirect, and returns 502 on upstream failure. | covered by `server/fastify/__tests__/hub.test.ts` |
+| `ANY /api/v1/hub/*` (x-risu-node-path)         | Honors the override header as a complete upstream URL. | covered by `server/fastify/__tests__/hub.test.ts` |
+| `GET /api/v1/storage/list`                     | Auth-gated list returns utf-8 decoded keys from hex filenames. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+| `GET /api/v1/storage/read`                     | Auth-gated read validates hex path, streams raw bytes, and returns an empty octet-stream body for missing keys. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+| `POST /api/v1/storage/write`                   | Auth-gated raw write validates hex path, rejects empty bodies, and writes bytes under `${dataDir}/save`. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+| `POST /api/v1/storage/remove`                  | Auth-gated remove deletes one or many `$$`-joined hex keys and is idempotent for missing keys. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+| `POST /api/v1/auth/crypto`                     | Returns sha256 hex for string `data` and rejects non-string payloads. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
 
 ## Phase 6: Generation Helpers
 

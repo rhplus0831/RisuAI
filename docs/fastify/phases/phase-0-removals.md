@@ -2,6 +2,10 @@
 
 Date: 2026-05-20
 
+Historical note: Phase 0 is closed. References below to keeping the
+Express server describe Phase 0 scope only; Phase 3 later deleted
+`server/node/`.
+
 ## Goal
 
 Delete Group chat, peer-to-peer multi-user chat, Risu Account Sync,
@@ -132,8 +136,8 @@ Delete:
 - **Do not delete Tauri-specific code.** It is out of migration
   scope; only delete a Tauri file when it depends on a removed
   feature and the dependency cannot be made optional.
-- **Do not remove the Express server.** It stays running until
-  Phase 3 retires it.
+- **Do not remove the Express server in Phase 0.** Phase 3 later
+  retired and deleted it.
 
 ## Exit criteria
 

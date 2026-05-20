@@ -1,11 +1,11 @@
 # Architecture
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 This doc describes the target shape of the Fastify server and the
-boundaries between it and the browser client. Phase 1 and Phase 2
-server files already exist; modules marked by later phases are target
-layout, not current implementation.
+boundaries between it and the browser client. Phase 1, Phase 2, and
+Phase 3 server files already exist; modules marked by later phases
+are target layout, not current implementation.
 
 ## Server module layout
 
@@ -17,11 +17,23 @@ server/fastify/
     config.ts           env loading and validation
     db.ts               node:sqlite handle, WAL pragma, schema metadata
     auth.ts             password + signed-assertion auth
+    http.ts             shared auth/header helpers
     repository.ts       db.json, assets, backups now; SQL domain repo later
-    proxy.ts            outbound provider proxy + stream-jobs
-    hub.ts              Risuai hub (sv.risuai.xyz) passthrough
-    events.ts           SSE event bus (state change broadcast)
-    tokenizer.ts        @dqbd/tiktoken / glm tokenizers
+    proxy.ts            generic proxy helpers
+    streamJobs.ts       proxy stream-job registry + local URL guard
+    routes/
+      health.ts
+      auth.ts
+      bootstrap.ts
+      save.ts
+      assets.ts
+      backups.ts
+      proxy.ts
+      streamJobs.ts
+      hub.ts
+      legacyStorage.ts
+    events.ts           SSE event bus (planned Phase 9)
+    tokenizer.ts        @dqbd/tiktoken / glm tokenizers (planned Phase 6)
     generate/
       router.ts         POST /api/v1/generate/* routes
       providers/        one file per provider family
@@ -52,22 +64,33 @@ not the route handlers.
 
 Routes are versioned at `/api/v1/`. Verb choice follows REST: `POST`
 creates or invokes, `PATCH` partial updates, `PUT` replaces a child
-collection, `DELETE` removes, `GET` reads. Domain-state mutations
-return the new server revision; backup create/delete and auth
-setup/login are administrative operations and do not bump revision.
-Every future event includes the revision it represents.
+collection, `DELETE` removes, `GET` reads. Revision-tracked
+domain-state mutations return the new server revision; backup
+create/delete, auth setup/login, and the Phase 3 legacy storage
+compatibility routes are administrative or bridge operations and do
+not bump revision. Every future event includes the revision it
+represents.
 
 Implemented now:
 
 - `GET /api/v1/health`
 - `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`,
-  `POST /api/v1/auth/login`
+  `POST /api/v1/auth/login`, `POST /api/v1/auth/crypto`
 - `GET /api/v1/bootstrap` - full database snapshot
 - `POST /api/v1/import/risusave` - JSON `{ database }` import
 - `POST /api/v1/assets`, `GET /api/v1/assets/:id`,
   `HEAD /api/v1/assets/:id`, `POST /api/v1/assets/exists`
 - `GET /api/v1/backups`, `POST /api/v1/backups`,
   `POST /api/v1/backups/:id/restore`, `DELETE /api/v1/backups/:id`
+- `POST /api/v1/proxy/fetch`
+- `POST /api/v1/proxy/stream-jobs`,
+  `GET /api/v1/proxy/stream-jobs/:id/ws`,
+  `DELETE /api/v1/proxy/stream-jobs/:id`
+- `ANY /api/v1/hub/*` - passthrough to `RISU_HUB_URL`
+- `GET /api/v1/storage/list`, `GET /api/v1/storage/read`,
+  `POST /api/v1/storage/write`, `POST /api/v1/storage/remove`
+- Optional static serving from `RISU_API_STATIC_ROOT`, including
+  `GET /` and non-API GET SPA fallback.
 
 Planned later (final shape is locked phase by phase, not by this
 list):
@@ -76,10 +99,6 @@ list):
 - `POST /api/v1/commands/<resource>[/...]` - one endpoint per
   resource family (character, chat, message, preset, persona, plugin,
   module, ...). No whole-state PUT.
-- `POST /api/v1/proxy/fetch`, `POST /api/v1/proxy/stream-jobs`,
-  `GET /api/v1/proxy/stream-jobs/:id/ws`,
-  `DELETE /api/v1/proxy/stream-jobs/:id`
-- `ANY /api/v1/hub/*` - passthrough to `sv.risuai.xyz`.
 - `POST /api/v1/generate/completion` - streamed completion.
 - `POST /api/v1/generate/translate`, `tts`, `image`, `horde`.
 - `POST /api/v1/generate/count-tokens`,
@@ -131,17 +150,19 @@ keypair in localStorage / IndexedDB; the server stores the password
 at `data/__password` and SHA-256 hashes of known public keys at
 `data/__known_public_key_hashes.json`.
 
-This matches the auth shape `server/node/server.cjs` uses today,
-with Fastify storing its files under `RISU_API_DATA_DIR` instead of
-the legacy `save/` directory. We do not redesign auth in this
-migration unless a concrete need surfaces.
+This matches the legacy Express auth shape that existed before
+Phase 3 deleted `server/node/`, with Fastify storing its files under
+`RISU_API_DATA_DIR` instead of the legacy `save/` directory. We do
+not redesign auth in this migration unless a concrete need surfaces.
 
 ## Events
 
-`GET /api/v1/events` is a Server-Sent Events stream. Every committed
-mutation emits one event: `{ revision, type, resource, ts, detail }`.
-The client subscribes once on startup and uses events to invalidate
-its in-memory projection.
+Planned for Phase 9; not implemented in the current Fastify tree.
+`GET /api/v1/events` will be a Server-Sent Events stream. Every
+committed mutation emits one event:
+`{ revision, type, resource, ts, detail }`. The client subscribes
+once on startup and uses events to invalidate its in-memory
+projection.
 
 Heartbeats every 15s keep idle connections alive. Auth is via
 `risu-auth` query string (so EventSource works) or header (for

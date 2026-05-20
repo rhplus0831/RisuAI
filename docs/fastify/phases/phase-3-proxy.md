@@ -18,7 +18,8 @@ during the migration.
 
 Move outbound HTTP for generation and the Risuai hub passthrough
 behind Fastify, with the same security rules the Express server
-enforces today. Retire the Express server once parity is proven.
+enforced before deletion. Retire the Express server once parity is
+proven.
 
 ## Preconditions
 
@@ -30,9 +31,10 @@ enforces today. Retire the Express server once parity is proven.
 ### Routes
 
 - `POST /api/v1/proxy/fetch` - generic upstream fetch. Accepts
-  `risu-url`, `risu-header`, `risu-method`, `risu-timeout-ms`
-  headers; streams the upstream response back to the client.
-  SSE-aware (sets no-cache headers, forwards chunks unbuffered).
+  `risu-url`, `risu-header`, and `risu-timeout-ms` headers; the
+  Fastify route is POST-only and forwards upstream as POST. It
+  streams the upstream response body back to the client, including
+  SSE bodies, without route-level buffering.
 - `POST /api/v1/proxy/stream-jobs` - opens a stream job; returns a
   `jobId` and `heartbeatSec`. The job runs in-process; the client
   attaches via WebSocket.
@@ -56,7 +58,9 @@ enforces today. Retire the Express server once parity is proven.
   `content-security-policy-report-only`, `clear-site-data`,
   `Cache-Control`, `Content-Encoding` from upstream response
   headers before forwarding.
-- Honor `X-Forwarded-For` only when `TRUST_PROXY` is set.
+- If a forwarded header set does not already include
+  `x-forwarded-for`, set it to `req.ip`; `TRUST_PROXY` controls how
+  Fastify derives `req.ip`.
 - Hub `Authorization: X-Node-Server-Auth` requests refresh the
   Sionyw access token. Phase 0 removes this entirely; do not port
   it.
@@ -107,13 +111,15 @@ After parity is proven on the proxy + hub routes:
     stream-jobs, IPv6 bracket handling, mapped-IPv4 cases).
   - Header sanitization in both directions.
   - SSE forwarding without buffering.
-  - Timeout + abort propagation (client disconnect aborts upstream).
+  - Timeout handling. Direct `/proxy/fetch` client-disconnect abort
+    wiring is not separately implemented; stream jobs abort via
+    delete, timeout, and GC.
   - Stream-job lifecycle: open, attach WebSocket, receive frames,
     delete mid-stream.
   - Hub passthrough including the `x-risu-node-path` override.
-- The browser's `globalFetch` and `fetchNative` helpers route
-  through `/api/v1/proxy/fetch` in server-backed mode and pass
-  every existing call-site test.
+- The browser's proxy URL builders route through
+  `/api/v1/proxy/fetch` and `/api/v1/proxy/stream-jobs` when
+  `platform.isFastifyServer` is true.
 - The Express server is deleted; `pnpm runserver` is gone.
 - `pnpm check`, `pnpm test`, `pnpm build`, `pnpm api:test` green.
 

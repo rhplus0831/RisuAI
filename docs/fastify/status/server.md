@@ -13,10 +13,11 @@ Express deletion) all exist on the `fastify` branch:
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
 - `server/fastify/src/app.ts` builds Fastify, registers
   `@fastify/rate-limit`, registers a raw-body parser for supported
-  asset content types, opens the SQLite metadata DB, registers
-  health/auth/bootstrap/import/assets/backups routes, and serves
-  `RISU_API_STATIC_ROOT` via `@fastify/static` when that directory
-  exists.
+  asset content types, registers `@fastify/websocket`, opens the
+  SQLite metadata DB, registers the health/auth/bootstrap/import/
+  assets/backups/proxy/stream-job/hub/legacy-storage routes, and
+  serves `RISU_API_STATIC_ROOT` via `@fastify/static` when that
+  directory exists.
 - `server/fastify/src/config.ts` reads `RISU_API_HOST`,
   `RISU_API_PORT`, `RISU_API_DATA_DIR`, `RISU_API_BODY_LIMIT`,
   `RISU_API_STATIC_ROOT`, `TRUST_PROXY`, and `RISU_HUB_URL`
@@ -101,6 +102,10 @@ Express deletion) all exist on the `fastify` branch:
   (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401
   because they cannot send `risu-auth`. Tracked as a follow-up
   in [`next-steps.md`](next-steps.md).
+- Known limitation: direct `POST /api/v1/proxy/fetch` request-close
+  abort wiring is not separately implemented. The route supports
+  `risu-timeout-ms`; stream jobs abort through explicit delete,
+  timeout, and GC.
 
 Other runtime servers still in tree:
 

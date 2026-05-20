@@ -1,12 +1,12 @@
 # Test Coverage Shards
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 Each shard is a list of what is pinned + a brief explanation of
-how to read or extend the tests. Phase 1 and Phase 2 Fastify route
-tests exist, and the Phase 4 `sendChat` characterization fixtures
-have landed. Later Fastify route tests are still planning artifacts
-until their phases land.
+how to read or extend the tests. Phase 1, Phase 2, and Phase 3
+Fastify route tests exist, and the Phase 4 `sendChat`
+characterization fixtures have landed. Phase 6-9 Fastify route
+tests are still planning artifacts until their phases land.
 
 ## Shards
 

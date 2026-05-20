@@ -2,6 +2,11 @@
 
 Date: 2026-05-20
 
+Historical note: Phase 2 is closed. References below to Express or
+the gap before proxy migration describe the state during Phase 2;
+Phase 3 later moved the proxy / hub / legacy storage surfaces to
+Fastify and deleted `server/node/`.
+
 ## Goal
 
 Give the Fastify server a place to keep Risuai state so callers can
@@ -56,8 +61,10 @@ Server-side Phase 2 landed on 2026-05-20:
 - Covered by `server/fastify/__tests__/{bootstrap,assets,backups,static}.test.ts`.
 
 The browser is not yet thinned into a server-backed projection; that
-remains Phase 9. Existing local/Tauri/legacy Node-server storage
-paths remain in the client until then.
+remains Phase 9. Local and Tauri storage paths remain in the client.
+The legacy NodeStorage path still exists as a compatibility adapter,
+but in Fastify-served mode it now targets the Phase 3D-Broad
+`/api/v1/storage/*` routes.
 
 ## Scope
 
@@ -274,11 +281,11 @@ snapshotting the asset blobs alongside the database.
 
 ### Container changes
 
-The image's runtime stage switches from the Express server
+The image's runtime stage switched from the Express server
 (`pnpm runserver`, port 6001, `save/` volume) to Fastify
 (`pnpm api:start`, port 6002, `data/` volume). The Express source
-files stay in the tree until Phase 3 retires them; the container
-just no longer runs them.
+files stayed in the tree until Phase 3 retired them; the container
+stopped running them in Phase 2.
 
 - `Dockerfile`: `CMD pnpm api:start`, `EXPOSE 6002`,
   `VOLUME /app/data`, env `RISU_API_DATA_DIR=/app/data` and
@@ -295,11 +302,12 @@ just no longer runs them.
   empty / `none` / `off` to disable static serving (handy in dev
   and in the test harness when there is no SPA build).
 
-Once Phase 3 ports the proxy and hub, the container is again a
-single-process image with full functionality. During the gap
-between 2E and Phase 3, the image is missing provider proxy / hub
-passthrough / `/api/read|write|list` - acceptable under the
-no-live-users migration window.
+Phase 3 has since ported the proxy, hub, and legacy storage
+compatibility routes, so the container is again a single-process
+Fastify image with the migrated server surface. During the historical
+gap between 2E and Phase 3, the image was missing provider proxy /
+hub passthrough / legacy storage compatibility - acceptable under
+the no-live-users migration window.
 
 ## Boundaries
 
@@ -319,9 +327,10 @@ no-live-users migration window.
   reviewable.
 - **No asset GC.** Orphaned blobs cost disk only. Defer until a
   caller needs it.
-- **No legacy `/api/read` / `/api/write` / `/api/list` ports.** The
-  Express server owns those during the migration; Fastify does not
-  reimplement file-based saves.
+- **No legacy unversioned `/api/read` / `/api/write` / `/api/list`
+  ports in Phase 2.** Phase 3D-Broad later added the versioned
+  Fastify compatibility surface at `/api/v1/storage/*`; the
+  unversioned Express paths remain deleted with `server/node/`.
 - **No server-side `.risu` codec.** Decode and encode stay
   client-side (`src/ts/storage/risuSave.ts`) until Phase 9 forces
   the move. The server is JSON-native through Phase 2.

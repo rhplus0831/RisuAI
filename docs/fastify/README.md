@@ -1,6 +1,6 @@
 # Fastify Migration Roadmap
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 This directory is the working roadmap for moving Risuai from a thick
 browser app to a Fastify backend with a display-only client. The
@@ -14,12 +14,14 @@ it needs.
 ## Scope
 
 Current status: Phase 0 removals, Phase 1 Fastify foundation,
-Phase 2 server storage, and Phase 4 `sendChat` characterization
-tests closed on 2026-05-20. Fastify now owns bootstrap, JSON
-import, content-addressed assets, backups, static SPA serving, and
-the Docker runtime. Phase 3 proxy migration is the next server
-slice; Phase 5 `sendChat` extraction is also unblocked by the
-landed fixture harness.
+Phase 2 server storage, Phase 3 proxy migration, and Phase 4
+`sendChat` characterization tests are closed. Fastify now owns
+bootstrap, JSON import, content-addressed assets, backups, static
+SPA serving, the Docker runtime, provider proxy fetch, stream-job
+WebSocket transport, Risu hub passthrough, and the legacy
+NodeStorage key-value surface. Express has been deleted. Phase 5
+`sendChat` extraction is the next natural server/client slice behind
+the landed fixture harness.
 
 In scope:
 
@@ -58,8 +60,9 @@ short form.
 - **sendChat.** Tests first, extraction second. Pin observable
   behavior before touching the current 2090-line function.
 - **Client modes.** Server-backed web only. Tauri stays as-is.
-- **Hub.** Fastify will keep proxying `sv.risuai.xyz` traffic once
-  Phase 3 lands.
+- **Hub.** Fastify proxies hub traffic through `/api/v1/hub/*`.
+  The route is intentionally still auth-gated; session-cookie or
+  public element-load support is tracked as a follow-up.
 - **Memory.** Only Hypa V3 survives. Supa, Hypa V2, Hanurai are
   removed in Phase 0.
 - **Drive.** Google Drive sync is removed in Phase 0 with the rest of

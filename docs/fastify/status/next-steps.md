@@ -98,7 +98,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   the default `formatingOrder`) and `cache-point`
   (`automaticCachePoint` walk-back marks the last 3 user entries
   - only reachable through a `promptTemplate` with a `chat`
-  card). All 8 prior fixtures were re-recorded.
+    card). All 8 prior fixtures were re-recorded.
 
 - **Phase 4 - persona / lorebook / abort slice.** Done
   2026-05-20. Adds `persona` (db.personaPrompt merged into the
@@ -131,7 +131,6 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 - **Phase 3D-Broad - Legacy NodeStorage surface on Fastify.**
   Done 2026-05-21. Two commits (server + client) plus a docs
   pass.
-
   - Server-side: new
     `server/fastify/src/routes/legacyStorage.ts` adds
     `GET /api/v1/storage/list`, `GET /api/v1/storage/read`,
@@ -169,7 +168,6 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 
 - **Phase 3D-Narrow - Client proxy / hub URL switchover.** Done
   2026-05-21. Two commits.
-
   - Server-side: `server/fastify/src/app.ts` now reads
     `dist/index.html` at startup, injects
     `<script>globalThis.__FASTIFY__ = true;</script>` after the
@@ -187,11 +185,12 @@ one `sendChat` extraction slice at a time. Phase 3 closed
     replace the old `getProxyStreamJobBaseUrl` and target the
     `/api/v1/proxy/stream-jobs` surface. `characterCards.ts`
     `hubURL` becomes `/api/v1/hub`.
-  - Express (`isNodeServer`) and Tauri / web branches are
-    untouched; the scope is the proxy + hub URLs only.
-    `NodeStorage` and the other `isNodeServer`-gated paths
-    still target Express endpoints. Migrating those is Phase
-    3D-Broad / a later slice.
+  - At this point in the chronology, Express (`isNodeServer`) and
+    Tauri / web branches were otherwise untouched; the scope was
+    the proxy + hub URLs only. `NodeStorage` and the other
+    `isNodeServer`-gated paths still targeted Express endpoints
+    until Phase 3D-Broad moved them to Fastify when
+    `isFastifyServer` is true.
 
 - **Phase 3C - Hub passthrough on Fastify.** Done 2026-05-20.
   Adds `ANY /api/v1/hub/*` (`server/fastify/src/routes/hub.ts`)
@@ -216,7 +215,6 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 
 - **Phase 3B - Proxy stream-jobs (HTTP + WebSocket).** Done
   2026-05-20. Landed in two commits.
-
   - **3B-1** added the lifecycle module
     `server/fastify/src/streamJobs.ts`: a `JobRegistry` class
     (create / pushEvent / attach / detach / markDone / cleanup /
@@ -263,8 +261,10 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   missing URL, status / body / filtered-header forward,
   request-side header stripping, `risu-header` JSON override,
   `risu-timeout-ms` -> 504, and multi-chunk SSE streaming.
-  Express `/proxy` / `/proxy2` remain live; client rewiring is
-  a later slice.
+  At this point in the chronology, Express `/proxy` / `/proxy2`
+  remained live and client rewiring was a later slice. Phase
+  3D-Narrow and the Phase 3 closeout later rewired the SPA and
+  deleted Express.
 
 - **Phase 4 - memory + trigger close-out slice.** Done
   2026-05-20. Adds `hypav3-memory`, `editrequest-trigger`, and
@@ -287,7 +287,9 @@ in this file and updating the relevant phase doc:
 
 - Tauri stays as-is. Do not add or modify Tauri-specific code in
   Phase 0-9.
-- Hub proxy stays. Do not delete `/hub-proxy/*` handling.
+- Hub proxy stays. Do not delete the Fastify `/api/v1/hub/*`
+  passthrough. The legacy `/hub-proxy/*` route was removed with
+  Express.
 - No whole-state PUT in the Fastify API.
 - Only Hypa V3 survives. Do not write code that re-introduces
   Supa / Hypa V2 / Hanurai.
