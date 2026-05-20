@@ -83,8 +83,10 @@ location so existing callers do not move.
 
 `server/fastify/src/repository.ts` owns:
 
-- `loadDatabase()` -> `RisuSavedDatabase` (reads `db.json`; returns
-  `defaultDatabase()` if absent).
+- `loadDatabase()` -> `RisuSavedDatabase | null` (reads `db.json`;
+  returns `null` when the file is absent). The client treats `null`
+  as "no save yet" and builds its own default; the server does not
+  embed `defaultDatabase()`.
 - `writeDatabase(next)` -> bumps `revision` in `risu.db`, writes
   `db.json.tmp`, renames.
 - Typed errors that map to HTTP: `RevisionMismatchError` -> 409,
@@ -120,17 +122,30 @@ repository adds:
 
 ### Save import / export
 
-- `POST /api/v1/import/risusave` accepts JSON or multipart. Buffers
-  every multipart part, saves uploaded assets first, replaces
-  `db.json` with the decoded `RisuSavedDatabase`, bumps revision,
-  returns `{ revision, assetReport: { referencedCount, missingCount,
-  orphanedCount } }`.
+Slice 2A (bootstrap + JSON import):
+
+- `POST /api/v1/import/risusave` accepts a JSON body
+  `{ database: <RisuSavedDatabase> }`. Replaces `db.json.database`,
+  bumps revision, returns
+  `{ revision, assetReport: { referencedCount, missingCount,
+  orphanedCount } }`. Asset counts are zero in 2A; they become
+  meaningful once asset upload lands.
+
+Slice 2B (binary `.risu` + bundle):
+
+- `POST /api/v1/import/risusave` widens to also accept multipart
+  with a binary `.risu` blob. The server decodes the magic-header
+  + msgpackr block format (mirroring `src/ts/storage/risuSave.ts`)
+  and applies the resulting database the same way 2A does.
 - `GET /api/v1/export/risusave` returns the legacy single `.risu`
-  blob (msgpackr-encoded `RisuSavedDatabase`), for compatibility with
-  the Risu hub.
+  blob, for compatibility with the Risu hub.
 - `GET /api/v1/export/bundle` returns a ZIP containing `save.risu`,
   every referenced asset under `assets/<sha256>.<ext>`, and a
   `manifest.json` with revision and asset counts.
+
+The endpoint name `/api/v1/import/risusave` is stable across both
+slices; 2A supports JSON only, 2B widens to the binary multipart
+form.
 
 ### Backups
 

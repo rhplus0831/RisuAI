@@ -1,0 +1,186 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { webcrypto } from 'node:crypto'
+import { buildApp } from '../src/app.js'
+import type { FastifyInstance } from 'fastify'
+
+const subtle = webcrypto.subtle
+
+interface Harness {
+  app: FastifyInstance
+  dataDir: string
+}
+
+async function startHarness(): Promise<Harness> {
+  process.env.LOG_LEVEL = 'silent'
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
+  const { app } = await buildApp({
+    config: {
+      host: '127.0.0.1',
+      port: 0,
+      dataDir,
+      bodyLimit: 1024 * 1024,
+      trustProxy: false,
+    },
+  })
+  return { app, dataDir }
+}
+
+async function stopHarness(h: Harness): Promise<void> {
+  await h.app.close()
+  rmSync(h.dataDir, { recursive: true, force: true })
+}
+
+async function signAssertion(
+  privateKey: CryptoKey,
+  publicJwk: JsonWebKey,
+  ttlSec = 60,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const header = { alg: 'ES256', typ: 'JWT' }
+  const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
+  const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url')
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  const signingInput = `${headerB64}.${payloadB64}`
+  const signature = await subtle.sign(
+    { name: 'ECDSA', hash: { name: 'SHA-256' } },
+    privateKey,
+    Buffer.from(signingInput),
+  )
+  const sigB64 = Buffer.from(signature).toString('base64url')
+  return `${signingInput}.${sigB64}`
+}
+
+async function setupAuthedClient(
+  app: FastifyInstance,
+): Promise<{ assertion: string }> {
+  const setup = await app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/setup',
+    payload: { password: 'hunter2' },
+  })
+  expect(setup.statusCode).toBe(200)
+
+  const keypair = (await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair
+  const publicKey = await subtle.exportKey('jwk', keypair.publicKey)
+
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/login',
+    payload: { password: 'hunter2', publicKey },
+  })
+  expect(login.statusCode).toBe(200)
+
+  const assertion = await signAssertion(keypair.privateKey, publicKey)
+  return { assertion }
+}
+
+let harness: Harness
+
+beforeEach(async () => {
+  harness = await startHarness()
+})
+
+afterEach(async () => {
+  await stopHarness(harness)
+})
+
+describe('Phase 2A bootstrap + import', () => {
+  it('returns empty database on a fresh data dir (no password)', async () => {
+    const res = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      revision: 0,
+      schemaVersion: 0,
+      database: null,
+      assetBaseUrl: '/api/v1/assets',
+    })
+  })
+
+  it('rejects unauthenticated bootstrap once a password is set', async () => {
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2' },
+    })
+    const res = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('imports a database and serves it back via bootstrap', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sample = { greeting: 'hi', characters: [{ id: 'a', name: 'Ada' }] }
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: sample },
+    })
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toEqual({
+      revision: 1,
+      assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
+    })
+
+    expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(true)
+    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(onDisk).toEqual({ _version: 1, database: sample, assets: [] })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json()).toEqual({
+      revision: 1,
+      schemaVersion: 0,
+      database: sample,
+      assetBaseUrl: '/api/v1/assets',
+    })
+  })
+
+  it('rejects import with missing database field', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: {},
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('bumps revision on each successive import', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const first = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: { v: 1 } },
+    })
+    expect(first.json().revision).toBe(1)
+
+    const second = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: { v: 2 } },
+    })
+    expect(second.json().revision).toBe(2)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(2)
+    expect(bootstrap.json().database).toEqual({ v: 2 })
+  })
+})

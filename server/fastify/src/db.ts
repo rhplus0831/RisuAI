@@ -31,3 +31,13 @@ export function getSchemaState(db: DatabaseSync): { version: number; revision: n
   }
   return row
 }
+
+export function bumpRevision(db: DatabaseSync): number {
+  const row = db
+    .prepare('UPDATE schema_version SET revision = revision + 1 WHERE id = 1 RETURNING revision')
+    .get() as { revision: number } | undefined
+  if (!row) {
+    throw new Error('schema_version row missing; database not initialized')
+  }
+  return row.revision
+}
