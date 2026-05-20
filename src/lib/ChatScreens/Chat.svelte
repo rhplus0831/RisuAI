@@ -39,7 +39,6 @@
     CurrentTriggerIdStore,
     popupStore,
   } from 'src/ts/stores.svelte'
-  import { ConnectionOpenStore } from 'src/ts/sync/multiuser'
   import { capitalize, getUserIcon, getUserName, sleep } from 'src/ts/util'
   import { onDestroy, onMount } from 'svelte'
   import { type Unsubscriber } from 'svelte/store'
@@ -922,19 +921,17 @@
         {/if}
       </button>
     {/if}
-    {#if !$ConnectionOpenStore}
-      <button
-        class="flex items-center hover:text-blue-500 transition-colors button-icon-remove"
-        onclick={(e) => rm(e, false)}
-        use:longpress={(e) => rm(e, true)}
-      >
-        <TrashIcon size={20} />
+    <button
+      class="flex items-center hover:text-blue-500 transition-colors button-icon-remove"
+      onclick={(e) => rm(e, false)}
+      use:longpress={(e) => rm(e, true)}
+    >
+      <TrashIcon size={20} />
 
-        {#if showNames}
-          <span class="ml-1">{language.remove}</span>
-        {/if}
-      </button>
-    {/if}
+      {#if showNames}
+        <span class="ml-1">{language.remove}</span>
+      {/if}
+    </button>
   {/if}
 {/snippet}
 

@@ -22,15 +22,8 @@ one removal target _or_ one foundation slice, not both at once.
      entry in [`phases/phase-0-removals.md`](../phases/phase-0-removals.md).
    - Confirm `pnpm check`, `pnpm test`, `pnpm build` stay green.
 
-2. **Phase 0 removals - Peer multi-user chat.**
-   - Delete `src/ts/sync/multiuser.ts` and the four call sites
-     inside `sendChat`.
-   - Remove imports in `src/lib/ChatScreens/Chat.svelte`,
-     `src/lib/ChatScreens/DefaultChatScreen.svelte`,
-     `src/lib/Playground/PlaygroundMenu.svelte`,
-     `src/lib/SideBars/Sidebar.svelte`,
-     `src/lib/SideBars/SideChatList.svelte`.
-   - Drop the `peerjs` dependency from `package.json`.
+2. **Phase 0 removals - Peer multi-user chat.** Done 2026-05-20.
+   See [`removals.md`](removals.md) for the as-landed inventory.
 
 3. **Phase 0 removals - Risu Account Sync + Drive sync.**
    - Delete `src/ts/storage/accountStorage.ts`,

@@ -6,6 +6,8 @@ Tracks Phase 0 progress. Update each row as code is deleted. The
 canonical scope lives in
 [`../phases/phase-0-removals.md`](../phases/phase-0-removals.md).
 
+Last updated: 2026-05-20 (Peer multi-user chat landed).
+
 ## Group chat
 
 Status: not started.
@@ -35,27 +37,37 @@ Exit when:
 
 ## Peer multi-user chat
 
-Status: not started.
+Status: done (2026-05-20).
 
-Code surface:
+Removed:
 
-- `src/ts/sync/multiuser.ts` (440 LOC).
-- `src/ts/process/index.svelte.ts` lines 221-230, 1980 - the
-  `connectionOpen` guard, `peerSafeCheck`, `peerRevertChat`,
-  `peerSync` calls.
-- UI consumers: `src/lib/ChatScreens/Chat.svelte`,
-  `src/lib/ChatScreens/DefaultChatScreen.svelte`,
-  `src/lib/Playground/PlaygroundMenu.svelte`,
-  `src/lib/SideBars/Sidebar.svelte`,
-  `src/lib/SideBars/SideChatList.svelte`.
-- `peerjs` dependency in `package.json`.
+- `src/ts/sync/multiuser.ts` deleted.
+- `src/ts/process/index.svelte.ts` import (line 41), the
+  `connectionOpen` guard / `peerSafeCheck` / `peerRevertChat` /
+  `peerSync` block (was lines 221-230), and the trailing
+  `peerSync()` call (was line 1980) deleted.
+- UI consumers cleaned: `src/lib/Playground/PlaygroundMenu.svelte`
+  (Join MultiUser Room button gone),
+  `src/lib/SideBars/SideChatList.svelte` (both `case 2:` /
+  `createMultiuserRoom()` branches gone),
+  `src/lib/SideBars/Sidebar.svelte` (`{:else if $ConnectionOpenStore}`
+  branch gone), `src/lib/ChatScreens/Chat.svelte`
+  (`{#if !$ConnectionOpenStore}` wrapper unwrapped),
+  `src/lib/ChatScreens/DefaultChatScreen.svelte`
+  (`$ConnectionOpenStore ? DBState.db.username : null` collapsed
+  to `null`), `src/lib/Others/AlertComp.svelte`
+  (`useExperimental` "Create Multiuser Room" button gone).
+- Language strings deleted from `src/lang/{en,ko,cn,de,es,vi}.ts`:
+  `joinMultiUserRoom`, `connectionOpen`, `connectionOpenInfo`,
+  `createMultiuserRoom`, `connectionHost`, `connectionGuest`,
+  `otherUserRequesting`.
+- `peerjs` dropped from `package.json` and `pnpm-lock.yaml`
+  (verified via `pnpm install`).
 
-Exit when:
-
-- `src/ts/sync/multiuser.ts` is gone and grep for `peerjs` /
-  `multiuser` returns no hits outside language files.
-- `peerjs` is removed from `package.json` and
-  `pnpm-lock.yaml`.
+Verification: `pnpm check` (0 errors / 0 warnings), `pnpm test`
+(152 passed, 4 skipped), `pnpm build` succeeded. Grep for
+`multiuser|peerjs|peerSync|peerSafeCheck|peerRevertChat|connectionOpen`
+in `src/` returns no hits.
 
 ## Risu Account Sync
 

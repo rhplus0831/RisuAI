@@ -38,7 +38,6 @@ import { HypaProcesser } from './memory/hypamemory'
 import { additionalInformations } from './embedding/addinfo'
 import { getInlayAsset } from './files/inlays'
 import { getGenerationModelString } from './models/modelString'
-import { connectionOpen, peerRevertChat, peerSafeCheck, peerSync } from '../sync/multiuser'
 import { runInlayScreen } from './inlayScreen'
 import { addRerolls } from './prereroll'
 import { runImageEmbedding } from './transformers'
@@ -216,19 +215,6 @@ export async function sendChat(
     } else {
       changeToPreset(findId, true)
     }
-  }
-
-  if (connectionOpen) {
-    chatProcessStage.set(4)
-    const peerSafe = await peerSafeCheck()
-    if (!peerSafe) {
-      peerRevertChat()
-      doingChat.set(false)
-      throwError(language.otherUserRequesting)
-      return false
-    }
-    await peerSync()
-    chatProcessStage.set(0)
   }
 
   DBState.db.statics.messages += 1
@@ -1976,8 +1962,6 @@ export async function sendChat(
       }
     } catch (error) {}
   }
-
-  peerSync()
 
   if (req.special) {
     if (req.special.emotion) {
