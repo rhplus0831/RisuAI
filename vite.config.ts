@@ -32,6 +32,12 @@ export default defineConfig(({ command, mode }) => {
       host: '0.0.0.0', // listen on all addresses
       port: 5174,
       strictPort: true,
+      proxy: {
+        '/api': {
+          target: process.env.RISU_API_PROXY_TARGET ?? 'http://localhost:6002',
+          changeOrigin: true,
+        },
+      },
       // hmr: false,
     },
     // to make use of `TAURI_ENV_DEBUG` and other env variables

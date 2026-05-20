@@ -29,13 +29,24 @@ one foundation slice or one characterization-test slice at a time.
    `hypaV3Key` with migration fallback), then the bulk removal.
    See [`removals.md`](removals.md) for the as-landed inventory.
 
-Phase 0 closed 2026-05-20. Phase 1 is now the immediate server
-track: scaffold `server/fastify/`, add root `api:*` scripts, health
-and auth smoke tests, and wire the Vite `/api/*` dev proxy.
+Phase 0 closed 2026-05-20.
 
-## Parallel track (safe to start with Phase 1)
+5. **Phase 1 - Fastify foundation.** Done 2026-05-20. Single
+   commit. Adds `server/fastify/` with `config.ts`, `db.ts`
+   (`node:sqlite` + `schema_version`), `auth.ts` (ES256
+   assertion verify against on-disk pub-key hashes), `http.ts`,
+   routes for `GET /api/v1/health` and
+   `GET/POST /api/v1/auth/{status,setup,login}`, plus a vitest
+   smoke harness. Root scripts: `pnpm api:dev`, `pnpm api:start`,
+   `pnpm api:test`. `package.json#engines.node` bumped to
+   `>=24.0.0` for `node:sqlite`. Vite dev proxies `/api` →
+   `http://localhost:6002`. Express server is untouched and still
+   owns SPA + `/proxy*` + `/hub-proxy/*`. State dir defaults to
+   `<repo>/data` (separate from the Express `save/` directory).
 
-5. **Phase 4 prep - characterization tests.**
+## Parallel track (safe to start with Phase 2)
+
+6. **Phase 4 prep - characterization tests.**
    - Build the fixture loader that drives the current `sendChat`
      against canned databases + canned upstream responses.
    - Do NOT modify `sendChat` itself. The goal is to record what
@@ -61,8 +72,9 @@ in this file and updating the relevant phase doc:
 ```bash
 pnpm check
 pnpm test
+pnpm api:test
 pnpm build
 ```
 
-Add `pnpm api:test` once Phase 1 lands. Tauri build is verified
-manually at phase boundaries, not per-slice.
+Tauri build is verified manually at phase boundaries, not
+per-slice.

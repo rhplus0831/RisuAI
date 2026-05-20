@@ -81,3 +81,20 @@ Test infrastructure:
   `e10499a2` (Docker + persistence smoke test).
 - Auth surface in `server/node/server.cjs` lines 614-742 is the
   shape Phase 1 reproduces.
+
+## Status
+
+Done 2026-05-20. Landed differences from the planned scope:
+
+- Vitest `root` is set inside `server/fastify/vitest.config.ts`
+  (via `import.meta.url`) so `pnpm api:test` can run from the
+  repo root.
+- Root `vitest.config.ts` now excludes `server/**` so
+  `pnpm test` (browser side) and `pnpm api:test` (server side)
+  do not overlap.
+- `@fastify/cors` was not installed; same-origin dev proxy means
+  it is not yet needed. Add it in Phase 3 when proxy routes
+  move over.
+- The smoke test sets `process.env.LOG_LEVEL = 'silent'` to keep
+  test output clean; production boot stays at the default `info`
+  level.
