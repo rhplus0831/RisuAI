@@ -1,15 +1,16 @@
 # sendChat Status
 
-Date: 2026-05-20 (Phase 4 scaffolding + 11 fixtures landed)
+Date: 2026-05-20 (Phase 4 scaffolding + 14 fixtures landed)
 
-Updated 2026-05-20: Phase 4 scaffolding and eleven fixtures have
+Updated 2026-05-20: Phase 4 scaffolding and fourteen fixtures have
 landed. Loader / provider fake / snapshot harness exist; fixtures
 cover the happy streaming path, preview short-circuit, continue
 (resume an assistant message), multiline reroll, upstream-fail
 with `inlayErrorResponse`, the recursive auto-continue branch,
 the author-note slot under the default `formatingOrder`, the
-`automaticCachePoint` walk-back, persona substitution,
-keyword-activated lorebook, and the pre-aborted-signal exit. See
+`automaticCachePoint` walk-back, persona substitution, the full
+lorebook trio (keyword / constant / recursive), the multimodal
+image attachment path, and the pre-aborted-signal exit. See
 "Phase 4 in progress" below for the running tally and the open
 items.
 
@@ -149,13 +150,34 @@ Landed:
   call is still captured, but the post-provider check at
   `index.svelte.ts:1541` short-circuits the function. Pins
   `stages: [1, 3]`, no assistant message added, no side effects.
+- `lorebook-constant` - one `globalLore` entry with
+  `alwaysActive: true` and no key. Pins that the content lands
+  in `formated` purely by the always-on flag.
+- `lorebook-recursive` - two `globalLore` entries chained by
+  keyword: A keyed `cat` whose content mentions `sunbeam`, B
+  keyed `sunbeam`. User message contains `cat`; A activates from
+  the message, then the recursive scan picks up `sunbeam` from
+  A's content and activates B. Both reach `formated` and the
+  `pushPrompts` coalescer merges them into a single system block.
+  Final order is `B then A` because the lorebook code sorts
+  actives by `order` (insertorder) desc, then reverses - with A
+  at 200 and B at 100, the reverse puts B first.
+- `multimodal-image` - `{{inlay::test-image}}` tag in the user
+  message; mocked `files/inlays` returns a 1x1 PNG. Uses a
+  custom `xcustom:::test-vision-model` with `hasImageInput` and
+  the `Unknown` tokenizer so `tikJS` runs offline. Pins that the
+  inlay tag is stripped from message content and the base64
+  lands in the OpenAIChat `multimodals` array. Bonus pin: with a
+  model id outside the gpt/claude/openrouter/reverse_proxy
+  family, `pushPrompts` does not coalesce consecutive system
+  entries, so the main prompt and character description are two
+  separate system messages instead of one.
 
 Open for the next slice:
 
-- 6 fixtures still to author per
+- 3 fixtures still to author per
   [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md):
-  `lorebook-constant`, `lorebook-recursive`, `hypav3-memory`,
-  `multimodal-image`, `editrequest-trigger`, `editoutput-trigger`.
+  `hypav3-memory`, `editrequest-trigger`, `editoutput-trigger`.
 - `doingChat` is set to `true` on sendChat entry and is not reset
   on the success path. The test harness resets it between
   fixtures; production code resets it from the UI layer. Worth

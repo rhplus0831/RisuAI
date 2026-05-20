@@ -1,12 +1,13 @@
 # sendChat Fixtures
 
-Date: 2026-05-20 (scaffolding + 11 fixtures landed)
+Date: 2026-05-20 (scaffolding + 14 fixtures landed)
 
-Status: scaffolding landed; eleven fixtures cover the entry path,
-the multiline reroll branch, the upstream-fail branch, the
+Status: scaffolding landed; fourteen fixtures cover the entry
+path, the multiline reroll branch, the upstream-fail branch, the
 auto-continue recursion, two prompt-shape pins (author note and
-automatic cache point), persona, keyword-activated lorebook, and
-the pre-aborted-signal exit path. Six fixtures still to author.
+automatic cache point), persona, the full lorebook trio (keyword,
+constant, recursive), multimodal image attachment, and the
+pre-aborted-signal exit path. Three fixtures still to author.
 
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
 array of normalized call records (`{ mode, formated, ... }`)
@@ -22,12 +23,12 @@ prompt-shape fixtures.
 | `regenerate`          | Multiline response: first becomes the message, rest go to `addRerolls`. | landed |
 | `preview`             | Preview mode: no provider call.                        | landed      |
 | `lorebook-keyword`    | One keyword-activated entry on `globalLore`; matched substring in the user message. Content lands at the `lorebook` slot in `formatingOrder`. | landed |
-| `lorebook-constant`   | One constant lorebook entry.                           | not started |
-| `lorebook-recursive`  | Recursion stays within the budget.                     | not started |
+| `lorebook-constant`   | One entry with `alwaysActive: true` and no `key`. Activates without a substring scan and lands at the lorebook slot. | landed |
+| `lorebook-recursive`  | Two entries chained by keyword: A's content mentions B's keyword. User message contains A's keyword; recursive scan activates B. Final block order is sort-by-`insertorder`-desc then reversed. | landed |
 | `hypav3-memory`       | One Hypa V3 summary slot consumed in the prompt.       | not started |
 | `author-note`         | `chats[].note` appended as the last system message under the default `formatingOrder`. | landed |
 | `persona`             | `db.personaPrompt` set. Lands in `unformated.personaPrompt`; under default `formatingOrder`, gets merged into the leading system block by `pushPrompts`. | landed |
-| `multimodal-image`    | One attached image is passed to the provider.          | not started |
+| `multimodal-image`    | `{{inlay::<id>}}` tag in a user message resolves via mocked `getInlayAsset` into the `multimodals: [{ type: 'image', base64, width, height }]` field on the user `OpenAIChat`. Uses a custom `xcustom:::` model with `hasImageInput`. | landed |
 | `cache-point`         | `automaticCachePoint` marks the last 3 user entries with `cachePoint: true`. Requires a `promptTemplate` with a `chat` card. | landed |
 | `editrequest-trigger` | A triggerscript rewrites the request payload.          | not started |
 | `editoutput-trigger`  | A triggerscript rewrites the response text.            | not started |

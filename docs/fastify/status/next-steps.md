@@ -19,10 +19,11 @@ one proxy slice or one characterization-test slice at a time.
      [`../phases/phase-3-proxy.md`](../phases/phase-3-proxy.md).
 
 2. **Phase 4 prep - characterization tests.** Scaffolding +
-   eleven fixtures landed 2026-05-20. The remaining 6 fixtures
-   are the next slice; pick them in batches of 2-4. See
-   [`sendchat.md`](sendchat.md) for the in-progress tally and the
-   `doingChat` lifecycle note flagged for Phase 5.
+   fourteen fixtures landed 2026-05-20. The remaining 3 fixtures
+   (`hypav3-memory`, `editrequest-trigger`, `editoutput-trigger`)
+   are the next slice. See [`sendchat.md`](sendchat.md) for the
+   in-progress tally and the `doingChat` lifecycle note flagged
+   for Phase 5.
    - Do not modify `sendChat` itself. The goal is to record what
      the function does today before Phase 5 extraction changes its
      structure.
@@ -102,6 +103,14 @@ one proxy slice or one characterization-test slice at a time.
   `aborted: true` flag to the fixture schema; the test driver
   synthesizes a pre-aborted controller and threads its signal
   into `sendChat`.
+
+- **Phase 4 - lorebook finisher + multimodal slice.** Done
+  2026-05-20. Adds `lorebook-constant`, `lorebook-recursive`,
+  and `multimodal-image`. The multimodal slice introduces a
+  `vi.mock` of `src/ts/process/files/inlays` to return a canned
+  PNG and stub `supportsInlayImage`. It also uses an
+  `xcustom:::` model with `hasImageInput` + the `Unknown`
+  tokenizer so token math runs offline.
 
 ## Closed (do not reopen without a contract)
 
