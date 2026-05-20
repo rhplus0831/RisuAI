@@ -3,7 +3,7 @@
 Date: 2026-05-20
 
 Use this list to pick the next slice. Keep work batches narrow:
-one foundation slice or one characterization-test slice at a time.
+one storage slice or one characterization-test slice at a time.
 
 ## Immediate
 

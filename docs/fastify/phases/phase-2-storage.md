@@ -17,7 +17,7 @@ bootstrap from `/api/v1/bootstrap`.
 
 ### Schema
 
-SQLite tables under `data/risuai.sqlite`:
+SQLite tables extend the Phase 1 database at `data/risu.db`:
 
 - `settings(group_name, key, value_json)` - top-level config,
   classified into groups (auth, network, translation, generation,
@@ -35,7 +35,9 @@ SQLite tables under `data/risuai.sqlite`:
   `data/backups/<id>.risu`.
 - `revision(value)` - the single integer the server bumps on every
   mutation; used as the cursor for `expected_revision` checks.
-- `schema_version(version, applied_at)` - migration log.
+- `schema_version(id, version, revision)` - already created by
+  Phase 1; Phase 2 increments `version` as domain migrations land
+  and `revision` as user-visible mutations commit.
 
 Pure shared types (no Svelte / DOM / Tauri) live under
 `src/ts/shared/databaseTypes.ts` so both the client and the

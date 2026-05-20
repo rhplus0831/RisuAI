@@ -2,17 +2,18 @@
 
 Date: 2026-05-20
 
-Status: the Fastify server does not exist yet. The table below is
-the target test set per phase.
+Status: Phase 1 Fastify smoke tests exist in
+`server/fastify/__tests__/smoke.test.ts`. Later rows are the target
+test set per phase.
 
 ## Phase 1: Foundation
 
 | Route                          | Pinned behavior                                | Status      |
 | ------------------------------ | ---------------------------------------------- | ----------- |
-| `GET /api/v1/health`           | Returns `{ status: 'ok', revision, schemaVersion }`. | not started |
-| `GET /api/v1/auth/status`      | Reports `unset` / `set` correctly.             | not started |
-| `POST /api/v1/auth/setup`      | First call sets password; second rejects.      | not started |
-| `POST /api/v1/auth/login`      | Issues an ES256 assertion accepted by /health. | not started |
+| `GET /api/v1/health`           | Returns `{ status: 'ok', revision, schemaVersion }`. | covered by `server/fastify/__tests__/smoke.test.ts` |
+| `GET /api/v1/auth/status`      | Reports `noPassword` before setup; accepts valid assertions and rejects expired ones. | covered by `server/fastify/__tests__/smoke.test.ts` |
+| `POST /api/v1/auth/setup`      | First call sets password; second rejects.      | covered by `server/fastify/__tests__/smoke.test.ts` |
+| `POST /api/v1/auth/login`      | Registers a public key after password match; matching ES256 assertions authorize later status checks. | covered by `server/fastify/__tests__/smoke.test.ts` |
 
 ## Phase 2: Storage, Import, Export, Assets
 

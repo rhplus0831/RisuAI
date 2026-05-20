@@ -27,13 +27,17 @@ End state:
 
 ## Current Baseline
 
-Where the codebase stands after the Phase 0 removals on 2026-05-20:
+Where the codebase stands after the Phase 1 foundation on 2026-05-20:
 
-- No Fastify server exists. `server/node/server.cjs` (Express) is the
-  production Node server; `server/hono/` is a small Hono static-serving
-  scaffold and is not the Fastify migration target.
-- Root `package.json` has `runserver` and `hono:build`; it does not
-  have `api:dev`, `api:start`, or `api:test` yet.
+- `server/fastify/` exists with the Phase 1 foundation: app boot,
+  config loading, `node:sqlite` schema metadata, password + ES256
+  assertion auth helpers, `GET /api/v1/health`, and
+  `GET/POST /api/v1/auth/{status,setup,login}`.
+- Root `package.json` has `api:dev`, `api:start`, and `api:test`
+  for the Fastify server. It still has `runserver` and `hono:build`;
+  `server/node/server.cjs` (Express) remains the production server
+  until Phase 3, and `server/hono/` remains a separate static-serving
+  scaffold.
 - `src/ts/process/index.svelte.ts` is **2090 lines** in a single
   `sendChat` function with explicit `stage1`-`stage4` timing markers.
 - Phase 0 removal targets are deleted from the live pipeline:
@@ -64,7 +68,8 @@ rules. The headline order:
    gets ported is smaller. See
    [`phases/phase-0-removals.md`](phases/phase-0-removals.md).
 1. **Foundation** - scaffold the Fastify server, decide auth shape,
-   pick the persistence layout, ship the health check.
+   pick the persistence layout, ship the health check. Done
+   2026-05-20.
 2. **Storage, import, export, assets** - SQLite schema, repository
    API, content-addressed assets, Risu save import/export.
 3. **Proxy migration** - move provider proxy and Risu hub
@@ -114,7 +119,7 @@ rules. The headline order:
 
 ## Verification commands
 
-Run before closing Phase 0 or any browser-only slice:
+Run before closing any browser-only slice:
 
 ```bash
 pnpm check          # svelte-check + tsc
@@ -122,8 +127,7 @@ pnpm test           # frontend vitest
 pnpm build          # vite build
 ```
 
-Add `pnpm api:test` to the required set once Phase 1 creates the
-Fastify test script.
+Run `pnpm api:test` as well for Fastify server slices.
 
 Tauri build is verified manually at phase boundaries.
 

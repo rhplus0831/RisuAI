@@ -15,8 +15,8 @@ shards under [`coverage/`](coverage/).
   `src/ts/process/mcp/risuaccess/tests/modules.test.ts`, and
   `src/ts/process/files/tests/inlays.test.ts`; broader repo tests
   cover parser, media, translator, network, and source-map helpers.
-- The Fastify server does not yet exist; `pnpm api:test` is not
-  a script yet.
+- `server/fastify/__tests__/smoke.test.ts` covers the Phase 1
+  Fastify foundation through `pnpm api:test`.
 
 ## Where to look
 
@@ -31,11 +31,12 @@ shards under [`coverage/`](coverage/).
 ```bash
 pnpm check          # svelte-check + tsc
 pnpm test           # frontend vitest (existing)
+pnpm api:test       # Fastify vitest smoke suite
 pnpm build          # production bundle
 ```
 
-Run these before closing a browser-only slice. Add `pnpm api:test`
-to the required set once Phase 1 creates the Fastify server tests.
+Run `pnpm check`, `pnpm test`, and `pnpm build` before closing a
+browser-only slice. Include `pnpm api:test` for Fastify server slices.
 
 ## Maintenance
 

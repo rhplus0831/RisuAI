@@ -3,9 +3,9 @@
 Date: 2026-05-20
 
 Each shard is a list of what is pinned + a brief explanation of
-how to read or extend the tests. The Fastify route tests and
-`sendChat` characterization fixtures listed here do not exist yet;
-this directory is the planning artifact for those suites.
+how to read or extend the tests. Phase 1 Fastify route smoke tests
+exist; the later Fastify route tests and `sendChat` characterization
+fixtures are still planning artifacts until their phases land.
 
 ## Shards
 

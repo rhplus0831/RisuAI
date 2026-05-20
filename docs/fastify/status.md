@@ -11,24 +11,27 @@ under [`status/`](status/).
   multi-user chat, Risu Account Sync, Google Drive sync, and the
   Supa / Hypa V2 / Hanurai memory engines are removed from the live
   client/server surface.
-- `server/node/server.cjs` (Express) is the only production server.
-  `server/hono/` is a small static-serving Hono scaffold and is not
-  the Fastify migration path.
-- No `server/fastify/` directory exists yet. Root `package.json`
-  has no `api:dev`, `api:start`, or `api:test` scripts.
+- Phase 1 Fastify foundation closed on 2026-05-20. `server/fastify/`
+  now has health and auth routes, config loading, a `node:sqlite`
+  metadata table, and a vitest smoke harness.
+- `server/node/server.cjs` (Express) is still the production server
+  until Phase 3 retires it. `server/hono/` is a small static-serving
+  Hono scaffold and is not the Fastify migration path.
+- Root `package.json` has `api:dev`, `api:start`, and `api:test`
+  for the Fastify server, while `runserver` still starts Express.
 - The `move-to-fastify` branch contains an agent-driven prototype
   that implements Phases 1-6; it is reference material, not the
   plan.
 
 ## Active phase
 
-**Phase 1 - Foundation**, not started.
+**Phase 2 - Storage, import, export, assets**, not started.
 
-See [`phases/phase-1-foundation.md`](phases/phase-1-foundation.md)
-for the Fastify scaffold scope and exit criteria.
+See [`phases/phase-2-storage.md`](phases/phase-2-storage.md)
+for the storage scope and exit criteria.
 
 Phase 4 (`sendChat` characterization tests) can start in parallel
-with Phase 1.
+with Phase 2.
 
 ## Start here
 

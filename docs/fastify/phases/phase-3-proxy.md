@@ -10,7 +10,8 @@ enforces today. Retire the Express server once parity is proven.
 
 ## Preconditions
 
-- Phase 1 closed.
+- Phase 2 closed (Fastify can serve the SPA and owns the data dir
+  before Express is retired).
 
 ## Scope
 

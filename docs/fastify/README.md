@@ -13,8 +13,10 @@ it needs.
 
 ## Scope
 
-Current status: Phase 0 removals closed on 2026-05-20. Phase 1
-(Fastify foundation) is the next blocked-to-unblocked server slice.
+Current status: Phase 0 removals and Phase 1 Fastify foundation
+closed on 2026-05-20. Phase 2 storage / import / export is the
+next server slice; Phase 4 `sendChat` characterization tests can
+start in parallel.
 
 In scope:
 

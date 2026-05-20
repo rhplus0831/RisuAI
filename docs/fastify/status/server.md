@@ -4,25 +4,48 @@ Date: 2026-05-20
 
 ## Current state
 
-No Fastify server exists on the `fastify` branch. The runtime
-servers in tree are:
+Phase 1 Fastify foundation exists on the `fastify` branch:
 
-- `server/node/server.cjs` - Express server used today. Owns the
-  static SPA, password + ES256 auth, proxy / proxy2 fetch, hub
-  passthrough, proxy stream-job WebSocket, and save file CRUD.
+- `server/fastify/src/index.ts` boots the app on
+  `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
+- `server/fastify/src/app.ts` builds Fastify, registers
+  `@fastify/rate-limit`, opens the Phase 1 SQLite metadata DB, and
+  registers health/auth routes.
+- `server/fastify/src/config.ts` reads `RISU_API_DATA_DIR`,
+  `RISU_API_BODY_LIMIT`, and `TRUST_PROXY`.
+- `server/fastify/src/db.ts` creates `data/risu.db` with
+  `schema_version(id, version, revision)`, WAL mode, and foreign
+  keys.
+- `server/fastify/src/auth.ts` stores the first-run password and
+  known public-key hashes under the Fastify data dir, then verifies
+  client-signed ES256 assertions from `risu-auth`.
+- Routes currently implemented: `GET /api/v1/health`,
+  `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`, and
+  `POST /api/v1/auth/login`.
+- `server/fastify/__tests__/smoke.test.ts` covers health, password
+  setup, login public-key registration, and assertion-based auth
+  status through `pnpm api:test`.
+
+Other runtime servers still in tree:
+
+- `server/node/server.cjs` - Express server used in production
+  until Phase 3. Owns the static SPA, existing password + ES256 auth,
+  proxy / proxy2 fetch, hub passthrough, proxy stream-job WebSocket,
+  and save file CRUD.
 - `server/hono/` - small Hono scaffold with CSRF middleware,
   `Hello Hono!`, and Node / Bun / Cloudflare / Vercel static-serving
   entry points. It is not on the Fastify migration path.
 
-Root `package.json` has `pnpm runserver` for the Express server and
-`pnpm hono:build` for the Hono static bundle. `pnpm api:dev`,
-`pnpm api:start`, and `pnpm api:test` do not yet exist.
+Root `package.json` has `pnpm runserver` for the Express server,
+`pnpm hono:build` for the Hono static bundle, and `pnpm api:dev`,
+`pnpm api:start`, `pnpm api:test` for the Fastify server.
 
 ## What lands when
 
-- **Phase 1.** `server/fastify/` directory, `pnpm api:dev` /
-  `pnpm api:start` / `pnpm api:test`, health endpoint, env loader,
-  auth scaffold, db connection. Vite proxy `/api` -> Fastify.
+- **Phase 1.** Done 2026-05-20. `server/fastify/` directory,
+  `pnpm api:dev` / `pnpm api:start` / `pnpm api:test`, health
+  endpoint, env loader, auth scaffold, DB connection, and Vite
+  proxy `/api` -> Fastify.
 - **Phase 2.** SQLite schema + repository + migrations, asset
   storage, Risu save import/export, backups.
 - **Phase 3.** Provider proxy + hub passthrough + stream-job
@@ -63,6 +86,6 @@ not by their endpoint URLs.
 ## Notes
 
 - Node 24+ is required for `node:sqlite`. `package.json#engines`
-  must widen at the start of Phase 1.
+  is currently `>=24.0.0`.
 - The Express server stays running until Phase 3 retires it. Until
   then, the SPA still serves through Express in non-dev mode.

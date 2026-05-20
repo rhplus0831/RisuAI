@@ -2,9 +2,10 @@
 
 Date: 2026-05-20
 
-This doc describes the intended shape of the Fastify server and the
-boundaries between it and the browser client. It is a target, not a
-description of code that exists yet.
+This doc describes the target shape of the Fastify server and the
+boundaries between it and the browser client. Phase 1 foundation files
+already exist; modules marked by later phases are target layout, not
+current implementation.
 
 ## Server module layout
 
@@ -12,9 +13,9 @@ description of code that exists yet.
 server/fastify/
   src/
     index.ts            entry point; reads env, builds app, listens
-    app.ts              Fastify app factory; route registration only
+    app.ts              Fastify app factory; plugins, resources, routes
     config.ts           env loading and validation
-    db.ts               node:sqlite handle, WAL pragma, migrations
+    db.ts               node:sqlite handle, WAL pragma, schema metadata
     auth.ts             password + signed-assertion auth
     repository.ts       SQL <-> domain types; transactions live here
     proxy.ts            outbound provider proxy + stream-jobs
@@ -95,9 +96,10 @@ Conscious differences vs the `move-to-fastify` branch:
 ## Persistence
 
 - SQLite via `node:sqlite`, WAL mode, foreign keys on.
-- One file at `data/risuai.sqlite`. No multi-tenant split.
-- Migrations are numbered SQL files that run on startup; the
-  repository asserts schema version before accepting writes.
+- One file at `data/risu.db`. No multi-tenant split.
+- Phase 1 creates `schema_version(id, version, revision)`. Phase 2
+  adds the domain schema and migration runner; the repository asserts
+  schema version before accepting writes.
 - Assets are stored on disk as `data/assets/<sha256>.<ext>`. The DB
   only stores metadata + a reference count.
 - Backups are stored as `.risu` blobs under `data/backups/<id>.risu`
@@ -153,11 +155,11 @@ sync, Risu Account Sync.
 
 ## Reference notes
 
-- `move-to-fastify`'s [`server/fastify/`](https://github.com/) tree
-  is a worked example of the module split above. It is denser than
-  we need (e.g. it ships a whole-state bridge, multiple compatibility
-  shims, and group-chat commands). Use it to read concrete code, not
-  to set the API contract.
+- `move-to-fastify`'s `server/fastify/` tree is a worked example of
+  the module split above. It is denser than we need (e.g. it ships a
+  whole-state bridge, multiple compatibility shims, and group-chat
+  commands). Use it to read concrete code, not to set the API
+  contract.
 - `risuai-metatron`'s `chat_generation/` split
   (`generation_validation`, `message_state`, `prompt_builder`,
   `prompt_sections`, `prompt_history`, `prompt_templates`,
