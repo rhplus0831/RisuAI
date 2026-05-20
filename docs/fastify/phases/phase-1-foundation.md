@@ -77,8 +77,9 @@ Test infrastructure:
 - `pnpm api:test` runs the smoke test and passes.
 - The Vite dev server forwards `/api/*` to Fastify.
 - `pnpm check`, `pnpm test`, `pnpm build` stay green.
-- The Express server still boots and serves the SPA in production
-  mode. (Retirement is Phase 3.)
+- At Phase 1 close, the Express server still booted and served the
+  SPA. Phase 2 later moved the Docker runtime and static serving to
+  Fastify; full Express deletion is still Phase 3.
 
 ## Reference
 

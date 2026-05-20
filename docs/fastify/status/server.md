@@ -4,41 +4,58 @@ Date: 2026-05-20
 
 ## Current state
 
-Phase 1 Fastify foundation exists on the `fastify` branch:
+Phase 1 and the server-side Phase 2 storage slice exist on the
+`fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
 - `server/fastify/src/app.ts` builds Fastify, registers
-  `@fastify/rate-limit`, opens the Phase 1 SQLite metadata DB, and
-  registers health/auth routes.
+  `@fastify/rate-limit`, registers a raw-body parser for supported
+  asset content types, opens the SQLite metadata DB, registers
+  health/auth/bootstrap/import/assets/backups routes, and serves
+  `RISU_API_STATIC_ROOT` via `@fastify/static` when that directory
+  exists.
 - `server/fastify/src/config.ts` reads `RISU_API_DATA_DIR`,
-  `RISU_API_BODY_LIMIT`, and `TRUST_PROXY`.
+  `RISU_API_BODY_LIMIT`, `RISU_API_STATIC_ROOT`, and `TRUST_PROXY`.
 - `server/fastify/src/db.ts` creates `data/risu.db` with
   `schema_version(id, version, revision)`, WAL mode, and foreign
   keys.
 - `server/fastify/src/auth.ts` stores the first-run password and
   known public-key hashes under the Fastify data dir, then verifies
   client-signed ES256 assertions from `risu-auth`.
+- `server/fastify/src/repository.ts` owns `data/db.json`,
+  `data/assets/<sha256>.<ext>`, and `data/backups/<id>/`.
+  Domain data is still a JSON blob; SQLite still holds system
+  metadata only.
 - Routes currently implemented: `GET /api/v1/health`,
-  `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`, and
-  `POST /api/v1/auth/login`.
-- `server/fastify/__tests__/smoke.test.ts` covers health, password
-  setup, login public-key registration, and assertion-based auth
-  status through `pnpm api:test`.
+  `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`,
+  `POST /api/v1/auth/login`, `GET /api/v1/bootstrap`,
+  `POST /api/v1/import/risusave`, `POST /api/v1/assets`,
+  `GET/HEAD /api/v1/assets/:id`, `POST /api/v1/assets/exists`,
+  `GET /api/v1/backups`, `POST /api/v1/backups`,
+  `POST /api/v1/backups/:id/restore`, and
+  `DELETE /api/v1/backups/:id`.
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static}.test.ts`
+  cover the implemented Fastify routes and static serving through
+  `pnpm api:test`.
 
 Other runtime servers still in tree:
 
-- `server/node/server.cjs` - Express server used in production
-  until Phase 3. Owns the static SPA, existing password + ES256 auth,
-  proxy / proxy2 fetch, hub passthrough, proxy stream-job WebSocket,
-  and save file CRUD.
+- `server/node/server.cjs` - Express server still used by
+  `pnpm runserver` and still owns the legacy Node-server storage
+  endpoints (`/api/read`, `/api/write`, `/api/list`) plus
+  `/proxy*`, `/hub-proxy/*`, and proxy stream-job WebSocket
+  behavior until Phase 3 ports and retires it. The Docker runtime
+  no longer starts this server.
 - `server/hono/` - small Hono scaffold with CSRF middleware,
   `Hello Hono!`, and Node / Bun / Cloudflare / Vercel static-serving
   entry points. It is not on the Fastify migration path.
 
 Root `package.json` has `pnpm runserver` for the Express server,
 `pnpm hono:build` for the Hono static bundle, and `pnpm api:dev`,
-`pnpm api:start`, `pnpm api:test` for the Fastify server.
+`pnpm api:start`, `pnpm api:test` for the Fastify server. The
+Dockerfile runs `pnpm api:start`, exposes 6002, and persists
+`/app/data`; `docker-compose.yml` maps `6002:6002`.
 
 ## What lands when
 
@@ -46,11 +63,13 @@ Root `package.json` has `pnpm runserver` for the Express server,
   `pnpm api:dev` / `pnpm api:start` / `pnpm api:test`, health
   endpoint, env loader, auth scaffold, DB connection, and Vite
   proxy `/api` -> Fastify.
-- **Phase 2.** `data/db.json` blob for domain state, repository
-  read/write, asset storage, JSON save import, backups, container
+- **Phase 2.** Done 2026-05-20. `data/db.json` blob for domain
+  state, repository read/write, raw asset storage, JSON save
+  import, backups, Fastify static serving, and container
   switchover. Domain SQL tables are deferred to Phases 5-9, per
-  resource. Binary `.risu` codec stays client-side until Phase 9.
-  See [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
+  resource. Binary `.risu` codec and bundle export stay client-side
+  until Phase 9. See
+  [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
 - **Phase 3.** Provider proxy + hub passthrough + stream-job
   WebSocket. Express server is retired once Phase 3 closes.
 - **Phase 6.** Server-side LLM / translation / TTS / image /
@@ -90,5 +109,7 @@ not by their endpoint URLs.
 
 - Node 24+ is required for `node:sqlite`. `package.json#engines`
   is currently `>=24.0.0`.
-- The Express server stays running until Phase 3 retires it. Until
-  then, the SPA still serves through Express in non-dev mode.
+- Fastify serves the SPA when `RISU_API_STATIC_ROOT` points at a
+  built `dist/`; unknown non-API GETs fall back to `index.html`.
+- Express remains available through `pnpm runserver` until Phase 3
+  deletes it, but it is no longer the Docker runtime.

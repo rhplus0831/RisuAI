@@ -1,12 +1,18 @@
-# Phase 2 - Storage, Import, Export, Assets
+# Phase 2 - Storage, Import, Assets, Backups
 
 Date: 2026-05-20
 
 ## Goal
 
-Give the Fastify server a place to keep Risuai state so a client can
-fully bootstrap from `/api/v1/bootstrap`. Ship import / export and
-server-side backups against that store.
+Give the Fastify server a place to keep Risuai state so callers can
+bootstrap from `/api/v1/bootstrap`. Ship JSON import,
+content-addressed assets, server-side backups, static SPA serving,
+and the Docker runtime switch against that store.
+
+Server-side `.risu` export and bundle export are not Phase 2
+deliverables. The client still owns `.risu` encode/decode during the
+migration window; Phase 9 moves the codec once the browser no longer
+owns a complete in-memory Database.
 
 Phase 2 deliberately does **not** design a domain SQL schema. The
 client today operates on a single in-memory `Database` blob and is
@@ -14,7 +20,7 @@ not split into per-resource readers; building 25 SQL tables now would
 mirror that current shape, which Phase 9 then tears apart. We avoid
 the wasted middle step by persisting the blob as a single JSON file
 during the migration window and migrating fields into SQL tables
-*per resource* when Phases 5-9 carve out their APIs and learn the
+_per resource_ when Phases 5-9 carve out their APIs and learn the
 shape each one actually needs.
 
 ## Migration-window assumption
@@ -37,6 +43,22 @@ the items under [Boundaries](#boundaries) before exposing it.
 
 - Phase 1 closed.
 
+## Status
+
+Server-side Phase 2 landed on 2026-05-20:
+
+- Implemented route files:
+  `server/fastify/src/routes/{bootstrap,save,assets,backups}.ts`.
+- Implemented storage helpers in `server/fastify/src/repository.ts`.
+- Implemented static serving in `server/fastify/src/app.ts`.
+- Docker now runs `pnpm api:start` on port 6002 with `/app/data`
+  persisted.
+- Covered by `server/fastify/__tests__/{bootstrap,assets,backups,static}.test.ts`.
+
+The browser is not yet thinned into a server-backed projection; that
+remains Phase 9. Existing local/Tauri/legacy Node-server storage
+paths remain in the client until then.
+
 ## Scope
 
 ### Persistence layout
@@ -50,7 +72,7 @@ data/
   assets/<sha256>.<ext>    # Content-addressed asset blobs.
   backups/<id>/
     db.json                # Snapshot of db.json at backup time.
-    manifest.json          # Snapshot revision + referenced assets.
+    manifest.json          # Snapshot revision + uploaded asset count.
 ```
 
 `risu.db` keeps the Phase 1 `schema_version(id, version, revision)`
@@ -61,11 +83,14 @@ counters). **Domain data does not go into `risu.db` in Phase 2.**
 
 ```jsonc
 {
-  "_version": 1,                 // bumped when the JSON shape changes
-  "database": { /* RisuSavedDatabase */ },
-  "assets": [                    // metadata for uploaded blobs
-    { "id": "<sha256>", "ext": "png", "size": 12345, "contentType": "image/png" }
-  ]
+  "_version": 1, // bumped when the JSON shape changes
+  "database": {
+    /* Database-shaped JSON */
+  },
+  "assets": [
+    // metadata for uploaded blobs
+    { "id": "<sha256>", "ext": "png", "size": 12345, "contentType": "image/png" },
+  ],
 }
 ```
 
@@ -74,25 +99,32 @@ Phase 2; the migration-window assumption above covers concurrency.
 
 ### Shared types
 
-`src/ts/shared/databaseTypes.ts` holds the pure `RisuSavedDatabase`
-shape (no Svelte / DOM / Tauri imports) so the client and the server
-agree on the on-disk JSON. The client re-exports it from its current
-location so existing callers do not move.
+The server stores the imported database blob as `unknown` in Phase 2.
+The authoritative client shape remains `Database` in
+`src/ts/storage/database.svelte.ts`; no pure shared
+`RisuSavedDatabase` module exists in this codebase yet. Add one only
+when client/server helpers need a compile-time contract instead of a
+JSON passthrough.
 
 ### Repository
 
 `server/fastify/src/repository.ts` owns:
 
-- `loadDatabase()` -> `RisuSavedDatabase | null` (reads `db.json`;
-  returns `null` when the file is absent). The client treats `null`
-  as "no save yet" and builds its own default; the server does not
-  embed `defaultDatabase()`.
-- `writeDatabase(next)` -> bumps `revision` in `risu.db`, writes
-  `db.json.tmp`, renames.
-- Typed errors that map to HTTP: `RevisionMismatchError` -> 409,
-  `EntityNotFoundError` -> 404, `ValidationError` -> 400. Phase 2
-  only emits `ValidationError` (no resource handlers yet), but the
-  classes ship now so later phases can import them without churn.
+- `loadPersisted(dataDir)` -> `{ _version, database, assets }`;
+  returns `{ _version: 1, database: null, assets: [] }` when
+  `db.json` is absent.
+- `writePersisted(dataDir, next)` -> writes `db.json.tmp` and
+  atomically renames it. Revision bumps happen in the caller.
+- `applyImport(db, dataDir, database)` -> validates that the
+  `database` field is present, replaces `db.json.database`, and
+  bumps `schema_version.revision`.
+- `addAsset`, `assetById`, `assetPath`, and `missingAssetIds` for
+  content-addressed blobs.
+- `createBackup`, `listBackups`, `restoreBackup`, and
+  `deleteBackup` for `data/backups/<id>/`.
+- Typed errors that map to HTTP: `RevisionMismatchError` -> 409
+  for later phases, `EntityNotFoundError` -> 404, and
+  `ValidationError` -> 400.
 
 When Phase 5+ extracts a resource (say characters) into SQL, the
 repository adds:
@@ -100,9 +132,9 @@ repository adds:
 - A `characters` SQL table with a schema shaped for its API.
 - A one-time boot migration that moves `db.json.database.characters`
   into rows and deletes the key from `db.json`.
-- A stitching layer in `loadDatabase()` that joins SQL rows back into
-  the `RisuSavedDatabase` shape until Phase 9 cuts whole-database
-  reads entirely.
+- A stitching layer around `loadPersisted().database` that joins SQL
+  rows back into the browser-facing database shape until Phase 9 cuts
+  whole-database reads entirely.
 
 ### Assets
 
@@ -110,20 +142,18 @@ Uploads are raw-binary, not multipart. The request body is the asset
 bytes; `Content-Type` carries the format and must be in a small
 allowlist (`image/{png,jpeg,webp,gif,avif}`,
 `audio/{mpeg,wav,ogg,webm}`, `video/{mp4,webm}`). Unknown types are
-rejected with 415 by Fastify (no parser registered). Multipart
-uploads earn their keep only when one
-request carries multiple parts, which happens for the `.risu` bundle
-import in 2B; single-asset uploads do not need it.
+rejected with 415 by Fastify when no parser is registered.
+Single-asset uploads do not use multipart.
 
 - `POST /api/v1/assets` (auth-gated): reads the raw body, computes
   `sha256`, writes `data/assets/<sha256>.<ext>` if not already
   present, appends to `db.json.assets`, bumps revision. Idempotent
   by content: re-uploading the same bytes is a no-op and does not
-  bump revision. Returns `{ assetId, size, contentType }`.
+  bump revision. Returns `{ assetId, size, contentType, revision }`.
 - `GET /api/v1/assets/:id` serves the file with the stored
-  `Content-Type` and `Cache-Control: public, max-age=31536000,
-  immutable`. Public (no auth) - ids are SHA-256-derived and
-  unguessable. Invalid id format (not 64 hex chars) returns 404.
+  `Content-Type` and an immutable one-year `Cache-Control` header.
+  Public (no auth) - ids are SHA-256-derived and unguessable.
+  Invalid id format (not 64 hex chars) returns 404.
 - `HEAD /api/v1/assets/:id` mirrors GET's headers with no body.
   Same public policy as GET; the information overlap is total, so
   auth-gating one without the other buys nothing. Used by the
@@ -140,7 +170,7 @@ import in 2B; single-asset uploads do not need it.
 - Asset GC is **not shipped in Phase 2.** A `POST /api/v1/assets/gc`
   endpoint can be added later when orphan accumulation matters.
 
-### Save import / export
+### Save import and client-side export
 
 Phase 2 ships a JSON-only import. The binary `.risu` codec stays
 client-side until Phase 9 thins the client enough that it can no
@@ -148,11 +178,10 @@ longer own a Database in memory; only then does the server have a
 real reason to learn the format.
 
 - `POST /api/v1/import/risusave` accepts a JSON body
-  `{ database: <RisuSavedDatabase> }`. Replaces `db.json.database`,
-  bumps revision, returns
-  `{ revision, assetReport: { referencedCount, missingCount,
-  orphanedCount } }`. Asset counts are zero - the populated
-  `assetReport` lands when reference walking does.
+  `{ database: <Database-shaped JSON> }`. Replaces `db.json.database`,
+  bumps revision, and returns the new revision plus a zeroed
+  `assetReport`. The populated `assetReport` lands when reference
+  walking does.
 
 **No `.risu` decode, encode, or bundle in Phase 2.** Rationale and
 the consuming flows:
@@ -204,10 +233,10 @@ Manifest shape:
 {
   "_version": 1,
   "id": "2026-05-20-17-30-42-a4f9c2",
-  "label": null,                         // or a string
+  "label": null, // or a string
   "createdAt": "2026-05-20T17:30:42.000Z",
   "revision": 7,
-  "assetCount": 12
+  "assetCount": 12,
 }
 ```
 
@@ -216,7 +245,7 @@ Backup ids match `^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[a-f0-9]{6}$`
 regex makes path-traversal attempts on `:id` fail at validation
 before they touch the filesystem.
 
-`assetCount` is `persisted.assets.length` - the count of *uploaded*
+`assetCount` is `persisted.assets.length` - the count of _uploaded_
 assets at backup time, **not** assets referenced by the database.
 The referenced count requires walking the database for ids, which
 needs the encoding to be locked; that comes in a later slice
@@ -235,7 +264,7 @@ snapshotting the asset blobs alongside the database.
 
 - `GET /api/v1/bootstrap` returns
   `{ revision, schemaVersion, database, assetBaseUrl }`. `database`
-  is the `RisuSavedDatabase` produced by `repository.loadDatabase()`.
+  is `repository.loadPersisted(dataDir).database`.
   `assetBaseUrl` is the stable string `/api/v1/assets`.
 
 ### Container changes
@@ -279,7 +308,7 @@ no-live-users migration window.
 - **No write concurrency control.** A single tempfile + rename is
   the entire write protocol. If Phase 3 / 4 introduces a second
   writer before per-resource SQL lands, add an async mutex around
-  `writeDatabase()` then.
+  `writePersisted()` callers then.
 - **No encryption-at-rest.** `RISU_ENCRYPTION_KEY` is a Phase-9
   consideration; we land Phase 2 with cleartext to keep the delta
   reviewable.
@@ -298,9 +327,9 @@ no-live-users migration window.
 ## Exit criteria
 
 - `pnpm api:test` covers:
-  - Bootstrap on a fresh data dir: returns
-    `{ revision: 0, schemaVersion: <phase-1 value>, database: null,
-    assetBaseUrl: '/api/v1/assets' }`.
+  - Bootstrap on a fresh data dir: returns revision 0,
+    schema version 0, `database: null`, and
+    `assetBaseUrl: '/api/v1/assets'`.
   - JSON import round-trip: import `{ database }` -> bootstrap
     returns the same database.
   - Asset upload + bootstrap response includes the new asset in
@@ -308,11 +337,14 @@ no-live-users migration window.
   - Backup create / restore / delete using a fixture database, with
     a full A -> backup -> B -> restore -> A round-trip.
   - Revision bumps on every mutation surface in this phase (import,
-    asset upload, backup restore). Backup *create* does not bump.
-- A user can hydrate the server from the Risu hub or from a
-  `legacy.risu` file: the client decodes locally, then uses the
-  JSON import + asset upload endpoints. The SPA boots against
-  `/api/v1/bootstrap` and displays the imported database.
+    asset upload, backup restore). Backup _create_ does not bump.
+  - Static serving: `dist/index.html`, nested assets, SPA fallback
+    for unknown non-API GETs, no fallback for `/api/*` or non-GET
+    routes, and API behavior when static serving is disabled.
+- A caller can hydrate the server by decoding a local `.risu` file
+  client-side and posting the resulting JSON database plus asset
+  uploads. The browser is not yet rewired to consume
+  `/api/v1/bootstrap`; that belongs to Phase 9 client thinning.
 - The Docker image runs Fastify + serves the SPA, with `data/`
   persisted across restarts.
 - `pnpm check`, `pnpm test`, `pnpm build` green.
@@ -322,7 +354,7 @@ no-live-users migration window.
 - `move-to-fastify` schema and repository: `0c3de7de` through
   `a1836719` (loadout normalization), `55f421d4` (character order),
   `b6a50d3e` (plugin code/trust). Treat this as a future reference
-  for *per-resource* SQL shapes (Phase 5+), not as the Phase 2 plan.
+  for _per-resource_ SQL shapes (Phase 5+), not as the Phase 2 plan.
 - `MAPPER_AUDIT.md` on `move-to-fastify` is a useful checklist of
-  fields the shared `RisuSavedDatabase` type must cover, even though
-  no Phase 2 SQL maps them.
+  database fields a future shared type must cover, even though no
+  Phase 2 SQL maps them.

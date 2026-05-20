@@ -27,17 +27,25 @@ End state:
 
 ## Current Baseline
 
-Where the codebase stands after the Phase 1 foundation on 2026-05-20:
+Where the codebase stands after the Phase 2 server storage slice on
+2026-05-20:
 
-- `server/fastify/` exists with the Phase 1 foundation: app boot,
-  config loading, `node:sqlite` schema metadata, password + ES256
-  assertion auth helpers, `GET /api/v1/health`, and
-  `GET/POST /api/v1/auth/{status,setup,login}`.
+- `server/fastify/` exists with app boot, config loading,
+  `node:sqlite` schema metadata, password + ES256 assertion auth,
+  `GET /api/v1/health`, `GET/POST /api/v1/auth/{status,setup,login}`,
+  `GET /api/v1/bootstrap`, JSON `POST /api/v1/import/risusave`,
+  raw asset routes, backup routes, and optional static SPA serving.
+- `server/fastify/src/repository.ts` owns the migration-window
+  `data/db.json` blob, content-addressed `data/assets/`, and
+  `data/backups/`. `data/risu.db` still holds system metadata only:
+  `schema_version(id, version, revision)`.
 - Root `package.json` has `api:dev`, `api:start`, and `api:test`
-  for the Fastify server. It still has `runserver` and `hono:build`;
-  `server/node/server.cjs` (Express) remains the production server
-  until Phase 3, and `server/hono/` remains a separate static-serving
-  scaffold.
+  for the Fastify server. The Docker image and compose file run
+  `pnpm api:start` on port 6002 with `/app/data` persisted.
+  `runserver` still starts `server/node/server.cjs` for the legacy
+  Node server and for unported proxy / hub / `/api/read|write|list`
+  surfaces until Phase 3. `server/hono/` remains a separate
+  static-serving scaffold and is not the migration path.
 - `src/ts/process/index.svelte.ts` is **2090 lines** in a single
   `sendChat` function with explicit `stage1`-`stage4` timing markers.
 - Phase 0 removal targets are deleted from the live pipeline:
@@ -70,12 +78,13 @@ rules. The headline order:
 1. **Foundation** - scaffold the Fastify server, decide auth shape,
    pick the persistence layout, ship the health check. Done
    2026-05-20.
-2. **Storage, import, export, assets** - `data/db.json` blob for
+2. **Storage, import, assets, backups** - `data/db.json` blob for
    domain state, repository API, content-addressed assets, JSON
-   save import, backups, container switchover. No domain SQL schema
+   save import, backups, Fastify static serving, and container
+   switchover. Done server-side on 2026-05-20. No domain SQL schema
    yet; per-resource tables land in Phases 5-9. The binary `.risu`
-   codec stays in the client until Phase 9 forces the move - the
-   server is JSON-native through Phase 2.
+   codec and bundle export stay out of the server until Phase 9 -
+   the server is JSON-native through Phase 2.
 3. **Proxy migration** - move provider proxy and Risu hub
    passthrough behind Fastify; keep the stream-job WebSocket
    contract.

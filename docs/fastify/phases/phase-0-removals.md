@@ -97,9 +97,10 @@ Keep, with the `forageStorage.isAccount` dead branches stripped:
   `risuSave.ts`. Move it to `src/ts/storage/backup.ts` and strip
   the Account-Sync dead branches inside it.
 
-The Phase 2 server bundle endpoint (`/api/v1/backups` +
-`/api/v1/export/bundle`) is the eventual replacement for _cloud_
-backup; local-file backup keeps working through `storage/backup.ts`
+The Phase 2 Fastify backup routes (`/api/v1/backups`) are the
+server-side snapshot replacement for _cloud_ backup during the
+migration. Bundle export (`/api/v1/export/bundle`) is deferred to
+Phase 9; local-file backup keeps working through `storage/backup.ts`
 in the meantime.
 
 ### 0.5 Legacy memory engines

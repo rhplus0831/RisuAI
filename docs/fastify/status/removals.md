@@ -181,9 +181,9 @@ in `src/` returns no hits. The string `sionyw.com` still appears in
 unrelated terms/privacy links, the plugin URL blacklist, and the MCP
 OAuth helper placeholder; those are not Risu Account Sync.
 
-Note: replacement backups will be provided by the Fastify server
-(`/api/v1/backups` + `/api/v1/export/bundle`) once Phase 2 lands.
-Phase 0 only deletes; it does not add replacements.
+Note: Phase 2 provides Fastify snapshot backups at
+`/api/v1/backups`. Bundle export is deferred to Phase 9. Phase 0
+only deletes; it does not add replacements.
 
 ## Legacy memory engines (Supa, Hypa V2, Hanurai)
 

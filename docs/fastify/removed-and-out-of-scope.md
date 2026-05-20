@@ -35,9 +35,9 @@ is not actively maintained.
   `drive/drive.ts` and the "Save to Google Drive" / "Restore from
   Drive" UI entries. The former `drive/backuplocal.ts` local-backup
   helper moved to `storage/backup.ts` with Account Sync branches
-  stripped. The replacement for cloud backup workflows is the
-  Fastify server's own `/api/v1/backups` + `/api/v1/export/bundle`
-  (Phase 2).
+  stripped. The replacement for cloud backup snapshots is the
+  Fastify server's own `/api/v1/backups` (Phase 2); bundle export
+  is deferred to Phase 9.
 - **Supa memory, Hypa V2, Hanurai.** Legacy memory engines.
   Deleted: `process/memory/{supaMemory, hypav2, hanuraiMemory}.ts`
   and the selection branches in `process/index.svelte.ts`. Only

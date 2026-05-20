@@ -66,8 +66,8 @@ enforces today. Retire the Express server once parity is proven.
 
 After parity is proven on the proxy + hub routes:
 
-- Vite dev proxy switches the production-build SPA serving to
-  Fastify (`@fastify/static` from Phase 2).
+- Fastify keeps the Phase 2 production-build SPA serving and Docker
+  runtime.
 - `runserver` script removed from `package.json`.
 - `server/node/` deleted in a single commit; reference the commit
   in [`../status/server.md`](../status/server.md).

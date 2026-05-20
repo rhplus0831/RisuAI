@@ -12,8 +12,8 @@ Read order during planning:
    multiuser, Risu Account Sync, Drive sync, legacy memory.
 2. [`phase-1-foundation.md`](phase-1-foundation.md) - Fastify
    scaffold, auth, health, env loader.
-3. [`phase-2-storage.md`](phase-2-storage.md) - SQLite schema,
-   repository, assets, import/export, backups.
+3. [`phase-2-storage.md`](phase-2-storage.md) - SQLite metadata,
+   JSON repository, assets, import, backups.
 4. [`phase-3-proxy.md`](phase-3-proxy.md) - provider proxy + hub
    passthrough + stream-job WebSocket.
 5. [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md) - pin

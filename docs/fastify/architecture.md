@@ -3,9 +3,9 @@
 Date: 2026-05-20
 
 This doc describes the target shape of the Fastify server and the
-boundaries between it and the browser client. Phase 1 foundation files
-already exist; modules marked by later phases are target layout, not
-current implementation.
+boundaries between it and the browser client. Phase 1 and Phase 2
+server files already exist; modules marked by later phases are target
+layout, not current implementation.
 
 ## Server module layout
 
@@ -17,7 +17,7 @@ server/fastify/
     config.ts           env loading and validation
     db.ts               node:sqlite handle, WAL pragma, schema metadata
     auth.ts             password + signed-assertion auth
-    repository.ts       SQL <-> domain types; transactions live here
+    repository.ts       db.json, assets, backups now; SQL domain repo later
     proxy.ts            outbound provider proxy + stream-jobs
     hub.ts              Risuai hub (sv.risuai.xyz) passthrough
     events.ts           SSE event bus (state change broadcast)
@@ -55,20 +55,22 @@ creates or invokes, `PATCH` partial updates, `PUT` replaces a child
 collection, `DELETE` removes, `GET` reads. Every mutating route
 returns the new server revision; every event includes it.
 
-Greenfield shape (final shape is locked phase by phase, not by this
-list):
+Implemented now:
 
 - `GET /api/v1/health`
 - `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`,
   `POST /api/v1/auth/login`
 - `GET /api/v1/bootstrap` - full database snapshot
-- `GET /api/v1/events` - SSE stream of committed mutations
-- `POST /api/v1/import/risusave`, `GET /api/v1/export/risusave`,
-  `GET /api/v1/export/bundle`
+- `POST /api/v1/import/risusave` - JSON `{ database }` import
 - `POST /api/v1/assets`, `GET /api/v1/assets/:id`,
-  `DELETE /api/v1/assets/:id`
+  `HEAD /api/v1/assets/:id`, `POST /api/v1/assets/exists`
 - `GET /api/v1/backups`, `POST /api/v1/backups`,
   `POST /api/v1/backups/:id/restore`, `DELETE /api/v1/backups/:id`
+
+Planned later (final shape is locked phase by phase, not by this
+list):
+
+- `GET /api/v1/events` - SSE stream of committed mutations
 - `POST /api/v1/commands/<resource>[/...]` - one endpoint per
   resource family (character, chat, message, preset, persona, plugin,
   module, ...). No whole-state PUT.
@@ -80,6 +82,9 @@ list):
 - `POST /api/v1/generate/translate`, `tts`, `image`, `horde`.
 - `POST /api/v1/generate/count-tokens`,
   `GET /api/v1/generate/encodings`.
+- `GET /api/v1/export/risusave`, `GET /api/v1/export/bundle`, and
+  multipart `.risu` import in Phase 9, after the server owns the
+  final per-resource schema. No Phase 2 server export route exists.
 
 Conscious differences vs the `move-to-fastify` branch:
 
@@ -101,7 +106,7 @@ Conscious differences vs the `move-to-fastify` branch:
   metadata. **System state only.**
 - Domain state lives in a single JSON blob at `data/db.json` during
   the migration window. Phase 2 ships this blob plus bootstrap,
-  import, export, assets, and backups against it. The blob carries a
+  JSON import, assets, and backups against it. The blob carries a
   top-level `_version` integer for shape evolution. See
   [`phases/phase-2-storage.md`](phases/phase-2-storage.md) for the
   rationale.
@@ -113,8 +118,8 @@ Conscious differences vs the `move-to-fastify` branch:
   metadata (size, contentType) lives in `db.json.assets` during
   Phase 2 and moves into SQL when the asset API graduates.
 - Backups are stored under `data/backups/<id>/` as a `db.json`
-  snapshot plus a `manifest.json` listing the revision and
-  referenced assets.
+  snapshot plus a `manifest.json` listing the revision and uploaded
+  asset count.
 
 ## Auth
 

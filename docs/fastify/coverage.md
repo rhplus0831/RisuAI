@@ -16,14 +16,17 @@ shards under [`coverage/`](coverage/).
   `src/ts/process/files/tests/inlays.test.ts`; broader repo tests
   cover parser, media, translator, network, and source-map helpers.
 - `server/fastify/__tests__/smoke.test.ts` covers the Phase 1
-  Fastify foundation through `pnpm api:test`.
+  Fastify foundation. `bootstrap.test.ts`, `assets.test.ts`,
+  `backups.test.ts`, and `static.test.ts` cover the Phase 2
+  server storage routes and static SPA serving through
+  `pnpm api:test`.
 
 ## Where to look
 
 | Concern                                        | Open                                                           |
 | ---------------------------------------------- | -------------------------------------------------------------- |
 | `sendChat` characterization fixtures (Phase 4) | [coverage/sendchat-fixtures.md](coverage/sendchat-fixtures.md) |
-| Fastify route tests (Phases 1-3, 6-8)          | [coverage/server-routes.md](coverage/server-routes.md)         |
+| Fastify route tests (Phases 1-3, 6-9)          | [coverage/server-routes.md](coverage/server-routes.md)         |
 | Per-provider generation tests (Phase 6)        | [coverage/providers.md](coverage/providers.md)                 |
 
 ## Verification commands
@@ -31,7 +34,7 @@ shards under [`coverage/`](coverage/).
 ```bash
 pnpm check          # svelte-check + tsc
 pnpm test           # frontend vitest (existing)
-pnpm api:test       # Fastify vitest smoke suite
+pnpm api:test       # Fastify vitest route suite
 pnpm build          # production bundle
 ```
 

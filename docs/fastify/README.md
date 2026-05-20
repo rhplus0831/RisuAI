@@ -13,10 +13,12 @@ it needs.
 
 ## Scope
 
-Current status: Phase 0 removals and Phase 1 Fastify foundation
-closed on 2026-05-20. Phase 2 storage / import / export is the
-next server slice; Phase 4 `sendChat` characterization tests can
-start in parallel.
+Current status: Phase 0 removals, Phase 1 Fastify foundation, and
+the Phase 2 server storage slice closed on 2026-05-20. Fastify now
+owns bootstrap, JSON import, content-addressed assets, backups,
+static SPA serving, and the Docker runtime. Phase 3 proxy migration
+is the next server slice; Phase 4 `sendChat` characterization tests
+can start in parallel.
 
 In scope:
 

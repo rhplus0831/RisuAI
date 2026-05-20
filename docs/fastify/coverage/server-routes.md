@@ -2,9 +2,9 @@
 
 Date: 2026-05-20
 
-Status: Phase 1 Fastify smoke tests exist in
-`server/fastify/__tests__/smoke.test.ts`. Later rows are the target
-test set per phase.
+Status: Phase 1 and Phase 2 Fastify route tests exist under
+`server/fastify/__tests__/`. Later rows are the target test set per
+phase.
 
 ## Phase 1: Foundation
 
@@ -15,25 +15,29 @@ test set per phase.
 | `POST /api/v1/auth/setup`      | First call sets password; second rejects.      | covered by `server/fastify/__tests__/smoke.test.ts` |
 | `POST /api/v1/auth/login`      | Registers a public key after password match; matching ES256 assertions authorize later status checks. | covered by `server/fastify/__tests__/smoke.test.ts` |
 
-## Phase 2: Storage, Import, Export, Assets
+## Phase 2: Storage, Import, Assets, Backups
 
 | Route                                       | Pinned behavior                            | Status      |
 | ------------------------------------------- | ------------------------------------------ | ----------- |
-| `GET /api/v1/bootstrap`                     | Empty DB returns `revision: 0`.            | not started |
-| `POST /api/v1/import/risusave`              | Multipart with assets resolves references. | not started |
-| `GET /api/v1/export/risusave`               | Legacy single-blob export.                 | not started |
-| `GET /api/v1/export/bundle`                 | ZIP with save + referenced assets + meta.  | not started |
-| `POST /api/v1/assets`                       | Stores file at SHA-256 path; returns id.   | not started |
-| `GET /api/v1/assets/:id`                    | Serves file with right Content-Type.       | not started |
-| `DELETE /api/v1/assets/:id`                 | Soft-deletes the row.                      | not started |
-| `GET /api/v1/backups`                       | Lists backup rows.                         | not started |
-| `POST /api/v1/backups`                      | Snapshots DB; writes .risu file.           | not started |
-| `POST /api/v1/backups/:id/restore`          | Rolls DB back; bumps revision.             | not started |
-| `DELETE /api/v1/backups/:id`                | Removes row + file.                        | not started |
+| `GET /api/v1/bootstrap`                     | Fresh data dir returns `revision: 0`, `schemaVersion: 0`, `database: null`, and `assetBaseUrl`. Requires auth once a password is set. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
+| `POST /api/v1/import/risusave`              | JSON `{ database }` replaces `db.json.database`, bumps revision, rejects missing database, returns zeroed `assetReport`. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
+| `POST /api/v1/assets`                       | Auth-gated raw upload computes SHA-256, writes `data/assets/<sha>.<ext>`, returns metadata + revision, and is idempotent on re-upload. | covered by `server/fastify/__tests__/assets.test.ts` |
+| `GET /api/v1/assets/:id`                    | Public read serves stored bytes with Content-Type, immutable cache header, and 404 for unknown / malformed ids. | covered by `server/fastify/__tests__/assets.test.ts` |
+| `HEAD /api/v1/assets/:id`                   | Mirrors GET headers with no body.          | covered by `server/fastify/__tests__/assets.test.ts` |
+| `POST /api/v1/assets/exists`                | Public preflight returns missing SHA-256 ids and validates `ids: string[]`. | covered by `server/fastify/__tests__/assets.test.ts` |
+| `GET /api/v1/backups`                       | Auth-gated list returns backups newest-first or an empty array. | covered by `server/fastify/__tests__/backups.test.ts` |
+| `POST /api/v1/backups`                      | Auth-gated create snapshots `db.json`, writes manifest + snapshot, accepts optional string label, does not bump revision. | covered by `server/fastify/__tests__/backups.test.ts` |
+| `POST /api/v1/backups/:id/restore`          | Auth-gated restore copies snapshot to live `db.json`, bumps revision, rejects unknown / malformed ids. | covered by `server/fastify/__tests__/backups.test.ts` |
+| `DELETE /api/v1/backups/:id`                | Auth-gated delete removes backup directory and rejects unknown / malformed ids. | covered by `server/fastify/__tests__/backups.test.ts` |
 
-Plus: round-trip test (import -> export -> diff), asset
-reference tracking (referenced / missing / orphaned counts),
-revision bumps on each mutation.
+Static serving is covered by `server/fastify/__tests__/static.test.ts`:
+Fastify serves `index.html`, nested static assets, SPA fallback for
+unknown non-API GETs, no fallback for `/api/*` or non-GET routes,
+and clean API behavior when `staticRoot` is absent.
+
+No Phase 2 server routes exist for `.risu` export, bundle export,
+asset delete, or asset GC. `.risu` encode/decode and bundle assembly
+stay client-side until Phase 9.
 
 ## Phase 3: Proxy + Hub
 

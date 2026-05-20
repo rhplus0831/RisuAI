@@ -14,9 +14,16 @@ under [`status/`](status/).
 - Phase 1 Fastify foundation closed on 2026-05-20. `server/fastify/`
   now has health and auth routes, config loading, a `node:sqlite`
   metadata table, and a vitest smoke harness.
-- `server/node/server.cjs` (Express) is still the production server
-  until Phase 3 retires it. `server/hono/` is a small static-serving
-  Hono scaffold and is not the Fastify migration path.
+- Phase 2 server storage closed on 2026-05-20. Fastify now has
+  bootstrap, JSON import, raw asset upload / read / head / exists
+  checks, backup create / list / restore / delete, optional static
+  SPA serving, and route tests for those surfaces.
+- The Docker image and compose file now run Fastify on port 6002
+  with `/app/data` persisted. `server/node/server.cjs` (Express)
+  still remains for `pnpm runserver`, the legacy `/api/read|write|list`
+  storage endpoints, and the proxy / hub surfaces that Phase 3
+  ports next. `server/hono/` is a small static-serving Hono scaffold
+  and is not the Fastify migration path.
 - Root `package.json` has `api:dev`, `api:start`, and `api:test`
   for the Fastify server, while `runserver` still starts Express.
 - The `move-to-fastify` branch contains an agent-driven prototype
@@ -25,13 +32,13 @@ under [`status/`](status/).
 
 ## Active phase
 
-**Phase 2 - Storage, import, export, assets**, not started.
+**Phase 3 - Proxy migration**, not started.
 
-See [`phases/phase-2-storage.md`](phases/phase-2-storage.md)
-for the storage scope and exit criteria.
+See [`phases/phase-3-proxy.md`](phases/phase-3-proxy.md)
+for the proxy / hub scope and exit criteria.
 
 Phase 4 (`sendChat` characterization tests) can start in parallel
-with Phase 2.
+with Phase 3.
 
 ## Start here
 
