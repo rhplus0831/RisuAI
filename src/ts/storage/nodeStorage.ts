@@ -1,6 +1,50 @@
 import { language } from 'src/lang'
 import { alertError, alertInput, waitAlert } from '../alert'
+import { isFastifyServer } from '../platform'
 import { base64url, getKeypairStore, saveKeypairStore } from '../util'
+
+const ROUTES = isFastifyServer
+  ? {
+      write: '/api/v1/storage/write',
+      read: '/api/v1/storage/read',
+      list: '/api/v1/storage/list',
+      remove: '/api/v1/storage/remove',
+      crypto: '/api/v1/auth/crypto',
+      status: '/api/v1/auth/status',
+      setPassword: '/api/v1/auth/setup',
+      login: '/api/v1/auth/login',
+    }
+  : {
+      write: '/api/write',
+      read: '/api/read',
+      list: '/api/list',
+      remove: '/api/remove',
+      crypto: '/api/crypto',
+      status: '/api/test_auth',
+      setPassword: '/api/set_password',
+      login: '/api/login',
+    }
+
+type AuthStatus = 'unset' | 'incorrect' | 'success'
+
+async function fetchAuthStatus(assertion: string): Promise<AuthStatus> {
+  if (isFastifyServer) {
+    const res = await fetch(ROUTES.status, {
+      headers: { 'risu-auth': assertion },
+    })
+    if (res.status >= 200 && res.status < 300) {
+      const body = (await res.json()) as { noPassword?: boolean; authorized?: boolean }
+      if (body.noPassword) return 'unset'
+      return body.authorized ? 'success' : 'incorrect'
+    }
+    return 'incorrect'
+  }
+  const res = await fetch(ROUTES.status, {
+    headers: { 'risu-auth': assertion },
+  })
+  const data = (await res.json()) as { status?: AuthStatus }
+  return (data.status ?? 'incorrect') as AuthStatus
+}
 
 export class NodeStorage {
   authChecked = false
@@ -73,7 +117,7 @@ export class NodeStorage {
 
   async setItem(key: string, value: Uint8Array) {
     await this.checkAuth()
-    const da = await fetch('/api/write', {
+    const da = await fetch(ROUTES.write, {
       method: 'POST',
       body: value as any,
       headers: {
@@ -92,7 +136,7 @@ export class NodeStorage {
   }
   async getItem(key: string): Promise<Buffer> {
     await this.checkAuth()
-    const da = await fetch('/api/read', {
+    const da = await fetch(ROUTES.read, {
       method: 'GET',
       headers: {
         'file-path': Buffer.from(key, 'utf-8').toString('hex'),
@@ -111,7 +155,7 @@ export class NodeStorage {
   }
   async keys(): Promise<string[]> {
     await this.checkAuth()
-    const da = await fetch('/api/list', {
+    const da = await fetch(ROUTES.list, {
       method: 'GET',
       headers: {
         'risu-auth': await this.createAuth(),
@@ -128,12 +172,22 @@ export class NodeStorage {
   }
   async removeItem(key: string | string[]) {
     await this.checkAuth()
-    const da = await fetch('/api/remove', {
-      method: 'GET',
+    const hexKey = (k: string) => Buffer.from(k, 'utf-8').toString('hex')
+    let filePath: string
+    if (isFastifyServer && Array.isArray(key)) {
+      // Fastify expects each key hex-encoded separately, joined by $$ so
+      // the server can split and validate every segment as hex.
+      filePath = key.map(hexKey).join('$$')
+    } else {
+      // Express's /api/remove is buggy for arrays; this preserves the
+      // legacy single-key behavior the client has always done.
+      const joined = Array.isArray(key) ? key.join('$$') : key
+      filePath = hexKey(joined)
+    }
+    const da = await fetch(ROUTES.remove, {
+      method: isFastifyServer ? 'POST' : 'GET',
       headers: {
-        'file-path': Buffer.from(Array.isArray(key) ? key.join('$$') : key, 'utf-8').toString(
-          'hex',
-        ),
+        'file-path': filePath,
         'risu-auth': await this.createAuth(),
       },
     })
@@ -148,17 +202,11 @@ export class NodeStorage {
 
   private async checkAuth() {
     if (!this.authChecked) {
-      const data = await (
-        await fetch('/api/test_auth', {
-          headers: {
-            'risu-auth': await this.createAuth(),
-          },
-        })
-      ).json()
+      const status = await fetchAuthStatus(await this.createAuth())
 
-      if (data.status === 'unset') {
+      if (status === 'unset') {
         const input = await digestPassword(await alertInput(language.setNodePassword))
-        await fetch('/api/set_password', {
+        await fetch(ROUTES.setPassword, {
           method: 'POST',
           body: JSON.stringify({
             password: input,
@@ -168,12 +216,12 @@ export class NodeStorage {
           },
         })
         return await this.createAuth()
-      } else if (data.status === 'incorrect') {
+      } else if (status === 'incorrect') {
         const keypair = await this.getKeyPair()
         const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
         const input = await digestPassword(await alertInput(language.inputNodePassword))
 
-        const s = await fetch('/api/login', {
+        const s = await fetch(ROUTES.login, {
           method: 'POST',
           body: JSON.stringify({
             password: input,
@@ -213,7 +261,7 @@ export async function getNodeServerProxyAuth() {
 }
 
 async function digestPassword(message: string) {
-  const response = await fetch('/api/crypto', {
+  const response = await fetch(ROUTES.crypto, {
     body: JSON.stringify({
       data: message,
     }),
