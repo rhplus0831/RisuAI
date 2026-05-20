@@ -1,6 +1,20 @@
 # sendChat Status
 
-Date: 2026-05-20
+Date: 2026-05-20 (Phase 4 scaffolding + 8 fixtures landed)
+
+Updated 2026-05-20: Phase 4 scaffolding and the first eight
+fixtures have landed. Loader / provider fake / snapshot harness
+exist; fixtures cover the happy streaming path, preview
+short-circuit, continue (resume an assistant message), multiline
+reroll, upstream-fail with `inlayErrorResponse`, the recursive
+auto-continue branch, the author-note slot under the default
+`formatingOrder`, and the `automaticCachePoint` walk-back. See
+"Phase 4 in progress" below for the running tally and the open
+items.
+
+Snapshot schema bumped 2026-05-20: `providerCalls` now persists
+the normalized call records (mode + formated + opt-in flags)
+instead of a count. Existing fixtures were re-recorded.
 
 ## Current state
 
@@ -32,9 +46,107 @@ It reaches into:
   `memory/{supaMemory,hypav2,hanuraiMemory}` imports and live
   branches.
 
-No `sendChat` characterization tests exist. Existing `process/`
-tests cover helper surfaces only: TTS hooks, request additional
-params, MCP Risu access modules, and inlay asset helpers.
+`src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
+fixture-based characterization harness:
+
+- `src/ts/process/__fixtures__/loadFixture.ts` reseeds `DBState`
+  via `setDatabase(...)` from a per-fixture `db/<name>.json`. The
+  cleanup intentionally does not restore the prior `DBState.db`
+  because doing so triggers a reactive `$effect` in
+  `parser.svelte.ts:504-518` against partial state; the next
+  fixture's `setDatabase()` reseeds wholesale.
+- `src/ts/process/__fixtures__/providerFake.ts` is the fake for
+  `requestChatData`. It scripts responses from
+  `upstream/<name>.jsonl` and records every call. The test file
+  installs it via `vi.mock('../request/request', ...)` so every
+  importer (sendChat, stableDiff, triggers, scriptings, memory,
+  mcp) routes through the same fake.
+- `src/ts/process/__fixtures__/snapshot.ts` captures the final
+  `messages`, the assistant `generationInfo`, the
+  `chatProcessStage` write sequence, the spied side-effect call
+  log, and the provider call count. It records to
+  `expected/<name>.json` on first run (failing loudly) and asserts
+  on every subsequent run. `UPDATE_FIXTURES=1` overwrites the
+  recorded snapshot.
+- The test mocks `inlayScreen`, `tts`, `stableDiff`, and
+  `prereroll` modules so their side effects are recorded but no
+  real work runs. UUIDs are deterministic
+  (`uuid` mocked to a counter); time is locked via
+  `vi.useFakeTimers({ toFake: ['Date'] })`.
+- A small defensive guard was added to `parser.svelte.ts:506-507`
+  (`selIdState?.selId ?? -1`, `DBState?.db?.characters?...`) so
+  the top-level `$effect.root` does not throw at vitest's module
+  teardown. This is a production-safe robustness change, not a
+  refactor.
+
+Existing `process/` helper-surface tests (TTS hooks, request
+additional params, MCP Risu access modules, inlay asset helpers)
+continue to cover the smaller seams.
+
+## Phase 4 in progress
+
+Landed:
+
+- Scaffolding (loader, provider fake, snapshot harness,
+  per-module mocks, test entry).
+- `simple-send` - one user message, OpenAI, no lorebook / memory
+  / triggers. Pins one streaming chunk being concatenated onto a
+  new assistant row, plus `addRerolls` + `runInlayScreen` side
+  effects and `chatProcessStage` writes `[1, 3, 4]`.
+- `preview` - `sendChat(-1, { preview: true })`. Pins that
+  `chatProcessStage` advances to `[1, 3]` and no provider call
+  fires (`previewFormated` is populated then the function
+  returns).
+- `continue` - existing assistant message gets streamed text
+  appended. Pins that no new message row is added; the existing
+  `chatId` is preserved.
+- `regenerate` - provider returns `type:'multiline'` with three
+  entries. Pins that the first entry becomes the new char
+  message, all three pass through `runInlayScreen`, and
+  `addRerolls` receives the generationId plus the full array.
+- `provider-error` - provider returns `type:'fail'`. With
+  `inlayErrorResponse: true`, pins that `throwError` appends a
+  `\`\`\`risuerror\n...\n\`\`\`` char message carrying the active
+  `generationInfo`, stages stop at `[1, 3]`, and no side effects
+  fire.
+- `auto-continue` - `autoContinueMinTokens` set so a 1-token
+  first response triggers the recursive call. Pins
+  `stages: [1, 3, 0, 1, 3, 4]`, two `runInlayScreen` calls (the
+  second with the concatenated text), two separate `addRerolls`
+  calls (one per call), and the subtle behavior that the final
+  message keeps the first call's `chatId` while
+  `generationInfo.generationId` is overwritten by the second. The
+  expanded `providerCalls` capture pins the second call's
+  `formated` array: prior user message + assistant `"Cats"` row
+  with `removable: true` + `"[Continue the last response]"`
+  system marker, with `continue: true`.
+- `author-note` - `chats[0].note` set. Pins that the note appears
+  as the last system message in `formated` under the default
+  `formatingOrder` (after the chat history, not at the documented
+  "configured depth" - the real default is end-of-prompt).
+- `cache-point` - `automaticCachePoint: true` with a
+  `promptTemplate` that has a `chat` card. Pins that the
+  walk-back marks the last three `user` entries with
+  `cachePoint: true` and stops there. Without a `promptTemplate`,
+  this branch is unreachable (it lives inside the `case 'chat'`
+  switch of the template-driven prompt assembly).
+
+Open for the next slice:
+
+- 9 fixtures still to author per
+  [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md):
+  `lorebook-keyword`, `lorebook-constant`, `lorebook-recursive`,
+  `hypav3-memory`, `persona`, `multimodal-image`,
+  `editrequest-trigger`, `editoutput-trigger`, `client-abort`.
+- `doingChat` is set to `true` on sendChat entry and is not reset
+  on the success path. The test harness resets it between
+  fixtures; production code resets it from the UI layer. Worth
+  flagging in Phase 5 extraction so the lifecycle is owned in
+  one place.
+- The `uuid` mock counter resets between fixtures so snapshots
+  are order-independent. Any new fixture that exercises a code
+  path emitting multiple `v4()` calls should expect
+  `uuid-0`, `uuid-1`, ... starting fresh.
 
 ## What lands when
 

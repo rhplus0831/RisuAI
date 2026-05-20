@@ -18,9 +18,13 @@ one proxy slice or one characterization-test slice at a time.
    - Inventory and exit criteria live in
      [`../phases/phase-3-proxy.md`](../phases/phase-3-proxy.md).
 
-2. **Phase 4 prep - characterization tests.**
-   - Build the fixture loader that drives the current `sendChat`
-     against canned databases + canned upstream responses.
+2. **Phase 4 prep - characterization tests.** Scaffolding +
+   eight fixtures (`simple-send`, `preview`, `continue`,
+   `regenerate`, `provider-error`, `auto-continue`,
+   `author-note`, `cache-point`) landed 2026-05-20. The remaining
+   9 fixtures are the next slice; pick them in batches of 2-4.
+   See [`sendchat.md`](sendchat.md) for the in-progress tally and
+   the `doingChat` lifecycle note flagged for Phase 5.
    - Do not modify `sendChat` itself. The goal is to record what
      the function does today before Phase 5 extraction changes its
      structure.
@@ -64,6 +68,32 @@ one proxy slice or one characterization-test slice at a time.
   from `RISU_API_STATIC_ROOT`, and the Docker switch to Fastify on
   port 6002. No server-side `.risu` export/bundle or asset delete
   route exists in Phase 2.
+
+- **Phase 4 - sendChat characterization scaffolding + first slice.**
+  Done 2026-05-20. Adds the fixture loader, provider fake,
+  snapshot harness, per-side-effect mocks, and three fixtures
+  (`simple-send`, `preview`, `continue`). A small defensive guard
+  on `parser.svelte.ts:506-507` (optional chaining of
+  `selIdState` and `DBState.db.characters`) was needed so the
+  module's top-level `$effect.root` does not throw at vitest
+  teardown.
+
+- **Phase 4 - second fixture slice.** Done 2026-05-20. Adds
+  `regenerate` (multiline reroll), `provider-error` (upstream
+  fail produces a `risuerror` chat message under
+  `inlayErrorResponse: true`), and `auto-continue` (recursive
+  `sendChat` call with `autoContinueMinTokens`). The `uuid` mock
+  counter now resets between fixtures so snapshots are
+  order-independent.
+
+- **Phase 4 - prompt-shape slice.** Done 2026-05-20. Bumps the
+  snapshot schema so `providerCalls` carries the normalized call
+  records (mode + formated + opt-in flags) instead of just a
+  count. Adds `author-note` (chat-level note lands at the end of
+  the default `formatingOrder`) and `cache-point`
+  (`automaticCachePoint` walk-back marks the last 3 user entries
+  - only reachable through a `promptTemplate` with a `chat`
+  card). All 8 prior fixtures were re-recorded.
 
 ## Closed (do not reopen without a contract)
 
