@@ -10,6 +10,7 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerHealthRoutes } from './routes/health.js'
+import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES } from './repository.js'
 
@@ -57,6 +58,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerSaveRoutes(app, db, authState, config.dataDir)
   registerAssetsRoutes(app, db, authState, config.dataDir)
   registerBackupRoutes(app, db, authState, config.dataDir)
+  registerProxyRoutes(app, authState)
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
     await app.register(fastifyStatic, {
