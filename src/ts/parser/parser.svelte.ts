@@ -503,8 +503,8 @@ export function resetAssetsCache(
 
 $effect.root(() => {
   $effect(() => {
-    const charId = selIdState.selId
-    const char = DBState.db.characters?.[charId]
+    const charId = selIdState?.selId ?? -1
+    const char = DBState?.db?.characters?.[charId]
     if (!char || char.type !== 'character') {
       return
     }
