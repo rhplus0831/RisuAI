@@ -11,6 +11,7 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerHealthRoutes } from './routes/health.js'
+import { registerHubRoutes } from './routes/hub.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
@@ -74,6 +75,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerBackupRoutes(app, db, authState, config.dataDir)
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)
+  registerHubRoutes(app, authState, config.hubUrl)
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
     await app.register(fastifyStatic, {

@@ -28,6 +28,7 @@ async function startHarness(opts: { withStatic: boolean }): Promise<Harness> {
       dataDir,
       bodyLimit: 1024 * 1024,
       trustProxy: false,
+      hubUrl: 'https://sv.risuai.xyz',
       staticRoot,
     },
   })

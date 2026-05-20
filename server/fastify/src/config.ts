@@ -8,6 +8,7 @@ export interface AppConfig {
   bodyLimit: number
   trustProxy: boolean | number | string
   staticRoot?: string | null
+  hubUrl: string
 }
 
 function repoRoot(): string {
@@ -49,6 +50,19 @@ function parseStaticRoot(raw: string | undefined, fallback: string): string | nu
   return path.resolve(raw)
 }
 
+function parseHubUrl(raw: string | undefined, fallback: string): string {
+  if (!raw) return fallback
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('protocol must be http or https')
+    }
+    return raw.replace(/\/+$/, '')
+  } catch (err) {
+    throw new Error(`Invalid RISU_HUB_URL: ${raw} (${(err as Error).message})`)
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const dataDir = env.RISU_API_DATA_DIR
     ? path.resolve(env.RISU_API_DATA_DIR)
@@ -61,5 +75,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     bodyLimit: parseBodyLimit(env.RISU_API_BODY_LIMIT, 100 * 1024 * 1024),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     staticRoot: parseStaticRoot(env.RISU_API_STATIC_ROOT, path.join(repoRoot(), 'dist')),
+    hubUrl: parseHubUrl(env.RISU_HUB_URL, 'https://sv.risuai.xyz'),
   }
 }
