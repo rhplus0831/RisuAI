@@ -157,6 +157,17 @@ export async function sendChat(
       return false
     }
   }
+  // iOwnDoingChat contract: this call sets `doingChat = true` on entry and
+  // the `finally` clears it on exit only when this flag is true. Three states:
+  //   (a) own         — fresh call, finally clears.
+  //   (b) reentrant   — chatProcessIndex !== -1 while doingChat is already
+  //                     true; we never took ownership, finally must not clear.
+  //   (c) handoff     — auto-continue or sendAIprompt resend recurse into
+  //                     sendChat. The inner call's entry guard refuses on
+  //                     `chatProcessIndex === -1` while doingChat is true, so
+  //                     before recursing we clear `doingChat` manually AND
+  //                     set `iOwnDoingChat = false` so the outer finally
+  //                     does not re-clear after the inner finally already did.
   let iOwnDoingChat = false
   if (!isDoing) {
     doingChat.set(true)
@@ -1708,8 +1719,7 @@ export async function sendChat(
   })
 
   if (shouldContinue) {
-    // Release the flag before the recursive call so the inner sendChat's
-    // entry guard does not refuse when chatProcessIndex === -1.
+    // Handoff — see iOwnDoingChat contract above.
     doingChat.set(false)
     iOwnDoingChat = false
     return await sendChat(chatProcessIndex, {
@@ -1737,8 +1747,7 @@ export async function sendChat(
 
   if (resendChat) {
     finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
-    // Release the flag before the recursive call so the inner sendChat's
-    // entry guard does not refuse when chatProcessIndex === -1.
+    // Handoff — see iOwnDoingChat contract above.
     doingChat.set(false)
     iOwnDoingChat = false
     return await sendChat(chatProcessIndex, {
