@@ -17,6 +17,14 @@ vi.mock('../memory/hypav3', async (importActual) => {
   return { ...actual, hypaMemoryV3: fake.hypaMemoryV3 }
 })
 
+// scriptings.ts imports wasmoon at module load. wasmoon's createRequire call
+// fails in the vitest happy-dom env (non-file URL), so we replace the whole
+// module rather than importActual-ing it. sendChat, scripts.ts, and
+// triggers.ts only consume runLuaEditTrigger and runScripted from this
+// module - the mock supplies both as no-ops, plus a fixture-driven
+// editRequest marker hook.
+vi.mock('../scriptings', () => import('../__fixtures__/mocks/scriptings'))
+
 // Stable UUIDs so generationId / chatId are deterministic in snapshots.
 // The counter is exposed via a reset hook so each fixture starts at uuid-0,
 // keeping snapshots independent of test order.
@@ -50,6 +58,7 @@ const FIXTURES = [
   'lorebook-recursive',
   'multimodal-image',
   'hypav3-memory',
+  'editrequest-trigger',
   'client-abort',
 ] as const
 
