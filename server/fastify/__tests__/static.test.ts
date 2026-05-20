@@ -17,7 +17,10 @@ async function startHarness(opts: { withStatic: boolean }): Promise<Harness> {
   let staticRoot: string | null = null
   if (opts.withStatic) {
     staticRoot = mkdtempSync(path.join(tmpdir(), 'risu-fastify-static-'))
-    writeFileSync(path.join(staticRoot, 'index.html'), '<!doctype html><title>spa</title>')
+    writeFileSync(
+      path.join(staticRoot, 'index.html'),
+      '<!doctype html><html><head lang="en"><title>spa</title></head><body></body></html>',
+    )
     mkdirSync(path.join(staticRoot, 'assets'))
     writeFileSync(path.join(staticRoot, 'assets', 'app.js'), 'console.log("app")')
   }
@@ -57,6 +60,22 @@ describe('Phase 2E static serving', () => {
       const res = await harness.app.inject({ method: 'GET', url: '/' })
       expect(res.statusCode).toBe(200)
       expect(res.body).toContain('<title>spa</title>')
+    })
+
+    it('injects globalThis.__FASTIFY__ = true into the served index.html', async () => {
+      const root = await harness.app.inject({ method: 'GET', url: '/' })
+      expect(root.statusCode).toBe(200)
+      expect(root.headers['content-type']).toContain('text/html')
+      expect(root.body).toContain('globalThis.__FASTIFY__ = true')
+      // Injected just after the opening <head ...> tag so the flag is set
+      // before any other script the SPA boot would run.
+      expect(root.body.indexOf('globalThis.__FASTIFY__')).toBeLessThan(
+        root.body.indexOf('<title>spa</title>'),
+      )
+
+      const spa = await harness.app.inject({ method: 'GET', url: '/character/123' })
+      expect(spa.statusCode).toBe(200)
+      expect(spa.body).toContain('globalThis.__FASTIFY__ = true')
     })
 
     it('serves nested static files', async () => {

@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
@@ -78,17 +79,36 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerHubRoutes(app, authState, config.hubUrl)
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
+    const indexPath = path.join(config.staticRoot, 'index.html')
+    let cachedIndex: string | null = null
+    const indexHtml = (): string => {
+      if (cachedIndex !== null) return cachedIndex
+      const raw = fs.readFileSync(indexPath, 'utf-8')
+      const tag = '<script>globalThis.__FASTIFY__ = true;</script>'
+      const headMatch = /<head(?:\s[^>]*)?>/i.exec(raw)
+      cachedIndex = headMatch
+        ? `${raw.slice(0, headMatch.index + headMatch[0].length)}\n${tag}${raw.slice(headMatch.index + headMatch[0].length)}`
+        : `${tag}\n${raw}`
+      return cachedIndex
+    }
+
     await app.register(fastifyStatic, {
       root: config.staticRoot,
       prefix: '/',
       wildcard: false,
+      index: false,
     })
+
+    app.get('/', async (_req, reply) => {
+      reply.type('text/html').send(indexHtml())
+    })
+
     app.setNotFoundHandler((req, reply) => {
       if (req.method !== 'GET' || req.url.startsWith('/api/')) {
         reply.code(404).send({ error: 'not found' })
         return
       }
-      reply.type('text/html').sendFile('index.html')
+      reply.type('text/html').send(indexHtml())
     })
   }
 
