@@ -6,7 +6,7 @@ Tracks Phase 0 progress. Update each row as code is deleted. The
 canonical scope lives in
 [`../phases/phase-0-removals.md`](../phases/phase-0-removals.md).
 
-Last updated: 2026-05-20 (Legacy memory engines landed).
+Last updated: 2026-05-20 (Risu Account Sync + Google Drive sync landed).
 
 ## Group chat
 
@@ -71,49 +71,75 @@ in `src/` returns no hits.
 
 ## Risu Account Sync
 
-Status: not started.
+Status: done (2026-05-20). Landed in the same commit as Google
+Drive sync below.
 
-Code surface:
+Removed:
 
-- `src/ts/storage/accountStorage.ts` (211 LOC).
-- `src/ts/drive/accounter.ts` (137 LOC) - Risu account profile /
-  login flow.
-- `src/ts/sionyw.ts` (342 LOC) - sionyw OAuth client.
-- `server/node/server.cjs` - `/api/oauth_login`,
-  `/api/oauth_callback`, `getSionywAccessToken`, related state.
-- `src/lib/Setting/Pages/UserSettings.svelte` - sync settings UI.
-- `src/ts/globalApi.svelte.ts`, `src/ts/bootstrap.ts`,
-  `src/ts/storage/autoStorage.ts`,
-  `src/ts/characterCards.ts`,
-  `src/lib/Others/SavePopupIcon.svelte` - call sites that go away
-  once `forageStorage.isAccount` cannot be true.
-- `openid-client` dependency in `package.json` (audit other
-  consumers before removing).
-
-Exit when:
-
-- Grep for `accountStorage`, `Sionyw`, `sionyw`,
-  `RisuAccount` returns no hits in `src/`.
-- The user-settings page no longer offers the Risu Account section.
-- `openid-client` is removed if and only if nothing else needs it.
+- `src/ts/storage/accountStorage.ts` (211 LOC), `src/ts/drive/accounter.ts`
+  (137 LOC), `src/ts/sionyw.ts` (342 LOC) deleted.
+- `src/ts/storage/autoStorage.ts` lost the `AccountStorage`
+  instantiation path (`checkAccountSync`, `isAccount` field, all
+  four `isAccount = true` write sites). `realStorage` now always
+  falls through to localforage/OPFS/NodeStorage.
+- `src/ts/globalApi.svelte.ts` lost six `forageStorage.isAccount`
+  branches plus the `loadRisuAccountData` / `AccountStorage` /
+  `checkDriverInit` / `syncDrive` imports.
+- `src/ts/bootstrap.ts` lost the `checkAccountSync` boot block,
+  the `loadRisuAccountData()` call, and the `AccountStorage` cast
+  used to read the remote save bin.
+- `src/ts/characterCards.ts` lost the `instanceof AccountStorage`
+  CharX-skippable preflight, the `lightningRealmImport` hub-fetch
+  fallback (queueFetch path), and the function-parameter / Realm
+  call sites that fed it.
+- `src/ts/process/coldstorage.svelte.ts` lost the four
+  `fetchProtectedResource('/hub/account/coldstorage', ...)`
+  branches in get/set/list/remove.
+- `src/ts/process/stableDiff.ts` lost the `fallbackRisuToken`
+  localStorage rehydrate inside the kei SD provider.
+- `src/ts/plugins/apiV3/v3.svelte.ts` collapsed `saveMethod` to
+  `tauri | local`.
+- `src/lib/Setting/Pages/UserSettings.svelte` rewritten - only
+  local backup / cold-storage / export buttons remain.
+- `src/lib/Others/SavePopupIcon.svelte` lost the
+  `AccountWarning` icon path.
+- `Database.account` shape pruned to `{ token, id, kei? }` (Realm +
+  kei consumers still need `token`/`id`). `data` and `useSync`
+  dropped. `Database.lightningRealmImport` dropped along with its
+  `advancedSettingsData.ts` entry.
+- `server/node/server.cjs` lost `const openid = require('openid-client')`,
+  `getSionywAccessToken` and its access-token cache, `/api/oauth_login`,
+  `/api/oauth_callback`, the `__sionyw_client_data.json` reads/writes,
+  the `__authcode` path constant and reader, and the
+  `Authorization === 'X-Node-Server-Auth'` Bearer-injection branch
+  inside `hubProxyFunc`.
+- `openid-client` dropped from `package.json`; `pnpm install`
+  pruned 5 packages (the dependency tree).
 
 ## Google Drive sync
 
-Status: not started.
+Status: done (2026-05-20). Landed alongside Account Sync.
 
-Code surface:
+Removed:
 
-- `src/ts/drive/drive.ts` (453 LOC).
-- `src/ts/drive/backuplocal.ts` (512 LOC) - the user-triggered
-  local backup helpers that share the Drive code path.
-- Settings UI entries for "Save to Google Drive" / "Restore from
-  Drive".
+- `src/ts/drive/drive.ts` (453 LOC) deleted; `src/ts/drive/`
+  directory removed entirely.
+- `src/ts/drive/backuplocal.ts` (512 LOC) was *moved* to
+  `src/ts/storage/backup.ts` with the seven `forageStorage.isAccount`
+  branches stripped. The user-facing "Save / Save Partial / Load
+  local backup" UI in UserSettings.svelte continues to work; only
+  the Account-sync dead branches inside it were dropped.
+- `src/lib/Setting/Pages/FilesSettings.svelte` deleted - it was a
+  pure Drive sync settings page (and unreachable from the settings
+  menu chips already). The `case 5: FilesSettings` branch in
+  `src/lib/Setting/Settings.svelte` was removed.
+- `src/ts/globalApi.svelte.ts` lost the `syncDrive()` kickoff at
+  the top of `saveDb`.
 
-Exit when:
-
-- `src/ts/drive/` is empty or only contains files unrelated to
-  Drive sync.
-- No UI surface offers Drive sync.
+Verification: `pnpm check` (0 errors / 0 warnings), `pnpm test`
+(152 passed, 4 pre-existing skips), `pnpm build` succeeded. Grep
+for `accountStorage|sionyw|RisuAccount|drive/drive|drive/backuplocal|drive/accounter|forageStorage\.isAccount`
+in `src/` returns no hits.
 
 Note: replacement backups will be provided by the Fastify server
 (`/api/v1/backups` + `/api/v1/export/bundle`) once Phase 2 lands.

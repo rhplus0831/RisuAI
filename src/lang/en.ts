@@ -989,15 +989,6 @@ export const languageEnglish = {
   downloads: 'Downloads',
   trending: 'Trending',
   imageCompression: 'Image Compression',
-  notLoggedIn: 'Not Logged in to Risu Account',
-  googleDriveInfo: 'Connect to Google Drive to sync your data.',
-  googleDriveConnection: 'Google Drive Connection',
-  googleDriveConnected: 'Google Drive Connected',
-  SaveDataInAccount: 'Save Data in Account',
-  dataSavingInAccount: 'Saving Data in Account',
-  logout: 'Logout',
-  loadDataFromAccount: 'Load Data from Account',
-  saveCurrentDataToAccount: 'Save Current Data to Account',
   chatAssumed: '',
   proxyAPIKey: 'Key/Password',
   proxyRequestModel: 'Request Model',
@@ -1287,7 +1278,6 @@ export const languageEnglish = {
   successApplyModule: 'Module is successfully applied',
   font: 'Font',
   lineHeight: 'Line Height',
-  loadAutoServerBackup: 'Load Auto Server Backup',
   notCharxWarn:
     'This character uses multiple assets. It is recommended to export this character as a CharX format for better compatibility.',
   noPlugins: 'No Plugins Installed',
@@ -1617,7 +1607,6 @@ export const languageEnglish = {
   add: 'Add',
   nightlyWarning:
     '## Nightly Builds\n\nYou are connecting to a nightly build of the software. This version is meant for testing and most likely contains bugs. **In this version, even if you encounter issues, we do not support resolving them directly.**',
-  loginSionyw: 'Login with Sionyw Account',
   pluginRiskDetectedAlert:
     'Risuai detected code that may be harmful which can STOLE YOUR API KEY OR PERSONAL DATA. We recommend you to NOT INSTALL THIS PLUGIN.',
   doNotInstall: 'Do Not Install',

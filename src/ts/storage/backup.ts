@@ -1,26 +1,17 @@
 import { BaseDirectory, readFile, readDir, writeFile } from '@tauri-apps/plugin-fs'
-import localforage from 'localforage'
 import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from '../alert'
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from '../globalApi.svelte'
 import { isTauri } from 'src/ts/platform'
-import { decodeRisuSave, encodeRisuSaveLegacy } from '../storage/risuSave'
-import { getDatabase, setDatabaseLite } from '../storage/database.svelte'
+import { decodeRisuSave, encodeRisuSaveLegacy } from './risuSave'
+import { getDatabase, setDatabaseLite } from './database.svelte'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { sleep } from '../util'
-import { hubURL } from '../characterCards'
 import { language } from 'src/lang'
 import {
   getColdStorageItem,
   listColdDataKeys,
   setColdStorageItem,
 } from '../process/coldstorage.svelte'
-
-function getBasename(data: string) {
-  const baseNameRegex = /\\/g
-  const splited = data.replace(baseNameRegex, '/').split('/')
-  const lasts = splited[splited.length - 1]
-  return lasts
-}
 
 export async function SaveLocalBackup() {
   alertWait('Saving local backup...')
@@ -123,45 +114,27 @@ export async function SaveLocalBackup() {
       if (!key || !key.endsWith('.png')) {
         continue
       }
-      let data: Uint8Array | undefined
-      let isCached = false
-      if (forageStorage.isAccount && key.startsWith('assets/')) {
-        const cached = (await localforage.getItem(key)) as ArrayBuffer
-        if (cached) {
-          isCached = true
-          data = new Uint8Array(cached)
-        }
-      }
-
-      if (!data) {
-        data = (await forageStorage.getItem(key)) as unknown as Uint8Array
-      }
+      const data = (await forageStorage.getItem(key)) as unknown as Uint8Array
 
       if (data) {
         await writer.writeBackup(key, data)
       } else {
         missingAssets.push(key)
       }
-      if (forageStorage.isAccount && !isCached) {
-        await sleep(1000)
-      }
     }
   }
 
-  if (!forageStorage.isAccount) {
-    //save coldstorages
-    const coldKeys = await listColdDataKeys()
-    for (let i = 0; i < coldKeys.length; i++) {
-      const key = coldKeys[i]
-      let message = `Saving local Backup Cold data... (${i + 1} / ${coldKeys.length})`
-      alertWait(message)
-      const data = await getColdStorageItem(key)
-      if (data) {
-        const encoded = new TextEncoder().encode(JSON.stringify(data))
-        await writer.writeBackup(`coldstorage/${key}.json`, encoded)
-      } else {
-        missingAssets.push(`coldstorage/${key}.json`)
-      }
+  const coldKeys = await listColdDataKeys()
+  for (let i = 0; i < coldKeys.length; i++) {
+    const key = coldKeys[i]
+    let message = `Saving local Backup Cold data... (${i + 1} / ${coldKeys.length})`
+    alertWait(message)
+    const data = await getColdStorageItem(key)
+    if (data) {
+      const encoded = new TextEncoder().encode(JSON.stringify(data))
+      await writer.writeBackup(`coldstorage/${key}.json`, encoded)
+    } else {
+      missingAssets.push(`coldstorage/${key}.json`)
     }
   }
 
@@ -200,14 +173,12 @@ export async function SaveLocalBackup() {
  * - Ideal for backing up core visual identity without bulk data
  */
 export async function SavePartialLocalBackup() {
-  // First confirmation: Explain the difference from regular backup
   const firstConfirm = await alertConfirm(language.partialBackupFirstConfirm)
 
   if (!firstConfirm) {
     return
   }
 
-  // Second confirmation: Final warning about not saving assets
   const secondConfirm = await alertConfirm(language.partialBackupSecondConfirm)
 
   if (!secondConfirm) {
@@ -225,26 +196,21 @@ export async function SavePartialLocalBackup() {
   const db = getDatabase()
   const assetMap = new Map<string, { charName: string; assetName: string }>()
 
-  // Only collect main profile images for both characters and groups
   if (db.characters) {
     for (const char of db.characters) {
       if (!char) continue
       const charName = char.name ?? 'Unknown Character'
 
-      // Save the main profile image (supports both character and group types)
-      // Note: emotionImages are intentionally excluded from partial backup
       if (char.image) {
         assetMap.set(char.image, { charName: charName, assetName: 'Profile Image' })
       }
     }
   }
 
-  // User icon
   if (db.userIcon) {
     assetMap.set(db.userIcon, { charName: 'User Settings', assetName: 'User Icon' })
   }
 
-  // Persona icons
   if (db.personas) {
     for (const persona of db.personas) {
       if (persona && persona.icon) {
@@ -253,12 +219,10 @@ export async function SavePartialLocalBackup() {
     }
   }
 
-  // Custom background
   if (db.customBackground) {
     assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
   }
 
-  // Folder images in characterOrder
   if (db.characterOrder) {
     for (const item of db.characterOrder) {
       if (typeof item !== 'string' && item.img) {
@@ -273,7 +237,6 @@ export async function SavePartialLocalBackup() {
     }
   }
 
-  // Bot preset images
   if (db.botPresets) {
     for (const preset of db.botPresets) {
       if (preset && preset.image) {
@@ -285,7 +248,6 @@ export async function SavePartialLocalBackup() {
   const missingAssets: string[] = []
 
   if (isTauri) {
-    // readDir returns entries without 'assets/' prefix, unlike forageStorage.keys()
     const assets = await readDir('assets', { baseDir: BaseDirectory.AppData })
     let i = 0
     for (let asset of assets) {
@@ -298,7 +260,6 @@ export async function SavePartialLocalBackup() {
         continue
       }
 
-      // Only process if this asset is in our map (profile images only)
       if (!assetMap.has(keyWithPrefix)) {
         continue
       }
@@ -324,7 +285,6 @@ export async function SavePartialLocalBackup() {
       }
     }
   } else {
-    const keys = await forageStorage.keys()
     const assetKeys = Array.from(assetMap.keys())
 
     for (let i = 0; i < assetKeys.length; i++) {
@@ -345,27 +305,12 @@ export async function SavePartialLocalBackup() {
         continue
       }
 
-      let data: Uint8Array | undefined
-      let isCached = false
-      if (forageStorage.isAccount && key.startsWith('assets/')) {
-        const cached = (await localforage.getItem(key)) as ArrayBuffer
-        if (cached) {
-          isCached = true
-          data = new Uint8Array(cached)
-        }
-      }
-
-      if (!data) {
-        data = (await forageStorage.getItem(key)) as unknown as Uint8Array
-      }
+      const data = (await forageStorage.getItem(key)) as unknown as Uint8Array
 
       if (data) {
         await writer.writeBackup(key, data)
       } else {
         missingAssets.push(key)
-      }
-      if (forageStorage.isAccount && !isCached) {
-        await sleep(100)
       }
     }
   }
@@ -409,7 +354,6 @@ export function LoadLocalBackup() {
       input.remove()
 
       const reader = file.stream().getReader()
-      const CHUNK_SIZE = 1024 * 1024 // 1MB chunk size
       let bytesRead = 0
       let remainingBuffer = new Uint8Array()
 
@@ -476,13 +420,11 @@ export function LoadLocalBackup() {
           } else if (name.startsWith('coldstorage/')) {
             const key = name.replace('coldstorage/', '').replace('.json', '')
             const text = new TextDecoder().decode(data)
-            if (!forageStorage.isAccount) {
-              try {
-                const jsonData = JSON.parse(text)
-                await setColdStorageItem(key, jsonData)
-              } catch (e) {
-                console.error(`Failed to parse cold storage item ${key}:`, e)
-              }
+            try {
+              const jsonData = JSON.parse(text)
+              await setColdStorageItem(key, jsonData)
+            } catch (e) {
+              console.error(`Failed to parse cold storage item ${key}:`, e)
             }
           } else {
             if (isTauri) {
@@ -492,9 +434,6 @@ export function LoadLocalBackup() {
             }
           }
           await sleep(10)
-          if (forageStorage.isAccount) {
-            await sleep(1000)
-          }
 
           offset += 4 + nameLength + 4 + dataLength
         }

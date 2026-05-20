@@ -84,14 +84,20 @@ Then audit `openid-client` use across the repo; remove it from
 Delete:
 
 - `src/ts/drive/drive.ts`.
-- `src/ts/drive/backuplocal.ts` (this file's helpers ride
-  alongside the Drive sync path).
 - "Save to Google Drive" / "Restore from Drive" UI entries.
 
-The replacement for backup workflows is the server-side bundle
-endpoint that lands in Phase 2. Phase 0 does not add a replacement;
-users keep `.risu` file export/import in the meantime, which already
-works through the Risu save bundle.
+Keep, with the `forageStorage.isAccount` dead branches stripped:
+
+- `src/ts/drive/backuplocal.ts` is *not* Drive-sync-coupled despite
+  living under `drive/`. It implements the in-app "Save local
+  backup" / "Load local backup" UI on top of `LocalWriter` +
+  `risuSave.ts`. Move it to `src/ts/storage/backup.ts` and strip
+  the Account-Sync dead branches inside it.
+
+The Phase 2 server bundle endpoint (`/api/v1/backups` +
+`/api/v1/export/bundle`) is the eventual replacement for *cloud*
+backup; local-file backup keeps working through `storage/backup.ts`
+in the meantime.
 
 ### 0.5 Legacy memory engines
 

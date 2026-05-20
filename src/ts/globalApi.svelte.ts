@@ -45,7 +45,6 @@ import {
   alertTOS,
   waitAlert,
 } from './alert'
-import { checkDriverInit, syncDrive } from './drive/drive'
 import { hasher } from './parser/parser.svelte'
 import { characterURLImport, hubURL } from './characterCards'
 import {
@@ -54,7 +53,6 @@ import {
   oldJailbreak,
   oldMainPrompt,
 } from './storage/defaultPrompts'
-import { loadRisuAccountData } from './drive/accounter'
 import {
   decodeRisuSave,
   encodeRisuSaveLegacy,
@@ -74,7 +72,6 @@ import { updateLorebooks } from './characters'
 import { initMobileGesture } from './hotkey'
 import { fetch as TauriHTTPFetch } from '@tauri-apps/plugin-http'
 import { moduleUpdate } from './process/modules'
-import type { AccountStorage } from './storage/accountStorage'
 import { makeColdData } from './process/coldstorage.svelte'
 import { isTauri, isNodeServer } from './platform'
 import { isLocalNetworkUrl } from './network/localNetwork'
@@ -165,9 +162,6 @@ export async function getFileSrc(loc: string) {
       }
     }
     return convertFileSrc(loc)
-  }
-  if (forageStorage.isAccount && loc.startsWith('assets')) {
-    return hubURL + `/rs/` + loc
   }
   try {
     if (usingSw) {
@@ -317,7 +311,6 @@ export let requiresFullEncoderReload = $state({
 })
 export async function saveDb() {
   let changed = false
-  syncDrive()
   let gotChannel = false
   const sessionID = v4()
   let channel: BroadcastChannel
@@ -350,7 +343,7 @@ export async function saveDb() {
 
   let encoder = new RisuSaveEncoder()
   await encoder.init(getDatabase(), {
-    compression: forageStorage.isAccount,
+    compression: false,
   })
 
   $effect.root(() => {
@@ -452,7 +445,7 @@ export async function saveDb() {
       if (requiresFullEncoderReload.state) {
         encoder = new RisuSaveEncoder()
         await encoder.init(getDatabase(), {
-          compression: forageStorage.isAccount,
+          compression: false,
           skipRemoteSavingOnCharacters: false,
         })
         requiresFullEncoderReload.state = false
@@ -492,19 +485,12 @@ export async function saveDb() {
         })
       } else {
         await forageStorage.setItem('database/database.bin', dbData)
-        if (!forageStorage.isAccount) {
-          await forageStorage.setItem(
-            `database/dbbackup-${(Date.now() / 100).toFixed()}.bin`,
-            dbData,
-          )
-        }
-        if (forageStorage.isAccount) {
-          await sleep(3000)
-        }
+        await forageStorage.setItem(
+          `database/dbbackup-${(Date.now() / 100).toFixed()}.bin`,
+          dbData,
+        )
       }
-      if (!forageStorage.isAccount) {
-        await getDbBackups()
-      }
+      await getDbBackups()
       savetrys = 0
       await saveDbKei()
       await sleep(500)
@@ -527,10 +513,6 @@ export async function saveDb() {
  * @returns {Promise<number[]>} - A promise that resolves to an array of backup timestamps.
  */
 export async function getDbBackups() {
-  let db = getDatabase()
-  if (db?.account?.useSync && !isTauri && !isNodeServer) {
-    return []
-  }
   if (isTauri) {
     const keys = await readDir('database', { baseDir: BaseDirectory.AppData })
     let backups: number[] = []

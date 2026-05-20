@@ -907,15 +907,6 @@ export const languageKorean = {
   downloads: '다운로드',
   trending: '인기',
   imageCompression: '이미지 압축',
-  notLoggedIn: 'Risu Account에 로그인되지 않음',
-  googleDriveInfo: '구글 드라이브에 연동해서 데이터를 동기화하세요.',
-  googleDriveConnection: '구글 드라이브 연동하기',
-  googleDriveConnected: '구글 드라이브 연동됨',
-  SaveDataInAccount: '계정에 데이터 저장',
-  dataSavingInAccount: '계정에 데이터 저장 중',
-  logout: '로그아웃',
-  loadDataFromAccount: '계정에서 데이터 불러오기',
-  saveCurrentDataToAccount: '계정에 데이터 현재 덮어쓰기',
   chatAssumed: '',
   proxyAPIKey: '키/패스워드',
   proxyRequestModel: '요청 모델',
@@ -1199,7 +1190,6 @@ export const languageKorean = {
   successApplyModule: '모듈이 성공적으로 적용되었습니다.',
   font: '폰트',
   lineHeight: '줄간격',
-  loadAutoServerBackup: '자동 서버 백업 불러오기',
   notCharxWarn:
     '이 캐릭터는 여러 에셋을 사용합니다. 더 나은 호환성을 위해 이 캐릭터를 CharX 포맷으로 엑스포트하는 것이 좋습니다.',
   noPlugins: '설치된 플러그인이 없습니다.',
@@ -1523,7 +1513,6 @@ export const languageKorean = {
   add: '추가',
   nightlyWarning:
     '## 나이틀리 빌드\n\n나이틀리 빌드에 연결하려고 합니다. 이 버전은 테스트용이며 버그가 포함되어 있을 수 있습니다. **이 버전에서는 버그 등 문제가 발생하더라도 직접적으로 해결하는 것을 지원하지 않습니다.**',
-  loginSionyw: 'Sionyw 계정으로 로그인',
   pluginRiskDetectedAlert:
     'Risuai가 API 키나 개인 데이터를 훔칠 수도 있는 위험한 코드를 감지했습니다. 이 플러그인을 설치하지 않는 것을 권장합니다.',
   doNotInstall: '설치하지 않음',

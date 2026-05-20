@@ -508,17 +508,6 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
 
-  // Sync (Condition: db.account.useSync)
-  {
-    id: 'adv.sync.realm',
-    type: 'check',
-    fallbackLabel: 'Lightning Realm Import',
-    bindKey: 'lightningRealmImport',
-    condition: (ctx) => !!ctx.db.account?.useSync,
-    showExperimental: true,
-    classes: 'mt-4',
-  },
-
   // Dynamic Assets Edit (Condition: dynamicAssets)
   {
     id: 'adv.dynAssetsEdit',

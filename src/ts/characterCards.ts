@@ -35,7 +35,6 @@ import {
   BlankWriter,
   checkCharOrder,
   downloadFile,
-  forageStorage,
   loadAsset,
   LocalWriter,
   openURL,
@@ -57,11 +56,10 @@ import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from './process/files/inlays'
 import { PngChunk } from './pngChunk'
 import type { OnnxModelFiles } from './process/transformers'
-import { CharXImporter, CharXSkippableChecker, CharXWriter } from './process/processzip'
+import { CharXImporter, CharXWriter } from './process/processzip'
 import { exportModule, readModule, type RisuModule } from './process/modules'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
-import { AccountStorage } from './storage/accountStorage'
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz'
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
@@ -94,7 +92,6 @@ export async function importCharacter() {
 export async function importCharacterProcess(f: {
   name: string
   data: Uint8Array | File | ReadableStream<Uint8Array>
-  lightningRealmImport?: boolean
 }) {
   if (f.name.endsWith('json')) {
     if (f.data instanceof ReadableStream) {
@@ -129,52 +126,8 @@ export async function importCharacterProcess(f: {
       msg: 'Loading... (Reading)',
     })
 
-    let charXMode: 'normal' | 'skippable' | 'signal' = 'normal'
-    let signal = ''
-    if (forageStorage.realStorage instanceof AccountStorage) {
-      if (f.data instanceof ReadableStream) {
-        const tee = f.data.tee()
-        const reader = tee[0].getReader()
-        f.data = tee[1]
-        const chunks: Uint8Array[] = []
-        let done = false
-        let readedBytes = 0
-        while (!done) {
-          const r = await reader.read()
-          readedBytes += r.value ? r.value.length : 0
-          if (r.done) {
-            done = true
-          } else {
-            chunks.push(r.value)
-          }
-          alertWait(`Loading... (Reading) ${readedBytes} Bytes`)
-        }
-        let offset = 0
-        const uint8 = new Uint8Array(readedBytes)
-        for (const chunk of chunks) {
-          uint8.set(chunk, offset)
-          offset += chunk.length
-        }
-        const v = await CharXSkippableChecker(uint8)
-        signal = v.hash
-        charXMode = v.success ? 'skippable' : 'signal'
-      } else {
-        const rsp = new Response(f.data as any)
-        f.data = new Uint8Array(await rsp.arrayBuffer())
-        const v = await CharXSkippableChecker(f.data)
-        signal = v.hash
-        charXMode = v.success ? 'skippable' : 'signal'
-      }
-    }
-
     const importer = new CharXImporter()
     importer.alertInfo = true
-    if (charXMode === 'skippable') {
-      importer.skipSaving = true
-    }
-    if (charXMode === 'signal') {
-      importer.hashSignal = signal
-    }
     await importer.parse(f.data)
     const cardData = importer.cardData
     if (!cardData) {
@@ -247,9 +200,6 @@ export async function importCharacterProcess(f: {
     returnTrimed: true,
   })
   const assets: { [key: string]: string } = {}
-  let queueFetch: Promise<Response>[] = []
-  let queueFetchKey: string[] = []
-  let queueFetchData: Buffer[] = []
   for await (const chunk of readGenerator) {
     if (!chunk) {
       continue
@@ -286,48 +236,9 @@ export async function importCharacterProcess(f: {
 
       readedPngChunks++
 
-      if (db.account?.useSync && f.lightningRealmImport) {
-        const id = await hasher(assetData)
-        const xid = 'assets/' + id + '.png'
-        queueFetchKey.push(assetIndex)
-        queueFetchData.push(assetData)
-        queueFetch.push(fetch('https://sv.risuai.xyz/rs/' + xid))
-        assets[assetIndex] = 'xid:' + xid
-        if (queueFetch.length > 10) {
-          const res = await Promise.all(queueFetch)
-          for (let i = 0; i < res.length; i++) {
-            if (res[i].status !== 200) {
-              const assetId = await saveAsset(queueFetchData[i])
-              assets[queueFetchKey[i]] = assetId
-            } else {
-              assets[queueFetchKey[i]] = assets[queueFetchKey[i]].replace('xid:', '')
-            }
-          }
-          queueFetch = []
-          queueFetchKey = []
-          queueFetchData = []
-        }
-        continue
-      }
-
       const assetId = await saveAsset(assetData)
       assets[assetIndex] = assetId
     }
-  }
-
-  if (queueFetch.length > 0) {
-    const res = await Promise.all(queueFetch)
-    for (let i = 0; i < res.length; i++) {
-      if (res[i].status !== 200) {
-        const assetId = await saveAsset(queueFetchData[i])
-        assets[queueFetchKey[i]] = assetId
-      } else {
-        assets[queueFetchKey[i]] = assets[queueFetchKey[i]].replace('xid:', '')
-      }
-    }
-    queueFetch = []
-    queueFetchKey = []
-    queueFetchData = []
   }
 
   if (!readedChara && !readedCCv3) {
@@ -1921,13 +1832,11 @@ export async function downloadRisuHub(
         await importCharacterProcess({
           name: 'realm.charx',
           data: new Uint8Array(await res.arrayBuffer()),
-          lightningRealmImport: db.lightningRealmImport,
         })
       } else {
         await importCharacterProcess({
           name: 'realm.png',
           data: res.body,
-          lightningRealmImport: db.lightningRealmImport,
         })
       }
       checkCharOrder()

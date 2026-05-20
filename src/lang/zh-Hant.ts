@@ -854,12 +854,6 @@ export const languageChineseTraditional = {
   downloads: '下載',
   trending: '熱門',
   imageCompression: '圖片壓縮',
-  notLoggedIn: '尚未登入 Risu 帳號',
-  SaveDataInAccount: '儲存資料到帳號',
-  dataSavingInAccount: '正在將資料儲存到帳號',
-  logout: '登出',
-  loadDataFromAccount: '從帳號讀取資料',
-  saveCurrentDataToAccount: '儲存目前資料到帳號',
   chatAssumed: '',
   proxyAPIKey: '代理金鑰/密碼',
   proxyRequestModel: '請求模型',
@@ -1132,7 +1126,6 @@ export const languageChineseTraditional = {
   successApplyModule: '已成功套用模組',
   font: '字型',
   lineHeight: '行距',
-  loadAutoServerBackup: '讀取伺服器自動備份',
   notCharxWarn: '此角色包含多項資源，建議匯出為 CharX 格式以確保最佳相容性。',
   noPlugins: '未安裝外掛',
   legacyTranslation: '舊版翻譯',
@@ -1445,7 +1438,6 @@ export const languageChineseTraditional = {
   add: '新增',
   nightlyWarning:
     '## Nightly Builds\n\n您正在連接至軟體的 Nightly 測試版本。此版本僅供測試，且極有可能包含錯誤。**請注意，我們不直接提供此版本的任何問題排解或技術支援。**',
-  loginSionyw: '使用 Sionyw 帳號登入',
   pluginRiskDetectedAlert:
     'Risuai 偵測到可能有害的程式碼，該外掛可能**竊取您的 API 金鑰或個人資料**。強烈建議**不要安裝此外掛**。',
   doNotInstall: '不要安裝',

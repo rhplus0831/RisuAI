@@ -919,15 +919,6 @@ export const languageSpanish = {
   downloads: 'Descargas',
   trending: 'Tendencias',
   imageCompression: 'Compresión de Imágenes',
-  notLoggedIn: 'No has iniciado sesión en Risu',
-  googleDriveInfo: 'Conéctate a Google Drive para sincronizar tus datos.',
-  googleDriveConnection: 'Conexión a Google Drive',
-  googleDriveConnected: 'Conectado a Google Drive',
-  SaveDataInAccount: 'Guardar Datos en la Cuenta',
-  dataSavingInAccount: 'Guardando Datos en la Cuenta',
-  logout: 'Cerrar Sesión',
-  loadDataFromAccount: 'Cargar Datos desde la Cuenta',
-  saveCurrentDataToAccount: 'Guardar Datos Actuales en la Cuenta',
   chatAssumed: '',
   proxyAPIKey: 'Clave/Contraseña del Proxy',
   proxyRequestModel: 'Modelo de Solicitud',
@@ -1221,7 +1212,6 @@ export const languageSpanish = {
   successApplyModule: 'El módulo se aplicó exitosamente',
   font: 'Fuente',
   lineHeight: 'Altura de Línea',
-  loadAutoServerBackup: 'Cargar Respaldo Automático del Servidor',
   notCharxWarn:
     'Este personaje usa múltiples activos. se recomienda exportar este personaje como un formato CharX para mejor compatibilidad.',
   noPlugins: 'No hay Plugins Instalados',
@@ -1547,7 +1537,6 @@ export const languageSpanish = {
   add: 'Agregar',
   nightlyWarning:
     '## Builds Nightly\n\nTe estás conectando a una build nightly del software. Esta versión está destinada a pruebas y muy probablemente contiene errores. **En esta versión, incluso si encuentras problemas, no admitimos resolverlos directamente.**',
-  loginSionyw: 'Iniciar sesión con cuenta de Sionyw',
   pluginRiskDetectedAlert:
     'Risuai detectó código que puede ser dañino y que podría ROBAR TU CLAVE API O DATOS PERSONALES. te recomendamos NO INSTALAR ESTE PLUGIN.',
   doNotInstall: 'No Instalar',

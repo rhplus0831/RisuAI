@@ -902,12 +902,6 @@ export interface Database {
   account?: {
     token: string
     id: string
-    data: {
-      refresh_token?: string
-      access_token?: string
-      expires_in?: number
-    }
-    useSync?: boolean
     kei?: boolean
   }
   classicMaxWidth: boolean
@@ -1095,7 +1089,6 @@ export interface Database {
   }
   translateBeforeHTMLFormatting: boolean
   autoTranslateCachedOnly: boolean
-  lightningRealmImport: boolean
   notification: boolean
   customFlags: LLMFlags[]
   enableCustomFlags: boolean

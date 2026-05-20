@@ -917,15 +917,6 @@ export const languageGerman = {
   downloads: 'Downloads',
   trending: 'Trends',
   imageCompression: 'Bildkompression',
-  notLoggedIn: 'Sie sind aktuell nicht in Ihrem Account eingeloggt',
-  googleDriveInfo: 'Verbinden Sie sich mit Google Drive, um Ihre Daten zu synchronisieren',
-  googleDriveConnection: 'Google Drive Verbindung',
-  googleDriveConnected: 'Mit Google Drive verbunden',
-  SaveDataInAccount: 'Daten im Konto speichern',
-  dataSavingInAccount: 'Daten im Konto speichern',
-  logout: 'Abmelden',
-  loadDataFromAccount: 'Daten aus dem Konto laden',
-  saveCurrentDataToAccount: 'Aktuelle Daten im Konto speichern',
   chatAssumed: '',
   proxyAPIKey: 'Schlüssel/Passwort',
   proxyRequestModel: 'Anforderungsmodell',
@@ -1221,7 +1212,6 @@ export const languageGerman = {
   successApplyModule: 'Modul erfolgreich angewendet',
   font: 'Schriftart',
   lineHeight: 'Zeilenhöhe',
-  loadAutoServerBackup: 'Automatisches Server-Backup laden',
   notCharxWarn:
     'Dieser Charakter verwendet mehrere Assets. Es wird empfohlen, diesen Charakter im CharX-Format zu exportieren, um eine bessere Kompatibilität zu gewährleisten.',
   noPlugins: 'Keine Plugins installiert',
@@ -1549,7 +1539,6 @@ export const languageGerman = {
   add: 'Hinzufügen',
   nightlyWarning:
     '## Nightly Builds\n\nSie verbinden sich mit einem Nightly Build der Software. Diese Version ist zu Testzwecken gedacht und enthält höchstwahrscheinlich Fehler. **In dieser Version unterstützen wir die Lösung von Problemen nicht direkt, auch wenn Sie auf Probleme stoßen.**',
-  loginSionyw: 'Mit Sionyw-Konto anmelden',
   pluginRiskDetectedAlert:
     'Risuai hat Code erkannt, der schädlich sein könnte und IHREN API-SCHLÜSSEL ODER PERSÖNLICHE DATEN STEHLEN KANN. Wir empfehlen Ihnen, DIESES PLUGIN NICHT ZU INSTALLIEREN.',
   doNotInstall: 'Nicht installieren',

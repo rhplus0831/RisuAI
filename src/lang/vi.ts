@@ -898,15 +898,6 @@ export const languageVietnamese = {
   downloads: 'Tải xuống',
   trending: 'Đang thịnh hành',
   imageCompression: 'Nén hình ảnh',
-  notLoggedIn: 'Chưa đăng nhập vào tài khoản Risu',
-  googleDriveInfo: 'Kết nối với Google Drive để đồng bộ dữ liệu của bạn.',
-  googleDriveConnection: 'Kết nối Google Drive',
-  googleDriveConnected: 'Đã kết nối Google Drive',
-  SaveDataInAccount: 'Lưu dữ liệu trong tài khoản',
-  dataSavingInAccount: 'Lưu dữ liệu trong tài khoản',
-  logout: 'Đăng xuất',
-  loadDataFromAccount: 'Tải dữ liệu từ tài khoản',
-  saveCurrentDataToAccount: 'Lưu dữ liệu hiện tại vào tài khoản',
   chatAssumed: '--',
   proxyAPIKey: 'Khóa/Mật khẩu',
   proxyRequestModel: 'Mô hình yêu cầu proxy',
@@ -1198,7 +1189,6 @@ export const languageVietnamese = {
   successApplyModule: 'Mô-đun đã được áp dụng thành công',
   font: 'Phông chữ',
   lineHeight: 'Chiều cao dòng',
-  loadAutoServerBackup: 'Tải sao lưu máy chủ tự động',
   notCharxWarn:
     'Nhân vật này sử dụng nhiều tài sản. Nên xuất nhân vật này dưới dạng định dạng CharX để tương thích tốt hơn.',
   noPlugins: 'Không có plugin nào được cài đặt',
@@ -1524,7 +1514,6 @@ export const languageVietnamese = {
   add: 'Thêm',
   nightlyWarning:
     '## Bản dựng Nightly\n\nBạn đang kết nối với bản dựng Nightly của phần mềm. Phiên bản này dùng để thử nghiệm và rất có thể có lỗi. **Trong phiên bản này, ngay cả khi bạn gặp sự cố, chúng tôi không hỗ trợ giải quyết trực tiếp.**',
-  loginSionyw: 'Đăng nhập bằng tài khoản Sionyw',
   pluginRiskDetectedAlert:
     'Risuai phát hiện mã có thể gây hại, có thể ĂN CẮP KHÓA API HOẶC DỮ LIỆU CÁ NHÂN CỦA BẠN. Chúng tôi khuyên bạn KHÔNG NÊN CÀI ĐẶT PLUGIN NÀY.',
   doNotInstall: 'Không cài đặt',

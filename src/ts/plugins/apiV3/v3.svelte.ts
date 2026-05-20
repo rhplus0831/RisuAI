@@ -26,7 +26,7 @@ import { v4 } from 'uuid'
 import { sleep } from 'src/ts/util'
 import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
 import { language } from 'src/lang'
-import { checkCharOrder, forageStorage, getFetchLogs } from 'src/ts/globalApi.svelte'
+import { checkCharOrder, getFetchLogs } from 'src/ts/globalApi.svelte'
 import {
   changeColorScheme,
   updateColorScheme,
@@ -1148,7 +1148,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       return {
         apiVersion: '3.0',
         platform: isNodeServer ? 'node' : isTauri ? 'tauri' : 'web',
-        saveMethod: isTauri ? 'tauri' : forageStorage.isAccount ? 'account' : 'local',
+        saveMethod: isTauri ? 'tauri' : 'local',
       }
     },
     getLocalPluginStorage: () => {

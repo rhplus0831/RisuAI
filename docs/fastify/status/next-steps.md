@@ -25,17 +25,13 @@ one removal target _or_ one foundation slice, not both at once.
 2. **Phase 0 removals - Peer multi-user chat.** Done 2026-05-20.
    See [`removals.md`](removals.md) for the as-landed inventory.
 
-3. **Phase 0 removals - Risu Account Sync + Drive sync.**
-   - Delete `src/ts/storage/accountStorage.ts`,
-     `src/ts/drive/accounter.ts`, `src/ts/sionyw.ts`,
-     `src/ts/drive/drive.ts`, `src/ts/drive/backuplocal.ts`.
-   - Strip OAuth handlers from `server/node/server.cjs`
-     (`/api/oauth_login`, `/api/oauth_callback`) - they go away
-     when Phase 0 lands; we are not porting them.
-   - Remove the matching UI entries from
-     `src/lib/Setting/Pages/UserSettings.svelte`.
-   - Drop `openid-client` from `package.json` if no other consumer
-     remains.
+3. **Phase 0 removals - Risu Account Sync + Drive sync.** Done
+   2026-05-20. Landed as a single commit. The
+   `backuplocal.ts` helpers were preserved (moved to
+   `src/ts/storage/backup.ts`) so the in-app local backup buttons
+   keep working; the doc claim that those helpers "rode alongside
+   the Drive code path" turned out to be wrong. See
+   [`removals.md`](removals.md) for the as-landed inventory.
 
 4. **Phase 0 removals - Legacy memory engines.** Done 2026-05-20.
    Two commits: V3 decoupling (rename `supaMemoryKey` →

@@ -23,7 +23,6 @@ import {
 } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from './alert'
-import { checkDriverInit } from './drive/drive'
 import { characterURLImport } from './characterCards'
 import {
   defaultJailbreak,
@@ -31,18 +30,15 @@ import {
   oldJailbreak,
   oldMainPrompt,
 } from './storage/defaultPrompts'
-import { loadRisuAccountData } from './drive/accounter'
 import { decodeRisuSave, encodeRisuSaveLegacy } from './storage/risuSave'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
-import { autoServerBackup } from './kei/backup'
 import { language } from 'src/lang'
 import { startObserveDom } from './observer.svelte'
 import { updateGuisize } from './gui/guisize'
 import { updateLorebooks } from './characters'
 import { initMobileGesture } from './hotkey'
 import { moduleUpdate } from './process/modules'
-import type { AccountStorage } from './storage/accountStorage'
 import { makeColdData } from './process/coldstorage.svelte'
 import {
   forageStorage,
@@ -163,47 +159,6 @@ export async function loadData() {
           }
         }
 
-        if (await forageStorage.checkAccountSync()) {
-          LoadingStatusState.text = 'Checking Account Sync...'
-          let gotStorage: Uint8Array = await (forageStorage.realStorage as AccountStorage).getItem(
-            'database/database.bin',
-            (v) => {
-              LoadingStatusState.text = `Loading Remote Save File ${(v * 100).toFixed(2)}%`
-            },
-          )
-          if (checkNullish(gotStorage)) {
-            gotStorage = encodeRisuSaveLegacy({})
-            await forageStorage.setItem('database/database.bin', gotStorage)
-          }
-          try {
-            setDatabase(await decodeRisuSave(gotStorage))
-          } catch (error) {
-            const backups = await getDbBackups()
-            let backupLoaded = false
-            for (const backup of backups) {
-              try {
-                LoadingStatusState.text = `Reading Backup File ${backup}...`
-                const backupData: Uint8Array = (await forageStorage.getItem(
-                  `database/dbbackup-${backup}.bin`,
-                )) as unknown as Uint8Array
-                setDatabase(await decodeRisuSave(backupData))
-                backupLoaded = true
-              } catch (error) {}
-            }
-            if (!backupLoaded) {
-              // throw "Your save file is corrupted"
-              await autoServerBackup()
-              await sleep(10000)
-            }
-          }
-        }
-        LoadingStatusState.text = 'Rechecking Account Sync...'
-        await forageStorage.checkAccountSync()
-        LoadingStatusState.text = 'Checking Drive Sync...'
-        const isDriverMode = await checkDriverInit()
-        if (isDriverMode) {
-          return
-        }
         LoadingStatusState.text = 'Checking Service Worker...'
         if (navigator.serviceWorker) {
           setUsingSw(true)
@@ -219,12 +174,6 @@ export async function loadData() {
       try {
         await loadPlugins()
       } catch (error) {}
-      if (getDatabase().account) {
-        LoadingStatusState.text = 'Checking Account Data...'
-        try {
-          await loadRisuAccountData()
-        } catch (error) {}
-      }
       try {
         const iosNavigator = window.navigator as Navigator & { standalone?: boolean }
         const isInStandaloneMode =
@@ -537,9 +486,6 @@ async function checkNewFormat(): Promise<void> {
  */
 async function cleanChunks() {
   const db = getDatabase()
-  if (db.account?.useSync) {
-    return
-  }
 
   const uncleanable = new Set(getUncleanables(db))
   if (isTauri) {
