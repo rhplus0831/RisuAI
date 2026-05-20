@@ -1,11 +1,12 @@
 # sendChat Fixtures
 
-Date: 2026-05-20 (scaffolding + 8 fixtures landed)
+Date: 2026-05-20 (scaffolding + 11 fixtures landed)
 
-Status: scaffolding landed; eight fixtures cover the entry path,
+Status: scaffolding landed; eleven fixtures cover the entry path,
 the multiline reroll branch, the upstream-fail branch, the
-auto-continue recursion, and two prompt-shape pins (author note
-and automatic cache point). Nine fixtures still to author.
+auto-continue recursion, two prompt-shape pins (author note and
+automatic cache point), persona, keyword-activated lorebook, and
+the pre-aborted-signal exit path. Six fixtures still to author.
 
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
 array of normalized call records (`{ mode, formated, ... }`)
@@ -20,19 +21,19 @@ prompt-shape fixtures.
 | `continue`            | Resume an existing assistant message.                  | landed      |
 | `regenerate`          | Multiline response: first becomes the message, rest go to `addRerolls`. | landed |
 | `preview`             | Preview mode: no provider call.                        | landed      |
-| `lorebook-keyword`    | One keyword-activated lorebook entry.                  | not started |
+| `lorebook-keyword`    | One keyword-activated entry on `globalLore`; matched substring in the user message. Content lands at the `lorebook` slot in `formatingOrder`. | landed |
 | `lorebook-constant`   | One constant lorebook entry.                           | not started |
 | `lorebook-recursive`  | Recursion stays within the budget.                     | not started |
 | `hypav3-memory`       | One Hypa V3 summary slot consumed in the prompt.       | not started |
 | `author-note`         | `chats[].note` appended as the last system message under the default `formatingOrder`. | landed |
-| `persona`             | Non-default persona substitution.                      | not started |
+| `persona`             | `db.personaPrompt` set. Lands in `unformated.personaPrompt`; under default `formatingOrder`, gets merged into the leading system block by `pushPrompts`. | landed |
 | `multimodal-image`    | One attached image is passed to the provider.          | not started |
 | `cache-point`         | `automaticCachePoint` marks the last 3 user entries with `cachePoint: true`. Requires a `promptTemplate` with a `chat` card. | landed |
 | `editrequest-trigger` | A triggerscript rewrites the request payload.          | not started |
 | `editoutput-trigger`  | A triggerscript rewrites the response text.            | not started |
 | `auto-continue`       | Auto-continue fires once and lands a second turn.      | landed      |
 | `provider-error`      | Upstream `type:'fail'` produces a `risuerror` chat message. | landed |
-| `client-abort`        | Client abort produces restoration patches.             | not started |
+| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `index.svelte.ts:1541` returns `false` before any assistant message is added. | landed |
 
 ## Loader
 

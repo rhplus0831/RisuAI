@@ -1,14 +1,15 @@
 # sendChat Status
 
-Date: 2026-05-20 (Phase 4 scaffolding + 8 fixtures landed)
+Date: 2026-05-20 (Phase 4 scaffolding + 11 fixtures landed)
 
-Updated 2026-05-20: Phase 4 scaffolding and the first eight
-fixtures have landed. Loader / provider fake / snapshot harness
-exist; fixtures cover the happy streaming path, preview
-short-circuit, continue (resume an assistant message), multiline
-reroll, upstream-fail with `inlayErrorResponse`, the recursive
-auto-continue branch, the author-note slot under the default
-`formatingOrder`, and the `automaticCachePoint` walk-back. See
+Updated 2026-05-20: Phase 4 scaffolding and eleven fixtures have
+landed. Loader / provider fake / snapshot harness exist; fixtures
+cover the happy streaming path, preview short-circuit, continue
+(resume an assistant message), multiline reroll, upstream-fail
+with `inlayErrorResponse`, the recursive auto-continue branch,
+the author-note slot under the default `formatingOrder`, the
+`automaticCachePoint` walk-back, persona substitution,
+keyword-activated lorebook, and the pre-aborted-signal exit. See
 "Phase 4 in progress" below for the running tally and the open
 items.
 
@@ -130,14 +131,31 @@ Landed:
   `cachePoint: true` and stops there. Without a `promptTemplate`,
   this branch is unreachable (it lives inside the `case 'chat'`
   switch of the template-driven prompt assembly).
+- `persona` - `db.personaPrompt` set, no `chat.bindedPersona`.
+  Pins that the content lands in `unformated.personaPrompt` and -
+  under the default OpenAI-flavored `pushPrompts` consecutive-
+  system merge - gets concatenated into the leading system
+  message (after main and description). When the rendering target
+  is not gpt/claude/openrouter/reverse_proxy, the merge does not
+  happen and the persona becomes its own system entry.
+- `lorebook-keyword` - one `globalLore` entry with `key: "cat"`,
+  user message contains `cat`. Pins that the entry's content
+  appears as the last system message under the default
+  `formatingOrder` (the `lorebook` slot). The keyword match is a
+  case-insensitive substring scan against the last
+  `db.loreBookDepth` (default 5) messages.
+- `client-abort` - test driver passes a pre-aborted
+  `AbortSignal`. Provider fake does not honor the signal so the
+  call is still captured, but the post-provider check at
+  `index.svelte.ts:1541` short-circuits the function. Pins
+  `stages: [1, 3]`, no assistant message added, no side effects.
 
 Open for the next slice:
 
-- 9 fixtures still to author per
+- 6 fixtures still to author per
   [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md):
-  `lorebook-keyword`, `lorebook-constant`, `lorebook-recursive`,
-  `hypav3-memory`, `persona`, `multimodal-image`,
-  `editrequest-trigger`, `editoutput-trigger`, `client-abort`.
+  `lorebook-constant`, `lorebook-recursive`, `hypav3-memory`,
+  `multimodal-image`, `editrequest-trigger`, `editoutput-trigger`.
 - `doingChat` is set to `true` on sendChat entry and is not reset
   on the success path. The test harness resets it between
   fixtures; production code resets it from the UI layer. Worth

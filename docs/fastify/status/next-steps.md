@@ -19,12 +19,10 @@ one proxy slice or one characterization-test slice at a time.
      [`../phases/phase-3-proxy.md`](../phases/phase-3-proxy.md).
 
 2. **Phase 4 prep - characterization tests.** Scaffolding +
-   eight fixtures (`simple-send`, `preview`, `continue`,
-   `regenerate`, `provider-error`, `auto-continue`,
-   `author-note`, `cache-point`) landed 2026-05-20. The remaining
-   9 fixtures are the next slice; pick them in batches of 2-4.
-   See [`sendchat.md`](sendchat.md) for the in-progress tally and
-   the `doingChat` lifecycle note flagged for Phase 5.
+   eleven fixtures landed 2026-05-20. The remaining 6 fixtures
+   are the next slice; pick them in batches of 2-4. See
+   [`sendchat.md`](sendchat.md) for the in-progress tally and the
+   `doingChat` lifecycle note flagged for Phase 5.
    - Do not modify `sendChat` itself. The goal is to record what
      the function does today before Phase 5 extraction changes its
      structure.
@@ -94,6 +92,16 @@ one proxy slice or one characterization-test slice at a time.
   (`automaticCachePoint` walk-back marks the last 3 user entries
   - only reachable through a `promptTemplate` with a `chat`
   card). All 8 prior fixtures were re-recorded.
+
+- **Phase 4 - persona / lorebook / abort slice.** Done
+  2026-05-20. Adds `persona` (db.personaPrompt merged into the
+  leading system block by `pushPrompts`'s same-role coalescer),
+  `lorebook-keyword` (one globalLore entry with `key: "cat"`
+  activated by user message), and `client-abort` (pre-aborted
+  AbortSignal short-circuits at `index.svelte.ts:1541`). Adds an
+  `aborted: true` flag to the fixture schema; the test driver
+  synthesizes a pre-aborted controller and threads its signal
+  into `sendChat`.
 
 ## Closed (do not reopen without a contract)
 
