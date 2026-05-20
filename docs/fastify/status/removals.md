@@ -6,7 +6,7 @@ Tracks Phase 0 progress. Update each row as code is deleted. The
 canonical scope lives in
 [`../phases/phase-0-removals.md`](../phases/phase-0-removals.md).
 
-Last updated: 2026-05-20 (Peer multi-user chat landed).
+Last updated: 2026-05-20 (Legacy memory engines landed).
 
 ## Group chat
 
@@ -121,21 +121,59 @@ Phase 0 only deletes; it does not add replacements.
 
 ## Legacy memory engines (Supa, Hypa V2, Hanurai)
 
-Status: not started.
+Status: done (2026-05-20). Landed as two commits:
 
-Code surface:
+- Commit A: decoupled Hypa V3 from the shared `supaMemoryKey`
+  database field by introducing `hypaV3Key` with a one-shot read
+  fallback; renamed all V3 + shared-infra read sites and the
+  V3-specific settings input.
+- Commit B (this entry): the bulk removal below.
 
-- `src/ts/process/memory/supaMemory.ts`.
-- `src/ts/process/memory/hypav2.ts`.
-- `src/ts/process/memory/hanuraiMemory.ts`.
-- `src/ts/process/index.svelte.ts` lines 1097-1142 - the
-  selection branches that pick one of the four engines.
-- Settings UI: "supaMemory enabled" toggle and engine selector.
+Removed:
 
-Exit when:
+- `src/ts/process/memory/{supaMemory.ts, hypav2.ts,
+hanuraiMemory.ts}` deleted. Shared infra `hypamemory.ts` and
+  `hypamemoryv2.ts` kept (despite the V2 name, V3 imports from
+  the latter).
+- `src/ts/process/index.svelte.ts`: legacy imports gone; engine
+  cascade at the former 1082-1178 collapsed to a single V3
+  branch; `supaMemoryCardUsed` renamed to `memoryCardUsed` (the
+  prompt-template "memory" card mechanism is preserved - V3 still
+  uses it).
+- Settings UI: 4-option engine selector replaced with a single
+  V3 on/off toggle in `OtherBotSettings.svelte`; all V2/Supa/Hanurai
+  config sub-blocks deleted.
+- V2 modal infrastructure removed: `showHypaV2Alert` + the
+  `'hypaV2'` alert type in `src/ts/alert.ts`; the V2 alert block
+  in `AlertComp.svelte`; the V2 toggle entries in
+  `DefaultChatScreen.svelte`, `CharConfig.svelte`,
+  `SideBars/Toggles.svelte`.
+- V2-to-V3 migration code in `HypaV3Modal.svelte`
+  (`isHypaV2ConversionPossible` / `convertHypaV2ToV3` + the
+  conversion button) deleted; consistent with Phase 0's "no
+  migration scripts" policy. Saved V2 chunks remain in JSON but
+  are no longer surfaced.
+- `coldstorage.svelte.ts` no longer round-trips `hypaV2Data`.
+- `PlaygroundEmbedding.svelte` rebound to `hypaV3Key`.
+- Database type pruned: dropped `supaMemoryPrompt`,
+  `supaModelType`, `hypav2`, `hypaMemory`, `memoryAlgorithmType`,
+  `maxSupaChunkSize`, `hypaAllocatedTokens`, `hypaChunkSize`,
+  `hanuraiTokens`, `hanuraiSplit`, `hanuraiEnable`; dropped
+  `supaMemoryData` and `hypaV2Data` from Chat; dropped the
+  `SerializableHypaV2Data` import. Init defaults for those fields
+  removed.
+- Kept: per-chatroom `supaMemory: boolean` (repurposed as the V3
+  enable flag per Phase 0.5 plan); `supaMemoryKey` retained as
+  optional source for the one-shot `hypaV3Key` fallback;
+  `memo: 'supaMemory'` / `memo: 'hypaMemory'` protocol tags
+  (shared with the prompt-template consumer; renamed later).
+- Lang keys removed across `en/ko/cn/de/es/vi`:
+  `ToggleSuperMemory`, `maxSupaChunkSize`, `hanuraiMemory`,
+  `hypaAllocatedTokens`, `hypaChunkSize`, `hypaV2Desc`,
+  `supaDesc`, `hanuraiDesc`, `hypaMemoryV2Modal`.
 
-- Only Hypa V3 remains under `src/ts/process/memory/`.
-- The settings UI no longer offers a memory-engine selector;
-  Hypa V3 is the only option (or memory off).
-- Persisted databases that record `supaMemory: true` continue to
-  load (drop the setting silently on read; do not write it back).
+Verification: `pnpm check` (0 errors / 0 warnings), `pnpm test`
+(152 passed, 4 pre-existing skips), `pnpm build` succeeded.
+Grep for `supaMemoryData|hypaV2Data|hanurai|hypav2|memoryAlgorithmType`
+in `src/` returns no production-code hits outside `database.svelte.ts`'s
+single localized cast for the V3 preset migration.

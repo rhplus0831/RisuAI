@@ -30,7 +30,6 @@ import { stableDiff } from './stableDiff'
 import { processScript, processScriptFull, risuChatParser } from './scripts'
 import { exampleMessage } from './exampleMessages'
 import { sayTTS } from './tts'
-import { supaMemory } from './memory/supaMemory'
 import { v4 } from 'uuid'
 import { groupOrder } from './group'
 import { runTrigger } from './triggers'
@@ -41,8 +40,6 @@ import { getGenerationModelString } from './models/modelString'
 import { runInlayScreen } from './inlayScreen'
 import { addRerolls } from './prereroll'
 import { runImageEmbedding } from './transformers'
-import { hanuraiMemory } from './memory/hanuraiMemory'
-import { hypaMemoryV2 } from './memory/hypav2'
 import { runLuaEditTrigger } from './scriptings'
 import { getModelInfo, LLMFlags } from '../model/modellist'
 import { hypaMemoryV3 } from './memory/hypav3'
@@ -617,7 +614,7 @@ export async function sendChat(
 
   //await tokenize currernt
   let currentTokens = DBState.db.maxResponse
-  let supaMemoryCardUsed = false
+  let memoryCardUsed = false
 
   //for unexpected error
   currentTokens += 50
@@ -806,7 +803,7 @@ export async function sendChat(
           break
         }
         case 'memory': {
-          supaMemoryCardUsed = true
+          memoryCardUsed = true
           break
         }
         case 'cache': {
@@ -1079,103 +1076,36 @@ export async function sendChat(
     currentTokens += await tokenizer.tokenizeChat(chat)
   }
 
-  if (
-    nowChatroom.supaMemory &&
-    (DBState.db.supaModelType !== 'none' ||
-      DBState.db.hanuraiEnable ||
-      DBState.db.hypav2 ||
-      DBState.db.hypaV3)
-  ) {
+  if (nowChatroom.supaMemory && DBState.db.hypaV3) {
     stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
     chatProcessStage.set(2)
     stageTimings.stage2Start = Date.now()
-    if (DBState.db.hanuraiEnable) {
-      const hn = await hanuraiMemory(chats, {
-        currentTokens,
-        maxContextTokens,
-        tokenizer,
-      })
-
-      if (hn === false) {
-        return false
+    console.log("Current chat's hypaV3 Data: ", currentChat.hypaV3Data)
+    const sp = await hypaMemoryV3(
+      chats,
+      currentTokens,
+      maxContextTokens,
+      currentChat,
+      nowChatroom,
+      tokenizer,
+    )
+    if (sp.error) {
+      // Save new summary
+      if (sp.memory) {
+        currentChat.hypaV3Data = sp.memory
+        DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
       }
-
-      chats = hn.chats
-      currentTokens = hn.tokens
-    } else if (DBState.db.hypav2) {
-      console.log("Current chat's hypaV2 Data: ", currentChat.hypaV2Data)
-      const sp = await hypaMemoryV2(
-        chats,
-        currentTokens,
-        maxContextTokens,
-        currentChat,
-        nowChatroom,
-        tokenizer,
-      )
-      if (sp.error) {
-        console.log(sp)
-        throwError(sp.error)
-        return false
-      }
-      chats = sp.chats
-      currentTokens = sp.currentTokens
-      currentChat.hypaV2Data = sp.memory ?? currentChat.hypaV2Data
-      DBState.db.characters[selectedChar].chats[selectedChat].hypaV2Data = currentChat.hypaV2Data
-
-      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-      console.log("[Expected to be updated] chat's HypaV2Data: ", currentChat.hypaV2Data)
-    } else if (DBState.db.hypaV3) {
-      console.log("Current chat's hypaV3 Data: ", currentChat.hypaV3Data)
-      const sp = await hypaMemoryV3(
-        chats,
-        currentTokens,
-        maxContextTokens,
-        currentChat,
-        nowChatroom,
-        tokenizer,
-      )
-      if (sp.error) {
-        // Save new summary
-        if (sp.memory) {
-          currentChat.hypaV3Data = sp.memory
-          DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data =
-            currentChat.hypaV3Data
-        }
-        console.log(sp)
-        throwError(sp.error)
-        return false
-      }
-      chats = sp.chats
-      currentTokens = sp.currentTokens
-      currentChat.hypaV3Data = sp.memory ?? currentChat.hypaV3Data
-      DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
-
-      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-      console.log("[Expected to be updated] chat's HypaV3Data: ", currentChat.hypaV3Data)
-    } else {
-      const sp = await supaMemory(
-        chats,
-        currentTokens,
-        maxContextTokens,
-        currentChat,
-        nowChatroom,
-        tokenizer,
-        {
-          asHyper: DBState.db.hypaMemory,
-        },
-      )
-      if (sp.error) {
-        throwError(sp.error)
-        return false
-      }
-      chats = sp.chats
-      currentTokens = sp.currentTokens
-      currentChat.supaMemoryData = sp.memory ?? currentChat.supaMemoryData
-      DBState.db.characters[selectedChar].chats[selectedChat].supaMemoryData =
-        currentChat.supaMemoryData
-      console.log(currentChat.supaMemoryData)
-      currentChat.lastMemory = sp.lastId ?? currentChat.lastMemory
+      console.log(sp)
+      throwError(sp.error)
+      return false
     }
+    chats = sp.chats
+    currentTokens = sp.currentTokens
+    currentChat.hypaV3Data = sp.memory ?? currentChat.hypaV3Data
+    DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
+
+    currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+    console.log("[Expected to be updated] chat's HypaV3Data: ", currentChat.hypaV3Data)
     stageTimings.stage2Duration = Date.now() - stageTimings.stage2Start
     chatProcessStage.set(1)
   } else {
@@ -1214,7 +1144,7 @@ export async function sendChat(
     .map((v) => {
       if (v.memo !== 'supaMemory' && v.memo !== 'hypaMemory') {
         v.removable = true
-      } else if (supaMemoryCardUsed) {
+      } else if (memoryCardUsed) {
         memories.push(v)
         return {
           role: 'system',

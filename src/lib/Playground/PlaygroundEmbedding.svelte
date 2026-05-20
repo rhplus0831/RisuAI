@@ -51,7 +51,7 @@
 
 {#if model === 'openai3small' || model === 'openai3large' || model === 'ada'}
   <span class="text-textcolor text-lg">OpenAI API Key</span>
-  <TextInput size="sm" marginBottom bind:value={DBState.db.supaMemoryKey} />
+  <TextInput size="sm" marginBottom bind:value={DBState.db.hypaV3Key} />
 {/if}
 
 {#if model === 'custom'}

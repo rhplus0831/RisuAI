@@ -397,7 +397,6 @@ async function makeColdDataForChat(i: number, j: number, coldTime: number) {
     const id = crypto.randomUUID()
     const writeSuccess = await setColdStorageItem(id, {
       message: chat.message,
-      hypaV2Data: chat.hypaV2Data,
       hypaV3Data: chat.hypaV3Data,
       scriptstate: chat.scriptstate,
       localLore: chat.localLore,
@@ -428,11 +427,6 @@ async function makeColdDataForChat(i: number, j: number, coldTime: number) {
         role: 'char',
       },
     ]
-    chat.hypaV2Data = {
-      chunks: [],
-      mainChunks: [],
-      lastMainChunkID: 0,
-    }
     chat.hypaV3Data = {
       summaries: [],
     }
@@ -490,7 +484,6 @@ export async function preLoadChat(characterIndex: number, chatIndex: number) {
       chat.lastDate = Date.now()
     } else if (coldData?.message) {
       chat.message = coldData.message
-      chat.hypaV2Data = coldData.hypaV2Data
       chat.hypaV3Data = coldData.hypaV3Data
       chat.scriptstate = coldData.scriptstate
       chat.localLore = coldData.localLore

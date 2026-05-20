@@ -23,7 +23,6 @@ export interface alertData {
     | 'cardexport'
     | 'requestdata'
     | 'addchar'
-    | 'hypaV2'
     | 'selectModule'
     | 'chatOptions'
     | 'pukmakkurit'
@@ -320,13 +319,6 @@ export function alertRequestData(info: AlertGenerationInfoStoreData) {
   alertStoreImported.set({
     type: 'requestdata',
     msg: info.genInfo.generationId ?? 'none',
-  })
-}
-
-export function showHypaV2Alert() {
-  alertStoreImported.set({
-    type: 'hypaV2',
-    msg: '',
   })
 }
 

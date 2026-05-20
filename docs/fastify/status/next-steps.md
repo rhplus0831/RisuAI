@@ -37,13 +37,10 @@ one removal target _or_ one foundation slice, not both at once.
    - Drop `openid-client` from `package.json` if no other consumer
      remains.
 
-4. **Phase 0 removals - Legacy memory engines.**
-   - Delete `src/ts/process/memory/{supaMemory.ts, hypav2.ts,
-hanuraiMemory.ts}`.
-   - Remove the matching branches from
-     `src/ts/process/index.svelte.ts` (lines 1097-1142 cover the
-     three legacy adapters).
-   - Remove their settings UI rows.
+4. **Phase 0 removals - Legacy memory engines.** Done 2026-05-20.
+   Two commits: V3 decoupling (rename `supaMemoryKey` →
+   `hypaV3Key` with migration fallback), then the bulk removal.
+   See [`removals.md`](removals.md) for the as-landed inventory.
 
 After all four bullets close, Phase 0 is done and Phase 1 unblocks.
 
