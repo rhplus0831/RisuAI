@@ -13,6 +13,7 @@ import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
+import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
@@ -77,6 +78,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)
   registerHubRoutes(app, authState, config.hubUrl)
+  registerLegacyStorageRoutes(app, authState, config.dataDir)
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
     const indexPath = path.join(config.staticRoot, 'index.html')
@@ -84,7 +86,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     const indexHtml = (): string => {
       if (cachedIndex !== null) return cachedIndex
       const raw = fs.readFileSync(indexPath, 'utf-8')
-      const tag = '<script>globalThis.__FASTIFY__ = true;</script>'
+      // __NODE__ activates every self-host gate in the SPA (NodeStorage,
+      // save flow, prefer-remote saves); __FASTIFY__ disambiguates the
+      // server family so URL builders can prefer /api/v1/* routes.
+      const tag =
+        '<script>globalThis.__NODE__ = true; globalThis.__FASTIFY__ = true;</script>'
       const headMatch = /<head(?:\s[^>]*)?>/i.exec(raw)
       cachedIndex = headMatch
         ? `${raw.slice(0, headMatch.index + headMatch[0].length)}\n${tag}${raw.slice(headMatch.index + headMatch[0].length)}`
