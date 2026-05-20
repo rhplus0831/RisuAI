@@ -10,17 +10,17 @@ one proxy slice or one `sendChat` extraction slice at a time.
 1. **Phase 3 - Proxy migration.** Port provider proxy, hub
    passthrough, and stream-job WebSocket behavior from
    `server/node/server.cjs` to Fastify.
-   - Phase 3A (`POST /api/v1/proxy/fetch`) landed 2026-05-20. It
-     covers the generic single-request upstream fetch behind
-     `requireAuth` (ES256 only, matching every other Fastify
-     route). The request / response header sanitization helpers
-     live in `server/fastify/src/proxy.ts` and are reused by the
-     stream-job slice next.
-   - Remaining slices, in order: stream-job WebSocket
-     (`POST /api/v1/proxy/stream-jobs` + WS upgrade + DELETE), hub
-     passthrough (`ANY /api/v1/hub/*` with `x-risu-node-path`
-     override), client rewiring (`globalFetch` / `fetchNative` ->
-     the new Fastify endpoints), then Express deletion +
+   - Phase 3A (`POST /api/v1/proxy/fetch`) and Phase 3B (proxy
+     stream-jobs HTTP+WS) landed 2026-05-20. The header
+     sanitization helpers in `server/fastify/src/proxy.ts` and
+     the `JobRegistry` + `sanitizeLocalTargetUrl` +
+     `runStreamJob` in `server/fastify/src/streamJobs.ts`
+     anchor the surface.
+   - Remaining slices, in order: hub passthrough
+     (`ANY /api/v1/hub/*` with the `x-risu-node-path` override),
+     client rewiring (`globalFetch` / `fetchNative` and the
+     stream-job WS URL builder in `globalApi.svelte.ts` ->
+     Fastify endpoints), then Express deletion +
      `runserver` removal.
    - Keep the existing client contracts (`/proxy*`,
      `/hub-proxy/*`, `/proxy-stream-jobs`) working until the
@@ -124,6 +124,41 @@ one proxy slice or one `sendChat` extraction slice at a time.
   PNG and stub `supportsInlayImage`. It also uses an
   `xcustom:::` model with `hasImageInput` + the `Unknown`
   tokenizer so token math runs offline.
+
+- **Phase 3B - Proxy stream-jobs (HTTP + WebSocket).** Done
+  2026-05-20. Landed in two commits.
+
+  - **3B-1** added the lifecycle module
+    `server/fastify/src/streamJobs.ts`: a `JobRegistry` class
+    (create / pushEvent / attach / detach / markDone / cleanup /
+    deleteJob / tickGc), `sanitizeLocalTargetUrl`, timeout /
+    heartbeat normalizers, and `runStreamJob`. The
+    local-network host check is re-implemented over
+    `node:net`'s `BlockList`, which (unlike the Express
+    string-matching original) accepts IPv4-mapped IPv6
+    addresses in both the dotted `::ffff:127.0.0.1` and the
+    WHATWG-canonical `::ffff:7f00:1` forms.
+  - **3B-2** added the HTTP and WebSocket routes in
+    `server/fastify/src/routes/streamJobs.ts`:
+    `POST /api/v1/proxy/stream-jobs`,
+    `DELETE /api/v1/proxy/stream-jobs/:id`, and the WS upgrade
+    at `GET /api/v1/proxy/stream-jobs/:id/ws`. The WS route is
+    the single documented exception that accepts the ES256
+    assertion via a `risu-auth` query-string parameter in
+    addition to the header (so EventSource-style fallbacks can
+    attach). `buildApp` now owns a `JobRegistry` instance,
+    schedules `tickGc` on a 60 s `unref`'d interval, and tears
+    the registry down via `onClose`.
+  - Adds `@fastify/websocket` as a dev dependency. Tests in
+    `server/fastify/__tests__/streamJobs.test.ts` cover the
+    lifecycle module (48 cases - URL allow/reject, buffering
+    caps, GC, abort, `runStreamJob` round-trip) and
+    `__tests__/streamJobsRoutes.test.ts` covers the routes (11
+    cases - POST validation matrix, DELETE idempotency, WS
+    happy path, query-param auth, 401, 404, pending-event
+    flush). The WS tests use the plugin's `injectWS` with an
+    `onInit` hook so the `message` listener is attached
+    before any frames arrive.
 
 - **Phase 3A - Generic provider proxy on Fastify.** Done
   2026-05-20. Adds `POST /api/v1/proxy/fetch` plus pure helpers

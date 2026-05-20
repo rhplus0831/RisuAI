@@ -4,8 +4,9 @@ Date: 2026-05-20
 
 ## Current state
 
-Phase 1, the server-side Phase 2 storage slice, and Phase 3A
-(generic provider proxy) exist on the `fastify` branch:
+Phase 1, the server-side Phase 2 storage slice, and Phase 3A+3B
+(generic provider proxy plus the stream-job WebSocket) exist on
+the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -35,8 +36,11 @@ Phase 1, the server-side Phase 2 storage slice, and Phase 3A
   `GET/HEAD /api/v1/assets/:id`, `POST /api/v1/assets/exists`,
   `GET /api/v1/backups`, `POST /api/v1/backups`,
   `POST /api/v1/backups/:id/restore`,
-  `DELETE /api/v1/backups/:id`, and `POST /api/v1/proxy/fetch`.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy}.test.ts`
+  `DELETE /api/v1/backups/:id`, `POST /api/v1/proxy/fetch`,
+  `POST /api/v1/proxy/stream-jobs`,
+  `DELETE /api/v1/proxy/stream-jobs/:id`, and the WebSocket
+  upgrade at `GET /api/v1/proxy/stream-jobs/:id/ws`.
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes}.test.ts`
   cover the implemented Fastify routes and static serving through
   `pnpm api:test`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
@@ -45,6 +49,16 @@ Phase 1, the server-side Phase 2 storage slice, and Phase 3A
   request bodies are forwarded as raw bytes regardless of
   content-type. Auth uses the standard `requireAuth` (ES256 only,
   consistent with every other Fastify route).
+- `server/fastify/src/streamJobs.ts` owns the Phase 3B stream-job
+  lifecycle (`JobRegistry`, `sanitizeLocalTargetUrl`,
+  `runStreamJob`) and `server/fastify/src/routes/streamJobs.ts`
+  registers the POST / DELETE / WebSocket routes. The WS upgrade
+  is the only authenticated route that accepts the ES256
+  assertion via a `risu-auth` query-string parameter in addition
+  to the header (EventSource-style clients can't set custom
+  headers); see [`../phases/phase-3-proxy.md`](../phases/phase-3-proxy.md).
+  `buildApp` schedules `JobRegistry.tickGc` on a 60s unref'd
+  interval and clears it via `onClose`.
 
 Other runtime servers still in tree:
 
@@ -53,9 +67,11 @@ Other runtime servers still in tree:
   endpoints (`/api/read`, `/api/write`, `/api/list`) plus
   `/proxy*`, `/hub-proxy/*`, and proxy stream-job WebSocket
   behavior until Phase 3 ports and retires it. The Docker runtime
-  no longer starts this server. Phase 3A landed `POST /api/v1/proxy/fetch`
-  on Fastify; the Express `/proxy` / `/proxy2` routes stay live
-  until the client is rewired to call the Fastify endpoint.
+  no longer starts this server. Phase 3A landed
+  `POST /api/v1/proxy/fetch` and Phase 3B landed the
+  stream-job HTTP+WS surface; the Express `/proxy*` and
+  `/proxy-stream-jobs` routes stay live until the client is
+  rewired to call the Fastify endpoints.
 - `server/hono/` - small Hono scaffold with CSRF middleware,
   `Hello Hono!`, and Node / Bun / Cloudflare static-serving entry
   points. It is not on the Fastify migration path.
@@ -81,9 +97,11 @@ Dockerfile runs `pnpm api:start`, exposes 6002, and persists
   [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
 - **Phase 3.** Provider proxy + hub passthrough + stream-job
   WebSocket. Express server is retired once Phase 3 closes.
-  Phase 3A landed 2026-05-20: `POST /api/v1/proxy/fetch` is in
-  place behind `requireAuth`, with the request / response header
-  sanitization helpers reused by the upcoming stream-job slice.
+  Phase 3A and Phase 3B landed 2026-05-20: `POST /api/v1/proxy/fetch`
+  and the full stream-job HTTP+WS surface are in place behind
+  `requireAuth` / a WS-only query-parameter ES256 fallback. Hub
+  passthrough and client rewiring are the remaining Phase 3
+  slices, after which Express is deleted.
 - **Phase 6.** Server-side LLM / translation / TTS / image /
   Stable Horde generation endpoints.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
