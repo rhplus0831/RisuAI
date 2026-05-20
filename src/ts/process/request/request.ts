@@ -272,7 +272,7 @@ export async function requestChatData(
 
       try {
         const currentChar = getCurrentCharacter()
-        if (currentChar?.type !== 'group') {
+        if (currentChar) {
           const perf = performance.now()
           const d = await runTrigger(currentChar, 'request', {
             chat: getCurrentChat(),

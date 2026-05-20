@@ -10,7 +10,7 @@
   } from '@lucide/svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
-  import { findCharacterbyId, getUserName, getUserIcon } from 'src/ts/util'
+  import { getUserName, getUserIcon } from 'src/ts/util'
   import {
     createSimpleCharacter,
     bookmarkListOpen,
@@ -51,12 +51,7 @@
         const message = map.get(id)
         if (!message) return null
 
-        let speaker = null
-        if (chara.type === 'group' && message.saying) {
-          speaker = findCharacterbyId(message.saying)
-        }
-
-        return { ...message, speaker }
+        return { ...message, speaker: null }
       })
       .filter(Boolean)
 
@@ -216,35 +211,20 @@
 
             {#if expandAll || expandedBookmarks.has(msg.chatId)}
               <div class="p-1 border-t border-darkborderc">
-                {#if chara.type === 'group'}
-                  <Chat
-                    idx={msg.originalIndex}
-                    message={msg.data}
-                    name={msg.speaker?.name}
-                    img={getCharImage(msg.speaker?.image, 'css')}
-                    role={msg.role}
-                    messageGenerationInfo={msg.generationInfo}
-                    rerollIcon={false}
-                    largePortrait={msg.speaker?.largePortrait}
-                    character={msg.saying}
-                    isLastMemory={false}
-                  />
-                {:else}
-                  <Chat
-                    idx={msg.originalIndex}
-                    message={msg.data}
-                    name={msg.role === 'user' ? getUserName() : chara.name}
-                    img={msg.role === 'user'
-                      ? getCharImage(getUserIcon(), 'css')
-                      : getCharImage(chara.image, 'css')}
-                    role={msg.role}
-                    messageGenerationInfo={msg.generationInfo}
-                    rerollIcon={false}
-                    largePortrait={chara.largePortrait}
-                    character={simpleChar}
-                    isLastMemory={false}
-                  />
-                {/if}
+                <Chat
+                  idx={msg.originalIndex}
+                  message={msg.data}
+                  name={msg.role === 'user' ? getUserName() : chara.name}
+                  img={msg.role === 'user'
+                    ? getCharImage(getUserIcon(), 'css')
+                    : getCharImage(chara.image, 'css')}
+                  role={msg.role}
+                  messageGenerationInfo={msg.generationInfo}
+                  rerollIcon={false}
+                  largePortrait={chara.largePortrait}
+                  character={simpleChar}
+                  isLastMemory={false}
+                />
               </div>
             {/if}
           </div>

@@ -3,7 +3,6 @@ import { CharEmotion, selectedCharID } from '../stores.svelte'
 import {
   type character,
   type customscript,
-  type groupChat,
   getDatabase,
   getCurrentCharacter,
   getCurrentChat,
@@ -36,7 +35,7 @@ type pScript = {
 }
 
 export async function processScript(
-  char: character | groupChat,
+  char: character,
   data: string,
   mode: ScriptMode,
   cbsConditions: CbsConditions = {},
@@ -120,7 +119,7 @@ export function resetScriptCache() {
 }
 
 export async function processScriptFull(
-  char: character | groupChat | simpleCharacterArgument,
+  char: character | simpleCharacterArgument,
   data: string,
   mode: ScriptMode,
   chatID = -1,
@@ -132,7 +131,7 @@ export async function processScriptFull(
 
   if (mode === 'editdisplay') {
     const currentChar = getCurrentCharacter()
-    if (currentChar.type !== 'group') {
+    if (currentChar) {
       try {
         const perf = performance.now()
         const d = await runTrigger(currentChar, 'display', {

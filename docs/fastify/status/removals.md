@@ -6,34 +6,72 @@ Tracks Phase 0 progress. Update each row as code is deleted. The
 canonical scope lives in
 [`../phases/phase-0-removals.md`](../phases/phase-0-removals.md).
 
-Last updated: 2026-05-20 (Risu Account Sync + Google Drive sync landed).
+Last updated: 2026-05-20 (Group chat landed — Phase 0 complete).
 
 ## Group chat
 
-Status: not started.
+Status: done (2026-05-20). Phase 0 closes with this slice.
 
-Code surface:
+Removed:
 
-- `src/ts/process/group.ts` (100 LOC) - speaker selection, group
-  membership helpers.
-- `src/ts/process/index.svelte.ts` - 5 sites referencing
-  `groupOrder` / `nowChatroom.type === 'group'` /
-  `isGroupChat`.
-- `src/ts/` - 49 `type === 'group'` branches across `tokenizer.ts`,
-  `util.ts`, `cbs.ts`, `stores.svelte.ts`, `characterCards.ts`,
-  `process/{command, scriptings, tts, mcp/risuaccess/chats}.ts`,
-  `storage/exportAsDataset.ts`.
-- `src/lib/` - ~20 `type === 'group'` branches in
-  `ChatScreens/`, `Mobile/`, `Others/`, `SideBars/`.
-- Settings: `groupOtherBotRole`, `characterTalks`,
-  `characterActive` on character/database types.
+- `src/ts/process/group.ts` deleted (`addGroupChar`,
+  `rmCharFromGroup`, `groupOrder` + private `getWords`). `createNewGroup`
+  in `characters.ts` plus the `'createGroup'` switch arm that calls it
+  also gone. `makeGroupImage` deleted from `characters.ts`.
+- `interface groupChat` dropped from `database.svelte.ts`;
+  `Database.characters` narrowed to `character[]`; helper signatures
+  (`getCurrentCharacter`, `setCurrentCharacter`, `getCharacterByIndex`,
+  `setCharacterByIndex`) follow. `setDatabase` filters out any
+  persisted `type !== 'character'` rows at load time — old saves
+  load cleanly and the group rows disappear on the next save (no
+  migration script, per Phase 0 policy).
+- `Database.groupOtherBotRole`, `Database.groupTemplate`,
+  `botPreset.groupOtherBotRole`, `botPreset.groupTemplate` and
+  their init/import/export sites in `database.svelte.ts` dropped.
+- `sendChat` (`process/index.svelte.ts`) lost the group dispatch
+  block (former 263-307), the post-everything "speaker hint"
+  injection at the former 441-447, the `type !== 'group'` guard
+  around the first-message push, and the group-template chat
+  formatting at the former 934-955. `isGroupChat` is kept on the
+  script-runtime payload as a back-compat shim, hard-coded to
+  `false`.
+- All `'group'` runtime branches stripped across `src/ts/`:
+  `tokenizer.ts`, `util.ts`, `cbs.ts`, `stores.svelte.ts`,
+  `characterCards.ts`, `parser/parser.svelte.ts`, `characters.ts`,
+  `translator/translator.ts`, `storage/{exportAsDataset,backup}.ts`,
+  `process/{command,scriptings,tts,scripts,modules,request/request,
+  memory/hypav3,mcp/risuaccess/{characters,chats,utils}}.ts`. The
+  13 uniform `'Error: The id pointed to a group chat'` blocks in
+  `mcp/risuaccess/characters.ts` removed in bulk.
+- `lightningRealmImport` — already gone in 0.3+0.4; no further
+  action.
+- UI cleanup across `src/lib/`: `Setting/Pages/PromptSettings.svelte`
+  (Group Other Bot Role selector + Group Inner Format textarea),
+  `Others/AlertComp.svelte` ("Create Group Chat" button +
+  `selectChar` group filter), `Others/BookmarkList.svelte` (group
+  speaker resolution path), `SideBars/CharConfig.svelte` (group
+  member grid, `addGroupChar`/`rmCharFromGroup` imports,
+  `makeGroupImage` button, `orderByOrder` toggle, group lowLevelAccess
+  branch), `SideBars/SideChatList.svelte` (group new-chat seeding,
+  `orderByOrder` toggle, unused `findCharacterbyId` import),
+  `SideBars/Toggles.svelte` (type union), `SideBars/LoreBook/
+  LoreBookSetting.svelte` (group lore label / info), `ChatScreens/
+  {ChatScreen, DefaultChatScreen, Chat, BackgroundDom, Chats,
+  AssetInput, Suggestion}.svelte` (type unions + the
+  `runAutoMode`/`autoMode` group-only state in
+  `DefaultChatScreen`), `Mobile/MobileCharacters.svelte` (sortChar
+  param type).
+- Lang keys removed across all 7 lang files: `errors.alreadyCharInGroup`,
+  `groupInnerFormat` desc, `groupOtherBotRole` desc + label,
+  `group`, `groupLoreInfo`, `removeGroup`, `createGroup`,
+  `groupIcon`, `askLoadFirstMsg`, `createGroupImg`, `talkness`.
 
-Exit when:
-
-- No `type === 'group'` reference remains in `src/ts/` or
-  `src/lib/`.
-- `Database.characters[].type` no longer accepts `'group'`.
-- `pnpm check`, `pnpm test`, `pnpm build` stay green.
+Verification: `pnpm check` (0 errors / 0 warnings), `pnpm test`
+(152 passed, 4 pre-existing skips), `pnpm build` succeeded.
+Grep for `groupChat|type === 'group'|type !== 'group'` in `src/`
+returns no hits outside the `'group'/'groupEnd'/'divider'`
+sidebar-template tokens in `util.ts:1101` (unrelated to chat groups)
+and the one-shot load filter in `database.svelte.ts`.
 
 ## Peer multi-user chat
 

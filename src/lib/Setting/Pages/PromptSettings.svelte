@@ -321,14 +321,6 @@
   <span class="text-textcolor mt-4">{language.maxThoughtTagDepth}</span>
   <NumberInput bind:value={DBState.db.promptSettings.maxThoughtTagDepth} />
   <span class="text-textcolor mt-4"
-    >{language.groupOtherBotRole} <Help key="groupOtherBotRole" /></span
-  >
-  <SelectInput bind:value={DBState.db.groupOtherBotRole}>
-    <OptionInput value="user">User</OptionInput>
-    <OptionInput value="system">System</OptionInput>
-    <OptionInput value="assistant">assistant</OptionInput>
-  </SelectInput>
-  <span class="text-textcolor mt-4"
     >{language.customPromptTemplateToggle} <Help key="customPromptTemplateToggle" /></span
   >
   <TextAreaInput bind:value={DBState.db.customPromptTemplateToggle} />
@@ -340,13 +332,6 @@
   <TextAreaInput bind:value={DBState.db.OAIPrediction} />
   <span class="text-textcolor mt-4">{language.autoSuggest} <Help key="autoSuggest" /></span>
   <TextAreaInput bind:value={DBState.db.autoSuggestPrompt} placeholder={defaultAutoSuggestPrompt} />
-  <span class="text-textcolor mt-4"
-    >{language.groupInnerFormat} <Help key="groupInnerFormat" /></span
-  >
-  <TextAreaInput
-    placeholder={`<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`}
-    bind:value={DBState.db.groupTemplate}
-  />
   <span class="text-textcolor mt-4"
     >{language.systemContentReplacement} <Help key="systemContentReplacement" /></span
   >

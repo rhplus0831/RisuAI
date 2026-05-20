@@ -76,11 +76,7 @@
       class="p-2 flex-1"
       class:bg-selected={submenu === 0}
     >
-      <span
-        >{DBState.db.characters[$selectedCharID].type === 'group'
-          ? language.group
-          : language.character}</span
-      >
+      <span>{language.character}</span>
     </button>
     <button
       onclick={() => {
@@ -105,11 +101,7 @@
 {#if submenu !== 2}
   {#if !globalMode}
     <span class="text-textcolor2 mt-2 mb-6 text-sm"
-      >{submenu === 0
-        ? DBState.db.characters[$selectedCharID].type === 'group'
-          ? language.groupLoreInfo
-          : language.globalLoreInfo
-        : language.localLoreInfo}</span
+      >{submenu === 0 ? language.globalLoreInfo : language.localLoreInfo}</span
     >
   {/if}
   <LoreBookList

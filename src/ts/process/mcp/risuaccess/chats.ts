@@ -1,6 +1,6 @@
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { getCharacter } from './utils'
-import { type character, type groupChat } from 'src/ts/storage/database.svelte'
+import { type character } from 'src/ts/storage/database.svelte'
 
 export class ChatHandler extends MCPToolHandler {
   getTools(): MCPTool[] {
@@ -47,20 +47,12 @@ export class ChatHandler extends MCPToolHandler {
     count: number = 20,
     offset: number = 0,
   ): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }

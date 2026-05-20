@@ -19,7 +19,6 @@ import {
   type loreBook,
   type triggerscript,
   importPreset,
-  type groupChat,
   setCurrentCharacter,
   getCurrentCharacter,
   getDatabase,
@@ -639,10 +638,6 @@ function convertOffSpecCards(
 export async function exportChar(charaID: number): Promise<string> {
   const db = getDatabase({ snapshot: true })
   let char = safeStructuredClone(db.characters[charaID])
-
-  if (char.type === 'group') {
-    return ''
-  }
 
   if (!char.image) {
     const res = await fetch('/none.webp')
@@ -1727,9 +1722,6 @@ export async function shareRisuHub2(
       const resJSON = await res.json()
       alertMd(resJSON.message)
       const currentChar = getCurrentCharacter()
-      if (currentChar.type === 'group') {
-        return
-      }
       currentChar.realmId = resJSON.id
       setCurrentCharacter(currentChar)
     }
@@ -1883,11 +1875,7 @@ export async function getHubResources(id: string) {
   return Buffer.from(await res.arrayBuffer())
 }
 
-export function isCharacterHasAssets(char: character | groupChat) {
-  if (char.type === 'group') {
-    return false
-  }
-
+export function isCharacterHasAssets(char: character) {
   if (char.additionalAssets && char.additionalAssets.length > 0) {
     return true
   }

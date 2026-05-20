@@ -250,10 +250,8 @@ export async function getCustomBackground(db: string) {
 export function findCharacterbyId(id: string) {
   const db = getDatabase()
   for (const char of db.characters) {
-    if (char.type !== 'group') {
-      if (char.chaId === id) {
-        return char
-      }
+    if (char.chaId === id) {
+      return char
     }
   }
   let unknown = createBlankChar()
@@ -306,42 +304,9 @@ export async function getEmotion(
   if (!currentDat) {
     return []
   }
-  let charIdList: string[] = []
+  let charIdList: string[] = [currentDat.chaId]
 
-  if (currentDat.type === 'group') {
-    if (currentDat.characters.length === 0) {
-      return []
-    }
-    switch (currentDat.viewScreen) {
-      case 'multiple':
-        charIdList = currentDat.characters
-        break
-      case 'single': {
-        let newist: [string, string, number] = ['', '', 0]
-        let newistChar = currentDat.characters[0]
-        for (const currentChar of currentDat.characters) {
-          const cha = chaEmotion[currentChar]
-          if (cha) {
-            const latestEmotion = cha[cha.length - 1]
-            if (latestEmotion && latestEmotion[2] > newist[2]) {
-              newist = latestEmotion
-              newistChar = currentChar
-            }
-          }
-        }
-        charIdList = [newistChar]
-        break
-      }
-      case 'emp': {
-        charIdList = currentDat.characters
-        break
-      }
-    }
-  } else {
-    charIdList = [currentDat.chaId]
-  }
-
-  let datas: string[] = [currentDat.viewScreen === 'emp' ? 'emp' : ('normal' as const)]
+  let datas: string[] = ['normal' as const]
   for (const chaid of charIdList) {
     const currentChar = findCharacterbyId(chaid)
     if (currentChar.viewScreen === 'emotion') {

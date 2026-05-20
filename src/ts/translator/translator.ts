@@ -4,7 +4,6 @@ import {
   getDatabase,
   type character,
   type customscript,
-  type groupChat,
 } from '../storage/database.svelte'
 import {
   defaultTranslatorPrompt,
@@ -293,7 +292,7 @@ export async function translateHTML(
   chatID: number,
   regenerate = false,
 ): Promise<string> {
-  let alwaysExistChar: character | groupChat | simpleCharacterArgument
+  let alwaysExistChar: character | simpleCharacterArgument
   if (charArg !== '') {
     if (typeof charArg === 'string') {
       const db = getDatabase()
@@ -680,7 +679,7 @@ export async function clearLLMCache(): Promise<void> {
 function applyEdittransRegex(
   text: string,
   charArg: simpleCharacterArgument | string,
-  alwaysExistChar: character | groupChat | simpleCharacterArgument,
+  alwaysExistChar: character | simpleCharacterArgument,
 ): string {
   if (charArg === '') return text
 

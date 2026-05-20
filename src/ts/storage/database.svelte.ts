@@ -28,6 +28,9 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.characters)) {
     data.characters = []
   }
+  data.characters = data.characters.filter(
+    (c) => (c as { type?: string } | null)?.type !== 'group',
+  )
   if (checkNullish(data.apiType)) {
     data.apiType = 'gemini-3-flash-preview'
   }
@@ -565,7 +568,6 @@ export function setDatabase(data: Database) {
   }
   data.customQuotes ??= false
   data.customQuotesData ??= ['“', '”', '‘', '’']
-  data.groupOtherBotRole ??= 'user'
   data.customGUI ??= ''
   data.customAPIFormat ??= LLMFormat.OpenAICompatible
   data.systemContentReplacement ??= `system: {{slot}}`
@@ -724,7 +726,7 @@ export function getDatabase(options: getDatabaseOptions = {}): Database {
   return DBState.db as Database
 }
 
-export function getCurrentCharacter(options: getDatabaseOptions = {}): character | groupChat {
+export function getCurrentCharacter(options: getDatabaseOptions = {}): character {
   const db = getDatabase(options)
   if (!db.characters) {
     db.characters = []
@@ -733,7 +735,7 @@ export function getCurrentCharacter(options: getDatabaseOptions = {}): character
   return char
 }
 
-export function setCurrentCharacter(char: character | groupChat) {
+export function setCurrentCharacter(char: character) {
   if (!DBState.db.characters) {
     DBState.db.characters = []
   }
@@ -743,7 +745,7 @@ export function setCurrentCharacter(char: character | groupChat) {
 export function getCharacterByIndex(
   index: number,
   options: getDatabaseOptions = {},
-): character | groupChat {
+): character {
   const db = getDatabase(options)
   if (!db.characters) {
     db.characters = []
@@ -752,7 +754,7 @@ export function getCharacterByIndex(
   return char
 }
 
-export function setCharacterByIndex(index: number, char: character | groupChat) {
+export function setCharacterByIndex(index: number, char: character) {
   if (!DBState.db.characters) {
     DBState.db.characters = []
   }
@@ -781,7 +783,7 @@ export interface DynamicOutput {
 }
 
 export interface Database {
-  characters: (character | groupChat)[]
+  characters: (character)[]
   apiType: string
   openAIKey: string
   proxyKey: string
@@ -1066,8 +1068,6 @@ export interface Database {
   }
   customQuotes: boolean
   customQuotesData?: [string, string, string, string]
-  groupTemplate?: string
-  groupOtherBotRole?: string
   customGUI: string
   guiHTML: string
   OAIPrediction: string
@@ -1486,78 +1486,6 @@ export interface loreSettings {
   fullWordMatching?: boolean
 }
 
-export interface groupChat {
-  type: 'group'
-  image?: string
-  firstMessage: string
-  chats: Chat[]
-  chatFolders: ChatFolder[]
-  chatPage: number
-  name: string
-  viewScreen: 'single' | 'multiple' | 'none' | 'emp'
-  characters: string[]
-  characterTalks: number[]
-  characterActive: boolean[]
-  globalLore: loreBook[]
-  autoMode: boolean
-  useCharacterLore: boolean
-  emotionImages: [string, string][]
-  customscript: customscript[]
-  chaId: string
-  alternateGreetings?: string[]
-  creatorNotes?: string
-  removedQuotes?: boolean
-  firstMsgIndex?: number
-  loreSettings?: loreSettings
-  supaMemory?: boolean
-  ttsMode?: string
-  suggestMessages?: string[]
-  orderByOrder?: boolean
-  backgroundHTML?: string
-  reloadKeys?: number
-  backgroundCSS?: string
-  oneAtTime?: boolean
-  virtualscript?: string
-  lorePlus?: boolean
-  trashTime?: number
-  nickname?: string
-  defaultVariables?: string
-  lowLevelAccess?: boolean
-  hideChatIcon?: boolean
-  lastInteraction?: number
-
-  //lazy hack for typechecking
-  voicevoxConfig?: any
-  ttsSpeech?: string
-  naittsConfig?: any
-  oaiVoice?: string
-  oaiTTSConfig?: any
-  hfTTS?: any
-  vits?: OnnxModelFiles
-  gptSoVitsConfig?: any
-  fishSpeechConfig?: any
-  ttsReadOnlyQuoted?: boolean
-  exampleMessage?: string
-  systemPrompt?: string
-  replaceGlobalNote?: string
-  additionalText?: string
-  personality?: string
-  scenario?: string
-  translatorNote?: string
-  additionalData?: any
-  depth_prompt?: { depth: number; prompt: string }
-  additionalAssets?: [string, string, string][]
-  utilityBot?: boolean
-  license?: string
-  realmId: string
-  prebuiltAssetCommand?: boolean
-  prebuiltAssetStyle?: string
-  prebuiltAssetExclude?: string[]
-  modules?: string[]
-  coldstorage?: string
-  coldStoragedChats?: string[]
-}
-
 export interface botPreset {
   name?: string
   apiType?: string
@@ -1619,8 +1547,6 @@ export interface botPreset {
   jsonSchema?: string
   strictJsonSchema?: boolean
   extractJson?: string
-  groupTemplate?: string
-  groupOtherBotRole?: string
   seperateParametersEnabled?: boolean
   seperateParameters?: {
     memory: SeparateParameters
@@ -2086,8 +2012,6 @@ export function saveCurrentPreset() {
     jsonSchema: db.jsonSchema ?? '',
     strictJsonSchema: db.strictJsonSchema ?? true,
     extractJson: db.extractJson ?? '',
-    groupOtherBotRole: db.groupOtherBotRole ?? 'user',
-    groupTemplate: db.groupTemplate ?? '',
     seperateParametersEnabled: db.seperateParametersEnabled ?? false,
     seperateParameters: safeStructuredClone(db.seperateParameters),
     customAPIFormat: safeStructuredClone(db.customAPIFormat),
@@ -2213,8 +2137,6 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.jsonSchema = newPres.jsonSchema ?? ''
   db.strictJsonSchema = newPres.strictJsonSchema ?? true
   db.extractJson = newPres.extractJson ?? ''
-  db.groupOtherBotRole = newPres.groupOtherBotRole ?? 'user'
-  db.groupTemplate = newPres.groupTemplate ?? ''
   db.seperateParametersEnabled = newPres.seperateParametersEnabled ?? false
   db.customAPIFormat = safeStructuredClone(newPres.customAPIFormat) ?? LLMFormat.OpenAICompatible
   db.systemContentReplacement = newPres.systemContentReplacement ?? ''

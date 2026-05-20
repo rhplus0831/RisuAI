@@ -7,7 +7,6 @@ import {
   type Database,
   type character,
   type customscript,
-  type groupChat,
   type triggerscript,
 } from '../storage/database.svelte'
 import { DBState, selIdState } from '../stores.svelte'
@@ -808,7 +807,7 @@ function parseThoughtsAndTools(data: string) {
 
 export async function ParseMarkdown(
   data: string,
-  charArg: character | simpleCharacterArgument | groupChat | string = null,
+  charArg: character | simpleCharacterArgument | string = null,
   mode: 'normal' | 'back' | 'pretranslate' | 'notrim' = 'normal',
   chatID = -1,
   cbsConditions: CbsConditions = {},
@@ -817,7 +816,7 @@ export async function ParseMarkdown(
   const additionalAssetMode = mode === 'back' ? 'back' : 'normal'
   let char = typeof charArg === 'string' ? findCharacterbyId(charArg) : charArg
 
-  if (char && char.type !== 'group') {
+  if (char) {
     data = await parseAdditionalAssets(data, char, additionalAssetMode, {
       ch: chatID,
     })
@@ -828,7 +827,7 @@ export async function ParseMarkdown(
     data = (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
   }
 
-  if (firstParsed !== data && char && char.type !== 'group') {
+  if (firstParsed !== data && char) {
     data = await parseAdditionalAssets(data, char, additionalAssetMode, {
       ch: chatID,
     })
@@ -1649,7 +1648,7 @@ export function risuChatParser(
   arg: {
     chatID?: number
     db?: Database
-    chara?: string | character | groupChat
+    chara?: string | character
     rmVar?: boolean
     var?: { [key: string]: string }
     tokenizeAccurate?: boolean
@@ -1668,18 +1667,7 @@ export function risuChatParser(
   let chara: character | string = null
 
   if (aChara) {
-    if (typeof aChara !== 'string' && aChara.type === 'group') {
-      if (aChara.chats[aChara.chatPage].message.length > 0) {
-        const gc = findCharacterbyId(aChara.chats[aChara.chatPage].message.at(-1).saying ?? '')
-        if (gc.name !== 'Unknown Character') {
-          chara = gc
-        }
-      } else {
-        chara = 'bot'
-      }
-    } else {
-      chara = aChara
-    }
+    chara = aChara
   }
   if (arg.tokenizeAccurate) {
     const db = arg.db ?? DBState.db

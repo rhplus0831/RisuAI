@@ -9,7 +9,6 @@ import {
   setDatabase,
   type Chat,
   type character,
-  type groupChat,
   type triggerscript,
 } from '../storage/database.svelte'
 import { get } from 'svelte/store'
@@ -61,7 +60,7 @@ let pendingEngineCreations = new Map<string, Promise<ScriptingEngineState>>()
 export async function runScripted(
   code: string,
   arg: {
-    char?: character | groupChat | simpleCharacterArgument
+    char?: character | simpleCharacterArgument
     chat?: Chat
     data?: string | OpenAIChat[]
     setVar?: (key: string, value: string) => void
@@ -393,7 +392,7 @@ export async function runScripted(
 
           const character = db.characters[selectedChar]
 
-          if (!character || character.type === 'group' || !character.image) {
+          if (!character || !character.image) {
             return ''
           }
 
@@ -673,9 +672,6 @@ export async function runScripted(
         }
         const selectedChar = get(selectedCharID)
         const char = DBState.db.characters[selectedChar]
-        if (char.type === 'group') {
-          throw 'Character is a group'
-        }
         return char.desc
       })
 
@@ -687,9 +683,6 @@ export async function runScripted(
         const char = DBState.db.characters[selectedChar]
         if (typeof data !== 'string') {
           throw 'Invalid data type'
-        }
-        if (char.type === 'group') {
-          throw 'Character is a group'
         }
         char.desc = desc
         DBState.db.characters[selectedChar] = char
@@ -1416,7 +1409,7 @@ ${code}
 }
 
 export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
-  char: character | groupChat | simpleCharacterArgument,
+  char: character | simpleCharacterArgument,
   mode: string,
   content: T,
   meta?: object,
@@ -1439,7 +1432,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
     let data = content
 
     const triggers =
-      char.type === 'group'
+      char.type === 'simple'
         ? getModuleTriggers()
         : char.triggerscript
             .map((v) => {
@@ -1468,18 +1461,18 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
 }
 
 export async function runLuaButtonTrigger(
-  char: character | groupChat | simpleCharacterArgument,
+  char: character | simpleCharacterArgument,
   data: string,
 ): Promise<any> {
   let runResult
   try {
     const triggers =
-      char.type === 'group'
+      char.type === 'simple'
         ? getModuleTriggers()
         : char.triggerscript
             .map<triggerscript>((v) => ({
               ...v,
-              lowLevelAccess: char.type !== 'simple' ? (char.lowLevelAccess ?? false) : false,
+              lowLevelAccess: char.lowLevelAccess ?? false,
             }))
             .concat(getModuleTriggers())
 

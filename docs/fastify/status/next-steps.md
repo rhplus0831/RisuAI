@@ -7,20 +7,11 @@ one removal target _or_ one foundation slice, not both at once.
 
 ## Immediate
 
-1. **Phase 0 removals - Group chat first.**
-   - Delete `src/ts/process/group.ts`.
-   - Remove the `connectionOpen` / `peerSync` block from
-     `src/ts/process/index.svelte.ts` lines 221-230 and the
-     `groupOrder` block at line 298.
-   - Strip `type === 'group'` branches from `src/ts/` and
-     `src/lib/`. There are 49 + ~20 sites; do them in one
-     reviewable commit per directory cluster.
-   - Remove the group-creation UI entry points in
-     `src/lib/SideBars/CharConfig.svelte` and the group views in
-     `src/lib/ChatScreens/` / `src/lib/Mobile/`.
-   - Update [`status/removals.md`](removals.md) and the relevant
-     entry in [`phases/phase-0-removals.md`](../phases/phase-0-removals.md).
-   - Confirm `pnpm check`, `pnpm test`, `pnpm build` stay green.
+1. **Phase 0 removals - Group chat.** Done 2026-05-20. Single
+   commit; the type narrowing forced types, runtime, and UI to
+   land together. `isGroupChat` was preserved as a `false`
+   back-compat shim for user scripts. See
+   [`removals.md`](removals.md) for the as-landed inventory.
 
 2. **Phase 0 removals - Peer multi-user chat.** Done 2026-05-20.
    See [`removals.md`](removals.md) for the as-landed inventory.
@@ -38,7 +29,7 @@ one removal target _or_ one foundation slice, not both at once.
    `hypaV3Key` with migration fallback), then the bulk removal.
    See [`removals.md`](removals.md) for the as-landed inventory.
 
-After all four bullets close, Phase 0 is done and Phase 1 unblocks.
+Phase 0 closed 2026-05-20. Phase 1 unblocks.
 
 ## Parallel track (safe to start with Phase 0)
 

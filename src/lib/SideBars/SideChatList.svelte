@@ -13,7 +13,7 @@
     BookmarkCheckIcon,
   } from '@lucide/svelte'
 
-  import type { Chat, ChatFolder, character, groupChat } from 'src/ts/storage/database.svelte'
+  import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
   import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
 
@@ -30,14 +30,14 @@
     alertSelect,
     alertStore,
   } from 'src/ts/alert'
-  import { findCharacterbyId, sleep, sortableOptions } from 'src/ts/util'
+  import { sleep, sortableOptions } from 'src/ts/util'
   import { bookmarkListOpen } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import Toggles from './Toggles.svelte'
   import { changeChatTo, createChatCopyName } from 'src/ts/globalApi.svelte'
 
   interface Props {
-    chara: character | groupChat
+    chara: character
   }
 
   let { chara = $bindable() }: Props = $props()
@@ -156,7 +156,6 @@
   <Button
     className="relative bottom-2"
     onclick={() => {
-      const cha = chara
       const len = chara.chats.length
       let chats = chara.chats
       chats.unshift({
@@ -167,15 +166,6 @@
         fmIndex: -1,
         id: v4(),
       })
-      if (cha.type === 'group') {
-        cha.characters.map((c) => {
-          chats[len].message.push({
-            saying: c,
-            role: 'char',
-            data: findCharacterbyId(c).firstMessage,
-          })
-        })
-      }
       chara.chats = chats
       changeChatTo(0)
       $ReloadGUIPointer += 1
@@ -654,9 +644,4 @@
       <Toggles bind:chara />
     {/if}
   </div>
-  {#if chara.type === 'group'}
-    <div class="flex mt-2 items-center">
-      <CheckInput bind:check={chara.orderByOrder} name={language.orderByOrder} />
-    </div>
-  {/if}
 </div>

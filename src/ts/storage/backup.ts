@@ -36,24 +36,22 @@ export async function SaveLocalBackup() {
           if (em && em[1]) assetMap.set(em[1], { charName: charName, assetName: em[0] })
         }
       }
-      if (char.type !== 'group') {
-        if (char.additionalAssets) {
-          for (const em of char.additionalAssets) {
-            if (em && em[1]) assetMap.set(em[1], { charName: charName, assetName: em[0] })
-          }
+      if (char.additionalAssets) {
+        for (const em of char.additionalAssets) {
+          if (em && em[1]) assetMap.set(em[1], { charName: charName, assetName: em[0] })
         }
-        if (char.vits) {
-          const keys = Object.keys(char.vits.files)
-          for (const key of keys) {
-            const vit = char.vits.files[key]
-            if (vit) assetMap.set(vit, { charName: charName, assetName: key })
-          }
+      }
+      if (char.vits) {
+        const keys = Object.keys(char.vits.files)
+        for (const key of keys) {
+          const vit = char.vits.files[key]
+          if (vit) assetMap.set(vit, { charName: charName, assetName: key })
         }
-        if (char.ccAssets) {
-          for (const asset of char.ccAssets) {
-            if (asset && asset.uri)
-              assetMap.set(asset.uri, { charName: charName, assetName: asset.name })
-          }
+      }
+      if (char.ccAssets) {
+        for (const asset of char.ccAssets) {
+          if (asset && asset.uri)
+            assetMap.set(asset.uri, { charName: charName, assetName: asset.name })
         }
       }
     }

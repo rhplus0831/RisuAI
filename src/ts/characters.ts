@@ -51,38 +51,6 @@ export function createNewCharacter() {
   return DBState.db.characters.length - 1
 }
 
-export function createNewGroup() {
-  DBState.db.characters.push({
-    type: 'group',
-    name: '',
-    firstMessage: '',
-    chats: [
-      {
-        message: [],
-        note: '',
-        name: 'Chat 1',
-        localLore: [],
-      },
-    ],
-    chatFolders: [],
-    chatPage: 0,
-    viewScreen: 'none',
-    globalLore: [],
-    characters: [],
-    autoMode: false,
-    useCharacterLore: true,
-    emotionImages: [],
-    customscript: [],
-    chaId: uuidv4(),
-    firstMsgIndex: -1,
-    characterTalks: [],
-    characterActive: [],
-    realmId: '',
-  })
-  checkCharOrder()
-  return DBState.db.characters.length - 1
-}
-
 export async function getCharImage(loc: string, type: 'plain' | 'css' | 'contain' | 'lgcss') {
   const db = DBState.db
 
@@ -205,20 +173,16 @@ export async function addCharEmotion(charId: number) {
     const imgp = await saveImage(img)
     const name = f.name.replace('.png', '').replace('.webp', '')
     let dbChar = db.characters[charId]
-    if (dbChar.type !== 'group') {
-      dbChar.emotionImages.push([name, imgp])
-      DBState.db.characters[charId] = dbChar
-    }
+    dbChar.emotionImages.push([name, imgp])
+    DBState.db.characters[charId] = dbChar
   }
   addingEmotion.set(false)
 }
 
 export function rmCharEmotion(charId: number, emotionId: number) {
   let dbChar = DBState.db.characters[charId]
-  if (dbChar.type !== 'group') {
-    dbChar.emotionImages.splice(emotionId, 1)
-    DBState.db.characters[charId] = dbChar
-  }
+  dbChar.emotionImages.splice(emotionId, 1)
+  DBState.db.characters[charId] = dbChar
 }
 
 export async function exportChat(page: number) {
@@ -413,9 +377,7 @@ export async function exportChat(page: number) {
         })
         .join('\n\n')
 
-      if (char.type !== 'group') {
-        stringl = `--${char.name}\n${char.firstMessage}\n\n` + stringl
-      }
+      stringl = `--${char.name}\n${char.firstMessage}\n\n` + stringl
 
       await downloadFile(
         `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, '') + '.txt',
@@ -637,76 +599,61 @@ export function characterFormatUpdate(
   if (!cha.chaId) {
     cha.chaId = uuidv4()
   }
-  if (cha.type !== 'group') {
-    if (checkNullish(cha.sdData)) {
-      cha.sdData = defaultSdDataFunc()
-    }
-    if (checkNullish(cha.utilityBot)) {
-      cha.utilityBot = false
-    }
-    cha.triggerscript = cha.triggerscript ?? []
-    cha.alternateGreetings = cha.alternateGreetings ?? []
-    cha.exampleMessage = cha.exampleMessage ?? ''
-    cha.creatorNotes = cha.creatorNotes ?? ''
-    cha.systemPrompt = cha.systemPrompt ?? ''
-    cha.tags = cha.tags ?? []
-    cha.creator = cha.creator ?? ''
-    cha.characterVersion = cha.characterVersion ?? ''
-    cha.personality = cha.personality ?? ''
-    cha.scenario = cha.scenario ?? ''
-    cha.firstMsgIndex = cha.firstMsgIndex ?? -1
-    cha.additionalData = cha.additionalData ?? {
-      tag: [],
-      creator: '',
-      character_version: '',
-    }
-    cha.voicevoxConfig = cha.voicevoxConfig ?? {
-      SPEED_SCALE: 1,
-      PITCH_SCALE: 0,
-      INTONATION_SCALE: 1,
-      VOLUME_SCALE: 1,
-    }
-    if (cha.postHistoryInstructions) {
-      cha.chats[cha.chatPage].note += '\n' + cha.postHistoryInstructions
-      cha.chats[cha.chatPage].note = cha.chats[cha.chatPage].note.trim()
-      cha.postHistoryInstructions = null
-    }
-    cha.additionalText ??= ''
-    cha.depth_prompt ??= {
-      depth: 0,
-      prompt: '',
-    }
-    cha.hfTTS ??= {
-      model: '',
-      language: 'en',
-    }
-    cha.backgroundHTML ??= ''
-    cha.backgroundCSS ??= ''
-    cha.creation_date ??= Date.now()
-    cha.globalLore = updateLorebooks(cha.globalLore)
-    if (!cha.newGenData) {
-      cha = updateInlayScreen(cha)
-    }
-    // Migrate legacy 'none' value to '' for UI dropdown compatibility
-    // Using '' because it's falsy, so `if (ttsMode)` correctly detects enabled TTS
-    if (cha.ttsMode === 'none') {
-      cha.ttsMode = ''
-    }
-    cha.ttsMode ??= ''
-  } else {
-    if (!cha.characterTalks || cha.characterTalks.length !== cha.characters.length) {
-      cha.characterTalks = []
-      for (let i = 0; i < cha.characters.length; i++) {
-        cha.characterTalks.push((1 / 6) * 4)
-      }
-    }
-    if (!cha.characterActive || cha.characterActive.length !== cha.characters.length) {
-      cha.characterActive = []
-      for (let i = 0; i < cha.characters.length; i++) {
-        cha.characterActive.push(true)
-      }
-    }
+  if (checkNullish(cha.sdData)) {
+    cha.sdData = defaultSdDataFunc()
   }
+  if (checkNullish(cha.utilityBot)) {
+    cha.utilityBot = false
+  }
+  cha.triggerscript = cha.triggerscript ?? []
+  cha.alternateGreetings = cha.alternateGreetings ?? []
+  cha.exampleMessage = cha.exampleMessage ?? ''
+  cha.creatorNotes = cha.creatorNotes ?? ''
+  cha.systemPrompt = cha.systemPrompt ?? ''
+  cha.tags = cha.tags ?? []
+  cha.creator = cha.creator ?? ''
+  cha.characterVersion = cha.characterVersion ?? ''
+  cha.personality = cha.personality ?? ''
+  cha.scenario = cha.scenario ?? ''
+  cha.firstMsgIndex = cha.firstMsgIndex ?? -1
+  cha.additionalData = cha.additionalData ?? {
+    tag: [],
+    creator: '',
+    character_version: '',
+  }
+  cha.voicevoxConfig = cha.voicevoxConfig ?? {
+    SPEED_SCALE: 1,
+    PITCH_SCALE: 0,
+    INTONATION_SCALE: 1,
+    VOLUME_SCALE: 1,
+  }
+  if (cha.postHistoryInstructions) {
+    cha.chats[cha.chatPage].note += '\n' + cha.postHistoryInstructions
+    cha.chats[cha.chatPage].note = cha.chats[cha.chatPage].note.trim()
+    cha.postHistoryInstructions = null
+  }
+  cha.additionalText ??= ''
+  cha.depth_prompt ??= {
+    depth: 0,
+    prompt: '',
+  }
+  cha.hfTTS ??= {
+    model: '',
+    language: 'en',
+  }
+  cha.backgroundHTML ??= ''
+  cha.backgroundCSS ??= ''
+  cha.creation_date ??= Date.now()
+  cha.globalLore = updateLorebooks(cha.globalLore)
+  if (!cha.newGenData) {
+    cha = updateInlayScreen(cha)
+  }
+  // Migrate legacy 'none' value to '' for UI dropdown compatibility
+  // Using '' because it's falsy, so `if (ttsMode)` correctly detects enabled TTS
+  if (cha.ttsMode === 'none') {
+    cha.ttsMode = ''
+  }
+  cha.ttsMode ??= ''
   if (checkNullish(cha.customscript)) {
     cha.customscript = []
   }
@@ -809,87 +756,6 @@ export function createBlankChar(): character {
   }
 }
 
-export async function makeGroupImage() {
-  try {
-    alertStore.set({
-      type: 'wait',
-      msg: `Loading..`,
-    })
-    const db = getDatabase()
-    const charID = get(selectedCharID)
-    const group = db.characters[charID]
-    if (group.type !== 'group') {
-      return
-    }
-
-    const imageUrls = await Promise.all(
-      group.characters.map((v) => {
-        return getCharImage(findCharacterbyId(v).image, 'plain')
-      }),
-    )
-
-    const canvas = document.createElement('canvas')
-    canvas.width = 256
-    canvas.height = 256
-    const ctx = canvas.getContext('2d')
-
-    // Load the images
-    const images = []
-    let loadedImages = 0
-
-    await Promise.all(
-      imageUrls.map(
-        (url) =>
-          new Promise<void>((resolve) => {
-            const img = new Image()
-            img.crossOrigin = 'anonymous'
-            img.onload = () => {
-              images.push(img)
-              resolve()
-            }
-            img.src = url
-          }),
-      ),
-    )
-
-    // Calculate dimensions and draw the grid
-    const numImages = images.length
-    const numCols = Math.ceil(Math.sqrt(images.length))
-    const numRows = Math.ceil(images.length / numCols)
-    const cellWidth = canvas.width / numCols
-    const cellHeight = canvas.height / numRows
-
-    for (let row = 0; row < numRows; row++) {
-      for (let col = 0; col < numCols; col++) {
-        const index = row * numCols + col
-        if (index >= numImages) break
-        ctx.drawImage(images[index], col * cellWidth, row * cellHeight, cellWidth, cellHeight)
-      }
-    }
-
-    // Return the image URI
-
-    const uri = canvas.toDataURL()
-    canvas.remove()
-    db.characters[charID].image = await saveImage(dataURLtoBuffer(uri))
-    alertStore.set({
-      type: 'none',
-      msg: '',
-    })
-  } catch (error) {
-    alertError(error)
-  }
-}
-
-function dataURLtoBuffer(string: string) {
-  const regex = /^data:.+\/(.+);base64,(.*)$/
-
-  const matches = string.match(regex)
-  const ext = matches[1]
-  const data = matches[2]
-  return Buffer.from(data, 'base64')
-}
-
 export async function removeChar(
   index: number,
   name: string,
@@ -936,9 +802,6 @@ export async function addCharacter(
   switch (r) {
     case 'createfromScratch':
       createNewCharacter()
-      break
-    case 'createGroup':
-      createNewGroup()
       break
     case 'importCharacter':
       await importCharacter()

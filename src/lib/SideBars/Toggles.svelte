@@ -4,7 +4,7 @@
   import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from 'src/ts/util'
   import { language } from 'src/lang'
   import type { PromptItem } from 'src/ts/process/prompt'
-  import type { character, groupChat } from 'src/ts/storage/database.svelte'
+  import type { character } from 'src/ts/storage/database.svelte'
   import Accordion from '../UI/Accordion.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
@@ -14,7 +14,7 @@
   import CustomSideBar from './CustomSidebar.svelte'
 
   interface Props {
-    chara?: character | groupChat
+    chara?: character
     noContainer?: boolean
   }
 

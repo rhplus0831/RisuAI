@@ -1,6 +1,6 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
-import { type character, type groupChat, type loreBook } from 'src/ts/storage/database.svelte'
+import { type character, type loreBook } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
@@ -398,20 +398,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterInfo(id: string, fields: string[]): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -455,20 +447,12 @@ export class CharacterHandler extends MCPToolHandler {
     count: number = 100,
     offset: number = 0,
   ): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -495,20 +479,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterLorebook(id: string, entryNames: string[]): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -543,20 +519,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async setCharacterInfo(id: string, data: any): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -615,20 +583,12 @@ export class CharacterHandler extends MCPToolHandler {
     newName?: string,
     alwaysActive?: boolean,
   ): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -698,20 +658,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async deleteCharacterLorebook(id: string, name: string): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -754,20 +706,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterRegexScripts(id: string): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -801,20 +745,12 @@ export class CharacterHandler extends MCPToolHandler {
     flag?: string,
     ableFlag?: boolean,
   ): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -878,20 +814,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async deleteCharacterRegexScripts(id: string, name: string): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -938,20 +866,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterAdditionalAssets(id: string): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -974,20 +894,12 @@ export class CharacterHandler extends MCPToolHandler {
     id: string,
     assetName: string,
   ): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -1034,20 +946,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterLuaScript(id: string): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }
@@ -1074,20 +978,12 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async setCharacterLuaScript(id: string, code: string): Promise<RPCToolCallContent[]> {
-    const char: character | groupChat = getCharacter(id)
+    const char: character = getCharacter(id)
     if (!char) {
       return [
         {
           type: 'text',
           text: `Error: Character with ID ${id} not found.`,
-        },
-      ]
-    }
-    if (char.type === 'group') {
-      return [
-        {
-          type: 'text',
-          text: `Error: The id pointed to a group chat, not a character.`,
         },
       ]
     }

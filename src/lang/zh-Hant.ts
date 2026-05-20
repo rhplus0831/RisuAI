@@ -19,7 +19,6 @@ export const languageChineseTraditional = {
     httpError: '錯誤：請求發生錯誤：',
     noData: '檔案格式錯誤或資料已損毀。',
     onlyOneChat: '至少需要一個聊天室',
-    alreadyCharInGroup: '該群組中已經有一個同名角色。',
     noUserIcon: '請先設定您的個人頭像。',
     emptyText: '文字內容為空。',
     wrongPassword: '密碼錯誤',
@@ -174,9 +173,6 @@ export const languageChineseTraditional = {
       '此欄位不為空時，將從回應中提取特定 JSON 資料。例如：要從回應 `{"response": {"text": ["hello"]}}` 提取 `response.text[0]`，請填寫 `response.text.0`。',
     translatorNote:
       '可在此處為每個角色加入獨特的翻譯備註，但僅適用於使用 Ax. 模型進行翻譯。要啟用此功能，請在語言設定中包含 `{{slot::tnote}}`。此功能不適用群組對話。',
-    groupInnerFormat:
-      '用於定義群組對話中非發言者的格式。此欄位不為空時，將使用此格式替代預設格式。若 `Group Other Bot Role` 設定為 `assistant`，該格式也將套用於發言者。',
-    groupOtherBotRole: '用於定義群組對話中非發言者的角色。',
     chatHTML:
       '每段對話插入的 HTML。\n\n可以使用CBS和特殊標籤。\n- `<risutextbox>`：用於呈現文字的文字框\n- `<risuicon>`：用於顯示使用者或助理的頭像\n- `<risubuttons>`：用於對話編輯、翻譯等圖示按鈕\n- `<risugeninfo>`：生成訊息按鈕。',
     systemContentReplacement: '若模型不支援系統提示詞，則使用此格式取代系統提示詞內容。',
@@ -686,7 +682,6 @@ export const languageChineseTraditional = {
   character: '角色',
   Chat: '對話',
   globalLoreInfo: '角色 Lorebook 適用於該角色的所有對話。',
-  group: '群組',
   localLoreInfo: '對話 Lorebook 僅適用於當前對話。',
   removeConfirm: '您確定要刪除：',
   removeConfirm2: '您**真的**確定要刪除：',
@@ -738,7 +733,6 @@ export const languageChineseTraditional = {
   multiple: '多個',
   useCharLorebook: '使用角色 Lorebook',
   selectChar: '選擇角色',
-  askLoadFirstMsg: '是否載入初始訊息？',
   theme: '介面主題',
   editOrder: '編輯順序',
   submodel: '輔助模型',
@@ -1179,7 +1173,6 @@ export const languageChineseTraditional = {
   trailingDoubleQuote: '下雙引號',
   translatorNote: '翻譯備註 (TL Note)',
   formatGroupInSingle: '單一群組格式',
-  groupInnerFormat: '非發言者內部格式',
   defineCustomGUI: '自訂介面',
   chatHTML: '對話介面 HTML',
   logShare: '顯示分享記錄按鈕',

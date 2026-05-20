@@ -1,7 +1,6 @@
 import type { Tiktoken } from '@dqbd/tiktoken'
 import type { Tokenizer } from '@mlc-ai/web-tokenizers'
 import {
-  type groupChat,
   type character,
   type Chat,
   getCurrentCharacter,
@@ -598,7 +597,7 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
   return bias
 }
 
-export async function getCharToken(char?: character | groupChat | null) {
+export async function getCharToken(char?: character | null) {
   let persistant = 0
   let dynamic = 0
 
@@ -606,7 +605,7 @@ export async function getCharToken(char?: character | groupChat | null) {
     const c = getCurrentCharacter()
     char = c
   }
-  if (char.type === 'group') {
+  if (!char) {
     return { persistant: 0, dynamic: 0 }
   }
 

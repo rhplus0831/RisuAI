@@ -5,7 +5,6 @@
     setDatabase,
     type character,
     type Message,
-    type groupChat,
     type Database,
   } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
@@ -59,7 +58,7 @@
       (!suggestMessages || suggestMessages.length === 0) &&
       !progress
     ) {
-      let currentChar: character | groupChat = DBState.db.characters[$selectedCharID]
+      let currentChar: character = DBState.db.characters[$selectedCharID]
       let messages: Message[] = []
 
       messages = [...messages, ...currentChar.chats[currentChar.chatPage].message]
