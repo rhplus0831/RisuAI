@@ -36,6 +36,7 @@ const FIXTURES = [
   'cache-point',
   'persona',
   'lorebook-keyword',
+  'lorebook-constant',
   'client-abort',
 ] as const
 
