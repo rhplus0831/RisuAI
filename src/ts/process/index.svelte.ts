@@ -9,7 +9,7 @@ import {
   type Message,
 } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
-import { CharEmotion, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { ChatTokenizer } from '../tokenizer'
 import { language } from '../../lang'
 import { alertError, alertToast } from '../alert'
@@ -30,7 +30,6 @@ import { exampleMessage } from './exampleMessages'
 import { sayTTS } from './tts'
 import { v4 } from 'uuid'
 import { runTrigger } from './triggers'
-import { HypaProcesser } from './memory/hypamemory'
 import { additionalInformations } from './embedding/addinfo'
 import { getInlayAsset } from './files/inlays'
 import { getGenerationModelString } from './models/modelString'
@@ -51,6 +50,7 @@ import { applyEmotionFromResponse } from './postGeneration/emotionFromResponse'
 import { runImggenStableDiff } from './postGeneration/imggenStableDiff'
 import { runEmotionLlmFallback } from './postGeneration/emotionFallbackLlm'
 import { runEmotionEmbeddingFallback } from './postGeneration/emotionFallbackEmbedding'
+import { loadAndTrimCharEmotion } from './postGeneration/charEmotionStore'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1770,19 +1770,7 @@ export async function sendChat(
 
   if (!currentChar.inlayViewScreen) {
     if (currentChar.viewScreen === 'emotion' && !emoChanged && abortSignal.aborted === false) {
-      let currentEmotion = currentChar.emotionImages
-      let emotionList = currentEmotion.map((a) => {
-        return a[0]
-      })
-      let charemotions = get(CharEmotion)
-
-      let tempEmotion = charemotions[currentChar.chaId]
-      if (!tempEmotion) {
-        tempEmotion = []
-      }
-      if (tempEmotion.length > 4) {
-        tempEmotion.splice(0, 1)
-      }
+      const { tempEmotion, charemotions } = loadAndTrimCharEmotion(currentChar.chaId)
 
       if (DBState.db.emotionProcesser === 'embedding') {
         await runEmotionEmbeddingFallback({
