@@ -42,7 +42,7 @@ export class HypaProcessorV2<TMetadata> {
     this.options = {
       model: db.hypaModel || 'MiniLM',
       customEmbeddingUrl: db.hypaCustomSettings?.url?.trim() || '',
-      oaiKey: db.supaMemoryKey?.trim() || '',
+      oaiKey: db.hypaV3Key?.trim() || '',
       rateLimiter: new TaskRateLimiter(),
       ...options,
     }
@@ -455,7 +455,7 @@ export class HypaProcessorV2<TMetadata> {
 
       const fetchArgs = {
         headers: {
-          Authorization: 'Bearer ' + (this.options.oaiKey?.trim() || db.supaMemoryKey?.trim()),
+          Authorization: 'Bearer ' + (this.options.oaiKey?.trim() || db.hypaV3Key?.trim()),
         },
         body: {
           input: contents,

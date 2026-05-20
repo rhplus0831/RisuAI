@@ -1710,7 +1710,7 @@
 
     {#if DBState.db.hypaModel === 'openai3small' || DBState.db.hypaModel === 'openai3large' || DBState.db.hypaModel === 'ada'}
       <span class="text-textcolor">OpenAI API Key</span>
-      <TextInput size="sm" marginBottom bind:value={DBState.db.supaMemoryKey} />
+      <TextInput size="sm" marginBottom bind:value={DBState.db.hypaV3Key} />
     {/if}
 
     {#if DBState.db.hypaModel === 'custom'}

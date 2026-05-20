@@ -142,7 +142,7 @@ export class HypaProcesser {
 
       gf = await globalFetch('https://api.openai.com/v1/embeddings', {
         headers: {
-          Authorization: 'Bearer ' + (this.oaikey?.trim() || db.supaMemoryKey?.trim()),
+          Authorization: 'Bearer ' + (this.oaikey?.trim() || db.hypaV3Key?.trim()),
         },
         body: {
           input: input,

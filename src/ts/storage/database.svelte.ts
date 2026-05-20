@@ -232,6 +232,9 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.supaMemoryKey)) {
     data.supaMemoryKey = ''
   }
+  if (checkNullish(data.hypaV3Key)) {
+    data.hypaV3Key = data.supaMemoryKey ?? ''
+  }
   if (checkNullish(data.hypaMemoryKey)) {
     data.hypaMemoryKey = ''
   }
@@ -880,6 +883,7 @@ export interface Database {
   roundIcons: boolean
   useStreaming: boolean
   supaMemoryKey: string
+  hypaV3Key: string
   hypaMemoryKey: string
   voyageApiKey: string
   supaModelType: string
