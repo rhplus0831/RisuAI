@@ -8,6 +8,15 @@ vi.mock('../stableDiff', () => import('../__fixtures__/mocks/stableDiff'))
 vi.mock('../prereroll', () => import('../__fixtures__/mocks/prereroll'))
 vi.mock('../files/inlays', () => import('../__fixtures__/mocks/inlays'))
 
+// memory/hypav3 exports other items (createHypaV3Preset, types) that
+// database.svelte.ts pulls in during setDatabase(). Preserve them via
+// importActual; only replace hypaMemoryV3.
+vi.mock('../memory/hypav3', async (importActual) => {
+  const actual = await importActual<typeof import('../memory/hypav3')>()
+  const fake = await import('../__fixtures__/mocks/hypav3')
+  return { ...actual, hypaMemoryV3: fake.hypaMemoryV3 }
+})
+
 // Stable UUIDs so generationId / chatId are deterministic in snapshots.
 // The counter is exposed via a reset hook so each fixture starts at uuid-0,
 // keeping snapshots independent of test order.
@@ -40,6 +49,7 @@ const FIXTURES = [
   'lorebook-constant',
   'lorebook-recursive',
   'multimodal-image',
+  'hypav3-memory',
   'client-abort',
 ] as const
 
