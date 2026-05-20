@@ -34,6 +34,9 @@ const FIXTURES = [
   'auto-continue',
   'author-note',
   'cache-point',
+  'persona',
+  'lorebook-keyword',
+  'client-abort',
 ] as const
 
 describe('sendChat fixtures', () => {
@@ -78,7 +81,13 @@ describe('sendChat fixtures', () => {
 
     const stageRecorder = recordStages()
 
-    await sendChat(-1, loaded.fixture.sendChatArgs ?? {})
+    const args: Parameters<typeof sendChat>[1] = { ...(loaded.fixture.sendChatArgs ?? {}) }
+    if (loaded.fixture.aborted) {
+      const controller = new AbortController()
+      controller.abort()
+      args.signal = controller.signal
+    }
+    await sendChat(-1, args)
 
     const stages = stageRecorder.stop()
     const captured = captureSnapshot(stages)

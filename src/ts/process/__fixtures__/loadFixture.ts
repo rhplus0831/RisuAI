@@ -17,6 +17,12 @@ export interface Fixture {
     preview?: boolean
     previewPrompt?: boolean
   }
+  /**
+   * When true, the test driver synthesizes a pre-aborted AbortSignal and
+   * passes it as `signal`. Used to pin sendChat's behavior when the caller
+   * has already cancelled before the function runs.
+   */
+  aborted?: boolean
 }
 
 export interface LoadedFixture {
