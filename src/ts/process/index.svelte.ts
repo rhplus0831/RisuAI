@@ -1993,10 +1993,6 @@ export async function sendChat(
 
       return true
     } else if (currentChar.viewScreen === 'imggen') {
-      if (chatProcessIndex !== -1) {
-        throwError('Stable diffusion in group chat is not supported')
-      }
-
       const msgs = DBState.db.characters[selectedChar].chats[selectedChat].message
       let msgStr = ''
       for (let i = msgs.length - 1; i >= 0; i--) {
