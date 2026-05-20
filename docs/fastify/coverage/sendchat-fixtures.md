@@ -1,13 +1,15 @@
 # sendChat Fixtures
 
-Date: 2026-05-20 (scaffolding + 14 fixtures landed)
+Date: 2026-05-20 (all 17 fixtures landed - Phase 4 done)
 
-Status: scaffolding landed; fourteen fixtures cover the entry
+Status: all 17 target fixtures landed. The harness pins the entry
 path, the multiline reroll branch, the upstream-fail branch, the
-auto-continue recursion, two prompt-shape pins (author note and
-automatic cache point), persona, the full lorebook trio (keyword,
-constant, recursive), multimodal image attachment, and the
-pre-aborted-signal exit path. Three fixtures still to author.
+auto-continue recursion, the prompt-shape variations (author
+note, automatic cache point, persona, the full lorebook trio,
+multimodal image attachment), the hypaV3 memory consumption, both
+trigger transformation paths (editRequest via runLuaEditTrigger,
+editOutput via customscript regex), and the pre-aborted-signal
+exit path.
 
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
 array of normalized call records (`{ mode, formated, ... }`)
@@ -25,13 +27,13 @@ prompt-shape fixtures.
 | `lorebook-keyword`    | One keyword-activated entry on `globalLore`; matched substring in the user message. Content lands at the `lorebook` slot in `formatingOrder`. | landed |
 | `lorebook-constant`   | One entry with `alwaysActive: true` and no `key`. Activates without a substring scan and lands at the lorebook slot. | landed |
 | `lorebook-recursive`  | Two entries chained by keyword: A's content mentions B's keyword. User message contains A's keyword; recursive scan activates B. Final block order is sort-by-`insertorder`-desc then reversed. | landed |
-| `hypav3-memory`       | One Hypa V3 summary slot consumed in the prompt.       | not started |
+| `hypav3-memory`       | `vi.mock` of `memory/hypav3` returns a canned summary; the entry survives into `formated` wrapped as `<Previous Conversation>...</Previous Conversation>` with `memo: "hypaMemory"`. Stages emit `[1, 2, 1, 3, 4]`. | landed |
 | `author-note`         | `chats[].note` appended as the last system message under the default `formatingOrder`. | landed |
 | `persona`             | `db.personaPrompt` set. Lands in `unformated.personaPrompt`; under default `formatingOrder`, gets merged into the leading system block by `pushPrompts`. | landed |
 | `multimodal-image`    | `{{inlay::<id>}}` tag in a user message resolves via mocked `getInlayAsset` into the `multimodals: [{ type: 'image', base64, width, height }]` field on the user `OpenAIChat`. Uses a custom `xcustom:::` model with `hasImageInput`. | landed |
 | `cache-point`         | `automaticCachePoint` marks the last 3 user entries with `cachePoint: true`. Requires a `promptTemplate` with a `chat` card. | landed |
-| `editrequest-trigger` | A triggerscript rewrites the request payload.          | not started |
-| `editoutput-trigger`  | A triggerscript rewrites the response text.            | not started |
+| `editrequest-trigger` | Full `vi.mock` of `scriptings` (wasmoon can't initialize under happy-dom). The fake `runLuaEditTrigger` appends a marker system entry when the character has a non-empty `triggerscript` and `mode === 'editRequest'`. | landed |
+| `editoutput-trigger`  | One `customscript` regex entry of `type: 'editoutput'` rewriting `sunshine` -> `starlight`. The rewrite fires inside the streaming loop's `processScriptFull('editoutput', ...)` at `index.svelte.ts:1596`. | landed |
 | `auto-continue`       | Auto-continue fires once and lands a second turn.      | landed      |
 | `provider-error`      | Upstream `type:'fail'` produces a `risuerror` chat message. | landed |
 | `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `index.svelte.ts:1541` returns `false` before any assistant message is added. | landed |

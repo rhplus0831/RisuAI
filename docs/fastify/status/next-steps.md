@@ -18,17 +18,17 @@ one proxy slice or one characterization-test slice at a time.
    - Inventory and exit criteria live in
      [`../phases/phase-3-proxy.md`](../phases/phase-3-proxy.md).
 
-2. **Phase 4 prep - characterization tests.** Scaffolding +
-   fourteen fixtures landed 2026-05-20. The remaining 3 fixtures
-   (`hypav3-memory`, `editrequest-trigger`, `editoutput-trigger`)
-   are the next slice. See [`sendchat.md`](sendchat.md) for the
-   in-progress tally and the `doingChat` lifecycle note flagged
-   for Phase 5.
-   - Do not modify `sendChat` itself. The goal is to record what
-     the function does today before Phase 5 extraction changes its
-     structure.
-   - Inventory lives in
-     [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md).
+2. **Phase 5 - sendChat extraction.** Phase 4 closed 2026-05-20
+   with all 17 characterization fixtures landed; the harness is
+   ready to defend an incremental refactor of `sendChat` into
+   per-stage modules. Start with the smallest meaningful seam
+   (e.g., move the auto-continue recursion or the response
+   post-processing block) and run `pnpm test -- sendChat.fixtures`
+   after each step. Pick up the open notes from
+   [`sendchat.md`](sendchat.md): the `doingChat` lifecycle (set
+   on entry, never cleared on the success path), the
+   format-dependent `pushPrompts` coalescer, and the
+   author-note-at-end-of-prompt vs. "configured depth" doc gap.
 
 ## Completed Slices
 
@@ -111,6 +111,20 @@ one proxy slice or one characterization-test slice at a time.
   PNG and stub `supportsInlayImage`. It also uses an
   `xcustom:::` model with `hasImageInput` + the `Unknown`
   tokenizer so token math runs offline.
+
+- **Phase 4 - memory + trigger close-out slice.** Done
+  2026-05-20. Adds `hypav3-memory`, `editrequest-trigger`, and
+  `editoutput-trigger` - the final three fixtures of the
+  Phase 4 plan. `hypav3-memory` mocks `memory/hypav3` via
+  `importActual`+override and pins `stages: [1, 2, 1, 3, 4]`.
+  `editrequest-trigger` swaps the entire `scriptings` module
+  (because the real one imports wasmoon at top level and
+  wasmoon's `createRequire` rejects the happy-dom URL); the
+  fake `runLuaEditTrigger` appends a marker entry on
+  `'editRequest'`. `editoutput-trigger` uses a plain
+  `customscript` regex of type `'editoutput'` and pins that
+  the rewrite is applied inside the streaming loop before
+  `runInlayScreen` sees the text. Phase 4 is now complete.
 
 ## Closed (do not reopen without a contract)
 

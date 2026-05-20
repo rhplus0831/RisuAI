@@ -1,18 +1,21 @@
 # sendChat Status
 
-Date: 2026-05-20 (Phase 4 scaffolding + 14 fixtures landed)
+Date: 2026-05-20 (Phase 4 done: scaffolding + all 17 fixtures
+landed)
 
-Updated 2026-05-20: Phase 4 scaffolding and fourteen fixtures have
-landed. Loader / provider fake / snapshot harness exist; fixtures
-cover the happy streaming path, preview short-circuit, continue
-(resume an assistant message), multiline reroll, upstream-fail
-with `inlayErrorResponse`, the recursive auto-continue branch,
-the author-note slot under the default `formatingOrder`, the
-`automaticCachePoint` walk-back, persona substitution, the full
-lorebook trio (keyword / constant / recursive), the multimodal
-image attachment path, and the pre-aborted-signal exit. See
-"Phase 4 in progress" below for the running tally and the open
-items.
+Updated 2026-05-20: Phase 4 is complete. The fixture harness
+(loader, provider fake, snapshot, per-module mocks) plus all 17
+target fixtures live under `src/ts/process/__fixtures__/` and
+`src/ts/process/__tests__/sendChat.fixtures.test.ts`. The
+fixtures pin the entry path, every documented exit shape
+(success, multiline reroll, upstream fail, abort, auto-continue
+recursion), the prompt-shape variations under the default
+`formatingOrder` (author note, automatic cache point, persona,
+keyword / constant / recursive lorebook, multimodal image),
+hypaV3 memory consumption, and both trigger transformation
+hooks (editRequest via `runLuaEditTrigger`, editOutput via
+`customscript` regex). See "Phase 4 landed" below for the
+per-fixture summary.
 
 Snapshot schema bumped 2026-05-20: `providerCalls` now persists
 the normalized call records (mode + formated + opt-in flags)
@@ -85,9 +88,10 @@ Existing `process/` helper-surface tests (TTS hooks, request
 additional params, MCP Risu access modules, inlay asset helpers)
 continue to cover the smaller seams.
 
-## Phase 4 in progress
+## Phase 4 landed
 
-Landed:
+All target fixtures are in place. The list below documents what
+each fixture pins.
 
 - Scaffolding (loader, provider fake, snapshot harness,
   per-module mocks, test entry).
@@ -172,12 +176,30 @@ Landed:
   family, `pushPrompts` does not coalesce consecutive system
   entries, so the main prompt and character description are two
   separate system messages instead of one.
-
-Open for the next slice:
-
-- 3 fixtures still to author per
-  [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md):
-  `hypav3-memory`, `editrequest-trigger`, `editoutput-trigger`.
+- `hypav3-memory` - `character.supaMemory: true` and
+  `db.hypaV3: true`. Mocks `memory/hypav3` via
+  `vi.importActual` + override so `hypaMemoryV3` returns a
+  canned `{ chats, currentTokens, memory }` with a prepended
+  summary OpenAIChat (`memo: 'hypaMemory'`). Pins
+  `stages: [1, 2, 1, 3, 4]` and that the summary entry survives
+  into the formated prompt wrapped as
+  `<Previous Conversation>...</Previous Conversation>`,
+  immediately after the leading system block.
+- `editrequest-trigger` - mocks `scriptings` wholesale (the
+  real module imports wasmoon, which fails to initialize under
+  happy-dom). The fake `runLuaEditTrigger` appends a marker
+  system entry when the character has at least one
+  triggerscript and the mode is `'editRequest'` on an
+  `OpenAIChat[]`. Pins that the `runLuaEditTrigger('editRequest',
+  formated)` call site at `index.svelte.ts:1440` mutates the
+  formated array and the mutation reaches the provider.
+- `editoutput-trigger` - one `customscript` regex of type
+  `'editoutput'` rewriting `sunshine` -> `starlight`. Pins that
+  the rewrite happens inside the streaming loop's
+  `processScriptFull('editoutput', ...)` at
+  `index.svelte.ts:1596` (before `runInlayScreen` sees the
+  text), and the rewritten text is what gets persisted on the
+  assistant message.
 - `doingChat` is set to `true` on sendChat entry and is not reset
   on the success path. The test harness resets it between
   fixtures; production code resets it from the UI layer. Worth

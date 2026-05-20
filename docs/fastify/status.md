@@ -18,6 +18,11 @@ under [`status/`](status/).
   bootstrap, JSON import, raw asset upload / read / head / exists
   checks, backup create / list / restore / delete, optional static
   SPA serving, and route tests for those surfaces.
+- Phase 4 sendChat characterization tests closed on 2026-05-20.
+  All 17 fixtures land under `src/ts/process/__fixtures__/` with
+  per-fixture DB / upstream / expected files plus targeted
+  `vi.mock`s for the heavy side-effect modules. Phase 5 can now
+  refactor sendChat behind a real safety net.
 - The Docker image and compose file now run Fastify on port 6002
   with `/app/data` persisted. `server/node/server.cjs` (Express)
   still remains for `pnpm runserver`, the legacy `/api/read|write|list`
@@ -37,8 +42,11 @@ under [`status/`](status/).
 See [`phases/phase-3-proxy.md`](phases/phase-3-proxy.md)
 for the proxy / hub scope and exit criteria.
 
-Phase 4 (`sendChat` characterization tests) can start in parallel
-with Phase 3.
+Phase 4 (`sendChat` characterization tests) closed 2026-05-20.
+The harness lives at `src/ts/process/__fixtures__/` and
+`src/ts/process/__tests__/sendChat.fixtures.test.ts`; all 17
+target fixtures pin. Phase 5 (`sendChat` extraction) can now
+start in parallel with Phase 3.
 
 ## Start here
 
