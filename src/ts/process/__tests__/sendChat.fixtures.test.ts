@@ -59,6 +59,7 @@ const FIXTURES = [
   'multimodal-image',
   'hypav3-memory',
   'editrequest-trigger',
+  'editoutput-trigger',
   'client-abort',
 ] as const
 
