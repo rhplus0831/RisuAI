@@ -57,8 +57,9 @@ enforces today. Retire the Express server once parity is proven.
   a valid ES256 assertion (`isAuthorizedProxyRequest`).
 - WebSocket upgrade accepts `risu-auth` as a query string parameter
   so EventSource-style clients can attach.
-- Hub `/api/v1/hub/*` is authenticated when the upstream call uses
-  `X-Node-Server-Auth`; otherwise it forwards without auth.
+- Hub `/api/v1/hub/*` uses the normal authenticated route guard
+  before forwarding. The old `X-Node-Server-Auth` Sionyw token
+  injection path was removed in Phase 0 and must not be ported.
 
 ### Retirement of Express
 

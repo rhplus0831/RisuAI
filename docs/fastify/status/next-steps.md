@@ -3,7 +3,7 @@
 Date: 2026-05-20
 
 Use this list to pick the next slice. Keep work batches narrow:
-one removal target _or_ one foundation slice, not both at once.
+one foundation slice or one characterization-test slice at a time.
 
 ## Immediate
 
@@ -29,16 +29,18 @@ one removal target _or_ one foundation slice, not both at once.
    `hypaV3Key` with migration fallback), then the bulk removal.
    See [`removals.md`](removals.md) for the as-landed inventory.
 
-Phase 0 closed 2026-05-20. Phase 1 unblocks.
+Phase 0 closed 2026-05-20. Phase 1 is now the immediate server
+track: scaffold `server/fastify/`, add root `api:*` scripts, health
+and auth smoke tests, and wire the Vite `/api/*` dev proxy.
 
-## Parallel track (safe to start with Phase 0)
+## Parallel track (safe to start with Phase 1)
 
 5. **Phase 4 prep - characterization tests.**
    - Build the fixture loader that drives the current `sendChat`
      against canned databases + canned upstream responses.
    - Do NOT modify `sendChat` itself. The goal is to record what
-     the function does today so removals in Phase 0 don't silently
-     change behavior.
+     the function does today before Phase 5 extraction changes its
+     structure.
    - Inventory lives in
      [`coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md).
 

@@ -25,29 +25,32 @@ End state:
 - Tauri keeps working in its current local-storage mode without
   changes from this migration.
 
-## Baseline
+## Current Baseline
 
-Where the codebase stands at the start of this roadmap (2026-05-20,
-branch `fastify`):
+Where the codebase stands after the Phase 0 removals on 2026-05-20:
 
-- No Fastify server exists. `server/node/server.cjs` (Express) and the
-  near-empty `server/hono/` scaffold are what's checked in.
-- `src/ts/process/index.svelte.ts` is **2245 lines** in a single
+- No Fastify server exists. `server/node/server.cjs` (Express) is the
+  production Node server; `server/hono/` is a small Hono static-serving
+  scaffold and is not the Fastify migration target.
+- Root `package.json` has `runserver` and `hono:build`; it does not
+  have `api:dev`, `api:start`, or `api:test` yet.
+- `src/ts/process/index.svelte.ts` is **2090 lines** in a single
   `sendChat` function with explicit `stage1`-`stage4` timing markers.
-- Removal targets are reachable from the live UI:
-  - Group chat: 49 `type === 'group'` sites in `src/ts/`, ~20 in
-    `src/lib/`; pipeline glue in `src/ts/process/group.ts`;
-    `groupOtherBotRole`/membership in settings.
-  - Peer multi-user chat: `src/ts/sync/multiuser.ts` (440 LOC),
-    PeerJS dependency, four call sites inside `sendChat`, five Svelte
-    components.
-  - Risu Account Sync: `src/ts/storage/accountStorage.ts` (211 LOC),
-    `src/ts/drive/accounter.ts` (137 LOC), `src/ts/sionyw.ts` (342
-    LOC), plus settings UI.
-  - Google Drive sync: `src/ts/drive/drive.ts` (453 LOC),
-    `src/ts/drive/backuplocal.ts` (512 LOC).
-  - Legacy memory engines: `src/ts/process/memory/{supaMemory,
-hypav2, hanuraiMemory}.ts`.
+- Phase 0 removal targets are deleted from the live pipeline:
+  - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
+    `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
+    `src/ts/drive/` are gone.
+  - `peerjs` and `openid-client` are no longer dependencies.
+  - `src/ts/process/memory/{supaMemory,hypav2,hanuraiMemory}.ts`
+    are gone; only Hypa V3 remains as the active memory engine.
+  - A few inert compatibility names remain by design, such as
+    `supaMemory` as the per-chat Hypa V3 enable flag and
+    `memo: 'supaMemory'` protocol tags.
+  - Current known cleanup debt: stale, unreachable UI checks for
+    `char.type === 'group'` remain in `src/lib/Others/ChatList.svelte`
+    and `src/lib/Others/GridCatalog.svelte`; prompt-toggle
+    `type === 'group'` tokens in `src/lib/SideBars/Toggles.svelte`
+    and `src/ts/util.ts` are unrelated to chat groups.
 
 ## Sequence
 
@@ -111,14 +114,16 @@ rules. The headline order:
 
 ## Verification commands
 
-Run before closing any phase slice:
+Run before closing Phase 0 or any browser-only slice:
 
 ```bash
 pnpm check          # svelte-check + tsc
 pnpm test           # frontend vitest
-pnpm api:test       # server vitest (added in Phase 1)
 pnpm build          # vite build
 ```
+
+Add `pnpm api:test` to the required set once Phase 1 creates the
+Fastify test script.
 
 Tauri build is verified manually at phase boundaries.
 

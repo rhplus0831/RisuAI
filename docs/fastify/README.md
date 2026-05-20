@@ -13,13 +13,16 @@ it needs.
 
 ## Scope
 
+Current status: Phase 0 removals closed on 2026-05-20. Phase 1
+(Fastify foundation) is the next blocked-to-unblocked server slice.
+
 In scope:
 
 - A new Fastify + TypeScript server that owns persistence, generation,
   and outbound provider calls.
-- Removing Group chat, peer-to-peer multi-user chat, Risu Account
-  Sync, Google Drive sync, and the Supa / Hypa V2 / Hanurai memory
-  engines from the client.
+- The Phase 0 removal set: Group chat, peer-to-peer multi-user chat,
+  Risu Account Sync, Google Drive sync, and the Supa / Hypa V2 /
+  Hanurai memory engines have been removed from the client surface.
 - Stabilizing `src/ts/process/index.svelte.ts::sendChat` with tests
   before carving it into smaller modules.
 - A display-only browser client in server-backed mode.
@@ -44,7 +47,7 @@ short form.
 - **Sequence.** Remove first, then port. Phase 0 strips the deprecated
   features so the surface that gets ported is smaller.
 - **sendChat.** Tests first, extraction second. Pin observable
-  behavior before touching the 2245-line function.
+  behavior before touching the current 2090-line function.
 - **Client modes.** Server-backed web only. Tauri stays as-is.
 - **Hub.** Fastify keeps proxying `sv.risuai.xyz` traffic.
 - **Memory.** Only Hypa V3 survives. Supa, Hypa V2, Hanurai are

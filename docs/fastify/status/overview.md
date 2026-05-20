@@ -9,8 +9,8 @@ workstream lives in the sibling shards.
 
 | Phase                           | Status      | Notes                                  |
 | ------------------------------- | ----------- | -------------------------------------- |
-| 0 - Removals                    | not started | Active phase. Inventory is captured.   |
-| 1 - Foundation                  | not started | Blocked on Phase 0.                    |
+| 0 - Removals                    | complete    | Closed 2026-05-20; see removals shard. |
+| 1 - Foundation                  | not started | Unblocked; next server slice.          |
 | 2 - Storage / import / export   | not started | Blocked on Phase 1.                    |
 | 3 - Proxy migration             | not started | Blocked on Phase 1.                    |
 | 4 - sendChat tests              | not started | Can start in parallel with Phases 1-3. |
@@ -22,12 +22,13 @@ workstream lives in the sibling shards.
 
 ## Workstreams
 
-- **Removals.** Captured in [`removals.md`](removals.md). Nothing
-  has been deleted yet.
+- **Removals.** Captured in [`removals.md`](removals.md). Feature
+  removal is complete; a couple of stale, unreachable group-chat UI
+  checks remain documented as cleanup debt.
 - **Server foundation.** Captured in [`server.md`](server.md). No
   Fastify code exists.
 - **sendChat.** Captured in [`sendchat.md`](sendchat.md). The
-  function is currently 2245 lines, no characterization tests.
+  function is currently 2090 lines, no characterization tests.
 
 ## Reference state
 

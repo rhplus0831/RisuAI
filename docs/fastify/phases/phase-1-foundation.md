@@ -79,5 +79,5 @@ Test infrastructure:
 - `move-to-fastify` foundation slice: commits `0c3de7de` (initial
   Fastify scaffold), `d430d31c` (runbook + Node 24 requirement),
   `e10499a2` (Docker + persistence smoke test).
-- Auth surface in `server/node/server.cjs` lines 622-742 is the
+- Auth surface in `server/node/server.cjs` lines 614-742 is the
   shape Phase 1 reproduces.

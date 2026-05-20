@@ -9,7 +9,8 @@ move each stage to its target owner.
 
 The stage names match the existing `stage1`-`stage4` timing markers
 in `src/ts/process/index.svelte.ts` so a reader can trace from the
-current code to the future shape.
+current code to the future shape. The current timing markers do not
+perfectly bracket the future server modules; they are trace anchors.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -39,8 +40,9 @@ Owner (after migration): server.
 - Persists the user row (for non-preview, non-reset modes) before
   prompt assembly begins.
 
-The current `sendChat` does this work in browser code between
-function entry and line ~330 (`stageTimings.stage1Start`).
+The current `sendChat` does this work in browser code around
+function entry through `stageTimings.stage1Start` at line 273 and
+continues browser-side validation / setup until Stage 3 dispatch.
 
 ## Stage 2 - Prompt assembly
 
@@ -54,9 +56,11 @@ Owner (after migration): server.
 - Computes the final OpenAI-shaped `messages[]` payload.
 - Runs `editRequest` triggers in the server-side trigger sandbox.
 
-The current `sendChat` does this work between
-`stageTimings.stage1Start` and `stageTimings.stage2Duration` (~lines
-330-1190).
+The current `sendChat` does this work in browser code around the
+`stageTimings.stage1Start` and `stageTimings.stage2Start` trace
+points. After Phase 0, `stage2Start` is at line 1013 and currently
+wraps the Hypa V3 memory call, while other prompt assembly work still
+lives before and after that marker.
 
 ## Stage 3 - Provider dispatch and streaming
 
@@ -73,8 +77,8 @@ Owner (after migration): server.
   emits `error`.
 
 The current `sendChat` does this work between
-`stageTimings.stage3Start` (~line 1654) and
-`stageTimings.stage3Duration` (~line 1930).
+`stageTimings.stage3Start` at line 1501 and
+`stageTimings.stage3Duration` around line 1777.
 
 ## Stage 4 - Finalize and post-generation
 
@@ -102,7 +106,7 @@ generation provider call, text-to-speech provider call), but the
 browser owns playback / rendering.
 
 The current `sendChat` does this work after
-`stageTimings.stage4Start` (~line 1936) through the end of the
+`stageTimings.stage4Start` at line 1783 through the end of the
 function.
 
 ## How the stages map to phases

@@ -8,6 +8,9 @@ Delete Group chat, peer-to-peer multi-user chat, Risu Account Sync,
 Google Drive sync, and the Supa / Hypa V2 / Hanurai memory engines
 from the tree, so later phases port a smaller surface.
 
+Status: complete as of 2026-05-20. The as-landed inventory lives in
+[`../status/removals.md`](../status/removals.md).
+
 ## Preconditions
 
 None. Phase 0 is the start.
@@ -23,16 +26,16 @@ lives in [`../status/removals.md`](../status/removals.md).
 Delete:
 
 - `src/ts/process/group.ts`.
-- The `type === 'group'` branches under `src/ts/` (49 sites) and
-  `src/lib/` (~20 sites). Each branch either:
+- The live chat-group `type === 'group'` branches under `src/ts/`
+  (49 sites) and `src/lib/` (~20 sites). Each branch either:
   - was the only `'group'` user (delete the conditional), or
   - left a now-impossible code path (delete the whole branch).
+- Prompt-toggle grouping syntax also uses the string `'group'` and
+  is unrelated; leave that syntax alone.
 - `groupOrder`, `addGroupChar`, `rmCharFromGroup` references.
-- Group-creation UI in
-  `src/lib/SideBars/CharConfig.svelte`,
-  `src/lib/Mobile/MobileCharacters.svelte`, and the group views
-  inside `src/lib/ChatScreens/{ChatScreen, BackgroundDom, Chats,
-AssetInput, Suggestion}.svelte`.
+- Group-creation UI in character config, mobile character lists, and
+  chat-screen group views (`ChatScreen`, `BackgroundDom`, `Chats`,
+  `AssetInput`, `Suggestion`).
 - Group-only settings on the database / character types:
   `groupOtherBotRole`, `characterTalks`, `characterActive`,
   `characters`/`chats` arrays inside group rows, the
@@ -88,14 +91,14 @@ Delete:
 
 Keep, with the `forageStorage.isAccount` dead branches stripped:
 
-- `src/ts/drive/backuplocal.ts` is *not* Drive-sync-coupled despite
+- `src/ts/drive/backuplocal.ts` is _not_ Drive-sync-coupled despite
   living under `drive/`. It implements the in-app "Save local
   backup" / "Load local backup" UI on top of `LocalWriter` +
   `risuSave.ts`. Move it to `src/ts/storage/backup.ts` and strip
   the Account-Sync dead branches inside it.
 
 The Phase 2 server bundle endpoint (`/api/v1/backups` +
-`/api/v1/export/bundle`) is the eventual replacement for *cloud*
+`/api/v1/export/bundle`) is the eventual replacement for _cloud_
 backup; local-file backup keeps working through `storage/backup.ts`
 in the meantime.
 
@@ -111,8 +114,10 @@ Delete:
 - The settings UI control that lets a user pick a memory engine
   (replace with a Hypa V3 on/off toggle if needed).
 - Persisted `supaMemory: true` reads silently as "memory enabled"
-  pointing at Hypa V3. Drop the field on next save without writing
-  a migration.
+  pointing at Hypa V3. Keep the per-chat `supaMemory` field as the
+  V3 enable flag for now, and keep legacy `memo: 'supaMemory'` /
+  `memo: 'hypaMemory'` protocol tags until the prompt-template
+  consumer is renamed in a later phase.
 
 ## Boundaries
 
@@ -131,18 +136,29 @@ Delete:
 
 ## Exit criteria
 
-- `rg "type === 'group'" src/` returns no hits in production code.
-- `rg "peerjs|multiuser" src/` returns hits only in language files
-  scheduled for cleanup.
-- `rg "accountStorage|sionyw|RisuAccount" src/` returns no hits.
-- `src/ts/drive/` is empty (or only contains files unrelated to
-  Drive).
+- No live Group-chat model, pipeline, or creation UI remains. Grep
+  for `type === 'group'` is allowed to find only prompt-toggle
+  grouping syntax, the database load filter, and the stale
+  unreachable UI checks listed below.
+- `rg "peerjs|multiuser" src/` returns no hits.
+- `rg "accountStorage|RisuAccount|drive/drive|drive/backuplocal|drive/accounter|forageStorage\\.isAccount" src/`
+  returns no hits. `sionyw.com` may still appear in unrelated
+  terms/privacy links, plugin blacklist entries, or MCP OAuth helper
+  placeholders.
+- `src/ts/drive/` no longer exists.
 - `src/ts/process/memory/` contains only Hypa V3 code.
 - `peerjs` is removed from `package.json`; `openid-client` is
   removed if no consumer remains.
 - `pnpm check`, `pnpm test`, `pnpm build` are green.
 - The app still boots, chats with a non-group character, and shows
   a clean settings page.
+
+Known cleanup debt: `type === 'group'` currently still appears in
+the prompt-toggle parser/UI (`group` and `groupEnd` toggle syntax),
+the one-shot database load filter that drops old group rows, and
+stale unreachable UI checks in `src/lib/Others/ChatList.svelte` and
+`src/lib/Others/GridCatalog.svelte`. Those do not reintroduce Group
+chat, but they should be removed or renamed when touching those files.
 
 ## Reference
 

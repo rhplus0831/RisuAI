@@ -9,7 +9,7 @@ the target test set per phase.
 
 | Route                          | Pinned behavior                                | Status      |
 | ------------------------------ | ---------------------------------------------- | ----------- |
-| `GET /api/v1/health`           | Returns `{ status: 'ok', revision, schema }`.  | not started |
+| `GET /api/v1/health`           | Returns `{ status: 'ok', revision, schemaVersion }`. | not started |
 | `GET /api/v1/auth/status`      | Reports `unset` / `set` correctly.             | not started |
 | `POST /api/v1/auth/setup`      | First call sets password; second rejects.      | not started |
 | `POST /api/v1/auth/login`      | Issues an ES256 assertion accepted by /health. | not started |

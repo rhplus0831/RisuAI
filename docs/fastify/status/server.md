@@ -9,12 +9,14 @@ servers in tree are:
 
 - `server/node/server.cjs` - Express server used today. Owns the
   static SPA, password + ES256 auth, proxy / proxy2 fetch, hub
-  passthrough, save file CRUD, Sionyw OAuth login flow.
-- `server/hono/` - 12-line Hono scaffold (`Hello Hono!`). Not on
-  the migration path.
+  passthrough, proxy stream-job WebSocket, and save file CRUD.
+- `server/hono/` - small Hono scaffold with CSRF middleware,
+  `Hello Hono!`, and Node / Bun / Cloudflare / Vercel static-serving
+  entry points. It is not on the Fastify migration path.
 
-`pnpm api:dev` does not yet exist. `pnpm runserver` runs the Node
-server.
+Root `package.json` has `pnpm runserver` for the Express server and
+`pnpm hono:build` for the Hono static bundle. `pnpm api:dev`,
+`pnpm api:start`, and `pnpm api:test` do not yet exist.
 
 ## What lands when
 

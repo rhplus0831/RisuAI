@@ -8,9 +8,13 @@ shards under [`coverage/`](coverage/).
 ## Snapshot
 
 - No characterization tests for `sendChat` exist yet.
-- The existing test files in `src/ts/process/` are
-  `ttsHooks.test.ts` and `sourcemap.test.ts` - small helpers,
-  not the generation pipeline.
+- Existing tests cover helper surfaces only, not the generation
+  pipeline. Relevant current files include
+  `src/ts/process/ttsHooks.test.ts`,
+  `src/ts/process/request/tests/additionalParams.test.ts`,
+  `src/ts/process/mcp/risuaccess/tests/modules.test.ts`, and
+  `src/ts/process/files/tests/inlays.test.ts`; broader repo tests
+  cover parser, media, translator, network, and source-map helpers.
 - The Fastify server does not yet exist; `pnpm api:test` is not
   a script yet.
 
@@ -27,11 +31,11 @@ shards under [`coverage/`](coverage/).
 ```bash
 pnpm check          # svelte-check + tsc
 pnpm test           # frontend vitest (existing)
-pnpm api:test       # server vitest (Phase 1+)
 pnpm build          # production bundle
 ```
 
-Run all four before closing a phase slice.
+Run these before closing a browser-only slice. Add `pnpm api:test`
+to the required set once Phase 1 creates the Fastify server tests.
 
 ## Maintenance
 

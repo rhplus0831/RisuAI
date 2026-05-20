@@ -4,17 +4,19 @@ Date: 2026-05-20
 
 ## Current state
 
-`src/ts/process/index.svelte.ts::sendChat` is a single 2245-line
+`src/ts/process/index.svelte.ts::sendChat` is a single 2090-line
 async function with these visible markers:
 
-- `stage1Start` at ~line 336 - validation, lorebook prep, persona,
+- `stage1Start` at line 273 - validation, lorebook prep, persona,
   description assembly.
-- `stage2Start` at ~line 1105 - tokenize, prompt cards / format
-  templates, history assembly, budget pruning.
-- `stage3Start` at ~line 1654 - provider dispatch via
+- `stage2Start` at line 1013 - Hypa V3 memory retrieval and prompt
+  memory-card accounting. The current timing marker is narrower
+  than the future Stage 2 module; the surrounding prompt assembly is
+  still browser code.
+- `stage3Start` at line 1501 - provider dispatch via
   `requestChatData()`; inlay screen + TTS run after the first
   response chunk.
-- `stage4Start` at ~line 1936 - post-generation (auto-continue,
+- `stage4Start` at line 1783 - post-generation (auto-continue,
   emotion, stable diff, reroll metadata).
 
 It reaches into:
@@ -24,14 +26,15 @@ It reaches into:
   `src/ts/parser/chatML.ts`.
 - `process/` submodules: `lorebook.svelte`, `scripts`,
   `triggers`, `exampleMessages`, `prereroll`,
-  `memory/{supaMemory, hypav2, hypav3, hanuraiMemory}`,
-  `transformers`, `inlayScreen`, `stableDiff`, `tts`,
-  `request/request`.
-- Removed-in-Phase-0 modules: `process/group`,
-  `sync/multiuser`.
+  `memory/{hypamemory, hypav3}`, `transformers`, `inlayScreen`,
+  `stableDiff`, `tts`, `request/request`.
+- Phase 0 removed the `process/group`, `sync/multiuser`,
+  `memory/{supaMemory,hypav2,hanuraiMemory}` imports and live
+  branches.
 
-No characterization tests exist. The only test file in `process/`
-is `ttsHooks.test.ts`, which exercises a small helper.
+No `sendChat` characterization tests exist. Existing `process/`
+tests cover helper surfaces only: TTS hooks, request additional
+params, MCP Risu access modules, and inlay asset helpers.
 
 ## What lands when
 
@@ -53,11 +56,10 @@ is `ttsHooks.test.ts`, which exercises a small helper.
 
 ## Boundary rules
 
-Until Phase 5 closes, do not edit `sendChat` itself except to fix
-type errors caused by Phase 0 removals. The function is the target,
-not the source of work. Removing a code path (group chat, peer
-sync, legacy memory) is fine and required; refactoring control
-flow is not.
+Until Phase 5 closes, avoid editing `sendChat` itself unless a
+targeted bug fix is required. The function is the target, not the
+source of work. Refactoring control flow belongs behind Phase 4
+fixtures and Phase 5 extraction.
 
 ## Reference: metatron's end state
 

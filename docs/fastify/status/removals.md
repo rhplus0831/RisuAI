@@ -2,15 +2,15 @@
 
 Date: 2026-05-20
 
-Tracks Phase 0 progress. Update each row as code is deleted. The
-canonical scope lives in
+Final Phase 0 inventory. Update this file if a follow-up cleanup
+changes the as-landed removal surface. The canonical scope lives in
 [`../phases/phase-0-removals.md`](../phases/phase-0-removals.md).
 
-Last updated: 2026-05-20 (Group chat landed — Phase 0 complete).
+Last updated: 2026-05-20 (legacy memory landed - Phase 0 complete).
 
 ## Group chat
 
-Status: done (2026-05-20). Phase 0 closes with this slice.
+Status: done (2026-05-20).
 
 Removed:
 
@@ -35,32 +35,20 @@ Removed:
   formatting at the former 934-955. `isGroupChat` is kept on the
   script-runtime payload as a back-compat shim, hard-coded to
   `false`.
-- All `'group'` runtime branches stripped across `src/ts/`:
-  `tokenizer.ts`, `util.ts`, `cbs.ts`, `stores.svelte.ts`,
-  `characterCards.ts`, `parser/parser.svelte.ts`, `characters.ts`,
-  `translator/translator.ts`, `storage/{exportAsDataset,backup}.ts`,
-  `process/{command,scriptings,tts,scripts,modules,request/request,
-  memory/hypav3,mcp/risuaccess/{characters,chats,utils}}.ts`. The
-  13 uniform `'Error: The id pointed to a group chat'` blocks in
-  `mcp/risuaccess/characters.ts` removed in bulk.
+- Chat-group runtime branches stripped across `src/ts/` modules for
+  tokenizer, utilities, CBS parsing, stores, character cards,
+  parser, characters, translator, storage export/backup, process
+  command/script/tts/module/request paths, Hypa V3 memory, and MCP
+  Risu access. The 13 uniform `'Error: The id pointed to a group chat'`
+  blocks in `mcp/risuaccess/characters.ts` removed in bulk.
 - `lightningRealmImport` — already gone in 0.3+0.4; no further
   action.
-- UI cleanup across `src/lib/`: `Setting/Pages/PromptSettings.svelte`
-  (Group Other Bot Role selector + Group Inner Format textarea),
-  `Others/AlertComp.svelte` ("Create Group Chat" button +
-  `selectChar` group filter), `Others/BookmarkList.svelte` (group
-  speaker resolution path), `SideBars/CharConfig.svelte` (group
-  member grid, `addGroupChar`/`rmCharFromGroup` imports,
-  `makeGroupImage` button, `orderByOrder` toggle, group lowLevelAccess
-  branch), `SideBars/SideChatList.svelte` (group new-chat seeding,
-  `orderByOrder` toggle, unused `findCharacterbyId` import),
-  `SideBars/Toggles.svelte` (type union), `SideBars/LoreBook/
-  LoreBookSetting.svelte` (group lore label / info), `ChatScreens/
-  {ChatScreen, DefaultChatScreen, Chat, BackgroundDom, Chats,
-  AssetInput, Suggestion}.svelte` (type unions + the
-  `runAutoMode`/`autoMode` group-only state in
-  `DefaultChatScreen`), `Mobile/MobileCharacters.svelte` (sortChar
-  param type).
+- UI cleanup across `src/lib/`: prompt settings group fields,
+  "Create Group Chat" buttons, bookmark speaker resolution,
+  character-config member controls, sidebar group seeding/order
+  controls, lorebook group labels, chat-screen group type unions,
+  `DefaultChatScreen` group-only auto-mode state, and mobile
+  character-list type params were removed.
 - Lang keys removed across all 7 lang files: `errors.alreadyCharInGroup`,
   `groupInnerFormat` desc, `groupOtherBotRole` desc + label,
   `group`, `groupLoreInfo`, `removeGroup`, `createGroup`,
@@ -68,10 +56,22 @@ Removed:
 
 Verification: `pnpm check` (0 errors / 0 warnings), `pnpm test`
 (152 passed, 4 pre-existing skips), `pnpm build` succeeded.
-Grep for `groupChat|type === 'group'|type !== 'group'` in `src/`
-returns no hits outside the `'group'/'groupEnd'/'divider'`
-sidebar-template tokens in `util.ts:1101` (unrelated to chat groups)
-and the one-shot load filter in `database.svelte.ts`.
+Current grep notes for `groupChat|type === 'group'|type !== 'group'`
+in `src/`:
+
+- No `groupChat` interface or `type !== 'group'` production path
+  remains.
+- `src/ts/storage/database.svelte.ts:32` filters persisted group
+  rows on load.
+- `src/lib/SideBars/Toggles.svelte` and `src/ts/util.ts` still use
+  `'group'` / `'groupEnd'` prompt-toggle syntax; this is unrelated
+  to chat groups.
+- Stale, unreachable chat-group UI checks remain in
+  `src/lib/Others/ChatList.svelte` and
+  `src/lib/Others/GridCatalog.svelte`. The data model now narrows
+  `character.type` to `'character'`, and `setDatabase` drops
+  persisted group rows, so these checks are cleanup debt rather than
+  a live feature surface.
 
 ## Peer multi-user chat
 
@@ -162,7 +162,7 @@ Removed:
 
 - `src/ts/drive/drive.ts` (453 LOC) deleted; `src/ts/drive/`
   directory removed entirely.
-- `src/ts/drive/backuplocal.ts` (512 LOC) was *moved* to
+- `src/ts/drive/backuplocal.ts` (512 LOC) was _moved_ to
   `src/ts/storage/backup.ts` with the seven `forageStorage.isAccount`
   branches stripped. The user-facing "Save / Save Partial / Load
   local backup" UI in UserSettings.svelte continues to work; only
@@ -176,8 +176,10 @@ Removed:
 
 Verification: `pnpm check` (0 errors / 0 warnings), `pnpm test`
 (152 passed, 4 pre-existing skips), `pnpm build` succeeded. Grep
-for `accountStorage|sionyw|RisuAccount|drive/drive|drive/backuplocal|drive/accounter|forageStorage\.isAccount`
-in `src/` returns no hits.
+for `accountStorage|RisuAccount|drive/drive|drive/backuplocal|drive/accounter|forageStorage\.isAccount`
+in `src/` returns no hits. The string `sionyw.com` still appears in
+unrelated terms/privacy links, the plugin URL blacklist, and the MCP
+OAuth helper placeholder; those are not Risu Account Sync.
 
 Note: replacement backups will be provided by the Fastify server
 (`/api/v1/backups` + `/api/v1/export/bundle`) once Phase 2 lands.

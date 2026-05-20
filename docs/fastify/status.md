@@ -7,24 +7,28 @@ under [`status/`](status/).
 
 ## Current snapshot
 
-- The roadmap is freshly written. No phase work has started on the
-  `fastify` branch.
-- `server/node/server.cjs` (Express) is the only running server.
-  `server/hono/` is a near-empty scaffold and is not on the
-  migration path.
+- Phase 0 removals closed on 2026-05-20. Group chat, peer
+  multi-user chat, Risu Account Sync, Google Drive sync, and the
+  Supa / Hypa V2 / Hanurai memory engines are removed from the live
+  client/server surface.
+- `server/node/server.cjs` (Express) is the only production server.
+  `server/hono/` is a small static-serving Hono scaffold and is not
+  the Fastify migration path.
+- No `server/fastify/` directory exists yet. Root `package.json`
+  has no `api:dev`, `api:start`, or `api:test` scripts.
 - The `move-to-fastify` branch contains an agent-driven prototype
   that implements Phases 1-6; it is reference material, not the
   plan.
 
 ## Active phase
 
-**Phase 0 - Removals**, not started.
+**Phase 1 - Foundation**, not started.
 
-See [`phases/phase-0-removals.md`](phases/phase-0-removals.md) for
-scope, exit criteria, and the inventory of code to delete.
+See [`phases/phase-1-foundation.md`](phases/phase-1-foundation.md)
+for the Fastify scaffold scope and exit criteria.
 
-Phase 0 must close before Phase 1 starts so the Fastify foundation
-is not built around code that will then be deleted.
+Phase 4 (`sendChat` characterization tests) can start in parallel
+with Phase 1.
 
 ## Start here
 

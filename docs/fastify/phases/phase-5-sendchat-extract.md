@@ -45,7 +45,7 @@ still browser-only at this phase).
 
 For each stage:
 
-1. Identify the entry and exit points in the current 2245-line
+1. Identify the entry and exit points in the current 2090-line
    function (use the `stageTimings.*Start` markers).
 2. Lift the block into the new module with the minimum signature
    that compiles.

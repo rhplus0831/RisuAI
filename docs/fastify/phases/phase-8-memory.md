@@ -78,7 +78,9 @@ the browser dispatches them as it does today.
 - **Do not bring back Supa / Hypa V2 / Hanurai.** They were
   removed in Phase 0. Persisted databases that set
   `supaMemory: true` read as "Hypa V3 enabled" or "memory off"
-  depending on context; the value is not written back.
+  depending on context. The current client still uses the
+  `supaMemory` field as the per-chat Hypa V3 enable flag until the
+  server schema gives that setting a clearer name.
 - **Do not introduce a second memory model.** One engine, one
   schema, one set of jobs.
 - **Do not run summarization in the request hot path.** The

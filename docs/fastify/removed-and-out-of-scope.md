@@ -18,8 +18,9 @@ is not actively maintained.
 - **Group chat.** Multi-character speaker-selection chats. Deleted
   along with `process/group.ts`, `groupOrder`, `groupOtherBotRole`,
   `characterTalks`, `characterActive`, and every `type === 'group'`
-  branch. Persisted group rows load as inert characters; they
-  surface no UI and get dropped on the next save.
+  branch in the live model / pipeline. Persisted group rows are
+  filtered out by `setDatabase` on load, so they do not surface in
+  the UI and are gone on the next save.
 - **Peer-to-peer multi-user chat.** PeerJS-based shared chat
   sessions. `src/ts/sync/multiuser.ts` and the `peerjs`
   dependency are gone. The "Join Room" / "Create Room" UI
@@ -31,10 +32,12 @@ is not actively maintained.
   `Setting/Pages/UserSettings.svelte`. `openid-client` is removed
   if no consumer remains.
 - **Google Drive sync.** Cloud backup to Drive. Deleted:
-  `drive/drive.ts`, `drive/backuplocal.ts`, and the "Save to
-  Google Drive" / "Restore from Drive" UI entries. The
-  replacement for backup workflows is the Fastify server's own
-  `/api/v1/backups` + `/api/v1/export/bundle` (Phase 2).
+  `drive/drive.ts` and the "Save to Google Drive" / "Restore from
+  Drive" UI entries. The former `drive/backuplocal.ts` local-backup
+  helper moved to `storage/backup.ts` with Account Sync branches
+  stripped. The replacement for cloud backup workflows is the
+  Fastify server's own `/api/v1/backups` + `/api/v1/export/bundle`
+  (Phase 2).
 - **Supa memory, Hypa V2, Hanurai.** Legacy memory engines.
   Deleted: `process/memory/{supaMemory, hypav2, hanuraiMemory}.ts`
   and the selection branches in `process/index.svelte.ts`. Only
@@ -46,10 +49,10 @@ These behaviors remain in tree and continue to work; the migration
 does not extend or replace them.
 
 - **Tauri / desktop builds.** Tauri keeps its current localForage
-  storage path. The migration's `if (isFastifyServer)` branches
-  are gated so Tauri runs the same code it does today. Tauri is
-  not actively tested at phase boundaries beyond "the bundle
-  builds without errors".
+  storage path. Future server-backed-web branches must be gated so
+  Tauri runs the same local-storage code it does today. Tauri is
+  not actively tested at phase boundaries beyond "the bundle builds
+  without errors".
 - **Local-browser-only web mode.** Once the migration closes, the
   web client only runs against the Fastify server. Standalone
   browser mode (no server, IndexedDB-only) is not a target
