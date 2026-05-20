@@ -10,7 +10,7 @@ import {
 } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
 import { CharEmotion, selectedCharID } from '../stores.svelte'
-import { ChatTokenizer, tokenize, tokenizeNum } from '../tokenizer'
+import { ChatTokenizer, tokenizeNum } from '../tokenizer'
 import { language } from '../../lang'
 import { alertError, alertToast } from '../alert'
 import { parseChatML } from '../parser/chatML'
@@ -20,7 +20,6 @@ import {
   getAuthorNoteDefaultText,
   getPersonaPrompt,
   getUserName,
-  isLastCharPunctuation,
   trimUntilPunctuation,
   parseToggleSyntax,
   prebuiltAssetCommand,
@@ -44,6 +43,7 @@ import { getModelInfo, LLMFlags } from '../model/modellist'
 import { hypaMemoryV3 } from './memory/hypav3'
 import { getModuleAssets, getModuleToggles } from './modules'
 import { readImage } from '../globalApi.svelte'
+import { evaluateAutoContinue } from './autoContinue'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1735,18 +1735,13 @@ export async function sendChat(
     }
   }
 
-  let needsAutoContinue = false
-  const resultTokens = (await tokenize(result)) + (arg.usedContinueTokens || 0)
-  if (DBState.db.autoContinueMinTokens > 0 && resultTokens < DBState.db.autoContinueMinTokens) {
-    needsAutoContinue = true
-  }
+  const { shouldContinue, resultTokens } = await evaluateAutoContinue({
+    result,
+    usedContinueTokens: arg.usedContinueTokens || 0,
+    db: DBState.db,
+  })
 
-  if (DBState.db.autoContinueChat && !isLastCharPunctuation(result)) {
-    //if result doesn't end with punctuation or special characters, auto continue
-    needsAutoContinue = true
-  }
-
-  if (needsAutoContinue) {
+  if (shouldContinue) {
     doingChat.set(false)
     return await sendChat(chatProcessIndex, {
       chatAdditonalTokens: arg.chatAdditonalTokens,
