@@ -46,6 +46,7 @@ import { readImage } from '../globalApi.svelte'
 import { evaluateAutoContinue } from './autoContinue'
 import { reportSendChatError } from './sendChatErrors'
 import { fireDesktopNotification } from './postGeneration/notification'
+import { evaluateIgp } from './postGeneration/igp'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1717,23 +1718,12 @@ export async function sendChat(
     })
   }
 
-  const igp = risuChatParser(DBState.db.igpPrompt ?? '')
-
-  if (igp) {
-    const igpFormated = parseChatML(igp)
-    const rq = await requestChatData(
-      {
-        formated: igpFormated,
-        bias: {},
-      },
-      'emotion',
-      abortSignal,
-    )
-
-    DBState.db.characters[selectedChar].chats[selectedChat].message[
-      DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1
-    ].data += rq
-  }
+  await evaluateIgp({
+    promptTemplate: DBState.db.igpPrompt ?? '',
+    abortSignal,
+    selectedChar,
+    selectedChat,
+  })
 
   stageTimings.stage3Duration = Date.now() - stageTimings.stage3Start
 
