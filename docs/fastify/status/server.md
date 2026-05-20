@@ -4,11 +4,10 @@ Date: 2026-05-21
 
 ## Current state
 
-Phase 1, the server-side Phase 2 storage slice, Phase 3A-C
-(generic provider proxy, stream-job WebSocket, hub passthrough),
-Phase 3D-Narrow (proxy / hub URL switchover), and Phase 3D-Broad
-(legacy NodeStorage surface on Fastify) all exist on the
-`fastify` branch:
+Phase 1, the server-side Phase 2 storage slice, Phase 3 in
+full (provider proxy, stream-job WebSocket, hub passthrough,
+client URL switchover, legacy NodeStorage / crypto surface, and
+Express deletion) all exist on the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -105,25 +104,16 @@ Phase 3D-Narrow (proxy / hub URL switchover), and Phase 3D-Broad
 
 Other runtime servers still in tree:
 
-- `server/node/server.cjs` - Express server still used by
-  `pnpm runserver` and still owns the legacy Node-server storage
-  endpoints (`/api/read`, `/api/write`, `/api/list`) plus
-  `/proxy*`, `/hub-proxy/*`, and proxy stream-job WebSocket
-  behavior until Phase 3 ports and retires it. The Docker runtime
-  no longer starts this server. Phase 3A-C have ported the
-  proxy fetch, stream-job HTTP+WS, and hub passthrough to
-  Fastify; the Express `/proxy*`, `/proxy-stream-jobs`, and
-  `/hub-proxy/*` routes stay live until the client is rewired
-  to call the Fastify endpoints.
 - `server/hono/` - small Hono scaffold with CSRF middleware,
-  `Hello Hono!`, and Node / Bun / Cloudflare static-serving entry
-  points. It is not on the Fastify migration path.
+  `Hello Hono!`, and Node / Bun / Cloudflare static-serving
+  entry points. It is not on the Fastify migration path.
 
-Root `package.json` has `pnpm runserver` for the Express server,
-`pnpm hono:build` for the Hono static bundle, and `pnpm api:dev`,
-`pnpm api:start`, `pnpm api:test` for the Fastify server. The
-Dockerfile runs `pnpm api:start`, exposes 6002, and persists
-`/app/data`; `docker-compose.yml` maps `6002:6002`.
+Root `package.json` has `pnpm hono:build` for the Hono static
+bundle and `pnpm api:dev` / `pnpm api:start` / `pnpm api:test`
+for the Fastify server. The Dockerfile runs `pnpm api:start`,
+exposes 6002, and persists `/app/data`; `docker-compose.yml`
+maps `6002:6002`. The Express `pnpm runserver` script has
+been removed; `server/node/` no longer exists.
 
 ## What lands when
 
@@ -138,15 +128,13 @@ Dockerfile runs `pnpm api:start`, exposes 6002, and persists
   resource. Binary `.risu` codec and bundle export stay client-side
   until Phase 9. See
   [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
-- **Phase 3.** Provider proxy + hub passthrough + stream-job
-  WebSocket. Express server is retired once Phase 3 closes.
-  Phase 3A (proxy fetch), Phase 3B (stream-job HTTP+WS), and
-  Phase 3C (hub passthrough) landed 2026-05-20. Phase 3D-Narrow
-  (client switchover for the proxy / hub URL builders + the
-  Fastify `__FASTIFY__` flag injection) and Phase 3D-Broad
-  (legacy NodeStorage / crypto routes on Fastify + `__NODE__`
-  injection so all self-host gates fire) landed 2026-05-21.
-  Express deletion is the only remaining Phase 3 work.
+- **Phase 3.** Closed 2026-05-21. Fastify owns provider proxy
+  fetch, hub passthrough, stream-job HTTP+WS, the legacy
+  key-value storage, auth, crypto, and the SPA static surface
+  (with `__NODE__` + `__FASTIFY__` injection so the SPA picks
+  up the self-host gates). `server/node/`, the `runserver`
+  script, and the express / express-rate-limit /
+  node-html-parser dependencies have been removed.
 - **Phase 6.** Server-side LLM / translation / TTS / image /
   Stable Horde generation endpoints.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
@@ -187,5 +175,3 @@ not by their endpoint URLs.
   is currently `>=24.0.0`.
 - Fastify serves the SPA when `RISU_API_STATIC_ROOT` points at a
   built `dist/`; unknown non-API GETs fall back to `index.html`.
-- Express remains available through `pnpm runserver` until Phase 3
-  deletes it, but it is no longer the Docker runtime.

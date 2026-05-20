@@ -3,47 +3,12 @@
 Date: 2026-05-21
 
 Use this list to pick the next slice. Keep work batches narrow:
-one proxy slice or one `sendChat` extraction slice at a time.
+one `sendChat` extraction slice at a time. Phase 3 closed
+2026-05-21.
 
 ## Immediate
 
-1. **Phase 3 - Proxy migration.** Port provider proxy, hub
-   passthrough, and stream-job WebSocket behavior from
-   `server/node/server.cjs` to Fastify.
-   - Phase 3A (`POST /api/v1/proxy/fetch`), Phase 3B (proxy
-     stream-jobs HTTP+WS), and Phase 3C (hub passthrough at
-     `ANY /api/v1/hub/*`) all landed 2026-05-20.
-   - Phase 3D-Narrow (proxy / hub URL switchover) and Phase
-     3D-Broad (legacy NodeStorage surface +
-     `/api/v1/auth/crypto` + `__NODE__` / `__FASTIFY__` index
-     injection) landed 2026-05-21. A Fastify-served SPA can
-     now sign in, persist the database, and use cold storage
-     end-to-end.
-   - Remaining: Express deletion + `runserver` removal. The
-     proxy, hub, stream-jobs, storage, auth, and crypto
-     surfaces on Express are all replicated on Fastify; the
-     SPA targets the Fastify paths when served by it. Confirm
-     no Express-only caller remains, then delete
-     `server/node/server.cjs` and the `runserver` script in a
-     single commit.
-   - Follow-up (not blocking Express deletion): the Fastify
-     hub route at `ANY /api/v1/hub/*` keeps `requireAuth`, so
-     on deployments with a password set, browser-loaded
-     resources (`<img src=hubURL/resource/...>`,
-     `<iframe src=hubURL/hub/login>`) will 401 because the
-     browser cannot send `risu-auth` on element-loaded
-     requests. The accepted resolution per the 3D-Broad
-     scoping decision is to leave the limitation in place
-     until a session-cookie auth path lands in a later slice;
-     unguarded deployments are unaffected. The Express
-     `/hub-proxy/*` is rate-limited but not auth-gated, so it
-     does not have this issue.
-   - Do not port Sionyw / Account Sync branches; Phase 0 removed
-     them.
-   - Inventory and exit criteria live in
-     [`../phases/phase-3-proxy.md`](../phases/phase-3-proxy.md).
-
-2. **Phase 5 - sendChat extraction.** Phase 4 closed 2026-05-20
+1. **Phase 5 - sendChat extraction.** Phase 4 closed 2026-05-20
    with all 17 characterization fixtures landed; the harness is
    ready to defend an incremental refactor of `sendChat` into
    per-stage modules. Start with the smallest meaningful seam
@@ -52,9 +17,24 @@ one proxy slice or one `sendChat` extraction slice at a time.
    each step:
    `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
    Pick up the open notes from [`sendchat.md`](sendchat.md): the
-   `doingChat` lifecycle (set on entry, never cleared on the success
-   path), the format-dependent `pushPrompts` coalescer, and the
-   author-note-at-end-of-prompt vs. "configured depth" doc gap.
+   `doingChat` lifecycle (set on entry, never cleared on the
+   success path), the format-dependent `pushPrompts` coalescer,
+   and the author-note-at-end-of-prompt vs. "configured depth"
+   doc gap.
+
+2. **Follow-up: hub-route session auth.** The Fastify hub route
+   at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
+   password-protected deployments browser-loaded resources
+   (`<img src=hubURL/resource/...>`,
+   `<iframe src=hubURL/hub/login>`) will 401 because the browser
+   cannot send `risu-auth` on element-loaded requests. The
+   accepted scoping decision (Phase 3D-Broad option (b)) was to
+   ship the limitation and revisit when a session-cookie path
+   is needed. Unguarded deployments are unaffected. The Express
+   `/hub-proxy/*` was rate-limited but not auth-gated, so it
+   did not have this issue. A later slice can either drop
+   `requireAuth` from the hub route to match the Express
+   behavior or add a session-cookie auth path.
 
 ## Completed Slices
 
@@ -137,6 +117,16 @@ one proxy slice or one `sendChat` extraction slice at a time.
   PNG and stub `supportsInlayImage`. It also uses an
   `xcustom:::` model with `hasImageInput` + the `Unknown`
   tokenizer so token math runs offline.
+
+- **Phase 3 closeout - Express deletion.** Done 2026-05-21.
+  After every Express surface had been mirrored on Fastify and
+  the SPA was targeting the Fastify routes, the Express server
+  was removed in a single commit: deleted `server/node/`,
+  removed the `runserver` script from `package.json`, and
+  dropped the `express`, `express-rate-limit`, and
+  `node-html-parser` dependencies. `pnpm api:test`,
+  `pnpm test`, `pnpm check`, and `pnpm build` were all green
+  before and after. Phase 3 is closed.
 
 - **Phase 3D-Broad - Legacy NodeStorage surface on Fastify.**
   Done 2026-05-21. Two commits (server + client) plus a docs

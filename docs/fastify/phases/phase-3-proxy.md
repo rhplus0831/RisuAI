@@ -1,6 +1,18 @@
 # Phase 3 - Proxy Migration
 
-Date: 2026-05-20
+Date: 2026-05-21
+
+Status: **closed 2026-05-21.** Fastify owns the proxy fetch, hub
+passthrough, stream-job HTTP+WS, legacy key-value storage, auth,
+crypto, and SPA static surface (with `__NODE__` + `__FASTIFY__`
+injection). The Express server has been deleted; the `runserver`
+script and the `express` / `express-rate-limit` /
+`node-html-parser` dependencies are gone. The hub-route /
+`requireAuth` decision (element-loaded resources 401 on
+password-protected deployments) is the one accepted follow-up
+tracked in [`../status/next-steps.md`](../status/next-steps.md).
+The rest of this document is the plan-of-record as it stood
+during the migration.
 
 ## Goal
 
