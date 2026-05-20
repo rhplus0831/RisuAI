@@ -52,8 +52,10 @@ not the route handlers.
 
 Routes are versioned at `/api/v1/`. Verb choice follows REST: `POST`
 creates or invokes, `PATCH` partial updates, `PUT` replaces a child
-collection, `DELETE` removes, `GET` reads. Every mutating route
-returns the new server revision; every event includes it.
+collection, `DELETE` removes, `GET` reads. Domain-state mutations
+return the new server revision; backup create/delete and auth
+setup/login are administrative operations and do not bump revision.
+Every future event includes the revision it represents.
 
 Implemented now:
 
@@ -102,8 +104,8 @@ Conscious differences vs the `move-to-fastify` branch:
 
 - SQLite via `node:sqlite`, WAL mode, foreign keys on. One file at
   `data/risu.db`, no multi-tenant split. The Phase 1 schema lives
-  here: `schema_version(id, version, revision)` and (later) auth
-  metadata. **System state only.**
+  here: `schema_version(id, version, revision)`. Auth currently
+  lives in data-dir files, not in SQLite. **System state only.**
 - Domain state lives in a single JSON blob at `data/db.json` during
   the migration window. Phase 2 ships this blob plus bootstrap,
   JSON import, assets, and backups against it. The blob carries a
@@ -125,11 +127,13 @@ Conscious differences vs the `move-to-fastify` branch:
 
 Single-user. Password set on first run; subsequent calls present a
 short-lived ES256 client-signed assertion. The browser keeps a
-keypair in localStorage / IndexedDB; the server stores the
-SHA-256 of the public key on first login.
+keypair in localStorage / IndexedDB; the server stores the password
+at `data/__password` and SHA-256 hashes of known public keys at
+`data/__known_public_key_hashes.json`.
 
-This matches what `server/node/server.cjs` already does today and is
-what `move-to-fastify` ports. We do not redesign auth in this
+This matches the auth shape `server/node/server.cjs` uses today,
+with Fastify storing its files under `RISU_API_DATA_DIR` instead of
+the legacy `save/` directory. We do not redesign auth in this
 migration unless a concrete need surfaces.
 
 ## Events

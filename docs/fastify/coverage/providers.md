@@ -37,8 +37,9 @@ For each provider that lands in `/api/v1/generate/completion`:
 | llama.cpp server       | /v1/chat/completions         | SSE    | not started |
 | Stable Horde (text)    | /v2/generate/text/async      | poll   | not started |
 
-Providers that stay browser-local (target LAN endpoints) - they
-return a documented `501` from the server route:
+Providers that stay browser-local (target LAN endpoints) should
+return a documented `501` from the server route once Phase 6
+implements that route:
 
 - VoiceVox, Vits, GPT-SoVITS - TTS.
 - WebLLM - in-browser model.

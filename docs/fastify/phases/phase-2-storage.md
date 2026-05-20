@@ -66,7 +66,10 @@ paths remain in the client until then.
 ```
 data/
   risu.db                  # Phase 1 SQLite. System state only:
-                           # schema_version, revision, auth meta.
+                           # schema_version and revision.
+  __password               # Fastify auth password, if configured.
+  __known_public_key_hashes.json
+                           # Hashes of browser public keys seen at login.
   db.json                  # The whole `Database` blob, plus a
                            # `_version` integer at the top level.
   assets/<sha256>.<ext>    # Content-addressed asset blobs.
@@ -76,8 +79,9 @@ data/
 ```
 
 `risu.db` keeps the Phase 1 `schema_version(id, version, revision)`
-table and grows only when system-level metadata is added (auth,
-counters). **Domain data does not go into `risu.db` in Phase 2.**
+table and grows only when SQLite-backed system metadata is added.
+Fastify auth currently uses the sibling files shown above.
+**Domain data does not go into `risu.db` in Phase 2.**
 
 `db.json` shape:
 
@@ -141,8 +145,9 @@ repository adds:
 Uploads are raw-binary, not multipart. The request body is the asset
 bytes; `Content-Type` carries the format and must be in a small
 allowlist (`image/{png,jpeg,webp,gif,avif}`,
-`audio/{mpeg,wav,ogg,webm}`, `video/{mp4,webm}`). Unknown types are
-rejected with 415 by Fastify when no parser is registered.
+`audio/{mpeg,wav,ogg,webm}`, `video/{mp4,webm}`). Types without a
+registered parser are rejected with 415 by Fastify; parsed bodies
+that are not supported raw asset bytes are rejected by the route.
 Single-asset uploads do not use multipart.
 
 - `POST /api/v1/assets` (auth-gated): reads the raw body, computes
@@ -332,8 +337,8 @@ no-live-users migration window.
     `assetBaseUrl: '/api/v1/assets'`.
   - JSON import round-trip: import `{ database }` -> bootstrap
     returns the same database.
-  - Asset upload + bootstrap response includes the new asset in
-    `db.json.assets`; HEAD and `/exists` see it; GET serves bytes.
+  - Asset upload writes the new asset metadata into `db.json.assets`;
+    HEAD and `/exists` see it; GET serves bytes.
   - Backup create / restore / delete using a fixture database, with
     a full A -> backup -> B -> restore -> A round-trip.
   - Revision bumps on every mutation surface in this phase (import,

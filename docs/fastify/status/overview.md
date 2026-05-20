@@ -13,8 +13,8 @@ workstream lives in the sibling shards.
 | 1 - Foundation                          | complete    | Closed 2026-05-20; health/auth smoke.      |
 | 2 - Storage / import / assets / backups | complete    | Closed 2026-05-20; server routes + Docker. |
 | 3 - Proxy migration                     | not started | Unblocked; next server slice.              |
-| 4 - sendChat tests                      | not started | Can start now, parallel with 3.            |
-| 5 - sendChat extraction                 | not started | Blocked on Phase 4.                        |
+| 4 - sendChat tests                      | complete    | Closed 2026-05-20; all 17 fixtures landed. |
+| 5 - sendChat extraction                 | not started | Unblocked by Phase 4; can run with 3.      |
 | 6 - Server-side generation              | not started | Blocked on Phases 3 + 5.                   |
 | 7 - Server-side prompt assembly         | not started | Blocked on Phase 6.                        |
 | 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.              |
@@ -30,7 +30,8 @@ workstream lives in the sibling shards.
   Express remains in-tree for `pnpm runserver` and unported proxy /
   hub / legacy file-storage routes until Phase 3.
 - **sendChat.** Captured in [`sendchat.md`](sendchat.md). The
-  function is currently 2090 lines, no characterization tests.
+  function is currently 2090 lines; Phase 4 added a 17-fixture
+  characterization harness before extraction.
 
 ## Reference state
 

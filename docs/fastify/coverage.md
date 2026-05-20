@@ -7,9 +7,11 @@ shards under [`coverage/`](coverage/).
 
 ## Snapshot
 
-- No characterization tests for `sendChat` exist yet.
-- Existing tests cover helper surfaces only, not the generation
-  pipeline. Relevant current files include
+- Phase 4 `sendChat` characterization tests exist at
+  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 17
+  fixture sets under `src/ts/process/__fixtures__/`.
+- Existing helper-surface tests continue to cover smaller process
+  seams outside the fixture harness. Relevant current files include
   `src/ts/process/ttsHooks.test.ts`,
   `src/ts/process/request/tests/additionalParams.test.ts`,
   `src/ts/process/mcp/risuaccess/tests/modules.test.ts`, and

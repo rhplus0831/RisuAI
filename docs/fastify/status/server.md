@@ -15,8 +15,9 @@ Phase 1 and the server-side Phase 2 storage slice exist on the
   health/auth/bootstrap/import/assets/backups routes, and serves
   `RISU_API_STATIC_ROOT` via `@fastify/static` when that directory
   exists.
-- `server/fastify/src/config.ts` reads `RISU_API_DATA_DIR`,
-  `RISU_API_BODY_LIMIT`, `RISU_API_STATIC_ROOT`, and `TRUST_PROXY`.
+- `server/fastify/src/config.ts` reads `RISU_API_HOST`,
+  `RISU_API_PORT`, `RISU_API_DATA_DIR`, `RISU_API_BODY_LIMIT`,
+  `RISU_API_STATIC_ROOT`, and `TRUST_PROXY`.
 - `server/fastify/src/db.ts` creates `data/risu.db` with
   `schema_version(id, version, revision)`, WAL mode, and foreign
   keys.
@@ -48,8 +49,8 @@ Other runtime servers still in tree:
   behavior until Phase 3 ports and retires it. The Docker runtime
   no longer starts this server.
 - `server/hono/` - small Hono scaffold with CSRF middleware,
-  `Hello Hono!`, and Node / Bun / Cloudflare / Vercel static-serving
-  entry points. It is not on the Fastify migration path.
+  `Hello Hono!`, and Node / Bun / Cloudflare static-serving entry
+  points. It is not on the Fastify migration path.
 
 Root `package.json` has `pnpm runserver` for the Express server,
 `pnpm hono:build` for the Hono static bundle, and `pnpm api:dev`,
@@ -90,7 +91,8 @@ branch.
   `b6a50d3e`.
 - Phase 3 proxy: `a1711803`, `fcfd69a8`, `58cfea1a`,
   `c929ca87`.
-- Phase 4 commands: `28f6647d` and following, through
+- Command-resource slice on `move-to-fastify` (that branch's phase
+  labels differ from this roadmap): `28f6647d` and following, through
   `15b8ed7d` / `54cfe6d5`.
 - Phase 5 generation: `648fe0fb` (OpenAI), `a1c6360a`
   (Anthropic), `8ddeb9d0` (Gemini), `92034749`

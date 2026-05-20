@@ -27,12 +27,13 @@ End state:
 
 ## Current Baseline
 
-Where the codebase stands after the Phase 2 server storage slice on
-2026-05-20:
+Where the codebase stands after the Phase 4 characterization slice
+on 2026-05-20:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
-  `GET /api/v1/health`, `GET/POST /api/v1/auth/{status,setup,login}`,
+  `GET /api/v1/health`, `GET /api/v1/auth/status`,
+  `POST /api/v1/auth/setup`, `POST /api/v1/auth/login`,
   `GET /api/v1/bootstrap`, JSON `POST /api/v1/import/risusave`,
   raw asset routes, backup routes, and optional static SPA serving.
 - `server/fastify/src/repository.ts` owns the migration-window
@@ -48,6 +49,10 @@ Where the codebase stands after the Phase 2 server storage slice on
   static-serving scaffold and is not the migration path.
 - `src/ts/process/index.svelte.ts` is **2090 lines** in a single
   `sendChat` function with explicit `stage1`-`stage4` timing markers.
+- `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
+  the current `sendChat` behavior with 17 fixtures under
+  `src/ts/process/__fixtures__/`. Phase 5 extraction can proceed
+  behind that harness.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -90,6 +95,7 @@ rules. The headline order:
    contract.
 4. **sendChat tests** - pin observable behavior of the current
    `sendChat` with fixtures and snapshots before any extraction.
+   Done 2026-05-20 with 17 fixtures.
 5. **sendChat extraction** - carve the function into stage-shaped
    modules behind the pinned tests.
 6. **Server-side generation** - move provider dispatch, tokenizer,

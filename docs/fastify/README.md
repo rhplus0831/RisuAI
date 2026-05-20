@@ -13,12 +13,13 @@ it needs.
 
 ## Scope
 
-Current status: Phase 0 removals, Phase 1 Fastify foundation, and
-the Phase 2 server storage slice closed on 2026-05-20. Fastify now
-owns bootstrap, JSON import, content-addressed assets, backups,
-static SPA serving, and the Docker runtime. Phase 3 proxy migration
-is the next server slice; Phase 4 `sendChat` characterization tests
-can start in parallel.
+Current status: Phase 0 removals, Phase 1 Fastify foundation,
+Phase 2 server storage, and Phase 4 `sendChat` characterization
+tests closed on 2026-05-20. Fastify now owns bootstrap, JSON
+import, content-addressed assets, backups, static SPA serving, and
+the Docker runtime. Phase 3 proxy migration is the next server
+slice; Phase 5 `sendChat` extraction is also unblocked by the
+landed fixture harness.
 
 In scope:
 
@@ -46,17 +47,19 @@ short form.
 
 - **Stack.** Fastify + TypeScript. Greenfield API surface, not a copy
   of the `move-to-fastify` branch.
-- **Storage.** SQLite via `node:sqlite` (Node 24+) for system state
-  (schema version, revision, auth). Domain state lives in a single
-  `data/db.json` blob during the migration window; per-resource SQL
-  tables land in Phases 5-9 as APIs are carved out. Content-addressed
-  assets on disk under `data/`.
+- **Storage.** SQLite via `node:sqlite` (Node 24+) for server schema
+  metadata and revision. Fastify auth files live beside it under
+  the data dir. Domain state lives in a single `data/db.json` blob
+  during the migration window; per-resource SQL tables land in
+  Phases 5-9 as APIs are carved out. Content-addressed assets live
+  on disk under `data/assets/`.
 - **Sequence.** Remove first, then port. Phase 0 strips the deprecated
   features so the surface that gets ported is smaller.
 - **sendChat.** Tests first, extraction second. Pin observable
   behavior before touching the current 2090-line function.
 - **Client modes.** Server-backed web only. Tauri stays as-is.
-- **Hub.** Fastify keeps proxying `sv.risuai.xyz` traffic.
+- **Hub.** Fastify will keep proxying `sv.risuai.xyz` traffic once
+  Phase 3 lands.
 - **Memory.** Only Hypa V3 survives. Supa, Hypa V2, Hanurai are
   removed in Phase 0.
 - **Drive.** Google Drive sync is removed in Phase 0 with the rest of

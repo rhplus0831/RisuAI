@@ -41,8 +41,10 @@ Read order during planning:
 
 - Phase 0 is a hard prerequisite for everything else.
 - Phases 1, 2, 3 form a server-side dependency chain.
-- Phase 4 (sendChat tests) can run in parallel with 1-3.
-- Phase 5 (sendChat extraction) needs Phase 4's tests in place.
+- Phase 4 (sendChat tests) ran in parallel with 1-3 and is now
+  complete.
+- Phase 5 (sendChat extraction) needs Phase 4's tests in place;
+  that dependency is now satisfied.
 - Phase 6 needs both server-side proxy (Phase 3) and extracted
   client stages (Phase 5) so the server can take over Stage 3
   without breaking Stages 1, 2, 4.

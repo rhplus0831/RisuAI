@@ -75,9 +75,9 @@ host them and never will under this roadmap.
 - **Browser image embedding.** `runImageEmbedding` from
   `@huggingface/transformers`. This is a `transformers.js` model
   loaded in the browser. The server does not run it.
-- **WebLLM.** In-browser LLM via `@mlc-ai/web-llm`. The server's
-  `/api/v1/generate/completion` returns 501 for `provider:
-'webllm'`.
+- **WebLLM.** In-browser LLM via `@mlc-ai/web-llm`. When Phase 6
+  adds `/api/v1/generate/completion`, that server route should
+  return 501 for `provider: 'webllm'`.
 - **Plugin code execution server-side.** Plugins that expose code
   hooks (`apiV3` plugins, character JS) run in the browser
   sandbox. The server gates plugin tool calls behind

@@ -14,7 +14,15 @@ safety net for Phases 5-9.
 - Phase 0 closed (so the function under test no longer has dead
   paths through group / multiuser / legacy memory).
 
-Phase 4 can run in parallel with Phases 1-3.
+Phase 4 ran in parallel with the server-side phases and is now
+closed.
+
+## Status
+
+Done 2026-05-20. The landed harness lives at
+`src/ts/process/__tests__/sendChat.fixtures.test.ts` and
+`src/ts/process/__fixtures__/`. All 17 initial fixtures listed
+below have expected snapshots.
 
 ## Scope
 
@@ -28,20 +36,23 @@ that:
 - Installs it into `DBState` via the same path the app uses on
   bootstrap.
 - Sets `selectedCharID` to the canned target.
-- Returns a `cleanup()` that restores the prior state.
+- Returns a `cleanup()` callback. As landed, the callback does not
+  restore the prior `DBState`; each fixture reseeds wholesale, which
+  avoids reactive teardown errors from `parser.svelte.ts` and
+  `stores.svelte.ts`.
 
 ### Provider fake
 
 Replace `requestChatData` (the upstream entry point) with a fake
 during tests:
 
-- Yields canned chunks from
+- Yields canned responses from
   `src/ts/process/__fixtures__/upstream/<name>.jsonl`.
-- Each line is `{ type: 'token' | 'tool_call' | 'done' | ...,
-payload: ... }`.
-- The fake is installed via dependency injection on `sendChat`'s
-  importable seam; we add a parameter or a module-level
-  override - whichever is least invasive.
+- Each line is one scripted provider response with
+  `type: 'success' | 'fail' | 'multiline' | 'streaming'`.
+- The fake is installed with `vi.mock('../request/request', ...)`
+  in the test file, keeping `sendChat`'s production signature
+  unchanged.
 
 ### Snapshot the outputs
 
@@ -56,7 +67,8 @@ For each fixture run, capture:
   are recorded by spying on the functions, not by running them.
 
 Compare against `src/ts/process/__fixtures__/expected/<name>.json`.
-First run records; subsequent runs assert.
+First run records and fails loudly; subsequent runs assert. Set
+`UPDATE_FIXTURES=1` to overwrite existing snapshots intentionally.
 
 ### Initial fixture set
 
@@ -72,7 +84,9 @@ chat under specific conditions:
 - `lorebook-constant` - one constant entry.
 - `lorebook-recursive` - recursion within budget.
 - `hypav3-memory` - one summary slot consumed.
-- `author-note` - injected at the documented depth.
+- `author-note` - appended as the last system message under the
+  default `formatingOrder` (the current behavior differs from the
+  old "configured depth" expectation).
 - `persona` - non-default persona.
 - `multimodal-image` - one image attached.
 - `cache-point` - one prompt with a `cachePoint` marker.
@@ -81,8 +95,11 @@ chat under specific conditions:
 - `editoutput-trigger` - a triggerscript that rewrites the
   response.
 - `auto-continue` - auto-continue fires once.
-- `provider-error` - upstream returns 500; assert cleanup patches.
-- `client-abort` - signal aborts mid-stream; assert restoration.
+- `provider-error` - provider fake returns `type: 'fail'`; assert
+  the error-message path.
+- `client-abort` - pre-aborted signal; the provider fake still
+  records the call, then `sendChat` exits before adding an
+  assistant message.
 
 Each fixture is small enough to read in one screen. The set grows
 in Phase 5 as extraction surfaces hidden coupling.
@@ -92,7 +109,8 @@ in Phase 5 as extraction surfaces hidden coupling.
 `vitest` already exists; the new tests go under
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`.
 
-Run with `pnpm test -- sendChat.fixtures`.
+Run only this suite with
+`pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
 
 ## Boundaries
 
@@ -112,8 +130,8 @@ Run with `pnpm test -- sendChat.fixtures`.
 ## Exit criteria
 
 - The 17 initial fixtures listed above run and pass.
-- `pnpm test -- sendChat.fixtures` runs in under 30 seconds on a
-  developer machine.
+- `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`
+  runs in under 30 seconds on a developer machine.
 - `coverage/sendchat-fixtures.md` lists the fixtures and any
   intentionally uncovered behavior.
 - The fixture loader and provider fake are reusable - they are the

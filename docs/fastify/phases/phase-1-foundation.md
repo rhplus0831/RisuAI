@@ -29,6 +29,9 @@ Lands under `server/fastify/`:
   - `RISU_API_PORT` (default `6002`).
   - `RISU_API_DATA_DIR` (default `<repoRoot>/data`).
   - `RISU_API_BODY_LIMIT` (default 100 MiB).
+  - `RISU_API_STATIC_ROOT` (default `<repoRoot>/dist`; added with
+    Phase 2 static serving and accepts empty / `none` / `off` to
+    disable).
   - `TRUST_PROXY` (default `false`; integer values are accepted).
 - `server/fastify/src/auth.ts`:
   - Password set / login with the same assertion shape as the
@@ -40,8 +43,8 @@ Lands under `server/fastify/`:
   `@fastify/rate-limit` is registered in `app.ts` but is not applied
   globally yet.
 - `server/fastify/src/db.ts` - `node:sqlite` connection, WAL pragma,
-  foreign keys, version table. No domain schema yet; that lands in
-  Phase 2.
+  foreign keys, version table. No domain schema yet; that remains
+  deferred until per-resource APIs need it.
 - Health route: `GET /api/v1/health` returns
   `{ status: 'ok', revision: number, schemaVersion: number }`.
 - Auth routes: `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`,
@@ -57,7 +60,8 @@ Test infrastructure:
 
 ## Boundaries
 
-- **No SQL schema beyond the version table.** That is Phase 2.
+- **No SQL schema beyond the version table.** Phase 2 decides the
+  migration-window storage layout; domain SQL tables remain deferred.
 - **No proxy routes.** That is Phase 3. The Express server still
   owns `/proxy*`, `/hub-proxy/*`, and SPA serving during Phase 1.
 - **No SPA serving from Fastify.** Phase 2 wires `@fastify/static`

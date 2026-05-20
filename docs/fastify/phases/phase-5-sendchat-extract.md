@@ -49,8 +49,10 @@ For each stage:
    function (use the `stageTimings.*Start` markers).
 2. Lift the block into the new module with the minimum signature
    that compiles.
-3. Run `pnpm test -- sendChat.fixtures`. Diff failures by hand;
-   adjust the new module until the fixture set is green again.
+3. Run
+   `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
+   Diff failures by hand; adjust the new module until the fixture
+   set is green again.
 4. Land the slice as one commit per stage. Bisect-friendly.
 
 Hidden coupling discovered during extraction (Svelte stores read
@@ -93,7 +95,8 @@ move dispatch server-side without ripping out coupling first.
 - Each `pipeline/` module is independently testable (the fixtures
   may exercise it through the coordinator; targeted unit tests
   per module are encouraged but not required).
-- `pnpm test -- sendChat.fixtures` is green.
+- `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`
+  is green.
 - `pnpm check`, `pnpm test`, `pnpm build` green.
 - The fixture set has grown to include any behaviors discovered
   during extraction; the new entries are listed in

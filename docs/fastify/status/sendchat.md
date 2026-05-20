@@ -69,7 +69,7 @@ fixture-based characterization harness:
 - `src/ts/process/__fixtures__/snapshot.ts` captures the final
   `messages`, the assistant `generationInfo`, the
   `chatProcessStage` write sequence, the spied side-effect call
-  log, and the provider call count. It records to
+  log, and normalized provider call records. It records to
   `expected/<name>.json` on first run (failing loudly) and asserts
   on every subsequent run. `UPDATE_FIXTURES=1` overwrites the
   recorded snapshot.

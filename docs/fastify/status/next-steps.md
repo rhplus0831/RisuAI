@@ -3,7 +3,7 @@
 Date: 2026-05-20
 
 Use this list to pick the next slice. Keep work batches narrow:
-one proxy slice or one characterization-test slice at a time.
+one proxy slice or one `sendChat` extraction slice at a time.
 
 ## Immediate
 
@@ -23,11 +23,12 @@ one proxy slice or one characterization-test slice at a time.
    ready to defend an incremental refactor of `sendChat` into
    per-stage modules. Start with the smallest meaningful seam
    (e.g., move the auto-continue recursion or the response
-   post-processing block) and run `pnpm test -- sendChat.fixtures`
-   after each step. Pick up the open notes from
-   [`sendchat.md`](sendchat.md): the `doingChat` lifecycle (set
-   on entry, never cleared on the success path), the
-   format-dependent `pushPrompts` coalescer, and the
+   post-processing block) and run the focused fixture suite after
+   each step:
+   `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
+   Pick up the open notes from [`sendchat.md`](sendchat.md): the
+   `doingChat` lifecycle (set on entry, never cleared on the success
+   path), the format-dependent `pushPrompts` coalescer, and the
    author-note-at-end-of-prompt vs. "configured depth" doc gap.
 
 ## Completed Slices
