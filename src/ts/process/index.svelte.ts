@@ -45,6 +45,7 @@ import { getModuleAssets, getModuleToggles } from './modules'
 import { readImage } from '../globalApi.svelte'
 import { evaluateAutoContinue } from './autoContinue'
 import { reportSendChatError } from './sendChatErrors'
+import { fireDesktopNotification } from './postGeneration/notification'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1774,17 +1775,7 @@ export async function sendChat(
   }
 
   if (DBState.db.notification) {
-    try {
-      const permission = await Notification.requestPermission()
-      if (permission === 'granted') {
-        const noti = new Notification('Risuai', {
-          body: result,
-        })
-        noti.onclick = () => {
-          window.focus()
-        }
-      }
-    } catch (error) {}
+    await fireDesktopNotification(result)
   }
 
   if (req.special) {

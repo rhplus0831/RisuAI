@@ -1,0 +1,79 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireDesktopNotification } from '../postGeneration/notification'
+
+interface NotificationCall {
+  title: string
+  options?: { body?: string }
+}
+
+function setupNotification(opts: {
+  permission?: 'granted' | 'denied' | 'default'
+  requestRejects?: boolean
+  constructorThrows?: boolean
+}): { calls: NotificationCall[]; instances: { onclick: (() => void) | null }[] } {
+  const calls: NotificationCall[] = []
+  const instances: { onclick: (() => void) | null }[] = []
+  class MockNotification {
+    onclick: (() => void) | null = null
+    constructor(title: string, options?: { body?: string }) {
+      if (opts.constructorThrows) throw new Error('blocked')
+      calls.push({ title, options })
+      instances.push(this)
+    }
+    static requestPermission = opts.requestRejects
+      ? vi.fn(() => Promise.reject(new Error('blocked')))
+      : vi.fn(() => Promise.resolve(opts.permission ?? 'default'))
+  }
+  vi.stubGlobal('Notification', MockNotification)
+  return { calls, instances }
+}
+
+describe('fireDesktopNotification', () => {
+  let focusSpy: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    focusSpy = vi.fn()
+    vi.stubGlobal('window', { focus: focusSpy })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('fires a Notification when permission is granted and wires onclick to window.focus', async () => {
+    const { calls, instances } = setupNotification({ permission: 'granted' })
+    await fireDesktopNotification('hello')
+    expect(calls).toEqual([{ title: 'Risuai', options: { body: 'hello' } }])
+    expect(instances).toHaveLength(1)
+    instances[0].onclick?.()
+    expect(focusSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not construct a Notification when permission is denied', async () => {
+    const { calls } = setupNotification({ permission: 'denied' })
+    await fireDesktopNotification('hello')
+    expect(calls).toEqual([])
+  })
+
+  it('does not construct a Notification when permission is default', async () => {
+    const { calls } = setupNotification({ permission: 'default' })
+    await fireDesktopNotification('hello')
+    expect(calls).toEqual([])
+  })
+
+  it('swallows requestPermission rejection silently', async () => {
+    const { calls } = setupNotification({ requestRejects: true })
+    await expect(fireDesktopNotification('hello')).resolves.toBeUndefined()
+    expect(calls).toEqual([])
+  })
+
+  it('swallows Notification constructor throw silently', async () => {
+    setupNotification({ permission: 'granted', constructorThrows: true })
+    await expect(fireDesktopNotification('hello')).resolves.toBeUndefined()
+  })
+
+  it('does not throw when the Notification global is missing entirely', async () => {
+    vi.stubGlobal('Notification', undefined)
+    await expect(fireDesktopNotification('hello')).resolves.toBeUndefined()
+  })
+})
