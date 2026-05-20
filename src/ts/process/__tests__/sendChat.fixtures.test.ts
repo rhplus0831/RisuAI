@@ -37,6 +37,7 @@ const FIXTURES = [
   'persona',
   'lorebook-keyword',
   'lorebook-constant',
+  'lorebook-recursive',
   'client-abort',
 ] as const
 
