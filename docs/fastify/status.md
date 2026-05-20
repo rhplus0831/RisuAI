@@ -44,10 +44,13 @@ under [`status/`](status/).
   `server/node/` directory, the `runserver` script, and the
   `express` / `express-rate-limit` / `node-html-parser`
   dependencies were removed.
-- The Docker image and compose file run Fastify on port 6002
-  with `/app/data` persisted. `server/node/` (Express) has been
-  deleted; `server/hono/` is a small static-serving Hono
-  scaffold and is not the Fastify migration path.
+- The Dockerfile and compose file target Fastify on port 6002
+  with `/app/data` persisted. Current caveat: the runtime image
+  copies production dependencies only, but `pnpm api:start` depends
+  on `tsx` and the server imports `@fastify/websocket`; both are
+  currently dev dependencies. `server/node/` (Express) has been
+  deleted; `server/hono/` is a small static-serving Hono scaffold
+  and is not the Fastify migration path.
 - Root `package.json` has `api:dev`, `api:start`, and
   `api:test` for the Fastify server. The `runserver` script
   has been removed.

@@ -1,6 +1,6 @@
 # Phase 5 - sendChat Extraction
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Goal
 
@@ -45,8 +45,9 @@ still browser-only at this phase).
 
 For each stage:
 
-1. Identify the entry and exit points in the current 2090-line
-   function (use the `stageTimings.*Start` markers).
+1. Identify the entry and exit points in the current mostly
+   monolithic function (use the `stageTimings.*Start` markers listed
+   in [`../status/sendchat.md`](../status/sendchat.md)).
 2. Lift the block into the new module with the minimum signature
    that compiles.
 3. Run
@@ -68,9 +69,10 @@ move dispatch server-side without ripping out coupling first.
   `loadLoreBookV3Prompt`. Phase 7 ports it to the server.
 - Hypa V3 still uses the browser's `hypav3` module. Phase 8 ports
   it.
-- Tokenizers still use `@dqbd/tiktoken` in the browser. Phase 6
-  ports tokenizer counting; Phase 7 reuses the port for prompt
-  budget.
+- Tokenizers still use the browser's `src/ts/tokenizer.ts` stack
+  (`@dqbd/tiktoken`, `@mlc-ai/web-tokenizers`, and
+  provider-specific tokenizer assets). Phase 6 ports tokenizer
+  counting; Phase 7 reuses the port for prompt budget.
 - Triggers still run in the browser sandbox. Phase 6 introduces a
   server-side `node:worker_threads` sandbox; the browser path
   stays as a fallback until Phase 9.

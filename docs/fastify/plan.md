@@ -44,16 +44,23 @@ and the Phase 4 characterization slice on 2026-05-20:
   `data/backups/`. `data/risu.db` still holds system metadata only:
   `schema_version(id, version, revision)`.
 - Root `package.json` has `api:dev`, `api:start`, and `api:test`
-  for the Fastify server. The Docker image and compose file run
-  `pnpm api:start` on port 6002 with `/app/data` persisted. The
-  legacy `runserver` script and `server/node/` Express server have
-  been removed. `server/hono/` remains a separate static-serving
-  scaffold and is not the migration path.
-- `src/ts/process/index.svelte.ts` is **2090 lines** in a single
-  `sendChat` function with explicit `stage1`-`stage4` timing markers.
+  for the Fastify server. The Dockerfile and compose file point at
+  `pnpm api:start` on port 6002 with `/app/data` persisted, but the
+  current production-image dependency layout is not self-contained:
+  the runtime stage installs production dependencies only while
+  `api:start` uses `tsx` and `server/fastify/src/app.ts` imports
+  `@fastify/websocket`, both of which are currently dev
+  dependencies. The legacy `runserver` script and `server/node/`
+  Express server have been removed. `server/hono/` remains a
+  separate static-serving scaffold and is not the migration path.
+- `src/ts/process/index.svelte.ts` is currently 1968 lines and is
+  still dominated by a mostly-monolithic `sendChat` function with
+  explicit `stage1`-`stage4` timing markers.
 - `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
   the current `sendChat` behavior with 17 fixtures under
-  `src/ts/process/__fixtures__/`. Phase 5 extraction can proceed
+  `src/ts/process/__fixtures__/`. The snapshots also assert that
+  `doingChat` is false after each fixture; `sendChat` now clears the
+  lease it owns in a `finally` block. Phase 5 extraction can proceed
   behind that harness.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,

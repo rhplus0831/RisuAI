@@ -1,6 +1,6 @@
 # Phase 6 - Server-Side Generation
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Goal
 
@@ -20,22 +20,34 @@ the calls and streams the results.
 
 - `POST /api/v1/generate/completion` - OpenAI-shaped Chat
   Completions request. Provider field selects implementation:
-  - OpenAI, openai-compatible.
-  - OpenRouter, NanoGPT, Mistral, Cohere, Huggingface, DeepInfra.
-  - Anthropic (Claude / Messages API).
-  - Gemini / Google.
-  - Local: Ollama, Kobold, ooba, llama.cpp.
-  - Vertex AI (with OAuth refresh).
+  - OpenAI Chat Completions, OpenAI Responses API, and OpenAI
+    legacy instruct.
+  - OpenAI-compatible custom endpoints, OpenRouter, DeepSeek, and
+    DeepInfra.
+  - NanoGPT chat / responses / messages / legacy formats.
+  - Mistral and Cohere.
+  - Anthropic Messages, Anthropic legacy, and AWS Bedrock Claude.
+  - Gemini / Google and Vertex AI Gemini (with OAuth refresh).
+  - NovelAI text and NovelList.
+  - Local / self-hosted: Ollama, Kobold, ooba
+    (text-generation-webui), and llama.cpp-compatible endpoints.
+  - Stable Horde text generation.
+  - Echo as a local deterministic developer provider.
 - `POST /api/v1/generate/horde` - Stable Horde text generation.
 - `POST /api/v1/generate/translate` - DeepL, DeepLX, Google
-  Translate free. LLM-based translation reuses
+  Translate free / HTML, Bergamot, and LLM translation. LLM-based
+  translation reuses
   `/api/v1/generate/completion`.
-- `POST /api/v1/generate/tts` - OpenAI, ElevenLabs, NovelAI.
+- `POST /api/v1/generate/tts` - OpenAI, ElevenLabs, NovelAI,
+  Hugging Face API Inference. Browser Web Speech, VoiceVox, Vits,
+  GPT-SoVITS, and Fish Speech stay browser-local or LAN-local.
 - `POST /api/v1/generate/image` - DALL-E, Stability, Imagen, fal,
-  NovelAI, wavespeed, WebUI, kei, ComfyUI. Local VoiceVox / Vits /
-  GPT-SoVITS stay browser-side (they target LAN endpoints).
-- `POST /api/v1/generate/count-tokens` - tokenizer counting for
-  `cl100k_base`, `o200k_base`, `p50k_base`, `r50k_base`, `gpt2`.
+  NovelAI, WaveSpeed, WebUI, kei, ComfyUI / legacy Comfy, and the
+  OpenAI-compatible image route.
+- `POST /api/v1/generate/count-tokens` - tokenizer counting for the
+  current `src/ts/tokenizer.ts` set: tiktoken (`cl100k_base`,
+  `o200k_base`), Mistral, NovelAI, Claude, Llama / Llama 3,
+  NovelList, Gemma, Cohere, DeepSeek / DeepSeek V4, GLM4, and GLM5.
 - `GET /api/v1/generate/encodings` - lists available tokenizers.
 - `POST /api/v1/generate/triggers/run` - server-side
   `node:worker_threads` sandbox for `editInput`, `editRequest`,
@@ -67,7 +79,8 @@ Client disconnect aborts the upstream via `AbortController`.
 modes:
 
 - Local (existing) - keeps the current direct-fetch path. Used
-  when `VITE_RISU_SERVER_BACKED=false`.
+  when the server-backed mode flag is off; the final flag name is
+  set when this phase lands.
 - Server-backed - posts to `/api/v1/generate/completion` and
   iterates the SSE stream.
 
@@ -93,9 +106,10 @@ both modes side by side until Phase 9.
   helpers; memory chunking / embeddings are Phase 8.
 - **Do not skip a provider because it is rare.** Every provider
   the browser supports today either lands here or is explicitly
-  marked "browser-local only" (VoiceVox, Vits, GPT-SoVITS,
-  WebLLM, transformers.js image embedding) in the route's 501
-  response.
+  marked "browser-local only" / "plugin-local only" (plugin
+  providers, WebLLM, Hugging Face `hf:::` models, transformers.js
+  image embedding, Web Speech, VoiceVox, Vits, GPT-SoVITS,
+  Fish Speech) in the route's 501 response.
 - **Do not redesign the trigger script language.** The server
   sandbox runs the same source the browser does, with a stricter
   globals set.

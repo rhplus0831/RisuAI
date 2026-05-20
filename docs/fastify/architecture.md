@@ -33,7 +33,7 @@ server/fastify/
       hub.ts
       legacyStorage.ts
     events.ts           SSE event bus (planned Phase 9)
-    tokenizer.ts        @dqbd/tiktoken / glm tokenizers (planned Phase 6)
+    tokenizer.ts        tiktoken + web-tokenizers encoders (planned Phase 6)
     generate/
       router.ts         POST /api/v1/generate/* routes
       providers/        one file per provider family

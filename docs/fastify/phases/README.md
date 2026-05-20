@@ -49,7 +49,8 @@ Read order during planning:
   client stages (Phase 5) so the server can take over Stage 3
   without breaking Stages 1, 2, 4.
 - Phase 7 needs Phase 6's dispatch endpoint to call into.
-- Phase 8 needs Phase 2's schema and Phase 7's prompt walker.
+- Phase 8 needs Phase 2's data-dir/repository foundation and Phase
+  7's prompt walker.
 - Phase 9 closes the loop.
 
 ## Per-phase doc shape

@@ -1,6 +1,6 @@
 # sendChat Status
 
-Date: 2026-05-20 (Phase 4 done: scaffolding + all 17 fixtures
+Date: 2026-05-21 (Phase 4 done: scaffolding + all 17 fixtures
 landed)
 
 Updated 2026-05-20: Phase 4 is complete. The fixture harness
@@ -19,24 +19,28 @@ per-fixture summary.
 
 Snapshot schema bumped 2026-05-20: `providerCalls` now persists
 the normalized call records (mode + formated + opt-in flags)
-instead of a count. Existing fixtures were re-recorded.
+instead of a count. A later cleanup also added the final
+`doingChat` boolean to every snapshot so the fixture harness pins
+the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts::sendChat` is a single 2090-line
-async function with these visible markers:
+`src/ts/process/index.svelte.ts` is currently 1968 lines and is
+still dominated by a mostly-monolithic `sendChat` async function
+with these visible markers:
 
-- `stage1Start` at line 273 - validation, lorebook prep, persona,
-  description assembly.
-- `stage2Start` at line 1013 - Hypa V3 memory retrieval and prompt
-  memory-card accounting. The current timing marker is narrower
-  than the future Stage 2 module; the surrounding prompt assembly is
-  still browser code.
-- `stage3Start` at line 1501 - provider dispatch via
-  `requestChatData()`; inlay screen + TTS run after the first
-  response chunk.
-- `stage4Start` at line 1783 - post-generation (auto-continue,
-  emotion, stable diff, reroll metadata).
+- `stage1Start` at `src/ts/process/index.svelte.ts:241` -
+  validation, lorebook prep, persona, description assembly.
+- `stage2Start` at `src/ts/process/index.svelte.ts:979` - Hypa V3
+  memory retrieval and prompt memory-card accounting. The current
+  timing marker is narrower than the future Stage 2 module; the
+  surrounding prompt assembly is still browser code.
+- `stage3Start` at `src/ts/process/index.svelte.ts:1467` -
+  provider dispatch via `requestChatData()`; inlay screen + TTS run
+  after the first response chunk.
+- `stage4Start` at `src/ts/process/index.svelte.ts:1736` -
+  post-generation (auto-continue, emotion, stable diff, reroll
+  metadata).
 
 It reaches into:
 
@@ -69,7 +73,8 @@ fixture-based characterization harness:
 - `src/ts/process/__fixtures__/snapshot.ts` captures the final
   `messages`, the assistant `generationInfo`, the
   `chatProcessStage` write sequence, the spied side-effect call
-  log, and normalized provider call records. It records to
+  log, normalized provider call records, and the final
+  `doingChat` value. It records to
   `expected/<name>.json` on first run (failing loudly) and asserts
   on every subsequent run. `UPDATE_FIXTURES=1` overwrites the
   recorded snapshot.
@@ -112,7 +117,7 @@ each fixture pins.
   `addRerolls` receives the generationId plus the full array.
 - `provider-error` - provider returns `type:'fail'`. With
   `inlayErrorResponse: true`, pins that `throwError` appends a
-  `\`\`\`risuerror\n...\n\`\`\`` char message carrying the active
+  `risuerror` fenced-block char message carrying the active
   `generationInfo`, stages stop at `[1, 3]`, and no side effects
   fire.
 - `auto-continue` - `autoContinueMinTokens` set so a 1-token
@@ -152,8 +157,9 @@ each fixture pins.
 - `client-abort` - test driver passes a pre-aborted
   `AbortSignal`. Provider fake does not honor the signal so the
   call is still captured, but the post-provider check at
-  `index.svelte.ts:1541` short-circuits the function. Pins
-  `stages: [1, 3]`, no assistant message added, no side effects.
+  `src/ts/process/index.svelte.ts:1507` short-circuits the
+  function. Pins `stages: [1, 3]`, no assistant message added, no
+  side effects.
 - `lorebook-constant` - one `globalLore` entry with
   `alwaysActive: true` and no key. Pins that the content lands
   in `formated` purely by the always-on flag.
@@ -190,21 +196,23 @@ each fixture pins.
   happy-dom). The fake `runLuaEditTrigger` appends a marker
   system entry when the character has at least one
   triggerscript and the mode is `'editRequest'` on an
-  `OpenAIChat[]`. Pins that the `runLuaEditTrigger('editRequest',
-  formated)` call site at `index.svelte.ts:1440` mutates the
-  formated array and the mutation reaches the provider.
+  `OpenAIChat[]`. Pins that the
+  `runLuaEditTrigger('editRequest', formated)` call site at
+  `src/ts/process/index.svelte.ts:1406` mutates the formated array
+  and the mutation reaches the provider.
 - `editoutput-trigger` - one `customscript` regex of type
   `'editoutput'` rewriting `sunshine` -> `starlight`. Pins that
   the rewrite happens inside the streaming loop's
   `processScriptFull('editoutput', ...)` at
-  `index.svelte.ts:1596` (before `runInlayScreen` sees the
-  text), and the rewritten text is what gets persisted on the
-  assistant message.
-- `doingChat` is set to `true` on sendChat entry and is not reset
-  on the success path. The test harness resets it between
-  fixtures; production code resets it from the UI layer. Worth
-  flagging in Phase 5 extraction so the lifecycle is owned in
-  one place.
+  `src/ts/process/index.svelte.ts:1562` (before
+  `runInlayScreen` sees the text), and the rewritten text is what
+  gets persisted on the assistant message.
+- `doingChat` is set to `true` only when `sendChat` owns the lease,
+  and the owned lease is cleared in a `finally` block on every exit
+  path. Recursive auto-continue / resend paths explicitly release
+  the flag before re-entering. All 17 snapshots currently pin final
+  `doingChat: false`; the test harness still resets it before each
+  fixture defensively.
 - The `uuid` mock counter resets between fixtures so snapshots
   are order-independent. Any new fixture that exercises a code
   path emitting multiple `v4()` calls should expect

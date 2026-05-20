@@ -1,6 +1,6 @@
 # Provider Tests
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 Status: no server-side provider implementations exist yet. The
 table below is the target test matrix for Phase 6.
@@ -13,48 +13,59 @@ For each provider that lands in `/api/v1/generate/completion`:
 - Streaming: chunks normalized into the SSE envelope.
 - Error: upstream 4xx / 5xx maps to a documented error frame.
 - Abort: client disconnect aborts upstream within ~1s.
-- Headers: API key sourced from `auth` settings group; not
-  echoed in upstream body.
+- Headers: API key sourced from the same database setting the
+  current browser request path uses; never echoed in upstream body
+  or SSE frames.
 
 ## Provider inventory
 
-| Provider               | Request shape                | Stream | Status      |
-| ---------------------- | ---------------------------- | ------ | ----------- |
-| OpenAI                 | Chat Completions             | SSE    | not started |
-| openai-compatible      | Chat Completions             | SSE    | not started |
-| OpenRouter             | Chat Completions             | SSE    | not started |
-| NanoGPT                | Chat Completions             | SSE    | not started |
-| Mistral                | Chat Completions             | SSE    | not started |
-| Cohere                 | Cohere chat                  | SSE    | not started |
-| Huggingface            | Chat Completions             | SSE    | not started |
-| DeepInfra              | Chat Completions             | SSE    | not started |
-| Anthropic              | Messages                     | SSE    | not started |
-| Gemini / Google        | generateContent / streamGen  | SSE    | not started |
-| Vertex AI (Gemini)     | streamGenerateContent + OAuth| SSE    | not started |
-| Ollama                 | /api/chat                    | SSE    | not started |
-| Kobold                 | /api/v1/generate             | poll   | not started |
-| ooba (text-generation-webui) | /v1/chat/completions   | SSE    | not started |
-| llama.cpp server       | /v1/chat/completions         | SSE    | not started |
-| Stable Horde (text)    | /v2/generate/text/async      | poll   | not started |
+This table mirrors the current `LLMProvider` / `LLMFormat` surface
+in `src/ts/model/types.ts`, `src/ts/model/modellist.ts`, and
+`src/ts/process/request/request.ts`.
 
-Providers that stay browser-local (target LAN endpoints) should
-return a documented `501` from the server route once Phase 6
-implements that route:
+| Provider / format family               | Request shape                             | Stream | Status      |
+| -------------------------------------- | ----------------------------------------- | ------ | ----------- |
+| OpenAI Chat Completions                | `/v1/chat/completions`                    | SSE    | not started |
+| OpenAI Responses API                   | `/v1/responses`                           | SSE    | not started |
+| OpenAI legacy instruct                 | legacy completions / instruct shape       | SSE    | not started |
+| OpenAI-compatible custom / OpenRouter / DeepSeek / DeepInfra | Chat Completions-compatible | SSE | not started |
+| NanoGPT chat / responses / messages / legacy | NanoGPT endpoint selected by format | SSE | not started |
+| Mistral                                | Mistral chat                              | SSE    | not started |
+| Cohere                                 | Cohere chat                               | SSE    | not started |
+| Anthropic Messages + legacy            | Messages / legacy Claude shape            | SSE    | not started |
+| AWS Bedrock Claude                     | Bedrock runtime Messages payload          | SSE    | not started |
+| Gemini / Google                        | `generateContent` / streaming generate    | SSE    | not started |
+| Vertex AI Gemini                       | `streamGenerateContent` + OAuth           | SSE    | not started |
+| NovelAI text                           | NovelAI text-generation API               | SSE    | not started |
+| NovelList                              | NovelList API                             | SSE    | not started |
+| Ollama hosted / Ollama Cloud           | `/api/chat`, or cloud OpenAI / Responses / Anthropic format | SSE | not started |
+| Kobold                                 | `/api/v1/generate`                        | poll   | not started |
+| ooba / text-generation-webui legacy    | WebSocket + blocking endpoints            | WS/poll | not started |
+| Stable Horde (text)                    | `/v2/generate/text/async`                 | poll   | not started |
+| Echo developer provider                | local deterministic echo                  | n/a    | not started |
 
-- VoiceVox, Vits, GPT-SoVITS - TTS.
-- WebLLM - in-browser model.
+Providers/features that stay browser-local, LAN-local, or
+plugin-local should return a documented `501` from the server route
+once Phase 6 implements that route:
+
+- Plugin legacy providers - plugin code execution stays in the
+  browser sandbox.
+- WebLLM and Hugging Face `hf:::` models - in-browser models.
 - transformers.js image embedding - browser ML.
+- Browser Web Speech, VoiceVox, Vits, GPT-SoVITS, and Fish Speech -
+  local / browser TTS.
 
 ## Helper providers
 
 | Endpoint                             | Providers                            | Status      |
 | ------------------------------------ | ------------------------------------ | ----------- |
-| `POST /api/v1/generate/translate`    | DeepL, DeepLX, Google free, LLM      | not started |
-| `POST /api/v1/generate/tts`          | OpenAI, ElevenLabs, NovelAI          | not started |
-| `POST /api/v1/generate/image`        | DALL-E, Stability, Imagen, fal,      | not started |
-|                                      | NovelAI, wavespeed, WebUI, kei,      |             |
-|                                      | ComfyUI                              |             |
-| `POST /api/v1/generate/count-tokens` | cl100k, o200k, p50k, r50k, gpt2      | not started |
+| `POST /api/v1/generate/translate`    | DeepL, DeepLX, Google free / HTML, Bergamot, LLM | not started |
+| `POST /api/v1/generate/tts`          | OpenAI, ElevenLabs, NovelAI, Hugging Face API Inference | not started |
+| `POST /api/v1/generate/image`        | WebUI, NovelAI, Stability, fal,      | not started |
+|                                      | ComfyUI / legacy Comfy, Imagen,      |             |
+|                                      | OpenAI-compatible image, WaveSpeed,  |             |
+|                                      | kei                                  |             |
+| `POST /api/v1/generate/count-tokens` | tiktoken, Mistral, NovelAI, Claude, Llama / Llama 3, NovelList, Gemma, Cohere, DeepSeek / DeepSeek V4, GLM4 / GLM5 | not started |
 
 ## Reference
 

@@ -65,6 +65,8 @@ For each fixture run, capture:
 - The order of side effects (`runInlayScreen` calls,
   `sayTTS` calls, `stableDiff` calls, `addRerolls` calls). These
   are recorded by spying on the functions, not by running them.
+- The final `doingChat` value, so the harness pins that `sendChat`
+  clears the lease it owns.
 
 Compare against `src/ts/process/__fixtures__/expected/<name>.json`.
 First run records and fails loudly; subsequent runs assert. Set

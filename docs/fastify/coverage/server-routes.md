@@ -66,8 +66,8 @@ stay client-side until Phase 9.
 | `POST /api/v1/generate/completion`         | OpenAI-shaped; streams SSE; aborts.        | not started |
 | `POST /api/v1/generate/horde`              | Stable Horde request shape.                | not started |
 | `POST /api/v1/generate/translate`          | DeepL / DeepLX / Google.                   | not started |
-| `POST /api/v1/generate/tts`                | OpenAI / ElevenLabs / NovelAI.             | not started |
-| `POST /api/v1/generate/image`              | Provider routing + body shaping.           | not started |
+| `POST /api/v1/generate/tts`                | OpenAI / ElevenLabs / NovelAI / Hugging Face API Inference. | not started |
+| `POST /api/v1/generate/image`              | Provider routing + body shaping for current `sdProvider` values. | not started |
 | `POST /api/v1/generate/count-tokens`       | Returns token count per encoder.           | not started |
 | `GET /api/v1/generate/encodings`           | Lists tokenizers.                          | not started |
 | `POST /api/v1/generate/triggers/run`       | Worker sandbox returns trigger result.     | not started |

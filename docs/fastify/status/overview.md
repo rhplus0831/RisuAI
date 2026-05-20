@@ -26,12 +26,16 @@ workstream lives in the sibling shards.
   removal is complete; a couple of stale, unreachable group-chat UI
   checks remain documented as cleanup debt.
 - **Server.** Captured in [`server.md`](server.md). Phases 1 +
-  2 + 3 are landed; Docker runs Fastify; Express has been
-  deleted. The Fastify-served SPA wires its self-host gates via
-  `__NODE__` + `__FASTIFY__` injection in `index.html`.
+  2 + 3 are landed; Docker targets Fastify and Express has been
+  deleted. The current production-image dependency layout still
+  needs follow-up before the image is self-contained. The
+  Fastify-served SPA wires its self-host gates via `__NODE__` +
+  `__FASTIFY__` injection in `index.html`.
 - **sendChat.** Captured in [`sendchat.md`](sendchat.md). The
-  function is currently 2090 lines; Phase 4 added a 17-fixture
-  characterization harness before extraction.
+  file is currently 1968 lines and still mostly one `sendChat`
+  implementation; Phase 4 added a 17-fixture characterization
+  harness before extraction, and the snapshots now pin the
+  `doingChat` lease returning to `false`.
 
 ## Reference state
 

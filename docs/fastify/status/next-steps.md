@@ -16,11 +16,12 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    post-processing block) and run the focused fixture suite after
    each step:
    `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
-   Pick up the open notes from [`sendchat.md`](sendchat.md): the
-   `doingChat` lifecycle (set on entry, never cleared on the
-   success path), the format-dependent `pushPrompts` coalescer,
-   and the author-note-at-end-of-prompt vs. "configured depth"
-   doc gap.
+   Preserve the current lifecycle invariant from
+   [`sendchat.md`](sendchat.md): `sendChat` owns and clears the
+   `doingChat` lease when it acquires it, including abort and error
+   exits. The remaining extraction notes are the format-dependent
+   `pushPrompts` coalescer and the author-note-at-end-of-prompt vs.
+   "configured depth" doc gap.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -35,6 +36,14 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    did not have this issue. A later slice can either drop
    `requireAuth` from the hub route to match the Express
    behavior or add a session-cookie auth path.
+
+3. **Follow-up: Docker runtime dependencies.** The Dockerfile and
+   compose file target Fastify on port 6002, but the runtime stage
+   installs production dependencies only while `pnpm api:start`
+   invokes `tsx` and `server/fastify/src/app.ts` imports
+   `@fastify/websocket`; both packages are currently
+   dev dependencies. Fix by promoting the runtime dependencies or
+   compiling the server before the runtime stage copies it.
 
 ## Completed Slices
 
@@ -105,7 +114,8 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   leading system block by `pushPrompts`'s same-role coalescer),
   `lorebook-keyword` (one globalLore entry with `key: "cat"`
   activated by user message), and `client-abort` (pre-aborted
-  AbortSignal short-circuits at `index.svelte.ts:1541`). Adds an
+  AbortSignal short-circuits at `src/ts/process/index.svelte.ts:1507`).
+  Adds an
   `aborted: true` flag to the fixture schema; the test driver
   synthesizes a pre-aborted controller and threads its signal
   into `sendChat`.
@@ -168,8 +178,8 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 
 - **Phase 3D-Narrow - Client proxy / hub URL switchover.** Done
   2026-05-21. Two commits.
-  - Server-side: `server/fastify/src/app.ts` now reads
-    `dist/index.html` at startup, injects
+  - Server-side: `server/fastify/src/app.ts` lazily reads and
+    caches `dist/index.html` on the first SPA request, injects
     `<script>globalThis.__FASTIFY__ = true;</script>` after the
     opening `<head ...>` tag, and serves the cached result from
     both `GET /` and the SPA fallback in

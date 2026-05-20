@@ -17,11 +17,15 @@ Current status: Phase 0 removals, Phase 1 Fastify foundation,
 Phase 2 server storage, Phase 3 proxy migration, and Phase 4
 `sendChat` characterization tests are closed. Fastify now owns
 bootstrap, JSON import, content-addressed assets, backups, static
-SPA serving, the Docker runtime, provider proxy fetch, stream-job
-WebSocket transport, Risu hub passthrough, and the legacy
-NodeStorage key-value surface. Express has been deleted. Phase 5
-`sendChat` extraction is the next natural server/client slice behind
-the landed fixture harness.
+SPA serving, provider proxy fetch, stream-job WebSocket transport,
+Risu hub passthrough, and the legacy NodeStorage key-value surface.
+Express has been deleted. The Dockerfile and compose file target
+the Fastify runtime on port 6002, but the production image still
+needs a dependency/layout follow-up before it is considered
+self-contained because `pnpm api:start` uses `tsx` and imports
+`@fastify/websocket` while both are currently dev dependencies.
+Phase 5 `sendChat` extraction is the next natural server/client
+slice behind the landed fixture harness.
 
 In scope:
 
@@ -58,7 +62,8 @@ short form.
 - **Sequence.** Remove first, then port. Phase 0 strips the deprecated
   features so the surface that gets ported is smaller.
 - **sendChat.** Tests first, extraction second. Pin observable
-  behavior before touching the current 2090-line function.
+  behavior before touching the current mostly-monolithic
+  `src/ts/process/index.svelte.ts` file.
 - **Client modes.** Server-backed web only. Tauri stays as-is.
 - **Hub.** Fastify proxies hub traffic through `/api/v1/hub/*`.
   The route is intentionally still auth-gated; session-cookie or

@@ -1,6 +1,6 @@
 # Runtime Stages
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 This doc describes the stages a `sendChat` invocation moves through
 and who owns each stage **after the migration**. Before migration
@@ -41,8 +41,9 @@ Owner (after migration): server.
   prompt assembly begins.
 
 The current `sendChat` does this work in browser code around
-function entry through `stageTimings.stage1Start` at line 273 and
-continues browser-side validation / setup until Stage 3 dispatch.
+function entry through `stageTimings.stage1Start` at
+`src/ts/process/index.svelte.ts:241` and continues browser-side
+validation / setup until Stage 3 dispatch.
 
 ## Stage 2 - Prompt assembly
 
@@ -58,9 +59,10 @@ Owner (after migration): server.
 
 The current `sendChat` does this work in browser code around the
 `stageTimings.stage1Start` and `stageTimings.stage2Start` trace
-points. After Phase 0, `stage2Start` is at line 1013 and currently
-wraps the Hypa V3 memory call, while other prompt assembly work still
-lives before and after that marker.
+points. As of 2026-05-21, `stage2Start` is at
+`src/ts/process/index.svelte.ts:979` and currently wraps the Hypa V3
+memory call, while other prompt assembly work still lives before and
+after that marker.
 
 ## Stage 3 - Provider dispatch and streaming
 
@@ -77,8 +79,9 @@ Owner (after migration): server.
   emits `error`.
 
 The current `sendChat` does this work between
-`stageTimings.stage3Start` at line 1501 and
-`stageTimings.stage3Duration` around line 1777.
+`stageTimings.stage3Start` at `src/ts/process/index.svelte.ts:1467`
+and `stageTimings.stage3Duration` around
+`src/ts/process/index.svelte.ts:1730`.
 
 ## Stage 4 - Finalize and post-generation
 
@@ -106,8 +109,8 @@ generation provider call, text-to-speech provider call), but the
 browser owns playback / rendering.
 
 The current `sendChat` does this work after
-`stageTimings.stage4Start` at line 1783 through the end of the
-function.
+`stageTimings.stage4Start` at `src/ts/process/index.svelte.ts:1736`
+through the end of the function.
 
 ## How the stages map to phases
 

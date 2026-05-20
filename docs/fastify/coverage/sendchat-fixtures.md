@@ -1,6 +1,6 @@
 # sendChat Fixtures
 
-Date: 2026-05-20 (all 17 fixtures landed - Phase 4 done)
+Date: 2026-05-21 (all 17 fixtures landed - Phase 4 done)
 
 Status: all 17 target fixtures landed. The harness pins the entry
 path, the multiline reroll branch, the upstream-fail branch, the
@@ -14,7 +14,8 @@ exit path.
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
 array of normalized call records (`{ mode, formated, ... }`)
 rather than a count. The `formated` field is the main pin for
-prompt-shape fixtures.
+prompt-shape fixtures. The schema also records final `doingChat`;
+all current snapshots assert it is `false`.
 
 ## Fixture inventory
 
@@ -33,10 +34,10 @@ prompt-shape fixtures.
 | `multimodal-image`    | `{{inlay::<id>}}` tag in a user message resolves via mocked `getInlayAsset` into the `multimodals: [{ type: 'image', base64, width, height }]` field on the user `OpenAIChat`. Uses a custom `xcustom:::` model with `hasImageInput`. | landed |
 | `cache-point`         | `automaticCachePoint` marks the last 3 user entries with `cachePoint: true`. Requires a `promptTemplate` with a `chat` card. | landed |
 | `editrequest-trigger` | Full `vi.mock` of `scriptings` (wasmoon can't initialize under happy-dom). The fake `runLuaEditTrigger` appends a marker system entry when the character has a non-empty `triggerscript` and `mode === 'editRequest'`. | landed |
-| `editoutput-trigger`  | One `customscript` regex entry of `type: 'editoutput'` rewriting `sunshine` -> `starlight`. The rewrite fires inside the streaming loop's `processScriptFull('editoutput', ...)` at `index.svelte.ts:1596`. | landed |
+| `editoutput-trigger`  | One `customscript` regex entry of `type: 'editoutput'` rewriting `sunshine` -> `starlight`. The rewrite fires inside the streaming loop's `processScriptFull('editoutput', ...)` at `src/ts/process/index.svelte.ts:1562`. | landed |
 | `auto-continue`       | Auto-continue fires once and lands a second turn.      | landed      |
 | `provider-error`      | Upstream `type:'fail'` produces a `risuerror` chat message. | landed |
-| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `index.svelte.ts:1541` returns `false` before any assistant message is added. | landed |
+| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `src/ts/process/index.svelte.ts:1507` returns `false` before any assistant message is added. | landed |
 
 ## Loader
 
@@ -108,6 +109,7 @@ focused.
   `stableDiff`, `addRerolls`. The side-effect functions
   themselves are spied on, not executed.
 - The sequence of `chatProcessStage` store writes.
+- The final `doingChat` store value after `sendChat` exits.
 
 ## What the fixtures intentionally do not pin
 

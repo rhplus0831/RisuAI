@@ -56,8 +56,12 @@ Server-side Phase 2 landed on 2026-05-20:
   `server/fastify/src/routes/{bootstrap,save,assets,backups}.ts`.
 - Implemented storage helpers in `server/fastify/src/repository.ts`.
 - Implemented static serving in `server/fastify/src/app.ts`.
-- Docker now runs `pnpm api:start` on port 6002 with `/app/data`
-  persisted.
+- Docker is configured to run `pnpm api:start` on port 6002 with
+  `/app/data` persisted. The current production-image dependency
+  layout still needs a follow-up because the runtime stage installs
+  production dependencies only while `api:start` uses `tsx` and the
+  server imports `@fastify/websocket`, both currently
+  dev dependencies.
 - Covered by `server/fastify/__tests__/{bootstrap,assets,backups,static}.test.ts`.
 
 The browser is not yet thinned into a server-backed projection; that
@@ -285,7 +289,7 @@ The image's runtime stage switched from the Express server
 (`pnpm runserver`, port 6001, `save/` volume) to Fastify
 (`pnpm api:start`, port 6002, `data/` volume). The Express source
 files stayed in the tree until Phase 3 retired them; the container
-stopped running them in Phase 2.
+stopped targeting them in Phase 2.
 
 - `Dockerfile`: `CMD pnpm api:start`, `EXPOSE 6002`,
   `VOLUME /app/data`, env `RISU_API_DATA_DIR=/app/data` and
@@ -303,11 +307,13 @@ stopped running them in Phase 2.
   and in the test harness when there is no SPA build).
 
 Phase 3 has since ported the proxy, hub, and legacy storage
-compatibility routes, so the container is again a single-process
-Fastify image with the migrated server surface. During the historical
-gap between 2E and Phase 3, the image was missing provider proxy /
-hub passthrough / legacy storage compatibility - acceptable under
-the no-live-users migration window.
+compatibility routes, so the container target is again a
+single-process Fastify server with the migrated server surface.
+Before using it as a production image, fix the runtime dependency
+layout noted above. During the historical gap between 2E and Phase
+3, the image was missing provider proxy / hub passthrough / legacy
+storage compatibility - acceptable under the no-live-users migration
+window.
 
 ## Boundaries
 
@@ -359,8 +365,9 @@ the no-live-users migration window.
   client-side and posting the resulting JSON database plus asset
   uploads. The browser is not yet rewired to consume
   `/api/v1/bootstrap`; that belongs to Phase 9 client thinning.
-- The Docker image runs Fastify + serves the SPA, with `data/`
-  persisted across restarts.
+- The Dockerfile/compose target Fastify + SPA serving, with `data/`
+  persisted across restarts; the current dependency-layout caveat
+  above must be cleared before treating the image as ready.
 - `pnpm check`, `pnpm test`, `pnpm build` green.
 
 ## Reference

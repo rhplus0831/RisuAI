@@ -1,6 +1,6 @@
 # Phase 8 - Hypa V3 Memory Server-Side
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Goal
 
@@ -12,7 +12,9 @@ browser localForage.
 ## Preconditions
 
 - Phase 0 closed (Supa, Hypa V2, Hanurai are already gone).
-- Phase 2 closed (server holds the chat schema we extend).
+- Phase 2 closed (server has the data-dir/repository foundation;
+  chat-specific SQL shape still lands with the extraction that needs
+  it).
 - Phase 7 closed (prompt assembly is server-side and needs
   somewhere to read summaries from).
 
