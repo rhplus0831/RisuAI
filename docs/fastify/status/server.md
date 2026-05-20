@@ -4,9 +4,9 @@ Date: 2026-05-20
 
 ## Current state
 
-Phase 1, the server-side Phase 2 storage slice, and Phase 3A+3B
-(generic provider proxy plus the stream-job WebSocket) exist on
-the `fastify` branch:
+Phase 1, the server-side Phase 2 storage slice, and Phase 3A-C
+(generic provider proxy, stream-job WebSocket, hub passthrough)
+exist on the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -18,7 +18,8 @@ the `fastify` branch:
   exists.
 - `server/fastify/src/config.ts` reads `RISU_API_HOST`,
   `RISU_API_PORT`, `RISU_API_DATA_DIR`, `RISU_API_BODY_LIMIT`,
-  `RISU_API_STATIC_ROOT`, and `TRUST_PROXY`.
+  `RISU_API_STATIC_ROOT`, `TRUST_PROXY`, and `RISU_HUB_URL`
+  (default `https://sv.risuai.xyz`).
 - `server/fastify/src/db.ts` creates `data/risu.db` with
   `schema_version(id, version, revision)`, WAL mode, and foreign
   keys.
@@ -38,9 +39,10 @@ the `fastify` branch:
   `POST /api/v1/backups/:id/restore`,
   `DELETE /api/v1/backups/:id`, `POST /api/v1/proxy/fetch`,
   `POST /api/v1/proxy/stream-jobs`,
-  `DELETE /api/v1/proxy/stream-jobs/:id`, and the WebSocket
-  upgrade at `GET /api/v1/proxy/stream-jobs/:id/ws`.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes}.test.ts`
+  `DELETE /api/v1/proxy/stream-jobs/:id`, the WebSocket upgrade
+  at `GET /api/v1/proxy/stream-jobs/:id/ws`, and
+  `ANY /api/v1/hub/*`.
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub}.test.ts`
   cover the implemented Fastify routes and static serving through
   `pnpm api:test`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
@@ -59,6 +61,16 @@ the `fastify` branch:
   headers); see [`../phases/phase-3-proxy.md`](../phases/phase-3-proxy.md).
   `buildApp` schedules `JobRegistry.tickGc` on a 60s unref'd
   interval and clears it via `onClose`.
+- `server/fastify/src/routes/hub.ts` registers the Phase 3C hub
+  passthrough at `ANY /api/v1/hub/*`. The route strips the
+  `/api/v1/hub` prefix and forwards the suffix to
+  `config.hubUrl` (`RISU_HUB_URL` env, default
+  `https://sv.risuai.xyz`); `x-risu-node-path` overrides the
+  destination URL entirely. It uses the same catch-all
+  content-type parser pattern as the proxy fetch route, strips
+  `content-encoding` / `content-length` / `transfer-encoding`
+  from upstream responses, and follows exactly one 3xx redirect
+  manually.
 
 Other runtime servers still in tree:
 
@@ -67,11 +79,11 @@ Other runtime servers still in tree:
   endpoints (`/api/read`, `/api/write`, `/api/list`) plus
   `/proxy*`, `/hub-proxy/*`, and proxy stream-job WebSocket
   behavior until Phase 3 ports and retires it. The Docker runtime
-  no longer starts this server. Phase 3A landed
-  `POST /api/v1/proxy/fetch` and Phase 3B landed the
-  stream-job HTTP+WS surface; the Express `/proxy*` and
-  `/proxy-stream-jobs` routes stay live until the client is
-  rewired to call the Fastify endpoints.
+  no longer starts this server. Phase 3A-C have ported the
+  proxy fetch, stream-job HTTP+WS, and hub passthrough to
+  Fastify; the Express `/proxy*`, `/proxy-stream-jobs`, and
+  `/hub-proxy/*` routes stay live until the client is rewired
+  to call the Fastify endpoints.
 - `server/hono/` - small Hono scaffold with CSRF middleware,
   `Hello Hono!`, and Node / Bun / Cloudflare static-serving entry
   points. It is not on the Fastify migration path.
@@ -97,11 +109,10 @@ Dockerfile runs `pnpm api:start`, exposes 6002, and persists
   [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
 - **Phase 3.** Provider proxy + hub passthrough + stream-job
   WebSocket. Express server is retired once Phase 3 closes.
-  Phase 3A and Phase 3B landed 2026-05-20: `POST /api/v1/proxy/fetch`
-  and the full stream-job HTTP+WS surface are in place behind
-  `requireAuth` / a WS-only query-parameter ES256 fallback. Hub
-  passthrough and client rewiring are the remaining Phase 3
-  slices, after which Express is deleted.
+  Phase 3A (proxy fetch), Phase 3B (stream-job HTTP+WS), and
+  Phase 3C (hub passthrough) landed 2026-05-20. Client
+  rewiring (`globalApi.svelte.ts`) and Express deletion are the
+  remaining Phase 3 slices.
 - **Phase 6.** Server-side LLM / translation / TTS / image /
   Stable Horde generation endpoints.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.

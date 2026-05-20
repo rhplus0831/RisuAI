@@ -10,17 +10,18 @@ one proxy slice or one `sendChat` extraction slice at a time.
 1. **Phase 3 - Proxy migration.** Port provider proxy, hub
    passthrough, and stream-job WebSocket behavior from
    `server/node/server.cjs` to Fastify.
-   - Phase 3A (`POST /api/v1/proxy/fetch`) and Phase 3B (proxy
-     stream-jobs HTTP+WS) landed 2026-05-20. The header
-     sanitization helpers in `server/fastify/src/proxy.ts` and
-     the `JobRegistry` + `sanitizeLocalTargetUrl` +
-     `runStreamJob` in `server/fastify/src/streamJobs.ts`
-     anchor the surface.
-   - Remaining slices, in order: hub passthrough
-     (`ANY /api/v1/hub/*` with the `x-risu-node-path` override),
-     client rewiring (`globalFetch` / `fetchNative` and the
-     stream-job WS URL builder in `globalApi.svelte.ts` ->
-     Fastify endpoints), then Express deletion +
+   - Phase 3A (`POST /api/v1/proxy/fetch`), Phase 3B (proxy
+     stream-jobs HTTP+WS), and Phase 3C (hub passthrough at
+     `ANY /api/v1/hub/*`) all landed 2026-05-20. The surface
+     is anchored by helpers in `server/fastify/src/proxy.ts`
+     and `server/fastify/src/streamJobs.ts`, and by the hub
+     route in `server/fastify/src/routes/hub.ts` reading
+     `config.hubUrl` (`RISU_HUB_URL` env, default
+     `https://sv.risuai.xyz`).
+   - Remaining slices, in order: client rewiring
+     (`globalFetch` / `fetchNative` / the hub-proxy and
+     stream-job WS URL builders in `globalApi.svelte.ts` ->
+     the new Fastify endpoints), then Express deletion +
      `runserver` removal.
    - Keep the existing client contracts (`/proxy*`,
      `/hub-proxy/*`, `/proxy-stream-jobs`) working until the
@@ -124,6 +125,27 @@ one proxy slice or one `sendChat` extraction slice at a time.
   PNG and stub `supportsInlayImage`. It also uses an
   `xcustom:::` model with `hasImageInput` + the `Unknown`
   tokenizer so token math runs offline.
+
+- **Phase 3C - Hub passthrough on Fastify.** Done 2026-05-20.
+  Adds `ANY /api/v1/hub/*` (`server/fastify/src/routes/hub.ts`)
+  forwarding to `config.hubUrl` (`RISU_HUB_URL` env, default
+  `https://sv.risuai.xyz`). Mirrors the Express
+  `hubProxyFunc` semantics: strip the `/api/v1/hub` prefix
+  and append the suffix; honor `x-risu-node-path` as a
+  complete URL override; drop host / connection /
+  content-length / risu-auth / x-risu-node-path from the
+  forwarded headers; set `origin` to the hub origin; strip
+  `content-encoding` / `content-length` / `transfer-encoding`
+  from upstream responses; follow exactly one 3xx redirect
+  manually; return 502 on upstream connection failure. Adds
+  the `hubUrl` field to `AppConfig` (with a `parseHubUrl`
+  validator) and updates every existing test harness for the
+  new required field. Tests in
+  `server/fastify/__tests__/hub.test.ts` cover auth gating,
+  GET path+query forward, POST body forward + origin rewrite,
+  request header strip, response header strip, the
+  `x-risu-node-path` URL override, single-redirect following,
+  and the 502 failure path.
 
 - **Phase 3B - Proxy stream-jobs (HTTP + WebSocket).** Done
   2026-05-20. Landed in two commits.
