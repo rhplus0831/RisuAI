@@ -25,7 +25,6 @@ import {
   prebuiltAssetCommand,
 } from '../util'
 import { requestChatData } from './request/request'
-import { stableDiff } from './stableDiff'
 import { processScript, processScriptFull, risuChatParser } from './scripts'
 import { exampleMessage } from './exampleMessages'
 import { sayTTS } from './tts'
@@ -49,6 +48,7 @@ import { fireDesktopNotification } from './postGeneration/notification'
 import { evaluateIgp } from './postGeneration/igp'
 import { finalizeStage4 } from './postGeneration/stage4Finalize'
 import { applyEmotionFromResponse } from './postGeneration/emotionFromResponse'
+import { runImggenStableDiff } from './postGeneration/imggenStableDiff'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1937,18 +1937,7 @@ export async function sendChat(
 
       return true
     } else if (currentChar.viewScreen === 'imggen') {
-      const msgs = DBState.db.characters[selectedChar].chats[selectedChat].message
-      let msgStr = ''
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === 'char') {
-          msgStr = `character: ${msgs[i].data.replace(/\n/g, ' ')} \n` + msgStr
-        } else {
-          msgStr = `user: ${msgs[i].data.replace(/\n/g, ' ')} \n` + msgStr
-          break
-        }
-      }
-
-      await stableDiff(currentChar, msgStr)
+      await runImggenStableDiff({ currentChar, selectedChar, selectedChat })
     }
   }
 
