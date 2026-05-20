@@ -6,6 +6,7 @@ vi.mock('../tts', () => import('../__fixtures__/mocks/tts'))
 vi.mock('../inlayScreen', () => import('../__fixtures__/mocks/inlayScreen'))
 vi.mock('../stableDiff', () => import('../__fixtures__/mocks/stableDiff'))
 vi.mock('../prereroll', () => import('../__fixtures__/mocks/prereroll'))
+vi.mock('../files/inlays', () => import('../__fixtures__/mocks/inlays'))
 
 // Stable UUIDs so generationId / chatId are deterministic in snapshots.
 // The counter is exposed via a reset hook so each fixture starts at uuid-0,
@@ -38,6 +39,7 @@ const FIXTURES = [
   'lorebook-keyword',
   'lorebook-constant',
   'lorebook-recursive',
+  'multimodal-image',
   'client-abort',
 ] as const
 
