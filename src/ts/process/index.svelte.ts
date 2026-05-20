@@ -47,6 +47,7 @@ import { evaluateAutoContinue } from './autoContinue'
 import { reportSendChatError } from './sendChatErrors'
 import { fireDesktopNotification } from './postGeneration/notification'
 import { evaluateIgp } from './postGeneration/igp'
+import { finalizeStage4 } from './postGeneration/stage4Finalize'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1734,27 +1735,7 @@ export async function sendChat(
   stageTimings.stage4Start = Date.now()
 
   if (resendChat) {
-    stageTimings.stage4Duration = Date.now() - stageTimings.stage4Start
-
-    if (generationInfo.stageTiming) {
-      generationInfo.stageTiming.stage1 = stageTimings.stage1Duration
-      generationInfo.stageTiming.stage2 = stageTimings.stage2Duration
-      generationInfo.stageTiming.stage3 = stageTimings.stage3Duration
-      generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
-    }
-
-    const lastMessageIndex =
-      DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1
-    if (
-      lastMessageIndex >= 0 &&
-      DBState.db.characters[selectedChar].chats[selectedChat].message[lastMessageIndex]
-        .generationInfo
-    ) {
-      DBState.db.characters[selectedChar].chats[selectedChat].message[
-        lastMessageIndex
-      ].generationInfo = generationInfo
-    }
-
+    finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
     // Release the flag before the recursive call so the inner sendChat's
     // entry guard does not refuse when chatProcessIndex === -1.
     doingChat.set(false)
@@ -1989,26 +1970,7 @@ export async function sendChat(
     }
   }
 
-  stageTimings.stage4Duration = Date.now() - stageTimings.stage4Start
-
-  if (generationInfo.stageTiming) {
-    generationInfo.stageTiming.stage1 = stageTimings.stage1Duration
-    generationInfo.stageTiming.stage2 = stageTimings.stage2Duration
-    generationInfo.stageTiming.stage3 = stageTimings.stage3Duration
-    generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
-  }
-
-  const lastMessageIndex =
-    DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1
-  if (
-    lastMessageIndex >= 0 &&
-    DBState.db.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo
-  ) {
-    DBState.db.characters[selectedChar].chats[selectedChat].message[
-      lastMessageIndex
-    ].generationInfo = generationInfo
-  }
-
+  finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
   return true
   } finally {
     if (iOwnDoingChat) {
