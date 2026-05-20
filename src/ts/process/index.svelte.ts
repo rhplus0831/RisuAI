@@ -10,7 +10,7 @@ import {
 } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
 import { CharEmotion, selectedCharID } from '../stores.svelte'
-import { ChatTokenizer, tokenizeNum } from '../tokenizer'
+import { ChatTokenizer } from '../tokenizer'
 import { language } from '../../lang'
 import { alertError, alertToast } from '../alert'
 import { parseChatML } from '../parser/chatML'
@@ -49,6 +49,7 @@ import { evaluateIgp } from './postGeneration/igp'
 import { finalizeStage4 } from './postGeneration/stage4Finalize'
 import { applyEmotionFromResponse } from './postGeneration/emotionFromResponse'
 import { runImggenStableDiff } from './postGeneration/imggenStableDiff'
+import { runEmotionLlmFallback } from './postGeneration/emotionFallbackLlm'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1827,123 +1828,15 @@ export async function sendChat(
         return true
       }
 
-      function shuffleArray(array: string[]) {
-        for (let i = array.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1))
-          ;[array[i], array[j]] = [array[j], array[i]]
-        }
-        return array
-      }
-
-      let emobias: { [key: number]: number } = {}
-
-      for (const emo of emotionList) {
-        const tokens = await tokenizeNum(emo)
-        for (const token of tokens) {
-          emobias[token] = 10
-        }
-      }
-
-      for (let i = 0; i < tempEmotion.length; i++) {
-        const emo = tempEmotion[i]
-
-        const tokens = await tokenizeNum(emo[0])
-        const modifier = 20 - (tempEmotion.length - (i + 1)) * (20 / 4)
-
-        for (const token of tokens) {
-          emobias[token] -= modifier
-          if (emobias[token] < -100) {
-            emobias[token] = -100
-          }
-        }
-      }
-
-      const promptbody: OpenAIChat[] = [
-        {
-          role: 'system',
-          content: `${DBState.db.emotionPrompt2 || "From the list below, choose a word that best represents a character's outfit description, action, or emotion in their dialogue. Prioritize selecting words related to outfit first, then action, and lastly emotion. Print out the chosen word."}\n\n list: ${shuffleArray(emotionList).join(', ')} \noutput only one word.`,
-        },
-        {
-          role: 'user',
-          content: `"Good morning, Master! Is there anything I can do for you today?"`,
-        },
-        {
-          role: 'assistant',
-          content: 'happy',
-        },
-        {
-          role: 'user',
-          content: result,
-        },
-      ]
-
-      const rq = await requestChatData(
-        {
-          formated: promptbody,
-          bias: emobias,
-          currentChar: currentChar,
-          maxTokens: 30,
-        },
-        'emotion',
+      await runEmotionLlmFallback({
+        result,
+        currentChar,
         abortSignal,
-      )
-
-      if (rq.type === 'fail') {
-        if (abortSignal.aborted) {
-          return true
-        }
-        throwError(rq.result)
-        return true
-      }
-      if (rq.type === 'streaming' || rq.type === 'multiline') {
-        if (abortSignal.aborted) {
-          return true
-        }
-        throwError('Unexpected response type')
-        return true
-      } else {
-        emotionList = currentEmotion.map((a) => {
-          return a[0]
-        })
-        try {
-          const emotion: string = rq.result.replace(/ |\n/g, '').trim().toLocaleLowerCase()
-          let emotionSelected = false
-          for (const emo of currentEmotion) {
-            if (emo[0] === emotion) {
-              const emos: [string, string, number] = [emo[0], emo[1], Date.now()]
-              tempEmotion.push(emos)
-              charemotions[currentChar.chaId] = tempEmotion
-              CharEmotion.set(charemotions)
-              emotionSelected = true
-              break
-            }
-          }
-          if (!emotionSelected) {
-            for (const emo of currentEmotion) {
-              if (emotion.includes(emo[0])) {
-                const emos: [string, string, number] = [emo[0], emo[1], Date.now()]
-                tempEmotion.push(emos)
-                charemotions[currentChar.chaId] = tempEmotion
-                CharEmotion.set(charemotions)
-                emotionSelected = true
-                break
-              }
-            }
-          }
-          if (!emotionSelected && emotionList.includes('neutral')) {
-            const emo = currentEmotion[emotionList.indexOf('neutral')]
-            const emos: [string, string, number] = [emo[0], emo[1], Date.now()]
-            tempEmotion.push(emos)
-            charemotions[currentChar.chaId] = tempEmotion
-            CharEmotion.set(charemotions)
-            emotionSelected = true
-          }
-        } catch (error) {
-          throwError(language.errors.httpError + `${error}`)
-          return true
-        }
-      }
-
+        throwError,
+        emotionPrompt2: DBState.db.emotionPrompt2,
+        tempEmotion,
+        charemotions,
+      })
       return true
     } else if (currentChar.viewScreen === 'imggen') {
       await runImggenStableDiff({ currentChar, selectedChar, selectedChat })
