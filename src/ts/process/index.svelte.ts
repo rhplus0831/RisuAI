@@ -51,6 +51,7 @@ import { runImggenStableDiff } from './postGeneration/imggenStableDiff'
 import { runEmotionLlmFallback } from './postGeneration/emotionFallbackLlm'
 import { runEmotionEmbeddingFallback } from './postGeneration/emotionFallbackEmbedding'
 import { loadAndTrimCharEmotion } from './postGeneration/charEmotionStore'
+import { applyOutputTrigger } from './postGeneration/outputTrigger'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1600,15 +1601,14 @@ export async function sendChat(
 
     addRerolls(generationId, Object.values(lastResponseChunk))
 
-    DBState.db.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(
-      DBState.db.characters[selectedChar].chats[selectedChat],
-    )
-    currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-    const triggerResult = await runTrigger(currentChar, 'output', { chat: currentChat })
-    if (triggerResult && triggerResult.chat) {
-      currentChat = triggerResult.chat
-    }
-    if (triggerResult && triggerResult.sendAIprompt) {
+    const streamTrigger = await applyOutputTrigger({
+      currentChar,
+      selectedChar,
+      selectedChat,
+      runCurrentChatFunction,
+    })
+    currentChat = streamTrigger.triggerChat ?? streamTrigger.chat
+    if (streamTrigger.resendChat) {
       resendChat = true
     }
     const inlayr = runInlayScreen(currentChar, currentChat.message[msgIndex].data)
@@ -1700,16 +1700,16 @@ export async function sendChat(
       addRerolls(generationId, mrerolls)
     }
 
-    DBState.db.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(
-      DBState.db.characters[selectedChar].chats[selectedChat],
-    )
-    currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-
-    const triggerResult = await runTrigger(currentChar, 'output', { chat: currentChat })
-    if (triggerResult && triggerResult.chat) {
-      DBState.db.characters[selectedChar].chats[selectedChat] = triggerResult.chat
+    const nonStreamTrigger = await applyOutputTrigger({
+      currentChar,
+      selectedChar,
+      selectedChat,
+      runCurrentChatFunction,
+    })
+    if (nonStreamTrigger.triggerChat) {
+      DBState.db.characters[selectedChar].chats[selectedChat] = nonStreamTrigger.triggerChat
     }
-    if (triggerResult && triggerResult.sendAIprompt) {
+    if (nonStreamTrigger.resendChat) {
       resendChat = true
     }
   }
