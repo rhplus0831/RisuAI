@@ -54,6 +54,7 @@ import { loadAndTrimCharEmotion } from './postGeneration/charEmotionStore'
 import { applyOutputTrigger } from './postGeneration/outputTrigger'
 import { applyNonStreamResponse } from './postGeneration/nonStreamResponse'
 import { consumeStreamResponse } from './postGeneration/streamResponse'
+import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1430,38 +1431,23 @@ export async function sendChat(
     promptInfo.promptText = promptBodyformatedForChatStore
   }
 
-  //token rechecking
-  let inputTokens = 0
-
-  for (const chat of formated) {
-    inputTokens += await tokenizer.tokenizeChat(chat)
+  const budget = await finalizeRequestBudget(
+    formated,
+    maxContextTokens,
+    DBState.db.maxResponse,
+    tokenizer,
+  )
+  if (!budget.ok) {
+    throwError(
+      language.errors.toomuchtoken +
+        '\n\nAt token rechecking. Required Tokens: ' +
+        budget.inputTokens,
+    )
+    return false
   }
-
-  if (inputTokens > maxContextTokens) {
-    let pointer = 0
-    while (inputTokens > maxContextTokens) {
-      if (pointer >= formated.length) {
-        throwError(
-          language.errors.toomuchtoken + '\n\nAt token rechecking. Required Tokens: ' + inputTokens,
-        )
-        return false
-      }
-      if (formated[pointer].removable) {
-        inputTokens -= await tokenizer.tokenizeChat(formated[pointer])
-        formated[pointer].content = ''
-      }
-      pointer++
-    }
-    formated = formated.filter((v) => {
-      return v.content !== '' || (v.multimodals && v.multimodals.length > 0)
-    })
-  }
-
-  //estimate tokens
-  let outputTokens = DBState.db.maxResponse
-  if (inputTokens + outputTokens > maxContextTokens) {
-    outputTokens = maxContextTokens - inputTokens
-  }
+  formated = budget.formated
+  const inputTokens = budget.inputTokens
+  const outputTokens = budget.outputTokens
   const generationId = v4()
   const generationModel = getGenerationModelString()
 
