@@ -9,7 +9,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-25. The landed slices already moved
+   through Phase 5-26. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
@@ -25,10 +25,13 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    splice, prompt-info text capture, editRequest trigger), the
    provider dispatch (stage-3 transition, preview /
    previewPrompt early returns, `requestChatData` invocation,
-   model override, abort + fail handling), and the response
+   model override, abort + fail handling), the response
    orchestration (streaming / non-streaming branch chooser,
    shared output-trigger, streaming-only inlay + TTS,
-   `addRerolls`, auto-continue decision, IGP) out of
+   `addRerolls`, auto-continue decision, IGP), and the stage-4
+   orchestrator (stage-3 duration writeback, stage-4 transition,
+   resend handoff, notification, provider emotion, emotion
+   fallback routing, imggen dispatch, `finalizeStage4`) out of
    `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
@@ -56,6 +59,52 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - stage-4 orchestrator slice 26.** Done 2026-05-22.
+  Extracted the stage-4 closeout into
+  `src/ts/process/postGeneration/runStage4.ts`. Owns the stage-3
+  duration writeback (`stageTimings.stage3Duration` +
+  `generationInfo.stageTiming.stage3`), the stage-4 transition
+  (`setProcessStage(4)` + `stageTimings.stage4Start`), and four
+  exit branches: (a) `resendChat=true` calls `finalizeStage4`
+  first then returns `{status: 'resend'}`; (b)
+  `viewScreen='emotion' && !emoChanged && !abortSignal.aborted`
+  routes to `runEmotionEmbeddingFallback` or `runEmotionLlmFallback`
+  based on `db.emotionProcesser` and returns `{status: 'done'}`
+  *without* calling `finalizeStage4` (matches production's
+  `return true` from those branches); (c) `viewScreen='imggen'`
+  calls `runImggenStableDiff` then `finalizeStage4`; (d) default
+  path calls `finalizeStage4`. The notification
+  (`fireDesktopNotification(result)` under `db.notification`) and
+  provider-emotion application
+  (`applyEmotionFromResponse({emotion: req.special.emotion,
+  currentChar})`) fire before the routing branches and may flip
+  `emoChanged` to true, short-circuiting the emotion fallback.
+  `currentChar.inlayViewScreen=true` skips both emotion and
+  imggen branches entirely.
+  Seven imports left `index.svelte.ts`:
+  `fireDesktopNotification`, `applyEmotionFromResponse`,
+  `runImggenStableDiff`, `runEmotionLlmFallback`,
+  `runEmotionEmbeddingFallback`, `loadAndTrimCharEmotion`,
+  `finalizeStage4`. The resend recursion (`return await
+  sendChat(chatProcessIndex, {signal: abortSignal})`) stays in the
+  coordinator for the same circular-import reason as the
+  auto-continue handoff. Helper test `runStage4.test.ts` mocks
+  all seven delegates and adds 12 cases pinning the stage
+  transition, resend short-circuit, notification gate, provider-
+  emotion short-circuit, emotion fallback routing (both
+  processors), the `emoChanged=true` and `aborted=true` skip
+  cases, imggen routing, inlayViewScreen skip, and the default
+  path. All 26 sendChat fixtures stay green without re-recording;
+  `index.svelte.ts` drops from 558 to 515 lines.
+
+  Also fixed a latent type-check issue in
+  `orchestrateResponse.test.ts` (slice 5-25): three `as
+  DispatchSuccessReq` casts now use `as unknown as
+  DispatchSuccessReq` to satisfy strict-mode conversion rules in
+  svelte-check. The cast was passing vitest but failing
+  svelte-check; only surfaced when this slice re-ran the full
+  `pnpm check`.
 
 - **Phase 5 - response orchestration slice 25.** Done 2026-05-22.
   Extracted the post-dispatch response stage into

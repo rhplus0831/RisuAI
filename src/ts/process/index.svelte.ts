@@ -21,14 +21,8 @@ import { v4 } from 'uuid'
 import { getModelInfo, LLMFlags } from '../model/modellist'
 import { getModuleToggles } from './modules'
 import { reportSendChatError } from './sendChatErrors'
-import { fireDesktopNotification } from './postGeneration/notification'
-import { finalizeStage4 } from './postGeneration/stage4Finalize'
-import { applyEmotionFromResponse } from './postGeneration/emotionFromResponse'
-import { runImggenStableDiff } from './postGeneration/imggenStableDiff'
-import { runEmotionLlmFallback } from './postGeneration/emotionFallbackLlm'
-import { runEmotionEmbeddingFallback } from './postGeneration/emotionFallbackEmbedding'
-import { loadAndTrimCharEmotion } from './postGeneration/charEmotionStore'
 import { orchestrateResponse } from './postGeneration/orchestrateResponse'
+import { runStage4 } from './postGeneration/runStage4'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
 import { buildDescription } from './promptAssembly/buildDescription'
 import { buildPlainPromptSections } from './promptAssembly/buildPlainPromptSections'
@@ -486,19 +480,24 @@ export async function sendChat(
   }
   currentChat = orchestrate.currentChat
   const result = orchestrate.result
-  let emoChanged = orchestrate.emoChanged
+  const emoChanged = orchestrate.emoChanged
   const resendChat = orchestrate.resendChat
 
-  stageTimings.stage3Duration = Date.now() - stageTimings.stage3Start
-
-  if (generationInfo.stageTiming) {
-    generationInfo.stageTiming.stage3 = stageTimings.stage3Duration
-  }
-  chatProcessStage.set(4)
-  stageTimings.stage4Start = Date.now()
-
-  if (resendChat) {
-    finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
+  const stage4 = await runStage4({
+    req,
+    currentChar,
+    result,
+    resendChat,
+    emoChanged,
+    abortSignal,
+    selectedChar,
+    selectedChat,
+    stageTimings,
+    generationInfo,
+    throwError,
+    setProcessStage: (stage) => chatProcessStage.set(stage),
+  })
+  if (stage4.status === 'resend') {
     // Handoff — see iOwnDoingChat contract above.
     doingChat.set(false)
     iOwnDoingChat = false
@@ -506,48 +505,6 @@ export async function sendChat(
       signal: abortSignal,
     })
   }
-
-  if (DBState.db.notification) {
-    await fireDesktopNotification(result)
-  }
-
-  if (
-    req.special &&
-    applyEmotionFromResponse({ emotion: req.special.emotion, currentChar })
-  ) {
-    emoChanged = true
-  }
-
-  if (!currentChar.inlayViewScreen) {
-    if (currentChar.viewScreen === 'emotion' && !emoChanged && abortSignal.aborted === false) {
-      const { tempEmotion, charemotions } = loadAndTrimCharEmotion(currentChar.chaId)
-
-      if (DBState.db.emotionProcesser === 'embedding') {
-        await runEmotionEmbeddingFallback({
-          result,
-          currentChar,
-          tempEmotion,
-          charemotions,
-        })
-        return true
-      }
-
-      await runEmotionLlmFallback({
-        result,
-        currentChar,
-        abortSignal,
-        throwError,
-        emotionPrompt2: DBState.db.emotionPrompt2,
-        tempEmotion,
-        charemotions,
-      })
-      return true
-    } else if (currentChar.viewScreen === 'imggen') {
-      await runImggenStableDiff({ currentChar, selectedChar, selectedChat })
-    }
-  }
-
-  finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
   return true
   } finally {
     if (iOwnDoingChat) {

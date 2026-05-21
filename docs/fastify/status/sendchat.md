@@ -1,8 +1,8 @@
 # sendChat Status
 
-Date: 2026-05-22 (Phase 5 active through Phase 5-25)
+Date: 2026-05-22 (Phase 5 active through Phase 5-26)
 
-Updated 2026-05-22: Phase 5 extraction is active. The first 25
+Updated 2026-05-22: Phase 5 extraction is active. The first 26
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
@@ -34,10 +34,13 @@ response]` push, character `depth_prompt` splice, prompt-info text
 capture, and the `editRequest` trigger), the provider dispatch
 (stage-3 transition, preview / previewPrompt early returns,
 `requestChatData` invocation, model-override propagation,
-post-provider abort and fail handling), and the response
+post-provider abort and fail handling), the response
 orchestration (streaming / non-streaming branch chooser,
 `addRerolls`, shared output-trigger, streaming-only inlay + TTS,
-auto-continue decision, IGP).
+auto-continue decision, IGP), and the stage-4 orchestrator
+(stage-3→4 transition, resend handoff, notification, provider
+emotion, emotion fallback routing, image-generation dispatch, and
+the final `finalizeStage4` call).
 
 Phase 4 remains complete for the original 17 fixtures, and nine
 narrow Phase 5 gate fixtures have since been added
@@ -65,12 +68,12 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 558 lines. It is
+`src/ts/process/index.svelte.ts` is currently 515 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:248` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:242` -
   validation, lorebook prep, persona, description assembly.
 - `stage2Start` inside
   `src/ts/process/promptAssembly/buildMemoryWindow.ts` - Hypa V3
@@ -87,14 +90,20 @@ The visible timing markers are:
   `requestChatData` or `getGenerationModelString` directly.
 - The streaming / non-streaming branch chooser, post-response
   output-trigger, streaming-only inlay + TTS, auto-continue
-  decision, and IGP now live inside
+  decision, and IGP live inside
   `src/ts/process/postGeneration/orchestrateResponse.ts`. The
   coordinator owns the auto-continue handoff itself (releases the
   `doingChat` lease and recurses into `sendChat`) so the helper
   avoids a circular import.
-- `stage4Start` at `src/ts/process/index.svelte.ts:498` -
-  post-generation (resend handoff, emotion, stable diff, reroll
-  metadata).
+- `stage4Start` inside
+  `src/ts/process/postGeneration/runStage4.ts` - the helper writes
+  `stage3Duration` and `generationInfo.stageTiming.stage3`, flips
+  the stage to 4, then drives the resend handoff (which finalizes
+  stage 4 before returning the resend signal), the notification,
+  the provider-emotion / emotion-fallback / imggen routing, and
+  the final `finalizeStage4` call. The coordinator now only owns
+  the resend recursion itself for the same circular-import reason
+  as the auto-continue handoff.
 
 It reaches into:
 
@@ -303,6 +312,33 @@ Already extracted during Phase 5:
   `applyOutputTrigger`, `runInlayScreen`, `sayTTS`, `addRerolls`,
   `evaluateAutoContinue`, and `evaluateIgp` imports moved out of
   the coordinator (8 imports total).
+- `src/ts/process/postGeneration/runStage4.ts` - the stage-4
+  orchestrator. Writes `stage3Duration` into both `stageTimings`
+  and `generationInfo.stageTiming.stage3`, transitions
+  `chatProcessStage` to 4 via a `setProcessStage` callback, then
+  branches: resend (calls `finalizeStage4` then returns
+  `{status: 'resend'}` so the coordinator can release the
+  `doingChat` lease and recurse into `sendChat({signal:
+  abortSignal})`), notification (`fireDesktopNotification(result)`
+  under `db.notification`), provider emotion
+  (`applyEmotionFromResponse({emotion: req.special.emotion,
+  currentChar})` may set `emoChanged` to true), then under
+  `!inlayViewScreen`: `viewScreen='emotion' && !emoChanged &&
+  !abortSignal.aborted` routes to
+  `runEmotionEmbeddingFallback` or `runEmotionLlmFallback`
+  (depending on `db.emotionProcesser`) and returns
+  `{status: 'done'}` *without* calling `finalizeStage4` (matches
+  production's `return true` from these branches);
+  `viewScreen='imggen'` runs `runImggenStableDiff`. The default
+  path calls `finalizeStage4` and returns `{status: 'done'}`.
+  Seven imports moved out of the coordinator
+  (`fireDesktopNotification`, `applyEmotionFromResponse`,
+  `runImggenStableDiff`, `runEmotionLlmFallback`,
+  `runEmotionEmbeddingFallback`, `loadAndTrimCharEmotion`,
+  `finalizeStage4`). The resend recursion (`return await
+  sendChat(chatProcessIndex, {signal: abortSignal})`) stays in the
+  coordinator for the same circular-import reason as 5-25's
+  auto-continue handoff.
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
@@ -360,7 +396,8 @@ for the extracted modules:
 `buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
 `formatHistoryMessage.test.ts`, `buildHistoryWindow.test.ts`,
 `buildMemoryWindow.test.ts`, `renderFinalPrompt.test.ts`,
-`dispatchRequest.test.ts`, and `orchestrateResponse.test.ts`.
+`dispatchRequest.test.ts`, `orchestrateResponse.test.ts`, and
+`runStage4.test.ts`.
 
 ## Fixture Inventory
 

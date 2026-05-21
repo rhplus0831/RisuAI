@@ -137,7 +137,7 @@ function seedDb(extra: Partial<Database> = {}) {
 
 function baseArgs(over: Partial<Parameters<typeof orchestrateResponse>[0]> = {}) {
   return {
-    req: { type: 'streaming', result: 'fake-stream' } as DispatchSuccessReq,
+    req: { type: 'streaming', result: 'fake-stream' } as unknown as DispatchSuccessReq,
     arg: {},
     nowChatroom: makeChar(),
     currentChar: makeChar(),
@@ -251,7 +251,7 @@ describe('orchestrateResponse - non-streaming branch', () => {
     const initialCurrentChat = makeChat()
     const result = await orchestrateResponse(
       baseArgs({
-        req: { type: 'success', result: 'done' } as DispatchSuccessReq,
+        req: { type: 'success', result: 'done' } as unknown as DispatchSuccessReq,
         currentChat: initialCurrentChat,
       }),
     )
@@ -279,7 +279,7 @@ describe('orchestrateResponse - non-streaming branch', () => {
     fakes.output.next = { chat: makeChat(), triggerChat: null, resendChat: false }
 
     await orchestrateResponse(
-      baseArgs({ req: { type: 'success', result: 'done' } as DispatchSuccessReq }),
+      baseArgs({ req: { type: 'success', result: 'done' } as unknown as DispatchSuccessReq }),
     )
 
     expect(fakes.rerolls.calls).toHaveLength(0)
