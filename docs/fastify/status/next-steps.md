@@ -9,14 +9,14 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-17. The landed slices already moved
+   through Phase 5-18. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
    description assembly, the plain-prompt main / jailbreak /
-   globalNote sections, prompt-template normalization, and the
-   static prompt sections (author note, cot, persona, inlay-view)
-   out of `index.svelte.ts`. The remaining work is now sliced in
+   globalNote sections, prompt-template normalization, the
+   static prompt sections (author note, cot, persona, inlay-view),
+   and the lorebook placement context out of `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
    needed, rather than picking an unrelated tiny helper. Run the
@@ -43,6 +43,37 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - lorebook placement slice 18.** Done 2026-05-21.
+  Extracted `loadLoreBookV3Prompt()` plus the `replaceposition` /
+  `resolvePosition` closures, four lore-placement loops (normal,
+  description with `before_desc` unshift, postEverything system,
+  postEverything assistant), the inject-mode `positionParser`
+  closure, and the `depthPrompts` filter into
+  `src/ts/process/promptAssembly/buildLorebookContext.ts`. The
+  helper mutates `unformated.lorebook` / `.description` /
+  `.postEverything` in place and returns
+  `{ resolvePosition, positionParser, depthPrompts }`. The two
+  depth-prompt loops at the token-preflight and history-splice
+  sites stay inline in `sendChat` because they execute at
+  different stages and consume `lore.depthPrompts` directly. The
+  coordinator now stages `buildPersona` and
+  `buildInlayViewInstruction` *before* `buildLorebookContext` so
+  the original postEverything order is preserved: cot →
+  inlay-view → lore depth=0 system → lore depth=0 assistant
+  (last, for prefill). Two pre-existing `console.log` calls
+  (`console.log(normalActives)` and `console.log(injectionLorePosSet)`)
+  were dropped during the move - both were development noise
+  that survived earlier slices. F4-C `lorebook-position-depth`
+  was landed first; it exercises `before_desc`, `after_desc`,
+  `@@depth 1`, `@@reverse_depth 1`, `@@position pt_<name>`, and
+  `{{position::<name>}}` resolution in one fixture. Helper test
+  `src/ts/process/__tests__/buildLorebookContext.test.ts` adds
+  12 cases covering placement, `resolvePosition` (substitution,
+  no-op, unresolved drop), `positionParser` passthrough, and
+  `depthPrompts` filtering. All 20 sendChat fixtures stay green
+  without re-recording; `index.svelte.ts` drops from 1543 to
+  1419 lines.
 
 - **Phase 5 - static prompt sections slice 17.** Done 2026-05-21.
   Extracted the author-note + chain-of-thought block (previously

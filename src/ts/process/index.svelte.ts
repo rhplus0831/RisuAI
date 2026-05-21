@@ -14,7 +14,6 @@ import { ChatTokenizer } from '../tokenizer'
 import { language } from '../../lang'
 import { alertError, alertToast } from '../alert'
 import { parseChatML } from '../parser/chatML'
-import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import {
   findCharacterbyId,
   getUserName,
@@ -61,6 +60,7 @@ import {
   buildInlayViewInstruction,
   buildPersona,
 } from './promptAssembly/buildStaticPromptSections'
+import { buildLorebookContext } from './promptAssembly/buildLorebookContext'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -288,104 +288,11 @@ export async function sendChat(
   unformated.postEverything.push(...buildCotInstruction(usingPromptTemplate))
 
   unformated.description.push(await buildDescription(currentChar, currentChat))
-
-  const lorepmt = await loadLoreBookV3Prompt()
-
-  const positionRegex = /{{position::(.+?)}}/g
-  const replaceposition = (text: string): { text: string; replaced: boolean } => {
-    let replaced = false
-    const result = text.replace(positionRegex, (match, p1) => {
-      replaced = true
-      const posMatch = 'pt_' + p1
-      const matchingPrompts: string[] = []
-      for (const v of lorepmt.actives) {
-        if (v.pos === posMatch) {
-          matchingPrompts.push(v.prompt)
-        }
-      }
-      return matchingPrompts.join('\n')
-    })
-    return { text: result, replaced }
-  }
-
-  // maxDepth controls how many levels of nesting are resolved. Currently set to 5, adjust if needed.
-  const resolvePosition = (text: string, maxDepth: number = 5) => {
-    let result = text
-    for (let i = 0; i < maxDepth; i++) {
-      const r = replaceposition(result)
-      result = r.text
-      if (!r.replaced) break
-    }
-    result = result.replace(positionRegex, '')
-    return result
-  }
-
-  const normalActives = lorepmt.actives.filter((v) => {
-    return v.pos === '' && v.inject === null
-  })
-  console.log(normalActives)
-
-  for (const lorebook of normalActives) {
-    unformated.lorebook.push({
-      role: lorebook.role,
-      content: risuChatParser(resolvePosition(lorebook.prompt), { chara: currentChar }),
-    })
-  }
-
-  const descActives = lorepmt.actives.filter((v) => {
-    return (
-      v.pos === 'after_desc' ||
-      v.pos === 'before_desc' ||
-      v.pos === 'personality' ||
-      v.pos === 'scenario'
-    )
-  })
-
-  for (const lorebook of descActives) {
-    const c = {
-      role: lorebook.role,
-      content: risuChatParser(resolvePosition(lorebook.prompt), { chara: currentChar }),
-    }
-    if (lorebook.pos === 'before_desc') {
-      unformated.description.unshift(c)
-    } else {
-      unformated.description.push(c)
-    }
-  }
-
   unformated.personaPrompt.push(...buildPersona(currentChar))
   unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
 
-  const postEverythingLorebooks = lorepmt.actives.filter((v) => {
-    return v.pos === 'depth' && v.depth === 0 && v.role !== 'assistant'
-  })
-  for (const lorebook of postEverythingLorebooks) {
-    unformated.postEverything.push({
-      role: lorebook.role,
-      content: risuChatParser(resolvePosition(lorebook.prompt), { chara: currentChar }),
-    })
-  }
-
-  //Since assistant needs to be prefill, we need to add assistant lorebooks after user/system lorebooks
-  const postEverythingAssistantLorebooks = lorepmt.actives.filter((v) => {
-    return v.pos === 'depth' && v.depth === 0 && v.role === 'assistant'
-  })
-
-  const injectionLorebooks = lorepmt.actives.filter((v) => {
-    return v.inject && !v.inject.lore
-  })
-
-  const injectionLorePosSet = new Set<string>()
-  for (const lorebook of injectionLorebooks) {
-    injectionLorePosSet.add(lorebook.inject.location)
-  }
-
-  for (const lorebook of postEverythingAssistantLorebooks) {
-    unformated.postEverything.push({
-      role: lorebook.role,
-      content: risuChatParser(resolvePosition(lorebook.prompt), { chara: currentChar }),
-    })
-  }
+  const lore = await buildLorebookContext(currentChar, unformated)
+  const { resolvePosition, positionParser, depthPrompts } = lore
 
   //await tokenize currernt
   let currentTokens = DBState.db.maxResponse
@@ -393,33 +300,6 @@ export async function sendChat(
 
   //for unexpected error
   currentTokens += 50
-
-  const positionParser = (text: string, loc: string) => {
-    console.log(injectionLorePosSet)
-    if (injectionLorePosSet.has(loc)) {
-      const matchings = injectionLorebooks.filter((v) => {
-        return v.inject.location === loc
-      })
-      for (const lore of matchings) {
-        switch (lore.inject.operation) {
-          case 'append': {
-            text += ' ' + lore.prompt
-            break
-          }
-          case 'prepend': {
-            text = lore.prompt + ' ' + text
-            break
-          }
-          case 'replace': {
-            text = text.replace(lore.inject.param, lore.prompt)
-            break
-          }
-        }
-      }
-    }
-
-    return resolvePosition(text)
-  }
 
   let hasCachePoint = false
   if (promptTemplate) {
@@ -821,10 +701,6 @@ export async function sendChat(
     index++
   }
   console.log(JSON.stringify(chats, null, 2))
-
-  const depthPrompts = lorepmt.actives.filter((v) => {
-    return (v.pos === 'depth' && v.depth > 0) || v.pos === 'reverse_depth'
-  })
 
   for (const depthPrompt of depthPrompts) {
     const chat: OpenAIChat = {
