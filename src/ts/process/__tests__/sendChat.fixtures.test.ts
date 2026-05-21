@@ -141,6 +141,7 @@ const FIXTURES = [
   'history-media-fallback',
   'start-trigger-control',
   'start-trigger-stop',
+  'prompt-info-text',
 ] as const
 
 describe('sendChat fixtures', () => {

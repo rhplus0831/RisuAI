@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { selectedCharID } from '../../stores.svelte'
+import { DBState, selectedCharID } from '../../stores.svelte'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -42,9 +42,20 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
 
   // Seed with full defaults then overlay the fixture's overrides.
   const seed = (fixture.db ?? {}) as Database
+  // setDatabase forcibly resets some web-only fields (e.g. `promptInfoInsideChat`)
+  // regardless of caller intent. Capture them up front so we can re-apply
+  // post-seed when the fixture explicitly set a value.
+  const promptInfoOverride = fixture.db?.promptInfoInsideChat
+  const promptTextInfoOverride = fixture.db?.promptTextInfoInsideChat
   setDatabase(seed)
   // setDatabase mutates `seed` in place and assigns it to DBState.db via setDatabaseLite.
   // Characters/chats from the fixture survive because they're carried in `seed`.
+  if (promptInfoOverride !== undefined) {
+    DBState.db.promptInfoInsideChat = promptInfoOverride
+  }
+  if (promptTextInfoOverride !== undefined) {
+    DBState.db.promptTextInfoInsideChat = promptTextInfoOverride
+  }
 
   const selectId = fixture.selectedCharID ?? 0
   selectedCharID.set(selectId)
