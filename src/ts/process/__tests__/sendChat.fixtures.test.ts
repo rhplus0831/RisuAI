@@ -25,6 +25,23 @@ vi.mock('../memory/hypav3', async (importActual) => {
 // editRequest marker hook.
 vi.mock('../scriptings', () => import('../__fixtures__/mocks/scriptings'))
 
+// transformers.runImageEmbedding lazily imports @huggingface/transformers,
+// which we don't want vitest to pull in. The history-media-fallback fixture
+// exercises the no-image-input caption path, so we replace just that export
+// and preserve everything else via importActual.
+vi.mock('../transformers', async (importActual) => {
+  const actual = await importActual<typeof import('../transformers')>()
+  return {
+    ...actual,
+    runImageEmbedding: async () => [{ generated_text: 'fake caption' }],
+  }
+})
+
+// globalApi.svelte.readImage reads via localforage in non-tauri contexts; in
+// vitest forageStorage returns undefined and Buffer.from(undefined) crashes.
+// history-media-fallback hits readImage for the {{asset_prompt::icon}} path;
+// we replace just that export and keep the rest via importActual.
+
 // Stable UUIDs so generationId / chatId are deterministic in snapshots.
 // The counter is exposed via a reset hook so each fixture starts at uuid-0,
 // keeping snapshots independent of test order.
@@ -65,6 +82,7 @@ const FIXTURES = [
   'utility-bot-template',
   'lorebook-position-depth',
   'prompt-template-memory-cache',
+  'history-media-fallback',
 ] as const
 
 describe('sendChat fixtures', () => {
