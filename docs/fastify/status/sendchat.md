@@ -1,8 +1,8 @@
 # sendChat Status
 
-Date: 2026-05-22 (Phase 5 active through Phase 5-26)
+Date: 2026-05-22 (Phase 5 active through Phase 5-27)
 
-Updated 2026-05-22: Phase 5 extraction is active. The first 26
+Updated 2026-05-22: Phase 5 extraction is active. The first 27
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
@@ -37,10 +37,13 @@ capture, and the `editRequest` trigger), the provider dispatch
 post-provider abort and fail handling), the response
 orchestration (streaming / non-streaming branch chooser,
 `addRerolls`, shared output-trigger, streaming-only inlay + TTS,
-auto-continue decision, IGP), and the stage-4 orchestrator
+auto-continue decision, IGP), the stage-4 orchestrator
 (stage-3→4 transition, resend handoff, notification, provider
 emotion, emotion fallback routing, image-generation dispatch, and
-the final `finalizeStage4` call).
+the final `finalizeStage4` call), and the entry context
+(preset-chain selection, stats counter, selected character/chat
+lookup, lastInteraction stamp, chatId backfill, promptInfo seed,
+tokenizer + maxContextTokens setup).
 
 Phase 4 remains complete for the original 17 fixtures, and nine
 narrow Phase 5 gate fixtures have since been added
@@ -68,12 +71,12 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 515 lines. It is
+`src/ts/process/index.svelte.ts` is currently 448 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:242` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:175` -
   validation, lorebook prep, persona, description assembly.
 - `stage2Start` inside
   `src/ts/process/promptAssembly/buildMemoryWindow.ts` - Hypa V3
@@ -120,6 +123,31 @@ It reaches into:
 
 Already extracted during Phase 5:
 
+- `src/ts/process/sendChatContext.ts` - the entry-context setup.
+  Owns the preset-chain selection (gated on `chatProcessIndex === -1`
+  + `db.presetChain`; random pick from the comma-separated names;
+  `changeToPreset(findId, true)` on hit or `alertToast` on miss),
+  `db.statics.messages += 1` increment, `selectedChar = get(selectedCharID)`,
+  `nowChatroom = DBState.db.characters[selectedChar]`,
+  `lastInteraction = Date.now()`, `selectedChat = nowChatroom.chatPage`,
+  the chatId backfill loop, the prompt-info seed (gated on
+  `db.promptInfoInsideChat`, capturing `promptName` and the
+  `parseToggleSyntax` + `getModuleToggles` output as
+  `promptToggles`), the gpt-vs-non-gpt `caculatedChatTokens` choice
+  (5 vs 3) with the `arg.chatAdditonalTokens` override, the
+  `ChatTokenizer` construction with the `'noName'`/`'name'` strategy,
+  and the `maxContextTokens = db.maxContext` read. Returns
+  `{ selectedChar, selectedChat, nowChatroom, promptInfo, tokenizer,
+  maxContextTokens }`. The coordinator keeps the closures
+  (`throwError`, `runCurrentChatFunction`, `reformatContent`,
+  `findCharacterbyIdwithCache`) and the `currentChar = nowChatroom`
+  + `currentChat = runCurrentChatFunction(...)` calls in scope
+  because `runCurrentChatFunction` closes over `currentChar`. The
+  `changeToPreset`, `alertToast`, `parseToggleSyntax`,
+  `getModuleToggles`, `ChatTokenizer`, `selectedCharID`,
+  `MessagePresetInfo`, and `v4` (uuid) imports moved out of the
+  coordinator (8 imports total; uuid now has zero call sites in
+  `index.svelte.ts`).
 - `src/ts/process/autoContinue.ts` - `evaluateAutoContinue`.
 - `src/ts/process/sendChatErrors.ts` - `reportSendChatError`.
 - `src/ts/process/postGeneration/notification.ts` -
@@ -396,8 +424,8 @@ for the extracted modules:
 `buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
 `formatHistoryMessage.test.ts`, `buildHistoryWindow.test.ts`,
 `buildMemoryWindow.test.ts`, `renderFinalPrompt.test.ts`,
-`dispatchRequest.test.ts`, `orchestrateResponse.test.ts`, and
-`runStage4.test.ts`.
+`dispatchRequest.test.ts`, `orchestrateResponse.test.ts`,
+`runStage4.test.ts`, and `sendChatContext.test.ts`.
 
 ## Fixture Inventory
 

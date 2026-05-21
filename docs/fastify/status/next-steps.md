@@ -9,7 +9,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-26. The landed slices already moved
+   through Phase 5-27. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
@@ -28,10 +28,13 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    model override, abort + fail handling), the response
    orchestration (streaming / non-streaming branch chooser,
    shared output-trigger, streaming-only inlay + TTS,
-   `addRerolls`, auto-continue decision, IGP), and the stage-4
+   `addRerolls`, auto-continue decision, IGP), the stage-4
    orchestrator (stage-3 duration writeback, stage-4 transition,
    resend handoff, notification, provider emotion, emotion
-   fallback routing, imggen dispatch, `finalizeStage4`) out of
+   fallback routing, imggen dispatch, `finalizeStage4`), and the
+   entry context (preset-chain selection, stats counter,
+   character/chat lookup, chatId backfill, promptInfo seed,
+   tokenizer + maxContextTokens setup) out of
    `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
@@ -59,6 +62,50 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - entry context slice 27.** Done 2026-05-22.
+  Extracted the sendChat entry-context setup into
+  `src/ts/process/sendChatContext.ts`. The new helper takes
+  `{chatProcessIndex, chatAdditonalTokens}` and returns
+  `{selectedChar, selectedChat, nowChatroom, promptInfo,
+  tokenizer, maxContextTokens}`. Owns the preset-chain selection
+  (gated on `chatProcessIndex === -1` and `db.presetChain`;
+  random pick from comma-separated names; `changeToPreset(id, true)`
+  on hit, `alertToast` on miss), `db.statics.messages += 1`, the
+  `selectedCharID` store lookup, the `nowChatroom.lastInteraction`
+  stamp, `selectedChat = nowChatroom.chatPage`, the chatId
+  backfill loop (with the `??` quirk that intentionally
+  preserves an existing empty-string `chatId`), the promptInfo
+  seed (gated on `db.promptInfoInsideChat`; captures
+  `promptName` from the active botPreset and `promptToggles`
+  from `parseToggleSyntax(customPromptTemplateToggle +
+  getModuleToggles())` with `'select'`/`'text'`/raw='1' branches),
+  the gpt-vs-non-gpt `caculatedChatTokens` choice (5 vs 3) with
+  the `arg.chatAdditonalTokens` override, the `ChatTokenizer`
+  construction with `'noName'`/`'name'` strategy, and the
+  `maxContextTokens` read. The coordinator keeps the closures
+  (`throwError`, `runCurrentChatFunction`, `reformatContent`,
+  `findCharacterbyIdwithCache`) and the `currentChar = nowChatroom`
+  + `currentChat = runCurrentChatFunction(...)` calls in scope
+  because `runCurrentChatFunction` closes over `currentChar`.
+  Eight imports left `index.svelte.ts`: `changeToPreset`,
+  `alertToast`, `parseToggleSyntax`, `getModuleToggles`,
+  `ChatTokenizer`, `selectedCharID`, `MessagePresetInfo`, `v4`.
+  uuid now has zero call sites in the coordinator. Helper test
+  `sendChatContext.test.ts` adds 15 cases pinning preset-chain
+  hit/miss/reentrant (verifying side effects via
+  `DBState.db.botPresetsId` rather than mocking
+  `changeToPreset` — vi.mock on `database.svelte.ts` did not
+  reliably intercept exports, mirroring the known `.svelte.ts`
+  mocking limitation from slice 5-20), the stats counter,
+  lastInteraction stamp, chatId backfill (with the `??`
+  empty-string preservation quirk), promptInfo for
+  `promptInfoInsideChat=false`/`=true` with `botPresets[id].name`,
+  select / text / boolean toggle harvest, tokenizer gpt /
+  non-gpt / override branches, and selectedChar / selectedChat
+  lookup. All 26 sendChat fixtures stay green without
+  re-recording; `index.svelte.ts` drops from 515 to 448 lines
+  — under the 500-line stretch goal that slice 5-28 targets.
 
 - **Phase 5 - stage-4 orchestrator slice 26.** Done 2026-05-22.
   Extracted the stage-4 closeout into

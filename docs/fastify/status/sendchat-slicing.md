@@ -16,8 +16,8 @@ gate first, then land the extraction slice. Update this file and
 
 ## Current Code Map
 
-`src/ts/process/index.svelte.ts` is 515 lines. Phase 5-1 through
-5-26 already extracted auto-continue, owned `doingChat` lifecycle,
+`src/ts/process/index.svelte.ts` is 448 lines. Phase 5-1 through
+5-27 already extracted auto-continue, owned `doingChat` lifecycle,
 error reporting, response loops, most post-generation helpers, final
 request-budget recheck, character description, plain-prompt main /
 jailbreak / global-note sections, prompt-template normalization
@@ -51,18 +51,23 @@ non-streaming branch chooser, shared output-trigger, streaming-only
 inlay + TTS, addRerolls, evaluateAutoContinue, evaluateIgp;
 3-variant discriminated union return that surfaces the auto-continue
 handoff back to the coordinator to avoid a circular `sendChat`
-import), and the stage-4 orchestrator (stage-3 duration writeback,
+import), the stage-4 orchestrator (stage-3 duration writeback,
 stage-4 transition, resend handoff, notification, provider emotion,
 emotion fallback routing, imggen dispatch, `finalizeStage4`;
 2-variant discriminated union return that surfaces the resend
-handoff back to the coordinator).
+handoff back to the coordinator), and the entry context
+(preset-chain selection, stats counter, character + chat lookup,
+lastInteraction stamp, chatId backfill, promptInfo seed, tokenizer
++ maxContextTokens setup; the coordinator now holds only the
+lifecycle closures, the depth-prompt + triggerResult distribution,
+and the orchestration wiring).
 
 The work still inside the coordinator is clustered here:
 
 | Lines   | Remaining responsibility                                                                                                      | Target owner after Phase 5           |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| 91-244  | Entry guard, preset-chain switch, selected character/chat setup, prompt-info seed, tokenizer setup.                           | `sendChatContext` / lifecycle helper |
-| 347-377 | Depth-prompt history splice and `triggerResult.additonalSysPrompt` distribution (`promptend` / `historyend` / `start` slots). | prompt render helper (or its setup)  |
+| 80-160  | Entry guard + `doingChat` lifecycle; closures (`throwError`, `runCurrentChatFunction`, `reformatContent`, `findCharacterbyIdwithCache`); `currentChar` / `currentChat` assignment.    | coordinator (closures stay).        |
+| 277-307 | Depth-prompt history splice and `triggerResult.additonalSysPrompt` distribution (`promptend` / `historyend` / `start` slots). | prompt render helper (or 5-28 closeout). |
 
 ## Phase 4 Fixture Gates
 
@@ -102,7 +107,7 @@ suite is the acceptance test.
 | 5-24 Dispatch request               | done 2026-05-22 | Extracted the stage-3 transition (with `setProcessStage` callback + `stageTimings.stage3Start`), the `arg.preview` early return, `generationId` + `generationModel` + `generationInfo` construction, the `requestChatData(...)` call with the full payload, the `req.model` override into `generationInfo.model`, the `arg.previewPrompt + req.type === 'success'` previewPrompt early return, the post-provider `abortSignal.aborted` check, and the `req.type === 'fail'` early return into `src/ts/process/dispatch/dispatchRequest.ts`. Returns a 5-variant discriminated union (`preview` / `previewPrompt` / `aborted` / `failed` / `success`); the coordinator owns the `previewFormated` / `previewBody` writes, the `throwError(reason)` on failure, and `generationInfo` attachment for both success and failed paths. The `v4` (uuid), `getGenerationModelString`, and `requestChatData` imports moved out of the coordinator (uuid stays for the `chatId` backfill at line 205). Two pre-existing `console.log` debug calls dropped during the move. | F4-G (landed)                                                                                                                                     |
 | 5-25 Response orchestration         | done 2026-05-22 | Extracted the streaming / non-streaming branch chooser, the shared `applyOutputTrigger`, the streaming-only `runInlayScreen` + DB writeback + `sayTTS`, the non-stream `triggerChat` DB writeback, `addRerolls`, `evaluateAutoContinue` decision, and `evaluateIgp` into `src/ts/process/postGeneration/orchestrateResponse.ts`. Returns a 3-variant discriminated union (`aborted` / `continue` / `done`); the coordinator owns the auto-continue handoff itself (releases the `doingChat` lease, resets `iOwnDoingChat`, recursively calls the exported `sendChat`) to avoid a circular import. The streaming-branch vs non-streaming-branch `currentChat` asymmetry is preserved verbatim. Eight imports moved out of the coordinator (`consumeStreamResponse`, `applyNonStreamResponse`, `applyOutputTrigger`, `runInlayScreen`, `sayTTS`, `addRerolls`, `evaluateAutoContinue`, `evaluateIgp`). | Existing fixtures cover the routing exhaustively; `orchestrateResponse.test.ts` adds 7 cases that mock all 8 delegates and pin the discriminated-union dispatch shape. |
 | 5-26 Stage-4 orchestrator           | done 2026-05-22 | Extracted the stage-3 duration writeback, the stage-4 transition (`setProcessStage(4)` + `stage4Start`), the resend handoff (calls `finalizeStage4` first), the notification dispatch, the provider-emotion application, the emotion-fallback routing (embedding vs LLM under `viewScreen='emotion' && !emoChanged && !aborted`), the imggen dispatch under `viewScreen='imggen'`, and the default-path `finalizeStage4` into `src/ts/process/postGeneration/runStage4.ts`. Returns a 2-variant discriminated union (`resend` / `done`); the coordinator owns the resend recursion itself to avoid a circular `sendChat` import. Emotion-fallback paths intentionally skip the final `finalizeStage4` (matches production's `return true` from those branches). Seven imports moved out of the coordinator (`fireDesktopNotification`, `applyEmotionFromResponse`, `runImggenStableDiff`, `runEmotionLlmFallback`, `runEmotionEmbeddingFallback`, `loadAndTrimCharEmotion`, `finalizeStage4`). | Existing fixtures cover the default routing; `runStage4.test.ts` adds 12 cases mocking all seven delegates to pin the discriminated-union dispatch and the emotion-fallback / inlayViewScreen / abort gating. |
-| 5-27 Entry context                  | open            | Extract preset-chain selection, stat counter, selected character/chat lookup, chatId backfill, prompt-info seed, tokenizer creation, and current-chat parser pass. This comes late because many earlier slices currently close over these values.                                                                                                                                                                                                                                                                                                                                | Existing fixtures plus a focused prompt-info seed unit test.                                                                                      |
+| 5-27 Entry context                  | done 2026-05-22 | Extracted the preset-chain selection (random pick + `changeToPreset` on hit, `alertToast` on miss; gated on `chatProcessIndex === -1`), the `db.statics.messages` increment, the `selectedCharID` lookup + `lastInteraction` stamp + `chatPage` read, the chatId backfill, the promptInfo seed (gated on `db.promptInfoInsideChat` with `botPresets[botPresetsId].name` and `parseToggleSyntax + getModuleToggles` toggle harvest), the gpt-vs-non-gpt `caculatedChatTokens` choice + override, the `ChatTokenizer` construction, and the `maxContextTokens` read into `src/ts/process/sendChatContext.ts`. The coordinator keeps the closures and the `runCurrentChatFunction` parser pass in scope because they close over `currentChar`. Eight imports moved out of the coordinator (`changeToPreset`, `alertToast`, `parseToggleSyntax`, `getModuleToggles`, `ChatTokenizer`, `selectedCharID`, `MessagePresetInfo`, `v4` — uuid now has zero call sites in the coordinator). | `sendChatContext.test.ts` adds 15 cases pinning preset-chain hit/miss/reentrant, the stats counter, lastInteraction stamp, chatId backfill (with the `??` falsy-string preservation quirk), promptInfo for `promptInfoInsideChat=false` and `=true` with select/text/boolean toggles, tokenizer gpt/non-gpt branches, and selectedChar/selectedChat lookup. |
 | 5-28 Coordinator closeout           | open            | Inline cleanup after the preceding slices: remove dead locals, make stage handoffs explicit, verify `index.svelte.ts` is under 500 lines, and update status docs.                                                                                                                                                                                                                                                                                                                                                                                                                | All gates satisfied                                                                                                                               |
 
 ## Acceptance Per Slice

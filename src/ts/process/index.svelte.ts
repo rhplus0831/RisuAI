@@ -3,24 +3,15 @@ import {
   type character,
   type MessageGenerationInfo,
   type Chat,
-  type MessagePresetInfo,
-  changeToPreset,
 } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
-import { selectedCharID } from '../stores.svelte'
-import { ChatTokenizer } from '../tokenizer'
 import { language } from '../../lang'
-import { alertError, alertToast } from '../alert'
-import {
-  findCharacterbyId,
-  trimUntilPunctuation,
-  parseToggleSyntax,
-} from '../util'
+import { alertError } from '../alert'
+import { findCharacterbyId, trimUntilPunctuation } from '../util'
 import { risuChatParser } from './scripts'
-import { v4 } from 'uuid'
 import { getModelInfo, LLMFlags } from '../model/modellist'
-import { getModuleToggles } from './modules'
 import { reportSendChatError } from './sendChatErrors'
+import { setupSendChatContext } from './sendChatContext'
 import { orchestrateResponse } from './postGeneration/orchestrateResponse'
 import { runStage4 } from './postGeneration/runStage4'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
@@ -165,78 +156,20 @@ export async function sendChat(
   }
 
   try {
-  if (chatProcessIndex === -1 && DBState.db.presetChain) {
-    const names = DBState.db.presetChain.split(',').map((v) => v.trim())
-    const randomSelect = Math.floor(Math.random() * names.length)
-    const ele = names[randomSelect]
-
-    const findId = DBState.db.botPresets.findIndex((v) => {
-      return v.name === ele
-    })
-
-    if (findId === -1) {
-      alertToast(`Cannot find preset: ${ele}`)
-    } else {
-      changeToPreset(findId, true)
-    }
-  }
-
-  DBState.db.statics.messages += 1
-  selectedChar = get(selectedCharID)
-  const nowChatroom = DBState.db.characters[selectedChar]
-  nowChatroom.lastInteraction = Date.now()
-  selectedChat = nowChatroom.chatPage
-  nowChatroom.chats[nowChatroom.chatPage].message = nowChatroom.chats[
-    nowChatroom.chatPage
-  ].message.map((v) => {
-    v.chatId = v.chatId ?? v4()
-    return v
+  const ctx = setupSendChatContext({
+    chatProcessIndex,
+    chatAdditonalTokens: arg.chatAdditonalTokens,
   })
-
-  let promptInfo: MessagePresetInfo = {}
-  let initialPresetNameForPromptInfo = null
-  let initialPromptTogglesForPromptInfo: {
-    key: string
-    value: string
-  }[] = []
-  if (DBState.db.promptInfoInsideChat) {
-    initialPresetNameForPromptInfo = DBState.db.botPresets[DBState.db.botPresetsId]?.name ?? ''
-    initialPromptTogglesForPromptInfo = parseToggleSyntax(
-      DBState.db.customPromptTemplateToggle + getModuleToggles(),
-    ).flatMap((toggle) => {
-      const raw = DBState.db.globalChatVariables[`toggle_${toggle.key}`]
-      if (toggle.type === 'select' || toggle.type === 'text') {
-        return [{ key: toggle.value, value: toggle.options[raw] }]
-      }
-      if (raw === '1') {
-        return [{ key: toggle.value, value: 'ON' }]
-      }
-      return []
-    })
-
-    promptInfo = {
-      promptName: initialPresetNameForPromptInfo,
-      promptToggles: initialPromptTogglesForPromptInfo,
-    }
-  }
-
-  let caculatedChatTokens = 0
-  if (DBState.db.aiModel.startsWith('gpt')) {
-    caculatedChatTokens += 5
-  } else {
-    caculatedChatTokens += 3
-  }
+  selectedChar = ctx.selectedChar
+  selectedChat = ctx.selectedChat
+  const nowChatroom = ctx.nowChatroom
+  let promptInfo = ctx.promptInfo
+  const tokenizer = ctx.tokenizer
+  const maxContextTokens = ctx.maxContextTokens
 
   currentChar = nowChatroom
-
-  let chatAdditonalTokens = arg.chatAdditonalTokens ?? caculatedChatTokens
-  const tokenizer = new ChatTokenizer(
-    chatAdditonalTokens,
-    DBState.db.aiModel.startsWith('gpt') ? 'noName' : 'name',
-  )
   let currentChat = runCurrentChatFunction(nowChatroom.chats[selectedChat])
   nowChatroom.chats[selectedChat] = currentChat
-  let maxContextTokens = DBState.db.maxContext
 
   chatProcessStage.set(1)
   stageTimings.stage1Start = Date.now()
