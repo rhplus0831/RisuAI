@@ -1,6 +1,6 @@
 # Runtime Stages
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 This doc describes the stages a `sendChat` invocation moves through
 and who owns each stage **after the migration**. Before migration
@@ -11,11 +11,11 @@ The stage names match the existing `stage1`-`stage4` timing markers
 in `src/ts/process/index.svelte.ts` so a reader can trace from the
 current code to the future shape. The current timing markers do not
 perfectly bracket the future server modules; they are trace anchors.
-Phase 5 has already extracted some Stage 2 / Stage 3 / Stage 4
-helpers into browser modules under `src/ts/process/promptAssembly/`,
-`src/ts/process/promptBudget/`, and
-`src/ts/process/postGeneration/`, but the server ownership described
-below has not moved yet.
+Phase 5 has extracted Stage 1 setup plus the Stage 2 / Stage 3 /
+Stage 4 work into browser modules under `src/ts/process/`,
+`src/ts/process/promptAssembly/`, `src/ts/process/promptBudget/`,
+`src/ts/process/dispatch/`, and `src/ts/process/postGeneration/`,
+but the server ownership described below has not moved yet.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -45,10 +45,9 @@ Owner (after migration): server.
 - Persists the user row (for non-preview, non-reset modes) before
   prompt assembly begins.
 
-The current `sendChat` does this work in browser code around
-function entry through `stageTimings.stage1Start` at
-`src/ts/process/index.svelte.ts:259` and continues browser-side
-validation / setup until Stage 3 dispatch.
+The current browser path does this setup in
+`src/ts/process/sendChatContext.ts`, then starts Stage 1 in the
+coordinator at `src/ts/process/index.svelte.ts:175`.
 
 ## Stage 2 - Prompt assembly
 
@@ -62,12 +61,12 @@ Owner (after migration): server.
 - Computes the final OpenAI-shaped `messages[]` payload.
 - Runs `editRequest` triggers in the server-side trigger sandbox.
 
-The current `sendChat` does this work in browser code around the
-`stageTimings.stage1Start` and `stageTimings.stage2Start` trace
-points. As of 2026-05-21, `stage2Start` is at
-`src/ts/process/index.svelte.ts:330` and currently wraps the Hypa V3
-memory call, while other prompt assembly work still lives before and
-after that marker.
+The current browser path does this work through
+`src/ts/process/promptAssembly/*` and
+`src/ts/process/promptBudget/*`. The `stage2Start` trace point is
+written inside `src/ts/process/promptAssembly/buildMemoryWindow.ts`
+only on the Hypa V3 branch; other prompt assembly work runs before
+and after that marker.
 
 ## Stage 3 - Provider dispatch and streaming
 
@@ -83,13 +82,11 @@ Owner (after migration): server.
 - On provider error, runs the cleanup / restoration patches and
   emits `error`.
 
-The current `sendChat` does this work between
-`stageTimings.stage3Start` at `src/ts/process/index.svelte.ts:803`
-and `stageTimings.stage3Duration` around
-`src/ts/process/index.svelte.ts:951`. Phase 5 has extracted the
-non-streaming response loop to
-`src/ts/process/postGeneration/nonStreamResponse.ts` and the stream
-reader loop to `src/ts/process/postGeneration/streamResponse.ts`.
+The current browser path writes `stageTimings.stage3Start` in
+`src/ts/process/dispatch/dispatchRequest.ts`, calls
+`requestChatData()`, and then routes the provider result through
+`src/ts/process/postGeneration/orchestrateResponse.ts`,
+`nonStreamResponse.ts`, and `streamResponse.ts`.
 
 ## Stage 4 - Finalize and post-generation
 
@@ -116,10 +113,10 @@ output. Server still does the heavy lifting where it can (image
 generation provider call, text-to-speech provider call), but the
 browser owns playback / rendering.
 
-The current `sendChat` does this work after
-`stageTimings.stage4Start` at `src/ts/process/index.svelte.ts:957`
-through the end of the function, with several post-generation
-helpers already split under `src/ts/process/postGeneration/`.
+The current browser path writes `stageTimings.stage4Start` and runs
+the closeout in `src/ts/process/postGeneration/runStage4.ts`, with
+the delegated post-generation helpers under
+`src/ts/process/postGeneration/`.
 
 ## How the stages map to phases
 

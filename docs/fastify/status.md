@@ -1,6 +1,6 @@
 # Migration Status
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 This is the status router. Concrete inventories live in the shards
 under [`status/`](status/).
@@ -22,20 +22,14 @@ under [`status/`](status/).
   The original 17 fixtures landed under
   `src/ts/process/__fixtures__/` with
   per-fixture DB / upstream / expected files plus targeted
-  `vi.mock`s for the heavy side-effect modules. Phase 5 has since
-  added seven narrow gate fixtures, so the active snapshot count is 24.
-- Phase 5 sendChat extraction is active. Commits `3c5a92b2`
-  through `8ac144f7` landed the first 21 slices: auto-continue
-  decision logic, `doingChat` ownership, error reporting,
-  notification / IGP / stage-4 helpers, emotion helpers, image
-  generation post-processing, output-trigger reuse, the
-  non-streaming + streaming response loops, final request-budget
-  recheck, description and plain-prompt helpers, prompt-template
-  normalization, static prompt sections, lorebook placement,
-  template token preflight, per-message history formatting, and
-  history-window assembly. The coordinator still lives in
-  `src/ts/process/index.svelte.ts`, now 1017 lines. Remaining
-  Phase 5 work is sliced in
+  `vi.mock`s for the heavy side-effect modules. Phase 5 added nine
+  narrow gate fixtures, so the active snapshot count is 26.
+- Phase 5 sendChat extraction closed on 2026-05-22. Commits
+  `3c5a92b2` through `a7e2831d` landed all 28 slices: the
+  coordinator now lives in `src/ts/process/index.svelte.ts` at
+  445 lines, while prompt assembly, request budgeting, dispatch,
+  response orchestration, Stage 4 closeout, and entry-context setup
+  live in focused helper modules. The slice history is archived in
   [`status/sendchat-slicing.md`](status/sendchat-slicing.md).
 - Phase 3A, Phase 3B, and Phase 3C all landed on 2026-05-20.
   `POST /api/v1/proxy/fetch` is in place behind `requireAuth`,
@@ -74,18 +68,13 @@ under [`status/`](status/).
 
 ## Active phase
 
-Phase 5 (`sendChat` extraction) is the active branch work. The
-landed slices now cover Stage 3 / Stage 4 support code plus major
-Stage 2 prompt-assembly and history helpers while keeping the
-24-snapshot fixture suite as the behavioral guardrail. The next
-pickup should follow the first open entry in
-[`status/sendchat-slicing.md`](status/sendchat-slicing.md) rather
-than starting Phase 6.
+Phase 6 (server-side LLM / translation / TTS / image generation) is
+the next branch work. It starts from the Phase 5 dispatch seam in
+`src/ts/process/dispatch/dispatchRequest.ts` and preserves the
+26-snapshot fixture suite as the behavioral guardrail.
 
-Phase 6 (server-side LLM / translation / TTS / image generation)
-remains blocked until Phase 5 closes. Phase 3 already closed on
-2026-05-21; Fastify owns the proxy / hub / stream-job / storage /
-auth / crypto surface and Express is deleted.
+Phase 3 closed on 2026-05-21; Fastify owns the proxy / hub /
+stream-job / storage / auth / crypto surface and Express is deleted.
 
 ## Start here
 
@@ -96,8 +85,8 @@ auth / crypto surface and Express is deleted.
   progress.
 - [Server status](status/server.md) - Fastify server state.
 - [sendChat status](status/sendchat.md) - stabilization progress.
-- [sendChat slicing](status/sendchat-slicing.md) - remaining Phase
-  4 fixture gates and Phase 5 extraction slices.
+- [sendChat slicing](status/sendchat-slicing.md) - historical Phase
+  4 gate and Phase 5 extraction slice record.
 
 ## Detail shards
 

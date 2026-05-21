@@ -1,6 +1,6 @@
 # Status Overview
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 Concise snapshot of where each workstream stands. Detail per
 workstream lives in the sibling shards.
@@ -14,8 +14,8 @@ workstream lives in the sibling shards.
 | 2 - Storage / import / assets / backups | complete    | Closed 2026-05-20; server routes + Docker. |
 | 3 - Proxy migration                     | complete    | Closed 2026-05-21; Express deleted.        |
 | 4 - sendChat tests                      | complete    | Closed 2026-05-20; 17 initial fixtures.    |
-| 5 - sendChat extraction                 | in progress | Phase 5-1 through 5-21 landed.             |
-| 6 - Server-side generation              | not started | Blocked on Phase 5 closeout.               |
+| 5 - sendChat extraction                 | complete    | Closed 2026-05-22; all 28 slices landed.   |
+| 6 - Server-side generation              | not started | Next phase; dispatch seam is ready.        |
 | 7 - Server-side prompt assembly         | not started | Blocked on Phase 6.                        |
 | 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.              |
 | 9 - Client thinning                     | not started | Blocked on all of the above.               |
@@ -32,14 +32,12 @@ workstream lives in the sibling shards.
   `pnpm api:start` resolves at runtime. The Fastify-served SPA wires
   its self-host gates via `__NODE__` + `__FASTIFY__` injection in
   `index.html`.
-- **sendChat.** Captured in [`sendchat.md`](sendchat.md). Phase
-  5 extraction is active: `src/ts/process/index.svelte.ts` is
-  currently 1017 lines, with auto-continue, error reporting,
-  post-generation / response-loop, request-budget,
-  prompt-assembly, lorebook, template-preflight, and history
-  helpers extracted into focused modules while the 24-snapshot
-  fixture harness keeps observable behavior pinned. The remaining
-  work picker lives in
+- **sendChat.** Captured in [`sendchat.md`](sendchat.md). Phase 5
+  is closed: `src/ts/process/index.svelte.ts` is 445 lines, with
+  prompt assembly, request budgeting, dispatch, response
+  orchestration, Stage 4 closeout, and entry-context setup
+  extracted into focused modules. The 26-snapshot fixture harness
+  remains the behavioral guardrail; the slice history lives in
   [`sendchat-slicing.md`](sendchat-slicing.md).
 
 ## Reference state

@@ -46,13 +46,10 @@ are below under "Completed Slices".
 
 - **Phase 5 - coordinator closeout slice 28.** Done 2026-05-22.
   **Phase 5 is closed.** Final cleanup pass on
-  `src/ts/process/index.svelte.ts`. Removed the dead `let
-  isAborted` declaration (vestigial from pre-5-1); removed the
-  dead `let chats = history.chats` + `chats = memWindow.chats`
-  reassignment (the local was unused after 5-22 absorbed the
-  memory-card split — `history.chats` now feeds
-  `buildMemoryWindow` inline); removed the dead `currentTokens
-  = memWindow.currentTokens` reassignment; hoisted a single
+  `src/ts/process/index.svelte.ts`. Removed the vestigial
+  `isAborted` local plus dead `chats` and `currentTokens`
+  reassignments; `history.chats` now feeds `buildMemoryWindow`
+  inline. Hoisted a single
   `const setProcessStage = (stage) => chatProcessStage.set(stage)`
   at the top of the try block, replacing three inlined callbacks
   at the `buildMemoryWindow` / `dispatchRequest` / `runStage4`
@@ -65,12 +62,12 @@ are below under "Completed Slices".
   and `pnpm build` all clean. **Final coordinator size: 445
   lines (down from 1625 at Phase 5 start — 73% reduction).**
 
-  Phase 5 retrospective: 28 slices, 27 focused helpers (under
+  Phase 5 retrospective: 28 slices, 29 extracted modules (under
   `src/ts/process/` and the `promptAssembly/`, `promptBudget/`,
   `postGeneration/`, and `dispatch/` subdirectories), 9 fixture
   gates landed during Phase 5 (raising the snapshot count from
-  17 to 26), and 454 unit tests covering the helpers
-  individually. Two pattern wrinkles documented in the slice
+  17 to 26), and 454 unit tests plus 127 API tests green at
+  closeout. Two pattern wrinkles documented in the slice
   history: `.svelte.ts` files cannot be reliably intercepted by
   `vi.mock` (forced workarounds in 5-20 and 5-27), and the
   web-mode default in `setDatabase` forcibly clears
@@ -80,9 +77,9 @@ are below under "Completed Slices".
 - **Phase 5 - entry context slice 27.** Done 2026-05-22.
   Extracted the sendChat entry-context setup into
   `src/ts/process/sendChatContext.ts`. The new helper takes
-  `{chatProcessIndex, chatAdditonalTokens}` and returns
-  `{selectedChar, selectedChat, nowChatroom, promptInfo,
-  tokenizer, maxContextTokens}`. Owns the preset-chain selection
+  `chatProcessIndex` plus `chatAdditonalTokens` and returns the
+  selected character/chat, chatroom, promptInfo, tokenizer, and
+  max context token budget. Owns the preset-chain selection
   (gated on `chatProcessIndex === -1` and `db.presetChain`;
   random pick from comma-separated names; `changeToPreset(id, true)`
   on hit, `alertToast` on miss), `db.statics.messages += 1`, the
@@ -92,34 +89,33 @@ are below under "Completed Slices".
   preserves an existing empty-string `chatId`), the promptInfo
   seed (gated on `db.promptInfoInsideChat`; captures
   `promptName` from the active botPreset and `promptToggles`
-  from `parseToggleSyntax(customPromptTemplateToggle +
-  getModuleToggles())` with `'select'`/`'text'`/raw='1' branches),
+  from `parseToggleSyntax(...)` plus `getModuleToggles()` with
+  `'select'`/`'text'`/raw='1' branches),
   the gpt-vs-non-gpt `caculatedChatTokens` choice (5 vs 3) with
   the `arg.chatAdditonalTokens` override, the `ChatTokenizer`
   construction with `'noName'`/`'name'` strategy, and the
   `maxContextTokens` read. The coordinator keeps the closures
   (`throwError`, `runCurrentChatFunction`, `reformatContent`,
-  `findCharacterbyIdwithCache`) and the `currentChar = nowChatroom`
-  + `currentChat = runCurrentChatFunction(...)` calls in scope
-  because `runCurrentChatFunction` closes over `currentChar`.
-  Eight imports left `index.svelte.ts`: `changeToPreset`,
-  `alertToast`, `parseToggleSyntax`, `getModuleToggles`,
-  `ChatTokenizer`, `selectedCharID`, `MessagePresetInfo`, `v4`.
-  uuid now has zero call sites in the coordinator. Helper test
+  `findCharacterbyIdwithCache`) plus the `currentChar` /
+  `currentChat` assignment in scope because
+  `runCurrentChatFunction` closes over `currentChar`. Eight imports
+  left `index.svelte.ts`: `changeToPreset`, `alertToast`,
+  `parseToggleSyntax`, `getModuleToggles`, `ChatTokenizer`,
+  `selectedCharID`, `MessagePresetInfo`, `v4`. uuid now has zero
+  call sites in the coordinator. Helper test
   `sendChatContext.test.ts` adds 15 cases pinning preset-chain
   hit/miss/reentrant (verifying side effects via
-  `DBState.db.botPresetsId` rather than mocking
-  `changeToPreset` — vi.mock on `database.svelte.ts` did not
-  reliably intercept exports, mirroring the known `.svelte.ts`
-  mocking limitation from slice 5-20), the stats counter,
-  lastInteraction stamp, chatId backfill (with the `??`
-  empty-string preservation quirk), promptInfo for
-  `promptInfoInsideChat=false`/`=true` with `botPresets[id].name`,
-  select / text / boolean toggle harvest, tokenizer gpt /
-  non-gpt / override branches, and selectedChar / selectedChat
-  lookup. All 26 sendChat fixtures stay green without
-  re-recording; `index.svelte.ts` drops from 515 to 448 lines
-  — under the 500-line stretch goal that slice 5-28 targets.
+  `DBState.db.botPresetsId` rather than mocking `changeToPreset` —
+  vi.mock on `database.svelte.ts` did not reliably intercept
+  exports, mirroring the known `.svelte.ts` mocking limitation from
+  slice 5-20), the stats counter, lastInteraction stamp, chatId
+  backfill (with the `??` empty-string preservation quirk),
+  promptInfo for `promptInfoInsideChat=false`/`=true` with
+  `botPresets[id].name`, select / text / boolean toggle harvest,
+  tokenizer gpt / non-gpt / override branches, and selectedChar /
+  selectedChat lookup. All 26 sendChat fixtures stay green without
+  re-recording; `index.svelte.ts` drops from 515 to 448 lines —
+  under the 500-line stretch goal that slice 5-28 targets.
 
 - **Phase 5 - stage-4 orchestrator slice 26.** Done 2026-05-22.
   Extracted the stage-4 closeout into
@@ -132,14 +128,13 @@ are below under "Completed Slices".
   `viewScreen='emotion' && !emoChanged && !abortSignal.aborted`
   routes to `runEmotionEmbeddingFallback` or `runEmotionLlmFallback`
   based on `db.emotionProcesser` and returns `{status: 'done'}`
-  *without* calling `finalizeStage4` (matches production's
+  _without_ calling `finalizeStage4` (matches production's
   `return true` from those branches); (c) `viewScreen='imggen'`
   calls `runImggenStableDiff` then `finalizeStage4`; (d) default
   path calls `finalizeStage4`. The notification
   (`fireDesktopNotification(result)` under `db.notification`) and
-  provider-emotion application
-  (`applyEmotionFromResponse({emotion: req.special.emotion,
-  currentChar})`) fire before the routing branches and may flip
+  provider-emotion application via `applyEmotionFromResponse` fire
+  before the routing branches and may flip
   `emoChanged` to true, short-circuiting the emotion fallback.
   `currentChar.inlayViewScreen=true` skips both emotion and
   imggen branches entirely.
@@ -148,7 +143,7 @@ are below under "Completed Slices".
   `runImggenStableDiff`, `runEmotionLlmFallback`,
   `runEmotionEmbeddingFallback`, `loadAndTrimCharEmotion`,
   `finalizeStage4`. The resend recursion (`return await
-  sendChat(chatProcessIndex, {signal: abortSignal})`) stays in the
+sendChat(chatProcessIndex, {signal: abortSignal})`) stays in the
   coordinator for the same circular-import reason as the
   auto-continue handoff. Helper test `runStage4.test.ts` mocks
   all seven delegates and adds 12 cases pinning the stage
@@ -161,8 +156,8 @@ are below under "Completed Slices".
 
   Also fixed a latent type-check issue in
   `orchestrateResponse.test.ts` (slice 5-25): three `as
-  DispatchSuccessReq` casts now use `as unknown as
-  DispatchSuccessReq` to satisfy strict-mode conversion rules in
+DispatchSuccessReq` casts now use `as unknown as
+DispatchSuccessReq` to satisfy strict-mode conversion rules in
   svelte-check. The cast was passing vitest but failing
   svelte-check; only surfaced when this slice re-ran the full
   `pnpm check`.
@@ -187,7 +182,7 @@ are below under "Completed Slices".
   resets `iOwnDoingChat`, recurses into `sendChat`) so the helper
   avoids a circular import. Otherwise `evaluateIgp` runs and the
   helper returns `{ status: 'done', currentChat, result,
-  emoChanged, resendChat }`. After extraction these imports left
+emoChanged, resendChat }`. After extraction these imports left
   `index.svelte.ts` (eight total): `consumeStreamResponse`,
   `applyNonStreamResponse`, `applyOutputTrigger`,
   `runInlayScreen`, `sayTTS`, `addRerolls`, `evaluateAutoContinue`,
@@ -207,7 +202,7 @@ are below under "Completed Slices".
   transition (`setProcessStage(3)` + `stageTimings.stage3Start`),
   the `arg.preview` early return (carrying the formated array so
   the coordinator can write `previewFormated`), `generationId =
-  v4()` + `getGenerationModelString()` + `generationInfo`
+v4()` + `getGenerationModelString()` + `generationInfo`
   construction, the `requestChatData(...)` invocation with the
   full request payload (formated, biasString, currentChar,
   useStreaming, isGroupChat, bias, continue, chatId,
@@ -224,11 +219,11 @@ are below under "Completed Slices".
   attachment. The `failed` variant carries `generationInfo` so
   the coordinator assigns it before `throwError`, preserving the
   `provider-error` fixture's `reportSendChatError(...,
-  generationInfo)` behavior. F4-G `preview-prompt` landed first,
+generationInfo)` behavior. F4-G `preview-prompt` landed first,
   pinning the `previewPrompt: true` branch. After extraction
   these imports left `index.svelte.ts`: `getGenerationModelString`,
-  `requestChatData` (uuid `v4` stays for the chatId backfill at
-  line 205). Two `console.log` debug calls at the old lines
+  `requestChatData` (uuid `v4` moved later to `sendChatContext.ts`
+  for the chatId backfill). Two `console.log` debug calls at the old lines
   473/476 were dropped during the move. Helper test
   `dispatchRequest.test.ts` adds 11 cases covering preview
   short-circuit, previewPrompt success / fail-fallthrough,
@@ -651,8 +646,8 @@ are below under "Completed Slices".
   leading system block by `pushPrompts`'s same-role coalescer),
   `lorebook-keyword` (one globalLore entry with `key: "cat"`
   activated by user message), and `client-abort` (pre-aborted
-  AbortSignal now short-circuits at
-  `src/ts/process/index.svelte.ts:843`).
+  AbortSignal now returns the aborted dispatch union in
+  `src/ts/process/dispatch/dispatchRequest.ts:127`).
   Adds an
   `aborted: true` flag to the fixture schema; the test driver
   synthesizes a pre-aborted controller and threads its signal

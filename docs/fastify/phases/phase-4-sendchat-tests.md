@@ -1,6 +1,6 @@
 # Phase 4 - sendChat Characterization Tests
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 ## Goal
 
@@ -22,7 +22,8 @@ closed.
 Done 2026-05-20. The landed harness lives at
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` and
 `src/ts/process/__fixtures__/`. All 17 initial fixtures listed
-below have expected snapshots.
+below have expected snapshots; Phase 5 later added 9 narrow gate
+fixtures, bringing the active suite to 26 snapshots.
 
 ## Scope
 
@@ -103,9 +104,9 @@ chat under specific conditions:
   records the call, then `sendChat` exits before adding an
   assistant message.
 
-Each fixture is small enough to read in one screen. The set grows
-in Phase 5 as extraction surfaces hidden coupling. New fixture
-gates for the remaining extraction work are tracked in
+Each fixture is small enough to read in one screen. During Phase 5
+the set grew as extraction surfaced hidden coupling. The completed
+gate list is tracked in
 [`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
 
 ### Test config

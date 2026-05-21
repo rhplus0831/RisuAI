@@ -1,19 +1,16 @@
 # sendChat Fixtures
 
-Date: 2026-05-21 (24 snapshots; Phase 5 refs current)
+Date: 2026-05-22 (26 snapshots; Phase 5 closed)
 
 Status: the 17 initial Phase 4 fixtures landed, and Phase 5 has
-added seven narrow gate fixtures. The harness pins the entry path,
+added nine narrow gate fixtures. The harness pins the entry path,
 the multiline reroll branch, the upstream-fail branch, the
 auto-continue recursion, prompt-shape variations, Hypa V3 memory,
 trigger transformation paths, prompt-template gates, lorebook
 placement, history-media fallback, start-trigger mutation / stop,
-and the pre-aborted-signal exit path.
-
-Remaining fixture gates for Phase 5 live in
+prompt-info text capture, preview-prompt early return, and the
+pre-aborted-signal exit path. The historical gate list lives in
 [`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
-Those gates are not a Phase 4 reopening; they are narrow snapshots
-to add immediately before extracting uncovered behavior.
 
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
 array of normalized call records (`{ mode, formated, ... }`)
@@ -44,11 +41,13 @@ all current snapshots assert it is `false`.
 | `history-media-fallback` | No-vision model plus `{{inlay::test-image}}` appends a mocked image caption and strips the inlay tag. | landed |
 | `start-trigger-control` | Start trigger mutates chat history; the injected user message reaches persisted history and the provider prompt. | landed |
 | `start-trigger-stop` | Start trigger returns `stopSending`; sendChat exits after Stage 1 with no provider call, side effects, or new assistant row. | landed |
+| `prompt-info-text` | `promptInfoInsideChat` + `promptTextInfoInsideChat` store the raw prompt-template text after the `editRequest` trigger. | landed |
+| `preview-prompt` | `previewPrompt` sends the provider request with `previewBody: true`, stores `previewBody`, and exits without persisting a new assistant row. | landed |
 | `editrequest-trigger` | Full `vi.mock` of `scriptings` (wasmoon can't initialize under happy-dom). The fake `runLuaEditTrigger` appends a marker system entry when the character has a non-empty `triggerscript` and `mode === 'editRequest'`. | landed |
 | `editoutput-trigger`  | One `customscript` regex entry of `type: 'editoutput'` rewriting `sunshine` -> `starlight`. The rewrite fires inside the extracted streaming loop's `processScriptFull('editoutput', ...)` at `src/ts/process/postGeneration/streamResponse.ts:102`. | landed |
 | `auto-continue`       | Auto-continue fires once and lands a second turn.      | landed      |
 | `provider-error`      | Upstream `type:'fail'` produces a `risuerror` chat message. | landed |
-| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `src/ts/process/index.svelte.ts:843` returns `false` before any assistant message is added. | landed |
+| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check in `src/ts/process/dispatch/dispatchRequest.ts:127` returns the aborted union and the coordinator exits before any assistant message is added. | landed |
 
 ## Loader
 
@@ -126,5 +125,5 @@ focused.
 ## What the fixtures intentionally do not pin
 
 - Wall-clock timings.
-- Internal function call shapes (the next phase rewrites these).
+- Internal function call shapes (server-side phases may rewrite these).
 - Provider-side network behavior (we use canned fakes).

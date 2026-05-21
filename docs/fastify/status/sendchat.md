@@ -43,16 +43,16 @@ emotion, emotion fallback routing, image-generation dispatch, and
 the final `finalizeStage4` call), the entry context
 (preset-chain selection, stats counter, selected character/chat
 lookup, lastInteraction stamp, chatId backfill, promptInfo seed,
-tokenizer + maxContextTokens setup), and the coordinator closeout
+tokenizer and maxContextTokens setup), and the coordinator closeout
 (dead-locals cleanup, single hoisted `setProcessStage` callback,
 `let → const` conversions where no reassignment happens).
 
 `src/ts/process/index.svelte.ts` went from **1625 → 445 lines**
-across 28 slices (a **73% reduction**), with 27 focused helpers
-extracted under `src/ts/process/` and its `promptAssembly/`,
-`promptBudget/`, `postGeneration/`, and `dispatch/`
-subdirectories. 26 sendChat fixtures pin end-to-end behavior;
-454 unit tests + 127 API tests cover the helpers individually.
+across 28 slices (a **73% reduction**), with 29 extracted modules
+under `src/ts/process/` and its `promptAssembly/`, `promptBudget/`,
+`postGeneration/`, and `dispatch/` subdirectories. 26 sendChat
+fixtures pin end-to-end behavior; the Phase 5 closeout recorded
+454 unit tests + 127 API tests green.
 
 Phase 4 remains complete for the original 17 fixtures, and nine
 narrow Phase 5 gate fixtures have since been added
@@ -134,30 +134,31 @@ It reaches into:
 Already extracted during Phase 5:
 
 - `src/ts/process/sendChatContext.ts` - the entry-context setup.
-  Owns the preset-chain selection (gated on `chatProcessIndex === -1`
-  + `db.presetChain`; random pick from the comma-separated names;
-  `changeToPreset(findId, true)` on hit or `alertToast` on miss),
-  `db.statics.messages += 1` increment, `selectedChar = get(selectedCharID)`,
+  Owns the preset-chain selection (gated on
+  `chatProcessIndex === -1` and `db.presetChain`; random pick from
+  the comma-separated names; `changeToPreset(findId, true)` on hit
+  or `alertToast` on miss), `db.statics.messages += 1` increment,
+  `selectedChar = get(selectedCharID)`,
   `nowChatroom = DBState.db.characters[selectedChar]`,
-  `lastInteraction = Date.now()`, `selectedChat = nowChatroom.chatPage`,
-  the chatId backfill loop, the prompt-info seed (gated on
-  `db.promptInfoInsideChat`, capturing `promptName` and the
-  `parseToggleSyntax` + `getModuleToggles` output as
-  `promptToggles`), the gpt-vs-non-gpt `caculatedChatTokens` choice
-  (5 vs 3) with the `arg.chatAdditonalTokens` override, the
-  `ChatTokenizer` construction with the `'noName'`/`'name'` strategy,
-  and the `maxContextTokens = db.maxContext` read. Returns
-  `{ selectedChar, selectedChat, nowChatroom, promptInfo, tokenizer,
-  maxContextTokens }`. The coordinator keeps the closures
-  (`throwError`, `runCurrentChatFunction`, `reformatContent`,
-  `findCharacterbyIdwithCache`) and the `currentChar = nowChatroom`
-  + `currentChat = runCurrentChatFunction(...)` calls in scope
-  because `runCurrentChatFunction` closes over `currentChar`. The
-  `changeToPreset`, `alertToast`, `parseToggleSyntax`,
-  `getModuleToggles`, `ChatTokenizer`, `selectedCharID`,
-  `MessagePresetInfo`, and `v4` (uuid) imports moved out of the
-  coordinator (8 imports total; uuid now has zero call sites in
-  `index.svelte.ts`).
+  `lastInteraction = Date.now()`,
+  `selectedChat = nowChatroom.chatPage`, the chatId backfill loop,
+  the prompt-info seed (gated on `db.promptInfoInsideChat`,
+  capturing `promptName` and the `parseToggleSyntax` plus
+  `getModuleToggles` output as `promptToggles`), the
+  gpt-vs-non-gpt `caculatedChatTokens` choice (5 vs 3) with the
+  `arg.chatAdditonalTokens` override, the `ChatTokenizer`
+  construction with the `'noName'`/`'name'` strategy, and the
+  `maxContextTokens = db.maxContext` read. Returns the selected
+  character/chat, chatroom, promptInfo, tokenizer, and max context
+  token budget. The coordinator keeps the closures (`throwError`,
+  `runCurrentChatFunction`, `reformatContent`,
+  `findCharacterbyIdwithCache`) plus the `currentChar` /
+  `currentChat` assignment in scope because `runCurrentChatFunction`
+  closes over `currentChar`. The `changeToPreset`, `alertToast`,
+  `parseToggleSyntax`, `getModuleToggles`, `ChatTokenizer`,
+  `selectedCharID`, `MessagePresetInfo`, and `v4` (uuid) imports
+  moved out of the coordinator (8 imports total; uuid now has zero
+  call sites in `index.svelte.ts`).
 - `src/ts/process/autoContinue.ts` - `evaluateAutoContinue`.
 - `src/ts/process/sendChatErrors.ts` - `reportSendChatError`.
 - `src/ts/process/postGeneration/notification.ts` -
@@ -263,8 +264,8 @@ Already extracted during Phase 5:
   (`stage1Duration`, `stage2Start`, `stage2Duration`) and a
   `setProcessStage(2)`/`setProcessStage(1)` callback pair,
   persisting `hypaV3Data` summaries back into the supplied
-  `currentChat` and `DBState.db.characters[selectedChar].chats[
-  selectedChat]`. A HypaV3 error writes back any partial summary
+  `currentChat` and the live DB chat row. A HypaV3 error writes
+  back any partial summary
   then short-circuits with `stopSending: true`. The fallback
   (non-Hypa) path runs a budget-trim while-loop, stops with
   `language.errors.toomuchtoken` if `chats.length <= 1` still
@@ -307,28 +308,29 @@ Already extracted during Phase 5:
   `parseChatML`, `prebuiltAssetCommand`, `runLuaEditTrigger`, and
   `systemizeChat` imports moved out of the coordinator.
 - `src/ts/process/dispatch/dispatchRequest.ts` - the provider
-  dispatch boundary. Owns the stage-3 transition (`setProcessStage(3)`
-  + `stageTimings.stage3Start`), the `arg.preview` early return,
-  the `generationId = v4()` + `getGenerationModelString()` +
-  `generationInfo` construction, the `requestChatData(...)`
-  invocation with the full payload (formated, biasString,
-  currentChar, useStreaming, isGroupChat, bias, continue, chatId,
-  imageResponse, previewBody = `arg.previewPrompt`, escape,
-  rememberToolUsage), the `req.model` override propagation into
-  `generationInfo.model`, the `arg.previewPrompt + req.type === 'success'`
-  preview-body early return, the post-provider `abortSignal.aborted`
-  check, and the `req.type === 'fail'` early return. Returns a
-  5-variant discriminated union (`preview` / `previewPrompt` /
-  `aborted` / `failed` / `success`); the coordinator owns the
-  module-level `previewFormated` / `previewBody` writes,
-  the `throwError(reason)` on failure, and `generationInfo`
-  attachment for both success and failed paths (the `failed`
-  variant carries `generationInfo` so the error report can include
-  it). The two pre-existing `console.log(req)` /
-  `console.log(generationInfo.model, req.model)` debug calls were
-  dropped during the move. The `v4` (uuid), `getGenerationModelString`,
-  and `requestChatData` imports moved out of the coordinator
-  (uuid stays only for the `chatId` backfill at line 205).
+  dispatch boundary. Owns the stage-3 transition
+  (`setProcessStage(3)` and `stageTimings.stage3Start`), the
+  `arg.preview` early return, the `generationId = v4()` +
+  `getGenerationModelString()` + `generationInfo` construction, the
+  `requestChatData(...)` invocation with the full payload (formated,
+  biasString, currentChar, useStreaming, isGroupChat, bias,
+  continue, chatId, imageResponse, previewBody =
+  `arg.previewPrompt`, escape, rememberToolUsage), the `req.model`
+  override propagation into `generationInfo.model`, the
+  `arg.previewPrompt + req.type === 'success'` preview-body early
+  return, the post-provider `abortSignal.aborted` check, and the
+  `req.type === 'fail'` early return. Returns a 5-variant
+  discriminated union (`preview` / `previewPrompt` / `aborted` /
+  `failed` / `success`); the coordinator owns the module-level
+  `previewFormated` / `previewBody` writes, the `throwError(reason)`
+  on failure, and `generationInfo` attachment for both success and
+  failed paths (the `failed` variant carries `generationInfo` so the
+  error report can include it). The two pre-existing
+  `console.log(req)` / `console.log(generationInfo.model, req.model)`
+  debug calls were dropped during the move. The `v4` (uuid),
+  `getGenerationModelString`, and `requestChatData` imports moved
+  out of the dispatch path; `v4` later moved to
+  `sendChatContext.ts` for the `chatId` backfill.
 - `src/ts/process/postGeneration/orchestrateResponse.ts` - the
   post-dispatch response stage. Routes to `consumeStreamResponse`
   or `applyNonStreamResponse` on `req.type === 'streaming'`,
@@ -356,16 +358,14 @@ Already extracted during Phase 5:
   `chatProcessStage` to 4 via a `setProcessStage` callback, then
   branches: resend (calls `finalizeStage4` then returns
   `{status: 'resend'}` so the coordinator can release the
-  `doingChat` lease and recurse into `sendChat({signal:
-  abortSignal})`), notification (`fireDesktopNotification(result)`
-  under `db.notification`), provider emotion
-  (`applyEmotionFromResponse({emotion: req.special.emotion,
-  currentChar})` may set `emoChanged` to true), then under
-  `!inlayViewScreen`: `viewScreen='emotion' && !emoChanged &&
-  !abortSignal.aborted` routes to
+  `doingChat` lease and recurse), notification
+  (`fireDesktopNotification(result)` under `db.notification`),
+  provider emotion via `applyEmotionFromResponse`, then under
+  `!inlayViewScreen`: the emotion view with unchanged emotion and
+  a non-aborted signal routes to
   `runEmotionEmbeddingFallback` or `runEmotionLlmFallback`
   (depending on `db.emotionProcesser`) and returns
-  `{status: 'done'}` *without* calling `finalizeStage4` (matches
+  `{status: 'done'}` _without_ calling `finalizeStage4` (matches
   production's `return true` from these branches);
   `viewScreen='imggen'` runs `runImggenStableDiff`. The default
   path calls `finalizeStage4` and returns `{status: 'done'}`.
@@ -374,15 +374,13 @@ Already extracted during Phase 5:
   `runImggenStableDiff`, `runEmotionLlmFallback`,
   `runEmotionEmbeddingFallback`, `loadAndTrimCharEmotion`,
   `finalizeStage4`). The resend recursion (`return await
-  sendChat(chatProcessIndex, {signal: abortSignal})`) stays in the
+sendChat(chatProcessIndex, {signal: abortSignal})`) stays in the
   coordinator for the same circular-import reason as 5-25's
   auto-continue handoff.
 
-The remaining Phase 5 work is tracked in
-[`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
-work picker: it maps the still-inline coordinator blocks to numbered
-Phase 5 slices and lists the narrow fixture gates to add before
-touching behavior the current 24 snapshots do not cover.
+The closed Phase 5 slice history is archived in
+[`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 now starts
+from the dispatch seam that Phase 5 exposed.
 
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:
@@ -544,9 +542,9 @@ what each fixture pins.
 - `client-abort` - test driver passes a pre-aborted
   `AbortSignal`. Provider fake does not honor the signal so the
   call is still captured, but the post-provider check at
-  `src/ts/process/index.svelte.ts:843` short-circuits the
-  function. Pins `stages: [1, 3]`, no assistant message added, no
-  side effects.
+  `src/ts/process/dispatch/dispatchRequest.ts:127` returns the
+  aborted union and the coordinator exits. Pins `stages: [1, 3]`,
+  no assistant message added, no side effects.
 - `lorebook-constant` - one `globalLore` entry with
   `alwaysActive: true` and no key. Pins that the content lands
   in `formated` purely by the always-on flag.
@@ -585,7 +583,7 @@ what each fixture pins.
   triggerscript and the mode is `'editRequest'` on an
   `OpenAIChat[]`. Pins that the
   `runLuaEditTrigger('editRequest', formated)` call site at
-  `src/ts/process/index.svelte.ts:757` mutates the formated array
+  `src/ts/process/promptAssembly/renderFinalPrompt.ts:384` mutates the formated array
   and the mutation reaches the provider.
 - `editoutput-trigger` - one `customscript` regex of type
   `'editoutput'` rewriting `sunshine` -> `starlight`. Pins that
@@ -597,7 +595,7 @@ what each fixture pins.
 - `doingChat` is set to `true` only when `sendChat` owns the lease,
   and the owned lease is cleared in a `finally` block on every exit
   path. Recursive auto-continue / resend paths explicitly release
-  the flag before re-entering. All 24 snapshots currently pin final
+  the flag before re-entering. All 26 snapshots currently pin final
   `doingChat: false`; the test harness still resets it before each
   fixture defensively.
 - The `uuid` mock counter resets between fixtures so snapshots
@@ -612,12 +610,12 @@ what each fixture pins.
   database snapshots, canned chat state, canned upstream provider
   responses (fakes). Outputs: the message patches the function
   emits and the persisted chat shape.
-- **Phase 5.** Per-stage extraction behind the fixtures. This is
-  in progress. The landed module names are
-  `autoContinue.ts`, `sendChatErrors.ts`, and
-  `postGeneration/*`, `promptBudget/*`, and
-  `promptAssembly/*`; the remaining numbered slices live in
-  [`sendchat-slicing.md`](sendchat-slicing.md).
+- **Phase 5.** Per-stage extraction behind the fixtures. Closed
+  2026-05-22 with all 28 slices landed. The landed module names
+  include `autoContinue.ts`, `sendChatContext.ts`,
+  `sendChatErrors.ts`, `dispatch/*`, `postGeneration/*`,
+  `promptBudget/*`, and `promptAssembly/*`; the numbered slice
+  history lives in [`sendchat-slicing.md`](sendchat-slicing.md).
 - **Phase 6.** Stage 3 dispatch moves server-side. Browser keeps
   a thin client that reads the server's SSE stream.
 - **Phase 7.** Stage 2 prompt assembly moves server-side.
@@ -627,10 +625,9 @@ what each fixture pins.
 
 ## Boundary rules
 
-Until Phase 5 closes, keep edits to `sendChat` narrow and
-fixture-backed. Refactoring control flow belongs in small extraction
-slices with targeted helper tests where the helper has a stable
-signature, plus the full fixture suite after each slice.
+After Phase 5, keep edits to `sendChat` narrow and fixture-backed.
+Phase 6 should use the dispatch helper as the first server boundary
+and preserve the full fixture suite while swapping the transport.
 
 ## Reference: metatron's end state
 

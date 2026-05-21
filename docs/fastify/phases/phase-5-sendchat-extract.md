@@ -1,6 +1,6 @@
 # Phase 5 - sendChat Extraction
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 ## Goal
 
@@ -16,12 +16,13 @@ server one at a time in later phases.
 
 ## Status
 
-In progress as of 2026-05-21. Phase 5-1 through Phase 5-21 have
-landed. The current coordinator is
-`src/ts/process/index.svelte.ts` (1017 lines), with extracted
+Closed 2026-05-22. All 28 slices landed, ending with coordinator
+closeout commit `a7e2831d`. The current coordinator is
+`src/ts/process/index.svelte.ts` (445 lines), with extracted
 helpers in `src/ts/process/autoContinue.ts`,
+`src/ts/process/sendChatContext.ts`,
 `src/ts/process/sendChatErrors.ts`,
-`src/ts/process/postGeneration/*`,
+`src/ts/process/dispatch/*`, `src/ts/process/postGeneration/*`,
 `src/ts/process/promptBudget/*`, and
 `src/ts/process/promptAssembly/*`.
 
@@ -31,9 +32,12 @@ helpers in `src/ts/process/autoContinue.ts`,
 
 ```
 src/ts/process/
-  index.svelte.ts             coordinator, still being reduced
+  index.svelte.ts             coordinator / lifecycle wiring
   autoContinue.ts             auto-continue decision
+  sendChatContext.ts          entry-context setup
   sendChatErrors.ts           inlay-error / alert reporting
+  dispatch/
+    dispatchRequest.ts        provider dispatch + preview exits
   postGeneration/
     notification.ts           desktop notification
     igp.ts                    IGP dispatch
@@ -47,6 +51,9 @@ src/ts/process/
     outputTrigger.ts          post-response output trigger
     nonStreamResponse.ts      success / multiline response loop
     streamResponse.ts         streaming reader loop
+    orchestrateResponse.ts    response branch chooser +
+                              auto-continue / IGP handoff
+    runStage4.ts              stage-4 closeout orchestration
   promptBudget/
     finalizeRequestBudget.ts  post-editRequest token recheck +
                               outputTokens estimate
@@ -70,25 +77,20 @@ src/ts/process/
     formatHistoryMessage.ts   one Message -> one OpenAIChat
     buildHistoryWindow.ts     examples, marker, first message,
                               triggers, history loop, depth prompts
+    buildMemoryWindow.ts      Hypa V3 / fallback budget window +
+                              memory-card split
+    renderFinalPrompt.ts      final template / formatting render
 ```
 
-Remaining extraction should keep moving toward a coordinator whose
-major responsibilities are validation / setup, prompt assembly,
-dispatch, and finalization orchestration. The Svelte stores stay
-where they are (the function is still browser-only at this phase).
-If a later slice introduces a `pipeline/` directory, it should absorb
-or call the helpers above rather than duplicating them.
-
-The remaining work is divided in
+The coordinator now owns lifecycle wiring, browser-only closures,
+depth-prompt distribution, trigger-result placement, and recursive
+handoffs. The Svelte stores stay where they are because Phase 5 is
+browser-only. The closed slice record lives in
 [`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
-That shard is the work picker for Phase 5-22 onward: it maps the
-current inline blocks to target modules and names the fixture gates
-that should land before risky prompt-template, lorebook, history,
-memory, or dispatch extraction.
 
-### Migration recipe
+### Historical migration recipe
 
-For each stage:
+During Phase 5, each stage followed this recipe:
 
 1. Identify the entry and exit points in the current coordinator
    (use the `stageTimings.*Start` markers listed
@@ -103,12 +105,10 @@ For each stage:
 
 Hidden coupling discovered during extraction (Svelte stores read
 mid-function, globals mutated, side effects with no return value)
-goes into the module's signature where the seam is stable. Some
-Phase 5-1 through 5-21 helpers still read or mutate `DBState`
-directly where the browser-only boundary is not stable yet; later
-slices should either make those writes explicit in the helper
-contract or leave a clear browser-only boundary for Phase 6 to
-route around.
+went into helper signatures where the seam was stable. Helpers that
+still read or mutate `DBState` directly document a browser-only
+boundary that Phase 6 and later phases must route around or make
+explicit.
 
 ### What does not move yet
 
@@ -139,16 +139,14 @@ route around.
 
 ## Exit criteria
 
-- `src/ts/process/index.svelte.ts` is under 500 lines and contains
-  only coordinator logic.
-- Each extracted module is independently testable (the fixtures may
-  exercise it through the coordinator; targeted unit tests per module
-  are encouraged and already exist for the Phase 5-3 through
-  Phase 5-21 helpers).
-- `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`
-  is green.
-- `pnpm check`, `pnpm test`, `pnpm build` green.
-- The fixture set has grown to include any behaviors discovered
+- Met at closeout: `src/ts/process/index.svelte.ts` is under 500
+  lines and contains only coordinator logic.
+- Met at closeout: each extracted module with a stable signature has
+  targeted tests, and the fixture harness exercises the rest through
+  the coordinator.
+- Met at closeout: `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`,
+  `pnpm check`, `pnpm test`, and `pnpm build` were green.
+- Met at closeout: the fixture set grew to cover behaviors discovered
   during extraction; the new entries are listed in
   [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md).
 

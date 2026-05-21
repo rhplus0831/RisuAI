@@ -1,6 +1,6 @@
 # Fastify Migration Roadmap
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 This directory is the working roadmap for moving Risuai from a thick
 browser app to a Fastify backend with a display-only client. The
@@ -13,22 +13,21 @@ it needs.
 
 ## Scope
 
-Current status: Phase 0 removals, Phase 1 Fastify foundation,
-Phase 2 server storage, Phase 3 proxy migration, and Phase 4
-`sendChat` characterization tests are closed. Fastify now owns
-bootstrap, JSON import, content-addressed assets, backups, static
-SPA serving, provider proxy fetch, stream-job WebSocket transport,
-Risu hub passthrough, and the legacy NodeStorage key-value surface.
-Express has been deleted. The Dockerfile and compose file target
-the Fastify runtime on port 6002 with `/app/data` persisted; `tsx`
-and `@fastify/websocket` are runtime dependencies after
-`1eddbfba`.
-Phase 5 `sendChat` extraction is now active: commits
-`3c5a92b2` through `8ac144f7` have extracted auto-continue,
-`doingChat` ownership, error reporting, response loops,
-post-generation helpers, request-budget helpers, prompt-assembly
-sections, lorebook placement, template token preflight, and history
-formatting / window assembly behind the 24-snapshot fixture harness.
+Current status: Phases 0-5 are closed. Fastify owns bootstrap, JSON
+import, content-addressed assets, backups, static SPA serving,
+provider proxy fetch, stream-job WebSocket transport, Risu hub
+passthrough, and the legacy NodeStorage key-value surface. Express
+has been deleted. The Dockerfile and compose file target Fastify on
+port 6002 with `/app/data` persisted; `tsx` and
+`@fastify/websocket` are runtime dependencies after `1eddbfba`.
+
+Phase 5 closed on 2026-05-22: commits `3c5a92b2` through
+`a7e2831d` reduced `src/ts/process/index.svelte.ts` from 1625 to
+445 lines and extracted prompt assembly, request budgeting,
+provider dispatch, response orchestration, Stage 4 closeout, and
+entry-context setup into focused browser-side modules. The
+fixture harness now has 26 snapshots: 17 Phase 4 fixtures plus 9
+Phase 5 gates.
 
 In scope:
 
@@ -37,8 +36,8 @@ In scope:
 - The Phase 0 removal set: Group chat, peer-to-peer multi-user chat,
   Risu Account Sync, Google Drive sync, and the Supa / Hypa V2 /
   Hanurai memory engines have been removed from the client surface.
-- Continuing the fixture-backed extraction of
-  `src/ts/process/index.svelte.ts::sendChat` into smaller modules.
+- Moving the extracted generation seams server-side, starting with
+  Phase 6 provider dispatch.
 - A display-only browser client in server-backed mode.
 
 Out of scope (see [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md)):
@@ -64,9 +63,9 @@ short form.
   live on disk under `data/assets/`.
 - **Sequence.** Remove first, then port. Phase 0 strips the deprecated
   features so the surface that gets ported is smaller.
-- **sendChat.** Tests first, extraction second. Keep observable
-  behavior pinned while shrinking `src/ts/process/index.svelte.ts`
-  into focused browser modules before any server move.
+- **sendChat.** Tests first, extraction second. Phase 5 shrank
+  `src/ts/process/index.svelte.ts` into focused browser modules;
+  later server phases keep the fixture-pinned behavior intact.
 - **Client modes.** Server-backed web only. Tauri stays as-is.
 - **Hub.** Fastify proxies hub traffic through `/api/v1/hub/*`.
   The route is intentionally still auth-gated; session-cookie or
@@ -79,7 +78,7 @@ short form.
 ## Read order
 
 1. [`plan.md`](plan.md) - goal, baseline, sequence, non-goals.
-2. [`status.md`](status.md) - what is in progress; routes into
+2. [`status.md`](status.md) - current progress and next work; routes into
    `status/` shards.
 3. [`runtime-stages.md`](runtime-stages.md) - client vs server
    responsibility per generation stage.
