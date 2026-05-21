@@ -25,6 +25,62 @@ vi.mock('../memory/hypav3', async (importActual) => {
 // editRequest marker hook.
 vi.mock('../scriptings', () => import('../__fixtures__/mocks/scriptings'))
 
+// triggers.runTrigger gets called with mode='start' at the top of the
+// history window. Existing fixtures have either no triggerscript or one
+// targeting 'editRequest', so the real impl correctly returns null for
+// them and they're unaffected. The start-trigger-control + start-trigger-stop
+// fixtures use a marker in triggerscript[0].comment to dispatch through the
+// override below. Other runTrigger call sites (output, manual, display,
+// request, editRequest) also flow through here; they continue to hit the
+// real impl whenever the marker check misses.
+vi.mock('../triggers', async (importActual) => {
+  const actual = await importActual<typeof import('../triggers')>()
+  return {
+    ...actual,
+    runTrigger: async (
+      char: { triggerscript?: Array<{ type?: string; comment?: string }> },
+      mode: string,
+      arg: { chat?: { message?: Array<unknown>; [k: string]: unknown } },
+    ) => {
+      const scripts = (char.triggerscript ?? []).filter((s) => s.type === mode)
+      if (scripts.length === 0) return null
+      const marker = scripts[0]?.comment ?? ''
+      if (mode === 'start' && marker === '__test_start_mutate') {
+        const baseChat = (arg.chat ?? { message: [] }) as { message: unknown[]; [k: string]: unknown }
+        const mutatedChat = {
+          ...baseChat,
+          message: [
+            ...(baseChat.message ?? []),
+            {
+              role: 'user',
+              data: '[trigger-injected]',
+              chatId: 'msg-trigger-injected',
+              time: 0,
+            },
+          ],
+        }
+        return {
+          additonalSysPrompt: { start: '', historyend: '', promptend: '' },
+          chat: mutatedChat,
+          tokens: 25,
+          stopSending: false,
+          sendAIprompt: false,
+        }
+      }
+      if (mode === 'start' && marker === '__test_start_stop') {
+        return {
+          additonalSysPrompt: { start: '', historyend: '', promptend: '' },
+          chat: arg.chat,
+          tokens: 0,
+          stopSending: true,
+          sendAIprompt: false,
+        }
+      }
+      return null
+    },
+  }
+})
+
 // transformers.runImageEmbedding lazily imports @huggingface/transformers,
 // which we don't want vitest to pull in. The history-media-fallback fixture
 // exercises the no-image-input caption path, so we replace just that export
@@ -83,6 +139,7 @@ const FIXTURES = [
   'lorebook-position-depth',
   'prompt-template-memory-cache',
   'history-media-fallback',
+  'start-trigger-control',
 ] as const
 
 describe('sendChat fixtures', () => {
