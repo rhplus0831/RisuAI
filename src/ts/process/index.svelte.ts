@@ -53,6 +53,7 @@ import { runEmotionEmbeddingFallback } from './postGeneration/emotionFallbackEmb
 import { loadAndTrimCharEmotion } from './postGeneration/charEmotionStore'
 import { applyOutputTrigger } from './postGeneration/outputTrigger'
 import { applyNonStreamResponse } from './postGeneration/nonStreamResponse'
+import { consumeStreamResponse } from './postGeneration/streamResponse'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1526,81 +1527,27 @@ export async function sendChat(
     throwError(req.result)
     return false
   } else if (req.type === 'streaming') {
-    const reader = req.result.getReader()
-    let msgIndex = DBState.db.characters[selectedChar].chats[selectedChat].message.length
-    let prefix = ''
-    if (arg.continue) {
-      msgIndex -= 1
-      prefix = DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data
-    } else {
-      DBState.db.characters[selectedChar].chats[selectedChat].message.push({
-        role: 'char',
-        data: '',
-        saying: currentChar.chaId,
-        time: Date.now(),
-        generationInfo,
-        promptInfo,
-        chatId: generationId,
-      })
-    }
-    DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = true
-    DBState.db.characters[selectedChar].reloadKeys += 1
-    let lastResponseChunk: { [key: string]: string } = {}
-    let streamAborted: boolean = abortSignal.aborted
-    const abortReader = () => {
-      streamAborted = true
-      void reader.cancel().catch(() => {})
-    }
-    abortSignal.addEventListener('abort', abortReader, { once: true })
-    try {
-      while (streamAborted === false) {
-        let readed: ReadableStreamReadResult<{ [key: string]: string }>
-        try {
-          readed = await reader.read()
-        } catch (error) {
-          if (abortSignal.aborted || streamAborted) {
-            streamAborted = true
-            break
-          }
-          throw error
-        }
-        if (readed.value) {
-          lastResponseChunk = readed.value
-          const firstChunkKey = Object.keys(lastResponseChunk)[0]
-          result = lastResponseChunk[firstChunkKey]
-          if (!result) {
-            result = ''
-          }
-          if (DBState.db.removeIncompleteResponse) {
-            result = trimUntilPunctuation(result)
-          }
-          let result2 = await processScriptFull(
-            nowChatroom,
-            reformatContent(prefix + result),
-            'editoutput',
-            msgIndex,
-          )
-          DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data =
-            result2.data
-          emoChanged = result2.emoChanged
-          DBState.db.characters[selectedChar].reloadKeys += 1
-        }
-        if (readed.done) {
-          break
-        }
-      }
-    } finally {
-      abortSignal.removeEventListener('abort', abortReader)
-      DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = false
-      DBState.db.characters[selectedChar].reloadKeys += 1
-      void reader.cancel().catch(() => {})
-    }
+    const stream = await consumeStreamResponse({
+      req,
+      arg,
+      nowChatroom,
+      currentChar,
+      selectedChar,
+      selectedChat,
+      generationId,
+      generationInfo,
+      promptInfo,
+      abortSignal,
+      reformatContent,
+    })
+    result = stream.result
+    emoChanged = stream.emoChanged
 
-    if (streamAborted || abortSignal.aborted) {
+    if (stream.streamAborted || abortSignal.aborted) {
       return false
     }
 
-    addRerolls(generationId, Object.values(lastResponseChunk))
+    addRerolls(generationId, Object.values(stream.lastResponseChunk))
 
     const streamTrigger = await applyOutputTrigger({
       currentChar,
@@ -1612,12 +1559,12 @@ export async function sendChat(
     if (streamTrigger.resendChat) {
       resendChat = true
     }
-    const inlayr = runInlayScreen(currentChar, currentChat.message[msgIndex].data)
-    currentChat.message[msgIndex].data = inlayr.text
+    const inlayr = runInlayScreen(currentChar, currentChat.message[stream.msgIndex].data)
+    currentChat.message[stream.msgIndex].data = inlayr.text
     DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
     if (inlayr.promise) {
       const t = await inlayr.promise
-      currentChat.message[msgIndex].data = t
+      currentChat.message[stream.msgIndex].data = t
       DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
     }
     if (DBState.db.ttsAutoSpeech) {
