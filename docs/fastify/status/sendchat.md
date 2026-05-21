@@ -92,6 +92,12 @@ Already extracted during Phase 5:
   non-template main / jailbreak / globalNote sections, with the
   `@@role` / `@@@role` parser internal to the module.
 
+The remaining Phase 5 work is tracked in
+[`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
+work picker: it maps the still-inline coordinator blocks to numbered
+Phase 5 slices and lists the narrow fixture gates to add before
+touching behavior the current 17 snapshots do not cover.
+
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:
 
@@ -274,9 +280,9 @@ each fixture pins.
 - **Phase 5.** Per-stage extraction behind the fixtures. This is
   in progress. The landed module names are
   `autoContinue.ts`, `sendChatErrors.ts`, and
-  `postGeneration/*`; the remaining work is to keep shrinking the
-  coordinator until validation, prompt assembly, dispatch, and
-  finalization are cleanly portable.
+  `postGeneration/*`, `promptBudget/*`, and
+  `promptAssembly/*`; the remaining numbered slices live in
+  [`sendchat-slicing.md`](sendchat-slicing.md).
 - **Phase 6.** Stage 3 dispatch moves server-side. Browser keeps
   a thin client that reads the server's SSE stream.
 - **Phase 7.** Stage 2 prompt assembly moves server-side.

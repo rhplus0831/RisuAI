@@ -65,6 +65,13 @@ where they are (the function is still browser-only at this phase).
 If a later slice introduces a `pipeline/` directory, it should absorb
 or call the helpers above rather than duplicating them.
 
+The remaining work is divided in
+[`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
+That shard is the work picker for Phase 5-16 onward: it maps the
+current inline blocks to target modules and names the fixture gates
+that should land before risky prompt-template, lorebook, history,
+memory, or dispatch extraction.
+
 ### Migration recipe
 
 For each stage:

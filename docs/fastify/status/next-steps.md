@@ -14,10 +14,11 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
    description assembly, and the plain-prompt main / jailbreak /
-   globalNote sections out of `index.svelte.ts`. Continue with the
-   smallest meaningful remaining seam in prompt assembly, dispatch,
-   or finalization and run the focused fixture suite after each
-   step:
+   globalNote sections out of `index.svelte.ts`. The remaining work
+   is now sliced in [`sendchat-slicing.md`](sendchat-slicing.md);
+   take the first open Phase 5 slice, adding its Phase 4 fixture
+   gate first when needed, rather than picking an unrelated tiny
+   helper. Run the focused fixture suite after each step:
    `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
    Preserve the current lifecycle invariant from
    [`sendchat.md`](sendchat.md): `sendChat` owns and clears the

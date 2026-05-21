@@ -31,7 +31,9 @@ under [`status/`](status/).
   non-streaming + streaming response loops, final request-budget
   recheck, leading description assembly, and non-template plain
   prompt sections. The coordinator still lives in
-  `src/ts/process/index.svelte.ts`, now 1625 lines.
+  `src/ts/process/index.svelte.ts`, now 1625 lines. Remaining
+  Phase 5 work is sliced in
+  [`status/sendchat-slicing.md`](status/sendchat-slicing.md).
 - Phase 3A, Phase 3B, and Phase 3C all landed on 2026-05-20.
   `POST /api/v1/proxy/fetch` is in place behind `requireAuth`,
   the proxy stream-job surface (`POST` / `DELETE` plus the
@@ -72,9 +74,9 @@ under [`status/`](status/).
 Phase 5 (`sendChat` extraction) is the active branch work. The
 landed slices have focused on Stage 3 / Stage 4 support code and
 response handling while keeping the Phase 4 fixture suite as the
-behavioral guardrail. The next pickup should continue narrowing the
-remaining prompt / dispatch / finalization blocks rather than
-starting Phase 6.
+behavioral guardrail. The next pickup should follow the first open
+entry in [`status/sendchat-slicing.md`](status/sendchat-slicing.md)
+rather than starting Phase 6.
 
 Phase 6 (server-side LLM / translation / TTS / image generation)
 remains blocked until Phase 5 closes. Phase 3 already closed on
@@ -90,16 +92,18 @@ auth / crypto surface and Express is deleted.
   progress.
 - [Server status](status/server.md) - Fastify server state.
 - [sendChat status](status/sendchat.md) - stabilization progress.
+- [sendChat slicing](status/sendchat-slicing.md) - remaining Phase
+  4 fixture gates and Phase 5 extraction slices.
 
 ## Detail shards
 
-| Read when changing...                                                                         | Open                                         |
-| --------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Anything about Group chat, peer chat, Risu Account Sync, Drive sync, or legacy memory engines | [status/removals.md](status/removals.md)     |
-| The Fastify server's scope, routes, or persistence                                            | [status/server.md](status/server.md)         |
-| `src/ts/process/index.svelte.ts` or its tests                                                 | [status/sendchat.md](status/sendchat.md)     |
-| The overall position in the phase order                                                       | [status/overview.md](status/overview.md)     |
-| What an agent should pick up next                                                             | [status/next-steps.md](status/next-steps.md) |
+| Read when changing...                                                                         | Open                                                                                               |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Anything about Group chat, peer chat, Risu Account Sync, Drive sync, or legacy memory engines | [status/removals.md](status/removals.md)                                                           |
+| The Fastify server's scope, routes, or persistence                                            | [status/server.md](status/server.md)                                                               |
+| `src/ts/process/index.svelte.ts` or its tests                                                 | [status/sendchat.md](status/sendchat.md), [status/sendchat-slicing.md](status/sendchat-slicing.md) |
+| The overall position in the phase order                                                       | [status/overview.md](status/overview.md)                                                           |
+| What an agent should pick up next                                                             | [status/next-steps.md](status/next-steps.md)                                                       |
 
 ## Maintenance rules
 

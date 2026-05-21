@@ -104,7 +104,9 @@ chat under specific conditions:
   assistant message.
 
 Each fixture is small enough to read in one screen. The set grows
-in Phase 5 as extraction surfaces hidden coupling.
+in Phase 5 as extraction surfaces hidden coupling. New fixture
+gates for the remaining extraction work are tracked in
+[`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
 
 ### Test config
 

@@ -11,6 +11,11 @@ trigger transformation paths (editRequest via runLuaEditTrigger,
 editOutput via customscript regex), and the pre-aborted-signal
 exit path.
 
+Additional fixture gates for the remaining Phase 5 slices live in
+[`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
+Those gates are not a Phase 4 reopening; they are narrow snapshots
+to add immediately before extracting uncovered behavior.
+
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
 array of normalized call records (`{ mode, formated, ... }`)
 rather than a count. The `formated` field is the main pin for

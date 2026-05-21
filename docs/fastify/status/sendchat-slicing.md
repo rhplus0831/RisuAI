@@ -1,0 +1,105 @@
+# sendChat Remaining Slice Plan
+
+Date: 2026-05-21
+
+This shard is the work picker for the rest of Phase 5. Phase 4 is
+still closed: the 17 landed fixtures remain the baseline safety net.
+The "Phase 4 gates" below are targeted fixture additions to land
+immediately before a Phase 5 slice touches an uncovered behavior.
+
+The intent is to keep agents from choosing only tiny helpers while
+also avoiding one oversized "finish sendChat" task. Pick the first
+open slice below; if its fixture gate is not satisfied, land that
+gate first, then land the extraction slice. Update this file and
+[`next-steps.md`](next-steps.md), then move on.
+
+## Current Code Map
+
+`src/ts/process/index.svelte.ts` is 1625 lines. Phase 5-1 through
+5-15 already extracted auto-continue, owned `doingChat` lifecycle,
+error reporting, response loops, most post-generation helpers, final
+request-budget recheck, character description, and plain-prompt
+main / jailbreak / global-note sections.
+
+The work still inside the coordinator is clustered here:
+
+| Lines                       | Remaining responsibility                                                                                                                          | Target owner after Phase 5           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| 91-258                      | Entry guard, preset-chain switch, selected character/chat setup, prompt-info seed, tokenizer setup.                                               | `sendChatContext` / lifecycle helper |
+| 273-319                     | Prompt-template normalization, implicit `postEverything`, utility-bot override.                                                                   | prompt-template helper               |
+| 329-349, 417-447            | Author note, chain-of-thought, persona, inlay-view instructions.                                                                                  | prompt-section builders              |
+| 352-506, 912-918, 1003-1010 | Lorebook activation placement, `{{position::...}}`, injection lore, depth / reverse-depth prompts.                                                | lorebook section helper              |
+| 507-681                     | Prompt-template token preflight and memory/cache-card discovery.                                                                                  | template token walker                |
+| 687-919                     | Example messages, first message, start trigger, history message formatting, inlays, asset prompts, thought extraction, initial token budget.      | history assembly helper              |
+| 920-1010                    | Hypa V3 handoff, fallback budget trimming, memory-card split / previous-conversation wrapping.                                                    | memory-window helper                 |
+| 1035-1349                   | Final prompt rendering, `pushPrompts`, template rendering, cache points, prompt-info text capture, character depth prompt, `editRequest` trigger. | prompt render helper                 |
+| 1365-1441                   | Generation metadata, preview exits, provider request payload, fail / abort exits.                                                                 | dispatch helper                      |
+| 1442-1543                   | Stream vs non-stream orchestration, output-trigger result, inlay / TTS side effects, auto-continue and IGP.                                       | response orchestration helper        |
+| 1548-1599                   | Resend handoff, notifications, emotion fallback routing, image generation dispatch, final timing writeback.                                       | stage-4 orchestrator                 |
+
+## Phase 4 Fixture Gates
+
+Do not reopen Phase 4 as a broad task. Add one fixture only when the
+next extraction slice would otherwise move behavior that snapshots do
+not cover.
+
+| Gate                                | Add before                                 | Fixture behavior to pin                                                                                                                                                       |
+| ----------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F4-A `prompt-template-basic`        | Template normalization or render slices.   | Prompt template with `persona`, `description`, `authornote`, `plain`, `chatML`, `chat`, and implicit `postEverything`; assert final provider `formated`.                      |
+| F4-B `prompt-template-memory-cache` | Memory-window or template cache slices.    | Template with `memory` and `cache` cards, Hypa V3 mock memory, and `automaticCachePoint`; assert memory card consumes the memory entry and cache marks the intended messages. |
+| F4-C `lorebook-position-depth`      | Lorebook placement slices.                 | Active lore with `{{position::...}}`, `before_desc` / `after_desc`, `depth`, and `reverse_depth`; assert exact placement in `formated`.                                       |
+| F4-D `history-media-fallback`       | History formatting slices.                 | Inlay image on a model without image input, mocked `runImageEmbedding`, plus `{{asset_prompt::icon}}`; assert caption append and multimodal asset attachment.                 |
+| F4-E `start-trigger-control`        | Start-trigger / history collection slices. | Mock `runTrigger('start')` to mutate chat and add token cost; include a stop-sending variant if the slice touches that early return.                                          |
+| F4-F `prompt-info-text`             | Prompt-info or template-render slices.     | Enable `promptInfoInsideChat` + `promptTextInfoInsideChat`; assert `generationInfo.promptInfo.promptText` after `editRequest`.                                                |
+| F4-G `preview-prompt`               | Dispatch slices.                           | Call `sendChat(..., { previewPrompt: true })`, fake a success response, and assert `previewBody` with no persisted assistant message.                                         |
+| F4-H `utility-bot-template`         | Template normalization slices.             | Utility character without `utilOverride`; assert the forced utility template order.                                                                                           |
+
+## Phase 5 Remaining Slices
+
+Keep each slice large enough to retire a real responsibility from
+`index.svelte.ts`, but small enough to review as one commit. Targeted
+unit tests are expected when the extracted helper has a stable public
+signature; otherwise the fixture gate plus the full sendChat fixture
+suite is the acceptance test.
+
+| Slice                               | Status | Scope                                                                                                                                                                                                                                             | Fixture gate                                                                                                            |
+| ----------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 5-16 Template normalization         | open   | Extract prompt-template cloning, implicit `postEverything`, utility-bot override, and chat-range normalization helpers. No rendering yet.                                                                                                         | F4-A, F4-H                                                                                                              |
+| 5-17 Author/persona/static sections | open   | Extract author note, default author note, chain-of-thought instruction, persona prompt, and inlay-view postEverything instructions into `promptAssembly/` builders.                                                                               | Existing fixtures cover author note and persona; add a focused unit test for chain-of-thought / inlay-view branches.    |
+| 5-18 Lorebook placement context     | open   | Extract `loadLoreBookV3Prompt()` result classification, `{{position::...}}` resolution, injection-lore position parsing, normal / description / postEverything lore placement, and depth prompt collection.                                       | F4-C                                                                                                                    |
+| 5-19 Template token preflight       | open   | Extract the first prompt-template walker that counts tokens and discovers `memory` / `cache` cards. Reuse the helpers from 5-16 and 5-18.                                                                                                         | F4-A, F4-B                                                                                                              |
+| 5-20 History message formatter      | open   | Extract one-message conversion from `Message` to `OpenAIChat`: editprocess scripts, name handling, inlay stripping, multimodal attachments, image-caption fallback, thought extraction, and asset prompts.                                        | F4-D                                                                                                                    |
+| 5-21 History assembly window        | open   | Extract examples, `[Start a new chat]`, first message, disabled / allBefore filtering, start trigger handling, token accounting, and initial context trimming. Call the 5-20 formatter.                                                           | F4-E                                                                                                                    |
+| 5-22 Memory window                  | open   | Extract Hypa V3 stage transition, error writeback, fallback budget trim, `lastMemory`, memory-card split, and `<Previous Conversation>` wrapping.                                                                                                 | F4-B                                                                                                                    |
+| 5-23 Final prompt render            | open   | Extract `pushPrompts`, non-template `formatingOrder`, template render walker, cache-point mutation, prompt-info text capture, character depth prompt, and `editRequest` trigger.                                                                  | F4-A, F4-B, F4-F                                                                                                        |
+| 5-24 Dispatch request               | open   | Extract generation metadata creation, preview / previewPrompt exits, `requestChatData` argument construction, model override update, abort check, and provider-fail handling.                                                                     | F4-G                                                                                                                    |
+| 5-25 Response orchestration         | open   | Extract the stream/non-stream branch chooser plus shared output-trigger, inlay-screen, TTS, auto-continue, and IGP orchestration. Existing response helpers stay in `postGeneration/`.                                                            | Existing fixtures; add unit tests only if the orchestration helper gets a narrow signature.                             |
+| 5-26 Stage-4 orchestrator           | open   | Extract resend handoff, notification, provider emotion, emotion fallback routing, image-generation dispatch, and final `finalizeStage4` call into one stage-4 wrapper.                                                                            | Existing fixtures cover notification/emotion/imggen helpers indirectly only; add a fixture if wrapper behavior changes. |
+| 5-27 Entry context                  | open   | Extract preset-chain selection, stat counter, selected character/chat lookup, chatId backfill, prompt-info seed, tokenizer creation, and current-chat parser pass. This comes late because many earlier slices currently close over these values. | Existing fixtures plus a focused prompt-info seed unit test.                                                            |
+| 5-28 Coordinator closeout           | open   | Inline cleanup after the preceding slices: remove dead locals, make stage handoffs explicit, verify `index.svelte.ts` is under 500 lines, and update status docs.                                                                                 | All gates satisfied                                                                                                     |
+
+## Acceptance Per Slice
+
+For a fixture gate:
+
+```bash
+UPDATE_FIXTURES=1 pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts
+pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts
+```
+
+For every Phase 5 extraction slice:
+
+```bash
+pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts
+```
+
+Also run any targeted helper tests touched by the slice. Before
+closing Phase 5, run:
+
+```bash
+pnpm check
+pnpm test
+pnpm build
+```
+
+Tauri build remains a manual phase-boundary verification.

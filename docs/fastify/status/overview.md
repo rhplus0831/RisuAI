@@ -38,7 +38,8 @@ workstream lives in the sibling shards.
   post-generation / response-loop, request-budget, and
   prompt-assembly helpers extracted into focused modules while the
   17-fixture characterization harness keeps observable behavior
-  pinned.
+  pinned. The remaining work picker lives in
+  [`sendchat-slicing.md`](sendchat-slicing.md).
 
 ## Reference state
 
