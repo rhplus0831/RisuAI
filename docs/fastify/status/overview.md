@@ -14,8 +14,8 @@ workstream lives in the sibling shards.
 | 2 - Storage / import / assets / backups | complete    | Closed 2026-05-20; server routes + Docker. |
 | 3 - Proxy migration                     | complete    | Closed 2026-05-21; Express deleted.        |
 | 4 - sendChat tests                      | complete    | Closed 2026-05-20; all 17 fixtures landed. |
-| 5 - sendChat extraction                 | not started | Unblocked by Phase 4.                      |
-| 6 - Server-side generation              | not started | Blocked on Phase 5.                        |
+| 5 - sendChat extraction                 | in progress | Phase 5-1 through 5-12 landed.             |
+| 6 - Server-side generation              | not started | Blocked on Phase 5 closeout.               |
 | 7 - Server-side prompt assembly         | not started | Blocked on Phase 6.                        |
 | 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.              |
 | 9 - Client thinning                     | not started | Blocked on all of the above.               |
@@ -31,11 +31,12 @@ workstream lives in the sibling shards.
   needs follow-up before the image is self-contained. The
   Fastify-served SPA wires its self-host gates via `__NODE__` +
   `__FASTIFY__` injection in `index.html`.
-- **sendChat.** Captured in [`sendchat.md`](sendchat.md). The
-  file is currently 1968 lines and still mostly one `sendChat`
-  implementation; Phase 4 added a 17-fixture characterization
-  harness before extraction, and the snapshots now pin the
-  `doingChat` lease returning to `false`.
+- **sendChat.** Captured in [`sendchat.md`](sendchat.md). Phase
+  5 extraction is active: `src/ts/process/index.svelte.ts` is
+  currently 1713 lines, with auto-continue, error reporting, and
+  several post-generation / response-loop helpers extracted into
+  focused modules while the 17-fixture characterization harness
+  keeps observable behavior pinned.
 
 ## Reference state
 

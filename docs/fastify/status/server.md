@@ -134,8 +134,8 @@ script has been removed; `server/node/` no longer exists.
 - **Phase 2.** Done 2026-05-20. `data/db.json` blob for domain
   state, repository read/write, raw asset storage, JSON save
   import, backups, Fastify static serving, and container
-  switchover. Domain SQL tables are deferred to Phases 5-9, per
-  resource. Binary `.risu` codec and bundle export stay client-side
+  switchover. Domain SQL tables are deferred to later server phases,
+  per resource. Binary `.risu` codec and bundle export stay client-side
   until Phase 9. See
   [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
 - **Phase 3.** Closed 2026-05-21. Fastify owns provider proxy

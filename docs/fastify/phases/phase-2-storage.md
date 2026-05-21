@@ -1,6 +1,6 @@
 # Phase 2 - Storage, Import, Assets, Backups
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 Historical note: Phase 2 is closed. References below to Express or
 the gap before proxy migration describe the state during Phase 2;
@@ -25,8 +25,8 @@ not split into per-resource readers; building 25 SQL tables now would
 mirror that current shape, which Phase 9 then tears apart. We avoid
 the wasted middle step by persisting the blob as a single JSON file
 during the migration window and migrating fields into SQL tables
-_per resource_ when Phases 5-9 carve out their APIs and learn the
-shape each one actually needs.
+_per resource_ when later server APIs learn the shape each one
+actually needs.
 
 ## Migration-window assumption
 
@@ -141,8 +141,8 @@ JSON passthrough.
   for later phases, `EntityNotFoundError` -> 404, and
   `ValidationError` -> 400.
 
-When Phase 5+ extracts a resource (say characters) into SQL, the
-repository adds:
+When a later server phase extracts a resource (say characters) into
+SQL, the repository adds:
 
 - A `characters` SQL table with a schema shaped for its API.
 - A one-time boot migration that moves `db.json.database.characters`
@@ -318,11 +318,11 @@ window.
 ## Boundaries
 
 - **No domain SQL tables in Phase 2.** Domain data stays in
-  `db.json`. SQL tables for individual resources land per-resource in
-  Phases 5-9, at the point a per-resource API needs them.
-- **No commands.** Per-resource mutations land later (Phase 5/6 via
-  the sendChat flow + Phase 9 client thinning), not here. Users still
-  mutate state by uploading a new save.
+  `db.json`. SQL tables for individual resources land per-resource
+  when a later server API needs them.
+- **No commands.** Per-resource mutations land later through the
+  server-backed chat flow and Phase 9 client thinning, not here.
+  Users still mutate state by uploading a new save.
 - **No SSE event stream yet.** That lands when commands do.
 - **No write concurrency control.** A single tempfile + rename is
   the entire write protocol. If Phase 3 / 4 introduces a second
@@ -375,7 +375,7 @@ window.
 - `move-to-fastify` schema and repository: `0c3de7de` through
   `a1836719` (loadout normalization), `55f421d4` (character order),
   `b6a50d3e` (plugin code/trust). Treat this as a future reference
-  for _per-resource_ SQL shapes (Phase 5+), not as the Phase 2 plan.
+  for _per-resource_ SQL shapes, not as the Phase 2 plan.
 - `MAPPER_AUDIT.md` on `move-to-fastify` is a useful checklist of
   database fields a future shared type must cover, even though no
   Phase 2 SQL maps them.

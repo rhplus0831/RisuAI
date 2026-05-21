@@ -24,8 +24,10 @@ the Fastify runtime on port 6002, but the production image still
 needs a dependency/layout follow-up before it is considered
 self-contained because `pnpm api:start` uses `tsx` and imports
 `@fastify/websocket` while both are currently dev dependencies.
-Phase 5 `sendChat` extraction is the next natural server/client
-slice behind the landed fixture harness.
+Phase 5 `sendChat` extraction is now active: commits
+`3c5a92b2` through `d926228a` have extracted auto-continue,
+error reporting, response-loop, and post-generation helpers behind
+the landed fixture harness.
 
 In scope:
 
@@ -34,8 +36,8 @@ In scope:
 - The Phase 0 removal set: Group chat, peer-to-peer multi-user chat,
   Risu Account Sync, Google Drive sync, and the Supa / Hypa V2 /
   Hanurai memory engines have been removed from the client surface.
-- Stabilizing `src/ts/process/index.svelte.ts::sendChat` with tests
-  before carving it into smaller modules.
+- Continuing the fixture-backed extraction of
+  `src/ts/process/index.svelte.ts::sendChat` into smaller modules.
 - A display-only browser client in server-backed mode.
 
 Out of scope (see [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md)):
@@ -56,14 +58,14 @@ short form.
 - **Storage.** SQLite via `node:sqlite` (Node 24+) for server schema
   metadata and revision. Fastify auth files live beside it under
   the data dir. Domain state lives in a single `data/db.json` blob
-  during the migration window; per-resource SQL tables land in
-  Phases 5-9 as APIs are carved out. Content-addressed assets live
-  on disk under `data/assets/`.
+  during the migration window; per-resource SQL tables land in later
+  server phases as APIs need durable shapes. Content-addressed assets
+  live on disk under `data/assets/`.
 - **Sequence.** Remove first, then port. Phase 0 strips the deprecated
   features so the surface that gets ported is smaller.
-- **sendChat.** Tests first, extraction second. Pin observable
-  behavior before touching the current mostly-monolithic
-  `src/ts/process/index.svelte.ts` file.
+- **sendChat.** Tests first, extraction second. Keep observable
+  behavior pinned while shrinking `src/ts/process/index.svelte.ts`
+  into focused browser modules before any server move.
 - **Client modes.** Server-backed web only. Tauri stays as-is.
 - **Hub.** Fastify proxies hub traffic through `/api/v1/hub/*`.
   The route is intentionally still auth-gated; session-cookie or

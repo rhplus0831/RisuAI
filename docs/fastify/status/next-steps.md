@@ -8,20 +8,19 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 
 ## Immediate
 
-1. **Phase 5 - sendChat extraction.** Phase 4 closed 2026-05-20
-   with all 17 characterization fixtures landed; the harness is
-   ready to defend an incremental refactor of `sendChat` into
-   per-stage modules. Start with the smallest meaningful seam
-   (e.g., move the auto-continue recursion or the response
-   post-processing block) and run the focused fixture suite after
-   each step:
+1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
+   through `d926228a` (Phase 5-12). The landed slices already moved
+   auto-continue, error handling, several post-generation helpers,
+   output-trigger reuse, and the non-streaming / streaming response
+   loops out of `index.svelte.ts`. Continue with the smallest
+   meaningful remaining seam in prompt assembly, dispatch, or
+   finalization and run the focused fixture suite after each step:
    `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
    Preserve the current lifecycle invariant from
    [`sendchat.md`](sendchat.md): `sendChat` owns and clears the
    `doingChat` lease when it acquires it, including abort and error
-   exits. The remaining extraction notes are the format-dependent
-   `pushPrompts` coalescer and the author-note-at-end-of-prompt vs.
-   "configured depth" doc gap.
+   exits. Also keep the helper-level tests green for any module
+   touched by the slice.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -46,6 +45,29 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    compiling the server before the runtime stage copies it.
 
 ## Completed Slices
+
+- **Phase 5 - extraction slices 1-3.** Done 2026-05-21.
+  `3c5a92b2` extracted `evaluateAutoContinue` to
+  `src/ts/process/autoContinue.ts`; `75e266f5` made
+  `sendChat` own the `doingChat` lease it acquires and clear it in
+  `finally`; `9c3713bb` extracted `reportSendChatError` to
+  `src/ts/process/sendChatErrors.ts` with targeted tests.
+
+- **Phase 5 - post-generation slices 4-8.** Done 2026-05-21.
+  `a2162545`, `da124c9b`, `0f44c35f`, `bd152cdf`, and
+  `bfa128b4` extracted desktop notification, IGP dispatch,
+  stage-4 timing writeback, response-emotion handling, and
+  imggen stable-diff dispatch under
+  `src/ts/process/postGeneration/`, each with a focused test.
+
+- **Phase 5 - emotion/output/response slices 9-12.** Done
+  2026-05-21. `3509972f`, `79ce8ce5`, `4424140e`, `d67543b2`,
+  `7519c384`, `241a6f13`, and `d926228a` extracted char-emotion
+  store helpers, LLM and embedding emotion fallbacks, collapsed
+  outer emotion dispatch, deduped output-trigger handling, and
+  moved the non-streaming and streaming response loops to
+  `postGeneration/nonStreamResponse.ts` and
+  `postGeneration/streamResponse.ts`.
 
 - **Phase 0 removals - Group chat.** Done 2026-05-20. Single
   commit; the type narrowing forced types, runtime, and UI to
@@ -87,8 +109,8 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   Done 2026-05-20. Adds the fixture loader, provider fake,
   snapshot harness, per-side-effect mocks, and three fixtures
   (`simple-send`, `preview`, `continue`). A small defensive guard
-  on `parser.svelte.ts:506-507` (optional chaining of
-  `selIdState` and `DBState.db.characters`) was needed so the
+  on `src/ts/parser/parser.svelte.ts:506-507` (optional chaining
+  of `selIdState` and `DBState.db.characters`) was needed so the
   module's top-level `$effect.root` does not throw at vitest
   teardown.
 
@@ -114,7 +136,8 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   leading system block by `pushPrompts`'s same-role coalescer),
   `lorebook-keyword` (one globalLore entry with `key: "cat"`
   activated by user message), and `client-abort` (pre-aborted
-  AbortSignal short-circuits at `src/ts/process/index.svelte.ts:1507`).
+  AbortSignal now short-circuits at
+  `src/ts/process/index.svelte.ts:1523`).
   Adds an
   `aborted: true` flag to the fixture schema; the test driver
   synthesizes a pre-aborted controller and threads its signal

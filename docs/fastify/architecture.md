@@ -131,9 +131,9 @@ Conscious differences vs the `move-to-fastify` branch:
   top-level `_version` integer for shape evolution. See
   [`phases/phase-2-storage.md`](phases/phase-2-storage.md) for the
   rationale.
-- Per-resource SQL tables land in Phases 5-9, when an extracted API
-  defines the shape that resource actually needs. Each extraction
-  runs a one-time boot migration that moves the field out of
+- Per-resource SQL tables land in later server phases, when an
+  extracted API defines the shape that resource actually needs.
+  Each extraction runs a one-time boot migration that moves the field out of
   `db.json`. When `db.json` is empty, it is deleted.
 - Assets are stored on disk as `data/assets/<sha256>.<ext>`. Asset
   metadata (size, contentType) lives in `db.json.assets` during

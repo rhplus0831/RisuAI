@@ -75,8 +75,8 @@ Client disconnect aborts the upstream via `AbortController`.
 
 ### Browser changes
 
-`src/ts/process/pipeline/dispatch.ts` (from Phase 5) gains two
-modes:
+The Stage 3 dispatch/response extraction module from Phase 5 gains
+two modes:
 
 - Local (existing) - keeps the current direct-fetch path. Used
   when the server-backed mode flag is off; the final flag name is

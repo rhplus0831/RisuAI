@@ -1,21 +1,27 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 4 done: scaffolding + all 17 fixtures
-landed)
+Date: 2026-05-21 (Phase 5 active through Phase 5-12)
 
-Updated 2026-05-20: Phase 4 is complete. The fixture harness
-(loader, provider fake, snapshot, per-module mocks) plus all 17
-target fixtures live under `src/ts/process/__fixtures__/` and
-`src/ts/process/__tests__/sendChat.fixtures.test.ts`. The
-fixtures pin the entry path, every documented exit shape
-(success, multiline reroll, upstream fail, abort, auto-continue
-recursion), the prompt-shape variations under the default
-`formatingOrder` (author note, automatic cache point, persona,
-keyword / constant / recursive lorebook, multimodal image),
-hypaV3 memory consumption, and both trigger transformation
-hooks (editRequest via `runLuaEditTrigger`, editOutput via
-`customscript` regex). See "Phase 4 landed" below for the
-per-fixture summary.
+Updated 2026-05-21: Phase 5 extraction is active. Commits
+`3c5a92b2` through `d926228a` landed the first 12 slices:
+auto-continue, owned `doingChat` lifecycle, error reporting,
+desktop notification, IGP, stage-4 timing writeback, direct
+response emotion, image-generation stable-diff dispatch, emotion
+fallback helpers, output-trigger reuse, and the non-streaming plus
+streaming response loops.
+
+Phase 4 remains complete. The fixture harness (loader, provider
+fake, snapshot, per-module mocks) plus all 17 target fixtures live
+under `src/ts/process/__fixtures__/` and
+`src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
+pin the entry path, every documented exit shape (success, multiline
+reroll, upstream fail, abort, auto-continue recursion), the
+prompt-shape variations under the default `formatingOrder` (author
+note, automatic cache point, persona, keyword / constant /
+recursive lorebook, multimodal image), hypaV3 memory consumption,
+and both trigger transformation hooks (editRequest via
+`runLuaEditTrigger`, editOutput via `customscript` regex). See
+"Phase 4 landed" below for the per-fixture summary.
 
 Snapshot schema bumped 2026-05-20: `providerCalls` now persists
 the normalized call records (mode + formated + opt-in flags)
@@ -25,20 +31,21 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 1968 lines and is
-still dominated by a mostly-monolithic `sendChat` async function
-with these visible markers:
+`src/ts/process/index.svelte.ts` is currently 1713 lines. It is
+still the main `sendChat` coordinator, but Phase 5 has pulled
+several response and post-generation pieces into focused helpers.
+The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:241` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:257` -
   validation, lorebook prep, persona, description assembly.
-- `stage2Start` at `src/ts/process/index.svelte.ts:979` - Hypa V3
+- `stage2Start` at `src/ts/process/index.svelte.ts:995` - Hypa V3
   memory retrieval and prompt memory-card accounting. The current
   timing marker is narrower than the future Stage 2 module; the
   surrounding prompt assembly is still browser code.
-- `stage3Start` at `src/ts/process/index.svelte.ts:1467` -
+- `stage3Start` at `src/ts/process/index.svelte.ts:1483` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:1736` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:1637` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -55,6 +62,25 @@ It reaches into:
   `memory/{supaMemory,hypav2,hanuraiMemory}` imports and live
   branches.
 
+Already extracted during Phase 5:
+
+- `src/ts/process/autoContinue.ts` - `evaluateAutoContinue`.
+- `src/ts/process/sendChatErrors.ts` - `reportSendChatError`.
+- `src/ts/process/postGeneration/notification.ts` -
+  `fireDesktopNotification`.
+- `src/ts/process/postGeneration/igp.ts` - IGP dispatch.
+- `src/ts/process/postGeneration/stage4Finalize.ts` - final
+  stage-timing writeback to `generationInfo`.
+- `src/ts/process/postGeneration/charEmotionStore.ts`,
+  `emotionFromResponse.ts`, `emotionFallbackLlm.ts`, and
+  `emotionFallbackEmbedding.ts` - emotion store and fallback paths.
+- `src/ts/process/postGeneration/imggenStableDiff.ts` - image
+  generation stable-diff dispatch.
+- `src/ts/process/postGeneration/outputTrigger.ts` - shared
+  output-trigger sequence after response application.
+- `src/ts/process/postGeneration/nonStreamResponse.ts` and
+  `streamResponse.ts` - non-streaming and streaming response loops.
+
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:
 
@@ -62,7 +88,7 @@ fixture-based characterization harness:
   via `setDatabase(...)` from a per-fixture `db/<name>.json`. The
   cleanup intentionally does not restore the prior `DBState.db`
   because doing so triggers a reactive `$effect` in
-  `parser.svelte.ts:504-518` against partial state; the next
+  `src/ts/parser/parser.svelte.ts:504-518` against partial state; the next
   fixture's `setDatabase()` reseeds wholesale.
 - `src/ts/process/__fixtures__/providerFake.ts` is the fake for
   `requestChatData`. It scripts responses from
@@ -83,7 +109,8 @@ fixture-based characterization harness:
   real work runs. UUIDs are deterministic
   (`uuid` mocked to a counter); time is locked via
   `vi.useFakeTimers({ toFake: ['Date'] })`.
-- A small defensive guard was added to `parser.svelte.ts:506-507`
+- A small defensive guard was added to
+  `src/ts/parser/parser.svelte.ts:506-507`
   (`selIdState?.selId ?? -1`, `DBState?.db?.characters?...`) so
   the top-level `$effect.root` does not throw at vitest's module
   teardown. This is a production-safe robustness change, not a
@@ -91,7 +118,14 @@ fixture-based characterization harness:
 
 Existing `process/` helper-surface tests (TTS hooks, request
 additional params, MCP Risu access modules, inlay asset helpers)
-continue to cover the smaller seams.
+continue to cover older seams. Phase 5 adds targeted helper tests
+for the extracted modules:
+`sendChatErrors.test.ts`, `notification.test.ts`, `igp.test.ts`,
+`stage4Finalize.test.ts`, `emotionFromResponse.test.ts`,
+`charEmotionStore.test.ts`, `emotionFallbackLlm.test.ts`,
+`emotionFallbackEmbedding.test.ts`, `imggenStableDiff.test.ts`,
+`outputTrigger.test.ts`, `nonStreamResponse.test.ts`, and
+`streamResponse.test.ts`.
 
 ## Phase 4 landed
 
@@ -157,7 +191,7 @@ each fixture pins.
 - `client-abort` - test driver passes a pre-aborted
   `AbortSignal`. Provider fake does not honor the signal so the
   call is still captured, but the post-provider check at
-  `src/ts/process/index.svelte.ts:1507` short-circuits the
+  `src/ts/process/index.svelte.ts:1523` short-circuits the
   function. Pins `stages: [1, 3]`, no assistant message added, no
   side effects.
 - `lorebook-constant` - one `globalLore` entry with
@@ -198,13 +232,13 @@ each fixture pins.
   triggerscript and the mode is `'editRequest'` on an
   `OpenAIChat[]`. Pins that the
   `runLuaEditTrigger('editRequest', formated)` call site at
-  `src/ts/process/index.svelte.ts:1406` mutates the formated array
+  `src/ts/process/index.svelte.ts:1422` mutates the formated array
   and the mutation reaches the provider.
 - `editoutput-trigger` - one `customscript` regex of type
   `'editoutput'` rewriting `sunshine` -> `starlight`. Pins that
-  the rewrite happens inside the streaming loop's
-  `processScriptFull('editoutput', ...)` at
-  `src/ts/process/index.svelte.ts:1562` (before
+  the rewrite happens inside the streaming loop's extracted
+  `processScriptFull('editoutput', ...)` call at
+  `src/ts/process/postGeneration/streamResponse.ts:102` (before
   `runInlayScreen` sees the text), and the rewritten text is what
   gets persisted on the assistant message.
 - `doingChat` is set to `true` only when `sendChat` owns the lease,
@@ -225,10 +259,12 @@ each fixture pins.
   database snapshots, canned chat state, canned upstream provider
   responses (fakes). Outputs: the message patches the function
   emits and the persisted chat shape.
-- **Phase 5.** Per-stage extraction behind the fixtures. The
-  function becomes a coordinator that calls into
-  `process/{validate, prompt, dispatch, finalize}.ts` (or similar
-  names; finalized in Phase 5).
+- **Phase 5.** Per-stage extraction behind the fixtures. This is
+  in progress. The landed module names are
+  `autoContinue.ts`, `sendChatErrors.ts`, and
+  `postGeneration/*`; the remaining work is to keep shrinking the
+  coordinator until validation, prompt assembly, dispatch, and
+  finalization are cleanly portable.
 - **Phase 6.** Stage 3 dispatch moves server-side. Browser keeps
   a thin client that reads the server's SSE stream.
 - **Phase 7.** Stage 2 prompt assembly moves server-side.
@@ -238,10 +274,10 @@ each fixture pins.
 
 ## Boundary rules
 
-Until Phase 5 closes, avoid editing `sendChat` itself unless a
-targeted bug fix is required. The function is the target, not the
-source of work. Refactoring control flow belongs behind Phase 4
-fixtures and Phase 5 extraction.
+Until Phase 5 closes, keep edits to `sendChat` narrow and
+fixture-backed. Refactoring control flow belongs in small extraction
+slices with targeted helper tests where the helper has a stable
+signature, plus the full 17-fixture suite after each slice.
 
 ## Reference: metatron's end state
 

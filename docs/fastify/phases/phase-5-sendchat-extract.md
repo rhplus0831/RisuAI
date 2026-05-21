@@ -14,39 +14,52 @@ server one at a time in later phases.
 - Phase 0 closed (no dead branches).
 - Phase 4 closed (fixtures pin behavior).
 
+## Status
+
+In progress as of 2026-05-21. Phase 5-1 through Phase 5-12 have
+landed, ending at `d926228a`. The current coordinator is
+`src/ts/process/index.svelte.ts` (1713 lines), with extracted
+helpers in `src/ts/process/autoContinue.ts`,
+`src/ts/process/sendChatErrors.ts`, and
+`src/ts/process/postGeneration/*`.
+
 ## Scope
 
-### Target shape
+### Current extracted shape
 
 ```
 src/ts/process/
-  index.svelte.ts             coordinator (~300 lines)
-  pipeline/
-    validate.ts               Stage 1: chat lookup, mode check,
-                              user-row prep, regenerate truncation
-    prompt/
-      assemble.ts             Stage 2: walk promptTemplate
-      lorebook.ts             activation + recursion
-      history.ts              chat history shaping
-      tokens.ts               budget pruning
-      memory.ts               Hypa V3 wrapper
-    dispatch.ts               Stage 3: provider request + stream
-    finalize.ts               Stage 4: post-text, emotion, auto-
-                              continue, reroll metadata
-    sideEffects.ts            TTS, inlay screen, stable diff queue
+  index.svelte.ts             coordinator, still being reduced
+  autoContinue.ts             auto-continue decision
+  sendChatErrors.ts           inlay-error / alert reporting
+  postGeneration/
+    notification.ts           desktop notification
+    igp.ts                    IGP dispatch
+    stage4Finalize.ts         generationInfo timing writeback
+    charEmotionStore.ts       shared emotion-store helpers
+    emotionFromResponse.ts    provider-returned emotion
+    emotionFallbackLlm.ts     LLM emotion fallback
+    emotionFallbackEmbedding.ts
+                              embedding emotion fallback
+    imggenStableDiff.ts       imggen stable-diff handoff
+    outputTrigger.ts          post-response output trigger
+    nonStreamResponse.ts      success / multiline response loop
+    streamResponse.ts         streaming reader loop
 ```
 
-`process/index.svelte.ts::sendChat` calls each stage in order, threads
-the abort signal through, and emits the same observable surface the
-fixtures pin. The Svelte stores stay where they are (the function is
-still browser-only at this phase).
+Remaining extraction should keep moving toward a coordinator whose
+major responsibilities are validation / setup, prompt assembly,
+dispatch, and finalization orchestration. The Svelte stores stay
+where they are (the function is still browser-only at this phase).
+If a later slice introduces a `pipeline/` directory, it should absorb
+or call the helpers above rather than duplicating them.
 
 ### Migration recipe
 
 For each stage:
 
-1. Identify the entry and exit points in the current mostly
-   monolithic function (use the `stageTimings.*Start` markers listed
+1. Identify the entry and exit points in the current coordinator
+   (use the `stageTimings.*Start` markers listed
    in [`../status/sendchat.md`](../status/sendchat.md)).
 2. Lift the block into the new module with the minimum signature
    that compiles.
@@ -54,14 +67,15 @@ For each stage:
    `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
    Diff failures by hand; adjust the new module until the fixture
    set is green again.
-4. Land the slice as one commit per stage. Bisect-friendly.
+4. Land the slice as one commit per seam. Bisect-friendly.
 
 Hidden coupling discovered during extraction (Svelte stores read
 mid-function, globals mutated, side effects with no return value)
-goes into the module's signature. A stage that needs `DBState` to
-write a message row passes the write back to the coordinator
-instead of mutating the store directly. This is what lets Phase 6
-move dispatch server-side without ripping out coupling first.
+goes into the module's signature where the seam is stable. The
+Phase 5-1 through 5-12 helpers still mutate `DBState` directly in
+the response and post-generation paths; later slices should either
+make those writes explicit in the helper contract or leave a clear
+browser-only boundary for Phase 6 to route around.
 
 ### What does not move yet
 
@@ -94,9 +108,10 @@ move dispatch server-side without ripping out coupling first.
 
 - `src/ts/process/index.svelte.ts` is under 500 lines and contains
   only coordinator logic.
-- Each `pipeline/` module is independently testable (the fixtures
-  may exercise it through the coordinator; targeted unit tests
-  per module are encouraged but not required).
+- Each extracted module is independently testable (the fixtures may
+  exercise it through the coordinator; targeted unit tests per module
+  are encouraged and already exist for the Phase 5-3 through
+  Phase 5-12 helpers).
 - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`
   is green.
 - `pnpm check`, `pnpm test`, `pnpm build` green.

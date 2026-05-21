@@ -21,8 +21,15 @@ under [`status/`](status/).
 - Phase 4 sendChat characterization tests closed on 2026-05-20.
   All 17 fixtures land under `src/ts/process/__fixtures__/` with
   per-fixture DB / upstream / expected files plus targeted
-  `vi.mock`s for the heavy side-effect modules. Phase 5 can now
-  refactor sendChat behind a real safety net.
+  `vi.mock`s for the heavy side-effect modules. Phase 5 is using
+  that safety net for incremental extraction.
+- Phase 5 sendChat extraction is active. Commits `3c5a92b2`
+  through `d926228a` landed the first 12 slices: auto-continue
+  decision logic, `doingChat` ownership, error reporting,
+  notification / IGP / stage-4 helpers, emotion helpers, image
+  generation post-processing, output-trigger reuse, and the
+  non-streaming + streaming response loops. The coordinator still
+  lives in `src/ts/process/index.svelte.ts`, now 1713 lines.
 - Phase 3A, Phase 3B, and Phase 3C all landed on 2026-05-20.
   `POST /api/v1/proxy/fetch` is in place behind `requireAuth`,
   the proxy stream-job surface (`POST` / `DELETE` plus the
@@ -60,20 +67,17 @@ under [`status/`](status/).
 
 ## Active phase
 
-No implementation phase is currently active in this branch. Phase 3
-closed on 2026-05-21; Fastify owns the proxy / hub / stream-job /
-storage / auth / crypto surface and Express is deleted.
+Phase 5 (`sendChat` extraction) is the active branch work. The
+landed slices have focused on Stage 3 / Stage 4 support code and
+response handling while keeping the Phase 4 fixture suite as the
+behavioral guardrail. The next pickup should continue narrowing the
+remaining prompt / dispatch / finalization blocks rather than
+starting Phase 6.
 
-Phase 5 (`sendChat` extraction) is the natural next pickup
-behind the characterization-test safety net landed in Phase 4.
 Phase 6 (server-side LLM / translation / TTS / image generation)
-remains blocked on Phase 5.
-
-Phase 4 (`sendChat` characterization tests) closed 2026-05-20.
-The harness lives at `src/ts/process/__fixtures__/` and
-`src/ts/process/__tests__/sendChat.fixtures.test.ts`; all 17
-target fixtures pin. Phase 5 (`sendChat` extraction) can now start
-without waiting on proxy work.
+remains blocked until Phase 5 closes. Phase 3 already closed on
+2026-05-21; Fastify owns the proxy / hub / stream-job / storage /
+auth / crypto surface and Express is deleted.
 
 ## Start here
 

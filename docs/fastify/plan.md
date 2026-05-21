@@ -27,8 +27,9 @@ End state:
 
 ## Current Baseline
 
-Where the codebase stands after the Phase 3 closeout on 2026-05-21
-and the Phase 4 characterization slice on 2026-05-20:
+Where the codebase stands after the Phase 3 closeout on 2026-05-21,
+the Phase 4 characterization slice on 2026-05-20, and the Phase
+5-1 through Phase 5-12 extraction commits on 2026-05-21:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -53,15 +54,21 @@ and the Phase 4 characterization slice on 2026-05-20:
   dependencies. The legacy `runserver` script and `server/node/`
   Express server have been removed. `server/hono/` remains a
   separate static-serving scaffold and is not the migration path.
-- `src/ts/process/index.svelte.ts` is currently 1968 lines and is
-  still dominated by a mostly-monolithic `sendChat` function with
-  explicit `stage1`-`stage4` timing markers.
+- `src/ts/process/index.svelte.ts` is currently 1713 lines and
+  remains the `sendChat` coordinator with explicit
+  `stage1`-`stage4` timing markers. Phase 5 has already moved
+  auto-continue evaluation, error reporting, desktop notification,
+  IGP, stage-4 timing writeback, emotion handling, image-generation
+  post-processing, output-trigger reuse, and the non-streaming /
+  streaming response loops into `src/ts/process/autoContinue.ts`,
+  `src/ts/process/sendChatErrors.ts`, and
+  `src/ts/process/postGeneration/*`.
 - `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
   the current `sendChat` behavior with 17 fixtures under
   `src/ts/process/__fixtures__/`. The snapshots also assert that
   `doingChat` is false after each fixture; `sendChat` now clears the
-  lease it owns in a `finally` block. Phase 5 extraction can proceed
-  behind that harness.
+  lease it owns in a `finally` block. Phase 5 extraction is
+  proceeding behind that harness.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -96,7 +103,8 @@ rules. The headline order:
    domain state, repository API, content-addressed assets, JSON
    save import, backups, Fastify static serving, and container
    switchover. Done server-side on 2026-05-20. No domain SQL schema
-   yet; per-resource tables land in Phases 5-9. The binary `.risu`
+   yet; per-resource tables land later as server APIs need durable
+   shapes. The binary `.risu`
    codec and bundle export stay out of the server until Phase 9 -
    the server is JSON-native through Phase 2.
 3. **Proxy migration** - move provider proxy and Risu hub
@@ -107,7 +115,8 @@ rules. The headline order:
    `sendChat` with fixtures and snapshots before any extraction.
    Done 2026-05-20 with 17 fixtures.
 5. **sendChat extraction** - carve the function into stage-shaped
-   modules behind the pinned tests.
+   modules behind the pinned tests. In progress as of 2026-05-21
+   through Phase 5-12 (`d926228a`).
 6. **Server-side generation** - move provider dispatch, tokenizer,
    translation, TTS, image, and Stable Horde calls server-side.
 7. **Server-side prompt assembly** - server walks the preset's

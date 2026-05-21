@@ -1,6 +1,6 @@
 # sendChat Fixtures
 
-Date: 2026-05-21 (all 17 fixtures landed - Phase 4 done)
+Date: 2026-05-21 (all 17 fixtures landed; Phase 5 refs current)
 
 Status: all 17 target fixtures landed. The harness pins the entry
 path, the multiline reroll branch, the upstream-fail branch, the
@@ -34,10 +34,10 @@ all current snapshots assert it is `false`.
 | `multimodal-image`    | `{{inlay::<id>}}` tag in a user message resolves via mocked `getInlayAsset` into the `multimodals: [{ type: 'image', base64, width, height }]` field on the user `OpenAIChat`. Uses a custom `xcustom:::` model with `hasImageInput`. | landed |
 | `cache-point`         | `automaticCachePoint` marks the last 3 user entries with `cachePoint: true`. Requires a `promptTemplate` with a `chat` card. | landed |
 | `editrequest-trigger` | Full `vi.mock` of `scriptings` (wasmoon can't initialize under happy-dom). The fake `runLuaEditTrigger` appends a marker system entry when the character has a non-empty `triggerscript` and `mode === 'editRequest'`. | landed |
-| `editoutput-trigger`  | One `customscript` regex entry of `type: 'editoutput'` rewriting `sunshine` -> `starlight`. The rewrite fires inside the streaming loop's `processScriptFull('editoutput', ...)` at `src/ts/process/index.svelte.ts:1562`. | landed |
+| `editoutput-trigger`  | One `customscript` regex entry of `type: 'editoutput'` rewriting `sunshine` -> `starlight`. The rewrite fires inside the extracted streaming loop's `processScriptFull('editoutput', ...)` at `src/ts/process/postGeneration/streamResponse.ts:102`. | landed |
 | `auto-continue`       | Auto-continue fires once and lands a second turn.      | landed      |
 | `provider-error`      | Upstream `type:'fail'` produces a `risuerror` chat message. | landed |
-| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `src/ts/process/index.svelte.ts:1507` returns `false` before any assistant message is added. | landed |
+| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `src/ts/process/index.svelte.ts:1523` returns `false` before any assistant message is added. | landed |
 
 ## Loader
 
@@ -52,7 +52,8 @@ all current snapshots assert it is `false`.
 - Returning a `cleanup()` callback. The current implementation
   intentionally does not restore the prior `DBState.db` because
   doing so triggers reactive `$effect` listeners
-  (`parser.svelte.ts:504-518`, `stores.svelte.ts:176-204`) against
+  (`src/ts/parser/parser.svelte.ts:504-518`,
+  `src/ts/stores.svelte.ts:176-204`) against
   partial state and surfaces an unhandled error. Each fixture's
   `loadFixture()` reseeds wholesale, which is enough isolation for
   this harness.

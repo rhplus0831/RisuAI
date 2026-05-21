@@ -1,6 +1,6 @@
 # Phase 4 - sendChat Characterization Tests
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Goal
 
@@ -38,8 +38,8 @@ that:
 - Sets `selectedCharID` to the canned target.
 - Returns a `cleanup()` callback. As landed, the callback does not
   restore the prior `DBState`; each fixture reseeds wholesale, which
-  avoids reactive teardown errors from `parser.svelte.ts` and
-  `stores.svelte.ts`.
+  avoids reactive teardown errors from
+  `src/ts/parser/parser.svelte.ts` and `src/ts/stores.svelte.ts`.
 
 ### Provider fake
 

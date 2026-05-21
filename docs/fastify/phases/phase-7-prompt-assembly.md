@@ -1,6 +1,6 @@
 # Phase 7 - Server-Side Prompt Assembly
 
-Date: 2026-05-20
+Date: 2026-05-21
 
 ## Goal
 
@@ -89,8 +89,8 @@ status: "start" | "end" }`.
 
 ### Browser changes
 
-`src/ts/process/pipeline/prompt/*` shrinks to ~0 lines in
-server-backed mode. The coordinator posts to
+The browser-side prompt extraction modules from Phase 5 shrink to
+thin adapters in server-backed mode. The coordinator posts to
 `/api/v1/generate/chat` and iterates the stream. The bridge owns:
 
 - UI lease, abort forwarding.
