@@ -1,8 +1,8 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-21)
+Date: 2026-05-21 (Phase 5 active through Phase 5-22)
 
-Updated 2026-05-21: Phase 5 extraction is active. The first 21
+Updated 2026-05-21: Phase 5 extraction is active. The first 22
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
@@ -21,10 +21,13 @@ discovery, no-template fallback that tokenizes every `unformated`
 slot), the per-message history formatter (one `Message` →
 `OpenAIChat` covering editprocess, inlays, multimodal +
 caption fallback, sendName wrapper, Thoughts extraction, and
-asset_prompt), and the history assembly window (examples +
+asset_prompt), the history assembly window (examples +
 start-new-chat marker + first message + makeMs filter + start
 trigger with stopSending early return + per-message loop + depth-
-prompt token preflight).
+prompt token preflight), and the memory window (Hypa V3 stage
+transition with error writeback, fallback budget trim with
+`lastMemory`, memory-card split, and `<Previous Conversation>`
+wrapping).
 
 Phase 4 remains complete for the original 17 fixtures, and seven
 narrow Phase 5 gate fixtures have since been added
@@ -50,21 +53,25 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 1017 lines. It is
+`src/ts/process/index.svelte.ts` is currently 968 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
 - `stage1Start` at `src/ts/process/index.svelte.ts:259` -
   validation, lorebook prep, persona, description assembly.
-- `stage2Start` at `src/ts/process/index.svelte.ts:330` - Hypa V3
-  memory retrieval and prompt memory-card accounting. The current
-  timing marker is narrower than the future Stage 2 module; the
-  surrounding prompt assembly is still browser code.
-- `stage3Start` at `src/ts/process/index.svelte.ts:803` -
+- `stage2Start` inside
+  `src/ts/process/promptAssembly/buildMemoryWindow.ts` - Hypa V3
+  memory retrieval. The outer coordinator now passes
+  `stageTimings` and a `setProcessStage` callback into the helper,
+  which writes `stage1Duration`, `stage2Start`/`Duration` and
+  flips the stage from 2 back to 1 around the `hypaMemoryV3`
+  call. The fallback budget-trim branch (no Hypa V3) writes
+  `stage1Duration` only.
+- `stage3Start` at `src/ts/process/index.svelte.ts:754` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:957` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:908` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -181,6 +188,32 @@ Already extracted during Phase 5:
   `if (history.stopSending === true)` because the project tsconfig
   has `strict: false`. The two pre-existing `console.log` debug
   calls that lived in this region were dropped during the move.
+- `src/ts/process/promptAssembly/buildMemoryWindow.ts` -
+  long-term memory + memory-card split. Branches on
+  `nowChatroom.supaMemory && DBState.db.hypaV3`: the Hypa V3 path
+  brackets a `hypaMemoryV3` call with stage timing transitions
+  (`stage1Duration`, `stage2Start`, `stage2Duration`) and a
+  `setProcessStage(2)`/`setProcessStage(1)` callback pair,
+  persisting `hypaV3Data` summaries back into the supplied
+  `currentChat` and `DBState.db.characters[selectedChar].chats[
+  selectedChat]`. A HypaV3 error writes back any partial summary
+  then short-circuits with `stopSending: true`. The fallback
+  (non-Hypa) path runs a budget-trim while-loop, stops with
+  `language.errors.toomuchtoken` if `chats.length <= 1` still
+  exceeds budget, and records `currentChat.lastMemory`. Then the
+  memory-card split rewrites `unformated.chats`: `supaMemory` /
+  `hypaMemory` rows either get captured into the returned
+  `memories[]` (when `memoryCardUsed`) and replaced with empty
+  system placeholders that the trailing filter drops, or wrapped
+  with `<Previous Conversation>…</Previous Conversation>`. All
+  non-memory rows get `removable: true`. Without a prompt
+  template the trailing chat is promoted to `unformated.lastChat`
+  first. Returns a stopped / non-stopped discriminated union
+  carrying `{ chats, currentTokens, currentChat, memories }`;
+  the coordinator narrows with
+  `if (memWindow.stopSending === true)`. Two pre-existing
+  `console.log` debug calls that lived in the Hypa branch were
+  dropped during the move.
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
@@ -236,7 +269,8 @@ for the extracted modules:
 `buildDescription.test.ts`, `buildPlainPromptSections.test.ts`,
 `normalizeTemplate.test.ts`, `buildStaticPromptSections.test.ts`,
 `buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
-`formatHistoryMessage.test.ts`, and `buildHistoryWindow.test.ts`.
+`formatHistoryMessage.test.ts`, `buildHistoryWindow.test.ts`, and
+`buildMemoryWindow.test.ts`.
 
 ## Fixture Inventory
 

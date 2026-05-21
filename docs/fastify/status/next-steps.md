@@ -9,7 +9,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-21. The landed slices already moved
+   through Phase 5-22. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
@@ -17,8 +17,10 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    globalNote sections, prompt-template normalization, the
    static prompt sections (author note, cot, persona, inlay-view),
    the lorebook placement context, the template token preflight,
-   the per-message history formatter, and the history assembly
-   window out of `index.svelte.ts`. The remaining work is now sliced in
+   the per-message history formatter, the history assembly
+   window, and the memory window (Hypa V3 / fallback budget trim /
+   memory-card split / `<Previous Conversation>` wrap) out of
+   `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
    needed, rather than picking an unrelated tiny helper. Run the
@@ -45,6 +47,47 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - memory window slice 22.** Done 2026-05-21.
+  Extracted the long-term-memory branching and the memory-card
+  split into `src/ts/process/promptAssembly/buildMemoryWindow.ts`.
+  The helper takes
+  `{ chats, currentTokens, maxContextTokens, currentChat, nowChatroom, tokenizer, selectedChar, selectedChat, memoryCardUsed, promptTemplate, unformated, stageTimings, throwError, setProcessStage }`
+  and returns a stopped / non-stopped discriminated union carrying
+  `{ chats, currentTokens, currentChat, memories }` on success.
+  The coordinator narrows with `memWindow.stopSending === true`.
+  On the `nowChatroom.supaMemory && DBState.db.hypaV3` branch the
+  helper brackets `hypaMemoryV3` with stage-timing transitions
+  (`stage1Duration`, `stage2Start`, `stage2Duration`) and a
+  `setProcessStage(2)` / `setProcessStage(1)` callback pair,
+  persisting `hypaV3Data` to both the supplied `currentChat` and
+  `DBState.db.characters[selectedChar].chats[selectedChat]`. A
+  HypaV3 error writes back any partial memory before stopping.
+  The fallback (non-Hypa) branch shifts the oldest chats until
+  under budget, stops with `language.errors.toomuchtoken` if
+  `chats.length <= 1` still exceeds, and records
+  `currentChat.lastMemory`. The memory-card split rewrites
+  `unformated.chats` per `memoryCardUsed`: `supaMemory` /
+  `hypaMemory` rows either become returned `memories[]` entries
+  with the originals zeroed (then filtered) or get wrapped with
+  `<Previous Conversation>…</Previous Conversation>`. Other rows
+  pick up `removable: true`. Without a prompt template the trailing
+  chat is promoted to `unformated.lastChat` first. F4-B
+  `prompt-template-memory-cache` (landed during 5-19) pins the
+  Hypa happy path; no new fixture was added. The `hypaMemoryV3`
+  import moved out of `index.svelte.ts`. Two pre-existing
+  `console.log` debug calls inside the Hypa branch were dropped.
+  Helper test `buildMemoryWindow.test.ts` adds 11 cases:
+  Hypa happy path, Hypa error with memory writeback, Hypa error
+  without memory, `supaMemory: false` skip, fallback noop with
+  `lastMemory`, fallback trim with `lastMemory`, fallback
+  `toomuchtoken`, memory-card split with `memoryCardUsed=true`
+  (extract + zero + filter + non-memory `removable: true`),
+  memory-card split with `memoryCardUsed=false`
+  (`<Previous Conversation>` wrap), `!promptTemplate` last-chat
+  promotion, and empty-content filter with multimodal preservation.
+  All 24 sendChat fixtures stay green without re-recording;
+  `index.svelte.ts` drops from 1017 to 968 lines.
 
 - **Phase 5 - history assembly window slice 21.** Done 2026-05-21.
   Extracted the surrounding history-assembly machinery into

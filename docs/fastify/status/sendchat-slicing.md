@@ -16,8 +16,8 @@ gate first, then land the extraction slice. Update this file and
 
 ## Current Code Map
 
-`src/ts/process/index.svelte.ts` is 1017 lines. Phase 5-1 through
-5-21 already extracted auto-continue, owned `doingChat` lifecycle,
+`src/ts/process/index.svelte.ts` is 968 lines. Phase 5-1 through
+5-22 already extracted auto-continue, owned `doingChat` lifecycle,
 error reporting, response loops, most post-generation helpers, final
 request-budget recheck, character description, plain-prompt main /
 jailbreak / global-note sections, prompt-template normalization
@@ -31,21 +31,24 @@ the template token preflight (per-card token math plus the
 template path that tokenizes every `unformated` slot), the
 per-message history formatter (one `Message` → `OpenAIChat`:
 editprocess script, name resolution, inlay/multimodal/caption
-fallback, sendName wrapper, Thoughts extraction, asset_prompt), and
-the history assembly window (examples + start-new-chat + first
+fallback, sendName wrapper, Thoughts extraction, asset_prompt), the
+history assembly window (examples + start-new-chat + first
 message + makeMs filter + start-trigger handling with stopSending
-early return + per-message loop + depth-prompt token preflight).
+early return + per-message loop + depth-prompt token preflight),
+and the memory window (Hypa V3 stage transition with error
+writeback, fallback budget trim with `lastMemory`, memory-card
+split, and `<Previous Conversation>` wrapping).
 
 The work still inside the coordinator is clustered here:
 
-| Lines    | Remaining responsibility                                                                                                                          | Target owner after Phase 5           |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| 91-257   | Entry guard, preset-chain switch, selected character/chat setup, prompt-info seed, tokenizer setup.                                               | `sendChatContext` / lifecycle helper |
-| 327-419  | Hypa V3 handoff, fallback budget trimming, memory-card split / previous-conversation wrapping, `triggerResult.additonalSysPrompt` distribution.   | memory-window helper                 |
-| 443-757  | Final prompt rendering, `pushPrompts`, template rendering, cache points, prompt-info text capture, character depth prompt, `editRequest` trigger. | prompt render helper                 |
-| 773-849  | Generation metadata, preview exits, provider request payload, fail / abort exits.                                                                 | dispatch helper                      |
-| 850-951  | Stream vs non-stream orchestration, output-trigger result, inlay / TTS side effects, auto-continue and IGP.                                       | response orchestration helper        |
-| 956-1007 | Resend handoff, notifications, emotion fallback routing, image generation dispatch, final timing writeback.                                       | stage-4 orchestrator                 |
+| Lines   | Remaining responsibility                                                                                                                          | Target owner after Phase 5           |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| 91-257  | Entry guard, preset-chain switch, selected character/chat setup, prompt-info seed, tokenizer setup.                                               | `sendChatContext` / lifecycle helper |
+| 360-390 | Depth-prompt history splice and `triggerResult.additonalSysPrompt` distribution (`promptend` / `historyend` / `start` slots).                     | prompt render helper (or its setup)  |
+| 394-717 | Final prompt rendering, `pushPrompts`, template rendering, cache points, prompt-info text capture, character depth prompt, `editRequest` trigger. | prompt render helper                 |
+| 736-800 | Generation metadata, preview exits, provider request payload, fail / abort exits.                                                                 | dispatch helper                      |
+| 801-902 | Stream vs non-stream orchestration, output-trigger result, inlay / TTS side effects, auto-continue and IGP.                                       | response orchestration helper        |
+| 907-958 | Resend handoff, notifications, emotion fallback routing, image generation dispatch, final timing writeback.                                       | stage-4 orchestrator                 |
 
 ## Phase 4 Fixture Gates
 
@@ -80,7 +83,7 @@ suite is the acceptance test.
 | 5-19 Template token preflight       | done 2026-05-21 | Extracted the first prompt-template walker into `src/ts/process/promptBudget/preflightTemplateTokens.ts`. Returns `{ addedTokens, memoryCardUsed, hasCachePoint }`. Handles both the templated and no-template paths. The local `systemizeChat` helper was moved to `src/ts/process/promptAssembly/systemizeChat.ts` so both the preflight helper and the still-inline final render walker can import it from one place.                                                                                                                                                         | F4-A, F4-B (both landed)                                                                                                                          |
 | 5-20 History message formatter      | done 2026-05-21 | Extracted the inner per-message loop body (originally ~150 lines in `sendChat`) into `src/ts/process/promptAssembly/formatHistoryMessage.ts`. The helper takes `{ msg, index, totalCount, currentChar, usingPromptTemplate, findCharacterbyIdwithCache }` and returns the assembled `OpenAIChat`. The coordinator loop becomes a 4-line wrapper that calls the helper, pushes onto `chats`, and tokenizes. The per-sendChat `findCharacterbyIdwithCache` cache stays in the coordinator and is threaded as a callback. The unused `name` local is preserved (cache side effect). | F4-D (landed; asset_prompt branch deferred per fixture note)                                                                                      |
 | 5-21 History assembly window        | done 2026-05-21 | Extracted examples, `[Start a new chat]` marker, first message, `makeMs` filter (disabled / allBefore), start-trigger handling with stopSending early return, per-message loop calling the 5-20 formatter, and the depth-prompt token preflight into `src/ts/process/promptAssembly/buildHistoryWindow.ts`. Returns a stopped / non-stopped discriminated union carrying `{ chats, addedTokens, currentChat, triggerResult }` on success; the coordinator narrows with `history.stopSending === true` because the project has `strict: false`.                                   | F4-E (landed)                                                                                                                                     |
-| 5-22 Memory window                  | open            | Extract Hypa V3 stage transition, error writeback, fallback budget trim, `lastMemory`, memory-card split, and `<Previous Conversation>` wrapping.                                                                                                                                                                                                                                                                                                                                                                                                                                | F4-B                                                                                                                                              |
+| 5-22 Memory window                  | done 2026-05-21 | Extracted the Hypa V3 stage transition (with `setProcessStage` callback + `stageTimings` mutation + DB writeback of `hypaV3Data`), fallback budget trim with `language.errors.toomuchtoken` stop, `currentChat.lastMemory` capture, memory-card split (returns `memories[]` for the downstream `'memory'` template card), and the `<Previous Conversation>` wrap into `src/ts/process/promptAssembly/buildMemoryWindow.ts`. Returns a stopped / non-stopped discriminated union carrying `{ chats, currentTokens, currentChat, memories }`; the coordinator narrows with `memWindow.stopSending === true`. Two pre-existing `console.log` debug calls dropped during the move. F4-B fixture pins the Hypa happy path; the `hypaMemoryV3` import moves out of the coordinator. | F4-B (landed)                                                                                                                                     |
 | 5-23 Final prompt render            | open            | Extract `pushPrompts`, non-template `formatingOrder`, template render walker, cache-point mutation, prompt-info text capture, character depth prompt, and `editRequest` trigger.                                                                                                                                                                                                                                                                                                                                                                                                 | F4-A, F4-B, F4-F                                                                                                                                  |
 | 5-24 Dispatch request               | open            | Extract generation metadata creation, preview / previewPrompt exits, `requestChatData` argument construction, model override update, abort check, and provider-fail handling.                                                                                                                                                                                                                                                                                                                                                                                                    | F4-G                                                                                                                                              |
 | 5-25 Response orchestration         | open            | Extract the stream/non-stream branch chooser plus shared output-trigger, inlay-screen, TTS, auto-continue, and IGP orchestration. Existing response helpers stay in `postGeneration/`.                                                                                                                                                                                                                                                                                                                                                                                           | Existing fixtures; add unit tests only if the orchestration helper gets a narrow signature.                                                       |

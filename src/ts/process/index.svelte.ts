@@ -27,7 +27,6 @@ import { runInlayScreen } from './inlayScreen'
 import { addRerolls } from './prereroll'
 import { runLuaEditTrigger } from './scriptings'
 import { getModelInfo, LLMFlags } from '../model/modellist'
-import { hypaMemoryV3 } from './memory/hypav3'
 import { getModuleToggles } from './modules'
 import { evaluateAutoContinue } from './autoContinue'
 import { reportSendChatError } from './sendChatErrors'
@@ -55,6 +54,7 @@ import {
 import { buildLorebookContext } from './promptAssembly/buildLorebookContext'
 import { systemizeChat } from './promptAssembly/systemizeChat'
 import { buildHistoryWindow } from './promptAssembly/buildHistoryWindow'
+import { buildMemoryWindow } from './promptAssembly/buildMemoryWindow'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 
 export interface OpenAIChat {
@@ -324,52 +324,29 @@ export async function sendChat(
   currentChat = history.currentChat
   const triggerResult = history.triggerResult
 
-  if (nowChatroom.supaMemory && DBState.db.hypaV3) {
-    stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
-    chatProcessStage.set(2)
-    stageTimings.stage2Start = Date.now()
-    console.log("Current chat's hypaV3 Data: ", currentChat.hypaV3Data)
-    const sp = await hypaMemoryV3(
-      chats,
-      currentTokens,
-      maxContextTokens,
-      currentChat,
-      nowChatroom,
-      tokenizer,
-    )
-    if (sp.error) {
-      // Save new summary
-      if (sp.memory) {
-        currentChat.hypaV3Data = sp.memory
-        DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
-      }
-      console.log(sp)
-      throwError(sp.error)
-      return false
-    }
-    chats = sp.chats
-    currentTokens = sp.currentTokens
-    currentChat.hypaV3Data = sp.memory ?? currentChat.hypaV3Data
-    DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = currentChat.hypaV3Data
-
-    currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-    console.log("[Expected to be updated] chat's HypaV3Data: ", currentChat.hypaV3Data)
-    stageTimings.stage2Duration = Date.now() - stageTimings.stage2Start
-    chatProcessStage.set(1)
-  } else {
-    stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
-    while (currentTokens > maxContextTokens) {
-      if (chats.length <= 1) {
-        throwError(language.errors.toomuchtoken + '\n\nRequired Tokens: ' + currentTokens)
-
-        return false
-      }
-
-      currentTokens -= await tokenizer.tokenizeChat(chats[0])
-      chats.splice(0, 1)
-    }
-    currentChat.lastMemory = chats[0].memo
+  const memWindow = await buildMemoryWindow({
+    chats,
+    currentTokens,
+    maxContextTokens,
+    currentChat,
+    nowChatroom,
+    tokenizer,
+    selectedChar,
+    selectedChat,
+    memoryCardUsed,
+    promptTemplate,
+    unformated,
+    stageTimings,
+    throwError,
+    setProcessStage: (stage) => chatProcessStage.set(stage),
+  })
+  if (memWindow.stopSending === true) {
+    return false
   }
+  chats = memWindow.chats
+  currentTokens = memWindow.currentTokens
+  currentChat = memWindow.currentChat
+  const memories = memWindow.memories
 
   let biases: [string, number][] = DBState.db.bias.concat(currentChar.bias).map((v) => {
     return [
@@ -380,32 +357,6 @@ export async function sendChat(
       v[1],
     ]
   })
-
-  let memories: OpenAIChat[] = []
-
-  if (!promptTemplate) {
-    unformated.lastChat.push(chats[chats.length - 1])
-    chats.splice(chats.length - 1, 1)
-  }
-
-  unformated.chats = chats
-    .map((v) => {
-      if (v.memo !== 'supaMemory' && v.memo !== 'hypaMemory') {
-        v.removable = true
-      } else if (memoryCardUsed) {
-        memories.push(v)
-        return {
-          role: 'system',
-          content: '',
-        } as OpenAIChat
-      } else {
-        v.content = `<Previous Conversation>${v.content}</Previous Conversation>`
-      }
-      return v
-    })
-    .filter((v) => {
-      return v.content.trim() !== '' || (v.multimodals && v.multimodals.length > 0)
-    })
 
   for (const depthPrompt of depthPrompts) {
     const chat: OpenAIChat = {
