@@ -29,7 +29,7 @@ End state:
 
 Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, and the Phase
-5-1 through Phase 5-15 extraction commits on 2026-05-21:
+5-1 through Phase 5-21 extraction commits on 2026-05-21:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -53,23 +53,32 @@ the Phase 4 characterization slice on 2026-05-20, and the Phase
   the TSX runtime. The legacy `runserver` script and `server/node/`
   Express server have been removed. `server/hono/` remains a
   separate static-serving scaffold and is not the migration path.
-- `src/ts/process/index.svelte.ts` is currently 1625 lines and
+- `src/ts/process/index.svelte.ts` is currently 1017 lines and
   remains the `sendChat` coordinator with explicit
   `stage1`-`stage4` timing markers. Phase 5 has already moved
-  auto-continue evaluation, error reporting, desktop notification,
-  IGP, stage-4 timing writeback, emotion handling, image-generation
-  post-processing, output-trigger reuse, and the non-streaming /
-  streaming response loops, final request-budget recheck, leading
-  description assembly, and non-template plain-prompt sections into
+  auto-continue evaluation, `doingChat` ownership, error reporting,
+  desktop notification, IGP, stage-4 timing writeback, emotion
+  handling, image-generation post-processing, output-trigger reuse,
+  the non-streaming / streaming response loops, final
+  request-budget recheck, leading description assembly,
+  non-template plain-prompt sections, prompt-template normalization,
+  static prompt sections, lorebook placement, template token
+  preflight, per-message history formatting, and history-window
+  assembly into
   `src/ts/process/autoContinue.ts`,
   `src/ts/process/sendChatErrors.ts`,
   `src/ts/process/postGeneration/*`,
   `src/ts/process/promptBudget/*`, and
   `src/ts/process/promptAssembly/*`.
 - `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
-  the current `sendChat` behavior with 17 fixtures under
-  `src/ts/process/__fixtures__/`. The snapshots also assert that
-  `doingChat` is false after each fixture; `sendChat` now clears the
+  the current `sendChat` behavior with 24 snapshots under
+  `src/ts/process/__fixtures__/`: the original 17 Phase 4
+  fixtures plus seven Phase 5 gate fixtures
+  (`prompt-template-basic`, `utility-bot-template`,
+  `lorebook-position-depth`, `prompt-template-memory-cache`,
+  `history-media-fallback`, `start-trigger-control`,
+  `start-trigger-stop`). The snapshots also assert that
+  `doingChat` is false after each fixture; `sendChat` clears the
   lease it owns in a `finally` block. Phase 5 extraction is
   proceeding behind that harness.
 - Phase 0 removal targets are deleted from the live pipeline:
@@ -116,10 +125,11 @@ rules. The headline order:
    crypto compatibility and Express deletion.
 4. **sendChat tests** - pin observable behavior of the current
    `sendChat` with fixtures and snapshots before any extraction.
-   Done 2026-05-20 with 17 fixtures.
+   Done 2026-05-20 with 17 initial fixtures; Phase 5 has since
+   added seven narrow gate fixtures.
 5. **sendChat extraction** - carve the function into stage-shaped
    modules behind the pinned tests. In progress as of 2026-05-21
-   through Phase 5-15 (`b32c9682`).
+   through Phase 5-21 (`8ac144f7`).
 6. **Server-side generation** - move provider dispatch, tokenizer,
    translation, TTS, image, and Stable Horde calls server-side.
 7. **Server-side prompt assembly** - server walks the preset's

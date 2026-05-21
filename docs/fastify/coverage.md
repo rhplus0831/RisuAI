@@ -8,8 +8,9 @@ shards under [`coverage/`](coverage/).
 ## Snapshot
 
 - Phase 4 `sendChat` characterization tests exist at
-  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 17
-  fixture sets under `src/ts/process/__fixtures__/`.
+  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 24
+  fixture sets under `src/ts/process/__fixtures__/` (17 initial
+  Phase 4 fixtures plus seven Phase 5 gate fixtures).
 - Phase 5 extraction slices add focused process tests for the helper
   modules that now sit beside the fixture harness:
   `sendChatErrors.test.ts`, `notification.test.ts`, `igp.test.ts`,
@@ -18,7 +19,10 @@ shards under [`coverage/`](coverage/).
   `emotionFallbackEmbedding.test.ts`, `imggenStableDiff.test.ts`,
   `outputTrigger.test.ts`, `nonStreamResponse.test.ts`, and
   `streamResponse.test.ts`, `finalizeRequestBudget.test.ts`,
-  `buildDescription.test.ts`, and `buildPlainPromptSections.test.ts`.
+  `preflightTemplateTokens.test.ts`, `buildDescription.test.ts`,
+  `buildPlainPromptSections.test.ts`, `normalizeTemplate.test.ts`,
+  `buildStaticPromptSections.test.ts`, `buildLorebookContext.test.ts`,
+  `formatHistoryMessage.test.ts`, and `buildHistoryWindow.test.ts`.
 - Existing helper-surface tests continue to cover smaller process
   seams outside the fixture harness. Relevant current files include
   `src/ts/process/ttsHooks.test.ts`,

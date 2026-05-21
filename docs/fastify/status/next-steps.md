@@ -58,42 +58,25 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   start-trigger handling with `setCurrentChat` on chat mutation
   plus the `stopSending` early return, the per-message loop
   calling the 5-20 `formatHistoryMessage`, and the depth-prompt
-  token preflight. The helper returns a discriminated union
-  `{ stopSending: true } | { stopSending: false, chats,
-  addedTokens, currentChat, triggerResult }`. The coordinator
-  narrows with `if (history.stopSending === true)` because the
-  project tsconfig has `strict: false`, which weakens the
-  default narrowing on a boolean discriminant.
-  Two F4-E gate fixtures were landed first as separate commits
-  (the slicing doc anticipated this pairing). Both share a single
-  `vi.mock('../triggers')` (importActual + override) that
-  dispatches on `triggerscript[0].comment` markers (`__test_start_mutate`
-  / `__test_start_stop`). Existing fixtures with no triggerscript
-  flow through to the real impl unaffected.
-  - `start-trigger-control` pins the mutation path: an injected
-    user message lands in the chat history and `formated`,
-    `inputTokens` jumps from ~233 to 248.
-  - `start-trigger-stop` pins the stopSending early return:
-    `stages: [1]`, empty `providerCalls`, empty `sideEffects`,
-    no new assistant entry, `doingChat: false`.
+  token preflight. The helper returns a stopped / non-stopped
+  discriminated union with success metadata. The coordinator narrows with
+  `if (history.stopSending === true)` because the project tsconfig
+  has `strict: false`, which weakens boolean discriminant narrowing.
+  Two F4-E gate fixtures landed first with one
+  `vi.mock('../triggers')` override keyed by
+  `triggerscript[0].comment`: `start-trigger-control` pins the
+  mutation path, and `start-trigger-stop` pins the early return
+  (`stages: [1]`, no provider calls or side effects, no new
+  assistant row, `doingChat: false`).
   After extraction these imports left `index.svelte.ts`:
   `Message`, `setCurrentChat`, `getUserName`, `processScript`,
-  `exampleMessage`, `runTrigger`, and `formatHistoryMessage`
-  (the latter is now an internal dependency of the window
-  helper). Two pre-existing `console.log` debug calls in the
-  region (`Prepared messages for token calculation` and
-  `JSON.stringify(chats, ...)`) were dropped during the move.
-  Helper test `buildHistoryWindow.test.ts` adds 10 cases:
-  happy path (examples + marker + first message + history),
-  marker gating (novelai prefix, `trimStartNewChat` true),
-  `makeMs` filtering (`disabled: true`, `disabled: 'allBefore'`
-  resets), first-message selection (`alternateGreetings[fmIndex]`,
-  `sendName` prefix), start-trigger (stopSending early return,
-  mutation forwarded into chats), and depth-prompts
-  (tokens-only contribution). Uses an `assertNotStopped`
-  type-narrowing helper because of the discriminated union.
-  All 24 sendChat fixtures stay green without re-recording;
-  `index.svelte.ts` drops from 1101 to 1017 lines.
+  `exampleMessage`, `runTrigger`, and `formatHistoryMessage`.
+  Two pre-existing debug logs in the region were dropped. Helper
+  test `buildHistoryWindow.test.ts` adds 10 cases for examples,
+  marker gates, `makeMs`, first-message selection, start-trigger
+  behavior, and depth prompts. All 24 sendChat fixtures stay green
+  without re-recording; `index.svelte.ts` drops from 1101 to 1017
+  lines.
 
 - **Phase 5 - history message formatter slice 20.** Done 2026-05-21.
   Extracted the ~150-line per-message loop body into
@@ -173,7 +156,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   sites stay inline in `sendChat` because they execute at
   different stages and consume `lore.depthPrompts` directly. The
   coordinator now stages `buildPersona` and
-  `buildInlayViewInstruction` *before* `buildLorebookContext` so
+  `buildInlayViewInstruction` _before_ `buildLorebookContext` so
   the original postEverything order is preserved: cot →
   inlay-view → lore depth=0 system → lore depth=0 assistant
   (last, for prefill). Two pre-existing `console.log` calls
@@ -223,7 +206,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   `src/ts/process/promptAssembly/normalizeTemplate.ts`. The
   coordinator call site is one line: a destructure of
   `{ promptTemplate, usingPromptTemplate }`. `usingPromptTemplate`
-  intentionally reflects the user's *original* choice (so the
+  intentionally reflects the user's _original_ choice (so the
   forced utility template does not flip the downstream
   `usingPromptTemplate && ...` gates that key off whether the user
   opted into template mode). Two gate fixtures landed in the same
@@ -235,17 +218,17 @@ one `sendChat` extraction slice at a time. Phase 3 closed
     message in the snapshot.
   - `utility-bot-template` (F4-H): `utilityBot: true`, no user
     template, default `utilOverride: false`. Pins that the forced
-    6-card template *replaces* the default `mainPrompt` /
+    6-card template _replaces_ the default `mainPrompt` /
     `globalNote` so `formated` shrinks to description plus the
     start-new-chat marker plus the user message. `inputTokens`
     drops from `233` (simple-send) to `30`.
-  Helper test `src/ts/process/__tests__/normalizeTemplate.test.ts`
-  covers eight branches: no template, implicit-postEverything add,
-  postEverything-already-present, db state non-mutation,
-  utility-bot forces template, utility-bot + `utilOverride: true`
-  keeps user template, `utilOverride: true` with no template still
-  forces the utility template, and non-utility passthrough. All 19
-  fixtures stay green; `index.svelte.ts` is now 1580 lines.
+    Helper test `src/ts/process/__tests__/normalizeTemplate.test.ts`
+    covers eight branches: no template, implicit-postEverything add,
+    postEverything-already-present, db state non-mutation,
+    utility-bot forces template, utility-bot + `utilOverride: true`
+    keeps user template, `utilOverride: true` with no template still
+    forces the utility template, and non-utility passthrough. All 19
+    fixtures stay green; `index.svelte.ts` is now 1580 lines.
 
 - **Docker runtime dependencies.** Done 2026-05-21. Moved
   `@fastify/websocket` and `tsx` from `devDependencies` to
@@ -390,7 +373,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   `lorebook-keyword` (one globalLore entry with `key: "cat"`
   activated by user message), and `client-abort` (pre-aborted
   AbortSignal now short-circuits at
-  `src/ts/process/index.svelte.ts:1435`).
+  `src/ts/process/index.svelte.ts:843`).
   Adds an
   `aborted: true` flag to the fixture schema; the test driver
   synthesizes a pre-aborted controller and threads its signal

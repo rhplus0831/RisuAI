@@ -175,13 +175,12 @@ Already extracted during Phase 5:
   `runTrigger('start', ...)` handling with stopSending early
   return and `setCurrentChat` on chat mutation, the per-message
   loop calling `formatHistoryMessage`, and the depth-prompt
-  token preflight. Returns a discriminated union
-  `{ stopSending: true } | { stopSending: false, chats,
-  addedTokens, currentChat, triggerResult }`. The coordinator
-  narrows with `if (history.stopSending === true)` because the
-  project tsconfig has `strict: false`. The two pre-existing
-  `console.log` debug calls that lived in this region were
-  dropped during the move.
+  token preflight. Returns a stopped / non-stopped discriminated
+  union carrying `{ chats, addedTokens, currentChat, triggerResult }`
+  on success. The coordinator narrows with
+  `if (history.stopSending === true)` because the project tsconfig
+  has `strict: false`. The two pre-existing `console.log` debug
+  calls that lived in this region were dropped during the move.
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
@@ -239,10 +238,10 @@ for the extracted modules:
 `buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
 `formatHistoryMessage.test.ts`, and `buildHistoryWindow.test.ts`.
 
-## Phase 4 landed
+## Fixture Inventory
 
-All target fixtures are in place. The list below documents what
-each fixture pins.
+All current sendChat fixtures are in place. The list below documents
+what each fixture pins.
 
 - Scaffolding (loader, provider fake, snapshot harness,
   per-module mocks, test entry).
@@ -287,6 +286,31 @@ each fixture pins.
   `cachePoint: true` and stops there. Without a `promptTemplate`,
   this branch is unreachable (it lives inside the `case 'chat'`
   switch of the template-driven prompt assembly).
+- `prompt-template-basic` - custom template with `persona`,
+  `description`, `authornote`, `plain`, `chatML`, and `chat`
+  cards. Pins implicit `postEverything` insertion through the
+  trailing chain-of-thought system message in `formated`.
+- `utility-bot-template` - `utilityBot: true`, no user template,
+  default `utilOverride: false`. Pins that the forced six-card
+  utility template replaces the default `mainPrompt` /
+  `globalNote`, shrinking `formated` to description plus history.
+- `prompt-template-memory-cache` - template `memory` card wraps the
+  Hypa V3 mock summary, and explicit `cache` card marks the
+  intended user messages while suppressing automatic cache walk-back.
+- `lorebook-position-depth` - six `globalLore` entries exercising
+  `@@position before_desc`, `@@position after_desc`, `@@depth`,
+  `@@reverse_depth`, named `@@position`, and
+  `{{position::...}}`. Pins leading-system-block ordering and
+  chat-history splice positions.
+- `history-media-fallback` - no-vision model plus
+  `{{inlay::test-image}}` user message. Pins mocked caption append
+  and inlay tag stripping.
+- `start-trigger-control` - start trigger mutates the chat history.
+  Pins the injected user message in persisted history and in the
+  provider `formated` payload.
+- `start-trigger-stop` - start trigger returns `stopSending`.
+  Pins `stages: [1]`, no provider calls, no side effects, no new
+  assistant row, and final `doingChat: false`.
 - `persona` - `db.personaPrompt` set, no `chat.bindedPersona`.
   Pins that the content lands in `unformated.personaPrompt` and -
   under the default OpenAI-flavored `pushPrompts` consecutive-
@@ -303,7 +327,7 @@ each fixture pins.
 - `client-abort` - test driver passes a pre-aborted
   `AbortSignal`. Provider fake does not honor the signal so the
   call is still captured, but the post-provider check at
-  `src/ts/process/index.svelte.ts:1435` short-circuits the
+  `src/ts/process/index.svelte.ts:843` short-circuits the
   function. Pins `stages: [1, 3]`, no assistant message added, no
   side effects.
 - `lorebook-constant` - one `globalLore` entry with
@@ -344,7 +368,7 @@ each fixture pins.
   triggerscript and the mode is `'editRequest'` on an
   `OpenAIChat[]`. Pins that the
   `runLuaEditTrigger('editRequest', formated)` call site at
-  `src/ts/process/index.svelte.ts:1349` mutates the formated array
+  `src/ts/process/index.svelte.ts:757` mutates the formated array
   and the mutation reaches the provider.
 - `editoutput-trigger` - one `customscript` regex of type
   `'editoutput'` rewriting `sunshine` -> `starlight`. Pins that

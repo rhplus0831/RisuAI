@@ -19,19 +19,22 @@ under [`status/`](status/).
   checks, backup create / list / restore / delete, optional static
   SPA serving, and route tests for those surfaces.
 - Phase 4 sendChat characterization tests closed on 2026-05-20.
-  All 17 fixtures land under `src/ts/process/__fixtures__/` with
+  The original 17 fixtures landed under
+  `src/ts/process/__fixtures__/` with
   per-fixture DB / upstream / expected files plus targeted
-  `vi.mock`s for the heavy side-effect modules. Phase 5 is using
-  that safety net for incremental extraction.
+  `vi.mock`s for the heavy side-effect modules. Phase 5 has since
+  added seven narrow gate fixtures, so the active snapshot count is 24.
 - Phase 5 sendChat extraction is active. Commits `3c5a92b2`
-  through `b32c9682` landed the first 15 slices: auto-continue
+  through `8ac144f7` landed the first 21 slices: auto-continue
   decision logic, `doingChat` ownership, error reporting,
   notification / IGP / stage-4 helpers, emotion helpers, image
   generation post-processing, output-trigger reuse, the
   non-streaming + streaming response loops, final request-budget
-  recheck, leading description assembly, and non-template plain
-  prompt sections. The coordinator still lives in
-  `src/ts/process/index.svelte.ts`, now 1625 lines. Remaining
+  recheck, description and plain-prompt helpers, prompt-template
+  normalization, static prompt sections, lorebook placement,
+  template token preflight, per-message history formatting, and
+  history-window assembly. The coordinator still lives in
+  `src/ts/process/index.svelte.ts`, now 1017 lines. Remaining
   Phase 5 work is sliced in
   [`status/sendchat-slicing.md`](status/sendchat-slicing.md).
 - Phase 3A, Phase 3B, and Phase 3C all landed on 2026-05-20.
@@ -72,11 +75,12 @@ under [`status/`](status/).
 ## Active phase
 
 Phase 5 (`sendChat` extraction) is the active branch work. The
-landed slices have focused on Stage 3 / Stage 4 support code and
-response handling while keeping the Phase 4 fixture suite as the
-behavioral guardrail. The next pickup should follow the first open
-entry in [`status/sendchat-slicing.md`](status/sendchat-slicing.md)
-rather than starting Phase 6.
+landed slices now cover Stage 3 / Stage 4 support code plus major
+Stage 2 prompt-assembly and history helpers while keeping the
+24-snapshot fixture suite as the behavioral guardrail. The next
+pickup should follow the first open entry in
+[`status/sendchat-slicing.md`](status/sendchat-slicing.md) rather
+than starting Phase 6.
 
 Phase 6 (server-side LLM / translation / TTS / image generation)
 remains blocked until Phase 5 closes. Phase 3 already closed on

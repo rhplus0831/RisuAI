@@ -13,8 +13,8 @@ workstream lives in the sibling shards.
 | 1 - Foundation                          | complete    | Closed 2026-05-20; health/auth smoke.      |
 | 2 - Storage / import / assets / backups | complete    | Closed 2026-05-20; server routes + Docker. |
 | 3 - Proxy migration                     | complete    | Closed 2026-05-21; Express deleted.        |
-| 4 - sendChat tests                      | complete    | Closed 2026-05-20; all 17 fixtures landed. |
-| 5 - sendChat extraction                 | in progress | Phase 5-1 through 5-15 landed.             |
+| 4 - sendChat tests                      | complete    | Closed 2026-05-20; 17 initial fixtures.    |
+| 5 - sendChat extraction                 | in progress | Phase 5-1 through 5-21 landed.             |
 | 6 - Server-side generation              | not started | Blocked on Phase 5 closeout.               |
 | 7 - Server-side prompt assembly         | not started | Blocked on Phase 6.                        |
 | 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.              |
@@ -34,11 +34,12 @@ workstream lives in the sibling shards.
   `index.html`.
 - **sendChat.** Captured in [`sendchat.md`](sendchat.md). Phase
   5 extraction is active: `src/ts/process/index.svelte.ts` is
-  currently 1625 lines, with auto-continue, error reporting,
-  post-generation / response-loop, request-budget, and
-  prompt-assembly helpers extracted into focused modules while the
-  17-fixture characterization harness keeps observable behavior
-  pinned. The remaining work picker lives in
+  currently 1017 lines, with auto-continue, error reporting,
+  post-generation / response-loop, request-budget,
+  prompt-assembly, lorebook, template-preflight, and history
+  helpers extracted into focused modules while the 24-snapshot
+  fixture harness keeps observable behavior pinned. The remaining
+  work picker lives in
   [`sendchat-slicing.md`](sendchat-slicing.md).
 
 ## Reference state

@@ -45,7 +45,7 @@ Read order during planning:
   complete.
 - Phase 5 (sendChat extraction) needs Phase 4's tests in place;
   that dependency is satisfied and Phase 5 is now in progress
-  through Phase 5-15.
+  through Phase 5-21.
 - Phase 6 needs both server-side proxy (Phase 3) and extracted
   client stages (Phase 5) so the server can take over Stage 3
   without breaking Stages 1, 2, 4.

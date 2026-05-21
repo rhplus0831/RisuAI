@@ -24,9 +24,11 @@ the Fastify runtime on port 6002 with `/app/data` persisted; `tsx`
 and `@fastify/websocket` are runtime dependencies after
 `1eddbfba`.
 Phase 5 `sendChat` extraction is now active: commits
-`3c5a92b2` through `b32c9682` have extracted auto-continue,
-error reporting, response-loop, post-generation, request-budget, and
-prompt-assembly helpers behind the landed fixture harness.
+`3c5a92b2` through `8ac144f7` have extracted auto-continue,
+`doingChat` ownership, error reporting, response loops,
+post-generation helpers, request-budget helpers, prompt-assembly
+sections, lorebook placement, template token preflight, and history
+formatting / window assembly behind the 24-snapshot fixture harness.
 
 In scope:
 

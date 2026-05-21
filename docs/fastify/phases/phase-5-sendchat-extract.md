@@ -16,9 +16,9 @@ server one at a time in later phases.
 
 ## Status
 
-In progress as of 2026-05-21. Phase 5-1 through Phase 5-15 have
+In progress as of 2026-05-21. Phase 5-1 through Phase 5-21 have
 landed. The current coordinator is
-`src/ts/process/index.svelte.ts` (1625 lines), with extracted
+`src/ts/process/index.svelte.ts` (1017 lines), with extracted
 helpers in `src/ts/process/autoContinue.ts`,
 `src/ts/process/sendChatErrors.ts`,
 `src/ts/process/postGeneration/*`,
@@ -50,12 +50,26 @@ src/ts/process/
   promptBudget/
     finalizeRequestBudget.ts  post-editRequest token recheck +
                               outputTokens estimate
+    preflightTemplateTokens.ts first prompt-template token walker +
+                              memory/cache flag discovery
   promptAssembly/
     buildDescription.ts       leading character-description
                               system message
     buildPlainPromptSections.ts
                               non-template main / jailbreak /
                               globalNote sections (@@role-aware)
+    normalizeTemplate.ts      prompt-template clone, implicit
+                              postEverything, utility-bot override
+    buildStaticPromptSections.ts
+                              author note, cot, persona,
+                              inlay-view instructions
+    buildLorebookContext.ts   lorebook placement, position slots,
+                              depth-prompt filter
+    systemizeChat.ts          role-to-system conversion for chat
+                              cards
+    formatHistoryMessage.ts   one Message -> one OpenAIChat
+    buildHistoryWindow.ts     examples, marker, first message,
+                              triggers, history loop, depth prompts
 ```
 
 Remaining extraction should keep moving toward a coordinator whose
@@ -67,7 +81,7 @@ or call the helpers above rather than duplicating them.
 
 The remaining work is divided in
 [`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
-That shard is the work picker for Phase 5-16 onward: it maps the
+That shard is the work picker for Phase 5-22 onward: it maps the
 current inline blocks to target modules and names the fixture gates
 that should land before risky prompt-template, lorebook, history,
 memory, or dispatch extraction.
@@ -89,11 +103,12 @@ For each stage:
 
 Hidden coupling discovered during extraction (Svelte stores read
 mid-function, globals mutated, side effects with no return value)
-goes into the module's signature where the seam is stable. The
-Phase 5-1 through 5-15 helpers still mutate `DBState` directly in
-the response and post-generation paths; later slices should either
-make those writes explicit in the helper contract or leave a clear
-browser-only boundary for Phase 6 to route around.
+goes into the module's signature where the seam is stable. Some
+Phase 5-1 through 5-21 helpers still read or mutate `DBState`
+directly where the browser-only boundary is not stable yet; later
+slices should either make those writes explicit in the helper
+contract or leave a clear browser-only boundary for Phase 6 to
+route around.
 
 ### What does not move yet
 
@@ -129,7 +144,7 @@ browser-only boundary for Phase 6 to route around.
 - Each extracted module is independently testable (the fixtures may
   exercise it through the coordinator; targeted unit tests per module
   are encouraged and already exist for the Phase 5-3 through
-  Phase 5-15 helpers).
+  Phase 5-21 helpers).
 - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`
   is green.
 - `pnpm check`, `pnpm test`, `pnpm build` green.
