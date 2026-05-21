@@ -36,15 +36,18 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    `requireAuth` from the hub route to match the Express
    behavior or add a session-cookie auth path.
 
-3. **Follow-up: Docker runtime dependencies.** The Dockerfile and
-   compose file target Fastify on port 6002, but the runtime stage
-   installs production dependencies only while `pnpm api:start`
-   invokes `tsx` and `server/fastify/src/app.ts` imports
-   `@fastify/websocket`; both packages are currently
-   dev dependencies. Fix by promoting the runtime dependencies or
-   compiling the server before the runtime stage copies it.
-
 ## Completed Slices
+
+- **Docker runtime dependencies.** Done 2026-05-21. Moved
+  `@fastify/websocket` and `tsx` from `devDependencies` to
+  `dependencies` in `package.json` so the Dockerfile's
+  `pnpm install --prod --frozen-lockfile` in the `deps` stage
+  resolves both packages before they are copied into the
+  `runtime` stage. Verified by re-running the prod-only install
+  in isolation: `node_modules/tsx/dist/cli.mjs` and
+  `node_modules/@fastify/websocket/package.json` are present;
+  dev-only deps (`svelte-check`, `vitest`) stay absent. The
+  Dockerfile and `docker-compose.yml` are unchanged.
 
 - **Phase 5 - extraction slices 1-3.** Done 2026-05-21.
   `3c5a92b2` extracted `evaluateAutoContinue` to
