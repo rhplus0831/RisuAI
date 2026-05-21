@@ -1,8 +1,8 @@
 # sendChat Status
 
-Date: 2026-05-22 (Phase 5 active through Phase 5-24)
+Date: 2026-05-22 (Phase 5 active through Phase 5-25)
 
-Updated 2026-05-22: Phase 5 extraction is active. The first 24
+Updated 2026-05-22: Phase 5 extraction is active. The first 25
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
@@ -31,10 +31,13 @@ wrapping), the final prompt render (12-card template walker,
 non-template `formatingOrder` loop, automatic cache-point walk-back,
 `pushPrompts` consecutive-system coalesce, `[Continue the last
 response]` push, character `depth_prompt` splice, prompt-info text
-capture, and the `editRequest` trigger), and the provider dispatch
+capture, and the `editRequest` trigger), the provider dispatch
 (stage-3 transition, preview / previewPrompt early returns,
 `requestChatData` invocation, model-override propagation,
-post-provider abort and fail handling).
+post-provider abort and fail handling), and the response
+orchestration (streaming / non-streaming branch chooser,
+`addRerolls`, shared output-trigger, streaming-only inlay + TTS,
+auto-continue decision, IGP).
 
 Phase 4 remains complete for the original 17 fixtures, and nine
 narrow Phase 5 gate fixtures have since been added
@@ -62,12 +65,12 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 637 lines. It is
+`src/ts/process/index.svelte.ts` is currently 558 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:255` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:248` -
   validation, lorebook prep, persona, description assembly.
 - `stage2Start` inside
   `src/ts/process/promptAssembly/buildMemoryWindow.ts` - Hypa V3
@@ -81,11 +84,16 @@ The visible timing markers are:
   `src/ts/process/dispatch/dispatchRequest.ts` - provider dispatch
   via `requestChatData()`. The helper writes `stage3Start` and
   flips the stage to 3; the coordinator no longer references
-  `requestChatData` or `getGenerationModelString` directly. Inlay
-  screen + TTS run after the first response chunk back in the
-  coordinator's streaming branch.
-- `stage4Start` at `src/ts/process/index.svelte.ts:577` -
-  post-generation (auto-continue, emotion, stable diff, reroll
+  `requestChatData` or `getGenerationModelString` directly.
+- The streaming / non-streaming branch chooser, post-response
+  output-trigger, streaming-only inlay + TTS, auto-continue
+  decision, and IGP now live inside
+  `src/ts/process/postGeneration/orchestrateResponse.ts`. The
+  coordinator owns the auto-continue handoff itself (releases the
+  `doingChat` lease and recurses into `sendChat`) so the helper
+  avoids a circular import.
+- `stage4Start` at `src/ts/process/index.svelte.ts:498` -
+  post-generation (resend handoff, emotion, stable diff, reroll
   metadata).
 
 It reaches into:
@@ -274,6 +282,27 @@ Already extracted during Phase 5:
   dropped during the move. The `v4` (uuid), `getGenerationModelString`,
   and `requestChatData` imports moved out of the coordinator
   (uuid stays only for the `chatId` backfill at line 205).
+- `src/ts/process/postGeneration/orchestrateResponse.ts` - the
+  post-dispatch response stage. Routes to `consumeStreamResponse`
+  or `applyNonStreamResponse` on `req.type === 'streaming'`,
+  applies the shared `applyOutputTrigger`, drives the
+  streaming-only `runInlayScreen` + `sayTTS` side effects, runs
+  `addRerolls` (conditionally on the non-stream branch when
+  `mrerolls.length > 1`), evaluates `evaluateAutoContinue`, and
+  runs `evaluateIgp`. Returns a 3-variant discriminated union
+  (`aborted` / `continue` / `done`); the coordinator owns the
+  auto-continue handoff (clears `doingChat`, resets
+  `iOwnDoingChat`, recurses into `sendChat`) so the helper avoids
+  a circular import on the exported `sendChat`. The
+  streaming-branch asymmetry vs non-streaming branch is preserved
+  verbatim: streaming reassigns local `currentChat` from
+  `triggerChat`, while non-streaming writes `triggerChat`
+  directly to `DBState.db.characters[selectedChar].chats[selectedChat]`
+  without touching the local. The
+  `consumeStreamResponse`, `applyNonStreamResponse`,
+  `applyOutputTrigger`, `runInlayScreen`, `sayTTS`, `addRerolls`,
+  `evaluateAutoContinue`, and `evaluateIgp` imports moved out of
+  the coordinator (8 imports total).
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
@@ -330,8 +359,8 @@ for the extracted modules:
 `normalizeTemplate.test.ts`, `buildStaticPromptSections.test.ts`,
 `buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
 `formatHistoryMessage.test.ts`, `buildHistoryWindow.test.ts`,
-`buildMemoryWindow.test.ts`, `renderFinalPrompt.test.ts`, and
-`dispatchRequest.test.ts`.
+`buildMemoryWindow.test.ts`, `renderFinalPrompt.test.ts`,
+`dispatchRequest.test.ts`, and `orchestrateResponse.test.ts`.
 
 ## Fixture Inventory
 

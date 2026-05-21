@@ -17,25 +17,18 @@ import {
   parseToggleSyntax,
 } from '../util'
 import { risuChatParser } from './scripts'
-import { sayTTS } from './tts'
 import { v4 } from 'uuid'
-import { runInlayScreen } from './inlayScreen'
-import { addRerolls } from './prereroll'
 import { getModelInfo, LLMFlags } from '../model/modellist'
 import { getModuleToggles } from './modules'
-import { evaluateAutoContinue } from './autoContinue'
 import { reportSendChatError } from './sendChatErrors'
 import { fireDesktopNotification } from './postGeneration/notification'
-import { evaluateIgp } from './postGeneration/igp'
 import { finalizeStage4 } from './postGeneration/stage4Finalize'
 import { applyEmotionFromResponse } from './postGeneration/emotionFromResponse'
 import { runImggenStableDiff } from './postGeneration/imggenStableDiff'
 import { runEmotionLlmFallback } from './postGeneration/emotionFallbackLlm'
 import { runEmotionEmbeddingFallback } from './postGeneration/emotionFallbackEmbedding'
 import { loadAndTrimCharEmotion } from './postGeneration/charEmotionStore'
-import { applyOutputTrigger } from './postGeneration/outputTrigger'
-import { applyNonStreamResponse } from './postGeneration/nonStreamResponse'
-import { consumeStreamResponse } from './postGeneration/streamResponse'
+import { orchestrateResponse } from './postGeneration/orchestrateResponse'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
 import { buildDescription } from './promptAssembly/buildDescription'
 import { buildPlainPromptSections } from './promptAssembly/buildPlainPromptSections'
@@ -462,94 +455,25 @@ export async function sendChat(
   const generationId = dispatch.generationId
   generationInfo = dispatch.generationInfo
 
-  let result = ''
-  let emoChanged = false
-  let resendChat = false
-
-  if (req.type === 'streaming') {
-    const stream = await consumeStreamResponse({
-      req,
-      arg,
-      nowChatroom,
-      currentChar,
-      selectedChar,
-      selectedChat,
-      generationId,
-      generationInfo,
-      promptInfo,
-      abortSignal,
-      reformatContent,
-    })
-    result = stream.result
-    emoChanged = stream.emoChanged
-
-    if (stream.streamAborted || abortSignal.aborted) {
-      return false
-    }
-
-    addRerolls(generationId, Object.values(stream.lastResponseChunk))
-
-    const streamTrigger = await applyOutputTrigger({
-      currentChar,
-      selectedChar,
-      selectedChat,
-      runCurrentChatFunction,
-    })
-    currentChat = streamTrigger.triggerChat ?? streamTrigger.chat
-    if (streamTrigger.resendChat) {
-      resendChat = true
-    }
-    const inlayr = runInlayScreen(currentChar, currentChat.message[stream.msgIndex].data)
-    currentChat.message[stream.msgIndex].data = inlayr.text
-    DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
-    if (inlayr.promise) {
-      const t = await inlayr.promise
-      currentChat.message[stream.msgIndex].data = t
-      DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
-    }
-    if (DBState.db.ttsAutoSpeech) {
-      await sayTTS(currentChar, result)
-    }
-  } else {
-    const nonStream = await applyNonStreamResponse({
-      req,
-      arg,
-      nowChatroom,
-      currentChar,
-      selectedChar,
-      selectedChat,
-      generationId,
-      generationInfo,
-      promptInfo,
-      reformatContent,
-    })
-    result = nonStream.result
-    emoChanged = nonStream.emoChanged
-    if (nonStream.mrerolls.length > 1) {
-      addRerolls(generationId, nonStream.mrerolls)
-    }
-
-    const nonStreamTrigger = await applyOutputTrigger({
-      currentChar,
-      selectedChar,
-      selectedChat,
-      runCurrentChatFunction,
-    })
-    if (nonStreamTrigger.triggerChat) {
-      DBState.db.characters[selectedChar].chats[selectedChat] = nonStreamTrigger.triggerChat
-    }
-    if (nonStreamTrigger.resendChat) {
-      resendChat = true
-    }
-  }
-
-  const { shouldContinue, resultTokens } = await evaluateAutoContinue({
-    result,
-    usedContinueTokens: arg.usedContinueTokens || 0,
-    db: DBState.db,
+  const orchestrate = await orchestrateResponse({
+    req,
+    arg,
+    nowChatroom,
+    currentChar,
+    currentChat,
+    selectedChar,
+    selectedChat,
+    generationId,
+    generationInfo,
+    promptInfo,
+    abortSignal,
+    reformatContent,
+    runCurrentChatFunction,
   })
-
-  if (shouldContinue) {
+  if (orchestrate.status === 'aborted') {
+    return false
+  }
+  if (orchestrate.status === 'continue') {
     // Handoff — see iOwnDoingChat contract above.
     doingChat.set(false)
     iOwnDoingChat = false
@@ -557,16 +481,13 @@ export async function sendChat(
       chatAdditonalTokens: arg.chatAdditonalTokens,
       continue: true,
       signal: abortSignal,
-      usedContinueTokens: resultTokens,
+      usedContinueTokens: orchestrate.resultTokens,
     })
   }
-
-  await evaluateIgp({
-    promptTemplate: DBState.db.igpPrompt ?? '',
-    abortSignal,
-    selectedChar,
-    selectedChat,
-  })
+  currentChat = orchestrate.currentChat
+  const result = orchestrate.result
+  let emoChanged = orchestrate.emoChanged
+  const resendChat = orchestrate.resendChat
 
   stageTimings.stage3Duration = Date.now() - stageTimings.stage3Start
 

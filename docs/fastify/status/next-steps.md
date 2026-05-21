@@ -9,7 +9,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-24. The landed slices already moved
+   through Phase 5-25. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
@@ -22,10 +22,13 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    memory-card split / `<Previous Conversation>` wrap), the
    final prompt render (12-card walker, non-template
    `formatingOrder` loop, cache-point walk-back, depth_prompt
-   splice, prompt-info text capture, editRequest trigger), and
-   the provider dispatch (stage-3 transition, preview /
+   splice, prompt-info text capture, editRequest trigger), the
+   provider dispatch (stage-3 transition, preview /
    previewPrompt early returns, `requestChatData` invocation,
-   model override, abort + fail handling) out of
+   model override, abort + fail handling), and the response
+   orchestration (streaming / non-streaming branch chooser,
+   shared output-trigger, streaming-only inlay + TTS,
+   `addRerolls`, auto-continue decision, IGP) out of
    `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
@@ -53,6 +56,40 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - response orchestration slice 25.** Done 2026-05-22.
+  Extracted the post-dispatch response stage into
+  `src/ts/process/postGeneration/orchestrateResponse.ts`. Owns the
+  streaming / non-streaming branch chooser: streaming routes
+  through `consumeStreamResponse`, then post-stream abort gate
+  (`streamAborted || abortSignal.aborted`), `addRerolls`,
+  `applyOutputTrigger` (reassigning local `currentChat` from
+  `triggerChat ?? chat`), `runInlayScreen` with optional promise
+  resolution and DB writeback, and conditional `sayTTS` under
+  `db.ttsAutoSpeech`. Non-streaming routes through
+  `applyNonStreamResponse`, then `addRerolls` (gated on
+  `mrerolls.length > 1`), `applyOutputTrigger` writing
+  `triggerChat` directly to DB without touching the local
+  `currentChat` (asymmetry preserved verbatim). Both branches
+  then run `evaluateAutoContinue`; on `shouldContinue` the helper
+  returns `{ status: 'continue', resultTokens }` and the
+  coordinator handles the actual handoff (releases `doingChat`,
+  resets `iOwnDoingChat`, recurses into `sendChat`) so the helper
+  avoids a circular import. Otherwise `evaluateIgp` runs and the
+  helper returns `{ status: 'done', currentChat, result,
+  emoChanged, resendChat }`. After extraction these imports left
+  `index.svelte.ts` (eight total): `consumeStreamResponse`,
+  `applyNonStreamResponse`, `applyOutputTrigger`,
+  `runInlayScreen`, `sayTTS`, `addRerolls`, `evaluateAutoContinue`,
+  `evaluateIgp`. Helper test `orchestrateResponse.test.ts` mocks
+  all eight delegates and adds 7 cases: streaming happy path with
+  inlay + TTS, streaming `streamAborted=true` short-circuit,
+  streaming with external `abortSignal.aborted`, non-streaming
+  with `triggerChat` writeback + `addRerolls` for `mrerolls > 1`,
+  non-streaming `mrerolls.length === 1` skip, auto-continue
+  handoff (skips IGP), and the done-path return shape. All 26
+  sendChat fixtures stay green without re-recording;
+  `index.svelte.ts` drops from 637 to 558 lines.
 
 - **Phase 5 - dispatch request slice 24.** Done 2026-05-22.
   Extracted the provider dispatch boundary into
