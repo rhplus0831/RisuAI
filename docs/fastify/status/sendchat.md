@@ -1,14 +1,14 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-13)
+Date: 2026-05-21 (Phase 5 active through Phase 5-14)
 
-Updated 2026-05-21: Phase 5 extraction is active. Commits
-`3c5a92b2` through `1de94ca9` landed the first 13 slices:
-auto-continue, owned `doingChat` lifecycle, error reporting,
-desktop notification, IGP, stage-4 timing writeback, direct
-response emotion, image-generation stable-diff dispatch, emotion
-fallback helpers, output-trigger reuse, the non-streaming plus
-streaming response loops, and the final request-budget recheck.
+Updated 2026-05-21: Phase 5 extraction is active. The first 14
+slices landed: auto-continue, owned `doingChat` lifecycle, error
+reporting, desktop notification, IGP, stage-4 timing writeback,
+direct response emotion, image-generation stable-diff dispatch,
+emotion fallback helpers, output-trigger reuse, the non-streaming
+plus streaming response loops, the final request-budget recheck,
+and the leading character-description system message.
 
 Phase 4 remains complete. The fixture harness (loader, provider
 fake, snapshot, per-module mocks) plus all 17 target fixtures live
@@ -31,21 +31,21 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 1699 lines. It is
+`src/ts/process/index.svelte.ts` is currently 1670 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
 - `stage1Start` at `src/ts/process/index.svelte.ts:257` -
   validation, lorebook prep, persona, description assembly.
-- `stage2Start` at `src/ts/process/index.svelte.ts:995` - Hypa V3
+- `stage2Start` at `src/ts/process/index.svelte.ts:967` - Hypa V3
   memory retrieval and prompt memory-card accounting. The current
   timing marker is narrower than the future Stage 2 module; the
   surrounding prompt assembly is still browser code.
-- `stage3Start` at `src/ts/process/index.svelte.ts:1469` -
+- `stage3Start` at `src/ts/process/index.svelte.ts:1440` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:1623` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:1594` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -84,6 +84,9 @@ Already extracted during Phase 5:
   post-`editRequest` token recheck + `outputTokens` estimate
   (discriminated `ok`/`overflow` result; `throwError` stays in
   the coordinator).
+- `src/ts/process/promptAssembly/buildDescription.ts` - leading
+  character-description system message
+  (`desc` + `additionalInformations` + `personality` + `scenario`).
 
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:

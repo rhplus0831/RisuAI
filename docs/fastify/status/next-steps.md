@@ -9,13 +9,14 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through `1de94ca9` (Phase 5-13). The landed slices already moved
+   through Phase 5-14. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
-   loops, and the final request-budget recheck out of
-   `index.svelte.ts`. Continue with the smallest meaningful
-   remaining seam in prompt assembly, dispatch, or finalization and
-   run the focused fixture suite after each step:
+   loops, the final request-budget recheck, and the character
+   description assembly out of `index.svelte.ts`. Continue with the
+   smallest meaningful remaining seam in prompt assembly, dispatch,
+   or finalization and run the focused fixture suite after each
+   step:
    `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
    Preserve the current lifecycle invariant from
    [`sendchat.md`](sendchat.md): `sendChat` owns and clears the
@@ -63,6 +64,21 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   stage-4 timing writeback, response-emotion handling, and
   imggen stable-diff dispatch under
   `src/ts/process/postGeneration/`, each with a focused test.
+
+- **Phase 5 - description-assembly slice 14.** Done 2026-05-21.
+  Extracted the leading character-description system message
+  (`desc` + `additionalInformations` + `personality` + `scenario`,
+  each run through `risuChatParser`) into
+  `src/ts/process/promptAssembly/buildDescription.ts`. The
+  coordinator now calls
+  `unformated.description.push(await buildDescription(currentChar, currentChat))`,
+  matching the seam style used by Phase 5-13's `promptBudget/`.
+  Targeted test
+  `src/ts/process/__tests__/buildDescription.test.ts` covers
+  desc-only, personality / scenario combos, exact concat order,
+  the `descriptionPrefix` gate on `db.promptPreprocess` (both
+  branches), and a call-time-read check on `DBState`. All 17
+  sendChat fixtures stayed green without re-recording.
 
 - **Phase 5 - request-budget slice 13.** Done 2026-05-21.
   `1de94ca9` extracted the post-`editRequest` token recheck +

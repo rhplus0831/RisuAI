@@ -16,13 +16,14 @@ server one at a time in later phases.
 
 ## Status
 
-In progress as of 2026-05-21. Phase 5-1 through Phase 5-13 have
-landed, ending at `1de94ca9`. The current coordinator is
-`src/ts/process/index.svelte.ts` (1699 lines), with extracted
+In progress as of 2026-05-21. Phase 5-1 through Phase 5-14 have
+landed. The current coordinator is
+`src/ts/process/index.svelte.ts` (1670 lines), with extracted
 helpers in `src/ts/process/autoContinue.ts`,
 `src/ts/process/sendChatErrors.ts`,
-`src/ts/process/postGeneration/*`, and
-`src/ts/process/promptBudget/*`.
+`src/ts/process/postGeneration/*`,
+`src/ts/process/promptBudget/*`, and
+`src/ts/process/promptAssembly/*`.
 
 ## Scope
 
@@ -49,6 +50,9 @@ src/ts/process/
   promptBudget/
     finalizeRequestBudget.ts  post-editRequest token recheck +
                               outputTokens estimate
+  promptAssembly/
+    buildDescription.ts       leading character-description
+                              system message
 ```
 
 Remaining extraction should keep moving toward a coordinator whose
@@ -76,7 +80,7 @@ For each stage:
 Hidden coupling discovered during extraction (Svelte stores read
 mid-function, globals mutated, side effects with no return value)
 goes into the module's signature where the seam is stable. The
-Phase 5-1 through 5-13 helpers still mutate `DBState` directly in
+Phase 5-1 through 5-14 helpers still mutate `DBState` directly in
 the response and post-generation paths; later slices should either
 make those writes explicit in the helper contract or leave a clear
 browser-only boundary for Phase 6 to route around.
@@ -115,7 +119,7 @@ browser-only boundary for Phase 6 to route around.
 - Each extracted module is independently testable (the fixtures may
   exercise it through the coordinator; targeted unit tests per module
   are encouraged and already exist for the Phase 5-3 through
-  Phase 5-13 helpers).
+  Phase 5-14 helpers).
 - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`
   is green.
 - `pnpm check`, `pnpm test`, `pnpm build` green.

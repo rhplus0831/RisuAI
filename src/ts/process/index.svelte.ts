@@ -30,7 +30,6 @@ import { exampleMessage } from './exampleMessages'
 import { sayTTS } from './tts'
 import { v4 } from 'uuid'
 import { runTrigger } from './triggers'
-import { additionalInformations } from './embedding/addinfo'
 import { getInlayAsset } from './files/inlays'
 import { getGenerationModelString } from './models/modelString'
 import { runInlayScreen } from './inlayScreen'
@@ -55,6 +54,7 @@ import { applyOutputTrigger } from './postGeneration/outputTrigger'
 import { applyNonStreamResponse } from './postGeneration/nonStreamResponse'
 import { consumeStreamResponse } from './postGeneration/streamResponse'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
+import { buildDescription } from './promptAssembly/buildDescription'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -392,36 +392,7 @@ export async function sendChat(
     })
   }
 
-  {
-    let description = risuChatParser(
-      (DBState.db.promptPreprocess ? DBState.db.descriptionPrefix : '') + currentChar.desc,
-      { chara: currentChar },
-    )
-
-    const additionalInfo = await additionalInformations(currentChar, currentChat)
-
-    if (additionalInfo) {
-      description += '\n\n' + risuChatParser(additionalInfo, { chara: currentChar })
-    }
-
-    if (currentChar.personality) {
-      description += risuChatParser('\n\nDescription of {{char}}: ' + currentChar.personality, {
-        chara: currentChar,
-      })
-    }
-
-    if (currentChar.scenario) {
-      description += risuChatParser(
-        '\n\nCircumstances and context of the dialogue: ' + currentChar.scenario,
-        { chara: currentChar },
-      )
-    }
-
-    unformated.description.push({
-      role: 'system',
-      content: description,
-    })
-  }
+  unformated.description.push(await buildDescription(currentChar, currentChat))
 
   const lorepmt = await loadLoreBookV3Prompt()
 
