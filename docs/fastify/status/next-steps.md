@@ -9,11 +9,12 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-14. The landed slices already moved
+   through Phase 5-15. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
-   loops, the final request-budget recheck, and the character
-   description assembly out of `index.svelte.ts`. Continue with the
+   loops, the final request-budget recheck, the character
+   description assembly, and the plain-prompt main / jailbreak /
+   globalNote sections out of `index.svelte.ts`. Continue with the
    smallest meaningful remaining seam in prompt assembly, dispatch,
    or finalization and run the focused fixture suite after each
    step:
@@ -64,6 +65,22 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   stage-4 timing writeback, response-emotion handling, and
   imggen stable-diff dispatch under
   `src/ts/process/postGeneration/`, each with a focused test.
+
+- **Phase 5 - plain-prompt sections slice 15.** Done 2026-05-21.
+  Extracted the non-template main / jailbreak / globalNote
+  assembly (gated by `!currentChar.utilityBot && !promptTemplate`)
+  into `src/ts/process/promptAssembly/buildPlainPromptSections.ts`.
+  The helper returns `{ main, jailbreak, globalNote }` as
+  `OpenAIChat[]` and keeps the `@@role`-tagged `formatPrompt`
+  closure internal. The coordinator gate stays at the call site;
+  only the assembly body moved. Targeted test
+  `src/ts/process/__tests__/buildPlainPromptSections.test.ts`
+  covers `mainPrompt` only, `systemPrompt` with/without
+  `{{original}}`, the empty-string fallback, `additionalPrompt`
+  gated by `db.promptPreprocess` (three branches),
+  `jailbreakToggle` on/off, `replaceGlobalNote` present/absent,
+  and the `formatPrompt` `@@` / `@@@` / implicit-system parsing.
+  All 17 sendChat fixtures stayed green without re-recording.
 
 - **Phase 5 - description-assembly slice 14.** Done 2026-05-21.
   Extracted the leading character-description system message

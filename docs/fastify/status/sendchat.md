@@ -1,14 +1,15 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-14)
+Date: 2026-05-21 (Phase 5 active through Phase 5-15)
 
-Updated 2026-05-21: Phase 5 extraction is active. The first 14
+Updated 2026-05-21: Phase 5 extraction is active. The first 15
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
 emotion fallback helpers, output-trigger reuse, the non-streaming
 plus streaming response loops, the final request-budget recheck,
-and the leading character-description system message.
+the leading character-description system message, and the
+non-template main / jailbreak / globalNote sections.
 
 Phase 4 remains complete. The fixture harness (loader, provider
 fake, snapshot, per-module mocks) plus all 17 target fixtures live
@@ -31,21 +32,21 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 1670 lines. It is
+`src/ts/process/index.svelte.ts` is currently 1625 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
 - `stage1Start` at `src/ts/process/index.svelte.ts:257` -
   validation, lorebook prep, persona, description assembly.
-- `stage2Start` at `src/ts/process/index.svelte.ts:967` - Hypa V3
+- `stage2Start` at `src/ts/process/index.svelte.ts:922` - Hypa V3
   memory retrieval and prompt memory-card accounting. The current
   timing marker is narrower than the future Stage 2 module; the
   surrounding prompt assembly is still browser code.
-- `stage3Start` at `src/ts/process/index.svelte.ts:1440` -
+- `stage3Start` at `src/ts/process/index.svelte.ts:1395` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:1594` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:1549` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -87,6 +88,9 @@ Already extracted during Phase 5:
 - `src/ts/process/promptAssembly/buildDescription.ts` - leading
   character-description system message
   (`desc` + `additionalInformations` + `personality` + `scenario`).
+- `src/ts/process/promptAssembly/buildPlainPromptSections.ts` -
+  non-template main / jailbreak / globalNote sections, with the
+  `@@role` / `@@@role` parser internal to the module.
 
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:

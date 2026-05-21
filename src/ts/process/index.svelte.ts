@@ -55,6 +55,7 @@ import { applyNonStreamResponse } from './postGeneration/nonStreamResponse'
 import { consumeStreamResponse } from './postGeneration/streamResponse'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
 import { buildDescription } from './promptAssembly/buildDescription'
+import { buildPlainPromptSections } from './promptAssembly/buildPlainPromptSections'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -318,56 +319,10 @@ export async function sendChat(
   }
 
   if (!currentChar.utilityBot && !promptTemplate) {
-    const mainp =
-      currentChar.systemPrompt?.replaceAll('{{original}}', DBState.db.mainPrompt) ||
-      DBState.db.mainPrompt
-
-    function formatPrompt(data: string) {
-      if (!data.startsWith('@@')) {
-        data = '@@system\n' + data
-      }
-      const parts = data.split(/@@@?(user|assistant|system)\n/)
-
-      // Initialize empty array for the chat objects
-      const chatObjects: OpenAIChat[] = []
-
-      // Loop through the parts array two elements at a time
-      for (let i = 1; i < parts.length; i += 2) {
-        const role = parts[i] as 'user' | 'assistant' | 'system'
-        const content = parts[i + 1]?.trim() || ''
-        chatObjects.push({ role, content })
-      }
-
-      return chatObjects
-    }
-
-    unformated.main.push(
-      ...formatPrompt(
-        risuChatParser(
-          mainp +
-            (DBState.db.additionalPrompt === '' || !DBState.db.promptPreprocess
-              ? ''
-              : `\n${DBState.db.additionalPrompt}`),
-          { chara: currentChar },
-        ),
-      ),
-    )
-
-    if (DBState.db.jailbreakToggle) {
-      unformated.jailbreak.push(
-        ...formatPrompt(risuChatParser(DBState.db.jailbreak, { chara: currentChar })),
-      )
-    }
-
-    unformated.globalNote.push(
-      ...formatPrompt(
-        risuChatParser(
-          currentChar.replaceGlobalNote?.replaceAll('{{original}}', DBState.db.globalNote) ||
-            DBState.db.globalNote,
-          { chara: currentChar },
-        ),
-      ),
-    )
+    const sections = buildPlainPromptSections(currentChar)
+    unformated.main.push(...sections.main)
+    unformated.jailbreak.push(...sections.jailbreak)
+    unformated.globalNote.push(...sections.globalNote)
   }
 
   if (currentChat.note) {
