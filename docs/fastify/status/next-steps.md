@@ -9,16 +9,17 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-15. The landed slices already moved
+   through Phase 5-16. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
-   description assembly, and the plain-prompt main / jailbreak /
-   globalNote sections out of `index.svelte.ts`. The remaining work
-   is now sliced in [`sendchat-slicing.md`](sendchat-slicing.md);
-   take the first open Phase 5 slice, adding its Phase 4 fixture
-   gate first when needed, rather than picking an unrelated tiny
-   helper. Run the focused fixture suite after each step:
+   description assembly, the plain-prompt main / jailbreak /
+   globalNote sections, and prompt-template normalization out of
+   `index.svelte.ts`. The remaining work is now sliced in
+   [`sendchat-slicing.md`](sendchat-slicing.md); take the first
+   open Phase 5 slice, adding its Phase 4 fixture gate first when
+   needed, rather than picking an unrelated tiny helper. Run the
+   focused fixture suite after each step:
    `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
    Preserve the current lifecycle invariant from
    [`sendchat.md`](sendchat.md): `sendChat` owns and clears the
@@ -41,6 +42,37 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - template-normalization slice 16.** Done 2026-05-21.
+  Extracted the prompt-template clone, implicit `postEverything`
+  insertion, and utility-bot forced template (originally lines
+  273-319 of `index.svelte.ts`) into
+  `src/ts/process/promptAssembly/normalizeTemplate.ts`. The
+  coordinator call site is one line: a destructure of
+  `{ promptTemplate, usingPromptTemplate }`. `usingPromptTemplate`
+  intentionally reflects the user's *original* choice (so the
+  forced utility template does not flip the downstream
+  `usingPromptTemplate && ...` gates that key off whether the user
+  opted into template mode). Two gate fixtures landed in the same
+  slice:
+  - `prompt-template-basic` (F4-A): template with persona,
+    description, authornote, plain, chatML, chat - no explicit
+    `postEverything`. `chainOfThought: true` so the implicit
+    `postEverything` add is observable as the trailing cot system
+    message in the snapshot.
+  - `utility-bot-template` (F4-H): `utilityBot: true`, no user
+    template, default `utilOverride: false`. Pins that the forced
+    6-card template *replaces* the default `mainPrompt` /
+    `globalNote` so `formated` shrinks to description plus the
+    start-new-chat marker plus the user message. `inputTokens`
+    drops from `233` (simple-send) to `30`.
+  Helper test `src/ts/process/__tests__/normalizeTemplate.test.ts`
+  covers eight branches: no template, implicit-postEverything add,
+  postEverything-already-present, db state non-mutation,
+  utility-bot forces template, utility-bot + `utilOverride: true`
+  keeps user template, `utilOverride: true` with no template still
+  forces the utility template, and non-utility passthrough. All 19
+  fixtures stay green; `index.svelte.ts` is now 1580 lines.
 
 - **Docker runtime dependencies.** Done 2026-05-21. Moved
   `@fastify/websocket` and `tsx` from `devDependencies` to

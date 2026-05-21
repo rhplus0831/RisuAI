@@ -56,6 +56,7 @@ import { consumeStreamResponse } from './postGeneration/streamResponse'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
 import { buildDescription } from './promptAssembly/buildDescription'
 import { buildPlainPromptSections } from './promptAssembly/buildPlainPromptSections'
+import { normalizeTemplate } from './promptAssembly/normalizeTemplate'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -270,53 +271,7 @@ export async function sendChat(
     personaPrompt: [] as OpenAIChat[],
   }
 
-  let promptTemplate = safeStructuredClone(DBState.db.promptTemplate)
-  const usingPromptTemplate = !!promptTemplate
-  if (promptTemplate) {
-    let hasPostEverything = false
-    for (const card of promptTemplate) {
-      if (card.type === 'postEverything') {
-        hasPostEverything = true
-        break
-      }
-    }
-
-    if (!hasPostEverything) {
-      promptTemplate.push({
-        type: 'postEverything',
-      })
-    }
-  }
-  if (currentChar.utilityBot && !(usingPromptTemplate && DBState.db.promptSettings.utilOverride)) {
-    promptTemplate = [
-      {
-        type: 'plain',
-        text: '',
-        role: 'system',
-        type2: 'main',
-      },
-      {
-        type: 'description',
-      },
-      {
-        type: 'lorebook',
-      },
-      {
-        type: 'chat',
-        rangeStart: 0,
-        rangeEnd: 'end',
-      },
-      {
-        type: 'plain',
-        text: '',
-        role: 'system',
-        type2: 'globalNote',
-      },
-      {
-        type: 'postEverything',
-      },
-    ]
-  }
+  let { promptTemplate, usingPromptTemplate } = normalizeTemplate(currentChar)
 
   if (!currentChar.utilityBot && !promptTemplate) {
     const sections = buildPlainPromptSections(currentChar)

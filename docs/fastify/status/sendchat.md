@@ -1,19 +1,22 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-15)
+Date: 2026-05-21 (Phase 5 active through Phase 5-16)
 
-Updated 2026-05-21: Phase 5 extraction is active. The first 15
+Updated 2026-05-21: Phase 5 extraction is active. The first 16
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
 emotion fallback helpers, output-trigger reuse, the non-streaming
 plus streaming response loops, the final request-budget recheck,
-the leading character-description system message, and the
-non-template main / jailbreak / globalNote sections.
+the leading character-description system message, the non-template
+main / jailbreak / globalNote sections, and prompt-template
+normalization (clone + implicit `postEverything` + utility-bot
+override).
 
-Phase 4 remains complete. The fixture harness (loader, provider
-fake, snapshot, per-module mocks) plus all 17 target fixtures live
-under `src/ts/process/__fixtures__/` and
+Phase 4 remains complete for the original 17 fixtures, and two
+narrow Phase 5 gate fixtures have since been added
+(`prompt-template-basic`, `utility-bot-template`) - bringing the
+total to 19. All live under `src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
 pin the entry path, every documented exit shape (success, multiline
 reroll, upstream fail, abort, auto-continue recursion), the
@@ -32,21 +35,21 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 1625 lines. It is
+`src/ts/process/index.svelte.ts` is currently 1580 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:259` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:260` -
   validation, lorebook prep, persona, description assembly.
-- `stage2Start` at `src/ts/process/index.svelte.ts:922` - Hypa V3
+- `stage2Start` at `src/ts/process/index.svelte.ts:877` - Hypa V3
   memory retrieval and prompt memory-card accounting. The current
   timing marker is narrower than the future Stage 2 module; the
   surrounding prompt assembly is still browser code.
-- `stage3Start` at `src/ts/process/index.svelte.ts:1395` -
+- `stage3Start` at `src/ts/process/index.svelte.ts:1350` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:1549` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:1504` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -91,12 +94,19 @@ Already extracted during Phase 5:
 - `src/ts/process/promptAssembly/buildPlainPromptSections.ts` -
   non-template main / jailbreak / globalNote sections, with the
   `@@role` / `@@@role` parser internal to the module.
+- `src/ts/process/promptAssembly/normalizeTemplate.ts` -
+  prompt-template cloning, implicit `postEverything` insertion,
+  and utility-bot forced template. Returns
+  `{ promptTemplate, usingPromptTemplate }`; `usingPromptTemplate`
+  reflects the user's original choice (so the cot / template-only
+  gates downstream still behave as before when the forced utility
+  template is in play).
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
 work picker: it maps the still-inline coordinator blocks to numbered
 Phase 5 slices and lists the narrow fixture gates to add before
-touching behavior the current 17 snapshots do not cover.
+touching behavior the current 19 snapshots do not cover.
 
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:
@@ -143,7 +153,8 @@ for the extracted modules:
 `emotionFallbackEmbedding.test.ts`, `imggenStableDiff.test.ts`,
 `outputTrigger.test.ts`, `nonStreamResponse.test.ts`, and
 `streamResponse.test.ts`, `finalizeRequestBudget.test.ts`,
-`buildDescription.test.ts`, and `buildPlainPromptSections.test.ts`.
+`buildDescription.test.ts`, `buildPlainPromptSections.test.ts`, and
+`normalizeTemplate.test.ts`.
 
 ## Phase 4 landed
 
@@ -262,7 +273,7 @@ each fixture pins.
 - `doingChat` is set to `true` only when `sendChat` owns the lease,
   and the owned lease is cleared in a `finally` block on every exit
   path. Recursive auto-continue / resend paths explicitly release
-  the flag before re-entering. All 17 snapshots currently pin final
+  the flag before re-entering. All 19 snapshots currently pin final
   `doingChat: false`; the test harness still resets it before each
   fixture defensively.
 - The `uuid` mock counter resets between fixtures so snapshots
@@ -295,7 +306,7 @@ each fixture pins.
 Until Phase 5 closes, keep edits to `sendChat` narrow and
 fixture-backed. Refactoring control flow belongs in small extraction
 slices with targeted helper tests where the helper has a stable
-signature, plus the full 17-fixture suite after each slice.
+signature, plus the full fixture suite after each slice.
 
 ## Reference: metatron's end state
 
