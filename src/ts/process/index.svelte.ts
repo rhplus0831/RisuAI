@@ -16,11 +16,9 @@ import {
   trimUntilPunctuation,
   parseToggleSyntax,
 } from '../util'
-import { requestChatData } from './request/request'
 import { risuChatParser } from './scripts'
 import { sayTTS } from './tts'
 import { v4 } from 'uuid'
-import { getGenerationModelString } from './models/modelString'
 import { runInlayScreen } from './inlayScreen'
 import { addRerolls } from './prereroll'
 import { getModelInfo, LLMFlags } from '../model/modellist'
@@ -53,6 +51,7 @@ import { buildHistoryWindow } from './promptAssembly/buildHistoryWindow'
 import { buildMemoryWindow } from './promptAssembly/buildMemoryWindow'
 import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
+import { dispatchRequest } from './dispatch/dispatchRequest'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -427,71 +426,47 @@ export async function sendChat(
   formated = budget.formated
   const inputTokens = budget.inputTokens
   const outputTokens = budget.outputTokens
-  const generationId = v4()
-  const generationModel = getGenerationModelString()
 
-  generationInfo = {
-    model: generationModel,
-    generationId: generationId,
-    inputTokens: inputTokens,
-    outputTokens: outputTokens,
-    maxContext: maxContextTokens,
-    stageTiming: {
-      stage1: stageTimings.stage1Duration,
-      stage2: stageTimings.stage2Duration,
-      stage3: 0,
-      stage4: 0,
-    },
-  }
-
-  chatProcessStage.set(3)
-  stageTimings.stage3Start = Date.now()
-  if (arg.preview) {
-    previewFormated = formated
-    return true
-  }
-
-  const req = await requestChatData(
-    {
-      formated: formated,
-      biasString: biases,
-      currentChar: currentChar,
-      useStreaming: true,
-      isGroupChat: false,
-      bias: {},
-      continue: arg.continue,
-      chatId: generationId,
-      imageResponse: DBState.db.outputImageModal,
-      previewBody: arg.previewPrompt,
-      escape: nowChatroom.type === 'character' && nowChatroom.escapeOutput,
-      rememberToolUsage: DBState.db.rememberToolUsage,
-    },
-    'model',
+  const dispatch = await dispatchRequest({
+    formated,
+    biases,
+    currentChar,
+    nowChatroom,
+    inputTokens,
+    outputTokens,
+    maxContextTokens,
+    stageTimings,
     abortSignal,
-  )
-
-  console.log(req)
-  if (req.model) {
-    generationInfo.model = getGenerationModelString(req.model)
-    console.log(generationInfo.model, req.model)
-  }
-
-  if (arg.previewPrompt && req.type === 'success') {
-    previewBody = req.result
+    isContinue: !!arg.continue,
+    isPreview: !!arg.preview,
+    isPreviewPrompt: !!arg.previewPrompt,
+    setProcessStage: (stage) => chatProcessStage.set(stage),
+  })
+  if (dispatch.status === 'preview') {
+    previewFormated = dispatch.formated
     return true
   }
+  if (dispatch.status === 'previewPrompt') {
+    previewBody = dispatch.body
+    return true
+  }
+  if (dispatch.status === 'aborted') {
+    return false
+  }
+  if (dispatch.status === 'failed') {
+    generationInfo = dispatch.generationInfo
+    throwError(dispatch.reason)
+    return false
+  }
+  const req = dispatch.req
+  const generationId = dispatch.generationId
+  generationInfo = dispatch.generationInfo
 
   let result = ''
   let emoChanged = false
   let resendChat = false
 
-  if (abortSignal.aborted === true) {
-    return false
-  }
-  if (req.type === 'fail') {
-    throwError(req.result)
-    return false
-  } else if (req.type === 'streaming') {
+  if (req.type === 'streaming') {
     const stream = await consumeStreamResponse({
       req,
       arg,

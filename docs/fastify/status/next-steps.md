@@ -9,7 +9,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-23. The landed slices already moved
+   through Phase 5-24. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
@@ -19,10 +19,13 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    the lorebook placement context, the template token preflight,
    the per-message history formatter, the history assembly
    window, the memory window (Hypa V3 / fallback budget trim /
-   memory-card split / `<Previous Conversation>` wrap), and the
+   memory-card split / `<Previous Conversation>` wrap), the
    final prompt render (12-card walker, non-template
    `formatingOrder` loop, cache-point walk-back, depth_prompt
-   splice, prompt-info text capture, editRequest trigger) out of
+   splice, prompt-info text capture, editRequest trigger), and
+   the provider dispatch (stage-3 transition, preview /
+   previewPrompt early returns, `requestChatData` invocation,
+   model override, abort + fail handling) out of
    `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
@@ -50,6 +53,45 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - dispatch request slice 24.** Done 2026-05-22.
+  Extracted the provider dispatch boundary into
+  `src/ts/process/dispatch/dispatchRequest.ts`. Owns the stage-3
+  transition (`setProcessStage(3)` + `stageTimings.stage3Start`),
+  the `arg.preview` early return (carrying the formated array so
+  the coordinator can write `previewFormated`), `generationId =
+  v4()` + `getGenerationModelString()` + `generationInfo`
+  construction, the `requestChatData(...)` invocation with the
+  full request payload (formated, biasString, currentChar,
+  useStreaming, isGroupChat, bias, continue, chatId,
+  imageResponse, previewBody = `arg.previewPrompt`, escape,
+  rememberToolUsage), the `req.model` override into
+  `generationInfo.model` via `getGenerationModelString(req.model)`,
+  the `arg.previewPrompt + req.type === 'success'` preview-body
+  early return, the post-provider `abortSignal.aborted` check, and
+  the `req.type === 'fail'` early return. Returns a 5-variant
+  discriminated union (`preview` / `previewPrompt` / `aborted` /
+  `failed` / `success`); the coordinator owns the
+  `previewFormated` / `previewBody` module-level writes, the
+  `throwError(reason)` call on failure, and `generationInfo`
+  attachment. The `failed` variant carries `generationInfo` so
+  the coordinator assigns it before `throwError`, preserving the
+  `provider-error` fixture's `reportSendChatError(...,
+  generationInfo)` behavior. F4-G `preview-prompt` landed first,
+  pinning the `previewPrompt: true` branch. After extraction
+  these imports left `index.svelte.ts`: `getGenerationModelString`,
+  `requestChatData` (uuid `v4` stays for the chatId backfill at
+  line 205). Two `console.log` debug calls at the old lines
+  473/476 were dropped during the move. Helper test
+  `dispatchRequest.test.ts` adds 11 cases covering preview
+  short-circuit, previewPrompt success / fail-fallthrough,
+  streaming / multiline / non-streaming success variants,
+  `req.model` override propagation, fail with carried
+  `generationInfo`, post-provider abort, previewPrompt priority
+  over abort, and the request payload (formated / biasString /
+  continue / escape / useStreaming / isGroupChat). All 26 sendChat
+  fixtures stay green without re-recording; `index.svelte.ts`
+  drops from 662 to 637 lines.
 
 - **Phase 5 - final prompt render slice 23.** Done 2026-05-21.
   Extracted ~324 lines of prompt rendering into

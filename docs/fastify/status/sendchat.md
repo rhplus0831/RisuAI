@@ -1,8 +1,8 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-23)
+Date: 2026-05-22 (Phase 5 active through Phase 5-24)
 
-Updated 2026-05-21: Phase 5 extraction is active. The first 23
+Updated 2026-05-22: Phase 5 extraction is active. The first 24
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
@@ -27,19 +27,23 @@ trigger with stopSending early return + per-message loop + depth-
 prompt token preflight), the memory window (Hypa V3 stage
 transition with error writeback, fallback budget trim with
 `lastMemory`, memory-card split, and `<Previous Conversation>`
-wrapping), and the final prompt render (12-card template walker,
+wrapping), the final prompt render (12-card template walker,
 non-template `formatingOrder` loop, automatic cache-point walk-back,
 `pushPrompts` consecutive-system coalesce, `[Continue the last
 response]` push, character `depth_prompt` splice, prompt-info text
-capture, and the `editRequest` trigger).
+capture, and the `editRequest` trigger), and the provider dispatch
+(stage-3 transition, preview / previewPrompt early returns,
+`requestChatData` invocation, model-override propagation,
+post-provider abort and fail handling).
 
-Phase 4 remains complete for the original 17 fixtures, and eight
+Phase 4 remains complete for the original 17 fixtures, and nine
 narrow Phase 5 gate fixtures have since been added
 (`prompt-template-basic`, `utility-bot-template`,
 `lorebook-position-depth`, `prompt-template-memory-cache`,
 `history-media-fallback`, `start-trigger-control`,
-`start-trigger-stop`, `prompt-info-text`) - bringing the total to
-25. All live under `src/ts/process/__fixtures__/` and
+`start-trigger-stop`, `prompt-info-text`, `preview-prompt`) -
+bringing the total to 26. All live under
+`src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
 pin the entry path, every documented exit shape (success, multiline
 reroll, upstream fail, abort, auto-continue recursion), the
@@ -58,12 +62,12 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 662 lines. It is
+`src/ts/process/index.svelte.ts` is currently 637 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:256` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:255` -
   validation, lorebook prep, persona, description assembly.
 - `stage2Start` inside
   `src/ts/process/promptAssembly/buildMemoryWindow.ts` - Hypa V3
@@ -73,10 +77,14 @@ The visible timing markers are:
   flips the stage from 2 back to 1 around the `hypaMemoryV3`
   call. The fallback budget-trim branch (no Hypa V3) writes
   `stage1Duration` only.
-- `stage3Start` at `src/ts/process/index.svelte.ts:448` -
-  provider dispatch via `requestChatData()`; inlay screen + TTS run
-  after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:602` -
+- `stage3Start` inside
+  `src/ts/process/dispatch/dispatchRequest.ts` - provider dispatch
+  via `requestChatData()`. The helper writes `stage3Start` and
+  flips the stage to 3; the coordinator no longer references
+  `requestChatData` or `getGenerationModelString` directly. Inlay
+  screen + TTS run after the first response chunk back in the
+  coordinator's streaming branch.
+- `stage4Start` at `src/ts/process/index.svelte.ts:577` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -243,6 +251,29 @@ Already extracted during Phase 5:
   `preflightTemplateTokens`). The
   `parseChatML`, `prebuiltAssetCommand`, `runLuaEditTrigger`, and
   `systemizeChat` imports moved out of the coordinator.
+- `src/ts/process/dispatch/dispatchRequest.ts` - the provider
+  dispatch boundary. Owns the stage-3 transition (`setProcessStage(3)`
+  + `stageTimings.stage3Start`), the `arg.preview` early return,
+  the `generationId = v4()` + `getGenerationModelString()` +
+  `generationInfo` construction, the `requestChatData(...)`
+  invocation with the full payload (formated, biasString,
+  currentChar, useStreaming, isGroupChat, bias, continue, chatId,
+  imageResponse, previewBody = `arg.previewPrompt`, escape,
+  rememberToolUsage), the `req.model` override propagation into
+  `generationInfo.model`, the `arg.previewPrompt + req.type === 'success'`
+  preview-body early return, the post-provider `abortSignal.aborted`
+  check, and the `req.type === 'fail'` early return. Returns a
+  5-variant discriminated union (`preview` / `previewPrompt` /
+  `aborted` / `failed` / `success`); the coordinator owns the
+  module-level `previewFormated` / `previewBody` writes,
+  the `throwError(reason)` on failure, and `generationInfo`
+  attachment for both success and failed paths (the `failed`
+  variant carries `generationInfo` so the error report can include
+  it). The two pre-existing `console.log(req)` /
+  `console.log(generationInfo.model, req.model)` debug calls were
+  dropped during the move. The `v4` (uuid), `getGenerationModelString`,
+  and `requestChatData` imports moved out of the coordinator
+  (uuid stays only for the `chatId` backfill at line 205).
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
@@ -299,7 +330,8 @@ for the extracted modules:
 `normalizeTemplate.test.ts`, `buildStaticPromptSections.test.ts`,
 `buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
 `formatHistoryMessage.test.ts`, `buildHistoryWindow.test.ts`,
-`buildMemoryWindow.test.ts`, and `renderFinalPrompt.test.ts`.
+`buildMemoryWindow.test.ts`, `renderFinalPrompt.test.ts`, and
+`dispatchRequest.test.ts`.
 
 ## Fixture Inventory
 
@@ -385,6 +417,13 @@ what each fixture pins.
   `db.promptInfoInsideChat` / `db.promptTextInfoInsideChat`
   post-`setDatabase` because the web-mode default in
   `setDatabase` forcibly clears `promptInfoInsideChat` to false.
+- `preview-prompt` - `sendChat(..., { previewPrompt: true })`
+  with a non-streaming success upstream response. Pins
+  `providerCalls[0].previewBody === true`, no new assistant
+  message persisted, `stages: [1, 3]`, no side effects, and final
+  `doingChat: false`. Together with `preview` (covers
+  `arg.preview`), these two fixtures bound the two early-exit
+  branches the dispatch helper owns.
 - `persona` - `db.personaPrompt` set, no `chat.bindedPersona`.
   Pins that the content lands in `unformated.personaPrompt` and -
   under the default OpenAI-flavored `pushPrompts` consecutive-
