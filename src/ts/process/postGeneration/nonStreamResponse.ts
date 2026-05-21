@@ -1,0 +1,130 @@
+import type {
+  Chat,
+  MessageGenerationInfo,
+  MessagePresetInfo,
+  character,
+} from '../../storage/database.svelte'
+import { DBState } from '../../stores.svelte'
+import { trimUntilPunctuation } from '../../util'
+import { runInlayScreen } from '../inlayScreen'
+import type { requestDataResponse } from '../request/request'
+import { processScriptFull } from '../scripts'
+import { sayTTS } from '../tts'
+
+export interface ApplyNonStreamResponseOptions {
+  req: requestDataResponse
+  arg: { continue?: boolean }
+  nowChatroom: character
+  currentChar: character
+  selectedChar: number
+  selectedChat: number
+  generationId: string
+  generationInfo: MessageGenerationInfo
+  promptInfo: MessagePresetInfo
+  reformatContent: (data: string) => string
+}
+
+export interface ApplyNonStreamResponseResult {
+  result: string
+  emoChanged: boolean
+  mrerolls: string[]
+}
+
+export async function applyNonStreamResponse(
+  opts: ApplyNonStreamResponseOptions,
+): Promise<ApplyNonStreamResponseResult> {
+  const {
+    req,
+    arg,
+    nowChatroom,
+    currentChar,
+    selectedChar,
+    selectedChat,
+    generationId,
+    generationInfo,
+    promptInfo,
+    reformatContent,
+  } = opts
+
+  const msgs =
+    req.type === 'success'
+      ? ([['char', req.result]] as const)
+      : req.type === 'multiline'
+        ? req.result
+        : []
+
+  let result = ''
+  let emoChanged = false
+  const mrerolls: string[] = []
+
+  const messagesAt = (): Chat['message'] =>
+    DBState.db.characters[selectedChar].chats[selectedChat].message
+
+  for (let i = 0; i < msgs.length; i++) {
+    const msg = msgs[i]
+    const mess = msg[1]
+    let msgIndex = messagesAt().length
+    let result2 = await processScriptFull(
+      nowChatroom,
+      reformatContent(mess),
+      'editoutput',
+      msgIndex,
+    )
+    if (i === 0 && arg.continue) {
+      msgIndex -= 1
+      const beforeChat = messagesAt()[msgIndex]
+      result2 = await processScriptFull(
+        nowChatroom,
+        reformatContent(beforeChat.data + mess),
+        'editoutput',
+        msgIndex,
+      )
+    }
+    if (DBState.db.removeIncompleteResponse) {
+      result2.data = trimUntilPunctuation(result2.data)
+    }
+    result = result2.data
+    const inlayResult = runInlayScreen(currentChar, result)
+    result = inlayResult.text
+    emoChanged = result2.emoChanged
+    if (i === 0 && arg.continue) {
+      messagesAt()[msgIndex] = {
+        role: 'char',
+        data: result,
+        saying: currentChar.chaId,
+        time: Date.now(),
+        generationInfo,
+        promptInfo,
+        chatId: generationId,
+      }
+      if (inlayResult.promise) {
+        const p = await inlayResult.promise
+        messagesAt()[msgIndex].data = p
+      }
+    } else if (i === 0) {
+      messagesAt().push({
+        role: msg[0],
+        data: result,
+        saying: currentChar.chaId,
+        time: Date.now(),
+        generationInfo,
+        promptInfo,
+        chatId: generationId,
+      })
+      const ind = messagesAt().length - 1
+      if (inlayResult.promise) {
+        const p = await inlayResult.promise
+        messagesAt()[ind].data = p
+      }
+      mrerolls.push(result)
+    } else {
+      mrerolls.push(result)
+    }
+    DBState.db.characters[selectedChar].reloadKeys += 1
+    if (DBState.db.ttsAutoSpeech) {
+      await sayTTS(currentChar, result)
+    }
+  }
+
+  return { result, emoChanged, mrerolls }
+}

@@ -52,6 +52,7 @@ import { runEmotionLlmFallback } from './postGeneration/emotionFallbackLlm'
 import { runEmotionEmbeddingFallback } from './postGeneration/emotionFallbackEmbedding'
 import { loadAndTrimCharEmotion } from './postGeneration/charEmotionStore'
 import { applyOutputTrigger } from './postGeneration/outputTrigger'
+import { applyNonStreamResponse } from './postGeneration/nonStreamResponse'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -1623,81 +1624,22 @@ export async function sendChat(
       await sayTTS(currentChar, result)
     }
   } else {
-    const msgs =
-      req.type === 'success'
-        ? ([['char', req.result]] as const)
-        : req.type === 'multiline'
-          ? req.result
-          : []
-    let mrerolls: string[] = []
-    for (let i = 0; i < msgs.length; i++) {
-      let msg = msgs[i]
-      let mess = msg[1]
-      let msgIndex = DBState.db.characters[selectedChar].chats[selectedChat].message.length
-      let result2 = await processScriptFull(
-        nowChatroom,
-        reformatContent(mess),
-        'editoutput',
-        msgIndex,
-      )
-      if (i === 0 && arg.continue) {
-        msgIndex -= 1
-        let beforeChat = DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex]
-        result2 = await processScriptFull(
-          nowChatroom,
-          reformatContent(beforeChat.data + mess),
-          'editoutput',
-          msgIndex,
-        )
-      }
-      if (DBState.db.removeIncompleteResponse) {
-        result2.data = trimUntilPunctuation(result2.data)
-      }
-      result = result2.data
-      const inlayResult = runInlayScreen(currentChar, result)
-      result = inlayResult.text
-      emoChanged = result2.emoChanged
-      if (i === 0 && arg.continue) {
-        DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex] = {
-          role: 'char',
-          data: result,
-          saying: currentChar.chaId,
-          time: Date.now(),
-          generationInfo,
-          promptInfo,
-          chatId: generationId,
-        }
-        if (inlayResult.promise) {
-          const p = await inlayResult.promise
-          DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = p
-        }
-      } else if (i === 0) {
-        DBState.db.characters[selectedChar].chats[selectedChat].message.push({
-          role: msg[0],
-          data: result,
-          saying: currentChar.chaId,
-          time: Date.now(),
-          generationInfo,
-          promptInfo,
-          chatId: generationId,
-        })
-        const ind = DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1
-        if (inlayResult.promise) {
-          const p = await inlayResult.promise
-          DBState.db.characters[selectedChar].chats[selectedChat].message[ind].data = p
-        }
-        mrerolls.push(result)
-      } else {
-        mrerolls.push(result)
-      }
-      DBState.db.characters[selectedChar].reloadKeys += 1
-      if (DBState.db.ttsAutoSpeech) {
-        await sayTTS(currentChar, result)
-      }
-    }
-
-    if (mrerolls.length > 1) {
-      addRerolls(generationId, mrerolls)
+    const nonStream = await applyNonStreamResponse({
+      req,
+      arg,
+      nowChatroom,
+      currentChar,
+      selectedChar,
+      selectedChat,
+      generationId,
+      generationInfo,
+      promptInfo,
+      reformatContent,
+    })
+    result = nonStream.result
+    emoChanged = nonStream.emoChanged
+    if (nonStream.mrerolls.length > 1) {
+      addRerolls(generationId, nonStream.mrerolls)
     }
 
     const nonStreamTrigger = await applyOutputTrigger({
