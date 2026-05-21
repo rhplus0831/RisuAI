@@ -63,6 +63,7 @@ const FIXTURES = [
   'client-abort',
   'prompt-template-basic',
   'utility-bot-template',
+  'lorebook-position-depth',
 ] as const
 
 describe('sendChat fixtures', () => {
