@@ -17,7 +17,8 @@ shards under [`coverage/`](coverage/).
   `charEmotionStore.test.ts`, `emotionFallbackLlm.test.ts`,
   `emotionFallbackEmbedding.test.ts`, `imggenStableDiff.test.ts`,
   `outputTrigger.test.ts`, `nonStreamResponse.test.ts`, and
-  `streamResponse.test.ts`.
+  `streamResponse.test.ts`, `finalizeRequestBudget.test.ts`,
+  `buildDescription.test.ts`, and `buildPlainPromptSections.test.ts`.
 - Existing helper-surface tests continue to cover smaller process
   seams outside the fixture harness. Relevant current files include
   `src/ts/process/ttsHooks.test.ts`,

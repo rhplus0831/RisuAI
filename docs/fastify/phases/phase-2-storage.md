@@ -57,11 +57,10 @@ Server-side Phase 2 landed on 2026-05-20:
 - Implemented storage helpers in `server/fastify/src/repository.ts`.
 - Implemented static serving in `server/fastify/src/app.ts`.
 - Docker is configured to run `pnpm api:start` on port 6002 with
-  `/app/data` persisted. The current production-image dependency
-  layout still needs a follow-up because the runtime stage installs
-  production dependencies only while `api:start` uses `tsx` and the
-  server imports `@fastify/websocket`, both currently
-  dev dependencies.
+  `/app/data` persisted. After Phase 3B added
+  `@fastify/websocket`, this prod-only runtime layout needed a
+  dependency follow-up because `api:start` also uses `tsx`;
+  `1eddbfba` later promoted both packages into `dependencies`.
 - Covered by `server/fastify/__tests__/{bootstrap,assets,backups,static}.test.ts`.
 
 The browser is not yet thinned into a server-backed projection; that
@@ -309,11 +308,10 @@ stopped targeting them in Phase 2.
 Phase 3 has since ported the proxy, hub, and legacy storage
 compatibility routes, so the container target is again a
 single-process Fastify server with the migrated server surface.
-Before using it as a production image, fix the runtime dependency
-layout noted above. During the historical gap between 2E and Phase
-3, the image was missing provider proxy / hub passthrough / legacy
-storage compatibility - acceptable under the no-live-users migration
-window.
+The runtime dependency layout noted above was cleared on 2026-05-21.
+During the historical gap between 2E and Phase 3, the image was
+missing provider proxy / hub passthrough / legacy storage
+compatibility - acceptable under the no-live-users migration window.
 
 ## Boundaries
 
@@ -366,8 +364,8 @@ window.
   uploads. The browser is not yet rewired to consume
   `/api/v1/bootstrap`; that belongs to Phase 9 client thinning.
 - The Dockerfile/compose target Fastify + SPA serving, with `data/`
-  persisted across restarts; the current dependency-layout caveat
-  above must be cleared before treating the image as ready.
+  persisted across restarts; the Phase 2 dependency-layout caveat was
+  cleared by `1eddbfba`.
 - `pnpm check`, `pnpm test`, `pnpm build` green.
 
 ## Reference

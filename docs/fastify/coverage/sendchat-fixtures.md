@@ -37,7 +37,7 @@ all current snapshots assert it is `false`.
 | `editoutput-trigger`  | One `customscript` regex entry of `type: 'editoutput'` rewriting `sunshine` -> `starlight`. The rewrite fires inside the extracted streaming loop's `processScriptFull('editoutput', ...)` at `src/ts/process/postGeneration/streamResponse.ts:102`. | landed |
 | `auto-continue`       | Auto-continue fires once and lands a second turn.      | landed      |
 | `provider-error`      | Upstream `type:'fail'` produces a `risuerror` chat message. | landed |
-| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `src/ts/process/index.svelte.ts:1523` returns `false` before any assistant message is added. | landed |
+| `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check at `src/ts/process/index.svelte.ts:1435` returns `false` before any assistant message is added. | landed |
 
 ## Loader
 

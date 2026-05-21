@@ -101,10 +101,8 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   `1de94ca9` extracted the post-`editRequest` token recheck +
   `outputTokens` estimate into
   `src/ts/process/promptBudget/finalizeRequestBudget.ts`. The
-  helper returns a discriminated `{ ok: true, formated,
-  inputTokens, outputTokens } | { ok: false, reason: 'overflow',
-  inputTokens }` so the coordinator keeps ownership of the
-  `throwError` exit. Targeted test
+  helper returns a discriminated ok / overflow result so the
+  coordinator keeps ownership of the `throwError` exit. Targeted test
   `src/ts/process/__tests__/finalizeRequestBudget.test.ts` covers
   happy path, `outputTokens` clamp, removable-trim success,
   multimodal-only survival, and the no-trim-possible overflow.
@@ -186,7 +184,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   `lorebook-keyword` (one globalLore entry with `key: "cat"`
   activated by user message), and `client-abort` (pre-aborted
   AbortSignal now short-circuits at
-  `src/ts/process/index.svelte.ts:1523`).
+  `src/ts/process/index.svelte.ts:1435`).
   Adds an
   `aborted: true` flag to the fixture schema; the test driver
   synthesizes a pre-aborted controller and threads its signal
@@ -318,7 +316,9 @@ one `sendChat` extraction slice at a time. Phase 3 closed
     attach). `buildApp` now owns a `JobRegistry` instance,
     schedules `tickGc` on a 60 s `unref`'d interval, and tears
     the registry down via `onClose`.
-  - Adds `@fastify/websocket` as a dev dependency. Tests in
+  - Initially added `@fastify/websocket` as a dev dependency; the
+    later Docker runtime-dependency follow-up promoted it to
+    `dependencies`. Tests in
     `server/fastify/__tests__/streamJobs.test.ts` cover the
     lifecycle module (48 cases - URL allow/reject, buffering
     caps, GC, abort, `runStreamJob` round-trip) and

@@ -125,9 +125,9 @@ After parity is proven on the proxy + hub routes:
 
 ## Reference
 
-- The Express proxy implementation is
-  `server/node/server.cjs:744-1122`. The Fastify port is a clean
-  rewrite, not a copy.
+- Historical Express proxy reference before deletion:
+  `2c234d9^:server/node/server.cjs` around lines 744-1122. The
+  Fastify port is a clean rewrite, not a copy.
 - `move-to-fastify` proxy slice: `a1711803`, `fcfd69a8`,
   `58cfea1a`, `c929ca87`. The `PROVIDER_FETCH_AUDIT.md` on that
   branch lists every call site that currently bypasses the

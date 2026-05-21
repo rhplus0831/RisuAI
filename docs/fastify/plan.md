@@ -20,8 +20,8 @@ End state:
   generation pipeline lives in focused server modules with
   fixture-backed tests.
 - Group chat, peer multi-user chat, Risu Account Sync, Google Drive
-  sync, and the Supa / Hypa V2 / Hanurai memory engines are gone
-  from the tree.
+  sync, and the Supa / Hypa V2 / Hanurai memory engine entry points
+  are gone from the live surface.
 - Tauri keeps working in its current local-storage mode without
   changes from this migration.
 
@@ -29,7 +29,7 @@ End state:
 
 Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, and the Phase
-5-1 through Phase 5-12 extraction commits on 2026-05-21:
+5-1 through Phase 5-15 extraction commits on 2026-05-21:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -46,23 +46,26 @@ the Phase 4 characterization slice on 2026-05-20, and the Phase
   `schema_version(id, version, revision)`.
 - Root `package.json` has `api:dev`, `api:start`, and `api:test`
   for the Fastify server. The Dockerfile and compose file point at
-  `pnpm api:start` on port 6002 with `/app/data` persisted, but the
-  current production-image dependency layout is not self-contained:
-  the runtime stage installs production dependencies only while
-  `api:start` uses `tsx` and `server/fastify/src/app.ts` imports
-  `@fastify/websocket`, both of which are currently dev
-  dependencies. The legacy `runserver` script and `server/node/`
+  `pnpm api:start` on port 6002 with `/app/data` persisted. The
+  runtime stage installs production dependencies only, and
+  `1eddbfba` promoted both `tsx` and `@fastify/websocket` into
+  `dependencies` so the current image layout is self-contained for
+  the TSX runtime. The legacy `runserver` script and `server/node/`
   Express server have been removed. `server/hono/` remains a
   separate static-serving scaffold and is not the migration path.
-- `src/ts/process/index.svelte.ts` is currently 1713 lines and
+- `src/ts/process/index.svelte.ts` is currently 1625 lines and
   remains the `sendChat` coordinator with explicit
   `stage1`-`stage4` timing markers. Phase 5 has already moved
   auto-continue evaluation, error reporting, desktop notification,
   IGP, stage-4 timing writeback, emotion handling, image-generation
   post-processing, output-trigger reuse, and the non-streaming /
-  streaming response loops into `src/ts/process/autoContinue.ts`,
-  `src/ts/process/sendChatErrors.ts`, and
-  `src/ts/process/postGeneration/*`.
+  streaming response loops, final request-budget recheck, leading
+  description assembly, and non-template plain-prompt sections into
+  `src/ts/process/autoContinue.ts`,
+  `src/ts/process/sendChatErrors.ts`,
+  `src/ts/process/postGeneration/*`,
+  `src/ts/process/promptBudget/*`, and
+  `src/ts/process/promptAssembly/*`.
 - `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
   the current `sendChat` behavior with 17 fixtures under
   `src/ts/process/__fixtures__/`. The snapshots also assert that
@@ -116,7 +119,7 @@ rules. The headline order:
    Done 2026-05-20 with 17 fixtures.
 5. **sendChat extraction** - carve the function into stage-shaped
    modules behind the pinned tests. In progress as of 2026-05-21
-   through Phase 5-12 (`d926228a`).
+   through Phase 5-15 (`b32c9682`).
 6. **Server-side generation** - move provider dispatch, tokenizer,
    translation, TTS, image, and Stable Horde calls server-side.
 7. **Server-side prompt assembly** - server walks the preset's

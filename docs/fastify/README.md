@@ -20,14 +20,13 @@ bootstrap, JSON import, content-addressed assets, backups, static
 SPA serving, provider proxy fetch, stream-job WebSocket transport,
 Risu hub passthrough, and the legacy NodeStorage key-value surface.
 Express has been deleted. The Dockerfile and compose file target
-the Fastify runtime on port 6002, but the production image still
-needs a dependency/layout follow-up before it is considered
-self-contained because `pnpm api:start` uses `tsx` and imports
-`@fastify/websocket` while both are currently dev dependencies.
+the Fastify runtime on port 6002 with `/app/data` persisted; `tsx`
+and `@fastify/websocket` are runtime dependencies after
+`1eddbfba`.
 Phase 5 `sendChat` extraction is now active: commits
-`3c5a92b2` through `d926228a` have extracted auto-continue,
-error reporting, response-loop, and post-generation helpers behind
-the landed fixture harness.
+`3c5a92b2` through `b32c9682` have extracted auto-continue,
+error reporting, response-loop, post-generation, request-budget, and
+prompt-assembly helpers behind the landed fixture harness.
 
 In scope:
 

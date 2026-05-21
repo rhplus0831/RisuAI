@@ -11,9 +11,11 @@ The stage names match the existing `stage1`-`stage4` timing markers
 in `src/ts/process/index.svelte.ts` so a reader can trace from the
 current code to the future shape. The current timing markers do not
 perfectly bracket the future server modules; they are trace anchors.
-Phase 5 has already extracted some Stage 3 / Stage 4 helpers into
-browser modules under `src/ts/process/postGeneration/`, but the
-server ownership described below has not moved yet.
+Phase 5 has already extracted some Stage 2 / Stage 3 / Stage 4
+helpers into browser modules under `src/ts/process/promptAssembly/`,
+`src/ts/process/promptBudget/`, and
+`src/ts/process/postGeneration/`, but the server ownership described
+below has not moved yet.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -45,7 +47,7 @@ Owner (after migration): server.
 
 The current `sendChat` does this work in browser code around
 function entry through `stageTimings.stage1Start` at
-`src/ts/process/index.svelte.ts:257` and continues browser-side
+`src/ts/process/index.svelte.ts:259` and continues browser-side
 validation / setup until Stage 3 dispatch.
 
 ## Stage 2 - Prompt assembly
@@ -63,7 +65,7 @@ Owner (after migration): server.
 The current `sendChat` does this work in browser code around the
 `stageTimings.stage1Start` and `stageTimings.stage2Start` trace
 points. As of 2026-05-21, `stage2Start` is at
-`src/ts/process/index.svelte.ts:995` and currently wraps the Hypa V3
+`src/ts/process/index.svelte.ts:922` and currently wraps the Hypa V3
 memory call, while other prompt assembly work still lives before and
 after that marker.
 
@@ -82,9 +84,9 @@ Owner (after migration): server.
   emits `error`.
 
 The current `sendChat` does this work between
-`stageTimings.stage3Start` at `src/ts/process/index.svelte.ts:1483`
+`stageTimings.stage3Start` at `src/ts/process/index.svelte.ts:1395`
 and `stageTimings.stage3Duration` around
-`src/ts/process/index.svelte.ts:1631`. Phase 5 has extracted the
+`src/ts/process/index.svelte.ts:1543`. Phase 5 has extracted the
 non-streaming response loop to
 `src/ts/process/postGeneration/nonStreamResponse.ts` and the stream
 reader loop to `src/ts/process/postGeneration/streamResponse.ts`.
@@ -115,7 +117,7 @@ generation provider call, text-to-speech provider call), but the
 browser owns playback / rendering.
 
 The current `sendChat` does this work after
-`stageTimings.stage4Start` at `src/ts/process/index.svelte.ts:1637`
+`stageTimings.stage4Start` at `src/ts/process/index.svelte.ts:1549`
 through the end of the function, with several post-generation
 helpers already split under `src/ts/process/postGeneration/`.
 

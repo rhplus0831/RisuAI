@@ -24,12 +24,14 @@ under [`status/`](status/).
   `vi.mock`s for the heavy side-effect modules. Phase 5 is using
   that safety net for incremental extraction.
 - Phase 5 sendChat extraction is active. Commits `3c5a92b2`
-  through `d926228a` landed the first 12 slices: auto-continue
+  through `b32c9682` landed the first 15 slices: auto-continue
   decision logic, `doingChat` ownership, error reporting,
   notification / IGP / stage-4 helpers, emotion helpers, image
-  generation post-processing, output-trigger reuse, and the
-  non-streaming + streaming response loops. The coordinator still
-  lives in `src/ts/process/index.svelte.ts`, now 1713 lines.
+  generation post-processing, output-trigger reuse, the
+  non-streaming + streaming response loops, final request-budget
+  recheck, leading description assembly, and non-template plain
+  prompt sections. The coordinator still lives in
+  `src/ts/process/index.svelte.ts`, now 1625 lines.
 - Phase 3A, Phase 3B, and Phase 3C all landed on 2026-05-20.
   `POST /api/v1/proxy/fetch` is in place behind `requireAuth`,
   the proxy stream-job surface (`POST` / `DELETE` plus the
@@ -52,12 +54,12 @@ under [`status/`](status/).
   `express` / `express-rate-limit` / `node-html-parser`
   dependencies were removed.
 - The Dockerfile and compose file target Fastify on port 6002
-  with `/app/data` persisted. Current caveat: the runtime image
-  copies production dependencies only, but `pnpm api:start` depends
-  on `tsx` and the server imports `@fastify/websocket`; both are
-  currently dev dependencies. `server/node/` (Express) has been
-  deleted; `server/hono/` is a small static-serving Hono scaffold
-  and is not the Fastify migration path.
+  with `/app/data` persisted. The runtime image copies production
+  dependencies only, and `tsx` plus `@fastify/websocket` are now
+  production dependencies, so the current TSX runtime layout is
+  self-contained. `server/node/` (Express) has been deleted;
+  `server/hono/` is a small static-serving Hono scaffold and is not
+  the Fastify migration path.
 - Root `package.json` has `api:dev`, `api:start`, and
   `api:test` for the Fastify server. The `runserver` script
   has been removed.

@@ -37,7 +37,7 @@ still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:257` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:259` -
   validation, lorebook prep, persona, description assembly.
 - `stage2Start` at `src/ts/process/index.svelte.ts:922` - Hypa V3
   memory retrieval and prompt memory-card accounting. The current
@@ -136,7 +136,8 @@ for the extracted modules:
 `charEmotionStore.test.ts`, `emotionFallbackLlm.test.ts`,
 `emotionFallbackEmbedding.test.ts`, `imggenStableDiff.test.ts`,
 `outputTrigger.test.ts`, `nonStreamResponse.test.ts`, and
-`streamResponse.test.ts`.
+`streamResponse.test.ts`, `finalizeRequestBudget.test.ts`,
+`buildDescription.test.ts`, and `buildPlainPromptSections.test.ts`.
 
 ## Phase 4 landed
 
@@ -202,7 +203,7 @@ each fixture pins.
 - `client-abort` - test driver passes a pre-aborted
   `AbortSignal`. Provider fake does not honor the signal so the
   call is still captured, but the post-provider check at
-  `src/ts/process/index.svelte.ts:1523` short-circuits the
+  `src/ts/process/index.svelte.ts:1435` short-circuits the
   function. Pins `stages: [1, 3]`, no assistant message added, no
   side effects.
 - `lorebook-constant` - one `globalLore` entry with
@@ -243,7 +244,7 @@ each fixture pins.
   triggerscript and the mode is `'editRequest'` on an
   `OpenAIChat[]`. Pins that the
   `runLuaEditTrigger('editRequest', formated)` call site at
-  `src/ts/process/index.svelte.ts:1422` mutates the formated array
+  `src/ts/process/index.svelte.ts:1349` mutates the formated array
   and the mutation reaches the provider.
 - `editoutput-trigger` - one `customscript` regex of type
   `'editoutput'` rewriting `sunshine` -> `starlight`. Pins that

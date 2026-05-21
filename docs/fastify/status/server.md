@@ -117,13 +117,11 @@ Root `package.json` has `pnpm hono:build` for the Hono static
 bundle and `pnpm api:dev` / `pnpm api:start` / `pnpm api:test`
 for the Fastify server. The Dockerfile is configured to run
 `pnpm api:start`, expose 6002, and persist `/app/data`;
-`docker-compose.yml` maps `6002:6002`. Current caveat: the runtime
-stage installs production dependencies only, but `api:start` invokes
-`tsx` and `server/fastify/src/app.ts` imports `@fastify/websocket`;
-both packages are currently under `devDependencies`. Promote those
-runtime dependencies or compile the server before treating the
-Docker image as production-ready. The Express `pnpm runserver`
-script has been removed; `server/node/` no longer exists.
+`docker-compose.yml` maps `6002:6002`. The runtime stage installs
+production dependencies only; `tsx` and `@fastify/websocket` are now
+under `dependencies` after `1eddbfba`, so `pnpm api:start` resolves
+in the current image layout. The Express `pnpm runserver` script has
+been removed; `server/node/` no longer exists.
 
 ## What lands when
 
