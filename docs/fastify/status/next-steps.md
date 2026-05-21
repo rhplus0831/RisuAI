@@ -44,6 +44,50 @@ are below under "Completed Slices".
 
 ## Completed Slices
 
+- **Phase 6-1 - generate/completion route + echo provider.** Done
+  2026-05-22. **Phase 6 opens.** Server-only slice that lands the
+  Stage 3 server boundary: a new `POST /api/v1/generate/completion`
+  route gated by `requireAuth`, JSON-schema-validated, that dispatches
+  on an explicit `provider` discriminant. Only `echo` is implemented;
+  every other provider returns `501` with
+  `{reason: 'provider not implemented in Phase 6-1: <name>'}`.
+  Non-streaming responses match the browser-side `requestDataResponse`
+  shape (`{type: 'success' | 'fail', result}`) so the next slice's
+  client adapter can map server output 1:1 into the dispatch helper's
+  `req` variable. Streaming responses use the envelope from the phase
+  doc: `event: chunk` frames with `{"type":"token","content":"..."}`
+  payloads, then `event: done` with `{"finishReason":"stop"}`. Client
+  disconnect aborts via `req.raw.on('close', ...)` → `AbortController`.
+  Echo accepts `options.echo.message` and `options.echo.delayMs`;
+  defaults (`'Echo Message'` / `0`) mirror the browser-side
+  `requestEcho`. Files added: `server/fastify/src/generation/echo.ts`
+  (pure dispatcher; non-streaming `runEcho` returns
+  `{type, result, aborted?}`, streaming `runEchoStream` is an
+  `AsyncGenerator<{kind: 'token' | 'done', ...}>`), and
+  `server/fastify/src/routes/generation.ts` (route plugin).
+  `app.ts` registers the plugin. 18 new tests across
+  `server/fastify/__tests__/echo.test.ts` (9 cases pinning the
+  dispatcher) and `server/fastify/__tests__/generation.completion.test.ts`
+  (9 cases pinning auth, schema validation for `provider` / `messages`
+  / `stream`, the 501 unknown-provider path, echo non-streaming happy
+  path, default-message fallback, streaming SSE envelope, and the
+  `delayMs` timing). No client wiring; the dispatch helper at
+  `src/ts/process/dispatch/dispatchRequest.ts` still uses local-mode
+  `requestChatData`. Decision recorded in this slice: the wire
+  contract carries an explicit `provider` discriminant instead of
+  the server resolving it from the model id via `modellist.ts`. The
+  alternative (server-side `getModelInfo`) was rejected because
+  `modellist.ts` is browser-coupled (top-level imports of
+  `getDatabase`, `DBState`, `customProviderStore`, `pluginV2`,
+  `customV3ProviderMetaStore`, `fetchNative`) and two of the format
+  dispatches (`reverse_proxy` reading `db.customAPIFormat`,
+  `xcustom:::` reading `db.customModels`) depend on browser DB state
+  that the server should not hold until Phase 9; the client adapter
+  in the next slice will carry a small `format → provider` map.
+  Verification: `pnpm api:test` (145 tests across 12 files, up from
+  127/10), `pnpm check`, `pnpm test` (454 SPA tests across 44 files),
+  `pnpm build` all green.
+
 - **Phase 5 - coordinator closeout slice 28.** Done 2026-05-22.
   **Phase 5 is closed.** Final cleanup pass on
   `src/ts/process/index.svelte.ts`. Removed the vestigial
