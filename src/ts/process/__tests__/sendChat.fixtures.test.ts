@@ -64,6 +64,7 @@ const FIXTURES = [
   'prompt-template-basic',
   'utility-bot-template',
   'lorebook-position-depth',
+  'prompt-template-memory-cache',
 ] as const
 
 describe('sendChat fixtures', () => {
