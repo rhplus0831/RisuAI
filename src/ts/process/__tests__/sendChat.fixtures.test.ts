@@ -140,6 +140,7 @@ const FIXTURES = [
   'prompt-template-memory-cache',
   'history-media-fallback',
   'start-trigger-control',
+  'start-trigger-stop',
 ] as const
 
 describe('sendChat fixtures', () => {
