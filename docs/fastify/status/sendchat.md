@@ -1,9 +1,9 @@
 # sendChat Status
 
-Date: 2026-05-22 (Phase 5 active through Phase 5-27)
+Date: 2026-05-22 (Phase 5 closed; all 28 slices landed)
 
-Updated 2026-05-22: Phase 5 extraction is active. The first 27
-slices landed: auto-continue, owned `doingChat` lifecycle, error
+Updated 2026-05-22: **Phase 5 is closed.** All 28 slices landed:
+auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
 emotion fallback helpers, output-trigger reuse, the non-streaming
@@ -40,10 +40,19 @@ orchestration (streaming / non-streaming branch chooser,
 auto-continue decision, IGP), the stage-4 orchestrator
 (stage-3→4 transition, resend handoff, notification, provider
 emotion, emotion fallback routing, image-generation dispatch, and
-the final `finalizeStage4` call), and the entry context
+the final `finalizeStage4` call), the entry context
 (preset-chain selection, stats counter, selected character/chat
 lookup, lastInteraction stamp, chatId backfill, promptInfo seed,
-tokenizer + maxContextTokens setup).
+tokenizer + maxContextTokens setup), and the coordinator closeout
+(dead-locals cleanup, single hoisted `setProcessStage` callback,
+`let → const` conversions where no reassignment happens).
+
+`src/ts/process/index.svelte.ts` went from **1625 → 445 lines**
+across 28 slices (a **73% reduction**), with 27 focused helpers
+extracted under `src/ts/process/` and its `promptAssembly/`,
+`promptBudget/`, `postGeneration/`, and `dispatch/`
+subdirectories. 26 sendChat fixtures pin end-to-end behavior;
+454 unit tests + 127 API tests cover the helpers individually.
 
 Phase 4 remains complete for the original 17 fixtures, and nine
 narrow Phase 5 gate fixtures have since been added
@@ -71,12 +80,13 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 448 lines. It is
+`src/ts/process/index.svelte.ts` is currently 445 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
-several response and post-generation pieces into focused helpers.
-The visible timing markers are:
+all of the prompt assembly, dispatch, response orchestration,
+and stage-4 closeout into focused helpers. The visible timing
+markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:175` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:176` -
   validation, lorebook prep, persona, description assembly.
 - `stage2Start` inside
   `src/ts/process/promptAssembly/buildMemoryWindow.ts` - Hypa V3

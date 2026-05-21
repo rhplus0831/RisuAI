@@ -1,18 +1,14 @@
 # sendChat Remaining Slice Plan
 
-Date: 2026-05-21
+Date: 2026-05-22
 
-This shard is the work picker for the rest of Phase 5. Phase 4 is
-still closed: the 17 landed fixtures remain the baseline safety net.
-Landed Phase 5 gates have raised the active snapshot count to 24.
-The "Phase 4 gates" below are targeted fixture additions to land
-immediately before a Phase 5 slice touches an uncovered behavior.
-
-The intent is to keep agents from choosing only tiny helpers while
-also avoiding one oversized "finish sendChat" task. Pick the first
-open slice below; if its fixture gate is not satisfied, land that
-gate first, then land the extraction slice. Update this file and
-[`next-steps.md`](next-steps.md), then move on.
+**Phase 5 is closed.** All 28 slices landed; the 26 sendChat
+fixtures remain the baseline safety net (17 from Phase 4, 9 from
+the Phase 5 gate fixtures listed below). The coordinator at
+`src/ts/process/index.svelte.ts` is 445 lines (down from 1625 at
+Phase 5 start, a 73% reduction). This document is now historical
+reference; Phase 6 work is tracked in
+[`next-steps.md`](next-steps.md).
 
 ## Current Code Map
 
@@ -108,7 +104,7 @@ suite is the acceptance test.
 | 5-25 Response orchestration         | done 2026-05-22 | Extracted the streaming / non-streaming branch chooser, the shared `applyOutputTrigger`, the streaming-only `runInlayScreen` + DB writeback + `sayTTS`, the non-stream `triggerChat` DB writeback, `addRerolls`, `evaluateAutoContinue` decision, and `evaluateIgp` into `src/ts/process/postGeneration/orchestrateResponse.ts`. Returns a 3-variant discriminated union (`aborted` / `continue` / `done`); the coordinator owns the auto-continue handoff itself (releases the `doingChat` lease, resets `iOwnDoingChat`, recursively calls the exported `sendChat`) to avoid a circular import. The streaming-branch vs non-streaming-branch `currentChat` asymmetry is preserved verbatim. Eight imports moved out of the coordinator (`consumeStreamResponse`, `applyNonStreamResponse`, `applyOutputTrigger`, `runInlayScreen`, `sayTTS`, `addRerolls`, `evaluateAutoContinue`, `evaluateIgp`). | Existing fixtures cover the routing exhaustively; `orchestrateResponse.test.ts` adds 7 cases that mock all 8 delegates and pin the discriminated-union dispatch shape. |
 | 5-26 Stage-4 orchestrator           | done 2026-05-22 | Extracted the stage-3 duration writeback, the stage-4 transition (`setProcessStage(4)` + `stage4Start`), the resend handoff (calls `finalizeStage4` first), the notification dispatch, the provider-emotion application, the emotion-fallback routing (embedding vs LLM under `viewScreen='emotion' && !emoChanged && !aborted`), the imggen dispatch under `viewScreen='imggen'`, and the default-path `finalizeStage4` into `src/ts/process/postGeneration/runStage4.ts`. Returns a 2-variant discriminated union (`resend` / `done`); the coordinator owns the resend recursion itself to avoid a circular `sendChat` import. Emotion-fallback paths intentionally skip the final `finalizeStage4` (matches production's `return true` from those branches). Seven imports moved out of the coordinator (`fireDesktopNotification`, `applyEmotionFromResponse`, `runImggenStableDiff`, `runEmotionLlmFallback`, `runEmotionEmbeddingFallback`, `loadAndTrimCharEmotion`, `finalizeStage4`). | Existing fixtures cover the default routing; `runStage4.test.ts` adds 12 cases mocking all seven delegates to pin the discriminated-union dispatch and the emotion-fallback / inlayViewScreen / abort gating. |
 | 5-27 Entry context                  | done 2026-05-22 | Extracted the preset-chain selection (random pick + `changeToPreset` on hit, `alertToast` on miss; gated on `chatProcessIndex === -1`), the `db.statics.messages` increment, the `selectedCharID` lookup + `lastInteraction` stamp + `chatPage` read, the chatId backfill, the promptInfo seed (gated on `db.promptInfoInsideChat` with `botPresets[botPresetsId].name` and `parseToggleSyntax + getModuleToggles` toggle harvest), the gpt-vs-non-gpt `caculatedChatTokens` choice + override, the `ChatTokenizer` construction, and the `maxContextTokens` read into `src/ts/process/sendChatContext.ts`. The coordinator keeps the closures and the `runCurrentChatFunction` parser pass in scope because they close over `currentChar`. Eight imports moved out of the coordinator (`changeToPreset`, `alertToast`, `parseToggleSyntax`, `getModuleToggles`, `ChatTokenizer`, `selectedCharID`, `MessagePresetInfo`, `v4` — uuid now has zero call sites in the coordinator). | `sendChatContext.test.ts` adds 15 cases pinning preset-chain hit/miss/reentrant, the stats counter, lastInteraction stamp, chatId backfill (with the `??` falsy-string preservation quirk), promptInfo for `promptInfoInsideChat=false` and `=true` with select/text/boolean toggles, tokenizer gpt/non-gpt branches, and selectedChar/selectedChat lookup. |
-| 5-28 Coordinator closeout           | open            | Inline cleanup after the preceding slices: remove dead locals, make stage handoffs explicit, verify `index.svelte.ts` is under 500 lines, and update status docs.                                                                                                                                                                                                                                                                                                                                                                                                                | All gates satisfied                                                                                                                               |
+| 5-28 Coordinator closeout           | done 2026-05-22 | Final cleanup. Removed dead `let isAborted` declaration; removed the dead `let chats = history.chats` + `chats = memWindow.chats` reassignment (the variable was unused after slice 5-22 absorbed the memory-card split — `history.chats` now feeds `buildMemoryWindow` inline); removed the dead `currentTokens = memWindow.currentTokens` reassignment; hoisted a single `const setProcessStage = (stage) => chatProcessStage.set(stage)` near the top of the try block, replacing three inline callbacks at `buildMemoryWindow` / `dispatchRequest` / `runStage4` call sites; converted `let → const` for `promptInfo`, `unformated`, `hasCachePoint`, and the `normalizeTemplate` destructure where none are reassigned; dropped a stray double-blank line after the `renderFinalPrompt` call. Final coordinator size: 445 lines (down from 1625 at Phase 5 start — 73% reduction). | All 26 sendChat fixtures stay green without re-recording. |
 
 ## Acceptance Per Slice
 

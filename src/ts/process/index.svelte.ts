@@ -94,7 +94,6 @@ export async function sendChat(
     stage4Duration: 0,
   }
 
-  let isAborted = false
   let findCharCache: { [key: string]: character } = {}
   function findCharacterbyIdwithCache(id: string) {
     const d = findCharCache[id]
@@ -156,6 +155,8 @@ export async function sendChat(
   }
 
   try {
+  const setProcessStage = (stage: number) => chatProcessStage.set(stage)
+
   const ctx = setupSendChatContext({
     chatProcessIndex,
     chatAdditonalTokens: arg.chatAdditonalTokens,
@@ -163,7 +164,7 @@ export async function sendChat(
   selectedChar = ctx.selectedChar
   selectedChat = ctx.selectedChat
   const nowChatroom = ctx.nowChatroom
-  let promptInfo = ctx.promptInfo
+  const promptInfo = ctx.promptInfo
   const tokenizer = ctx.tokenizer
   const maxContextTokens = ctx.maxContextTokens
 
@@ -171,9 +172,9 @@ export async function sendChat(
   let currentChat = runCurrentChatFunction(nowChatroom.chats[selectedChat])
   nowChatroom.chats[selectedChat] = currentChat
 
-  chatProcessStage.set(1)
+  setProcessStage(1)
   stageTimings.stage1Start = Date.now()
-  let unformated = {
+  const unformated = {
     main: [] as OpenAIChat[],
     jailbreak: [] as OpenAIChat[],
     chats: [] as OpenAIChat[],
@@ -186,7 +187,7 @@ export async function sendChat(
     personaPrompt: [] as OpenAIChat[],
   }
 
-  let { promptTemplate, usingPromptTemplate } = normalizeTemplate(currentChar)
+  const { promptTemplate, usingPromptTemplate } = normalizeTemplate(currentChar)
 
   if (!currentChar.utilityBot && !promptTemplate) {
     const sections = buildPlainPromptSections(currentChar)
@@ -221,7 +222,7 @@ export async function sendChat(
   )
   currentTokens += preflight.addedTokens
   const memoryCardUsed = preflight.memoryCardUsed
-  let hasCachePoint = preflight.hasCachePoint
+  const hasCachePoint = preflight.hasCachePoint
 
   const history = await buildHistoryWindow({
     currentChar,
@@ -235,13 +236,12 @@ export async function sendChat(
   if (history.stopSending === true) {
     return false
   }
-  let chats: OpenAIChat[] = history.chats
   currentTokens += history.addedTokens
   currentChat = history.currentChat
   const triggerResult = history.triggerResult
 
   const memWindow = await buildMemoryWindow({
-    chats,
+    chats: history.chats,
     currentTokens,
     maxContextTokens,
     currentChat,
@@ -254,13 +254,11 @@ export async function sendChat(
     unformated,
     stageTimings,
     throwError,
-    setProcessStage: (stage) => chatProcessStage.set(stage),
+    setProcessStage,
   })
   if (memWindow.stopSending === true) {
     return false
   }
-  chats = memWindow.chats
-  currentTokens = memWindow.currentTokens
   currentChat = memWindow.currentChat
   const memories = memWindow.memories
 
@@ -328,7 +326,6 @@ export async function sendChat(
     promptInfo.promptText = render.promptText
   }
 
-
   const budget = await finalizeRequestBudget(
     formated,
     maxContextTokens,
@@ -360,7 +357,7 @@ export async function sendChat(
     isContinue: !!arg.continue,
     isPreview: !!arg.preview,
     isPreviewPrompt: !!arg.previewPrompt,
-    setProcessStage: (stage) => chatProcessStage.set(stage),
+    setProcessStage,
   })
   if (dispatch.status === 'preview') {
     previewFormated = dispatch.formated
@@ -428,7 +425,7 @@ export async function sendChat(
     stageTimings,
     generationInfo,
     throwError,
-    setProcessStage: (stage) => chatProcessStage.set(stage),
+    setProcessStage,
   })
   if (stage4.status === 'resend') {
     // Handoff — see iOwnDoingChat contract above.

@@ -1,51 +1,32 @@
 # Next Steps
 
-Date: 2026-05-21
+Date: 2026-05-22
 
-Use this list to pick the next slice. Keep work batches narrow:
-one `sendChat` extraction slice at a time. Phase 3 closed
-2026-05-21.
+Use this list to pick the next chunk of work. **Phase 5 closed
+2026-05-22**: all 28 slices landed and `src/ts/process/index.svelte.ts`
+went from 1625 to 445 lines (73% reduction). The historical
+slice picker is now archived at
+[`sendchat-slicing.md`](sendchat-slicing.md). Per-slice details
+are below under "Completed Slices".
 
 ## Immediate
 
-1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-27. The landed slices already moved
-   auto-continue, error handling, several post-generation helpers,
-   output-trigger reuse, the non-streaming / streaming response
-   loops, the final request-budget recheck, the character
-   description assembly, the plain-prompt main / jailbreak /
-   globalNote sections, prompt-template normalization, the
-   static prompt sections (author note, cot, persona, inlay-view),
-   the lorebook placement context, the template token preflight,
-   the per-message history formatter, the history assembly
-   window, the memory window (Hypa V3 / fallback budget trim /
-   memory-card split / `<Previous Conversation>` wrap), the
-   final prompt render (12-card walker, non-template
-   `formatingOrder` loop, cache-point walk-back, depth_prompt
-   splice, prompt-info text capture, editRequest trigger), the
-   provider dispatch (stage-3 transition, preview /
-   previewPrompt early returns, `requestChatData` invocation,
-   model override, abort + fail handling), the response
-   orchestration (streaming / non-streaming branch chooser,
-   shared output-trigger, streaming-only inlay + TTS,
-   `addRerolls`, auto-continue decision, IGP), the stage-4
-   orchestrator (stage-3 duration writeback, stage-4 transition,
-   resend handoff, notification, provider emotion, emotion
-   fallback routing, imggen dispatch, `finalizeStage4`), and the
-   entry context (preset-chain selection, stats counter,
-   character/chat lookup, chatId backfill, promptInfo seed,
-   tokenizer + maxContextTokens setup) out of
-   `index.svelte.ts`. The remaining work is now sliced in
-   [`sendchat-slicing.md`](sendchat-slicing.md); take the first
-   open Phase 5 slice, adding its Phase 4 fixture gate first when
-   needed, rather than picking an unrelated tiny helper. Run the
-   focused fixture suite after each step:
-   `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
-   Preserve the current lifecycle invariant from
-   [`sendchat.md`](sendchat.md): `sendChat` owns and clears the
-   `doingChat` lease when it acquires it, including abort and error
-   exits. Also keep the helper-level tests green for any module
-   touched by the slice.
+1. **Phase 6 - Stage 3 dispatch moves server-side.** Per
+   [`runtime-stages.md`](../runtime-stages.md), the next phase is
+   moving the provider dispatch (currently in
+   `src/ts/process/dispatch/dispatchRequest.ts` and
+   `src/ts/process/request/request.ts`) onto the Fastify backend.
+   The browser keeps a thin client that reads the server's SSE
+   stream. Open work: define the server route surface, the SSE
+   contract, and the client adapter that replaces
+   `dispatchRequest`'s `requestChatData(...)` call with a network
+   round-trip. Preserve the 26 sendChat fixtures and the helper
+   tests as the safety net; the fixture provider fake will likely
+   shift from `vi.mock('../request/request')` to a fake SSE
+   transport. The dispatch helper's 5-variant discriminated union
+   return (`preview` / `previewPrompt` / `aborted` / `failed` /
+   `success`) is a natural seam between the client and the new
+   server boundary.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -62,6 +43,39 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - coordinator closeout slice 28.** Done 2026-05-22.
+  **Phase 5 is closed.** Final cleanup pass on
+  `src/ts/process/index.svelte.ts`. Removed the dead `let
+  isAborted` declaration (vestigial from pre-5-1); removed the
+  dead `let chats = history.chats` + `chats = memWindow.chats`
+  reassignment (the local was unused after 5-22 absorbed the
+  memory-card split — `history.chats` now feeds
+  `buildMemoryWindow` inline); removed the dead `currentTokens
+  = memWindow.currentTokens` reassignment; hoisted a single
+  `const setProcessStage = (stage) => chatProcessStage.set(stage)`
+  at the top of the try block, replacing three inlined callbacks
+  at the `buildMemoryWindow` / `dispatchRequest` / `runStage4`
+  call sites; converted `let → const` for `promptInfo`,
+  `unformated`, `hasCachePoint`, and the `normalizeTemplate`
+  destructure where none are reassigned; dropped a stray
+  double-blank line after the `renderFinalPrompt` call.
+  No behavior changes. All 26 sendChat fixtures stay green
+  without re-recording; `pnpm check`, `pnpm test`, `pnpm api:test`,
+  and `pnpm build` all clean. **Final coordinator size: 445
+  lines (down from 1625 at Phase 5 start — 73% reduction).**
+
+  Phase 5 retrospective: 28 slices, 27 focused helpers (under
+  `src/ts/process/` and the `promptAssembly/`, `promptBudget/`,
+  `postGeneration/`, and `dispatch/` subdirectories), 9 fixture
+  gates landed during Phase 5 (raising the snapshot count from
+  17 to 26), and 454 unit tests covering the helpers
+  individually. Two pattern wrinkles documented in the slice
+  history: `.svelte.ts` files cannot be reliably intercepted by
+  `vi.mock` (forced workarounds in 5-20 and 5-27), and the
+  web-mode default in `setDatabase` forcibly clears
+  `promptInfoInsideChat` (loadFixture re-applies it for F4-F,
+  and `sendChatContext.test.ts` re-applies it in its seedDb).
 
 - **Phase 5 - entry context slice 27.** Done 2026-05-22.
   Extracted the sendChat entry-context setup into
