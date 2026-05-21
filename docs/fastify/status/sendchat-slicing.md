@@ -15,8 +15,8 @@ gate first, then land the extraction slice. Update this file and
 
 ## Current Code Map
 
-`src/ts/process/index.svelte.ts` is 1101 lines. Phase 5-1 through
-5-20 already extracted auto-continue, owned `doingChat` lifecycle,
+`src/ts/process/index.svelte.ts` is 1017 lines. Phase 5-1 through
+5-21 already extracted auto-continue, owned `doingChat` lifecycle,
 error reporting, response loops, most post-generation helpers, final
 request-budget recheck, character description, plain-prompt main /
 jailbreak / global-note sections, prompt-template normalization
@@ -27,22 +27,24 @@ injection lore, normal / description / postEverything placements;
 returns `resolvePosition`, `positionParser`, and `depthPrompts`),
 the template token preflight (per-card token math plus the
 `memoryCardUsed` / `hasCachePoint` flag discovery, plus the no-
-template path that tokenizes every `unformated` slot), and the
+template path that tokenizes every `unformated` slot), the
 per-message history formatter (one `Message` → `OpenAIChat`:
 editprocess script, name resolution, inlay/multimodal/caption
-fallback, sendName wrapper, Thoughts extraction, asset_prompt).
+fallback, sendName wrapper, Thoughts extraction, asset_prompt), and
+the history assembly window (examples + start-new-chat + first
+message + makeMs filter + start-trigger handling with stopSending
+early return + per-message loop + depth-prompt token preflight).
 
 The work still inside the coordinator is clustered here:
 
-| Lines     | Remaining responsibility                                                                                                                          | Target owner after Phase 5           |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| 91-263    | Entry guard, preset-chain switch, selected character/chat setup, prompt-info seed, tokenizer setup.                                               | `sendChatContext` / lifecycle helper |
-| 315-411   | Example messages, first message, start trigger, makeMs filter, history-loop wrapper, depth-prompt token accounting.                              | history assembly window helper       |
-| 412-503   | Hypa V3 handoff, fallback budget trimming, memory-card split / previous-conversation wrapping.                                                    | memory-window helper                 |
-| 527-841   | Final prompt rendering, `pushPrompts`, template rendering, cache points, prompt-info text capture, character depth prompt, `editRequest` trigger. | prompt render helper                 |
-| 857-933   | Generation metadata, preview exits, provider request payload, fail / abort exits.                                                                 | dispatch helper                      |
-| 934-1035  | Stream vs non-stream orchestration, output-trigger result, inlay / TTS side effects, auto-continue and IGP.                                       | response orchestration helper        |
-| 1040-1091 | Resend handoff, notifications, emotion fallback routing, image generation dispatch, final timing writeback.                                       | stage-4 orchestrator                 |
+| Lines    | Remaining responsibility                                                                                                                          | Target owner after Phase 5           |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| 91-257   | Entry guard, preset-chain switch, selected character/chat setup, prompt-info seed, tokenizer setup.                                               | `sendChatContext` / lifecycle helper |
+| 327-419  | Hypa V3 handoff, fallback budget trimming, memory-card split / previous-conversation wrapping, `triggerResult.additonalSysPrompt` distribution.   | memory-window helper                 |
+| 443-757  | Final prompt rendering, `pushPrompts`, template rendering, cache points, prompt-info text capture, character depth prompt, `editRequest` trigger. | prompt render helper                 |
+| 773-849  | Generation metadata, preview exits, provider request payload, fail / abort exits.                                                                 | dispatch helper                      |
+| 850-951  | Stream vs non-stream orchestration, output-trigger result, inlay / TTS side effects, auto-continue and IGP.                                       | response orchestration helper        |
+| 956-1007 | Resend handoff, notifications, emotion fallback routing, image generation dispatch, final timing writeback.                                       | stage-4 orchestrator                 |
 
 ## Phase 4 Fixture Gates
 
@@ -56,7 +58,7 @@ not cover.
 | F4-B `prompt-template-memory-cache` | Memory-window or template cache slices.    | Landed 2026-05-21. Template with `memory` (innerFormat: `"Memory: {{slot}}"`) and `cache` (depth: 2, role: 'user') cards, Hypa V3 mock memory, and `automaticCachePoint: true`. Pins that the memory card wraps the canned summary as a system entry with `memo: 'hypaMemory'`, the cache card marks msg-user-3 and msg-user-4 with `cachePoint: true`, and the automatic walk-back is suppressed (msg-user-2 stays unmarked). |
 | F4-C `lorebook-position-depth`      | Lorebook placement slices.                 | Landed 2026-05-21. Six globalLore entries exercising `@@position before_desc`, `@@position after_desc`, `@@depth 1`, `@@reverse_depth 1`, `@@position pt_<name>`, and a `{{position::<name>}}` reference; snapshot pins the leading-system-block ordering, the chat-history splice positions, and end-to-end `resolvePosition`. |
 | F4-D `history-media-fallback`       | History formatting slices.                 | Landed 2026-05-21. User message `"Look: {{inlay::test-image}}"` on `xcustom:::no-vision-model` (no `LLMFlags.hasImageInput`). Mocks `runImageEmbedding` to return `[{ generated_text: 'fake caption' }]`. Pins the caption append + inlay strip path. The `{{asset_prompt::icon}}` part of the original scope is deferred: `vi.mock` cannot reliably intercept `.svelte.ts` modules in this vitest setup, so the `readImage` mock needed for icon assets is dropped here and unit-tested with the `{{asset_prompt::missing}}` no-op branch instead. |
-| F4-E `start-trigger-control`        | Start-trigger / history collection slices. | Mock `runTrigger('start')` to mutate chat and add token cost; include a stop-sending variant if the slice touches that early return.                                          |
+| F4-E `start-trigger-control`        | Start-trigger / history collection slices. | Landed 2026-05-21 as a pair: `start-trigger-control` (mutation) and `start-trigger-stop` (early return). A vi.mock on `../triggers` uses importActual and overrides `runTrigger` to dispatch on `triggerscript[0].comment` markers (`__test_start_mutate` / `__test_start_stop`). Existing fixtures with no triggerscript flow through to the real impl unchanged. |
 | F4-F `prompt-info-text`             | Prompt-info or template-render slices.     | Enable `promptInfoInsideChat` + `promptTextInfoInsideChat`; assert `generationInfo.promptInfo.promptText` after `editRequest`.                                                |
 | F4-G `preview-prompt`               | Dispatch slices.                           | Call `sendChat(..., { previewPrompt: true })`, fake a success response, and assert `previewBody` with no persisted assistant message.                                         |
 | F4-H `utility-bot-template`         | Template normalization slices.             | Landed 2026-05-21. `utilityBot: true` with no `promptTemplate` and default `utilOverride: false`. Pins that the forced 6-card template replaces the default `mainPrompt` / `globalNote`, so `formated` shrinks to description + history only. |
@@ -76,7 +78,7 @@ suite is the acceptance test.
 | 5-18 Lorebook placement context     | done 2026-05-21 | Extracted `loadLoreBookV3Prompt()` plus the `resolvePosition` / `positionParser` closures, normal / description / postEverything lore placements, and the depth-prompt filter into `src/ts/process/promptAssembly/buildLorebookContext.ts`. Helper mutates the three relevant `unformated` slots and returns `{ resolvePosition, positionParser, depthPrompts }` for the downstream walkers and the two depth-prompt loops (token preflight + history splice). Two leftover `console.log` calls dropped. | F4-C (landed)                                                                                                           |
 | 5-19 Template token preflight       | done 2026-05-21 | Extracted the first prompt-template walker into `src/ts/process/promptBudget/preflightTemplateTokens.ts`. Returns `{ addedTokens, memoryCardUsed, hasCachePoint }`. Handles both the templated and no-template paths. The local `systemizeChat` helper was moved to `src/ts/process/promptAssembly/systemizeChat.ts` so both the preflight helper and the still-inline final render walker can import it from one place. | F4-A, F4-B (both landed)                                                                                                |
 | 5-20 History message formatter      | done 2026-05-21 | Extracted the inner per-message loop body (originally ~150 lines in `sendChat`) into `src/ts/process/promptAssembly/formatHistoryMessage.ts`. The helper takes `{ msg, index, totalCount, currentChar, usingPromptTemplate, findCharacterbyIdwithCache }` and returns the assembled `OpenAIChat`. The coordinator loop becomes a 4-line wrapper that calls the helper, pushes onto `chats`, and tokenizes. The per-sendChat `findCharacterbyIdwithCache` cache stays in the coordinator and is threaded as a callback. The unused `name` local is preserved (cache side effect). | F4-D (landed; asset_prompt branch deferred per fixture note) |
-| 5-21 History assembly window        | open   | Extract examples, `[Start a new chat]`, first message, disabled / allBefore filtering, start trigger handling, token accounting, and initial context trimming. Call the 5-20 formatter.                                                           | F4-E                                                                                                                    |
+| 5-21 History assembly window        | done 2026-05-21 | Extracted examples, `[Start a new chat]` marker, first message, `makeMs` filter (disabled / allBefore), start-trigger handling with stopSending early return, per-message loop calling the 5-20 formatter, and the depth-prompt token preflight into `src/ts/process/promptAssembly/buildHistoryWindow.ts`. Returns a discriminated union `{ stopSending: true } | { stopSending: false, chats, addedTokens, currentChat, triggerResult }`. Coordinator narrows with `history.stopSending === true` because the project has `strict: false`. | F4-E (landed) |
 | 5-22 Memory window                  | open   | Extract Hypa V3 stage transition, error writeback, fallback budget trim, `lastMemory`, memory-card split, and `<Previous Conversation>` wrapping.                                                                                                 | F4-B                                                                                                                    |
 | 5-23 Final prompt render            | open   | Extract `pushPrompts`, non-template `formatingOrder`, template render walker, cache-point mutation, prompt-info text capture, character depth prompt, and `editRequest` trigger.                                                                  | F4-A, F4-B, F4-F                                                                                                        |
 | 5-24 Dispatch request               | open   | Extract generation metadata creation, preview / previewPrompt exits, `requestChatData` argument construction, model override update, abort check, and provider-fail handling.                                                                     | F4-G                                                                                                                    |

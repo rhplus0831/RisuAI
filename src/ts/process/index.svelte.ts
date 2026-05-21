@@ -5,8 +5,6 @@ import {
   type Chat,
   type MessagePresetInfo,
   changeToPreset,
-  setCurrentChat,
-  type Message,
 } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
 import { selectedCharID } from '../stores.svelte'
@@ -16,17 +14,14 @@ import { alertError, alertToast } from '../alert'
 import { parseChatML } from '../parser/chatML'
 import {
   findCharacterbyId,
-  getUserName,
   trimUntilPunctuation,
   parseToggleSyntax,
   prebuiltAssetCommand,
 } from '../util'
 import { requestChatData } from './request/request'
-import { processScript, risuChatParser } from './scripts'
-import { exampleMessage } from './exampleMessages'
+import { risuChatParser } from './scripts'
 import { sayTTS } from './tts'
 import { v4 } from 'uuid'
-import { runTrigger } from './triggers'
 import { getGenerationModelString } from './models/modelString'
 import { runInlayScreen } from './inlayScreen'
 import { addRerolls } from './prereroll'
@@ -59,7 +54,7 @@ import {
 } from './promptAssembly/buildStaticPromptSections'
 import { buildLorebookContext } from './promptAssembly/buildLorebookContext'
 import { systemizeChat } from './promptAssembly/systemizeChat'
-import { formatHistoryMessage } from './promptAssembly/formatHistoryMessage'
+import { buildHistoryWindow } from './promptAssembly/buildHistoryWindow'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 
 export interface OpenAIChat {
@@ -312,101 +307,22 @@ export async function sendChat(
   const memoryCardUsed = preflight.memoryCardUsed
   let hasCachePoint = preflight.hasCachePoint
 
-  const examples = exampleMessage(currentChar, getUserName())
-
-  for (const example of examples) {
-    currentTokens += await tokenizer.tokenizeChat(example)
+  const history = await buildHistoryWindow({
+    currentChar,
+    currentChat,
+    usingPromptTemplate,
+    tokenizer,
+    findCharacterbyIdwithCache,
+    depthPrompts,
+    resolvePosition,
+  })
+  if (history.stopSending === true) {
+    return false
   }
-
-  let chats: OpenAIChat[] = examples
-
-  if (!DBState.db.aiModel.startsWith('novelai') && !DBState.db?.promptSettings?.trimStartNewChat) {
-    chats.push({
-      role: 'system',
-      content: '[Start a new chat]',
-      memo: 'NewChat',
-    })
-  }
-
-  let msReseted = false
-  const makeMs = (currentChat: Chat) => {
-    let mss: Message[] = []
-    msReseted = false
-    for (let i = currentChat.message.length - 1; i >= 0; i--) {
-      const d = currentChat.message[i]
-      if (d.disabled === true) {
-        continue
-      }
-      if (d.disabled === 'allBefore') {
-        msReseted = true
-        break
-      }
-      mss.unshift(d)
-    }
-    return mss
-  }
-
-  let ms: Message[] = makeMs(currentChat)
-
-  if (!msReseted) {
-    const firstMsg =
-      currentChat.fmIndex === -1
-        ? nowChatroom.firstMessage
-        : nowChatroom.alternateGreetings[currentChat.fmIndex]
-
-    const chat: OpenAIChat = {
-      role: 'assistant',
-      content: await processScript(
-        nowChatroom,
-        risuChatParser(firstMsg, { chara: currentChar }),
-        'editprocess',
-      ),
-    }
-
-    if (usingPromptTemplate && DBState.db.promptSettings.sendName) {
-      chat.content = `${currentChar.name}: ${chat.content}`
-      chat.attr = ['nameAdded']
-    }
-    chats.push(chat)
-    currentTokens += await tokenizer.tokenizeChat(chat)
-  }
-
-  console.log('Prepared messages for token calculation:', ms)
-
-  const triggerResult = await runTrigger(currentChar, 'start', { chat: currentChat })
-  if (triggerResult) {
-    currentChat = triggerResult.chat
-    setCurrentChat(currentChat)
-    ms = makeMs(currentChat)
-    currentTokens += triggerResult.tokens
-    if (triggerResult.stopSending) {
-      return false
-    }
-  }
-
-  let index = 0
-  for (const msg of ms) {
-    const chat = await formatHistoryMessage({
-      msg,
-      index,
-      totalCount: ms.length,
-      currentChar,
-      usingPromptTemplate,
-      findCharacterbyIdwithCache,
-    })
-    chats.push(chat)
-    currentTokens += await tokenizer.tokenizeChat(chat)
-    index++
-  }
-  console.log(JSON.stringify(chats, null, 2))
-
-  for (const depthPrompt of depthPrompts) {
-    const chat: OpenAIChat = {
-      role: depthPrompt.role,
-      content: risuChatParser(resolvePosition(depthPrompt.prompt), { chara: currentChar }),
-    }
-    currentTokens += await tokenizer.tokenizeChat(chat)
-  }
+  let chats: OpenAIChat[] = history.chats
+  currentTokens += history.addedTokens
+  currentChat = history.currentChat
+  const triggerResult = history.triggerResult
 
   if (nowChatroom.supaMemory && DBState.db.hypaV3) {
     stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start

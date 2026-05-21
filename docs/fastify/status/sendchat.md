@@ -1,8 +1,8 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-20)
+Date: 2026-05-21 (Phase 5 active through Phase 5-21)
 
-Updated 2026-05-21: Phase 5 extraction is active. The first 20
+Updated 2026-05-21: Phase 5 extraction is active. The first 21
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
@@ -18,16 +18,20 @@ closures plus normal / description / postEverything placements
 and the depth-prompt filter), the template token preflight
 (per-card token math, `memoryCardUsed` / `hasCachePoint` flag
 discovery, no-template fallback that tokenizes every `unformated`
-slot), and the per-message history formatter (one `Message` →
+slot), the per-message history formatter (one `Message` →
 `OpenAIChat` covering editprocess, inlays, multimodal +
 caption fallback, sendName wrapper, Thoughts extraction, and
-asset_prompt).
+asset_prompt), and the history assembly window (examples +
+start-new-chat marker + first message + makeMs filter + start
+trigger with stopSending early return + per-message loop + depth-
+prompt token preflight).
 
-Phase 4 remains complete for the original 17 fixtures, and five
+Phase 4 remains complete for the original 17 fixtures, and seven
 narrow Phase 5 gate fixtures have since been added
 (`prompt-template-basic`, `utility-bot-template`,
 `lorebook-position-depth`, `prompt-template-memory-cache`,
-`history-media-fallback`) - bringing the total to 22. All live under `src/ts/process/__fixtures__/` and
+`history-media-fallback`, `start-trigger-control`,
+`start-trigger-stop`) - bringing the total to 24. All live under `src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
 pin the entry path, every documented exit shape (success, multiline
 reroll, upstream fail, abort, auto-continue recursion), the
@@ -46,21 +50,21 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 1101 lines. It is
+`src/ts/process/index.svelte.ts` is currently 1017 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:264` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:259` -
   validation, lorebook prep, persona, description assembly.
-- `stage2Start` at `src/ts/process/index.svelte.ts:414` - Hypa V3
+- `stage2Start` at `src/ts/process/index.svelte.ts:330` - Hypa V3
   memory retrieval and prompt memory-card accounting. The current
   timing marker is narrower than the future Stage 2 module; the
   surrounding prompt assembly is still browser code.
-- `stage3Start` at `src/ts/process/index.svelte.ts:887` -
+- `stage3Start` at `src/ts/process/index.svelte.ts:803` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:1041` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:957` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -160,12 +164,30 @@ Already extracted during Phase 5:
   a callback. The unused `name` local is preserved because the
   call has the cache-population side effect that the sendName
   branch relies on.
+- `src/ts/process/promptAssembly/buildHistoryWindow.ts` -
+  the surrounding window machinery: `exampleMessage` +
+  initial token cost, `[Start a new chat]` marker (gated by
+  `aiModel.startsWith('novelai')` and `trimStartNewChat`),
+  `makeMs` filter (handles `disabled: true` and
+  `disabled: 'allBefore'` reset), first-message resolution from
+  `firstMessage` / `alternateGreetings[fmIndex]` with
+  `processScript('editprocess')` and the `sendName` prefix,
+  `runTrigger('start', ...)` handling with stopSending early
+  return and `setCurrentChat` on chat mutation, the per-message
+  loop calling `formatHistoryMessage`, and the depth-prompt
+  token preflight. Returns a discriminated union
+  `{ stopSending: true } | { stopSending: false, chats,
+  addedTokens, currentChat, triggerResult }`. The coordinator
+  narrows with `if (history.stopSending === true)` because the
+  project tsconfig has `strict: false`. The two pre-existing
+  `console.log` debug calls that lived in this region were
+  dropped during the move.
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
 work picker: it maps the still-inline coordinator blocks to numbered
 Phase 5 slices and lists the narrow fixture gates to add before
-touching behavior the current 22 snapshots do not cover.
+touching behavior the current 24 snapshots do not cover.
 
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:
@@ -215,7 +237,7 @@ for the extracted modules:
 `buildDescription.test.ts`, `buildPlainPromptSections.test.ts`,
 `normalizeTemplate.test.ts`, `buildStaticPromptSections.test.ts`,
 `buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
-and `formatHistoryMessage.test.ts`.
+`formatHistoryMessage.test.ts`, and `buildHistoryWindow.test.ts`.
 
 ## Phase 4 landed
 
@@ -334,7 +356,7 @@ each fixture pins.
 - `doingChat` is set to `true` only when `sendChat` owns the lease,
   and the owned lease is cleared in a `finally` block on every exit
   path. Recursive auto-continue / resend paths explicitly release
-  the flag before re-entering. All 22 snapshots currently pin final
+  the flag before re-entering. All 24 snapshots currently pin final
   `doingChat: false`; the test harness still resets it before each
   fixture defensively.
 - The `uuid` mock counter resets between fixtures so snapshots

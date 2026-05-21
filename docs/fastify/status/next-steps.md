@@ -9,7 +9,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-20. The landed slices already moved
+   through Phase 5-21. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
@@ -17,7 +17,8 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    globalNote sections, prompt-template normalization, the
    static prompt sections (author note, cot, persona, inlay-view),
    the lorebook placement context, the template token preflight,
-   and the per-message history formatter out of `index.svelte.ts`. The remaining work is now sliced in
+   the per-message history formatter, and the history assembly
+   window out of `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
    needed, rather than picking an unrelated tiny helper. Run the
@@ -44,6 +45,55 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - history assembly window slice 21.** Done 2026-05-21.
+  Extracted the surrounding history-assembly machinery into
+  `src/ts/process/promptAssembly/buildHistoryWindow.ts`:
+  `exampleMessage` + initial tokenization, the
+  `[Start a new chat]` marker (with the `novelai` and
+  `trimStartNewChat` gates), the `makeMs` filter that handles
+  `disabled: true` and `disabled: 'allBefore'`, first-message
+  resolution from `firstMessage` / `alternateGreetings[fmIndex]`
+  with `processScript('editprocess')` and the `sendName` prefix,
+  start-trigger handling with `setCurrentChat` on chat mutation
+  plus the `stopSending` early return, the per-message loop
+  calling the 5-20 `formatHistoryMessage`, and the depth-prompt
+  token preflight. The helper returns a discriminated union
+  `{ stopSending: true } | { stopSending: false, chats,
+  addedTokens, currentChat, triggerResult }`. The coordinator
+  narrows with `if (history.stopSending === true)` because the
+  project tsconfig has `strict: false`, which weakens the
+  default narrowing on a boolean discriminant.
+  Two F4-E gate fixtures were landed first as separate commits
+  (the slicing doc anticipated this pairing). Both share a single
+  `vi.mock('../triggers')` (importActual + override) that
+  dispatches on `triggerscript[0].comment` markers (`__test_start_mutate`
+  / `__test_start_stop`). Existing fixtures with no triggerscript
+  flow through to the real impl unaffected.
+  - `start-trigger-control` pins the mutation path: an injected
+    user message lands in the chat history and `formated`,
+    `inputTokens` jumps from ~233 to 248.
+  - `start-trigger-stop` pins the stopSending early return:
+    `stages: [1]`, empty `providerCalls`, empty `sideEffects`,
+    no new assistant entry, `doingChat: false`.
+  After extraction these imports left `index.svelte.ts`:
+  `Message`, `setCurrentChat`, `getUserName`, `processScript`,
+  `exampleMessage`, `runTrigger`, and `formatHistoryMessage`
+  (the latter is now an internal dependency of the window
+  helper). Two pre-existing `console.log` debug calls in the
+  region (`Prepared messages for token calculation` and
+  `JSON.stringify(chats, ...)`) were dropped during the move.
+  Helper test `buildHistoryWindow.test.ts` adds 10 cases:
+  happy path (examples + marker + first message + history),
+  marker gating (novelai prefix, `trimStartNewChat` true),
+  `makeMs` filtering (`disabled: true`, `disabled: 'allBefore'`
+  resets), first-message selection (`alternateGreetings[fmIndex]`,
+  `sendName` prefix), start-trigger (stopSending early return,
+  mutation forwarded into chats), and depth-prompts
+  (tokens-only contribution). Uses an `assertNotStopped`
+  type-narrowing helper because of the discriminated union.
+  All 24 sendChat fixtures stay green without re-recording;
+  `index.svelte.ts` drops from 1101 to 1017 lines.
 
 - **Phase 5 - history message formatter slice 20.** Done 2026-05-21.
   Extracted the ~150-line per-message loop body into
