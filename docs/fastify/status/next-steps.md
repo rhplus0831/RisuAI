@@ -9,12 +9,13 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through `d926228a` (Phase 5-12). The landed slices already moved
+   through `1de94ca9` (Phase 5-13). The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
-   output-trigger reuse, and the non-streaming / streaming response
-   loops out of `index.svelte.ts`. Continue with the smallest
-   meaningful remaining seam in prompt assembly, dispatch, or
-   finalization and run the focused fixture suite after each step:
+   output-trigger reuse, the non-streaming / streaming response
+   loops, and the final request-budget recheck out of
+   `index.svelte.ts`. Continue with the smallest meaningful
+   remaining seam in prompt assembly, dispatch, or finalization and
+   run the focused fixture suite after each step:
    `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts`.
    Preserve the current lifecycle invariant from
    [`sendchat.md`](sendchat.md): `sendChat` owns and clears the
@@ -62,6 +63,18 @@ one `sendChat` extraction slice at a time. Phase 3 closed
   stage-4 timing writeback, response-emotion handling, and
   imggen stable-diff dispatch under
   `src/ts/process/postGeneration/`, each with a focused test.
+
+- **Phase 5 - request-budget slice 13.** Done 2026-05-21.
+  `1de94ca9` extracted the post-`editRequest` token recheck +
+  `outputTokens` estimate into
+  `src/ts/process/promptBudget/finalizeRequestBudget.ts`. The
+  helper returns a discriminated `{ ok: true, formated,
+  inputTokens, outputTokens } | { ok: false, reason: 'overflow',
+  inputTokens }` so the coordinator keeps ownership of the
+  `throwError` exit. Targeted test
+  `src/ts/process/__tests__/finalizeRequestBudget.test.ts` covers
+  happy path, `outputTokens` clamp, removable-trim success,
+  multimodal-only survival, and the no-trim-possible overflow.
 
 - **Phase 5 - emotion/output/response slices 9-12.** Done
   2026-05-21. `3509972f`, `79ce8ce5`, `4424140e`, `d67543b2`,
