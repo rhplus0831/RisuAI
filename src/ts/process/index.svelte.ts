@@ -17,8 +17,6 @@ import { parseChatML } from '../parser/chatML'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import {
   findCharacterbyId,
-  getAuthorNoteDefaultText,
-  getPersonaPrompt,
   getUserName,
   trimUntilPunctuation,
   parseToggleSyntax,
@@ -57,6 +55,12 @@ import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
 import { buildDescription } from './promptAssembly/buildDescription'
 import { buildPlainPromptSections } from './promptAssembly/buildPlainPromptSections'
 import { normalizeTemplate } from './promptAssembly/normalizeTemplate'
+import {
+  buildAuthorNote,
+  buildCotInstruction,
+  buildInlayViewInstruction,
+  buildPersona,
+} from './promptAssembly/buildStaticPromptSections'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -280,27 +284,8 @@ export async function sendChat(
     unformated.globalNote.push(...sections.globalNote)
   }
 
-  if (currentChat.note) {
-    unformated.authorNote.push({
-      role: 'system',
-      content: risuChatParser(currentChat.note, { chara: currentChar }),
-    })
-  } else if (getAuthorNoteDefaultText() !== '') {
-    unformated.authorNote.push({
-      role: 'system',
-      content: risuChatParser(getAuthorNoteDefaultText(), { chara: currentChar }),
-    })
-  }
-
-  if (
-    DBState.db.chainOfThought &&
-    !(usingPromptTemplate && DBState.db.promptSettings.customChainOfThought)
-  ) {
-    unformated.postEverything.push({
-      role: 'system',
-      content: `<instruction> - before respond everything, Think step by step as a ai assistant how would you respond inside <Thoughts> xml tag. this must be less than 5 paragraphs.</instruction>`,
-    })
-  }
+  unformated.authorNote.push(...buildAuthorNote(currentChar, currentChat))
+  unformated.postEverything.push(...buildCotInstruction(usingPromptTemplate))
 
   unformated.description.push(await buildDescription(currentChar, currentChat))
 
@@ -368,30 +353,8 @@ export async function sendChat(
     }
   }
 
-  if (DBState.db.personaPrompt) {
-    unformated.personaPrompt.push({
-      role: 'system',
-      content: risuChatParser(getPersonaPrompt(), { chara: currentChar }),
-    })
-  }
-
-  if (currentChar.inlayViewScreen) {
-    if (currentChar.viewScreen === 'emotion') {
-      unformated.postEverything.push({
-        role: 'system',
-        content: currentChar.newGenData.emotionInstructions.replaceAll(
-          '{{slot}}',
-          currentChar.emotionImages.map((v) => v[0]).join(', '),
-        ),
-      })
-    }
-    if (currentChar.viewScreen === 'imggen') {
-      unformated.postEverything.push({
-        role: 'system',
-        content: currentChar.newGenData.instructions,
-      })
-    }
-  }
+  unformated.personaPrompt.push(...buildPersona(currentChar))
+  unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
 
   const postEverythingLorebooks = lorepmt.actives.filter((v) => {
     return v.pos === 'depth' && v.depth === 0 && v.role !== 'assistant'

@@ -9,13 +9,14 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-16. The landed slices already moved
+   through Phase 5-17. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
    description assembly, the plain-prompt main / jailbreak /
-   globalNote sections, and prompt-template normalization out of
-   `index.svelte.ts`. The remaining work is now sliced in
+   globalNote sections, prompt-template normalization, and the
+   static prompt sections (author note, cot, persona, inlay-view)
+   out of `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
    needed, rather than picking an unrelated tiny helper. Run the
@@ -42,6 +43,32 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - static prompt sections slice 17.** Done 2026-05-21.
+  Extracted the author-note + chain-of-thought block (previously
+  21 lines around `index.svelte.ts:283-303`) and the
+  persona + inlay-view block (previously 24 lines around
+  `index.svelte.ts:371-394`) into
+  `src/ts/process/promptAssembly/buildStaticPromptSections.ts` as
+  four pure functions: `buildAuthorNote`, `buildCotInstruction`,
+  `buildPersona`, and `buildInlayViewInstruction`. Each returns
+  `OpenAIChat[]` (0 or 1 entries) and the coordinator stages
+  each push at the correct point in the `unformated` assembly so
+  the relative `postEverything` ordering (cot before
+  description/lorebook, inlay-view after) stays explicit at the
+  call site. `buildCotInstruction` takes `usingPromptTemplate` as
+  its only argument; everything else reads from `DBState` or the
+  passed `currentChar` / `currentChat`. The `getAuthorNoteDefaultText`
+  / `getPersonaPrompt` imports in `index.svelte.ts` were dropped
+  along with the inlined logic. Helper test
+  `src/ts/process/__tests__/buildStaticPromptSections.test.ts`
+  covers 16 cases: author-note chat-note vs template-default vs
+  empty (4), cot off / on / off-via-customChainOfThought /
+  no-template-suppression-doesn't-apply (5), persona on / off
+  (2), and inlay-view emotion (with images, empty images,
+  feature-off) + imggen + viewScreen-none (5). All 19 sendChat
+  fixtures stay green without re-recording; `index.svelte.ts`
+  drops to 1543 lines.
 
 - **Phase 5 - template-normalization slice 16.** Done 2026-05-21.
   Extracted the prompt-template clone, implicit `postEverything`

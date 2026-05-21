@@ -1,17 +1,18 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-16)
+Date: 2026-05-21 (Phase 5 active through Phase 5-17)
 
-Updated 2026-05-21: Phase 5 extraction is active. The first 16
+Updated 2026-05-21: Phase 5 extraction is active. The first 17
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
 emotion fallback helpers, output-trigger reuse, the non-streaming
 plus streaming response loops, the final request-budget recheck,
 the leading character-description system message, the non-template
-main / jailbreak / globalNote sections, and prompt-template
+main / jailbreak / globalNote sections, prompt-template
 normalization (clone + implicit `postEverything` + utility-bot
-override).
+override), and the static prompt sections (author note,
+chain-of-thought, persona, inlay-view instructions).
 
 Phase 4 remains complete for the original 17 fixtures, and two
 narrow Phase 5 gate fixtures have since been added
@@ -35,21 +36,21 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 1580 lines. It is
+`src/ts/process/index.svelte.ts` is currently 1543 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:260` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:264` -
   validation, lorebook prep, persona, description assembly.
-- `stage2Start` at `src/ts/process/index.svelte.ts:877` - Hypa V3
+- `stage2Start` at `src/ts/process/index.svelte.ts:840` - Hypa V3
   memory retrieval and prompt memory-card accounting. The current
   timing marker is narrower than the future Stage 2 module; the
   surrounding prompt assembly is still browser code.
-- `stage3Start` at `src/ts/process/index.svelte.ts:1350` -
+- `stage3Start` at `src/ts/process/index.svelte.ts:1313` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:1504` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:1467` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -101,6 +102,16 @@ Already extracted during Phase 5:
   reflects the user's original choice (so the cot / template-only
   gates downstream still behave as before when the forced utility
   template is in play).
+- `src/ts/process/promptAssembly/buildStaticPromptSections.ts` -
+  four pure functions returning `OpenAIChat[]`: `buildAuthorNote`
+  (chat note + template default fallback), `buildCotInstruction`
+  (gated on `chainOfThought` + the
+  `usingPromptTemplate && customChainOfThought` suppression),
+  `buildPersona`, and `buildInlayViewInstruction` (emotion +
+  imggen branches under `inlayViewScreen`). Each call site
+  remains visible in `sendChat` so the relative `postEverything`
+  ordering (cot before description/lorebook, inlay-view after)
+  stays explicit.
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
@@ -153,8 +164,9 @@ for the extracted modules:
 `emotionFallbackEmbedding.test.ts`, `imggenStableDiff.test.ts`,
 `outputTrigger.test.ts`, `nonStreamResponse.test.ts`, and
 `streamResponse.test.ts`, `finalizeRequestBudget.test.ts`,
-`buildDescription.test.ts`, `buildPlainPromptSections.test.ts`, and
-`normalizeTemplate.test.ts`.
+`buildDescription.test.ts`, `buildPlainPromptSections.test.ts`,
+`normalizeTemplate.test.ts`, and
+`buildStaticPromptSections.test.ts`.
 
 ## Phase 4 landed
 
