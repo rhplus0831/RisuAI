@@ -1,8 +1,8 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-22)
+Date: 2026-05-21 (Phase 5 active through Phase 5-23)
 
-Updated 2026-05-21: Phase 5 extraction is active. The first 22
+Updated 2026-05-21: Phase 5 extraction is active. The first 23
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
@@ -24,17 +24,22 @@ caption fallback, sendName wrapper, Thoughts extraction, and
 asset_prompt), the history assembly window (examples +
 start-new-chat marker + first message + makeMs filter + start
 trigger with stopSending early return + per-message loop + depth-
-prompt token preflight), and the memory window (Hypa V3 stage
+prompt token preflight), the memory window (Hypa V3 stage
 transition with error writeback, fallback budget trim with
 `lastMemory`, memory-card split, and `<Previous Conversation>`
-wrapping).
+wrapping), and the final prompt render (12-card template walker,
+non-template `formatingOrder` loop, automatic cache-point walk-back,
+`pushPrompts` consecutive-system coalesce, `[Continue the last
+response]` push, character `depth_prompt` splice, prompt-info text
+capture, and the `editRequest` trigger).
 
-Phase 4 remains complete for the original 17 fixtures, and seven
+Phase 4 remains complete for the original 17 fixtures, and eight
 narrow Phase 5 gate fixtures have since been added
 (`prompt-template-basic`, `utility-bot-template`,
 `lorebook-position-depth`, `prompt-template-memory-cache`,
 `history-media-fallback`, `start-trigger-control`,
-`start-trigger-stop`) - bringing the total to 24. All live under `src/ts/process/__fixtures__/` and
+`start-trigger-stop`, `prompt-info-text`) - bringing the total to
+25. All live under `src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
 pin the entry path, every documented exit shape (success, multiline
 reroll, upstream fail, abort, auto-continue recursion), the
@@ -53,12 +58,12 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 968 lines. It is
+`src/ts/process/index.svelte.ts` is currently 662 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:259` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:256` -
   validation, lorebook prep, persona, description assembly.
 - `stage2Start` inside
   `src/ts/process/promptAssembly/buildMemoryWindow.ts` - Hypa V3
@@ -68,10 +73,10 @@ The visible timing markers are:
   flips the stage from 2 back to 1 around the `hypaMemoryV3`
   call. The fallback budget-trim branch (no Hypa V3) writes
   `stage1Duration` only.
-- `stage3Start` at `src/ts/process/index.svelte.ts:754` -
+- `stage3Start` at `src/ts/process/index.svelte.ts:448` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:908` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:602` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -214,6 +219,30 @@ Already extracted during Phase 5:
   `if (memWindow.stopSending === true)`. Two pre-existing
   `console.log` debug calls that lived in the Hypa branch were
   dropped during the move.
+- `src/ts/process/promptAssembly/renderFinalPrompt.ts` -
+  the final prompt render. Owns the `pushPrompts`
+  consecutive-system coalesce (gated on
+  `gpt|claude|openrouter|reverse_proxy` model family), the
+  `[Continue the last response]` push under the same gate, the
+  full 12-card template walker (persona, description, authornote,
+  lorebook, postEverything, plain, jailbreak, cot, chatML, chat,
+  memory, cache), the non-template `formatingOrder` fallback, the
+  automatic 3-deep `user`-role cache-point walk-back inside the
+  `chat` card (gated on `automaticCachePoint && !hasCachePoint`),
+  the explicit `cache` card depth walk, the final trim pass, the
+  character `depth_prompt` splice at `length - depth`, and the
+  `runLuaEditTrigger('editRequest', ...)` calls for both
+  `formated` and (when prompt-info text capture is enabled)
+  `promptBodyformatedForChatStore`. Returns
+  `{ formated, promptText? }`; `promptText` is set only when both
+  `promptInfoInsideChat` and `promptTextInfoInsideChat` are
+  enabled. The coordinator attaches `promptInfo.promptText`
+  conditionally. The helper takes a `positionParser` callback
+  (from `buildLorebookContext`), a `memories` array (from
+  `buildMemoryWindow`), and a `hasCachePoint` boolean (from
+  `preflightTemplateTokens`). The
+  `parseChatML`, `prebuiltAssetCommand`, `runLuaEditTrigger`, and
+  `systemizeChat` imports moved out of the coordinator.
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
@@ -269,8 +298,8 @@ for the extracted modules:
 `buildDescription.test.ts`, `buildPlainPromptSections.test.ts`,
 `normalizeTemplate.test.ts`, `buildStaticPromptSections.test.ts`,
 `buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
-`formatHistoryMessage.test.ts`, `buildHistoryWindow.test.ts`, and
-`buildMemoryWindow.test.ts`.
+`formatHistoryMessage.test.ts`, `buildHistoryWindow.test.ts`,
+`buildMemoryWindow.test.ts`, and `renderFinalPrompt.test.ts`.
 
 ## Fixture Inventory
 
@@ -345,6 +374,17 @@ what each fixture pins.
 - `start-trigger-stop` - start trigger returns `stopSending`.
   Pins `stages: [1]`, no provider calls, no side effects, no new
   assistant row, and final `doingChat: false`.
+- `prompt-info-text` - enables `promptInfoInsideChat` +
+  `promptTextInfoInsideChat` on a template with persona /
+  description / authornote (with defaultText) / plain cards. Pins
+  `messages[1].promptInfo.promptText` carrying the raw
+  `innerFormat` strings (`'Persona: {{slot}}'`,
+  `'Desc: {{slot}}'`, `'Note: {{slot}}'`) and the plain card's
+  rendered content (`'Be concise.'`) after the `editRequest`
+  trigger. `loadFixture.ts` re-applies
+  `db.promptInfoInsideChat` / `db.promptTextInfoInsideChat`
+  post-`setDatabase` because the web-mode default in
+  `setDatabase` forcibly clears `promptInfoInsideChat` to false.
 - `persona` - `db.personaPrompt` set, no `chat.bindedPersona`.
   Pins that the content lands in `unformated.personaPrompt` and -
   under the default OpenAI-flavored `pushPrompts` consecutive-

@@ -9,7 +9,7 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-22. The landed slices already moved
+   through Phase 5-23. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
@@ -18,8 +18,11 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    static prompt sections (author note, cot, persona, inlay-view),
    the lorebook placement context, the template token preflight,
    the per-message history formatter, the history assembly
-   window, and the memory window (Hypa V3 / fallback budget trim /
-   memory-card split / `<Previous Conversation>` wrap) out of
+   window, the memory window (Hypa V3 / fallback budget trim /
+   memory-card split / `<Previous Conversation>` wrap), and the
+   final prompt render (12-card walker, non-template
+   `formatingOrder` loop, cache-point walk-back, depth_prompt
+   splice, prompt-info text capture, editRequest trigger) out of
    `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
@@ -47,6 +50,50 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - final prompt render slice 23.** Done 2026-05-21.
+  Extracted ~324 lines of prompt rendering into
+  `src/ts/process/promptAssembly/renderFinalPrompt.ts`. Owns
+  `pushPrompts` (with the gpt/claude/openrouter/reverse_proxy
+  consecutive-system coalesce), the `[Continue the last response]`
+  push under the same model gate, the 12-card prompt template
+  walker (persona / description / authornote / lorebook /
+  postEverything / plain / jailbreak / cot / chatML / chat /
+  memory / cache), the non-template `formatingOrder` fallback,
+  the automatic 3-deep `user`-role cache-point walk-back inside
+  the `chat` card (gated on `automaticCachePoint && !hasCachePoint`),
+  the explicit `cache` card depth walk, the final trim pass, the
+  character `depth_prompt` splice at `length - depth`, and the
+  `runLuaEditTrigger('editRequest', ...)` calls for both the
+  formated array and (when prompt-info text capture is on) the
+  parallel `promptBodyformatedForChatStore`. Returns
+  `{ formated, promptText? }`; `promptText` is set only when both
+  `promptInfoInsideChat` and `promptTextInfoInsideChat` are
+  enabled, and the coordinator attaches `promptInfo.promptText`
+  conditionally. F4-F `prompt-info-text` landed first, pinning
+  `messages[1].promptInfo.promptText` for a template that
+  exercises persona / description / authornote (defaultText) /
+  plain. `loadFixture.ts` re-applies
+  `db.promptInfoInsideChat` / `db.promptTextInfoInsideChat`
+  post-`setDatabase` because the web-mode default in
+  `setDatabase` forcibly clears `promptInfoInsideChat` to false.
+  After extraction, these imports left `index.svelte.ts`:
+  `parseChatML`, `prebuiltAssetCommand`, `runLuaEditTrigger`,
+  `systemizeChat`. Helper test `renderFinalPrompt.test.ts` adds
+  21 cases covering formatOrder coalesce gating, continue marker
+  gating, persona / description / authornote innerFormat
+  substitution, plain card role conversion, chatML parsing,
+  jailbreak / cot toggle suppression, memory card innerFormat,
+  chat card slice math (full / negative-end / start>=end), the
+  automatic cache-point walk-back (with and without
+  `hasCachePoint`), the explicit cache card with `role='all'`,
+  the depth_prompt splice, the editRequest pass-through and
+  mutation paths, and the three prompt-info text capture paths
+  (innerFormat captured raw, plain card content captured rendered,
+  globalNote excluded, dual editRequest dispatch order, suppressed
+  when either flag is off). All 25 sendChat fixtures stay green
+  without re-recording; `index.svelte.ts` drops from 968 to 662
+  lines.
 
 - **Phase 5 - memory window slice 22.** Done 2026-05-21.
   Extracted the long-term-memory branching and the memory-card
