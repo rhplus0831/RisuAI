@@ -9,15 +9,15 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-19. The landed slices already moved
+   through Phase 5-20. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
    description assembly, the plain-prompt main / jailbreak /
    globalNote sections, prompt-template normalization, the
    static prompt sections (author note, cot, persona, inlay-view),
-   the lorebook placement context, and the template token
-   preflight out of `index.svelte.ts`. The remaining work is now sliced in
+   the lorebook placement context, the template token preflight,
+   and the per-message history formatter out of `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
    needed, rather than picking an unrelated tiny helper. Run the
@@ -44,6 +44,42 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - history message formatter slice 20.** Done 2026-05-21.
+  Extracted the ~150-line per-message loop body into
+  `src/ts/process/promptAssembly/formatHistoryMessage.ts`. The
+  helper takes
+  `{ msg, index, totalCount, currentChar, usingPromptTemplate, findCharacterbyIdwithCache }`
+  and returns the assembled `OpenAIChat`. The coordinator loop
+  becomes a four-line wrapper that calls the helper, pushes onto
+  `chats`, and tokenizes. The per-sendChat
+  `findCharacterbyIdwithCache` cache stays in the coordinator and
+  is threaded as a callback. The pre-existing unused `name`
+  local is preserved (renamed `_name`) because the call has the
+  cache-population side effect that the sendName branch relies
+  on. After extraction, `index.svelte.ts` dropped these imports:
+  `processScriptFull`, `getInlayAsset`, `runImageEmbedding`,
+  `getModuleAssets`, `readImage`.
+  F4-D `history-media-fallback` was landed first. It covers a
+  no-vision model + `{{inlay::test-image}}` user message with a
+  stubbed `runImageEmbedding`, pinning that the caption is
+  appended (`"Look: [fake caption]"`) and the inlay tag is
+  stripped. The `{{asset_prompt::icon}}` half of the original
+  F4-D scope is deferred: vitest cannot reliably `vi.mock` the
+  `.svelte.ts` module (`globalApi.svelte`) where `readImage`
+  lives. The 5-20 unit test covers the `{{asset_prompt::missing}}`
+  no-op branch instead; full asset-icon coverage will return
+  with a different mocking strategy.
+  Helper test `formatHistoryMessage.test.ts` adds 15 cases:
+  basic conversion (user / char / chatId backfill), inlay
+  handling (caption append, video first-wins, signature
+  unbounded, char-message strip, char-message inlayeddata
+  record), Thoughts extraction (strip + accumulate, depth-clamp
+  drop, depth -1 no-op), sendName wrapper (on under template,
+  off without template), asset_prompt no-match strip, and
+  empty-multimodals deletion. All 22 sendChat fixtures stay
+  green without re-recording; `index.svelte.ts` drops from 1241
+  to 1101 lines.
 
 - **Phase 5 - template token preflight slice 19.** Done 2026-05-21.
   Extracted the ~170-line preflight walker (per-card token math +

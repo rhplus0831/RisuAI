@@ -1,8 +1,8 @@
 # sendChat Status
 
-Date: 2026-05-21 (Phase 5 active through Phase 5-19)
+Date: 2026-05-21 (Phase 5 active through Phase 5-20)
 
-Updated 2026-05-21: Phase 5 extraction is active. The first 19
+Updated 2026-05-21: Phase 5 extraction is active. The first 20
 slices landed: auto-continue, owned `doingChat` lifecycle, error
 reporting, desktop notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
@@ -15,16 +15,19 @@ override), the static prompt sections (author note,
 chain-of-thought, persona, inlay-view instructions), the
 lorebook placement context (`resolvePosition` / `positionParser`
 closures plus normal / description / postEverything placements
-and the depth-prompt filter), and the template token preflight
+and the depth-prompt filter), the template token preflight
 (per-card token math, `memoryCardUsed` / `hasCachePoint` flag
 discovery, no-template fallback that tokenizes every `unformated`
-slot).
+slot), and the per-message history formatter (one `Message` →
+`OpenAIChat` covering editprocess, inlays, multimodal +
+caption fallback, sendName wrapper, Thoughts extraction, and
+asset_prompt).
 
-Phase 4 remains complete for the original 17 fixtures, and four
+Phase 4 remains complete for the original 17 fixtures, and five
 narrow Phase 5 gate fixtures have since been added
 (`prompt-template-basic`, `utility-bot-template`,
-`lorebook-position-depth`, `prompt-template-memory-cache`) -
-bringing the total to 21. All live under `src/ts/process/__fixtures__/` and
+`lorebook-position-depth`, `prompt-template-memory-cache`,
+`history-media-fallback`) - bringing the total to 22. All live under `src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
 pin the entry path, every documented exit shape (success, multiline
 reroll, upstream fail, abort, auto-continue recursion), the
@@ -43,21 +46,21 @@ the owned lease reset. Existing fixtures were re-recorded.
 
 ## Current state
 
-`src/ts/process/index.svelte.ts` is currently 1241 lines. It is
+`src/ts/process/index.svelte.ts` is currently 1101 lines. It is
 still the main `sendChat` coordinator, but Phase 5 has pulled
 several response and post-generation pieces into focused helpers.
 The visible timing markers are:
 
-- `stage1Start` at `src/ts/process/index.svelte.ts:266` -
+- `stage1Start` at `src/ts/process/index.svelte.ts:264` -
   validation, lorebook prep, persona, description assembly.
-- `stage2Start` at `src/ts/process/index.svelte.ts:554` - Hypa V3
+- `stage2Start` at `src/ts/process/index.svelte.ts:414` - Hypa V3
   memory retrieval and prompt memory-card accounting. The current
   timing marker is narrower than the future Stage 2 module; the
   surrounding prompt assembly is still browser code.
-- `stage3Start` at `src/ts/process/index.svelte.ts:1027` -
+- `stage3Start` at `src/ts/process/index.svelte.ts:887` -
   provider dispatch via `requestChatData()`; inlay screen + TTS run
   after the first response chunk.
-- `stage4Start` at `src/ts/process/index.svelte.ts:1181` -
+- `stage4Start` at `src/ts/process/index.svelte.ts:1041` -
   post-generation (auto-continue, emotion, stable diff, reroll
   metadata).
 
@@ -144,12 +147,25 @@ Already extracted during Phase 5:
   `example_` exceptions). Moved out of `index.svelte.ts` during
   5-19 so the new preflight helper and the still-inline final
   render walker import from one place.
+- `src/ts/process/promptAssembly/formatHistoryMessage.ts` -
+  one-message conversion from `Message` to `OpenAIChat`. Handles
+  `processScriptFull('editprocess', ...)`, `chatId` backfill,
+  inlay stripping (with the char-vs-user branch), multimodal
+  attachment (image / video first-wins / audio first-wins /
+  signature unbounded), `runImageEmbedding` caption fallback for
+  no-vision models, sendName wrapper, Thoughts extraction with
+  `maxThoughtTagDepth` clamp, `{{asset_prompt::...}}` →
+  `readImage`, and the empty-multimodals cleanup. The
+  per-sendChat `findCharacterbyIdwithCache` cache is threaded as
+  a callback. The unused `name` local is preserved because the
+  call has the cache-population side effect that the sendName
+  branch relies on.
 
 The remaining Phase 5 work is tracked in
 [`sendchat-slicing.md`](sendchat-slicing.md). Use that file as the
 work picker: it maps the still-inline coordinator blocks to numbered
 Phase 5 slices and lists the narrow fixture gates to add before
-touching behavior the current 21 snapshots do not cover.
+touching behavior the current 22 snapshots do not cover.
 
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:
@@ -198,8 +214,8 @@ for the extracted modules:
 `streamResponse.test.ts`, `finalizeRequestBudget.test.ts`,
 `buildDescription.test.ts`, `buildPlainPromptSections.test.ts`,
 `normalizeTemplate.test.ts`, `buildStaticPromptSections.test.ts`,
-`buildLorebookContext.test.ts`, and
-`preflightTemplateTokens.test.ts`.
+`buildLorebookContext.test.ts`, `preflightTemplateTokens.test.ts`,
+and `formatHistoryMessage.test.ts`.
 
 ## Phase 4 landed
 
@@ -318,7 +334,7 @@ each fixture pins.
 - `doingChat` is set to `true` only when `sendChat` owns the lease,
   and the owned lease is cleared in a `finally` block on every exit
   path. Recursive auto-continue / resend paths explicitly release
-  the flag before re-entering. All 21 snapshots currently pin final
+  the flag before re-entering. All 22 snapshots currently pin final
   `doingChat: false`; the test harness still resets it before each
   fixture defensively.
 - The `uuid` mock counter resets between fixtures so snapshots

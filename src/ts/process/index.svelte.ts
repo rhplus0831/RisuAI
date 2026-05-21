@@ -22,21 +22,18 @@ import {
   prebuiltAssetCommand,
 } from '../util'
 import { requestChatData } from './request/request'
-import { processScript, processScriptFull, risuChatParser } from './scripts'
+import { processScript, risuChatParser } from './scripts'
 import { exampleMessage } from './exampleMessages'
 import { sayTTS } from './tts'
 import { v4 } from 'uuid'
 import { runTrigger } from './triggers'
-import { getInlayAsset } from './files/inlays'
 import { getGenerationModelString } from './models/modelString'
 import { runInlayScreen } from './inlayScreen'
 import { addRerolls } from './prereroll'
-import { runImageEmbedding } from './transformers'
 import { runLuaEditTrigger } from './scriptings'
 import { getModelInfo, LLMFlags } from '../model/modellist'
 import { hypaMemoryV3 } from './memory/hypav3'
-import { getModuleAssets, getModuleToggles } from './modules'
-import { readImage } from '../globalApi.svelte'
+import { getModuleToggles } from './modules'
 import { evaluateAutoContinue } from './autoContinue'
 import { reportSendChatError } from './sendChatErrors'
 import { fireDesktopNotification } from './postGeneration/notification'
@@ -62,6 +59,7 @@ import {
 } from './promptAssembly/buildStaticPromptSections'
 import { buildLorebookContext } from './promptAssembly/buildLorebookContext'
 import { systemizeChat } from './promptAssembly/systemizeChat'
+import { formatHistoryMessage } from './promptAssembly/formatHistoryMessage'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 
 export interface OpenAIChat {
@@ -388,152 +386,14 @@ export async function sendChat(
 
   let index = 0
   for (const msg of ms) {
-    let formatedChat = (
-      await processScriptFull(
-        nowChatroom,
-        risuChatParser(msg.data, { chara: currentChar, role: msg.role }),
-        'editprocess',
-        index,
-        {
-          chatRole: msg.role,
-        },
-      )
-    ).data
-    let name = ''
-    if (msg.role === 'char') {
-      if (msg.saying) {
-        name = `${findCharacterbyIdwithCache(msg.saying).name}`
-      } else {
-        name = `${currentChar.name}`
-      }
-    } else if (msg.role === 'user') {
-      name = `${getUserName()}`
-    }
-    if (!msg.chatId) {
-      msg.chatId = v4()
-    }
-    let inlays: string[] = []
-    if (msg.role === 'char') {
-      formatedChat = formatedChat.replace(
-        /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g,
-        (match: string, p1: string, p2: string) => {
-          if (p2 && p1 === 'inlayeddata') {
-            inlays.push(p2)
-          }
-          return ''
-        },
-      )
-    } else {
-      const inlayMatch = formatedChat.match(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g)
-      if (inlayMatch) {
-        for (const inlay of inlayMatch) {
-          inlays.push(inlay)
-        }
-      }
-    }
-
-    let multimodal: MultiModal[] = []
-    const modelinfo = getModelInfo(DBState.db.aiModel)
-    if (inlays.length > 0) {
-      for (const inlay of inlays) {
-        const inlayName = inlay
-          .replace('{{inlayed::', '')
-          .replace('{{inlay::', '')
-          .replace('}}', '')
-          .replace('{{inlayeddata::', '')
-        const inlayData = await getInlayAsset(inlayName)
-        if (inlayData?.type === 'image') {
-          if (modelinfo.flags.includes(LLMFlags.hasImageInput)) {
-            multimodal.push({
-              type: 'image',
-              base64: inlayData.data,
-              width: inlayData.width,
-              height: inlayData.height,
-            })
-          } else {
-            const captionResult = await runImageEmbedding(inlayData.data)
-            formatedChat += `[${captionResult[0].generated_text}]`
-          }
-        }
-        if (inlayData?.type === 'video' || inlayData?.type === 'audio') {
-          if (multimodal.length === 0) {
-            multimodal.push({
-              type: inlayData.type,
-              base64: inlayData.data,
-            })
-          }
-        }
-        if (inlayData?.type === 'signature') {
-          multimodal.push({
-            type: 'signature',
-            base64: inlayData.data,
-          })
-        }
-        formatedChat = formatedChat.replace(inlay, '')
-      }
-    }
-
-    let attr: string[] = []
-    let role: 'user' | 'assistant' | 'system' = msg.role === 'user' ? 'user' : 'assistant'
-
-    if (usingPromptTemplate && DBState.db.promptSettings.sendName) {
-      const form = `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`
-      formatedChat = risuChatParser(form, {
-        chara: findCharacterbyIdwithCache(msg.saying).name,
-      }).replace('{{slot}}', formatedChat)
-    }
-    let thoughts: string[] = []
-    const maxThoughtDepth = DBState.db.promptSettings?.maxThoughtTagDepth ?? -1
-    formatedChat = formatedChat.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (match, p1) => {
-      if (maxThoughtDepth === -1 || maxThoughtDepth - ms.length <= index) {
-        thoughts.push(p1)
-      }
-      return ''
+    const chat = await formatHistoryMessage({
+      msg,
+      index,
+      totalCount: ms.length,
+      currentChar,
+      usingPromptTemplate,
+      findCharacterbyIdwithCache,
     })
-
-    const assetPromises: Promise<void>[] = []
-    formatedChat = formatedChat.replace(/\{\{asset_?prompt::(.+?)\}\}/gimsu, (match, p1) => {
-      const moduleAssets = getModuleAssets()
-      const assets = (currentChar.additionalAssets ?? []).concat(moduleAssets)
-      const asset = assets.find((v) => {
-        return v[0] === p1
-      })
-      if (asset) {
-        assetPromises.push(
-          (async () => {
-            const assetDataBuf = await readImage(asset[1])
-            multimodal.push({
-              type: 'image',
-              base64: `data:image/png;base64,${Buffer.from(assetDataBuf).toString('base64')}`,
-            })
-          })(),
-        )
-      } else if (p1 === 'icon') {
-        assetPromises.push(
-          (async () => {
-            const assetDataBuf = await readImage(currentChar.image ?? '')
-            multimodal.push({
-              type: 'image',
-              base64: `data:image/png;base64,${Buffer.from(assetDataBuf).toString('base64')}`,
-            })
-          })(),
-        )
-      }
-      return ''
-    })
-    await Promise.all(assetPromises)
-
-    const chat: OpenAIChat = {
-      role: role,
-      content: formatedChat,
-      memo: msg.chatId,
-      attr: attr,
-      multimodals: multimodal,
-      thoughts: thoughts,
-    }
-    if (chat.multimodals.length === 0) {
-      delete chat.multimodals
-    }
     chats.push(chat)
     currentTokens += await tokenizer.tokenizeChat(chat)
     index++
