@@ -15,30 +15,31 @@ gate first, then land the extraction slice. Update this file and
 
 ## Current Code Map
 
-`src/ts/process/index.svelte.ts` is 1419 lines. Phase 5-1 through
-5-18 already extracted auto-continue, owned `doingChat` lifecycle,
+`src/ts/process/index.svelte.ts` is 1241 lines. Phase 5-1 through
+5-19 already extracted auto-continue, owned `doingChat` lifecycle,
 error reporting, response loops, most post-generation helpers, final
 request-budget recheck, character description, plain-prompt main /
 jailbreak / global-note sections, prompt-template normalization
 (clone + implicit `postEverything` + utility-bot override), the
 static prompt sections (author note, chain-of-thought, persona,
-inlay-view), and the lorebook placement context (`{{position::...}}`,
+inlay-view), the lorebook placement context (`{{position::...}}`,
 injection lore, normal / description / postEverything placements;
-returns `resolvePosition`, `positionParser`, and `depthPrompts` for
-downstream consumers).
+returns `resolvePosition`, `positionParser`, and `depthPrompts`),
+and the template token preflight (per-card token math plus the
+`memoryCardUsed` / `hasCachePoint` flag discovery, plus the no-
+template path that tokenizes every `unformated` slot).
 
 The work still inside the coordinator is clustered here:
 
 | Lines     | Remaining responsibility                                                                                                                          | Target owner after Phase 5           |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| 91-263    | Entry guard, preset-chain switch, selected character/chat setup, prompt-info seed, tokenizer setup.                                               | `sendChatContext` / lifecycle helper |
-| 304-475   | Prompt-template token preflight and memory/cache-card discovery.                                                                                  | template token walker                |
-| 479-713   | Example messages, first message, start trigger, history message formatting, inlays, asset prompts, thought extraction, initial token budget.     | history assembly helper              |
-| 714-805   | Hypa V3 handoff, fallback budget trimming, memory-card split / previous-conversation wrapping.                                                    | memory-window helper                 |
-| 829-1143  | Final prompt rendering, `pushPrompts`, template rendering, cache points, prompt-info text capture, character depth prompt, `editRequest` trigger. | prompt render helper                 |
-| 1159-1235 | Generation metadata, preview exits, provider request payload, fail / abort exits.                                                                 | dispatch helper                      |
-| 1236-1337 | Stream vs non-stream orchestration, output-trigger result, inlay / TTS side effects, auto-continue and IGP.                                       | response orchestration helper        |
-| 1342-1393 | Resend handoff, notifications, emotion fallback routing, image generation dispatch, final timing writeback.                                       | stage-4 orchestrator                 |
+| 91-265    | Entry guard, preset-chain switch, selected character/chat setup, prompt-info seed, tokenizer setup.                                               | `sendChatContext` / lifecycle helper |
+| 317-551   | Example messages, first message, start trigger, history message formatting, inlays, asset prompts, thought extraction, initial token budget.     | history assembly helper              |
+| 552-643   | Hypa V3 handoff, fallback budget trimming, memory-card split / previous-conversation wrapping.                                                    | memory-window helper                 |
+| 667-981   | Final prompt rendering, `pushPrompts`, template rendering, cache points, prompt-info text capture, character depth prompt, `editRequest` trigger. | prompt render helper                 |
+| 997-1073  | Generation metadata, preview exits, provider request payload, fail / abort exits.                                                                 | dispatch helper                      |
+| 1074-1175 | Stream vs non-stream orchestration, output-trigger result, inlay / TTS side effects, auto-continue and IGP.                                       | response orchestration helper        |
+| 1180-1231 | Resend handoff, notifications, emotion fallback routing, image generation dispatch, final timing writeback.                                       | stage-4 orchestrator                 |
 
 ## Phase 4 Fixture Gates
 
@@ -49,7 +50,7 @@ not cover.
 | Gate                                | Add before                                 | Fixture behavior to pin                                                                                                                                                       |
 | ----------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | F4-A `prompt-template-basic`        | Template normalization or render slices.   | Landed 2026-05-21. Template with `persona`, `description`, `authornote`, `plain`, `chatML`, `chat`, no explicit `postEverything`. `chainOfThought: true` so the implicit `postEverything` insertion is observable as the trailing cot system message in `formated`. |
-| F4-B `prompt-template-memory-cache` | Memory-window or template cache slices.    | Template with `memory` and `cache` cards, Hypa V3 mock memory, and `automaticCachePoint`; assert memory card consumes the memory entry and cache marks the intended messages. |
+| F4-B `prompt-template-memory-cache` | Memory-window or template cache slices.    | Landed 2026-05-21. Template with `memory` (innerFormat: `"Memory: {{slot}}"`) and `cache` (depth: 2, role: 'user') cards, Hypa V3 mock memory, and `automaticCachePoint: true`. Pins that the memory card wraps the canned summary as a system entry with `memo: 'hypaMemory'`, the cache card marks msg-user-3 and msg-user-4 with `cachePoint: true`, and the automatic walk-back is suppressed (msg-user-2 stays unmarked). |
 | F4-C `lorebook-position-depth`      | Lorebook placement slices.                 | Landed 2026-05-21. Six globalLore entries exercising `@@position before_desc`, `@@position after_desc`, `@@depth 1`, `@@reverse_depth 1`, `@@position pt_<name>`, and a `{{position::<name>}}` reference; snapshot pins the leading-system-block ordering, the chat-history splice positions, and end-to-end `resolvePosition`. |
 | F4-D `history-media-fallback`       | History formatting slices.                 | Inlay image on a model without image input, mocked `runImageEmbedding`, plus `{{asset_prompt::icon}}`; assert caption append and multimodal asset attachment.                 |
 | F4-E `start-trigger-control`        | Start-trigger / history collection slices. | Mock `runTrigger('start')` to mutate chat and add token cost; include a stop-sending variant if the slice touches that early return.                                          |
@@ -70,7 +71,7 @@ suite is the acceptance test.
 | 5-16 Template normalization         | done 2026-05-21 | Extracted prompt-template cloning, implicit `postEverything`, and utility-bot override into `src/ts/process/promptAssembly/normalizeTemplate.ts`. The coordinator call site at `index.svelte.ts:274` destructures `{ promptTemplate, usingPromptTemplate }`. No rendering moved. | F4-A, F4-H (both landed)                                                                                                |
 | 5-17 Author/persona/static sections | done 2026-05-21 | Extracted author note (with template default fallback), chain-of-thought instruction, persona prompt, and inlay-view `postEverything` instructions into `src/ts/process/promptAssembly/buildStaticPromptSections.ts` as four pure functions returning `OpenAIChat[]`. The coordinator now stages each push at the correct point in the `unformated` assembly. | Existing fixtures cover author note and persona; `buildStaticPromptSections.test.ts` adds 16 focused cases for cot gates and inlay-view branches. |
 | 5-18 Lorebook placement context     | done 2026-05-21 | Extracted `loadLoreBookV3Prompt()` plus the `resolvePosition` / `positionParser` closures, normal / description / postEverything lore placements, and the depth-prompt filter into `src/ts/process/promptAssembly/buildLorebookContext.ts`. Helper mutates the three relevant `unformated` slots and returns `{ resolvePosition, positionParser, depthPrompts }` for the downstream walkers and the two depth-prompt loops (token preflight + history splice). Two leftover `console.log` calls dropped. | F4-C (landed)                                                                                                           |
-| 5-19 Template token preflight       | open   | Extract the first prompt-template walker that counts tokens and discovers `memory` / `cache` cards. Reuse the helpers from 5-16 and 5-18.                                                                                                         | F4-A, F4-B                                                                                                              |
+| 5-19 Template token preflight       | done 2026-05-21 | Extracted the first prompt-template walker into `src/ts/process/promptBudget/preflightTemplateTokens.ts`. Returns `{ addedTokens, memoryCardUsed, hasCachePoint }`. Handles both the templated and no-template paths. The local `systemizeChat` helper was moved to `src/ts/process/promptAssembly/systemizeChat.ts` so both the preflight helper and the still-inline final render walker can import it from one place. | F4-A, F4-B (both landed)                                                                                                |
 | 5-20 History message formatter      | open   | Extract one-message conversion from `Message` to `OpenAIChat`: editprocess scripts, name handling, inlay stripping, multimodal attachments, image-caption fallback, thought extraction, and asset prompts.                                        | F4-D                                                                                                                    |
 | 5-21 History assembly window        | open   | Extract examples, `[Start a new chat]`, first message, disabled / allBefore filtering, start trigger handling, token accounting, and initial context trimming. Call the 5-20 formatter.                                                           | F4-E                                                                                                                    |
 | 5-22 Memory window                  | open   | Extract Hypa V3 stage transition, error writeback, fallback budget trim, `lastMemory`, memory-card split, and `<Previous Conversation>` wrapping.                                                                                                 | F4-B                                                                                                                    |

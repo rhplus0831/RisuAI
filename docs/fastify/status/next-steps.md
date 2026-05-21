@@ -9,14 +9,15 @@ one `sendChat` extraction slice at a time. Phase 3 closed
 ## Immediate
 
 1. **Phase 5 - continue sendChat extraction.** Phase 5 is active
-   through Phase 5-18. The landed slices already moved
+   through Phase 5-19. The landed slices already moved
    auto-continue, error handling, several post-generation helpers,
    output-trigger reuse, the non-streaming / streaming response
    loops, the final request-budget recheck, the character
    description assembly, the plain-prompt main / jailbreak /
    globalNote sections, prompt-template normalization, the
    static prompt sections (author note, cot, persona, inlay-view),
-   and the lorebook placement context out of `index.svelte.ts`. The remaining work is now sliced in
+   the lorebook placement context, and the template token
+   preflight out of `index.svelte.ts`. The remaining work is now sliced in
    [`sendchat-slicing.md`](sendchat-slicing.md); take the first
    open Phase 5 slice, adding its Phase 4 fixture gate first when
    needed, rather than picking an unrelated tiny helper. Run the
@@ -43,6 +44,34 @@ one `sendChat` extraction slice at a time. Phase 3 closed
    behavior or add a session-cookie auth path.
 
 ## Completed Slices
+
+- **Phase 5 - template token preflight slice 19.** Done 2026-05-21.
+  Extracted the ~170-line preflight walker (per-card token math +
+  `memoryCardUsed` / `hasCachePoint` flag setters plus the
+  no-template branch that tokenizes every `unformated` slot) into
+  `src/ts/process/promptBudget/preflightTemplateTokens.ts`. The
+  helper returns `{ addedTokens, memoryCardUsed, hasCachePoint }`;
+  the coordinator does `currentTokens += preflight.addedTokens`
+  and keeps `hasCachePoint` as `let` (the final render walker
+  reassigns it inside the `case 'chat'` automatic walk-back). The
+  local `systemizeChat` function moved out of `index.svelte.ts`
+  into `src/ts/process/promptAssembly/systemizeChat.ts` so both
+  the preflight helper and the still-inline final render walker
+  import it from the same module. F4-B
+  `prompt-template-memory-cache` was landed first; it combines a
+  template `memory` card (innerFormat-wrapping the Hypa V3 mock
+  summary) with an explicit `cache` card (depth: 2, role: 'user')
+  under `automaticCachePoint: true`, pinning that the explicit
+  cache marker suppresses the automatic walk-back. Helper test
+  `preflightTemplateTokens.test.ts` covers 16 cases:
+  no-template path (every slot tokenized, empty input), flag
+  setters (memory + cache), per-card branches (jailbreak / cot
+  toggles, postEverything with `postEndInnerFormat`), and the
+  `chat` card range math (negative `rangeStart`, `'end'`
+  rangeEnd, `start >= end`, `-1000` sentinel, `systemizeChat`,
+  `chatAsOriginalOnSystem`). All 21 sendChat fixtures stay green
+  without re-recording; `index.svelte.ts` drops from 1419 to
+  1241 lines.
 
 - **Phase 5 - lorebook placement slice 18.** Done 2026-05-21.
   Extracted `loadLoreBookV3Prompt()` plus the `replaceposition` /
