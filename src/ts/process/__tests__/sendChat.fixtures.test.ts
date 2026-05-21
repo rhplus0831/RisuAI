@@ -62,6 +62,7 @@ const FIXTURES = [
   'editoutput-trigger',
   'client-abort',
   'prompt-template-basic',
+  'utility-bot-template',
 ] as const
 
 describe('sendChat fixtures', () => {
