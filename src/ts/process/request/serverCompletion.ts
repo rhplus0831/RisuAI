@@ -30,6 +30,11 @@ export function formatToServerProvider(format: LLMFormat): string | null {
     case LLMFormat.OpenAIResponseAPI:
     case LLMFormat.NanoGPTResponses:
       return 'openai-responses'
+    case LLMFormat.Ollama:
+      // The native /api/chat ollama path stays local for now. Cloud variants
+      // (ollama.com OAI-compat / Responses / Messages) get routed inside the
+      // gate based on db.ollamaRequestFormat.
+      return 'ollama'
     default:
       return null
   }
@@ -164,7 +169,28 @@ export function getServerCompletionProvider(
   if (provider === 'gemini' && !isVanillaGemini(targ)) return null
   if (provider === 'openai-legacy-instruct' && !isVanillaLegacyInstruct(targ)) return null
   if (provider === 'openai-responses' && !isVanillaResponses(targ)) return null
+  if (provider === 'ollama') {
+    // Translate the routing decision the local code makes for ollama-cloud.
+    return resolveOllamaProvider(targ)
+  }
   return provider
+}
+
+/**
+ * Local code routes `aiModel === 'ollama-cloud'` to different upstream
+ * dispatchers based on `db.ollamaRequestFormat`. Mirror that. The native
+ * `/api/chat` shape (LLMFormat.Ollama / non-cloud / ollamaRequestFormat ===
+ * LLMFormat.Ollama) stays on local dispatch until a server dispatcher lands.
+ */
+function resolveOllamaProvider(targ: RequestDataArgumentExtended): string | null {
+  if (targ.aiModel !== 'ollama-cloud') return null
+  const db = getDatabase()
+  if (typeof db.ollamaApiKey !== 'string' || db.ollamaApiKey.length === 0) return null
+  const fmt = db.ollamaRequestFormat
+  if (fmt === LLMFormat.OpenAICompatible) return 'openai'
+  if (fmt === LLMFormat.OpenAIResponseAPI) return 'openai-responses'
+  if (fmt === LLMFormat.Anthropic) return 'anthropic'
+  return null
 }
 
 /**
@@ -173,11 +199,18 @@ export function getServerCompletionProvider(
  * `db.nanogptRequestModel` / `db.openrouterRequestModel` because the local
  * dispatcher does the same in `request/openAI/requests.ts:255-262`.
  */
+function isOllamaCloud(targ: RequestDataArgumentExtended): boolean {
+  return targ.aiModel === 'ollama-cloud'
+}
+
 export function resolveProviderModel(
   targ: RequestDataArgumentExtended,
   provider: string,
 ): string {
   const db = getDatabase()
+  if (isOllamaCloud(targ)) {
+    return db.ollamaCloudModel ?? ''
+  }
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
   if (provider === 'gemini') {
@@ -247,14 +280,19 @@ function buildProviderOptions(
   }
   if (provider === 'openai') {
     const openai: Record<string, unknown> = {}
-    const keyId = targ.modelInfo?.keyIdentifier
-    if (typeof keyId === 'string' && keyId.length > 0) {
-      openai.apiKey = db.OaiCompAPIKeys?.[keyId] ?? ''
-      if (typeof targ.modelInfo?.endpoint === 'string') {
-        openai.baseUrl = deriveOpenAIBaseUrl(targ.modelInfo.endpoint)
-      }
+    if (isOllamaCloud(targ)) {
+      openai.apiKey = db.ollamaApiKey ?? ''
+      openai.baseUrl = 'https://ollama.com/v1'
     } else {
-      openai.apiKey = db.openAIKey ?? ''
+      const keyId = targ.modelInfo?.keyIdentifier
+      if (typeof keyId === 'string' && keyId.length > 0) {
+        openai.apiKey = db.OaiCompAPIKeys?.[keyId] ?? ''
+        if (typeof targ.modelInfo?.endpoint === 'string') {
+          openai.baseUrl = deriveOpenAIBaseUrl(targ.modelInfo.endpoint)
+        }
+      } else {
+        openai.apiKey = db.openAIKey ?? ''
+      }
     }
     if (typeof targ.maxTokens === 'number') openai.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') openai.temperature = targ.temperature
@@ -279,7 +317,10 @@ function buildProviderOptions(
   if (provider === 'anthropic') {
     const anthropic: Record<string, unknown> = {}
     const isNanoGPT = targ.modelInfo?.format === LLMFormat.NanoGPTMessages
-    if (isNanoGPT) {
+    if (isOllamaCloud(targ)) {
+      anthropic.apiKey = db.ollamaApiKey ?? ''
+      anthropic.baseUrl = 'https://ollama.com/v1'
+    } else if (isNanoGPT) {
       anthropic.apiKey = db.nanogptKey ?? ''
       anthropic.baseUrl = 'https://nano-gpt.com/api/v1'
     } else {
@@ -334,7 +375,11 @@ function buildProviderOptions(
   if (provider === 'openai-responses') {
     const resp: Record<string, unknown> = {}
     const isNanoGPT = targ.modelInfo?.format === LLMFormat.NanoGPTResponses
-    if (isNanoGPT) {
+    if (isOllamaCloud(targ)) {
+      resp.apiKey = db.ollamaApiKey ?? ''
+      resp.baseUrl = 'https://ollama.com/v1'
+      resp.store = false
+    } else if (isNanoGPT) {
       resp.apiKey = db.nanogptKey ?? ''
       resp.baseUrl = 'https://nano-gpt.com/api/v1'
       if (typeof db.nanogptProvider === 'string' && db.nanogptProvider.length > 0) {
@@ -343,8 +388,6 @@ function buildProviderOptions(
     } else {
       resp.apiKey = db.openAIKey ?? ''
       if (typeof targ.modelInfo?.endpoint === 'string' && targ.modelInfo.endpoint.length > 0) {
-        // Some users carry a hardcoded /responses endpoint; the dispatcher's
-        // `{baseUrl}/responses` re-assembly strips the suffix.
         resp.baseUrl = targ.modelInfo.endpoint.replace(/\/responses\/?$/, '')
       }
     }

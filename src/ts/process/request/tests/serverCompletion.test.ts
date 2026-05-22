@@ -406,6 +406,70 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
+  it('routes ollama-cloud + ollamaRequestFormat=OpenAICompatible into provider "openai"', () => {
+    seedDb({
+      ollamaApiKey: 'oc',
+      ollamaRequestFormat: LLMFormat.OpenAICompatible,
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'ollama-cloud',
+        modelInfo: {
+          id: 'ollama-cloud',
+          format: LLMFormat.Ollama,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai')
+  })
+
+  it('routes ollama-cloud + ollamaRequestFormat=Anthropic into provider "anthropic"', () => {
+    seedDb({
+      ollamaApiKey: 'oc',
+      ollamaRequestFormat: LLMFormat.Anthropic,
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'ollama-cloud',
+        modelInfo: {
+          id: 'ollama-cloud',
+          format: LLMFormat.Ollama,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('anthropic')
+  })
+
+  it('refuses ollama-cloud when ollamaApiKey is missing', () => {
+    seedDb({
+      ollamaRequestFormat: LLMFormat.OpenAICompatible,
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'ollama-cloud',
+        modelInfo: {
+          id: 'ollama-cloud',
+          format: LLMFormat.Ollama,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses ollama-hosted (local ollama needs a native /api/chat dispatcher)', () => {
+    seedDb({ ollamaApiKey: 'x' } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'ollama-hosted',
+        modelInfo: {
+          id: 'ollama-hosted',
+          format: LLMFormat.Ollama,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
   it('refuses an endpoint-only model (no keyIdentifier auth path defined)', () => {
     const r = getServerCompletionProvider(
       makeTarg({
