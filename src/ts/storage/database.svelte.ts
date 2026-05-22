@@ -692,6 +692,7 @@ export function setDatabase(data: Database) {
   data.newMessageButtonStyle ??= 'bottom-center'
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
+  data.useServerGeneration ??= false
   if (!isNodeServer && !isTauri) {
     //this is intended to forcely reduce the size of the database in web
     data.promptInfoInsideChat = false
@@ -1222,6 +1223,7 @@ export interface Database {
   pluginDevelopMode?: boolean
   echoMessage?: string
   echoDelay?: number
+  useServerGeneration?: boolean
   createFolderOnBranch?: boolean
   hamburgerButtonBottom?: boolean
   enableRemoteSaving?: boolean

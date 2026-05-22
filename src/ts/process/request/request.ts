@@ -28,6 +28,10 @@ import {
   requestOpenAILegacyInstruct,
   requestOpenAIResponseAPI,
 } from './openAI/requests'
+import {
+  getServerCompletionProvider,
+  requestServerCompletion,
+} from './serverCompletion'
 import { applyParameters, type ModelModeExtended } from './shared'
 
 export type ToolCall = {
@@ -517,6 +521,11 @@ export async function requestChatDataMain(
   const format = targ.modelInfo.format
 
   targ.formated = reformater(targ.formated, targ.modelInfo)
+
+  const serverProvider = getServerCompletionProvider(targ)
+  if (serverProvider !== null) {
+    return requestServerCompletion(targ, serverProvider, abortSignal)
+  }
 
   switch (format) {
     case LLMFormat.OpenAICompatible:

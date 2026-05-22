@@ -44,6 +44,76 @@ are below under "Completed Slices".
 
 ## Completed Slices
 
+- **Phase 6-2 - client adapter for echo (flag-gated).** Done
+  2026-05-22. Browser-side adapter that posts to the Phase 6-1
+  route. New module `src/ts/process/request/serverCompletion.ts`
+  exports three functions: `formatToServerProvider` (maps
+  `LLMFormat.Echo` to `'echo'`; every other format returns `null`),
+  `getServerCompletionProvider` (combines `isFastifyServer` +
+  `db.useServerGeneration` + `!previewBody` + format gate into a
+  single nullable provider), and `requestServerCompletion` (does
+  the actual POST to `/api/v1/generate/completion`). The branch
+  lives in `src/ts/process/request/request.ts` inside
+  `requestChatDataMain`, immediately after `reformater(...)` and
+  before the format `switch`; it short-circuits to the server path
+  when `getServerCompletionProvider` returns non-null and otherwise
+  falls through to the existing dispatch. The dispatch helper at
+  `src/ts/process/dispatch/dispatchRequest.ts` is unchanged. The
+  outer `requestChatData` retry / fallback / escape / trigger /
+  pluginV2 replacer wrappers continue to apply because the branch
+  sits below them. Adapter behavior: non-streaming response goes
+  through `response.json()` and is mapped to
+  `{type: 'success' | 'fail', result, model?}`; streaming response
+  iterates the `ReadableStream<Uint8Array>` body and parses the
+  Phase 6-1 SSE envelope (`event: chunk` + `event: done`),
+  accumulating token frames into a single string returned as
+  `{type: 'success', result}` (orchestrator-level streaming wiring
+  is deferred — see "out of scope" below). Auth flows through
+  `getNodeServerProxyAuth()`. Errors map to the `requestDataResponse`
+  fail shape: HTTP non-2xx extracts `body.reason` then `body.error`,
+  falling back to `HTTP <status>`; fetch exceptions return
+  `Network error: <msg>` (or `Aborted` if the signal is already
+  aborted). Echo-specific payload: `options.echo.message` from
+  `db.echoMessage` and `options.echo.delayMs` from
+  `(db.echoDelay ?? 0) * 1000` (seconds → milliseconds), mirroring
+  the local `requestEcho` defaults. New DB field
+  `useServerGeneration?: boolean` (defaulting `false` via the
+  normalization in `setDatabase`); migrations are unnecessary
+  because the gate reads `=== true`. 20 new tests in
+  `src/ts/process/request/tests/serverCompletion.test.ts`:
+  `formatToServerProvider` (3 cases), `getServerCompletionProvider`
+  (5 cases pinning the four gate failures and the happy path),
+  non-streaming (7 cases — body / headers shape, delayMs scaling,
+  server fail, 501 reason extraction, 401 error extraction,
+  network error, pre-aborted signal), and streaming (5 cases —
+  single chunk + done, multi-chunk concat, partial-frame split
+  across reads, mid-stream abort, missing body). The
+  `../../modules` mock pattern from Phase 5-27 was reused to
+  neutralize a `moduleUpdate` `$effect` chain triggered by
+  `setDatabase` in the test harness. Decisions locked: (1) branch
+  inside `requestChatDataMain`, not `dispatchRequest` (the
+  Phase 6 doc's "`requestChatData` keeps both modes side by side"
+  phrasing maps to this seam); (2) flag stored in `db`
+  (`useServerGeneration`) rather than `globalThis` (server-injected
+  flag is a Phase 9 concern); (3) hand-rolled SSE parser (~30
+  lines) instead of a dependency; (4) preview-prompt
+  (`targ.previewBody === true`) stays on the local path because
+  preview is a debugging tool for the local request-shaping code,
+  not the server-routing code. Out of scope: dual-mode sendChat
+  fixture sweep (next slice — the existing 26 fixtures
+  `vi.mock('../request/request')` at the function-export level so
+  the server path is never reached today; that harness rework +
+  adding an echo-routed fixture is Phase 6-3); orchestrator-level
+  streaming wiring (the adapter accumulates SSE token frames into a
+  single string today — when the first real streaming provider
+  lands the adapter will return `{type: 'streaming', result:
+  ReadableStream<StreamResponseChunk>}` to feed
+  `consumeStreamResponse`); additional providers (each is its own
+  slice). Verification: `pnpm test` (474 across 45 files, up from
+  454/44), `pnpm check`, `pnpm api:test` (145 unchanged), `pnpm
+  build` all green. Existing 26 sendChat fixtures unaffected (flag
+  defaults off).
+
 - **Phase 6-1 - generate/completion route + echo provider.** Done
   2026-05-22. **Phase 6 opens.** Server-only slice that lands the
   Stage 3 server boundary: a new `POST /api/v1/generate/completion`
