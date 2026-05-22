@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `9a60380d feat: port minimal regex script processor (Phase 7-6a)`
+Head: `7ad226b9 feat: per-message scripts + sendName + Thoughts (Phase 7-5b)`
 
 This is the short runbook for picking up **Phase 7 in progress**.
 Phases 0-6 are closed. The detailed Phase 7 roadmap lives in
@@ -24,6 +24,7 @@ Landed Phase 7 slices:
 | docs  | `e7a76f32` | Organized the remaining Phase 7 roadmap into tiers.                                                                          |
 | 7-5a  | `c44e53fc` | Ported the minimal history walk: examples, start-new-chat marker, first message, makeMs filter, per-message role mapping.    |
 | 7-6a  | `9a60380d` | Ported the minimal regex script processor: preset+character regex chain, mode filter, flag sanitization, CBS in replacement. |
+| 7-5b  | `7ad226b9` | Added per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill on the history walk.             |
 
 What is real in code:
 
@@ -32,14 +33,15 @@ What is real in code:
   **not** call `assemble.ts` yet.
 - `server/fastify/src/prompt/sseEvents.ts`,
   `variables.ts`, `staticSections.ts`, `plainSections.ts`,
-  `history.ts` (minimal walk only), and `scripts.ts` (regex-only
-  `processScript`) are implemented and tested.
+  `history.ts` (deterministic walk + per-message scripts +
+  sendName wrapper + `<Thoughts>` extraction + memo/UUID
+  backfill), and `scripts.ts` (regex-only `processScript`) are
+  implemented and tested.
 - `assemble.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
   `triggers.ts` still throw Phase 7 not-implemented errors.
-- `history.ts` does not yet call `processScript` per message, and
-  does not yet handle `sendName`, `<Thoughts>`, multimodal,
+- `history.ts` does not yet handle multimodal inlays,
   `{{asset_prompt::}}`, start triggers, tokenizer accumulation, or
-  depth prompts (7-5b/c/d/e).
+  depth prompts (7-5c/d/e).
 - `scripts.ts` does not yet handle special action prefixes
   (`@@emo`, `@@move_top`, `@@move_bottom`, `@@inject`,
   `@@repeat_back`), the `ableFlag` `<order, actions>` DSL,
@@ -47,47 +49,50 @@ What is real in code:
   `pluginV2` hooks, or module regex scripts (7-6b/c/d/e).
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-6a:
+Last recorded baselines after 7-5b:
 
-- `pnpm api:test`: 516 across 33 files
+- `pnpm api:test`: 529 across 33 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: clean
 
 ## Next Slice
 
-Pick up **7-5b - history per-message scripts + sendName +
-`<Thoughts>` extraction**.
+Pick up **7-6b - scripts special action prefixes**.
 
-`server/fastify/src/prompt/scripts.ts` is now real (regex-only),
-so the per-message `processScriptFull('editprocess', ...)` call in
-`formatHistoryMessage` can be ported via the existing
-`processScript`. Slice scope:
+`scripts.ts` currently only honors the plain regex branch. Port
+the four deterministic special-action prefixes that the SPA's
+`executeScript` recognizes (`scripts.ts:218-325`):
 
-- Pipe each history message's `msg.data` through
-  `processScript(ctx, currentChar, data, 'editprocess', {chatRole: msg.role})`
-  before role mapping.
-- Add the optional `usingPromptTemplate + db.promptSettings.sendName`
-  wrapper that prefixes the first message and per-message content
-  with `${currentChar.name}: ` (and sets `attr: ['nameAdded']` on
-  the first message only). The per-message form ports the
-  `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>` wrapper
-  from `formatHistoryMessage.ts:138`.
-- Add `<Thoughts>...</Thoughts>` extraction with the
-  `maxThoughtTagDepth` clamp: stripped from `content`, captured to
-  `chat.thoughts: string[]` when `maxThoughtDepth === -1 ||
-maxThoughtDepth - totalCount <= index`.
+- `@@move_top` / `@@move_bottom` — extract matched text via
+  `data.matchAll(reg)`, rewrite with the SPA's `$1` / `$&` / `$<n>`
+  substitution helper, then re-prepend or append to `data`.
+- `@@inject` — mutate the message at `chatID` in place
+  (writes `currentChat.message[chatID].data = data`) and strip
+  the matched text from `data`. Server signature accepts an
+  optional `chatID` like the SPA.
+- `@@repeat_back` — read the previous same-role message body,
+  copy its first match to the current `data` (positions: bare,
+  `end`, `start`, `end_nl`, `start_nl`).
 
-Other Tier 1 candidates remain unblocked: **7-5c**
-(multimodal/asset_prompt; needs the Phase 2 server-side asset
-read path; see formatHistoryMessage.ts for the SPA shape) and
-**7-7a** (constant lorebook; the SPA orchestrator does not slice
-cleanly without porting the decorator system first - revisit).
+`@@emo` stays as a no-op on the server (browser-only emotion-image
+side effect; document the skip).
 
-Same rhythm as the prior slices: boot prompt-variable infra in
-tests with `beforeAll(() => bootPromptVariables())`, small
-database fixtures, and run all four bars (`pnpm check`,
-`pnpm api:test`, `pnpm test`, `pnpm build`) before reporting back.
+Deferred to later sub-slices: `ableFlag` `<order, actions>` DSL
+parsing (7-6c), script-cache (7-6c), module regex scripts (7-6d),
+`runTrigger('display', …)` for `editdisplay` mode (7-6e).
+
+Other Tier 1 candidates remain unblocked: **7-5c** (multimodal
+inlays + `{{asset_prompt::}}`; the assets path benefits from a
+clearer request-body inlay payload interface that Tier 3 will
+shape - reasonable to wait) and **7-7a** (constant lorebook; the
+SPA orchestrator still doesn't slice cleanly without porting the
+decorator system first - revisit).
+
+Same rhythm as prior slices: boot prompt-variable infra in tests
+with `beforeAll(() => bootPromptVariables())`, small database
+fixtures, and run all four bars (`pnpm check`, `pnpm api:test`,
+`pnpm test`, `pnpm build`) before reporting back.
 
 ## Patterns To Keep
 
