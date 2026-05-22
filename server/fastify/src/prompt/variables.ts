@@ -1,22 +1,101 @@
+import type { Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
+import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
+import {
+  clearActivePromptScope,
+  isActivePromptScopeDirty,
+  setActivePromptScope,
+} from './promptScope.js'
+
 /**
- * Phase 7 variable expansion. `risuChatParser` port, `#when`, conditional
- * cards.
+ * Phase 7-2c server-side `risuChatParser` entry point.
  *
- * Browser source to port:
- *   - `src/ts/parser/parser.svelte.ts` (`risuChatParser`)
- *   - `src/ts/cbs.ts` (callbacks consumed by the parser)
- *   - `src/ts/process/dynamicutils/`
+ * Sets the active prompt scope from `ctx.database` + selected character
+ * + chat indices, runs the canonical browser parser (extracted to a
+ * Svelte-free module in slice 7-2b), then clears the scope. The chat's
+ * `scriptstate` object is mutated in place when `runVar` is true and
+ * the preset contains `{{setvar}}` / `{{addvar}}` / `{{setdefaultvar}}`;
+ * the caller can check `expandVariables.returns.dirty` to decide
+ * whether to persist `ctx.database` via `applyImport`.
  *
- * Slice 7-2 (next): ship the pure-function port of `risuChatParser` for
- * use by the assembly modules and the route's `preview-prompt` shortcut.
+ * Browser-only cbs callbacks (`{{screenwidth}}`, `{{metadata::browserlanguage}}`,
+ * HTML emitters) register but will throw at invocation on the server.
+ * Phase 7 prompt-assembly paths do not invoke them; revisit per fixture
+ * if any preset reaches them.
+ *
+ * `bootPromptVariables()` must have been called before the first
+ * `expandVariables` invocation; the boot wires the chatVar backend and
+ * registers the cbs callbacks into the parser's matcherMap.
  */
 
 export interface ExpandContext {
-  charName?: string
-  userName?: string
-  // Phase 7-2 fills in the remaining substitution variables.
+  database: Database
+  /** Index into `database.characters`. Defaults to `database.currentChar ?? 0`. */
+  selectedCharID?: number
+  /**
+   * Index into `database.characters[selectedCharID].chats`. Defaults to
+   * the character's stored `chatPage` (the active chat).
+   */
+  chatPage?: number
+  /**
+   * Enables `{{setvar}}` / `{{addvar}}` / `{{setdefaultvar}}` mutation.
+   * Defaults to false so preview / read-only assembly paths can't
+   * accidentally write chat state.
+   */
+  runVar?: boolean
+  /** Per-call slot map; consumed by `{{slot::X}}`. */
+  slot?: Record<string, string>
+  /** Optional chat role passed into the matcher arg (`{{role}}`). */
+  role?: string
+  /** Conditional flags for `{{#when::isfirstmsg}}` etc. */
+  cbsConditions?: CbsConditions
+  /** Optional explicit character override; defaults to the resolved character from the db. */
+  chara?: string | character
+  /** Recursion guard for direct callers; defaults to the parser's own. */
+  callStack?: number
 }
 
-export function expandVariables(_input: string, _ctx: ExpandContext): string {
-  throw new Error('phase-7 variable expansion not yet implemented')
+export interface ExpandResult {
+  /** The expanded string. */
+  text: string
+  /** True if any chat-var mutation happened during expansion. */
+  dirty: boolean
+}
+
+export function expandVariables(input: string, ctx: ExpandContext): ExpandResult {
+  const selectedCharID = ctx.selectedCharID ?? ctx.database.currentChar ?? 0
+  const char = ctx.database.characters[selectedCharID]
+  const chatPage = ctx.chatPage ?? char?.chatPage ?? 0
+  const chat = char?.chats?.[chatPage]
+
+  if (chat && !chat.scriptstate) {
+    // Lazy-init mirrors `chatVar.svelte.ts:11` (browser behavior).
+    chat.scriptstate = {}
+  }
+
+  const scriptstate = (chat?.scriptstate ?? {}) as Record<string, unknown>
+  const globalChatVariables = (ctx.database.globalChatVariables ?? {}) as Record<string, unknown>
+
+  setActivePromptScope({
+    database: ctx.database,
+    selectedCharID,
+    chatPage,
+    scriptstate,
+    globalChatVariables,
+  })
+
+  try {
+    const text = risuChatParser(input, {
+      db: ctx.database,
+      chara: ctx.chara ?? char,
+      var: ctx.slot,
+      runVar: ctx.runVar ?? false,
+      role: ctx.role,
+      cbsConditions: ctx.cbsConditions,
+      callStack: ctx.callStack,
+    })
+    return { text, dirty: isActivePromptScopeDirty() }
+  } finally {
+    clearActivePromptScope()
+  }
 }
