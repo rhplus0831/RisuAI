@@ -2,309 +2,163 @@
 
 Date: 2026-05-22
 Branch: `fastify`
-Head: `5c9d40fe docs: record Phase 6-10 through 6-14 slice summaries`
+Head: `05a4e248 docs: backfill Phase 6-22 commit hash in next-steps.md`
 
 This file is the working handover from the previous agent. Read
-`docs/fastify/phases/phase-6-server-generation.md` for the phase goal
-and `docs/fastify/status/next-steps.md` for the per-slice history; this
-HANDOVER focuses on **what's queued next** so you can pick it up
-without re-deriving context.
+`docs/fastify/phases/phase-6-server-generation.md` for the phase
+goal and `docs/fastify/status/next-steps.md` for the per-slice
+history; this HANDOVER focuses on **what's queued next** so you
+can pick it up without re-deriving context.
 
 ## Where things stand
 
 Phase 6 has shipped a server-side `POST /api/v1/generate/completion`
 route, the normalized SSE envelope, the client adapter, and the
-dual-mode fixture sweep. The following provider mappings are live:
+dual-mode fixture sweep. The following provider mappings are
+live:
 
-- `echo`, `openai`, `nanogpt`, `openrouter`, `anthropic`, `mistral`,
-  `cohere`, `gemini`, `openai-legacy-instruct`, `openai-responses`,
-  `kobold`, `ooba-legacy`.
-- Variant routings that ride existing dispatchers: AnthropicLegacy,
+- Vanilla wire formats: `echo`, `openai`, `nanogpt`, `openrouter`,
+  `anthropic`, `mistral`, `cohere`, `gemini` (Studio + Vertex),
+  `openai-legacy-instruct`, `openai-responses`, `kobold`,
+  `ooba-legacy`, `ollama` (native `/api/chat`), `bedrock` (AWS
+  SigV4), `horde` (async polling).
+- Variant routings on existing dispatchers: AnthropicLegacy,
   NanoGPT Messages, NanoGPT Legacy, NanoGPT Responses, DeepSeek +
-  DeepInfra (OAI-compat keyIdentifier), Ollama cloud (openai /
-  openai-responses / anthropic per `db.ollamaRequestFormat`).
+  DeepInfra (OAI-compat keyIdentifier), Ollama cloud
+  (openai / openai-responses / anthropic per
+  `db.ollamaRequestFormat`), `xcustom:::<id>` under
+  OpenAICompatible **and** Anthropic, `reverse_proxy` under
+  OpenAICompatible (with `risu::` header lift, URL autofill,
+  `db.reverseProxyOobaMode` system hoisting) **and** Anthropic.
 
-Latest verification (Phase 6-14 closeout):
+Shared server-side infrastructure that now exists:
 
-- `pnpm api:test`: 295 across 21 files
-- `pnpm test`: 526 across 46 files (+ 4 skipped)
+- `additionalParams.ts` — body/header overlay DSL ported from the
+  SPA (used by openai + anthropic dispatchers; ready to wire into
+  other dispatchers when their reverse_proxy / xcustom slices
+  land).
+- `vertexAuth.ts` — RS256 JWT signing + in-process Bearer cache.
+- `sigv4.ts` — pure-JS AWS SigV4 signer.
+- `applyOobaSystemHoist` in `openai.ts` — system-message hoist
+  for `db.reverseProxyOobaMode`.
+
+Latest verification (Phase 6-22 closeout):
+
+- `pnpm api:test`: 419 across 27 files
+- `pnpm test`: 570 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: clean
 
-The dual-mode fixture sweep covers 7 fixtures (`echo-basic`,
-`openai-basic`, `anthropic-basic`, `mistral-basic`, `cohere-basic`,
-`deepseek-basic`, `gemini-basic`). Local sendChat sweep covers 33
-fixtures.
+The dual-mode fixture sweep still covers the original 7
+fixtures (`echo-basic`, `openai-basic`, `anthropic-basic`,
+`mistral-basic`, `cohere-basic`, `deepseek-basic`,
+`gemini-basic`). Local sendChat sweep still covers 33 fixtures.
 
 ## What to do next
 
-There are two straightforward batches ready to land without design
-questions, plus three slices that need a quick design check-in
-before implementation. Land the two cheap batches first to keep
-momentum, then bring the three open questions to the user.
+Three categories of work remain. All three are well-scoped; pick
+based on appetite and risk tolerance.
 
-### Straightforward batch A: Ooba OAI-compat + Native Ollama
+### 1. Mechanical batch — extend additionalParams to other format dispatchers
 
-Both follow the established slice pattern (server dispatcher → route
-hook → client adapter format-map + buildProviderOptions branch →
-dispatcher tests + 1-2 route tests + 1-2 adapter tests). Each is its
-own commit.
+`reverse_proxy` and `xcustom:::<id>` users can target any
+`LLMFormat` via `db.customAPIFormat` / `customModels[].format`.
+Today only OpenAICompatible and Anthropic are routed; Mistral,
+Cohere, Gemini Studio, OpenAI Responses, OpenAI Legacy Instruct,
+Kobold, ooba-legacy are all refused.
 
-**Slice 6-15: Ooba OAI-compat.** No new dispatcher — Ooba's modern
-endpoint is `/v1/completions` (OpenAI Legacy Instruct wire shape) at
-`db.textgenWebUIBlockingURL`. Route it through the existing
-`provider: 'openai-legacy-instruct'` dispatcher with:
+Each one follows the same recipe established by Phases 6-17
+(xcustom OAI-compat) and 6-19 (Anthropic): port `additionalParams`
+into the target dispatcher, drop the blanket refusal in the
+adapter gate, add an autofill helper if the URL shape differs
+from the wire's natural path.
 
-- `formatToServerProvider`: keep returning `null` for plain
-  `LLMFormat.Ooba` (which means "old Ooba" — see Slice 6-16 below) and
-  instead lift the routing inside `selectOpenAIVariant`-style logic.
-  Actually the simpler placement: extend `formatToServerProvider` to
-  return `'openai-legacy-instruct'` for `LLMFormat.Ooba` and add an
-  `isOobaCompatible` gate that requires `db.textgenWebUIBlockingURL`
-  to be set. The local code in `request.ts:839-908` builds the URL
-  from that DB field.
-- `buildProviderOptions['openai-legacy-instruct']`: when the source
-  format is `LLMFormat.Ooba`, set `baseUrl = db.textgenWebUIBlockingURL`
-  (the dispatcher already appends `/completions`; if the user's URL
-  ends in `/v1` or already includes `/v1/completions` the existing
-  endpoint() helper handles both — verify with a route test).
-- No new fixture; the adapter test pinning the routing is sufficient.
+Per-slice cost is small (~150 LOC + tests):
 
-Expected size: ~60 LOC of code (gate + options branch) + ~30 LOC of
-tests.
+- **Mistral** (`reverse_proxy`/`xcustom` under `LLMFormat.Mistral`):
+  Mistral's wire is OpenAI-compat-shaped, so URL autofill is
+  same as OAI's `/v1/chat/completions`. The mistral dispatcher
+  needs the same `buildRequestInit` consolidation we did for
+  openai + anthropic.
+- **Cohere** (`reverse_proxy`/`xcustom` under `LLMFormat.Cohere`):
+  Cohere wire is `/chat` (no `/completions`). URL autofill helper
+  needed.
+- **OpenAI Responses** (`reverse_proxy`/`xcustom` under
+  `LLMFormat.OpenAIResponseAPI`): wire path is `/responses`;
+  autofill helper. Already accepts a `baseUrl` override.
+- **OpenAI Legacy Instruct** (`reverse_proxy` under
+  `LLMFormat.OpenAILegacyInstruct`): wire path is
+  `/v1/completions`; autofill. Note that the SPA has an Ooba
+  OAI-compat case too (see open question below).
+- **Native Ollama**: probably skip — reverse_proxy onto a native
+  Ollama server is an unusual config; xcustom can carry a custom
+  baseUrl already.
+- **Kobold / ooba-legacy**: same — these targets already accept
+  an arbitrary baseUrl via their `options.kobold.baseUrl` /
+  `options['ooba-legacy'].baseUrl`. A user who wants a
+  reverse-proxied Kobold can configure it directly.
 
-**Slice 6-16: Native Ollama (`/api/chat`).** Own dispatcher because
-the wire shape differs from openai-compatible. Look at
-`src/ts/process/request/request.ts:1172-1278` for the local
-implementation; the parts you need are the buffered branch
-(`ollama.chat({model, messages, stream: false, think})`) plus the
-streaming branch (`stream: true`) which yields `{message: {content,
-thinking}}` chunks.
+Recommended next: Mistral first (smallest), then Cohere, then
+OpenAI Responses. The OpenAI Legacy Instruct one is entangled
+with the Ooba memo decision (see below).
 
-Recommended scope:
+### 2. Other remaining gaps
 
-- New `server/fastify/src/generation/ollama.ts` with
-  `resolveOllamaRequest`, `runOllama` (buffered) and `runOllamaStream`.
-- Wire shape: `POST {baseUrl}/api/chat` with body
-  `{model, messages: [{role, content}], stream, think?}`.
-- The local code uses the `ollama` npm client. Server side, write
-  a plain fetch dispatcher — that's lighter and matches the pattern
-  established by other dispatchers in this phase. The streaming wire
-  format is **NDJSON** (not SSE): each chunk is a JSON object on its
-  own line, with a final `{done: true}` chunk. Parse line-by-line.
-- Buffered response shape: `{message: {content, thinking?}, done:
-  true, ...}`. Concatenate `content`; ignore `thinking` for the
-  first cut (the local code renders it via
-  `formatThinkingOutput` — defer that helper).
-- Route hook: add `'ollama'` to SUPPORTED_PROVIDERS, dispatch
-  ahead of openai-compat.
-- Client adapter: `formatToServerProvider(LLMFormat.Ollama)` already
-  returns `'ollama'` (Slice 6-13). The `resolveOllamaProvider` helper
-  currently returns `null` for `aiModel === 'ollama-hosted'`; change
-  it to return `'ollama'` (the new native provider tag) when
-  `db.ollamaURL` is set. `buildProviderOptions.ollama` should emit
-  `{baseUrl: db.ollamaURL, model: db.ollamaModel, think?}`.
-- `resolveProviderModel('ollama', targ)` reads `db.ollamaModel` for
-  ollama-hosted, `db.ollamaCloudModel` for ollama-cloud (already
-  done).
-- Streaming: yes, the Ollama NDJSON stream is straightforward —
-  buffer until `\n`, JSON.parse, yield `{kind: 'token', content}`.
-  Final chunk has `done: true` → yield `{kind: 'done',
-  finishReason: 'stop'}`.
+- **Streaming for buffered-only providers**: Cohere, OpenAI Responses,
+  OpenAI Legacy Instruct, Kobold, ooba-legacy, Bedrock, and Horde
+  all ship buffered-only today. Each has its own reason (Cohere
+  + legacy-instruct match local; Bedrock needs EventStream parser;
+  Horde wire isn't incrementally streamable). The Bedrock
+  EventStream parser is the most interesting follow-up: AWS
+  EventStream is a binary length-prefixed framing protocol used
+  by `:invoke-with-response-stream`. ~150 LOC for the parser +
+  another ~100 LOC of wiring.
+- **OpenAI MultiGen (`body.n = db.genTime`)**: deferred from
+  reverse_proxy. Incompatible with the one-stream-per-completion
+  SSE envelope as currently designed; would need a multi-result
+  return shape.
 
-Expected size: ~220 LOC dispatcher + ~150 LOC tests + ~50 LOC route +
-~40 LOC adapter.
+### 3. Phase 7 prep — deferred prompt-assembly slices
 
-### Straightforward batch B: NovelAI + NovelList
+Three providers were explicitly deferred to Phase 7 because they
+all need server-owned character / user context to do their
+prompt flatten properly:
 
-These need stringlize/unstringlize helpers ported from the local
-code. They're individually substantial but follow the established
-pattern. Read `src/ts/process/request/request.ts:582-697` for
-NovelAI and `:1092-1170` for NovelList before starting.
+- **Ooba OAI-compat** (`/v1/completions` against
+  `db.textgenWebUIBlockingURL`). Memo:
+  [`docs/fastify/design/ooba-oai-compat.md`](docs/fastify/design/ooba-oai-compat.md).
+  Local uses `applyChatTemplate` (Jinja); routing through the
+  existing `## User` flatten would silently change prompt format.
+- **NovelAI + NovelList**. Memo:
+  [`docs/fastify/design/novelai-novellist-stringlize.md`](docs/fastify/design/novelai-novellist-stringlize.md).
+  Same shape — `stringlizeNAIChat` / `stringlizeAINChat` /
+  `unstringlizeChat` need character + user state.
 
-**Slice 6-17: NovelAI.** New dispatcher. Wire shape:
+The Horde slice (6-22) used the option-B pattern from the
+NovelAI memo: client pre-flattens via `applyChatTemplate`, ships
+a `prompt` string, and unstringlizes the result client-side.
+If the same pattern is acceptable for Ooba / NovelAI / NovelList,
+those slices unblock immediately (~150 LOC each). Decision is
+still open and worth raising with the user.
 
-- URL: `https://text.novelai.net/ai/generate` for kayra,
-  `https://api.novelai.net/ai/generate` for clio (the local code
-  branches on `aiModel === 'novelai_kayra'`).
-- Auth: `Bearer ${db.novelai.token}`.
-- Body: `{input: <flattened prompt>, model: 'kayra-v1' | 'clio-v1',
-  parameters: {temperature, max_length, top_k, top_p, top_a,
-  tail_free_sampling, repetition_penalty, ... full sampler block}}`.
-  Look at the full payload in `request.ts:632-666`.
-- Response: `{output: string}`. Run `unstringlizeChat(output,
-  formated, charName)` on it.
+## Open questions for the user
 
-Helpers you need to port:
+If you keep going on Phase 6 without check-in, the safe picks are
+the **mechanical batch** items above (Mistral / Cohere / OpenAI
+Responses reverse_proxy + xcustom). They have no design
+questions.
 
-- `stringlizeNAIChat(formated, charName, continueFlag)` — flatten
-  chat into a single text prompt. The local source is in
-  `src/ts/process/stringlize.ts` (verify path with grep).
-- `unstringlizeChat(text, formated, charName)` — reverse-extract the
-  assistant turn from the model's continuation.
-- The whitespace-token-handling and the `repetition_penalty_whitelist`
-  /  `bad_words_ids` arrays.
+For the bigger decisions:
 
-Out of scope for the first cut: `logit_bias_exp` (the local code builds
-this from `arg.biasString` via `tokenizeNum` which uses the NovelAI
-tokenizer; defer until needed). `NAIadventure` mode toggle. Server side
-returns `{type: 'success', result: ...}` not `{type: 'multiline', ...}`.
-
-Expected size: ~250 LOC dispatcher + ~150 LOC tests. Buffered only;
-NovelAI doesn't stream text generation through `/ai/generate`.
-
-**Slice 6-18: NovelList.** New dispatcher (or piggyback in
-`novelai.ts` — your call). Wire shape:
-
-- URL: `https://api.tringpt.com/api`.
-- Auth: `Bearer ${db.novellistAPI}`.
-- Body: `{text: stringlizeAINChat(...), length, temperature, top_p,
-  top_k, rep_pen, top_a, rep_pen_slope, rep_pen_range, typical_p,
-  badwords, model: 'damsel' | 'supertrin', stoptokens, logit_bias?,
-  logit_bias_values?}`. Model picks based on `aiModel ===
-  'novellist_damsel'`.
-- Response: `{data: [text]}` (note the array). `unstringlizeAIN` to
-  extract.
-
-Helpers to port: `stringlizeAINChat`, `unstringlizeAIN`. Same
-location guess as the NovelAI helpers.
-
-Local code returns `{type: 'multiline', result}` but the Phase 6
-server contract is `{type: 'success' | 'fail', result}` — the
-multiline distinction is handled downstream on the SPA side.
-
-Expected size: ~200 LOC dispatcher (or +120 if you stuff it into
-`novelai.ts`) + ~120 LOC tests. Buffered only.
-
-### Open questions — three auth-complex slices
-
-These three slices each introduce a new infrastructure pattern. Bring
-the questions to the user before writing code; each one is ~200-350
-LOC and the design choice affects later maintenance.
-
-**Slice 6-19: Vertex AI Gemini (JWT auth).**
-
-The local code in `src/ts/process/request/google.ts:462-558` builds
-a service-account assertion JWT using Web Crypto's `subtle.importKey`
-+ `subtle.sign('RSASSA-PKCS1-v1_5')`, posts it to
-`https://oauth2.googleapis.com/token` to exchange for a Bearer
-access token, then hits `https://${region}-aiplatform.googleapis.com/
-v1/projects/${PROJECT_ID}/locations/${region}/publishers/google/
-models/${modelId}:generateContent`. Some Gemini 3 preview models are
-only on the `global` endpoint; the local code special-cases
-`/^gemini-3-.*-preview$/`.
-
-**Questions to surface to the user:**
-
-1. **Crypto lib**: Node `crypto.createSign('RSA-SHA256')` (Node
-   standard, no deps) vs. importing a Web Crypto polyfill. The
-   server already runs in Node so `crypto` is fine — preferred unless
-   the user wants symmetry with the SPA's Web Crypto path.
-2. **Token caching**: cache the issued Bearer (TTL ~1 hour from
-   Google's response) in process memory keyed by service-account
-   email? Avoids JWT-signing per request but adds a small cache
-   structure.
-3. **Auth field plumbing**: the SPA's `db.google.projectId` /
-   `db.vertexRegion` / `db.google.clientEmail` (?) / `db.google.privateKey`
-   pass through the request body in `options.gemini` like every
-   other Phase 6 provider, or move them to a future server-side
-   `auth` settings group (Phase 9)? Sticking with the body-pass
-   pattern is consistent with the rest of Phase 6.
-
-The Gemini dispatcher (`server/fastify/src/generation/gemini.ts`)
-already has `endpoint(req, stream)` that builds the URL from
-`baseUrl + /models/<model>:generateContent?key=<apiKey>`. The
-Vertex variant needs:
-
-- A different `endpoint()` shape (`/v1/projects/.../locations/.../
-  publishers/google/models/<id>:generateContent`).
-- A different auth (Bearer in `Authorization` header instead of the
-  `?key=` query param).
-- The JWT signing flow producing that Bearer.
-
-You can either extend `gemini.ts` with a `mode: 'studio' | 'vertex'`
-discriminant or create a parallel `vertexGemini.ts` that delegates the
-request-body building to a shared helper. Either works.
-
-Expected size: ~250 LOC including the JWT helper + token cache + the
-Vertex URL builder + ~150 LOC of tests (some pinning the JWT shape).
-
-**Slice 6-20: AWS Bedrock Claude (SigV4).**
-
-The local code isn't in the repo for AWS — this is a fresh
-implementation. AWS SigV4 is well-documented (see AWS's
-[Authenticating Requests (Signature Version 4)](https://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html)).
-
-Wire flow:
-
-- Endpoint: `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/invoke`
-  for buffered, `:invoke-with-response-stream` for streaming.
-- Body: Anthropic Messages wire shape but with
-  `anthropic_version: 'bedrock-2023-05-31'` (not the regular date).
-- Auth: SigV4. Need `accessKeyId`, `secretAccessKey`, optional
-  `sessionToken` (for STS-issued temporary creds), and `region`.
-- Streaming wire format is **AWS EventStream** (not SSE) — a binary
-  framing protocol. Each frame is length-prefixed and contains a
-  payload with the Anthropic-shaped delta. This is the biggest
-  unknown of the slice.
-
-**Questions to surface to the user:**
-
-1. **Streaming scope**: skip Bedrock streaming for the first cut (the
-   `:invoke` non-streaming endpoint is plain JSON; only
-   `:invoke-with-response-stream` uses EventStream)? That cuts ~150
-   LOC and aligns with how Cohere shipped non-streaming-only in 6-7.
-2. **SigV4 implementation**: pure-JS port of the canonical-request
-   algorithm (~150 LOC of HMAC chaining) vs. pulling in
-   `@aws-sdk/client-bedrock-runtime` (full AWS SDK, large bundle —
-   probably not worth it on the server). The pure port is what every
-   third-party client does and is straightforward.
-3. **Credential plumbing**: same question as Vertex — pass via
-   `options.bedrock = {accessKeyId, secretAccessKey, sessionToken?,
-   region}` in the request body, or wait for the Phase 9 server-side
-   auth store?
-
-Expected size: ~350 LOC including a small SigV4 helper + body
-mapping + ~200 LOC of tests (with one test pinning a known SigV4
-signature against AWS's published reference examples for confidence).
-
-**Slice 6-21: Stable Horde (async polling).**
-
-The Stable Horde wire flow is fundamentally different from
-request/response. Local browser code in `request.ts` (find
-`requestHorde`) does:
-
-1. `POST /v2/generate/text/async` with the prompt + sampler params,
-   gets back `{id: 'job-uuid'}`.
-2. Poll `GET /v2/generate/text/status/<id>` every few seconds until
-   `done: true`.
-3. Cancel via `DELETE /v2/generate/text/status/<id>`.
-
-For the server, this means the request handler holds the polling loop
-internally, and:
-
-- Buffered mode: poll until done, then return `{type: 'success',
-  result}` from the final status payload.
-- Streaming mode: emit a `kind: 'token'` frame each poll-cycle as
-  partial text appears, then `kind: 'done'` when complete.
-
-**Questions to surface to the user:**
-
-1. **Streaming scope**: emit progressive `kind: 'token'` frames per
-   poll, or buffer the whole thing and emit one final token + done
-   frame? The local code is non-streaming on the read side; the
-   simpler-first-cut is to mirror that.
-2. **Polling cadence**: 2 seconds matches the local code's default.
-   Configurable per request, or hardcoded for the first cut?
-3. **Timeout**: a job that never completes (worker exhausted, model
-   crashed) needs a wall-clock limit. 5 minutes? Server-configurable?
-4. **Client abort**: when the SPA aborts mid-poll, the server should
-   fire `DELETE /v2/generate/text/status/<id>` so the Horde worker
-   stops the job. Verify the existing `attachAbort` cleanup pattern
-   handles this.
-
-Expected size: ~200 LOC including the polling loop + abort hook +
-~120 LOC of tests (using `vi.useFakeTimers` to advance polling).
+1. **Ooba / NovelAI / NovelList**: ship now using the Horde
+   pattern (client pre-flattens + ships `prompt`), or defer to
+   Phase 7 as the existing memos recommend?
+2. **Bedrock streaming**: implement now (~250 LOC for the
+   EventStream parser + plumbing) or defer until a fixture
+   demands it?
+3. **Phase 6 closeout**: is the current scope (15+ providers,
+   shared infrastructure for additionalParams / SigV4 / Vertex
+   JWT) enough to call Phase 6 done and move to Phase 7?
 
 ## Patterns to follow
 
@@ -314,31 +168,53 @@ slice. The cleanest references:
 - **OpenAI-compat wire shape**: copy `mistral.ts` (Phase 6-6).
 - **New wire shape with streaming**: copy `gemini.ts` (Phase 6-9).
 - **Non-streaming buffered-only**: copy `cohere.ts` (Phase 6-7).
-- **Flat-prompt with prompt-flattening helper**: copy
-  `openaiLegacyInstruct.ts` (Phase 6-10).
-- **Variant routing of an existing dispatcher (no new code)**: the
-  Anthropic/NanoGPT-Messages routing in Phase 6-11 is the smallest
+- **Flat-prompt with flatten helper**: copy `openaiLegacyInstruct.ts`
+  (Phase 6-10).
+- **Variant routing of an existing dispatcher (no new code)**:
+  Phase 6-11 anthropic-legacy / NanoGPT-messages is the smallest
   example.
+- **additionalParams overlay through an existing dispatcher**:
+  copy the openai (Phase 6-17) or anthropic (Phase 6-19) work.
+- **reverse_proxy with URL autofill**: copy Phase 6-18 (OAI-compat)
+  or 6-19 (Anthropic).
+- **JWT auth + token cache**: copy `vertexAuth.ts` (Phase 6-20).
+- **SigV4 / new pure-JS crypto**: copy `sigv4.ts` (Phase 6-21).
+- **Async polling loop with abort cleanup**: copy `horde.ts`
+  (Phase 6-22).
 
-The dispatcher tests live in `server/fastify/__tests__/` (one file
-per dispatcher). The route-level test cases append to
-`server/fastify/__tests__/generation.completion.test.ts`. The adapter
-test cases (format-map + buildProviderOptions + gate refusals) go in
-`src/ts/process/request/tests/serverCompletion.test.ts`.
+The dispatcher tests live in `server/fastify/__tests__/` (one
+file per dispatcher). The route-level test cases append to
+`server/fastify/__tests__/generation.completion.test.ts`. The
+adapter test cases (format-map + buildProviderOptions + gate
+refusals) go in `src/ts/process/request/tests/serverCompletion.test.ts`.
 
-If the slice adds a dual-mode fixture, follow Phase 6-9's pattern
-(`gemini-basic`): the fixture JSON can include an `injectedModels`
-field that `loadFixture.ts` pushes into `LLMModels` for the test only.
+If a slice adds a dual-mode fixture, follow Phase 6-9's pattern
+(`gemini-basic`): the fixture JSON can include an
+`injectedModels` field that `loadFixture.ts` pushes into
+`LLMModels` for the test only.
 
 ## Commit convention
 
-Each slice gets its own commit. Use `feat:` prefix. Footer:
+Each slice gets its own commit. Use `feat:` prefix for code,
+`docs:` for docs-only. Trailer:
 
 ```
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
-After the slice lands, append a `Phase 6-XX` entry to the top of
-`docs/fastify/status/next-steps.md` under "Completed Slices" and
-update the "Immediate" item with the current count of green tests
-and what's still uncovered.
+After a slice lands, update `docs/fastify/status/next-steps.md`:
+
+1. Bump the "Immediate" item with current test counts and
+   what's still uncovered.
+2. Append a `Phase 6-XX` row to the "Landed Phase 6 Slices" table
+   (mark `_pending_` first, then backfill the commit hash as a
+   separate `docs:` commit).
+
+## Slice numbering note
+
+The original HANDOVER (`f33b15fb`) used 6-19 / 6-20 / 6-21 for
+Vertex / AWS / Horde. Subsequent slices took those numbers
+instead (6-16 native ollama through 6-22 horde). The
+`docs/fastify/status/next-steps.md` table is authoritative for
+current numbering; the pending task entries (#125-#127) still
+carry historical labels but reflect completed work.
