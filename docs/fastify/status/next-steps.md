@@ -16,13 +16,19 @@ snapshot is summarized here.
 1. **Continue Phase 6 provider coverage.** The completion route,
    normalized SSE envelope, client adapter, and dual-mode fixture
    harness are in place for echo, vanilla OpenAI, NanoGPT,
-   OpenRouter, vanilla Anthropic, vanilla Mistral, vanilla Cohere
-   (non-streaming), the OAI-compat keyIdentifier path (DeepSeek +
-   DeepInfra), and vanilla Google AI Gemini (LLMFormat.GoogleCloud
-   with streaming). The next Phase 6 slice should pick one
-   uncovered provider family or helper route. Keep the 33 local
-   sendChat snapshots, the 7-fixture server-backed sweep, and the
-   Fastify generation tests green.
+   OpenRouter, vanilla Anthropic (+ NanoGPT Messages), vanilla
+   Mistral, vanilla Cohere (non-streaming), the OAI-compat
+   keyIdentifier path (DeepSeek + DeepInfra), vanilla Google AI
+   Gemini, OpenAI Legacy Instruct (+ NanoGPT Legacy), OpenAI
+   Responses API (+ NanoGPT Responses), Ollama cloud variants
+   (rides openai / openai-responses / anthropic dispatchers based
+   on db.ollamaRequestFormat), Kobold, and ooba legacy. Still
+   remaining: NovelAI, NovelList, native Ollama (/api/chat), ooba
+   OAI-compat (/v1/completions), Vertex AI Gemini (needs RSA-JWT
+   service-account auth), AWS Bedrock Claude (needs SigV4
+   signing), and Stable Horde (async job submission + polling).
+   Keep the 33 local sendChat snapshots, the 7-fixture
+   server-backed sweep, and the Fastify generation tests green.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -41,6 +47,42 @@ snapshot is summarized here.
 <!-- prettier-ignore-start -->
 
 ## Completed Slices
+
+- **Phase 6-14 - kobold + ooba legacy.** Done 2026-05-22. Two
+  flat-prompt local-hosted dispatchers. Both reuse
+  `flattenForLegacyInstruct` from 6-10. Kobold posts to
+  `{baseUrl}/api/v1/generate`; OobaLegacy posts to the normalized
+  `{baseUrl}/api/v1/generate` with optional `X-API-KEY` for Mancer.
+  Streaming deferred (Ooba legacy uses WebSocket, Kobold doesn't
+  natively stream).
+
+- **Phase 6-13 - ollama cloud variant routing.** Done 2026-05-22.
+  `ollama-cloud` rides the existing openai / openai-responses /
+  anthropic dispatchers based on `db.ollamaRequestFormat`, with
+  hardcoded `https://ollama.com/v1` baseUrl and
+  `db.ollamaApiKey`. Native Ollama `/api/chat` deferred.
+
+- **Phase 6-12 - openai responses api + nanogpt responses.** Done
+  2026-05-22. Server dispatcher for `/v1/responses` with input
+  items (input_text / output_text wrappers; trailing-assistant
+  marked `status: incomplete` for prefill). NanoGPT Responses
+  rides the dispatcher with nano-gpt.com baseUrl + db.nanogptKey.
+  Streaming + tools + multimodal deferred. Honors
+  `modelInfo.endpoint` as a `/responses` base override.
+
+- **Phase 6-11 - anthropic legacy + nanogpt messages routing.**
+  Done 2026-05-22. Both formats share the Anthropic Messages
+  wire shape with the existing dispatcher. AnthropicLegacy is
+  format-map only. NanoGPT Messages routes through provider=
+  anthropic with nano-gpt.com baseUrl, db.nanogptKey, and
+  db.nanogptRequestModel as the wire-level model.
+
+- **Phase 6-10 - openai legacy instruct + nanogpt legacy.** Done
+  2026-05-22. Server dispatcher for `/v1/completions` with the
+  local browser path's prompt-flattening (`## Author` / `##
+  Response` section headers). NanoGPT Legacy rides the same
+  dispatcher with nano-gpt.com baseUrl + db.nanogptKey + optional
+  X-Provider. Streaming deferred.
 
 - **Phase 6-9 - gemini end-to-end (vanilla Google AI).** Done
   2026-05-22. First Phase 6 provider with a fully new request/
