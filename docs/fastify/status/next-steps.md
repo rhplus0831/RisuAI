@@ -11,26 +11,32 @@ the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
 deferred until a fixture demands it. Phase 7 (prompt assembly)
-is the next phase to start.
+is in progress as of 2026-05-22 — slice 7-1 (scaffold) landed and
+the assembly modules under `server/fastify/src/prompt/` are now
+empty stubs waiting to be filled in by subsequent slices.
 
 ## Immediate
 
-1. **Start Phase 7 (prompt assembly).** Phase 6 is closed; see
-   [`../phases/phase-6-server-generation.md#closeout-2026-05-22`](../phases/phase-6-server-generation.md#closeout-2026-05-22)
-   for the full landed inventory. The natural Phase 7 starting
-   point is the three deferred providers whose prompt flatten
-   needs server-owned character/user state: Ooba OAI-compatible
-   `/v1/completions`, NovelAI text, and NovelList. Memos:
-   [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md),
-   [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md).
-   The Horde slice (6-22) shipped an interim option-B pattern
-   (client pre-flattens via `applyChatTemplate`, server takes a
-   `prompt` string, client unstringlizes the result); Phase 7
-   needs to decide whether to apply that pattern to the three
-   deferred providers or move the flatten server-side. Keep the
-   38 local sendChat snapshots, the 12-fixture server-backed
-   sweep, and the Fastify generation tests green (`pnpm api:test`:
-   434, `pnpm test`: 601 + 4 skipped) while Phase 7 lands.
+1. **Continue Phase 7 with slice 7-2 (`variables.ts` /
+   `risuChatParser` port).** Slice 7-1 locked the SSE event
+   taxonomy, stubbed seven assembly modules under
+   `server/fastify/src/prompt/`, and shipped the
+   `POST /api/v1/generate/chat` route shell that currently emits
+   a `phase-7 prompt assembly not yet implemented` error event.
+   The decision on the three deferred providers (Ooba
+   OAI-compatible, NovelAI text, NovelList) is **D — wait for the
+   server-side flatten**; memos in
+   [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md) and
+   [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
+   explain why. Slice 7-2 should port `risuChatParser`
+   (`src/ts/parser/parser.svelte.ts`) into
+   `server/fastify/src/prompt/variables.ts` as a pure function
+   with the same substitution surface (`{{user}}`, `{{char}}`,
+   `#when`, conditional cards); each leaf assembly module that
+   follows depends on it. Keep the 38 local sendChat snapshots,
+   the 12-fixture server-backed sweep, and the Fastify generation
+   tests green (`pnpm api:test`: 442, `pnpm test`: 601 + 4 skipped)
+   while Phase 7 lands.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments
@@ -72,6 +78,12 @@ is the next phase to start.
 | 6-26  | `7ae69fd8` | Ported the `additionalParams` overlay to the openai-legacy-instruct dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.OpenAILegacyInstruct` with a dedicated `resolveReverseProxyLegacyInstructUrl` autofill helper for the `/v1/completions` wire path.                                                                                                             |
 | 6-27  | `cb6d876c` | Extended the dual-mode fixture sweep with five fixtures for the newly-routed providers: `gemini-vertex-basic`, `bedrock-basic`, `horde-basic`, `mistral-reverse-proxy-basic`, and `anthropic-reverse-proxy-basic`. Added bedrock and horde branches to the server fetch stub; wired each fixture's upstream jsonl `result` + `model` through per-provider result setters so both sweeps assert against the same snapshot. |
 | 6-28  | `398a3ae6` | Phase 6 closeout: refreshed `phases/phase-6-server-generation.md` with an explicit "Closeout" section enumerating what landed, what was deferred to Phase 7 (Ooba / NovelAI / NovelList), and what's deferred until a fixture demands it (Bedrock streaming, MultiGen, etc.). Refreshed HANDOVER.md for the next agent and flipped `next-steps.md` Immediate to point at Phase 7.                                         |
+
+## Landed Phase 7 Slices
+
+| Slice | Commit    | Summary                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7-1   | _pending_ | Scaffolded `POST /api/v1/generate/chat`: locked the 9-event SSE taxonomy in `server/fastify/src/prompt/sseEvents.ts`, stubbed seven assembly modules under `server/fastify/src/prompt/` (`assemble`, `lorebook`, `history`, `templates`, `tokens`, `variables`, `triggers`), wired auth + body validation + a `validate`→`error`→`done` SSE stream returning `phase-7 prompt assembly not yet implemented`. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

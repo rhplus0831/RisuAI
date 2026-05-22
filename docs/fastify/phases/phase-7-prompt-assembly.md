@@ -2,6 +2,12 @@
 
 Date: 2026-05-21
 
+Status: in-progress (1 slice landed as of 2026-05-22). The scaffold for
+`POST /api/v1/generate/chat` is in place; the assembly modules under
+`server/fastify/src/prompt/` are still stubs that throw
+`phase-7 ... not yet implemented`. Slice 7-2 (`variables.ts` /
+`risuChatParser` port) is the next planned slice.
+
 ## Goal
 
 Move Stage 2 (prompt assembly, lorebook activation, persona /
@@ -120,6 +126,12 @@ thin adapters in server-backed mode. The coordinator posts to
 - `pnpm api:test` includes prompt snapshot tests: given a canned
   database + preset + chat state, `assembled === expected`.
 - `pnpm test`, `pnpm check`, `pnpm build`, `pnpm api:test` green.
+
+## Landed slices
+
+| Slice | Commit       | Summary                                                                                                                                                                                                                            |
+| ----- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7-1   | _pending_    | Scaffolded `POST /api/v1/generate/chat`: locked the 9-event SSE taxonomy in `server/fastify/src/prompt/sseEvents.ts`, stubbed the seven assembly modules under `server/fastify/src/prompt/`, wired auth + validation + a validate→error→done stream that returns `phase-7 prompt assembly not yet implemented`. |
 
 ## Reference
 

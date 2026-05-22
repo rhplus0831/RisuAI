@@ -12,6 +12,7 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerGenerationRoutes } from './routes/generation.js'
+import { registerGenerationChatRoutes } from './routes/generationChat.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
 import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
@@ -81,6 +82,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerHubRoutes(app, authState, config.hubUrl)
   registerLegacyStorageRoutes(app, authState, config.dataDir)
   registerGenerationRoutes(app, authState)
+  registerGenerationChatRoutes(app, authState)
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
     const indexPath = path.join(config.staticRoot, 'index.html')
