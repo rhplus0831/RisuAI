@@ -158,11 +158,11 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       method: 'POST',
       url: '/api/v1/generate/completion',
       headers: { 'risu-auth': assertion },
-      payload: { ...basePayload, provider: 'kobold' },
+      payload: { ...basePayload, provider: 'novelai' },
     })
     expect(res.statusCode).toBe(501)
     expect(res.json()).toEqual({
-      reason: 'provider not implemented yet: kobold',
+      reason: 'provider not implemented yet: novelai',
     })
   })
 

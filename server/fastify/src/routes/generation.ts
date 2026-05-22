@@ -35,6 +35,8 @@ import {
   resolveOpenAIResponsesRequest,
   runOpenAIResponses,
 } from '../generation/openaiResponses.js'
+import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
+import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import { requireAuth } from '../http.js'
 
 const SUPPORTED_PROVIDERS = new Set([
@@ -48,6 +50,8 @@ const SUPPORTED_PROVIDERS = new Set([
   'gemini',
   'openai-legacy-instruct',
   'openai-responses',
+  'kobold',
+  'ooba-legacy',
 ])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -154,6 +158,30 @@ interface ResponsesOptions {
   topP?: unknown
   store?: unknown
   extraHeaders?: Record<string, string>
+}
+
+interface KoboldOptions {
+  baseUrl?: unknown
+  maxTokens?: unknown
+  maxContextLength?: unknown
+  temperature?: unknown
+  topP?: unknown
+  topK?: unknown
+  topA?: unknown
+  repetitionPenalty?: unknown
+}
+
+interface OobaLegacyOptions {
+  baseUrl?: unknown
+  apiKey?: unknown
+  maxTokens?: unknown
+  truncationLength?: unknown
+  temperature?: unknown
+  topP?: unknown
+  topK?: unknown
+  typicalP?: unknown
+  repetitionPenalty?: unknown
+  stoppingStrings?: unknown
 }
 
 interface OpenAICompatibleVariant {
@@ -359,6 +387,72 @@ async function handleAnthropicBuffered(
     }
     if (result.model !== undefined) payload.model = result.model
     reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleKoboldBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  messages: unknown[],
+  options: KoboldOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveKoboldRequest({
+      messages,
+      baseUrl: options.baseUrl,
+      maxTokens: options.maxTokens,
+      maxContextLength: options.maxContextLength,
+      temperature: options.temperature,
+      topP: options.topP,
+      topK: options.topK,
+      topA: options.topA,
+      repetitionPenalty: options.repetitionPenalty,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.kobold.baseUrl is required')
+      return
+    }
+    const result = await runKobold(resolved)
+    if (result.aborted === true) return
+    reply.code(200).send({ type: result.type, result: result.result })
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleOobaLegacyBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  messages: unknown[],
+  options: OobaLegacyOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveOobaLegacyRequest({
+      messages,
+      baseUrl: options.baseUrl,
+      apiKey: options.apiKey,
+      maxTokens: options.maxTokens,
+      truncationLength: options.truncationLength,
+      temperature: options.temperature,
+      topP: options.topP,
+      topK: options.topK,
+      typicalP: options.typicalP,
+      repetitionPenalty: options.repetitionPenalty,
+      stoppingStrings: options.stoppingStrings,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options["ooba-legacy"].baseUrl is required')
+      return
+    }
+    const result = await runOobaLegacy(resolved)
+    if (result.aborted === true) return
+    reply.code(200).send({ type: result.type, result: result.result })
   } finally {
     cleanup()
   }
@@ -730,6 +824,8 @@ export function registerGenerationRoutes(
       gemini?: GeminiOptions
       'openai-legacy-instruct'?: LegacyInstructOptions
       'openai-responses'?: ResponsesOptions
+      kobold?: KoboldOptions
+      'ooba-legacy'?: OobaLegacyOptions
     }
 
     if (provider === 'echo') {
@@ -803,8 +899,6 @@ export function registerGenerationRoutes(
 
     if (provider === 'openai-responses') {
       if (body.stream === true) {
-        // The Responses API streaming envelope is significantly different
-        // from the chat-completions style. Defer the streaming pipe.
         reply.code(400).send({
           error: 'openai-responses streaming is not yet supported; set stream: false',
         })
@@ -812,6 +906,30 @@ export function registerGenerationRoutes(
       }
       const opts = options['openai-responses'] ?? {}
       await handleResponsesBuffered(req, reply, body.model, messages, opts)
+      return
+    }
+
+    if (provider === 'kobold') {
+      if (body.stream === true) {
+        reply.code(400).send({
+          error: 'kobold streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      await handleKoboldBuffered(req, reply, messages, options.kobold ?? {})
+      return
+    }
+
+    if (provider === 'ooba-legacy') {
+      if (body.stream === true) {
+        // The local code uses a WebSocket stream for ooba legacy. The fetch
+        // SSE envelope doesn't apply; deferred.
+        reply.code(400).send({
+          error: 'ooba-legacy streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      await handleOobaLegacyBuffered(req, reply, messages, options['ooba-legacy'] ?? {})
       return
     }
 

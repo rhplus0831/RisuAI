@@ -35,6 +35,10 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       // (ollama.com OAI-compat / Responses / Messages) get routed inside the
       // gate based on db.ollamaRequestFormat.
       return 'ollama'
+    case LLMFormat.Kobold:
+      return 'kobold'
+    case LLMFormat.OobaLegacy:
+      return 'ooba-legacy'
     default:
       return null
   }
@@ -371,6 +375,28 @@ function buildProviderOptions(
     if (typeof targ.maxTokens === 'number') legacy.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') legacy.temperature = targ.temperature
     return { 'openai-legacy-instruct': legacy }
+  }
+  if (provider === 'kobold') {
+    const kobold: Record<string, unknown> = {}
+    if (typeof db.koboldURL === 'string' && db.koboldURL.length > 0) {
+      kobold.baseUrl = db.koboldURL
+    }
+    if (typeof targ.maxTokens === 'number') kobold.maxTokens = targ.maxTokens
+    if (typeof db.maxContext === 'number') kobold.maxContextLength = db.maxContext
+    if (typeof targ.temperature === 'number') kobold.temperature = targ.temperature
+    return { kobold }
+  }
+  if (provider === 'ooba-legacy') {
+    const ooba: Record<string, unknown> = {}
+    if (typeof db.textgenWebUIBlockingURL === 'string' && db.textgenWebUIBlockingURL.length > 0) {
+      ooba.baseUrl = db.textgenWebUIBlockingURL
+    }
+    if (targ.aiModel !== 'textgen_webui' && typeof db.mancerHeader === 'string') {
+      ooba.apiKey = db.mancerHeader
+    }
+    if (typeof targ.maxTokens === 'number') ooba.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') ooba.temperature = targ.temperature
+    return { 'ooba-legacy': ooba }
   }
   if (provider === 'openai-responses') {
     const resp: Record<string, unknown> = {}
