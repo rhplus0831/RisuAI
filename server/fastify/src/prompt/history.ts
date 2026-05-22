@@ -132,6 +132,7 @@ function extractThoughts(
 function formatHistoryMessage(
   ctx: ExpandContext,
   currentChar: character,
+  currentChat: Chat,
   msg: Message,
   index: number,
   totalCount: number,
@@ -153,6 +154,8 @@ function formatHistoryMessage(
     preExpanded,
     'editprocess',
     { chatRole: msg.role },
+    index,
+    currentChat,
   )
 
   if (!msg.chatId) {
@@ -253,6 +256,7 @@ export function buildHistoryWindow(
       formatHistoryMessage(
         ctx,
         currentChar,
+        currentChat,
         ms[i],
         i,
         ms.length,

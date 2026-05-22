@@ -214,3 +214,291 @@ describe('Phase 7-6a processScript', () => {
     expect(out).toBe('bar')
   })
 })
+
+function makeChatForScripts(messages: { role: 'user' | 'char'; data: string }[] = []) {
+  return {
+    message: messages.map((m, i) => ({
+      role: m.role,
+      data: m.data,
+      chatId: `m-${i}`,
+      time: 0,
+    })),
+    note: '',
+    name: 'main',
+    localLore: [],
+    scriptstate: {},
+    fmIndex: -1,
+  } as unknown as Chat
+}
+
+describe('Phase 7-6b @@emo (no-op on the server)', () => {
+  it('matches but does not modify data', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('foo', '@@emo happy', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'foo bar',
+      'editprocess',
+    )
+    expect(out).toBe('foo bar')
+  })
+})
+
+describe('Phase 7-6b @@move_top / @@move_bottom', () => {
+  it('@@move_top extracts a single match (no `g`) and prepends with newline', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('TAG', '@@move_top $&', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'pre TAG post',
+      'editprocess',
+    )
+    expect(out).toBe('TAG\npre  post')
+  })
+
+  it('@@move_top with `g` flag extracts all matches and prepends each', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('TAG', '@@move_top $&', 'editprocess', 'g')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'TAG a TAG b',
+      'editprocess',
+    )
+    expect(out).toBe('TAG\nTAG\n a  b')
+  })
+
+  it('@@move_bottom appends instead of prepending', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('TAG', '@@move_bottom $&', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'pre TAG post',
+      'editprocess',
+    )
+    expect(out).toBe('pre  post\nTAG')
+  })
+
+  it('@@move_top substitutes `$1` from a capture group', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('\\[(\\w+)\\]', '@@move_top <$1>', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'pre [meta] post',
+      'editprocess',
+    )
+    expect(out).toBe('<meta>\npre  post')
+  })
+
+  it('does nothing when the regex does not match', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('NEVER', '@@move_top $&', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'plain',
+      'editprocess',
+    )
+    expect(out).toBe('plain')
+  })
+})
+
+describe('Phase 7-6b @@inject', () => {
+  it('overwrites message[chatID].data with current data and strips the match', () => {
+    const chat = makeChatForScripts([
+      { role: 'user', data: 'original-0' },
+      { role: 'char', data: 'original-1' },
+    ])
+    const db = makeDatabase({
+      presetRegex: [regex('SECRET', '@@inject', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'visible SECRET tail',
+      'editprocess',
+      {},
+      1,
+      chat,
+    )
+    expect(out).toBe('visible  tail')
+    expect(chat.message[1].data).toBe('visible SECRET tail')
+    expect(chat.message[0].data).toBe('original-0')
+  })
+
+  it('is a no-op when chatID is the default -1', () => {
+    const chat = makeChatForScripts([{ role: 'user', data: 'untouched' }])
+    const db = makeDatabase({
+      presetRegex: [regex('SECRET', '@@inject', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'SECRET payload',
+      'editprocess',
+    )
+    expect(out).toBe('SECRET payload')
+    expect(chat.message[0].data).toBe('untouched')
+  })
+
+  it('is a no-op when currentChat is undefined even with chatID >= 0', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('SECRET', '@@inject', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'SECRET payload',
+      'editprocess',
+      {},
+      0,
+    )
+    expect(out).toBe('SECRET payload')
+  })
+})
+
+describe('Phase 7-6b @@repeat_back', () => {
+  it('fires only when the regex does NOT match data; appends previous same-role match', () => {
+    const chat = makeChatForScripts([
+      { role: 'user', data: 'prev contains KEY here' },
+      { role: 'user', data: 'current has no token' },
+    ])
+    const db = makeDatabase({
+      presetRegex: [regex('KEY', '@@repeat_back', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'current has no token',
+      'editprocess',
+      {},
+      1,
+      chat,
+    )
+    expect(out).toBe('current has no tokenKEY')
+  })
+
+  it('applies the `end_nl` positional modifier (appends with newline)', () => {
+    const chat = makeChatForScripts([
+      { role: 'user', data: 'has KEY' },
+      { role: 'user', data: 'no token' },
+    ])
+    const db = makeDatabase({
+      presetRegex: [regex('KEY', '@@repeat_back end_nl', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'no token',
+      'editprocess',
+      {},
+      1,
+      chat,
+    )
+    expect(out).toBe('no token\nKEY')
+  })
+
+  it('applies the `start` positional modifier (prepends without newline)', () => {
+    const chat = makeChatForScripts([
+      { role: 'user', data: 'has KEY' },
+      { role: 'user', data: 'no token' },
+    ])
+    const db = makeDatabase({
+      presetRegex: [regex('KEY', '@@repeat_back start', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'no token',
+      'editprocess',
+      {},
+      1,
+      chat,
+    )
+    expect(out).toBe('KEYno token')
+  })
+
+  it('falls back to currentChar.firstMessage when no previous same-role message exists', () => {
+    const char = makeCharacter({ firstMessage: 'greeting with KEY inline' })
+    const chat = makeChatForScripts([{ role: 'user', data: 'standalone' }])
+    const db = makeDatabase({
+      presetRegex: [regex('KEY', '@@repeat_back end', 'editprocess')],
+      characters: [char],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'standalone',
+      'editprocess',
+      {},
+      0,
+      chat,
+    )
+    expect(out).toBe('standaloneKEY')
+  })
+
+  it('falls through to plain replace when the regex matches data (mirrors SPA scripts.ts:284-286)', () => {
+    const chat = makeChatForScripts([
+      { role: 'user', data: 'prev KEY' },
+      { role: 'user', data: 'current KEY' },
+    ])
+    const db = makeDatabase({
+      presetRegex: [regex('KEY', '@@repeat_back end', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'current KEY',
+      'editprocess',
+      {},
+      1,
+      chat,
+    )
+    expect(out).toBe('current @@repeat_back end')
+  })
+
+  it('gracefully handles no match on lastChat (SPA r[0] guard)', () => {
+    const chat = makeChatForScripts([
+      { role: 'user', data: 'no relevant content' },
+      { role: 'user', data: 'no token here' },
+    ])
+    const db = makeDatabase({
+      presetRegex: [regex('KEY', '@@repeat_back', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'no token here',
+      'editprocess',
+      {},
+      1,
+      chat,
+    )
+    expect(out).toBe('no token here')
+  })
+})
+
+describe('Phase 7-6b unknown @@ prefix falls through to plain replace', () => {
+  it('treats an unrecognized @@ outScript like a normal regex replacement', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('foo', '@@bogus replacement', 'editprocess')],
+    })
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'foo bar',
+      'editprocess',
+    )
+    expect(out).toBe('@@bogus replacement bar')
+  })
+})
