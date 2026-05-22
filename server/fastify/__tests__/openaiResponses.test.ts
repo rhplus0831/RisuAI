@@ -121,6 +121,37 @@ describe('runOpenAIResponses', () => {
     ])
   })
 
+  it('applies additionalParams to the body + headers after the default payload is built', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({
+        model: 'gpt-5-responses',
+        output: [{ type: 'message', content: [{ type: 'output_text', text: 'x' }] }],
+      })
+    })
+    const resolved = resolveOpenAIResponsesRequest({
+      model: 'gpt-5-responses',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'sk',
+      temperature: 0.5,
+      additionalParams: [
+        ['header::X-Custom', 'one'],
+        ['extra.flag', 'true'],
+        ['extra.nested.value', 'json::[1, 2]'],
+        ['temperature', '{{none}}'],
+      ],
+      signal: new AbortController().signal,
+    })!
+    await runOpenAIResponses(resolved)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.temperature).toBeUndefined()
+    expect(sent.extra).toEqual({ flag: true, nested: { value: [1, 2] } })
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Custom']).toBe('one')
+    expect(headers.authorization).toBe('Bearer sk')
+  })
+
   it('returns fail with upstream error.message on non-2xx', async () => {
     vi.stubGlobal('fetch', async () => {
       return new Response(JSON.stringify({ error: { message: 'bad model' } }), { status: 400 })

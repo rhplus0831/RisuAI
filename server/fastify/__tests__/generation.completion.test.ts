@@ -1175,6 +1175,79 @@ describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () =>
   })
 })
 
+describe('Phase 6-25 POST /api/v1/generate/completion (openai-responses additionalParams + reverse_proxy)', () => {
+  it('applies additionalParams overlay to the openai-responses body + headers', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-on-proxy',
+          output: [
+            { type: 'message', content: [{ type: 'output_text', text: 'rp ok' }] },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openai-responses',
+        model: 'gpt-on-proxy',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          'openai-responses': {
+            apiKey: 'sk-proxy',
+            baseUrl: 'https://proxy.example.com/v1',
+            maxOutputTokens: 256,
+            additionalParams: [
+              ['header::X-Custom', 'cool'],
+              ['extra.flag', 'true'],
+            ],
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'rp ok' })
+    expect(captured!.url).toBe('https://proxy.example.com/v1/responses')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.extra).toEqual({ flag: true })
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Custom']).toBe('cool')
+    expect(headers.authorization).toBe('Bearer sk-proxy')
+  })
+
+  it('400s with a specific error when options["openai-responses"].additionalParams is malformed', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openai-responses',
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          'openai-responses': {
+            apiKey: 'sk-resp',
+            additionalParams: 'oops',
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\["openai-responses"\]\.additionalParams/)
+  })
+})
+
 describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)', () => {
   const legacyPayload = {
     provider: 'openai-legacy-instruct',

@@ -750,6 +750,65 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
+  it('routes reverse_proxy under OpenAIResponseAPI to provider "openai-responses" when db.forceReplaceUrl and db.proxyKey are set', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/responses',
+      proxyKey: 'sk-proxy',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.OpenAIResponseAPI,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai-responses')
+  })
+
+  it('refuses reverse_proxy under OpenAIResponseAPI when db.proxyKey is empty', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/responses',
+      proxyKey: '',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.OpenAIResponseAPI,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes xcustom::: under OpenAIResponseAPI to provider "openai-responses" when entry.format matches', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::resp-clone',
+          internalId: 'gpt-fake-responses',
+          url: 'https://example.com/v1/responses',
+          key: 'sk-x',
+          format: LLMFormat.OpenAIResponseAPI,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::resp-clone',
+        modelInfo: {
+          id: 'xcustom:::resp-clone',
+          format: LLMFormat.OpenAIResponseAPI,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai-responses')
+  })
+
   it('routes a NanoGPT-format model to provider "nanogpt"', () => {
     const r = getServerCompletionProvider(
       makeTarg({
@@ -1742,6 +1801,82 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     expect(sent.options.cohere.apiKey).toBe('sk-acme')
     expect(sent.options.cohere.baseUrl).toBe('https://acme.example.com/v1')
     expect(sent.options.cohere.additionalParams).toEqual([
+      ['header::X-Custom', 'cool'],
+      ['extra.flag', 'true'],
+    ])
+  })
+
+  it('emits options["openai-responses"] with proxyKey + autofilled baseUrl + additionalParams for reverse_proxy under OpenAIResponseAPI', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      customProxyRequestModel: 'gpt-on-proxy',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Custom', 'cool'],
+        ['extra.knob', '1'],
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.OpenAIResponseAPI,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 512,
+    })
+    await requestServerCompletion(targ, 'openai-responses', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openai-responses')
+    expect(sent.model).toBe('gpt-on-proxy')
+    expect(sent.options['openai-responses'].apiKey).toBe('sk-proxy')
+    expect(sent.options['openai-responses'].baseUrl).toBe('https://proxy.example.com/v1')
+    expect(sent.options['openai-responses'].additionalParams).toEqual([
+      ['header::X-Custom', 'cool'],
+      ['extra.knob', '1'],
+    ])
+  })
+
+  it('routes xcustom::: under OpenAIResponseAPI with entry url/key + parsed additionalParams', async () => {
+    seedDb({
+      openAIKey: 'sk-not-used',
+      customModels: [
+        {
+          id: 'xcustom:::resp-clone',
+          internalId: 'gpt-acme-responses',
+          url: 'https://acme.example.com/v1/responses',
+          key: 'sk-acme',
+          format: LLMFormat.OpenAIResponseAPI,
+          params: 'header::X-Custom=cool\nextra.flag=true',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'xcustom:::resp-clone',
+      modelInfo: {
+        id: 'xcustom:::resp-clone',
+        format: LLMFormat.OpenAIResponseAPI,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'openai-responses', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openai-responses')
+    expect(sent.model).toBe('gpt-acme-responses')
+    expect(sent.options['openai-responses'].apiKey).toBe('sk-acme')
+    expect(sent.options['openai-responses'].baseUrl).toBe('https://acme.example.com/v1')
+    expect(sent.options['openai-responses'].additionalParams).toEqual([
       ['header::X-Custom', 'cool'],
       ['extra.flag', 'true'],
     ])

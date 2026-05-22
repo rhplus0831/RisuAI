@@ -100,6 +100,30 @@ function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
 }
 
 /**
+ * OpenAI Responses counterpart to `resolveReverseProxyUrl`: mirror the
+ * local URL shape (which talks to `/v1/responses`), then strip the
+ * trailing `/responses` so the server-side dispatcher can re-append it
+ * itself. The Responses API has no `risu::` prefix handling on the
+ * local path.
+ */
+function resolveReverseProxyResponsesUrl(rawUrl: string, autofill: boolean): string {
+  let url = rawUrl
+  if (autofill) {
+    if (url.endsWith('v1')) {
+      url += '/responses'
+    } else if (url.endsWith('v1/')) {
+      url += 'responses'
+    } else if (!(url.endsWith('responses') || url.endsWith('responses/'))) {
+      url += url.endsWith('/') ? 'v1/responses' : '/v1/responses'
+    }
+  }
+  // Strip trailing /responses (or /responses/) since the server appends it.
+  const trimmed = url.replace(/\/+$/, '')
+  if (trimmed.endsWith('/responses')) return trimmed.slice(0, -'/responses'.length)
+  return trimmed
+}
+
+/**
  * Cohere counterpart to `resolveReverseProxyUrl`: mirror the local URL
  * shape at `src/ts/process/request/request.ts:1377` (which talks to
  * `/v1/chat`), then strip the trailing `/chat` so the server-side
@@ -407,10 +431,29 @@ function isVanillaHorde(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+/**
+ * OpenAI Responses' wire path is `/v1/responses`. reverse_proxy + xcustom
+ * under `LLMFormat.OpenAIResponseAPI` ride the existing dispatcher with a
+ * dedicated `resolveReverseProxyResponsesUrl` autofill helper. `request.ts`
+ * mutates `targ.modelInfo.format = db.customAPIFormat` before the adapter
+ * runs, so reverse_proxy with `customAPIFormat = OpenAIResponseAPI` shows
+ * up here with `format === LLMFormat.OpenAIResponseAPI`. Azure-style
+ * `modelInfo.endpoint` overrides keep the vanilla dispatch path.
+ */
 function isVanillaResponses(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
+  if (aiModel === 'reverse_proxy') {
+    const db = getDatabase()
+    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
+    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
+    return true
+  }
+  if (aiModel.startsWith('xcustom:::')) {
+    const entry = findXcustomEntry(aiModel)
+    if (entry === null) return false
+    if (entry.format !== LLMFormat.OpenAIResponseAPI) return false
+    return true
+  }
   // OpenAI Responses keeps `modelInfo.endpoint` for Azure-style hosts. We
   // accept the endpoint as a baseUrl override when present; the dispatcher
   // re-derives `/responses` from it. Refuse only when the endpoint is
@@ -841,6 +884,7 @@ function buildProviderOptions(
   }
   if (provider === 'openai-responses') {
     const resp: Record<string, unknown> = {}
+    const aiModel = targ.aiModel ?? ''
     const isNanoGPT = targ.modelInfo?.format === LLMFormat.NanoGPTResponses
     if (isOllamaCloud(targ)) {
       resp.apiKey = db.ollamaApiKey ?? ''
@@ -851,6 +895,26 @@ function buildProviderOptions(
       resp.baseUrl = 'https://nano-gpt.com/api/v1'
       if (typeof db.nanogptProvider === 'string' && db.nanogptProvider.length > 0) {
         resp.extraHeaders = { 'X-Provider': db.nanogptProvider }
+      }
+    } else if (aiModel === 'reverse_proxy') {
+      resp.apiKey = db.proxyKey ?? ''
+      const autofill = db.autofillRequestUrl !== false
+      resp.baseUrl = resolveReverseProxyResponsesUrl(db.forceReplaceUrl ?? '', autofill)
+      if (Array.isArray(db.additionalParams) && db.additionalParams.length > 0) {
+        resp.additionalParams = db.additionalParams
+      }
+    } else if (aiModel.startsWith('xcustom:::')) {
+      const entry = findXcustomEntry(aiModel)
+      if (entry !== null) {
+        resp.apiKey = entry.key
+        // xcustom URL is stored as the full /v1/responses URL; strip the
+        // trailing /responses so the server can re-append it.
+        const trimmed = entry.url.replace(/\/+$/, '')
+        resp.baseUrl = trimmed.endsWith('/responses')
+          ? trimmed.slice(0, -'/responses'.length)
+          : trimmed
+        const params = parseXcustomParams(entry.params)
+        if (params.length > 0) resp.additionalParams = params
       }
     } else {
       resp.apiKey = db.openAIKey ?? ''

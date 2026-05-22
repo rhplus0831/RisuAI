@@ -217,6 +217,7 @@ interface ResponsesOptions {
   topP?: unknown
   store?: unknown
   extraHeaders?: Record<string, string>
+  additionalParams?: unknown
 }
 
 interface KoboldOptions {
@@ -528,6 +529,21 @@ function coerceCohereAdditionalParams(
     return {
       ok: false,
       error: 'options.cohere.additionalParams must be an array of [string, string] pairs',
+    }
+  }
+  return { ok: true, value: coerced.length > 0 ? coerced : undefined }
+}
+
+function coerceResponsesAdditionalParams(
+  options: ResponsesOptions,
+): { ok: true; value: Array<[string, string]> | undefined } | { ok: false; error: string } {
+  if (options.additionalParams === undefined) return { ok: true, value: undefined }
+  const coerced = coerceAdditionalParams(options.additionalParams)
+  if (coerced === null) {
+    return {
+      ok: false,
+      error:
+        'options["openai-responses"].additionalParams must be an array of [string, string] pairs',
     }
   }
   return { ok: true, value: coerced.length > 0 ? coerced : undefined }
@@ -848,6 +864,11 @@ async function handleResponsesBuffered(
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
+    const ap = coerceResponsesAdditionalParams(options)
+    if (!ap.ok) {
+      badRequest(reply, ap.error)
+      return
+    }
     const resolved = resolveOpenAIResponsesRequest({
       model,
       messages,
@@ -858,6 +879,7 @@ async function handleResponsesBuffered(
       topP: options.topP,
       store: options.store,
       extraHeaders: options.extraHeaders,
+      additionalParams: ap.value,
       signal,
     })
     if (!resolved) {
