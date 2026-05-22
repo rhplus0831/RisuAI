@@ -46,11 +46,14 @@ shards under [`coverage/`](coverage/).
   `streamJobs.test.ts`, `streamJobsRoutes.test.ts`, `hub.test.ts`,
   and `legacyStorage.test.ts` cover the Phase 3 proxy / hub /
   stream-job / legacy storage surface. `generation.completion.test.ts`,
-  `echo.test.ts`, `openai.test.ts`, `anthropic.test.ts`,
-  `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`,
+  `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`,
+  `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`,
+  `gemini.test.ts`, `vertexAuth.test.ts`,
   `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`,
-  `kobold.test.ts`, and `oobaLegacy.test.ts` cover the current
-  Phase 6 completion-route providers through `pnpm api:test`.
+  `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`,
+  `bedrock.test.ts`, `sigv4.test.ts`, and `horde.test.ts` cover
+  the current Phase 6 completion-route providers through
+  `pnpm api:test`.
 
 ## Where to look
 

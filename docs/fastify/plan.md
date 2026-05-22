@@ -30,7 +30,7 @@ End state:
 Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, the Phase 5
 closeout on 2026-05-22, and Phase 6 provider slices through
-6-14 (`f6b88f01`):
+6-22 (`5e2975ec`):
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -83,13 +83,14 @@ closeout on 2026-05-22, and Phase 6 provider slices through
   boundary from the shared snapshot, and asserts the recorded
   `/api/v1/generate/completion` call shape separately.
 - Phase 6 has landed the completion route and provider dispatchers
-  for echo, OpenAI Chat Completions, NanoGPT chat, OpenRouter,
-  Anthropic Messages / legacy / NanoGPT Messages, Mistral,
-  Cohere, Gemini, the DeepSeek / DeepInfra OpenAI-compatible key
-  path, OpenAI legacy instruct / NanoGPT legacy, OpenAI Responses /
-  NanoGPT Responses, Ollama Cloud variants, Kobold, and ooba
-  legacy. Unsupported provider strings still return a documented
-  `501`.
+  through Stable Horde text. Current coverage includes the
+  provider strings `echo`, `openai`, `nanogpt`, `openrouter`,
+  `anthropic`, `mistral`, `cohere`, `gemini`,
+  `openai-legacy-instruct`, `openai-responses`, `kobold`,
+  `ooba-legacy`, `ollama`, `bedrock`, and `horde`, plus the
+  client-side variant gates documented in
+  [`coverage/providers.md`](coverage/providers.md). Unsupported
+  provider strings still return a documented `501`.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -140,10 +141,10 @@ rules. The headline order:
 5. **sendChat extraction** - carve the function into stage-shaped
    modules behind the pinned tests. Done 2026-05-22 with all 28
    slices landed through `a7e2831d`.
-6. **Server-side generation** - move provider dispatch, tokenizer,
-   translation, TTS, image, and Stable Horde calls server-side.
+6. **Server-side generation** - move provider dispatch plus
+   tokenizer, translation, TTS, and image helper calls server-side.
    In progress since 2026-05-22; completion routing has landed
-   through Phase 6-14 for the provider families listed in the
+   through Phase 6-22 for the provider families listed in the
    current baseline above.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and

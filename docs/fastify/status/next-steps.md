@@ -13,7 +13,7 @@ landed through Stable Horde (buffered-only async polling).
 
 1. **Continue Phase 6 provider coverage.** The completion route,
    normalized SSE envelope, client adapter, and dual-mode fixture
-   harness are in place. Current server-backed coverage includes
+   harness are in place. Current completion coverage includes
    echo, vanilla OpenAI, NanoGPT chat, OpenRouter, vanilla
    Anthropic (+ Anthropic Legacy and NanoGPT Messages), vanilla
    Mistral, vanilla Cohere (buffered only), the DeepSeek /
@@ -51,8 +51,7 @@ landed through Stable Horde (buffered-only async polling).
    their own slices to port the additionalParams overlay to
    those dispatchers). Keep the 33 local sendChat snapshots, the
    7-fixture server-backed sweep, and the Fastify generation
-   tests green (`pnpm api:test`: 419, `pnpm test`: 570 + 4
-   skipped).
+   tests green.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments

@@ -43,12 +43,11 @@ In scope:
   Risu Account Sync, Google Drive sync, and the Supa / Hypa V2 /
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 has
-  landed the completion route plus echo, OpenAI Chat Completions,
-  NanoGPT chat, OpenRouter, Anthropic Messages / legacy /
-  NanoGPT Messages, Mistral, Cohere, Gemini, the DeepSeek /
-  DeepInfra OpenAI-compatible key path, OpenAI legacy instruct /
-  NanoGPT legacy, OpenAI Responses / NanoGPT Responses, Ollama
-  Cloud variants, Kobold, and ooba legacy.
+  landed the completion route through Phase 6-22 (`5e2975ec`).
+  The current provider matrix lives in
+  [`coverage/providers.md`](coverage/providers.md), and the
+  per-slice commit history lives in
+  [`status/next-steps.md`](status/next-steps.md).
 - A display-only browser client in server-backed mode.
 
 Out of scope (see [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md)):

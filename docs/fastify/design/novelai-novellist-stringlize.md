@@ -1,14 +1,16 @@
-# NovelAI + NovelList stringlize/unstringlize — Phase 6-19/6-20 Design Memo
+# NovelAI + NovelList stringlize/unstringlize - Deferred Phase 6 Design Memo
 
 Date: 2026-05-22
-Status: open question, needs a call
+Status: decision recorded; keep local through Phase 6 and revisit in Phase 7
 Sibling memo: [`ooba-oai-compat.md`](./ooba-oai-compat.md)
 
 ## The question
 
-Should Phase 6-19 (NovelAI) and Phase 6-20 (NovelList) port the
-SPA's `stringlize` / `unstringlize` helpers to the server, or
-defer them to Phase 7 like Ooba?
+Should the NovelAI and NovelList slices port the SPA's `stringlize`
+/ `unstringlize` helpers to the server, or defer them to Phase 7
+like Ooba? This memo predates the later Phase 6-19 / 6-20 commits,
+which landed Anthropic-format proxy routing and Vertex AI Gemini
+instead; NovelAI / NovelList remain deferred by design.
 
 These two providers come up together because they share the
 same shape: a flat `{input: <flattened prompt string>}` wire

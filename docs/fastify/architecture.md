@@ -5,7 +5,7 @@ Date: 2026-05-22
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
 Phase 3, and Phase 6 completion-route files through provider slice
-6-14 already exist; modules marked by later phases are target
+6-22 already exist; modules marked by later phases are target
 layout, not current implementation.
 
 ## Server module layout
@@ -36,16 +36,22 @@ server/fastify/
       generation.ts       POST /api/v1/generate/completion
     generation/
       frames.ts           shared completion result/frame types
+      additionalParams.ts body/header overlay helper
       echo.ts             deterministic developer provider
       openai.ts           OpenAI-compatible chat completions
       anthropic.ts        Anthropic Messages-compatible dispatch
+      bedrock.ts          AWS Bedrock Claude dispatch
       cohere.ts
       gemini.ts
+      horde.ts
       kobold.ts
       mistral.ts
+      ollama.ts
       oobaLegacy.ts
       openaiLegacyInstruct.ts
       openaiResponses.ts
+      sigv4.ts            Bedrock signing helper
+      vertexAuth.ts       Vertex AI service-account JWT exchange
     events.ts           SSE event bus (planned Phase 9)
     tokenizer.ts        tiktoken + web-tokenizers encoders (planned Phase 6)
     generate/
@@ -104,14 +110,16 @@ Implemented now:
 - `GET /api/v1/storage/list`, `GET /api/v1/storage/read`,
   `POST /api/v1/storage/write`, `POST /api/v1/storage/remove`
 - `POST /api/v1/generate/completion` - auth-gated provider
-  dispatch for echo, OpenAI Chat Completions, NanoGPT chat,
-  OpenRouter, Anthropic Messages / legacy / NanoGPT Messages,
-  Mistral, Cohere, Gemini, OpenAI legacy instruct / NanoGPT
-  legacy, OpenAI Responses / NanoGPT Responses, Kobold, and ooba
-  legacy. The client adapter also routes DeepSeek / DeepInfra via
-  the OpenAI-compatible keyIdentifier path and Ollama Cloud via
-  the selected OpenAI / Responses / Anthropic wire format.
-  Unsupported provider strings return `501`.
+  dispatch. Current provider strings are `echo`, `openai`,
+  `nanogpt`, `openrouter`, `anthropic`, `mistral`, `cohere`,
+  `gemini`, `openai-legacy-instruct`, `openai-responses`,
+  `kobold`, `ooba-legacy`, `ollama`, `bedrock`, and `horde`.
+  The client adapter also routes covered variants such as
+  DeepSeek / DeepInfra keyIdentifier models, Ollama Cloud,
+  OAI-compatible `reverse_proxy` / `xcustom:::`, Anthropic
+  `reverse_proxy` / `xcustom:::`, Vertex AI Gemini, AWS Bedrock
+  Claude, and Stable Horde text. Unsupported provider strings
+  return `501`.
 - Optional static serving from `RISU_API_STATIC_ROOT`, including
   `GET /` and non-API GET SPA fallback.
 
@@ -122,7 +130,10 @@ list):
 - `POST /api/v1/commands/<resource>[/...]` - one endpoint per
   resource family (character, chat, message, preset, persona, plugin,
   module, ...). No whole-state PUT.
-- `POST /api/v1/generate/translate`, `tts`, `image`, `horde`.
+- `POST /api/v1/generate/translate`, `tts`, and `image`. Stable
+  Horde text currently lands as provider `horde` on
+  `/api/v1/generate/completion`, so no separate Horde route exists
+  in the current tree.
 - `POST /api/v1/generate/count-tokens`,
   `GET /api/v1/generate/encodings`.
 - `GET /api/v1/export/risusave`, `GET /api/v1/export/bundle`, and

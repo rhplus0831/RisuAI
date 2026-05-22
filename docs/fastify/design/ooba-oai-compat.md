@@ -1,13 +1,16 @@
-# Ooba OAI-compat (LLMFormat.Ooba) — Phase 6-15 Design Memo
+# Ooba OAI-compat (LLMFormat.Ooba) - Deferred Phase 6 Design Memo
 
 Date: 2026-05-22
-Status: open question, needs a call
+Status: decision recorded; defer to Phase 7 unless the triggers below fire
 
 ## The question
 
-Should Phase 6-15 route `LLMFormat.Ooba` through the existing
-`openai-legacy-instruct` server dispatcher (HANDOVER.md's
-suggestion), or does that change behavior for existing users?
+Should the Ooba OAI-compatible path route `LLMFormat.Ooba` through
+the existing `openai-legacy-instruct` server dispatcher
+(HANDOVER.md's suggestion), or does that change behavior for
+existing users? This was considered in the old Phase 6-15 slot; the
+later commit history skips that implementation and keeps Ooba
+OAI-compatible local for now.
 
 ## Why this isn't actually straightforward
 

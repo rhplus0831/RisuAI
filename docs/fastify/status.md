@@ -59,14 +59,12 @@ under [`status/`](status/).
   dependencies were removed.
 - Phase 6 is active as of 2026-05-22. The auth-gated
   `POST /api/v1/generate/completion` route implements the
-  normalized SSE envelope plus dispatchers for echo, OpenAI Chat
-  Completions, NanoGPT chat, OpenRouter, Anthropic Messages /
-  legacy / NanoGPT Messages, Mistral, Cohere, Gemini, OpenAI
-  legacy instruct / NanoGPT legacy, OpenAI Responses / NanoGPT
-  Responses, Kobold, and ooba legacy. The client adapter is
-  flag-gated by `db.useServerGeneration` and also routes the
-  DeepSeek / DeepInfra OpenAI-compatible key path and Ollama Cloud
-  variants through the existing completion dispatchers.
+  normalized SSE envelope plus provider dispatch through Phase
+  6-22 (`5e2975ec`), including native Ollama, Vertex AI Gemini,
+  AWS Bedrock Claude, and Stable Horde text. The client adapter is
+  flag-gated by `db.useServerGeneration`; the current matrix and
+  remaining local-only paths are tracked in
+  [`coverage/providers.md`](coverage/providers.md).
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
   dependencies only, and `tsx` plus `@fastify/websocket` are now

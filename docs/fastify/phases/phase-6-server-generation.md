@@ -5,9 +5,10 @@ Date: 2026-05-22
 ## Goal
 
 Move Stage 3 (provider dispatch + streaming) and helper providers
-(translation, TTS, image, Stable Horde, tokenizer) behind Fastify
-routes. End state: the browser stops holding LLM API keys; the
-server makes the calls and streams the results.
+(translation, TTS, image, tokenizer) behind Fastify routes. Stable
+Horde text rides the completion route as provider `horde`. End
+state: the browser stops holding LLM API keys; the server makes the
+calls and streams the results.
 
 ## Preconditions
 
@@ -19,16 +20,13 @@ server makes the calls and streams the results.
 As of 2026-05-22, Phase 6 has landed `POST
 /api/v1/generate/completion`, the normalized SSE envelope, the
 server-backed client adapter, and provider dispatch through
-Phase 6-14 (`f6b88f01`): echo, OpenAI Chat Completions, NanoGPT
-chat, OpenRouter, Anthropic Messages / legacy / NanoGPT Messages,
-Mistral, Cohere, Gemini, the DeepSeek / DeepInfra
-OpenAI-compatible key path, OpenAI legacy instruct / NanoGPT
-legacy, OpenAI Responses / NanoGPT Responses, Ollama Cloud
-variants, Kobold, and ooba legacy. The dual-mode fixture sweep
-covers `echo-basic`, `openai-basic`, `anthropic-basic`,
-`mistral-basic`, `cohere-basic`, `deepseek-basic`, and
-`gemini-basic`. The rest of this document describes the full
-Phase 6 target scope and the remaining provider/helper work.
+Phase 6-22 (`5e2975ec`), ending with Stable Horde text. The
+dual-mode fixture sweep still covers the seven provider-parity
+fixtures listed in
+[`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md);
+newer provider variants are covered by route, dispatcher, and
+adapter tests. The rest of this document describes the full Phase
+6 target scope and the remaining provider/helper work.
 
 ## Scope
 
@@ -41,13 +39,19 @@ Phase 6 target scope and the remaining provider/helper work.
     keyIdentifier path; Anthropic Messages / legacy / NanoGPT
     Messages; Mistral; Cohere; vanilla Google AI Gemini; OpenAI
     legacy instruct / NanoGPT legacy; OpenAI Responses / NanoGPT
-    Responses; Ollama Cloud variants; Kobold; and ooba legacy.
-  - Remaining: OpenAI-compatible custom / reverse proxy / xcustom
-    paths without the keyIdentifier contract; AWS Bedrock Claude;
-    Vertex AI Gemini; NovelAI text; NovelList; native Ollama
-    `/api/chat`; ooba OAI-compatible `/v1/completions`;
-    llama.cpp-compatible endpoints.
-- `POST /api/v1/generate/horde` - Stable Horde text generation.
+    Responses; Ollama Cloud variants; Kobold; ooba legacy; native
+    Ollama `/api/chat`; OAI-compatible `xcustom:::` and
+    `reverse_proxy`; Anthropic-format `xcustom:::` and
+    `reverse_proxy`; Vertex AI Gemini; AWS Bedrock Claude; and
+    Stable Horde text.
+  - Remaining: NovelAI text; NovelList; ooba OAI-compatible
+    `/v1/completions`; llama.cpp-compatible endpoints; and
+    `reverse_proxy` / `xcustom` variants whose `db.customAPIFormat`
+    points at Mistral, Cohere, or another dispatcher that does not
+    yet receive the additional-parameters overlay.
+  - Stable Horde text lands as provider `horde` on this route; no
+    separate `/api/v1/generate/horde` route exists in the current
+    tree.
 - `POST /api/v1/generate/translate` - DeepL, DeepLX, Google
   Translate free / HTML, Bergamot, and LLM translation. LLM-based
   translation reuses

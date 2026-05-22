@@ -15,7 +15,7 @@ workstream lives in the sibling shards.
 | 3 - Proxy migration                     | complete    | Closed 2026-05-21; Express deleted.                  |
 | 4 - sendChat tests                      | complete    | Closed 2026-05-20; 17 initial fixtures.              |
 | 5 - sendChat extraction                 | complete    | Closed 2026-05-22; all 28 slices landed.             |
-| 6 - Server-side generation              | in progress | Completion route through Phase 6-14 provider slices. |
+| 6 - Server-side generation              | in progress | Completion route through Phase 6-22 provider slices. |
 | 7 - Server-side prompt assembly         | not started | Blocked on Phase 6.                                  |
 | 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.                        |
 | 9 - Client thinning                     | not started | Blocked on all of the above.                         |
@@ -27,7 +27,7 @@ workstream lives in the sibling shards.
   checks remain documented as cleanup debt.
 - **Server.** Captured in [`server.md`](server.md). Phases 1-3 are
   landed; Phase 6 is active with `/api/v1/generate/completion`
-  routed through the current provider slices. Docker targets
+  routed through the current provider matrix. Docker targets
   Fastify, Express has been deleted, and the production image
   installs the runtime dependencies needed by `pnpm api:start`.
   The Fastify-served SPA wires its self-host gates via `__NODE__`

@@ -8,7 +8,7 @@ Phase 1, the server-side Phase 2 storage slice, Phase 3 in
 full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
 Express deletion), and Phase 6 completion-route slices through
-6-14 all exist on the `fastify` branch:
+6-22 all exist on the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -48,7 +48,7 @@ Express deletion), and Phase 6 completion-route slices through
   `GET /api/v1/storage/read`, `POST /api/v1/storage/write`, and
   `POST /api/v1/storage/remove`, and the
   `/api/v1/generate/completion` POST route.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,echo,openai,anthropic,mistral,cohere,gemini,openaiLegacyInstruct,openaiResponses,kobold,oobaLegacy}.test.ts`
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,echo,openai,additionalParams,anthropic,mistral,cohere,gemini,vertexAuth,openaiLegacyInstruct,openaiResponses,kobold,oobaLegacy,ollama,bedrock,sigv4,horde}.test.ts`
   cover the implemented Fastify routes, provider dispatchers, and
   static serving through `pnpm api:test`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
@@ -107,11 +107,13 @@ Express deletion), and Phase 6 completion-route slices through
   provider files in `server/fastify/src/generation/`. The route
   supports `echo`, `openai`, `nanogpt`, `openrouter`,
   `anthropic`, `mistral`, `cohere`, `gemini`,
-  `openai-legacy-instruct`, `openai-responses`, `kobold`, and
-  `ooba-legacy`; unsupported provider strings return
+  `openai-legacy-instruct`, `openai-responses`, `kobold`,
+  `ooba-legacy`, `ollama`, `bedrock`, and `horde`; unsupported
+  provider strings return
   `{ reason: 'provider not implemented yet: <name>' }` with 501.
-  Cohere, legacy instruct, Responses, Kobold, and ooba legacy are
-  currently buffered-only and reject `stream: true` with a 400.
+  Cohere, legacy instruct, Responses, Kobold, ooba legacy,
+  Bedrock, and Horde are currently buffered-only and reject
+  `stream: true` with a 400.
 - Known limitation: `ANY /api/v1/hub/*` keeps `requireAuth`, so
   on password-protected deployments browser-loaded resources
   (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401
@@ -165,10 +167,13 @@ been removed; `server/node/` no longer exists.
   Cohere, Gemini, DeepSeek / DeepInfra via the OpenAI-compatible
   key path, OpenAI legacy instruct / NanoGPT legacy, OpenAI
   Responses / NanoGPT Responses, Ollama Cloud variants, Kobold,
-  and ooba legacy. Translation, TTS, image, Stable Horde,
-  token-counting, NovelAI, NovelList, native Ollama, ooba
-  OAI-compatible, Vertex AI Gemini, and AWS Bedrock Claude are
-  still open.
+  ooba legacy, native Ollama, OAI-compatible `xcustom:::` and
+  `reverse_proxy`, Anthropic-format `xcustom:::` and
+  `reverse_proxy`, Vertex AI Gemini, AWS Bedrock Claude, and
+  Stable Horde text. Translation, TTS, image, token-counting,
+  NovelAI, NovelList, ooba OAI-compatible, llama.cpp-compatible
+  endpoints, and non-OAI/non-Anthropic `reverse_proxy` / `xcustom`
+  variants are still open.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 
