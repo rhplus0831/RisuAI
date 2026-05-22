@@ -11,31 +11,30 @@ the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
 deferred until a fixture demands it. Phase 7 (prompt assembly)
-is in progress as of 2026-05-22 — slice 7-1 (scaffold) landed and
-the assembly modules under `server/fastify/src/prompt/` are now
-empty stubs waiting to be filled in by subsequent slices.
+is in progress as of 2026-05-23 — slices 7-1 (scaffold) and
+7-2a/b/c (canonical `risuChatParser` extracted Svelte-free + wired
+into the server via `expandVariables`) have landed. The
+remaining assembly modules under `server/fastify/src/prompt/`
+(`assemble`, `lorebook`, `history`, `templates`, `tokens`,
+`triggers`) are still stubs waiting to be filled in by
+subsequent slices.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-2 (`variables.ts` /
-   `risuChatParser` port).** Slice 7-1 locked the SSE event
-   taxonomy, stubbed seven assembly modules under
-   `server/fastify/src/prompt/`, and shipped the
-   `POST /api/v1/generate/chat` route shell that currently emits
-   a `phase-7 prompt assembly not yet implemented` error event.
-   The decision on the three deferred providers (Ooba
-   OAI-compatible, NovelAI text, NovelList) is **D — wait for the
-   server-side flatten**; memos in
+1. **Continue Phase 7 with the next leaf assembly slice.** With
+   `expandVariables` live, the natural next moves are the leaves
+   that consume it: persona / description / author-note assembly
+   (mirror `src/ts/process/promptAssembly/buildDescription.ts` +
+   `buildStaticPromptSections.ts`), or lorebook activation
+   (mirror `src/ts/process/lorebook.svelte.ts` +
+   `buildLorebookContext.ts`). The decision on the three deferred
+   providers (Ooba OAI-compatible, NovelAI text, NovelList) is
+   **D — wait for the server-side flatten**; memos in
    [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md) and
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
-   explain why. Slice 7-2 should port `risuChatParser`
-   (`src/ts/parser/parser.svelte.ts`) into
-   `server/fastify/src/prompt/variables.ts` as a pure function
-   with the same substitution surface (`{{user}}`, `{{char}}`,
-   `#when`, conditional cards); each leaf assembly module that
-   follows depends on it. Keep the 38 local sendChat snapshots,
-   the 12-fixture server-backed sweep, and the Fastify generation
-   tests green (`pnpm api:test`: 442, `pnpm test`: 601 + 4 skipped)
+   explain why. Keep the 38 local sendChat snapshots, the
+   12-fixture server-backed sweep, and the Fastify generation
+   tests green (`pnpm api:test`: 459, `pnpm test`: 601 + 4 skipped)
    while Phase 7 lands.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -84,6 +83,9 @@ empty stubs waiting to be filled in by subsequent slices.
 | Slice | Commit    | Summary                                                                                                                                                                                                                                                                                                                                                                                              |
 | ----- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 7-1   | `3d2426c4` | Scaffolded `POST /api/v1/generate/chat`: locked the 9-event SSE taxonomy in `server/fastify/src/prompt/sseEvents.ts`, stubbed seven assembly modules under `server/fastify/src/prompt/` (`assemble`, `lorebook`, `history`, `templates`, `tokens`, `variables`, `triggers`), wired auth + body validation + a `validate`→`error`→`done` SSE stream returning `phase-7 prompt assembly not yet implemented`. |
+| 7-2a  | `9eed5093` | Introduced two DI seams so the parser internals stop importing Svelte directly: `src/ts/parser/chatVarBackend.ts` for `getChatVar`/`setChatVar`/`getGlobalChatVar`, and `getCurrentTriggerId` on `CBSRegisterArg` for the `{{trigger_id}}` callback. `cbs.ts` is now Svelte-free; the browser registers backends at `chatVar.svelte`'s module init. No behavior change. |
+| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` + helpers out of `parser.svelte.ts` into Svelte-free `src/ts/parser/risuChatParser.ts` + `risuChatParserHelpers.ts`. `parser.svelte.ts` re-exports for the 426 SPA call sites. `parserStateBackend.ts` carries the `DBState.db` / `selectedCharID` fallback for `tokenizeAccurate`. The 65-test parser oracle suite stays green. |
+| 7-2c  | `7ed156e6` | Replaced the throwing `expandVariables` stub with the real server adapter. `server/fastify/src/prompt/promptScope.ts` (single-user module-level scope), `cbsAdapter.ts` (24-field `CBSRegisterArg`), `promptVariablesBoot.ts` (one-time wiring). 17-test smoke suite covers PARSER.md's "Minimum Server Slice": `{{user}}`/`{{char}}`/`{{bot}}`, `{{#when}}`, `{{#each}}`, `{{? expr}}`, `{{getvar}}`/`{{setvar}}` with `runVar` gating + dirty flag write-back surface. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
