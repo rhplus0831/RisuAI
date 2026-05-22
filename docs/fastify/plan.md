@@ -28,8 +28,8 @@ End state:
 ## Current Baseline
 
 Where the codebase stands after the Phase 3 closeout on 2026-05-21,
-the Phase 4 characterization slice on 2026-05-20, and the Phase 5
-closeout on 2026-05-22:
+the Phase 4 characterization slice on 2026-05-20, the Phase 5
+closeout on 2026-05-22, and the first Phase 6 provider slices:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -39,7 +39,8 @@ closeout on 2026-05-22:
   raw asset routes, backup routes, `POST /api/v1/proxy/fetch`,
   proxy stream-job HTTP + WebSocket routes, `ANY /api/v1/hub/*`,
   versioned legacy storage routes, `POST /api/v1/auth/crypto`,
-  and optional static SPA serving.
+  `POST /api/v1/generate/completion`, and optional static SPA
+  serving.
 - `server/fastify/src/repository.ts` owns the migration-window
   `data/db.json` blob, content-addressed `data/assets/`, and
   `data/backups/`. `data/risu.db` still holds system metadata only:
@@ -62,16 +63,27 @@ closeout on 2026-05-22:
   under `src/ts/process/`, `promptAssembly/`, `promptBudget/`,
   `postGeneration/`, and `dispatch/`.
 - `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
-  the current `sendChat` behavior with 26 snapshots under
+  the current `sendChat` behavior with 29 snapshots under
   `src/ts/process/__fixtures__/`: the original 17 Phase 4
-  fixtures plus nine Phase 5 gate fixtures
+  fixtures, nine Phase 5 gate fixtures
   (`prompt-template-basic`, `utility-bot-template`,
   `lorebook-position-depth`, `prompt-template-memory-cache`,
   `history-media-fallback`, `start-trigger-control`,
-  `start-trigger-stop`, `prompt-info-text`, `preview-prompt`).
+  `start-trigger-stop`, `prompt-info-text`, `preview-prompt`),
+  and three Phase 6 provider parity fixtures (`echo-basic`,
+  `openai-basic`, `anthropic-basic`).
   The snapshots also assert that
   `doingChat` is false after each fixture; `sendChat` clears the
   lease it owns in a `finally` block.
+- `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
+  runs the three Phase 6 provider fixtures through the
+  server-backed adapter, strips the local-only `providerCalls`
+  boundary from the shared snapshot, and asserts the recorded
+  `/api/v1/generate/completion` call shape separately.
+- Phase 6 has landed the completion route and provider dispatchers
+  for echo, OpenAI Chat Completions, NanoGPT, OpenRouter, and
+  Anthropic Messages. Unsupported provider strings still return
+  a documented `501`.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -123,6 +135,9 @@ rules. The headline order:
    slices landed through `a7e2831d`.
 6. **Server-side generation** - move provider dispatch, tokenizer,
    translation, TTS, image, and Stable Horde calls server-side.
+   In progress since 2026-05-22; completion routing has landed
+   for echo, OpenAI Chat Completions, NanoGPT, OpenRouter, and
+   Anthropic Messages.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
    triggers.

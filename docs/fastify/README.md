@@ -13,21 +13,26 @@ it needs.
 
 ## Scope
 
-Current status: Phases 0-5 are closed. Fastify owns bootstrap, JSON
-import, content-addressed assets, backups, static SPA serving,
-provider proxy fetch, stream-job WebSocket transport, Risu hub
-passthrough, and the legacy NodeStorage key-value surface. Express
-has been deleted. The Dockerfile and compose file target Fastify on
-port 6002 with `/app/data` persisted; `tsx` and
-`@fastify/websocket` are runtime dependencies after `1eddbfba`.
+Current status: Phases 0-5 are closed and Phase 6 is active.
+Fastify owns bootstrap, JSON import, content-addressed assets,
+backups, static SPA serving, provider proxy fetch, stream-job
+WebSocket transport, Risu hub passthrough, the legacy NodeStorage
+key-value surface, and the first `/api/v1/generate/completion`
+server-backed providers. Express has been deleted. The Dockerfile
+and compose file target Fastify on port 6002 with `/app/data`
+persisted; `tsx` and `@fastify/websocket` are runtime dependencies
+after `1eddbfba`.
 
 Phase 5 closed on 2026-05-22: commits `3c5a92b2` through
 `a7e2831d` reduced `src/ts/process/index.svelte.ts` from 1625 to
 445 lines and extracted prompt assembly, request budgeting,
 provider dispatch, response orchestration, Stage 4 closeout, and
-entry-context setup into focused browser-side modules. The
-fixture harness now has 26 snapshots: 17 Phase 4 fixtures plus 9
-Phase 5 gates.
+entry-context setup into focused browser-side modules. The local
+fixture harness now has 29 snapshots: 17 Phase 4 fixtures, 9 Phase
+5 gates, and 3 Phase 6 provider parity fixtures
+(`echo-basic`, `openai-basic`, `anthropic-basic`). A separate
+server-backed sweep checks those 3 fixtures through
+`/api/v1/generate/completion`.
 
 In scope:
 
@@ -36,8 +41,9 @@ In scope:
 - The Phase 0 removal set: Group chat, peer-to-peer multi-user chat,
   Risu Account Sync, Google Drive sync, and the Supa / Hypa V2 /
   Hanurai memory engines have been removed from the client surface.
-- Moving the extracted generation seams server-side, starting with
-  Phase 6 provider dispatch.
+- Moving the extracted generation seams server-side. Phase 6 has
+  landed the completion route plus echo, OpenAI Chat Completions,
+  NanoGPT, OpenRouter, and Anthropic Messages coverage.
 - A display-only browser client in server-backed mode.
 
 Out of scope (see [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md)):

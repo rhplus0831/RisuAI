@@ -1,6 +1,6 @@
 # Removed and Out-of-Scope Behavior
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 This is the canonical registry of what the migration deletes and
 what it intentionally does not touch. When a question comes up
@@ -76,9 +76,10 @@ host them and never will under this roadmap.
   `@huggingface/transformers`. This is a `transformers.js` model
   loaded in the browser. The server does not run it.
 - **WebLLM and Hugging Face `hf:::` local models.** In-browser LLMs
-  via `@mlc-ai/web-llm` and `@huggingface/transformers`. When
-  Phase 6 adds `/api/v1/generate/completion`, that server route
-  should return 501 for these browser-local model families.
+  via `@mlc-ai/web-llm` and `@huggingface/transformers`. The
+  Phase 6 `/api/v1/generate/completion` route should keep these
+  browser-local model families out of server dispatch and return
+  501 if they are addressed by the server route.
 - **Plugin code execution server-side.** Plugins that expose code
   hooks (`apiV3` plugins, character JS) run in the browser
   sandbox. The server gates plugin tool calls behind

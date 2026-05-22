@@ -1,11 +1,12 @@
 # Architecture
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 This doc describes the target shape of the Fastify server and the
-boundaries between it and the browser client. Phase 1, Phase 2, and
-Phase 3 server files already exist; modules marked by later phases
-are target layout, not current implementation.
+boundaries between it and the browser client. Phase 1, Phase 2,
+Phase 3, and the first Phase 6 completion-route files already
+exist; modules marked by later phases are target layout, not
+current implementation.
 
 ## Server module layout
 
@@ -32,6 +33,12 @@ server/fastify/
       streamJobs.ts
       hub.ts
       legacyStorage.ts
+      generation.ts       POST /api/v1/generate/completion
+    generation/
+      frames.ts           shared completion result/frame types
+      echo.ts             deterministic developer provider
+      openai.ts           OpenAI-compatible chat completions
+      anthropic.ts        Anthropic Messages
     events.ts           SSE event bus (planned Phase 9)
     tokenizer.ts        tiktoken + web-tokenizers encoders (planned Phase 6)
     generate/
@@ -89,6 +96,10 @@ Implemented now:
 - `ANY /api/v1/hub/*` - passthrough to `RISU_HUB_URL`
 - `GET /api/v1/storage/list`, `GET /api/v1/storage/read`,
   `POST /api/v1/storage/write`, `POST /api/v1/storage/remove`
+- `POST /api/v1/generate/completion` - auth-gated provider
+  dispatch for echo, OpenAI Chat Completions, NanoGPT, OpenRouter,
+  and Anthropic Messages. Unsupported provider strings return
+  `501`.
 - Optional static serving from `RISU_API_STATIC_ROOT`, including
   `GET /` and non-API GET SPA fallback.
 
@@ -99,7 +110,6 @@ list):
 - `POST /api/v1/commands/<resource>[/...]` - one endpoint per
   resource family (character, chat, message, preset, persona, plugin,
   module, ...). No whole-state PUT.
-- `POST /api/v1/generate/completion` - streamed completion.
 - `POST /api/v1/generate/translate`, `tts`, `image`, `horde`.
 - `POST /api/v1/generate/count-tokens`,
   `GET /api/v1/generate/encodings`.
@@ -174,11 +184,14 @@ Server owns:
 
 - Persisted state. The browser never writes to localForage in
   server-backed mode.
-- Provider API keys. Bootstrap masks them under
-  `RISU_MASK_SERVER_KEYS=1` once Phase 6 has covered every provider
-  the user relies on.
-- Outbound HTTP for generation. The browser does not call provider
-  APIs directly in server-backed mode.
+- Provider API keys for fully server-owned flows. During the current
+  Phase 6 slices, the client adapter still reads the existing DB key
+  fields and sends them in the `/generate/completion` options body;
+  bootstrap masking under `RISU_MASK_SERVER_KEYS=1` waits until the
+  server owns every provider path a deployment needs.
+- Outbound HTTP for generation providers covered by the
+  server-backed adapter. Uncovered providers continue through the
+  local browser dispatch path until their Phase 6 slice lands.
 - Prompt assembly, tokenization, lorebook activation, Hypa V3
   memory.
 

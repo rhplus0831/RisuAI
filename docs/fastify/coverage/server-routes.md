@@ -1,10 +1,10 @@
 # Server Route Tests
 
-Date: 2026-05-21
+Date: 2026-05-22
 
-Status: Phase 1, Phase 2, and Phase 3 Fastify route tests exist
-under `server/fastify/__tests__/`. Phase 6-9 rows are the target
-test set per phase.
+Status: Phase 1, Phase 2, Phase 3, and the first Phase 6
+completion-route tests exist under `server/fastify/__tests__/`.
+Unlanded Phase 6 helpers plus Phases 7-9 remain target test rows.
 
 ## Phase 1: Foundation
 
@@ -63,7 +63,7 @@ stay client-side until Phase 9.
 
 | Route                                      | Pinned behavior                            | Status      |
 | ------------------------------------------ | ------------------------------------------ | ----------- |
-| `POST /api/v1/generate/completion`         | OpenAI-shaped; streams SSE; aborts.        | not started |
+| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, and buffered/streaming dispatch for echo, OpenAI Chat Completions, NanoGPT, OpenRouter, and Anthropic Messages. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, and `anthropic.test.ts` |
 | `POST /api/v1/generate/horde`              | Stable Horde request shape.                | not started |
 | `POST /api/v1/generate/translate`          | DeepL / DeepLX / Google.                   | not started |
 | `POST /api/v1/generate/tts`                | OpenAI / ElevenLabs / NovelAI / Hugging Face API Inference. | not started |

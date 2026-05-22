@@ -8,9 +8,12 @@ shards under [`coverage/`](coverage/).
 ## Snapshot
 
 - Phase 4 `sendChat` characterization tests exist at
-  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 26
+  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 29
   fixture sets under `src/ts/process/__fixtures__/` (17 initial
-  Phase 4 fixtures plus nine Phase 5 gate fixtures).
+  Phase 4 fixtures, nine Phase 5 gate fixtures, plus the
+  Phase 6 `echo-basic`, `openai-basic`, and `anthropic-basic`
+  provider fixtures). The three Phase 6 fixtures also run through
+  `sendChat.fixtures.serverBacked.test.ts`.
 - Phase 5 extraction slices added focused process tests for the
   helper modules that now sit beside the fixture harness:
   `sendChatErrors.test.ts`, `notification.test.ts`, `igp.test.ts`,
@@ -30,6 +33,7 @@ shards under [`coverage/`](coverage/).
   seams outside the fixture harness. Relevant current files include
   `src/ts/process/ttsHooks.test.ts`,
   `src/ts/process/request/tests/additionalParams.test.ts`,
+  `src/ts/process/request/tests/serverCompletion.test.ts`,
   `src/ts/process/mcp/risuaccess/tests/modules.test.ts`, and
   `src/ts/process/files/tests/inlays.test.ts`; broader repo tests
   cover parser, media, translator, network, and source-map helpers.
@@ -39,7 +43,10 @@ shards under [`coverage/`](coverage/).
   server storage routes and static SPA serving. `proxy.test.ts`,
   `streamJobs.test.ts`, `streamJobsRoutes.test.ts`, `hub.test.ts`,
   and `legacyStorage.test.ts` cover the Phase 3 proxy / hub /
-  stream-job / legacy storage surface through `pnpm api:test`.
+  stream-job / legacy storage surface. `generation.completion.test.ts`,
+  `echo.test.ts`, `openai.test.ts`, and `anthropic.test.ts`
+  cover the current Phase 6 completion-route providers through
+  `pnpm api:test`.
 
 ## Where to look
 

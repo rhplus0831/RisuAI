@@ -7,26 +7,21 @@ Use this list to pick the next chunk of work. **Phase 5 closed
 went from 1625 to 445 lines (73% reduction). The historical
 slice picker is now archived at
 [`sendchat-slicing.md`](sendchat-slicing.md). Per-slice details
-are below under "Completed Slices".
+are below under "Completed Slices". Older completed-slice entries
+describe the codebase at the time that slice landed; the current
+snapshot is summarized here.
 
 ## Immediate
 
-1. **Phase 6 - Stage 3 dispatch moves server-side.** Per
-   [`runtime-stages.md`](../runtime-stages.md), the next phase is
-   moving the provider dispatch (currently in
-   `src/ts/process/dispatch/dispatchRequest.ts` and
-   `src/ts/process/request/request.ts`) onto the Fastify backend.
-   The browser keeps a thin client that reads the server's SSE
-   stream. Open work: define the server route surface, the SSE
-   contract, and the client adapter that replaces
-   `dispatchRequest`'s `requestChatData(...)` call with a network
-   round-trip. Preserve the 26 sendChat fixtures and the helper
-   tests as the safety net; the fixture provider fake will likely
-   shift from `vi.mock('../request/request')` to a fake SSE
-   transport. The dispatch helper's 5-variant discriminated union
-   return (`preview` / `previewPrompt` / `aborted` / `failed` /
-   `success`) is a natural seam between the client and the new
-   server boundary.
+1. **Continue Phase 6 provider coverage.** The completion route,
+   normalized SSE envelope, client adapter, and dual-mode fixture
+   harness are in place for echo, vanilla OpenAI, NanoGPT,
+   OpenRouter, and vanilla Anthropic. The next Phase 6 slice should
+   pick one uncovered provider family or helper route, add server
+   request/response tests, and add a dual-mode fixture when the
+   provider is eligible for the server-backed adapter. Keep the 29
+   local sendChat snapshots, the 3-fixture server-backed sweep, and
+   the Fastify generation tests green.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -41,6 +36,8 @@ are below under "Completed Slices".
    did not have this issue. A later slice can either drop
    `requireAuth` from the hub route to match the Express
    behavior or add a session-cookie auth path.
+
+<!-- prettier-ignore-start -->
 
 ## Completed Slices
 
@@ -217,8 +214,8 @@ are below under "Completed Slices".
   `server/fastify/src/generation/frames.ts` (shared
   `CompletionStreamFrame` and `CompletionResult` types so the
   route's `writeSseChunk` can drive any provider's dispatcher),
-  `server/fastify/src/generation/openai.ts` (`resolveOpenAIRequest`
-  + `runOpenAI` for non-streaming + `runOpenAIStream` async
+  `server/fastify/src/generation/openai.ts` (`resolveOpenAIRequest`,
+  `runOpenAI` for non-streaming, and `runOpenAIStream` as an async
   generator). The non-streaming path POSTs
   `{baseUrl}/chat/completions` with a `Bearer <apiKey>` header,
   forwards `{model, messages, stream, max_tokens?, temperature?}`,
@@ -1247,3 +1244,5 @@ pnpm build
 
 Tauri build is verified manually at phase boundaries, not
 per-slice.
+
+<!-- prettier-ignore-end -->

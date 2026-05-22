@@ -46,7 +46,7 @@ Read order during planning:
 - Phase 5 (sendChat extraction) needed Phase 4's tests in place;
   that dependency was satisfied and Phase 5 closed on 2026-05-22
   with all 28 slices landed.
-- Phase 6 needs both server-side proxy (Phase 3) and extracted
+- Phase 6 uses both server-side proxy (Phase 3) and extracted
   client stages (Phase 5) so the server can take over Stage 3
   without breaking Stages 1, 2, 4.
 - Phase 7 needs Phase 6's dispatch endpoint to call into.

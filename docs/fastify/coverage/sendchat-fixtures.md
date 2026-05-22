@@ -1,15 +1,18 @@
 # sendChat Fixtures
 
-Date: 2026-05-22 (26 snapshots; Phase 5 closed)
+Date: 2026-05-22 (29 snapshots; Phase 6 active)
 
 Status: the 17 initial Phase 4 fixtures landed, and Phase 5 has
-added nine narrow gate fixtures. The harness pins the entry path,
-the multiline reroll branch, the upstream-fail branch, the
-auto-continue recursion, prompt-shape variations, Hypa V3 memory,
-trigger transformation paths, prompt-template gates, lorebook
-placement, history-media fallback, start-trigger mutation / stop,
-prompt-info text capture, preview-prompt early return, and the
-pre-aborted-signal exit path. The historical gate list lives in
+added nine narrow gate fixtures. Phase 6 added three provider
+parity fixtures (`echo-basic`, `openai-basic`, `anthropic-basic`)
+that also run through the server-backed sweep. The harness pins
+the entry path, multiline reroll, upstream fail, auto-continue,
+prompt-shape variations, Hypa V3 memory, trigger transformations,
+prompt-template gates, lorebook placement, history-media fallback,
+start-trigger mutation / stop, prompt-info text capture,
+preview-prompt early return, pre-aborted-signal exit, and the
+first server-backed provider adapters. The historical gate list
+lives in
 [`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
 
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
@@ -48,6 +51,9 @@ all current snapshots assert it is `false`.
 | `auto-continue`       | Auto-continue fires once and lands a second turn.      | landed      |
 | `provider-error`      | Upstream `type:'fail'` produces a `risuerror` chat message. | landed |
 | `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check in `src/ts/process/dispatch/dispatchRequest.ts:127` returns the aborted union and the coordinator exits before any assistant message is added. | landed |
+| `echo-basic` | Minimal echo provider turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts `{provider: 'echo', model: 'echo_model', stream: false}` and `options.echo`. | landed |
+| `openai-basic` | Minimal vanilla OpenAI Chat Completions turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts provider/model/options for `openai`. | landed |
+| `anthropic-basic` | Minimal vanilla Anthropic Messages turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts provider/model/options for `anthropic`. | landed |
 
 ## Loader
 
@@ -91,6 +97,15 @@ each call as a normalized record carrying `mode`, the full
 `imageResponse`, `previewBody`, `escape`). Scalars are only
 emitted when set, so default-false flags do not appear in the
 snapshot.
+
+## Server-backed sweep
+
+`src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
+runs `echo-basic`, `openai-basic`, and `anthropic-basic` with
+`platform.isFastifyServer === true` and `db.useServerGeneration === true`.
+It compares the same expected snapshots as the local sweep after
+dropping `providerCalls`, then asserts the recorded fetch call to
+`/api/v1/generate/completion` separately.
 
 ## Side-effect mocks
 

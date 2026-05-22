@@ -50,17 +50,19 @@ tokenizer and maxContextTokens setup), and the coordinator closeout
 `src/ts/process/index.svelte.ts` went from **1625 → 445 lines**
 across 28 slices (a **73% reduction**), with 29 extracted modules
 under `src/ts/process/` and its `promptAssembly/`, `promptBudget/`,
-`postGeneration/`, and `dispatch/` subdirectories. 26 sendChat
-fixtures pin end-to-end behavior; the Phase 5 closeout recorded
-454 unit tests + 127 API tests green.
+`postGeneration/`, and `dispatch/` subdirectories. Phase 5 closed
+with 26 sendChat fixtures and recorded 454 unit tests + 127 API
+tests green. Phase 6 has since raised the local fixture count to
+29 and added a 3-fixture server-backed sweep.
 
 Phase 4 remains complete for the original 17 fixtures, and nine
-narrow Phase 5 gate fixtures have since been added
+narrow Phase 5 gate fixtures landed during extraction
 (`prompt-template-basic`, `utility-bot-template`,
 `lorebook-position-depth`, `prompt-template-memory-cache`,
 `history-media-fallback`, `start-trigger-control`,
-`start-trigger-stop`, `prompt-info-text`, `preview-prompt`) -
-bringing the total to 26. All live under
+`start-trigger-stop`, `prompt-info-text`, `preview-prompt`).
+Phase 6 adds `echo-basic`, `openai-basic`, and
+`anthropic-basic`, bringing the local total to 29. All live under
 `src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
 pin the entry path, every documented exit shape (success, multiline
@@ -379,8 +381,8 @@ sendChat(chatProcessIndex, {signal: abortSignal})`) stays in the
   auto-continue handoff.
 
 The closed Phase 5 slice history is archived in
-[`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 now starts
-from the dispatch seam that Phase 5 exposed.
+[`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 now uses the
+dispatch seam that Phase 5 exposed.
 
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` now drives a
 fixture-based characterization harness:
@@ -416,6 +418,11 @@ fixture-based characterization harness:
   the top-level `$effect.root` does not throw at vitest's module
   teardown. This is a production-safe robustness change, not a
   refactor.
+- `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
+  runs `echo-basic`, `openai-basic`, and `anthropic-basic` through
+  the server-backed adapter. It shares the local expected snapshots
+  after dropping `providerCalls`, then asserts the recorded
+  `/api/v1/generate/completion` fetch shape separately.
 
 Existing `process/` helper-surface tests (TTS hooks, request
 additional params, MCP Risu access modules, inlay asset helpers)
@@ -526,6 +533,19 @@ what each fixture pins.
   `doingChat: false`. Together with `preview` (covers
   `arg.preview`), these two fixtures bound the two early-exit
   branches the dispatch helper owns.
+- `echo-basic` - minimal echo provider turn with
+  `db.useServerGeneration: true` and `db.useStreaming: false`.
+  Pins the same local chat state as the server-backed adapter path;
+  the server-backed sweep asserts provider `echo`, model
+  `echo_model`, auth header, and `options.echo`.
+- `openai-basic` - minimal vanilla OpenAI Chat Completions turn.
+  Pins shared local/server-backed chat state and asserts provider
+  `openai`, model `gpt-4o`, and `options.openai` in the
+  server-backed sweep.
+- `anthropic-basic` - minimal vanilla Anthropic Messages turn.
+  Pins shared local/server-backed chat state and asserts provider
+  `anthropic`, model `claude-opus-4-7`, and `options.anthropic`
+  in the server-backed sweep.
 - `persona` - `db.personaPrompt` set, no `chat.bindedPersona`.
   Pins that the content lands in `unformated.personaPrompt` and -
   under the default OpenAI-flavored `pushPrompts` consecutive-
@@ -595,7 +615,7 @@ what each fixture pins.
 - `doingChat` is set to `true` only when `sendChat` owns the lease,
   and the owned lease is cleared in a `finally` block on every exit
   path. Recursive auto-continue / resend paths explicitly release
-  the flag before re-entering. All 26 snapshots currently pin final
+  the flag before re-entering. All 29 snapshots currently pin final
   `doingChat: false`; the test harness still resets it before each
   fixture defensively.
 - The `uuid` mock counter resets between fixtures so snapshots
@@ -616,8 +636,11 @@ what each fixture pins.
   `sendChatErrors.ts`, `dispatch/*`, `postGeneration/*`,
   `promptBudget/*`, and `promptAssembly/*`; the numbered slice
   history lives in [`sendchat-slicing.md`](sendchat-slicing.md).
-- **Phase 6.** Stage 3 dispatch moves server-side. Browser keeps
-  a thin client that reads the server's SSE stream.
+- **Phase 6.** Stage 3 dispatch is moving server-side. The current
+  server-backed path covers echo, vanilla OpenAI, NanoGPT,
+  OpenRouter, and vanilla Anthropic through
+  `/api/v1/generate/completion`; uncovered providers stay on the
+  local browser path.
 - **Phase 7.** Stage 2 prompt assembly moves server-side.
 - **Phase 9.** Stages 1 + 4 move server-side; Stage 0 becomes a
   ~50-line bridge that owns the UI lease, abort forwarding, and
@@ -626,8 +649,9 @@ what each fixture pins.
 ## Boundary rules
 
 After Phase 5, keep edits to `sendChat` narrow and fixture-backed.
-Phase 6 should use the dispatch helper as the first server boundary
-and preserve the full fixture suite while swapping the transport.
+Phase 6 uses the dispatch helper as the first server boundary and
+keeps local and server-backed fixture parity for every provider it
+routes through `/api/v1/generate/completion`.
 
 ## Reference: metatron's end state
 

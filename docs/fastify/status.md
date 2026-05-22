@@ -23,7 +23,10 @@ under [`status/`](status/).
   `src/ts/process/__fixtures__/` with
   per-fixture DB / upstream / expected files plus targeted
   `vi.mock`s for the heavy side-effect modules. Phase 5 added nine
-  narrow gate fixtures, so the active snapshot count is 26.
+  narrow gate fixtures, and Phase 6 added `echo-basic`,
+  `openai-basic`, and `anthropic-basic`, so the active local
+  snapshot count is 29. The Phase 6 provider fixtures also run
+  through `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.
 - Phase 5 sendChat extraction closed on 2026-05-22. Commits
   `3c5a92b2` through `a7e2831d` landed all 28 slices: the
   coordinator now lives in `src/ts/process/index.svelte.ts` at
@@ -52,6 +55,13 @@ under [`status/`](status/).
   `server/node/` directory, the `runserver` script, and the
   `express` / `express-rate-limit` / `node-html-parser`
   dependencies were removed.
+- Phase 6 is active as of 2026-05-22. The auth-gated
+  `POST /api/v1/generate/completion` route implements the
+  normalized SSE envelope plus echo, OpenAI Chat Completions,
+  NanoGPT, OpenRouter, and Anthropic Messages dispatchers. The
+  client adapter is flag-gated by `db.useServerGeneration` and
+  currently routes echo, vanilla OpenAI, NanoGPT, OpenRouter, and
+  vanilla Anthropic models through the server-backed path.
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
   dependencies only, and `tsx` plus `@fastify/websocket` are now
@@ -69,9 +79,10 @@ under [`status/`](status/).
 ## Active phase
 
 Phase 6 (server-side LLM / translation / TTS / image generation) is
-the next branch work. It starts from the Phase 5 dispatch seam in
-`src/ts/process/dispatch/dispatchRequest.ts` and preserves the
-26-snapshot fixture suite as the behavioral guardrail.
+the active branch work. It starts from the Phase 5 dispatch seam in
+`src/ts/process/dispatch/dispatchRequest.ts`; the current guardrails
+are the 29 local sendChat snapshots, the 3-fixture server-backed
+sweep, and the Fastify generation provider tests.
 
 Phase 3 closed on 2026-05-21; Fastify owns the proxy / hub /
 stream-job / storage / auth / crypto surface and Express is deleted.

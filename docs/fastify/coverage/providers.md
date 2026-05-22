@@ -1,9 +1,11 @@
 # Provider Tests
 
-Date: 2026-05-21
+Date: 2026-05-22
 
-Status: no server-side provider implementations exist yet. The
-table below is the target test matrix for Phase 6.
+Status: Phase 6 has started. The server-backed completion route
+currently implements echo, OpenAI Chat Completions, NanoGPT,
+OpenRouter, and Anthropic Messages. The table below tracks the
+remaining provider matrix.
 
 ## Required per provider
 
@@ -25,14 +27,18 @@ in `src/ts/model/types.ts`, `src/ts/model/modellist.ts`, and
 
 | Provider / format family               | Request shape                             | Stream | Status      |
 | -------------------------------------- | ----------------------------------------- | ------ | ----------- |
-| OpenAI Chat Completions                | `/v1/chat/completions`                    | SSE    | not started |
+| Echo developer provider                | local deterministic echo                  | SSE envelope | covered by `server/fastify/__tests__/echo.test.ts` and `generation.completion.test.ts`; dual-mode fixture `echo-basic` |
+| OpenAI Chat Completions                | `/v1/chat/completions`                    | SSE    | covered by `server/fastify/__tests__/openai.test.ts` and `generation.completion.test.ts`; dual-mode fixture `openai-basic` |
+| OpenRouter                             | Chat Completions-compatible via `https://openrouter.ai/api/v1` with `X-Title` + `HTTP-Referer` | SSE | covered by `generation.completion.test.ts` and `serverCompletion.test.ts` |
+| NanoGPT chat                           | Chat Completions-compatible via `https://nano-gpt.com/api/v1` or subscription endpoint, optional `X-Provider` | SSE | covered by `generation.completion.test.ts` and `serverCompletion.test.ts` |
+| Anthropic Messages                     | `/v1/messages`                            | SSE    | covered by `server/fastify/__tests__/anthropic.test.ts` and `generation.completion.test.ts`; dual-mode fixture `anthropic-basic` |
 | OpenAI Responses API                   | `/v1/responses`                           | SSE    | not started |
 | OpenAI legacy instruct                 | legacy completions / instruct shape       | SSE    | not started |
-| OpenAI-compatible custom / OpenRouter / DeepSeek / DeepInfra | Chat Completions-compatible | SSE | not started |
-| NanoGPT chat / responses / messages / legacy | NanoGPT endpoint selected by format | SSE | not started |
+| OpenAI-compatible custom / reverse proxy / xcustom / DeepSeek / DeepInfra | Chat Completions-compatible with user endpoint or key identifier | SSE | still local; client gate refuses these server-backed paths |
+| NanoGPT responses / messages / legacy  | NanoGPT endpoint selected by format       | SSE    | not started |
 | Mistral                                | Mistral chat                              | SSE    | not started |
 | Cohere                                 | Cohere chat                               | SSE    | not started |
-| Anthropic Messages + legacy            | Messages / legacy Claude shape            | SSE    | not started |
+| Anthropic legacy                       | legacy Claude shape                       | SSE    | not started |
 | AWS Bedrock Claude                     | Bedrock runtime Messages payload          | SSE    | not started |
 | Gemini / Google                        | `generateContent` / streaming generate    | SSE    | not started |
 | Vertex AI Gemini                       | `streamGenerateContent` + OAuth           | SSE    | not started |
@@ -42,11 +48,10 @@ in `src/ts/model/types.ts`, `src/ts/model/modellist.ts`, and
 | Kobold                                 | `/api/v1/generate`                        | poll   | not started |
 | ooba / text-generation-webui legacy    | WebSocket + blocking endpoints            | WS/poll | not started |
 | Stable Horde (text)                    | `/v2/generate/text/async`                 | poll   | not started |
-| Echo developer provider                | local deterministic echo                  | n/a    | not started |
 
 Providers/features that stay browser-local, LAN-local, or
 plugin-local should return a documented `501` from the server route
-once Phase 6 implements that route:
+when they are addressed by a server route:
 
 - Plugin legacy providers - plugin code execution stays in the
   browser sandbox.

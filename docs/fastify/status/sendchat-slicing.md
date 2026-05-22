@@ -2,9 +2,12 @@
 
 Date: 2026-05-22
 
-**Phase 5 is closed.** All 28 slices landed; the 26 sendChat
-fixtures remain the baseline safety net (17 from Phase 4, 9 from
-the Phase 5 gate fixtures listed below). The coordinator at
+**Phase 5 is closed.** All 28 slices landed; Phase 5 closed with
+26 sendChat fixtures (17 from Phase 4, 9 from the Phase 5 gate
+fixtures listed below). Phase 6 has since added provider parity
+fixtures, tracked in
+[`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md).
+The coordinator at
 `src/ts/process/index.svelte.ts` is 445 lines (down from 1625 at
 Phase 5 start, a 73% reduction). This document is now historical
 reference; Phase 6 work is tracked in

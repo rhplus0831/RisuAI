@@ -1,13 +1,14 @@
 # Server Status
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 ## Current state
 
 Phase 1, the server-side Phase 2 storage slice, Phase 3 in
 full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
-Express deletion) all exist on the `fastify` branch:
+Express deletion), and the first Phase 6 completion-route slices
+all exist on the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -15,9 +16,9 @@ Express deletion) all exist on the `fastify` branch:
   `@fastify/rate-limit`, registers a raw-body parser for supported
   asset content types, registers `@fastify/websocket`, opens the
   SQLite metadata DB, registers the health/auth/bootstrap/import/
-  assets/backups/proxy/stream-job/hub/legacy-storage routes, and
-  serves `RISU_API_STATIC_ROOT` via `@fastify/static` when that
-  directory exists.
+  assets/backups/proxy/stream-job/hub/legacy-storage/generation
+  routes, and serves `RISU_API_STATIC_ROOT` via `@fastify/static`
+  when that directory exists.
 - `server/fastify/src/config.ts` reads `RISU_API_HOST`,
   `RISU_API_PORT`, `RISU_API_DATA_DIR`, `RISU_API_BODY_LIMIT`,
   `RISU_API_STATIC_ROOT`, `TRUST_PROXY`, and `RISU_HUB_URL`
@@ -45,10 +46,11 @@ Express deletion) all exist on the `fastify` branch:
   at `GET /api/v1/proxy/stream-jobs/:id/ws`,
   `ANY /api/v1/hub/*`, `GET /api/v1/storage/list`,
   `GET /api/v1/storage/read`, `POST /api/v1/storage/write`, and
-  `POST /api/v1/storage/remove`.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage}.test.ts`
-  cover the implemented Fastify routes and static serving through
-  `pnpm api:test`.
+  `POST /api/v1/storage/remove`, and the
+  `/api/v1/generate/completion` POST route.
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,echo,openai,anthropic}.test.ts`
+  cover the implemented Fastify routes, provider dispatchers, and
+  static serving through `pnpm api:test`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
   hold the Phase 3A generic-proxy surface. The route is scoped to
   its own plugin instance with a catch-all content-type parser so
@@ -97,6 +99,14 @@ Express deletion) all exist on the `fastify` branch:
   the auth-status response shape (`{noPassword, authorized}` on
   Fastify, `{status}` on Express) into the existing
   unset / incorrect / success enum.
+- `server/fastify/src/routes/generation.ts` adds the Phase 6
+  completion route. It validates the provider, model, messages,
+  stream flag, and options body; requires auth; streams through the
+  normalized `event: chunk` / `event: done` envelope; and dispatches to
+  `server/fastify/src/generation/{echo,openai,anthropic}.ts`.
+  The route supports `echo`, `openai`, `nanogpt`, `openrouter`,
+  and `anthropic`; other provider strings return
+  `{ reason: 'provider not implemented yet: <name>' }` with 501.
 - Known limitation: `ANY /api/v1/hub/*` keeps `requireAuth`, so
   on password-protected deployments browser-loaded resources
   (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401
@@ -143,8 +153,12 @@ been removed; `server/node/` no longer exists.
   up the self-host gates). `server/node/`, the `runserver`
   script, and the express / express-rate-limit /
   node-html-parser dependencies have been removed.
-- **Phase 6.** Server-side LLM / translation / TTS / image /
-  Stable Horde generation endpoints.
+- **Phase 6.** In progress since 2026-05-22. Landed so far:
+  `POST /api/v1/generate/completion`, the normalized SSE envelope,
+  echo, OpenAI Chat Completions, NanoGPT, OpenRouter, and
+  Anthropic Messages. Translation, TTS, image, Stable Horde,
+  token-counting, and remaining LLM provider families are still
+  open.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 

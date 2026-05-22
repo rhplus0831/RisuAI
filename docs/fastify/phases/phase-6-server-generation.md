@@ -1,18 +1,28 @@
 # Phase 6 - Server-Side Generation
 
-Date: 2026-05-21
+Date: 2026-05-22
 
 ## Goal
 
 Move Stage 3 (provider dispatch + streaming) and helper providers
 (translation, TTS, image, Stable Horde, tokenizer) behind Fastify
-routes. The browser stops holding LLM API keys; the server makes
-the calls and streams the results.
+routes. End state: the browser stops holding LLM API keys; the
+server makes the calls and streams the results.
 
 ## Preconditions
 
 - Phase 3 closed (proxy is server-side).
 - Phase 5 closed (Stage 3 is its own browser module already).
+
+## Landed So Far
+
+As of 2026-05-22, Phase 6 has landed `POST
+/api/v1/generate/completion`, the normalized SSE envelope, the
+server-backed client adapter, and provider dispatch for echo,
+OpenAI Chat Completions, NanoGPT, OpenRouter, and Anthropic
+Messages. The dual-mode fixture sweep covers `echo-basic`,
+`openai-basic`, and `anthropic-basic`. The rest of this document is
+the remaining target scope for Phase 6.
 
 ## Scope
 
@@ -54,11 +64,11 @@ the calls and streams the results.
   `editOutput` triggerscript runs. Deny `require`, `process`,
   `fetch`, timers, fs, net. Wall-clock timeout enforced by parent.
 
-### Streaming contract
+### Target streaming contract
 
-Each `POST /api/v1/generate/completion` returns SSE if
-`stream: true`. The browser subscribes; the server forwards each
-upstream chunk verbatim with a normalized envelope:
+Each supported `POST /api/v1/generate/completion` provider returns
+SSE if `stream: true`. The browser subscribes; the server forwards
+upstream chunks with a normalized envelope:
 
 ```
 event: chunk
@@ -71,16 +81,18 @@ event: done
 data: { "finishReason": "stop" }
 ```
 
-Client disconnect aborts the upstream via `AbortController`.
+Usage frames are optional; the currently landed providers emit
+token chunks plus a final `done`. Client disconnect aborts the
+upstream via `AbortController`.
 
 ### Browser changes
 
 The Stage 3 dispatch/response extraction module from Phase 5 gains
 two modes:
 
-- Local (existing) - keeps the current direct-fetch path. Used
-  when the server-backed mode flag is off; the final flag name is
-  set when this phase lands.
+- Local (existing) - keeps the current direct-fetch path. Used when
+  `db.useServerGeneration !== true` or the provider is not yet
+  server-routable.
 - Server-backed - posts to `/api/v1/generate/completion` and
   iterates the SSE stream.
 
@@ -89,9 +101,14 @@ both modes side by side until Phase 9.
 
 ### Key handling
 
-- Server reads provider API keys from the `auth` settings group
-  (and translation keys from the `translation` group). The browser
-  no longer needs the key in server-backed mode.
+- During the current Phase 6 slices, the client adapter still reads
+  the existing DB key fields and sends only the selected provider's
+  key in the `/generate/completion` options body. This preserves
+  current settings behavior while provider coverage is incomplete.
+- The final server-owned key path reads provider API keys from the
+  `auth` settings group (and translation keys from the
+  `translation` group). At that point the browser no longer needs
+  the key in server-backed mode.
 - Bootstrap optionally masks keys when `RISU_MASK_SERVER_KEYS=1`.
   Defaults to off until every provider the user relies on has a
   server-side path. The decision to flip the flag on is a

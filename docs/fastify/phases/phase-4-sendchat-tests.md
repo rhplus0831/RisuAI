@@ -23,7 +23,8 @@ Done 2026-05-20. The landed harness lives at
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` and
 `src/ts/process/__fixtures__/`. All 17 initial fixtures listed
 below have expected snapshots; Phase 5 later added 9 narrow gate
-fixtures, bringing the active suite to 26 snapshots.
+fixtures and Phase 6 added 3 provider parity fixtures, bringing
+the active local suite to 29 snapshots.
 
 ## Scope
 
