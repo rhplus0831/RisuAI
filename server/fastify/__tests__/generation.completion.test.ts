@@ -1000,3 +1000,113 @@ describe('Phase 6-9 POST /api/v1/generate/completion (gemini)', () => {
   })
 })
 
+describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
+  const ollamaPayload = {
+    provider: 'ollama',
+    model: 'llama3',
+    messages: [
+      { role: 'system', content: 'be brief' },
+      { role: 'user', content: 'hi' },
+    ],
+    stream: false,
+    options: { ollama: { baseUrl: 'http://localhost:11434', maxTokens: 128 } },
+  }
+
+  it('400s when options.ollama.baseUrl is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...ollamaPayload, options: { ollama: {} } },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\.ollama\.baseUrl/)
+  })
+
+  it('non-streaming forwards to {baseUrl}/api/chat and returns message.content', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'llama3',
+          message: { role: 'assistant', content: 'ollama route ok' },
+          done: true,
+          done_reason: 'stop',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: ollamaPayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      type: 'success',
+      result: 'ollama route ok',
+      model: 'llama3',
+    })
+
+    expect(captured!.url).toBe('http://localhost:11434/api/chat')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('llama3')
+    expect(sent.stream).toBe(false)
+    expect(sent.messages).toEqual([
+      { role: 'system', content: 'be brief' },
+      { role: 'user', content: 'hi' },
+    ])
+    expect(sent.options).toEqual({ num_predict: 128 })
+  })
+
+  it('streaming relays per-line NDJSON content into the normalized envelope', async () => {
+    const enc = new TextEncoder()
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            enc.encode(
+              `${JSON.stringify({ message: { content: 'hi' }, done: false })}\n`,
+            ),
+          )
+          controller.enqueue(
+            enc.encode(
+              `${JSON.stringify({ message: { content: ' there' }, done: false })}\n`,
+            ),
+          )
+          controller.enqueue(
+            enc.encode(
+              `${JSON.stringify({ message: { content: '' }, done: true, done_reason: 'stop' })}\n`,
+            ),
+          )
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...ollamaPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'hi' })}\n\n` +
+        `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: ' there' })}\n\n` +
+        `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
+    )
+  })
+})
+

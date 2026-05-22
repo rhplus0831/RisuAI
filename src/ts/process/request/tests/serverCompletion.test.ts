@@ -456,8 +456,24 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
-  it('refuses ollama-hosted (local ollama needs a native /api/chat dispatcher)', () => {
-    seedDb({ ollamaApiKey: 'x' } as unknown as Partial<Database>)
+  it('routes ollama-hosted (native /api/chat) to provider "ollama" when db.ollamaURL is set', () => {
+    seedDb({
+      ollamaURL: 'http://localhost:11434',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'ollama-hosted',
+        modelInfo: {
+          id: 'ollama-hosted',
+          format: LLMFormat.Ollama,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('ollama')
+  })
+
+  it('refuses ollama-hosted when db.ollamaURL is empty (no host to talk to)', () => {
+    seedDb({ ollamaURL: '' } as unknown as Partial<Database>)
     const r = getServerCompletionProvider(
       makeTarg({
         aiModel: 'ollama-hosted',
@@ -902,6 +918,39 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
       apiKey: 'nk',
       baseUrl: 'https://nano-gpt.com/api/v1',
       extraHeaders: { 'X-Provider': 'meta' },
+    })
+  })
+
+  it('emits options.ollama with db.ollamaURL + db.ollamaModel as the wire model for native ollama', async () => {
+    seedDb({
+      ollamaURL: 'http://localhost:11434',
+      ollamaModel: 'llama3.1:70b',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), {
+        status: 200,
+      })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'ollama-hosted',
+      modelInfo: {
+        id: 'ollama-hosted',
+        format: LLMFormat.Ollama,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 128,
+      temperature: 0.5,
+    })
+    await requestServerCompletion(targ, 'ollama', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('ollama')
+    expect(sent.model).toBe('llama3.1:70b')
+    expect(sent.options.ollama).toEqual({
+      baseUrl: 'http://localhost:11434',
+      maxTokens: 128,
+      temperature: 0.5,
     })
   })
 

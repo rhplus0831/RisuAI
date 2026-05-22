@@ -36,6 +36,11 @@ import {
   runOpenAIResponses,
 } from '../generation/openaiResponses.js'
 import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
+import {
+  resolveOllamaRequest,
+  runOllama,
+  runOllamaStream,
+} from '../generation/ollama.js'
 import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import { requireAuth } from '../http.js'
 
@@ -52,6 +57,7 @@ const SUPPORTED_PROVIDERS = new Set([
   'openai-responses',
   'kobold',
   'ooba-legacy',
+  'ollama',
 ])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -182,6 +188,16 @@ interface OobaLegacyOptions {
   typicalP?: unknown
   repetitionPenalty?: unknown
   stoppingStrings?: unknown
+}
+
+interface OllamaOptions {
+  baseUrl?: unknown
+  apiKey?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+  topP?: unknown
+  topK?: unknown
+  extraHeaders?: Record<string, string>
 }
 
 interface OpenAICompatibleVariant {
@@ -453,6 +469,75 @@ async function handleOobaLegacyBuffered(
     const result = await runOobaLegacy(resolved)
     if (result.aborted === true) return
     reply.code(200).send({ type: result.type, result: result.result })
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleOllamaStreaming(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: OllamaOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveOllamaRequest({
+      model,
+      messages,
+      baseUrl: options.baseUrl,
+      apiKey: options.apiKey,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      topP: options.topP,
+      topK: options.topK,
+      extraHeaders: options.extraHeaders,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.ollama.baseUrl is required (and messages must be non-empty)')
+      return
+    }
+    await pipeStream(reply, runOllamaStream(resolved))
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleOllamaBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: OllamaOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveOllamaRequest({
+      model,
+      messages,
+      baseUrl: options.baseUrl,
+      apiKey: options.apiKey,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      topP: options.topP,
+      topK: options.topK,
+      extraHeaders: options.extraHeaders,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.ollama.baseUrl is required (and messages must be non-empty)')
+      return
+    }
+    const result = await runOllama(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
+      type: result.type,
+      result: result.result,
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
   } finally {
     cleanup()
   }
@@ -826,6 +911,7 @@ export function registerGenerationRoutes(
       'openai-responses'?: ResponsesOptions
       kobold?: KoboldOptions
       'ooba-legacy'?: OobaLegacyOptions
+      ollama?: OllamaOptions
     }
 
     if (provider === 'echo') {
@@ -930,6 +1016,16 @@ export function registerGenerationRoutes(
         return
       }
       await handleOobaLegacyBuffered(req, reply, messages, options['ooba-legacy'] ?? {})
+      return
+    }
+
+    if (provider === 'ollama') {
+      const ollamaOpts = options.ollama ?? {}
+      if (body.stream === true) {
+        await handleOllamaStreaming(req, reply, body.model, messages, ollamaOpts)
+        return
+      }
+      await handleOllamaBuffered(req, reply, body.model, messages, ollamaOpts)
       return
     }
 

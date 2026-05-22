@@ -31,9 +31,11 @@ export function formatToServerProvider(format: LLMFormat): string | null {
     case LLMFormat.NanoGPTResponses:
       return 'openai-responses'
     case LLMFormat.Ollama:
-      // The native /api/chat ollama path stays local for now. Cloud variants
-      // (ollama.com OAI-compat / Responses / Messages) get routed inside the
-      // gate based on db.ollamaRequestFormat.
+      // Both the native /api/chat path (LLMFormat.Ollama on a self-hosted
+      // box) and the ollama.com cloud variants land here. The gate inside
+      // resolveOllamaProvider() picks the upstream dispatcher: native gets
+      // its own 'ollama' provider, cloud routes to openai / openai-responses
+      // / anthropic per db.ollamaRequestFormat.
       return 'ollama'
     case LLMFormat.Kobold:
       return 'kobold'
@@ -183,18 +185,22 @@ export function getServerCompletionProvider(
 /**
  * Local code routes `aiModel === 'ollama-cloud'` to different upstream
  * dispatchers based on `db.ollamaRequestFormat`. Mirror that. The native
- * `/api/chat` shape (LLMFormat.Ollama / non-cloud / ollamaRequestFormat ===
- * LLMFormat.Ollama) stays on local dispatch until a server dispatcher lands.
+ * `/api/chat` shape (non-cloud) goes to the dedicated `'ollama'` provider
+ * when `db.ollamaURL` is set; otherwise we have no host to talk to and fall
+ * through to local dispatch.
  */
 function resolveOllamaProvider(targ: RequestDataArgumentExtended): string | null {
-  if (targ.aiModel !== 'ollama-cloud') return null
   const db = getDatabase()
-  if (typeof db.ollamaApiKey !== 'string' || db.ollamaApiKey.length === 0) return null
-  const fmt = db.ollamaRequestFormat
-  if (fmt === LLMFormat.OpenAICompatible) return 'openai'
-  if (fmt === LLMFormat.OpenAIResponseAPI) return 'openai-responses'
-  if (fmt === LLMFormat.Anthropic) return 'anthropic'
-  return null
+  if (targ.aiModel === 'ollama-cloud') {
+    if (typeof db.ollamaApiKey !== 'string' || db.ollamaApiKey.length === 0) return null
+    const fmt = db.ollamaRequestFormat
+    if (fmt === LLMFormat.OpenAICompatible) return 'openai'
+    if (fmt === LLMFormat.OpenAIResponseAPI) return 'openai-responses'
+    if (fmt === LLMFormat.Anthropic) return 'anthropic'
+    return null
+  }
+  if (typeof db.ollamaURL !== 'string' || db.ollamaURL.length === 0) return null
+  return 'ollama'
 }
 
 /**
@@ -215,6 +221,7 @@ export function resolveProviderModel(
   if (isOllamaCloud(targ)) {
     return db.ollamaCloudModel ?? ''
   }
+  if (provider === 'ollama') return db.ollamaModel ?? ''
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
   if (provider === 'gemini') {
@@ -385,6 +392,12 @@ function buildProviderOptions(
     if (typeof db.maxContext === 'number') kobold.maxContextLength = db.maxContext
     if (typeof targ.temperature === 'number') kobold.temperature = targ.temperature
     return { kobold }
+  }
+  if (provider === 'ollama') {
+    const ollama: Record<string, unknown> = { baseUrl: db.ollamaURL ?? '' }
+    if (typeof targ.maxTokens === 'number') ollama.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') ollama.temperature = targ.temperature
+    return { ollama }
   }
   if (provider === 'ooba-legacy') {
     const ooba: Record<string, unknown> = {}
