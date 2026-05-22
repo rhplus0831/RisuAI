@@ -96,6 +96,34 @@ describe('runOpenAILegacyInstruct', () => {
     expect(sent.top_p).toBe(1)
   })
 
+  it('applies additionalParams to the body + headers after the default payload is built', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ choices: [{ text: 'x' }] })
+    })
+    const resolved = resolveOpenAILegacyInstructRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      temperature: 0.5,
+      additionalParams: [
+        ['header::X-Custom', 'one'],
+        ['extra.flag', 'true'],
+        ['extra.nested.value', 'json::[1, 2]'],
+        ['temperature', '{{none}}'],
+      ],
+      signal: new AbortController().signal,
+    })!
+    await runOpenAILegacyInstruct(resolved)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.temperature).toBeUndefined()
+    expect(sent.extra).toEqual({ flag: true, nested: { value: [1, 2] } })
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Custom']).toBe('one')
+    expect(headers.authorization).toBe('Bearer k')
+  })
+
   it('honors a caller-supplied stop list', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

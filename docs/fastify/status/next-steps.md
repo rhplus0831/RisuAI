@@ -6,9 +6,10 @@ Use this list to pick the next chunk of work. Phase 5 closed on
 2026-05-22 with all 28 extraction slices landed; the historical
 slice record now lives in
 [`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 is active,
-and commit history through Phase 6-25 shows provider coverage
-landed through OpenAI Responses `reverse_proxy` + `xcustom:::id`
-with the shared `additionalParams` overlay.
+and commit history through Phase 6-26 shows provider coverage
+landed through OpenAI Legacy Instruct `reverse_proxy` +
+`xcustom:::id` — the mechanical batch of additionalParams
+ports is complete.
 
 ## Immediate
 
@@ -40,7 +41,11 @@ with the shared `additionalParams` overlay.
    format (URL autofill to `/v1/responses` via a dedicated
    `resolveReverseProxyResponsesUrl` helper, plus shared
    additionalParams via the openai-responses `buildRequestInit`
-   refactor), and Vertex AI Gemini (RS256 JWT signed
+   refactor), `reverse_proxy` + `xcustom:::id` under the OpenAI
+   Legacy Instruct format (URL autofill to `/v1/completions` via
+   a dedicated `resolveReverseProxyLegacyInstructUrl` helper, plus
+   shared additionalParams via the legacy-instruct
+   `buildRequestInit` refactor), and Vertex AI Gemini (RS256 JWT signed
    with Node `crypto`, in-process Bearer cache keyed by
    service-account email, `<region>-aiplatform.googleapis.com`
    URL with the `global` carveout for Gemini 3 preview models),
@@ -59,13 +64,11 @@ with the shared `additionalParams` overlay.
    NovelAI / NovelList (deferred to Phase 7 per the same memo),
    ooba OAI-compatible `/v1/completions` (deferred to Phase 7
    per [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md)),
-   and reverse_proxy / xcustom variants whose
-   `db.customAPIFormat` points at OpenAI Legacy Instruct (needs
-   its own slice to port the additionalParams overlay to that
-   dispatcher). Keep the 33 local sendChat snapshots, the
-   7-fixture server-backed sweep, and the Fastify generation
-   tests green (`pnpm api:test`: 431,
-   `pnpm test`: 586 + 4 skipped).
+   the mechanical batch of additionalParams ports across non-OAI
+   dispatchers is complete. Keep the 33 local sendChat snapshots,
+   the 7-fixture server-backed sweep, and the Fastify generation
+   tests green (`pnpm api:test`: 434, `pnpm test`: 591 + 4
+   skipped).
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments
@@ -104,6 +107,7 @@ with the shared `additionalParams` overlay.
 | 6-23  | `755bbe83` | Ported the `additionalParams` overlay to the mistral dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.Mistral` with URL autofill to `/v1/chat/completions` (reuses the OAI-compat `resolveReverseProxyUrl` helper) and the `risu::` → `X-Proxy-Risu` header lift. |
 | 6-24  | `691daa0f` | Ported the `additionalParams` overlay to the cohere dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.Cohere` with a dedicated `resolveReverseProxyCohereUrl` autofill helper for the `/v1/chat` wire path. |
 | 6-25  | `9497a9fd` | Ported the `additionalParams` overlay to the openai-responses dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.OpenAIResponseAPI` with a dedicated `resolveReverseProxyResponsesUrl` autofill helper for the `/v1/responses` wire path. |
+| 6-26  | _pending_  | Ported the `additionalParams` overlay to the openai-legacy-instruct dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.OpenAILegacyInstruct` with a dedicated `resolveReverseProxyLegacyInstructUrl` autofill helper for the `/v1/completions` wire path. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

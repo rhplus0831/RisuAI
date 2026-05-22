@@ -100,6 +100,31 @@ function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
 }
 
 /**
+ * OpenAI Legacy Instruct counterpart to `resolveReverseProxyUrl`:
+ * mirror the local URL shape at
+ * `src/ts/process/request/openAI/requests.ts:1043` (which talks to
+ * `/v1/completions`), then strip the trailing `/completions` so the
+ * server-side dispatcher can re-append it itself. Legacy Instruct has
+ * no `risu::` prefix handling on the local path.
+ */
+function resolveReverseProxyLegacyInstructUrl(rawUrl: string, autofill: boolean): string {
+  let url = rawUrl
+  if (autofill) {
+    if (url.endsWith('v1')) {
+      url += '/completions'
+    } else if (url.endsWith('v1/')) {
+      url += 'completions'
+    } else if (!(url.endsWith('completions') || url.endsWith('completions/'))) {
+      url += url.endsWith('/') ? 'v1/completions' : '/v1/completions'
+    }
+  }
+  // Strip trailing /completions (or /completions/) since the server appends it.
+  const trimmed = url.replace(/\/+$/, '')
+  if (trimmed.endsWith('/completions')) return trimmed.slice(0, -'/completions'.length)
+  return trimmed
+}
+
+/**
  * OpenAI Responses counterpart to `resolveReverseProxyUrl`: mirror the
  * local URL shape (which talks to `/v1/responses`), then strip the
  * trailing `/responses` so the server-side dispatcher can re-append it
@@ -461,10 +486,33 @@ function isVanillaResponses(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+/**
+ * OpenAI Legacy Instruct uses `POST /v1/completions` (the flat-prompt
+ * shape, no `/chat`). reverse_proxy + xcustom under
+ * `LLMFormat.OpenAILegacyInstruct` ride the existing dispatcher with a
+ * dedicated `resolveReverseProxyLegacyInstructUrl` autofill helper.
+ * `request.ts` mutates `targ.modelInfo.format = db.customAPIFormat`
+ * before the adapter runs, so reverse_proxy with
+ * `customAPIFormat = OpenAILegacyInstruct` shows up to the gate with
+ * `format === LLMFormat.OpenAILegacyInstruct`. NanoGPTLegacy carries a
+ * fixed-format model id, so its baked-in `modelInfo.endpoint` is
+ * accepted; vanilla LegacyInstruct with an endpoint override stays
+ * deferred (no clear local equivalent).
+ */
 function isVanillaLegacyInstruct(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
+  if (aiModel === 'reverse_proxy') {
+    const db = getDatabase()
+    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
+    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
+    return true
+  }
+  if (aiModel.startsWith('xcustom:::')) {
+    const entry = findXcustomEntry(aiModel)
+    if (entry === null) return false
+    if (entry.format !== LLMFormat.OpenAILegacyInstruct) return false
+    return true
+  }
   // NanoGPTLegacy carries a fixed-format model id; it's still server-routable.
   // OpenAILegacyInstruct with a modelInfo.endpoint override is deferred.
   if (
@@ -840,12 +888,33 @@ function buildProviderOptions(
   }
   if (provider === 'openai-legacy-instruct') {
     const legacy: Record<string, unknown> = {}
+    const aiModel = targ.aiModel ?? ''
     const isNanoGPT = targ.modelInfo?.format === LLMFormat.NanoGPTLegacy
     if (isNanoGPT) {
       legacy.apiKey = db.nanogptKey ?? ''
       legacy.baseUrl = 'https://nano-gpt.com/api/v1'
       if (typeof db.nanogptProvider === 'string' && db.nanogptProvider.length > 0) {
         legacy.extraHeaders = { 'X-Provider': db.nanogptProvider }
+      }
+    } else if (aiModel === 'reverse_proxy') {
+      legacy.apiKey = db.proxyKey ?? ''
+      const autofill = db.autofillRequestUrl !== false
+      legacy.baseUrl = resolveReverseProxyLegacyInstructUrl(db.forceReplaceUrl ?? '', autofill)
+      if (Array.isArray(db.additionalParams) && db.additionalParams.length > 0) {
+        legacy.additionalParams = db.additionalParams
+      }
+    } else if (aiModel.startsWith('xcustom:::')) {
+      const entry = findXcustomEntry(aiModel)
+      if (entry !== null) {
+        legacy.apiKey = entry.key
+        // xcustom URL is stored as the full /v1/completions URL; strip the
+        // trailing /completions so the server can re-append it.
+        const trimmed = entry.url.replace(/\/+$/, '')
+        legacy.baseUrl = trimmed.endsWith('/completions')
+          ? trimmed.slice(0, -'/completions'.length)
+          : trimmed
+        const params = parseXcustomParams(entry.params)
+        if (params.length > 0) legacy.additionalParams = params
       }
     } else {
       legacy.apiKey = db.openAIKey ?? ''

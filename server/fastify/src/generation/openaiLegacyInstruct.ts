@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 
 export interface OpenAILegacyInstructRequest {
@@ -12,6 +13,13 @@ export interface OpenAILegacyInstructRequest {
   frequencyPenalty?: number
   stop?: string[]
   extraHeaders?: Record<string, string>
+  /**
+   * Pre-validated `[key, value][]` pairs from the SPA's additionalParams /
+   * xcustom `params` DSL. Applied after the dispatcher builds its default
+   * body + headers, so the user DSL has the last word. See
+   * `./additionalParams.ts` for semantics.
+   */
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -27,6 +35,7 @@ interface ResolveInput {
   frequencyPenalty?: unknown
   stop?: unknown
   extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -104,6 +113,7 @@ export function resolveOpenAILegacyInstructRequest(
     frequencyPenalty,
     stop,
     extraHeaders: input.extraHeaders,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
@@ -113,12 +123,23 @@ function endpoint(req: OpenAILegacyInstructRequest): string {
   return `${base}/completions`
 }
 
-function headers(req: OpenAILegacyInstructRequest): Record<string, string> {
+function buildHeaders(req: OpenAILegacyInstructRequest): Record<string, string> {
   return {
     'content-type': 'application/json',
     authorization: `Bearer ${req.apiKey}`,
     ...(req.extraHeaders ?? {}),
   }
+}
+
+function buildRequestInit(
+  req: OpenAILegacyInstructRequest,
+): { body: string; headers: Record<string, string> } {
+  const body = buildPayload(req)
+  const headers = buildHeaders(req)
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, headers, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers }
 }
 
 function buildPayload(req: OpenAILegacyInstructRequest): Record<string, unknown> {
@@ -148,12 +169,13 @@ export async function runOpenAILegacyInstruct(
     return { type: 'fail', result: 'aborted', aborted: true }
   }
 
+  const init = buildRequestInit(req)
   let response: Response
   try {
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {

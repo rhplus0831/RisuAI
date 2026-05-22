@@ -784,6 +784,65 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
+  it('routes reverse_proxy under OpenAILegacyInstruct to provider "openai-legacy-instruct" when db.forceReplaceUrl and db.proxyKey are set', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/completions',
+      proxyKey: 'sk-proxy',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.OpenAILegacyInstruct,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai-legacy-instruct')
+  })
+
+  it('refuses reverse_proxy under OpenAILegacyInstruct when db.proxyKey is empty', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/completions',
+      proxyKey: '',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.OpenAILegacyInstruct,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes xcustom::: under OpenAILegacyInstruct to provider "openai-legacy-instruct" when entry.format matches', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::legacy-clone',
+          internalId: 'gpt-fake-instruct',
+          url: 'https://example.com/v1/completions',
+          key: 'sk-x',
+          format: LLMFormat.OpenAILegacyInstruct,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::legacy-clone',
+        modelInfo: {
+          id: 'xcustom:::legacy-clone',
+          format: LLMFormat.OpenAILegacyInstruct,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai-legacy-instruct')
+  })
+
   it('routes xcustom::: under OpenAIResponseAPI to provider "openai-responses" when entry.format matches', () => {
     seedDb({
       customModels: [
@@ -2153,6 +2212,82 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
       apiKey: 'sk-legacy',
       maxTokens: 128,
     })
+  })
+
+  it('emits options["openai-legacy-instruct"] with proxyKey + autofilled baseUrl + additionalParams for reverse_proxy under OpenAILegacyInstruct', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      customProxyRequestModel: 'gpt-on-proxy',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Custom', 'cool'],
+        ['extra.knob', '1'],
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.OpenAILegacyInstruct,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 256,
+    })
+    await requestServerCompletion(targ, 'openai-legacy-instruct', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openai-legacy-instruct')
+    expect(sent.model).toBe('gpt-on-proxy')
+    expect(sent.options['openai-legacy-instruct'].apiKey).toBe('sk-proxy')
+    expect(sent.options['openai-legacy-instruct'].baseUrl).toBe('https://proxy.example.com/v1')
+    expect(sent.options['openai-legacy-instruct'].additionalParams).toEqual([
+      ['header::X-Custom', 'cool'],
+      ['extra.knob', '1'],
+    ])
+  })
+
+  it('routes xcustom::: under OpenAILegacyInstruct with entry url/key + parsed additionalParams', async () => {
+    seedDb({
+      openAIKey: 'sk-not-used',
+      customModels: [
+        {
+          id: 'xcustom:::legacy-clone',
+          internalId: 'gpt-acme-instruct',
+          url: 'https://acme.example.com/v1/completions',
+          key: 'sk-acme',
+          format: LLMFormat.OpenAILegacyInstruct,
+          params: 'header::X-Custom=cool\nextra.flag=true',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'xcustom:::legacy-clone',
+      modelInfo: {
+        id: 'xcustom:::legacy-clone',
+        format: LLMFormat.OpenAILegacyInstruct,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'openai-legacy-instruct', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openai-legacy-instruct')
+    expect(sent.model).toBe('gpt-acme-instruct')
+    expect(sent.options['openai-legacy-instruct'].apiKey).toBe('sk-acme')
+    expect(sent.options['openai-legacy-instruct'].baseUrl).toBe('https://acme.example.com/v1')
+    expect(sent.options['openai-legacy-instruct'].additionalParams).toEqual([
+      ['header::X-Custom', 'cool'],
+      ['extra.flag', 'true'],
+    ])
   })
 
   it('routes NanoGPTMessages through provider=anthropic with nano-gpt.com baseUrl + nanogpt key + db.nanogptRequestModel', async () => {
