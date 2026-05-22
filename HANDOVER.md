@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `8414d5c7 feat: scripts special action prefixes (Phase 7-6b)`
+Head: `5aae492b feat: ableFlag <order, actions> DSL + outScript prep (Phase 7-6c)`
 
 This is the short runbook for picking up **Phase 7 in progress**.
 Phases 0-6 are closed. The detailed Phase 7 roadmap lives in
@@ -26,6 +26,7 @@ Landed Phase 7 slices:
 | 7-6a  | `9a60380d` | Ported the minimal regex script processor: preset+character regex chain, mode filter, flag sanitization, CBS in replacement. |
 | 7-5b  | `7ad226b9` | Added per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill on the history walk.             |
 | 7-6b  | `8414d5c7` | Added scripts `@@`-action prefixes: `@@emo` (no-op), `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`.             |
+| 7-6c  | `5aae492b` | Added `ableFlag <order, actions>` DSL, `cbs`/`no_end_nl` actions, outScript prep, and SPA-parity flag defaults.              |
 
 What is real in code:
 
@@ -36,57 +37,62 @@ What is real in code:
   `variables.ts`, `staticSections.ts`, `plainSections.ts`,
   `history.ts` (deterministic walk + per-message scripts +
   sendName wrapper + `<Thoughts>` extraction + memo/UUID
-  backfill), and `scripts.ts` (regex + five `@@`-action prefixes)
-  are implemented and tested.
+  backfill), and `scripts.ts` (regex chain + five `@@`-action
+  prefixes + `ableFlag` `<order, actions>` DSL + `cbs` /
+  `no_end_nl` actions + outScript prep + SPA-parity flag
+  defaults) are implemented and tested.
 - `assemble.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
   `triggers.ts` still throw Phase 7 not-implemented errors.
 - `history.ts` does not yet handle multimodal inlays,
   `{{asset_prompt::}}`, start triggers, tokenizer accumulation, or
   depth prompts (7-5c/d/e).
-- `scripts.ts` does not yet handle the `ableFlag` `<order, actions>`
-  DSL, script-cache, `runLuaEditTrigger`, `runTrigger('display', …)`,
-  `pluginV2` hooks, or module regex scripts (7-6c/d/e).
+- `scripts.ts` does not yet handle module regex scripts,
+  script-cache, `runLuaEditTrigger`, `runTrigger('display', …)`,
+  or `pluginV2` hooks (7-6d/e).
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-6b:
+Last recorded baselines after 7-6c:
 
-- `pnpm api:test`: 545 across 33 files
+- `pnpm api:test`: 557 across 33 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: clean
 
 ## Next Slice
 
-Pick up **7-6c - scripts `ableFlag` DSL parsing**.
+Pick up **7-6d - module regex scripts**.
 
-When `script.ableFlag === true` and `script.flag` contains
-`<…>`-bracketed meta tokens, the SPA parses out an `order` integer
-and an `actions[]` list (`scripts.ts:333-366`). The actions are
-case-equivalents of the `@@`-prefixes already landed in 7-6b
-(`'inject'`, `'move_top'`, `'move_bottom'`, `'repeat_back'`,
-`'cbs'`, `'no_end_nl'`). After parsing, the script list gets
-stable-sorted in descending order if any script declared one.
+The SPA's `processScriptFull` extends the script chain with
+`getModuleRegexScripts()` (`scripts.ts:161`), which walks the
+enabled modules and concatenates their `regex` arrays. Server
+needs to read the active module list from the database snapshot.
 
 Slice scope:
 
-- Add an `ableFlag` parse step before the `script.type === mode`
-  filter. Extract the `<order N, action1, action2>` segments out
-  of `script.flag` and produce a `parsedScript = { script, order,
-actions }` shape per entry.
-- Re-route the `@@`-action dispatch to ALSO fire when
-  `actions.includes('inject' | 'move_top' | 'move_bottom' |
-'repeat_back')`. Keep the `@@`-prefix detection as a fallback for
-  scripts that don't use the DSL.
-- Implement the `'cbs'` action: when set, pre-expand `script.in`
-  through `expandVariables` before compiling the RegExp
-  (`scripts.ts:211-213`).
-- Implement the `'no_end_nl'` action: suppress the `\n` suffix the
-  SPA tacks onto outputs ending in `>` (`scripts.ts:194-196`).
-- Stable-sort the parsed list by `order desc` when `orderChanged`
-  flips during parsing.
+- Add a helper that mirrors `modules.ts:381-405`
+  `getModules()`: derives the active module id list from
+  `db.enabledModules`, `currentChat.modules`,
+  `currentChar.modules`, and `db.moduleIntergration` (comma list),
+  then filters `db.modules` by `id` or `namespace` match and
+  dedupes by id. Skip the SPA's lastModules / lastModuleData
+  memoization (server runs once per assembly).
+- Add `getModuleRegexScripts(modules)` returning the concatenated
+  `regex[]` from each module (`modules.ts:454-466`).
+- Wire `processScript` to concat
+  `presetRegex` -> `char.customscript` -> module regex into one
+  script list before parsing the `ableFlag` DSL. The ordering
+  matters: presets first, then character, then modules.
 
-Skip-list (defer to 7-6d/e): script-cache, module regex scripts,
-`runTrigger('display', …)` for `editdisplay` mode.
+Skip-list (defer to 7-6e or beyond):
+
+- `module.trigger` / `module.lorebook` / `module.assets` / `module.cjs`
+  (their consumers ship in 7-5c, 7-7, 7-9).
+- script-cache (`generateScriptCacheKey` / `getScriptCache` /
+  `cacheScript`): pure optimization; the server runs each script
+  chain fresh per assembly. Revisit if profiling shows a hot path.
+- `runTrigger('display', …)` for `editdisplay` mode: blocked on
+  Triggers (7-9).
+- `runLuaEditTrigger`, `pluginV2[mode]`: browser-only.
 
 Other Tier 1 candidates remain unblocked: **7-5c** (multimodal
 inlays + `{{asset_prompt::}}`; the assets path benefits from a

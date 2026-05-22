@@ -2,17 +2,18 @@
 
 Date: 2026-05-23
 
-Status: in-progress (10 slices landed as of 2026-05-23). `variables.ts`,
+Status: in-progress (11 slices landed as of 2026-05-23). `variables.ts`,
 `staticSections.ts`, `plainSections.ts`, `history.ts` (deterministic
 walk + per-message scripts + sendName wrapper + `<Thoughts>` extraction
 — see 7-5b notes for the remaining skip list), and `scripts.ts`
-(regex + five `@@`-action prefixes — see 7-6b notes for the remaining
-skip list) are real. The remaining assembly modules under
-`server/fastify/src/prompt/` (`assemble`, `lorebook`, `templates`,
-`tokens`, `triggers`) are still throwing stubs. See
-[Remaining roadmap](#remaining-roadmap) below for the tiered slice
-plan. [`HANDOVER.md`](../../../HANDOVER.md) is the working entry point
-for picking up Phase 7.
+(regex chain + five `@@`-action prefixes + `ableFlag` `<order, actions>`
+DSL + `cbs` / `no_end_nl` actions + outScript prep + SPA-parity flag
+defaults — see 7-6c notes for the remaining skip list) are real. The
+remaining assembly modules under `server/fastify/src/prompt/`
+(`assemble`, `lorebook`, `templates`, `tokens`, `triggers`) are still
+throwing stubs. See [Remaining roadmap](#remaining-roadmap) below for
+the tiered slice plan. [`HANDOVER.md`](../../../HANDOVER.md) is the
+working entry point for picking up Phase 7.
 
 ## Goal
 
@@ -149,6 +150,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-6a  | `9a60380d` | Minimal regex script processor: `scripts.ts` exposes a sync `processScript(ctx, char, data, mode, cbsConditions?)`. Walks `db.presetRegex ?? []` then `char.customscript ?? []`, runs entries where `script.type === mode` as a plain `RegExp.replace`, then expands CBS in the result via `expandVariables`. Sanitizes flags to `[dgimsuvy]` (dedupe + default `'u'`), skips empty `in`, and swallows per-script errors so one bad regex does not kill the chain. Defers `@@emo`/`@@move_top`/`@@move_bottom`/`@@inject`/`@@repeat_back` action prefixes, the `ableFlag` `<order, actions>` DSL, script-cache, `runLuaEditTrigger`, `runTrigger('display', …)`, `pluginV2` hooks, and module regex scripts to 7-6b/c/d/e. 14-test suite (api:test 502 → 516). Unblocks 7-5b.                                                                                                                                                                                                                                                                        |
 | 7-5b  | `7ad226b9` | Per-message scripts + sendName + `<Thoughts>`: each history message body now flows through `expandVariables` (chara + role) then `processScript('editprocess', {chatRole})`; first message body also runs through `processScript`. Optional `usingPromptTemplate` arg (defaults `false`) gates the sendName wrappers — first message gets `${currentChar.name}: ` + `attr: ['nameAdded']`, per-message gets `<{{char}}'s Message>\n{slot}\n</{{char}}'s Message>` resolved against the active currentChar (the SPA's `chara: msg.saying` override at `formatHistoryMessage.ts:140` is shadowed by `cbs.ts:184`; documented inline). `<Thoughts>` always stripped from content, captured to `chat.thoughts` when `maxThoughtTagDepth === -1 \|\| maxThoughtTagDepth - totalCount <= index`. `memo` defaults to `msg.chatId`; missing chatIds get backfilled with `randomUUID()`. 13 new tests (api:test 516 → 529). Defers multimodal inlays + `{{asset_prompt::}}` (7-5c), start trigger (7-5d), tokenizer accumulation + depth prompts (7-5e).      |
 | 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes: `processScript` now branches on `outScript.startsWith('@@')`. Five action paths: `@@emo` no-op (documented server skip), `@@inject` (mutates `currentChat.message[chatID].data` to current pre-strip data and strips the match), `@@move_top`/`@@move_bottom` (matchAll-aware extraction with `$1` / `$&` / `$<…>` substitution, then prepend/append with `\n`), `@@repeat_back` (no-match branch only, walks previous same-role message with firstMessage fallback, four positional modifiers). Public signature grew `chatID = -1` and `currentChat?: Chat` positional args; `history.ts` threads `index` + `currentChat` per-message. Two documented SPA divergences: resets `reg.lastIndex = 0` after the dispatching `reg.test()` so `@@move_top g` finds all matches (SPA loses the first one); adds an r-null guard in `@@repeat_back` (SPA accesses `r[0]` without one). 16 new tests (api:test 529 → 545). Defers `ableFlag` `<order, actions>` DSL (7-6c), script-cache (7-6d), module regex scripts (7-6e). |
+| 7-6c  | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + flag-default fixes: added `parseScripts()` for the `<order N, action…>` meta DSL with stable-sort by `order desc`; plumbed `actions[]` into the dispatcher so `<inject>`/`<move_top>`/`<move_bottom>`/`<repeat_back>` match the `@@`-prefix paths; added `cbs` (pre-expand `script.in`) and `no_end_nl` (suppress trailing-`>` newline) actions; ported the full outScript prep pipeline (`{{data}}` self-substitute no-op + `>`-ending auto-newline gated by `no_end_nl`); corrected two SPA-parity bugs (default flag `'g'` not `'u'`; `script.flag` honored only when `ableFlag === true`; `@@move_top` / `@@move_bottom` strip `g`). 4 existing 7-6a/b assertions updated to SPA-mirror behavior; 12 new 7-6c tests. api:test 545 → 557. Defers script-cache (7-6d), module regex scripts (7-6e).                                                                                                                                                                                           |
 
 ## Remaining roadmap
 
@@ -198,12 +200,24 @@ progress as sub-slices.
   stable-sort by `order desc`, route `actions.includes('inject' |
 'move_top' | 'move_bottom' | 'repeat_back')` to the existing 7-6b
   paths, implement the `'cbs'` action (pre-expand `script.in`) and
-  `'no_end_nl'` action (suppress the trailing-`>` newline). Next
-  pickup.
-- **7-6d/e** — Script-cache (`generateScriptCacheKey` +
-  `getScriptCache` + `cacheScript`), module regex scripts
-  (`getModuleRegexScripts()`), `runTrigger('display', …)` for
-  `editdisplay`. Order TBD per slice.
+  `'no_end_nl'` action (suppress the trailing-`>` newline).
+  **Landed `5aae492b`** (12 new + 4 updated tests, api:test 545 →
+  557). Also corrected the default-flag-is-`'g'` and
+  `ableFlag`-gated-`script.flag` SPA-parity bugs the 7-6a tests
+  had silently asserted wrong.
+- **7-6d** — Module regex scripts: port `getModules()` +
+  `getModuleRegexScripts()` from `src/ts/process/modules.ts`
+  (resolve active module ids from `db.enabledModules`,
+  `currentChat.modules`, `currentChar.modules`, and
+  `db.moduleIntergration`; filter `db.modules` by id/namespace;
+  dedupe; concat each module's `regex[]` into the script chain).
+  Module triggers, lorebooks, assets, and cjs stay browser-side
+  (their consumers ship in 7-5c, 7-7, 7-9). Next pickup.
+- **7-6e** — Script-cache (`generateScriptCacheKey` +
+  `getScriptCache` + `cacheScript`) and `runTrigger('display', …)`
+  for `editdisplay` mode. Both are optional polish: the cache is
+  a pure optimization (the server runs each chain fresh per
+  assembly), and `editdisplay` is blocked on Triggers (7-9).
 
 Browser-only paths (`runLuaEditTrigger`, `pluginV2[mode]`) are
 out-of-scope for the server port; the SPA continues to use them

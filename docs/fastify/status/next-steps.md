@@ -11,19 +11,21 @@ the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
 deferred until a fixture demands it. Phase 7 (prompt assembly)
-is in progress as of 2026-05-23 — ten slices landed (7-1
+is in progress as of 2026-05-23 — eleven slices landed (7-1
 scaffold; 7-2a/b/c canonical `risuChatParser` extracted
 Svelte-free + wired into the server via `expandVariables`; 7-3
 static prompt sections; 7-4 plain prompt sections; 7-5a minimal
 history walk; 7-6a minimal regex script processor; 7-5b
 per-message scripts + sendName + `<Thoughts>`; 7-6b scripts
-`@@`-action prefixes). The remaining assembly modules under
+`@@`-action prefixes; 7-6c `ableFlag` DSL + outScript prep + flag
+defaults). The remaining assembly modules under
 `server/fastify/src/prompt/` (`assemble`, `lorebook`, `templates`,
 `tokens`, `triggers`) are still stubs; `history.ts` now covers
 the deterministic walk, per-message scripts, the sendName
 wrapper, and `<Thoughts>` extraction (remaining skip list in
-7-5b), and `scripts.ts` covers the regex chain plus the five
-`@@`-action prefixes (remaining skip list in 7-6b). The tiered roadmap for the rest of
+7-5b), and `scripts.ts` covers the regex chain, five `@@`-action
+prefixes, and the `ableFlag` DSL with `cbs` / `no_end_nl` actions
+(remaining skip list in 7-6c). The tiered roadmap for the rest of
 Phase 7 lives in the
 [Remaining roadmap](../phases/phase-7-prompt-assembly.md#remaining-roadmap)
 section of the phase doc; [`HANDOVER.md`](../../../HANDOVER.md) is
@@ -31,36 +33,34 @@ the short pickup runbook.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-6c — scripts `ableFlag` DSL
-   parsing.** When `script.ableFlag === true` and `script.flag`
-   contains `<…>`-bracketed meta tokens, the SPA parses out an
-   `order` integer and an `actions[]` list
-   (`src/ts/process/scripts.ts:333-366`). The actions are
-   case-equivalents of the `@@`-prefixes already landed in 7-6b
-   (`'inject'`, `'move_top'`, `'move_bottom'`, `'repeat_back'`,
-   `'cbs'`, `'no_end_nl'`). After parsing, the script list gets
-   stable-sorted in descending order if any script declared one.
+1. **Continue Phase 7 with slice 7-6d — module regex scripts.**
+   `processScript` currently builds its script chain from
+   `db.presetRegex` + `char.customscript`. The SPA also concats
+   `getModuleRegexScripts()` (`src/ts/process/scripts.ts:161`),
+   which walks the active modules and joins their `regex[]`.
 
    Slice scope:
-   - Add an `ableFlag` parse step before the
-     `script.type === mode` filter. Extract the `<order N,
-action1, action2>` segments out of `script.flag` and produce a
-     `parsedScript = { script, order, actions }` shape per entry.
-   - Re-route the `@@`-action dispatch to ALSO fire when
-     `actions.includes('inject' | 'move_top' | 'move_bottom' |
-'repeat_back')`. Keep the `@@`-prefix detection as a fallback for
-     scripts that don't use the DSL.
-   - Implement the `'cbs'` action: pre-expand `script.in` through
-     `expandVariables` before compiling the RegExp
-     (`scripts.ts:211-213`).
-   - Implement the `'no_end_nl'` action: suppress the `\n` suffix
-     the SPA tacks onto outputs ending in `>`
-     (`scripts.ts:194-196`).
-   - Stable-sort the parsed list by `order desc` when
-     `orderChanged` flips during parsing.
+   - Add a helper mirroring
+     `src/ts/process/modules.ts:381-405` `getModules()`: resolve
+     the active module id list from `db.enabledModules`,
+     `currentChat.modules`, `currentChar.modules`, and
+     `db.moduleIntergration` (comma-separated); then filter
+     `db.modules` by `id` or `namespace` match and dedupe by `id`.
+     Skip the SPA's `lastModules` / `lastModuleData` memoization
+     (server runs the chain once per assembly).
+   - Add `getModuleRegexScripts(modules)` returning the
+     concatenated `regex[]` (`modules.ts:454-466`).
+   - Wire `processScript` to append module regex after
+     `char.customscript` so the chain stays
+     `presetRegex` → `char.customscript` → `moduleRegex`.
 
-   Skip-list (defer to 7-6d/e): script-cache, module regex
-   scripts, `runTrigger('display', …)` for `editdisplay` mode.
+   Skip-list (defer to 7-6e or beyond): `module.trigger` /
+   `module.lorebook` / `module.assets` / `module.cjs` (their
+   consumers ship in 7-5c, 7-7, 7-9); script-cache (pure
+   optimization — server runs each chain fresh per assembly);
+   `runTrigger('display', …)` for `editdisplay` mode (blocked on
+   Triggers 7-9); `runLuaEditTrigger` and `pluginV2[mode]`
+   (browser-only).
 
    Other Tier 1 candidates remain available: **7-5c** (multimodal
    inlays + `{{asset_prompt::}}`; the assets path benefits from a
@@ -75,7 +75,7 @@ action1, action2>` segments out of `script.flag` and produce a
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 545
+   tests green. Last recorded baselines are `pnpm api:test`: 557
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -133,6 +133,7 @@ action1, action2>` segments out of `script.flag` and produce a
 | 7-6a  | `9a60380d` | Added `server/fastify/src/prompt/scripts.ts` with a sync `processScript(ctx, char, data, mode, cbsConditions?)`. Walks `db.presetRegex ?? []` then `char.customscript ?? []`, runs entries where `script.type === mode` as a plain `RegExp.replace`, then routes the result through `expandVariables` (matches the SPA's `risuChatParser(data.replace(reg, outScript), {chatID, cbsConditions})` pass at `scripts.ts:285,328`). Flag handling sanitizes to `[dgimsuvy]`, dedupes, defaults to `'u'` when empty; scripts with empty `in` are skipped; per-script errors are swallowed (mirrors `scripts.ts:372-376`). Defers special action prefixes (`@@emo`, `@@move_top`, `@@move_bottom`, `@@inject`, `@@repeat_back`), the `ableFlag` `<order, actions>` DSL, script-cache, `runLuaEditTrigger`, `runTrigger('display', …)`, `pluginV2` hooks, and module regex scripts to 7-6b/c/d/e. 14-test suite (api:test 502 → 516). Unblocks 7-5b.                                                                                                                                                                                                                                                           |
 | 7-5b  | `7ad226b9` | Per-message scripts + sendName wrapper + `<Thoughts>` extraction on the history walk. Each history message body now flows through `expandVariables` (chara + role) then `processScript('editprocess', {chatRole})`; first message body also runs through `processScript`. Optional `usingPromptTemplate` arg (defaults `false`) gates the sendName wrappers — first message gets `${currentChar.name}: ` + `attr: ['nameAdded']`, per-message gets `<{{char}}'s Message>\n{slot}\n</{{char}}'s Message>` resolved against the active currentChar (the SPA's `chara: msg.saying` override at `formatHistoryMessage.ts:140` is shadowed by `cbs.ts:184` reading currentChar from scope first; documented inline). `<Thoughts>` always stripped from content, captured to `chat.thoughts` when `maxThoughtTagDepth === -1 \|\| maxThoughtTagDepth - totalCount <= index`. `memo` defaults to `msg.chatId`; missing chatIds get backfilled with `randomUUID()`. 13 new tests (api:test 516 → 529). Defers multimodal inlays + `{{asset_prompt::}}` (7-5c), start trigger (7-5d), tokenizer accumulation + depth prompts (7-5e).                                                                             |
 | 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes added to `processScript`. Five paths: `@@emo` no-op (documented server skip), `@@inject` (mutates `currentChat.message[chatID].data` with the pre-strip data and strips the match — Tier 3 routes will persist the chat blob after assembly), `@@move_top` / `@@move_bottom` (matchAll-aware extraction with `$1` / `$&` / `$<…>` substitution, prepend/append with `\n`), `@@repeat_back` (no-match branch only, walks previous same-role with `firstMessage` / `alternateGreetings[fmIndex]` fallback, four positional modifiers). Public signature grew `chatID = -1` and `currentChat?: Chat` positional args; `history.ts` threads `index` + `currentChat` so per-message `@@inject` and `@@repeat_back` fire correctly. Two documented SPA divergences: resets `reg.lastIndex = 0` after the dispatching `reg.test()` so `@@move_top g` finds all matches (SPA loses the first one via lastIndex leak at `scripts.ts:216/254`); adds an r-null guard in `@@repeat_back` (SPA accesses `r[0]` without one at `scripts.ts:306`). 16 new tests (api:test 529 → 545). Defers `ableFlag` `<order, actions>` DSL (7-6c), script-cache (7-6d), module regex scripts (7-6e). |
+| 7-6c  | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + flag defaults. Added `parseScripts()` for the `<order N, action…>` meta DSL with stable-sort by `order desc`; plumbed `actions[]` into the dispatcher so `<inject>` / `<move_top>` / `<move_bottom>` / `<repeat_back>` match the `@@`-prefix paths (7-6b); added `cbs` (pre-expand `script.in`) and `no_end_nl` (suppress trailing-`>` newline) actions; ported the outScript prep pipeline (`{{data}}` self-substitute is a SPA no-op kept for parity; `>`-ending auto-newline gated by `no_end_nl`). Fixed two SPA-parity bugs the earlier 7-6a tests silently asserted wrong: default flag is `'g'` (not `'u'`); `script.flag` is honored only when `ableFlag === true` (without it the SPA silently overrides to `'g'`). `@@move_top` / `@@move_bottom` now strip `g` (SPA "temperary fix"). 12 new tests + 4 existing assertions corrected (api:test 545 → 557). Defers script-cache and module regex scripts to 7-6d/e.                                                                                                                                                                                                                      |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
