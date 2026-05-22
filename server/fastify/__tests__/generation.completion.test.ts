@@ -158,11 +158,11 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       method: 'POST',
       url: '/api/v1/generate/completion',
       headers: { 'risu-auth': assertion },
-      payload: { ...basePayload, provider: 'gemini' },
+      payload: { ...basePayload, provider: 'kobold' },
     })
     expect(res.statusCode).toBe(501)
     expect(res.json()).toEqual({
-      reason: 'provider not implemented yet: gemini',
+      reason: 'provider not implemented yet: kobold',
     })
   })
 
@@ -797,6 +797,104 @@ describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
       { role: 'CHATBOT', message: 'hi' },
     ])
     expect(sent.safety_mode).toBe('NONE')
+  })
+})
+
+describe('Phase 6-9 POST /api/v1/generate/completion (gemini)', () => {
+  const geminiPayload = {
+    provider: 'gemini',
+    model: 'gemini-2.5-flash',
+    messages: [
+      { role: 'system', content: 'be brief' },
+      { role: 'user', content: 'hi' },
+    ],
+    stream: false,
+    options: { gemini: { apiKey: 'goog-test', maxOutputTokens: 256 } },
+  }
+
+  it('400s when options.gemini.apiKey is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...geminiPayload, options: { gemini: {} } },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\.gemini\.apiKey/)
+  })
+
+  it('non-streaming forwards to /models/<model>:generateContent?key=<apiKey> with contents + systemInstruction', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          modelVersion: 'gemini-2.5-flash',
+          candidates: [{ content: { parts: [{ text: 'gemini ok' }] }, finishReason: 'STOP' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: geminiPayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      type: 'success',
+      result: 'gemini ok',
+      model: 'gemini-2.5-flash',
+    })
+
+    expect(captured!.url).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=goog-test',
+    )
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }])
+    expect(sent.systemInstruction).toEqual({ parts: [{ text: 'be brief' }] })
+    expect(sent.generationConfig).toEqual({ maxOutputTokens: 256 })
+  })
+
+  it('streaming relays per-frame candidates text into the normalized envelope', async () => {
+    const enc = new TextEncoder()
+    const frame = (text: string, fr?: string): string => {
+      const c: Record<string, unknown> = { content: { parts: [{ text }] } }
+      if (fr !== undefined) c.finishReason = fr
+      return `data: ${JSON.stringify({ candidates: [c] })}\n\n`
+    }
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode(frame('hi')))
+          controller.enqueue(enc.encode(frame(' there', 'STOP')))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...geminiPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'hi' })}\n\n` +
+        `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: ' there' })}\n\n` +
+        `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
+    )
   })
 })
 

@@ -20,6 +20,8 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       return 'mistral'
     case LLMFormat.Cohere:
       return 'cohere'
+    case LLMFormat.GoogleCloud:
+      return 'gemini'
     default:
       return null
   }
@@ -98,6 +100,19 @@ function isVanillaCohere(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+/**
+ * Vanilla Google AI (LLMFormat.GoogleCloud) only. VertexAIGemini stays local
+ * for now — it needs the project ID, region, and a JWT-derived bearer token
+ * which we don't yet own server-side.
+ */
+function isVanillaGemini(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (aiModel === 'reverse_proxy') return false
+  if (aiModel.startsWith('xcustom:::')) return false
+  if (targ.modelInfo?.endpoint) return false
+  return true
+}
+
 export function getServerCompletionProvider(
   targ: RequestDataArgumentExtended,
 ): string | null {
@@ -112,6 +127,7 @@ export function getServerCompletionProvider(
   if (provider === 'anthropic' && !isVanillaAnthropic(targ)) return null
   if (provider === 'mistral' && !isVanillaMistral(targ)) return null
   if (provider === 'cohere' && !isVanillaCohere(targ)) return null
+  if (provider === 'gemini' && !isVanillaGemini(targ)) return null
   return provider
 }
 
@@ -128,6 +144,15 @@ export function resolveProviderModel(
   const db = getDatabase()
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
+  if (provider === 'gemini') {
+    // Gemini's URL is /models/<id>:generateContent. Local code uses
+    // modelInfo.internalID for that path; mirror it.
+    const raw = targ.modelInfo?.internalID ?? targ.modelInfo?.id ?? targ.aiModel ?? ''
+    // Dynamic-registered entries store internalID as `'models/<name>'`. Strip
+    // the `models/` prefix so the dispatcher's `/models/<model>` URL doesn't
+    // end up with a double prefix.
+    return raw.startsWith('models/') ? raw.slice('models/'.length) : raw
+  }
   return targ.modelInfo?.id ?? targ.aiModel ?? ''
 }
 
@@ -223,6 +248,12 @@ function buildProviderOptions(
       aiModel === 'cohere-command-r-03-2024' || aiModel === 'cohere-command-r-plus-04-2024'
     if (!isNewerCommandR) cohere.safetyMode = 'NONE'
     return { cohere }
+  }
+  if (provider === 'gemini') {
+    const gemini: Record<string, unknown> = { apiKey: db.google?.accessToken ?? '' }
+    if (typeof targ.maxTokens === 'number') gemini.maxOutputTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') gemini.temperature = targ.temperature
+    return { gemini }
   }
   return {}
 }

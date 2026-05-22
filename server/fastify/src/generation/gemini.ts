@@ -1,0 +1,314 @@
+import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+
+export interface GeminiRequest {
+  model: string
+  contents: GeminiContent[]
+  systemInstruction?: string
+  apiKey: string
+  baseUrl: string
+  maxOutputTokens?: number
+  temperature?: number
+  topP?: number
+  topK?: number
+  signal: AbortSignal
+}
+
+export interface GeminiContent {
+  role: 'user' | 'model'
+  parts: Array<{ text: string }>
+}
+
+interface GeminiResolveInput {
+  model?: unknown
+  messages?: unknown
+  apiKey?: unknown
+  baseUrl?: unknown
+  maxOutputTokens?: unknown
+  temperature?: unknown
+  topP?: unknown
+  topK?: unknown
+  signal: AbortSignal
+}
+
+interface RawChatMessage {
+  role?: unknown
+  content?: unknown
+}
+
+const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
+
+/**
+ * Gemini takes:
+ *   - `systemInstruction` as a top-level field (parts of system rows joined),
+ *   - `contents` alternating between `user` and `model` roles with `parts`.
+ *
+ * Function/tool rows are dropped. Consecutive same-role rows are coalesced
+ * since Gemini also rejects two `user` (or two `model`) in a row. Mirrors the
+ * subset of `src/ts/process/request/google.ts:65-150` that we currently
+ * support; tools / multimodal / thinking config / response schema are
+ * deferred.
+ */
+export interface GeminiReformatResult {
+  contents: GeminiContent[]
+  systemInstruction?: string
+}
+
+export function reformatForGemini(messages: RawChatMessage[]): GeminiReformatResult {
+  const systemTexts: string[] = []
+  const contents: GeminiContent[] = []
+  for (const m of messages) {
+    const content = typeof m.content === 'string' ? m.content : ''
+    if (m.role === 'system') {
+      if (content.length > 0) systemTexts.push(content)
+      continue
+    }
+    const role: 'user' | 'model' =
+      m.role === 'assistant' ? 'model' : m.role === 'user' ? 'user' : 'user'
+    if (m.role !== 'user' && m.role !== 'assistant') continue
+    const prev = contents[contents.length - 1]
+    if (prev && prev.role === role) {
+      prev.parts[0].text += `\n${content}`
+      continue
+    }
+    contents.push({ role, parts: [{ text: content }] })
+  }
+  const systemInstruction = systemTexts.length > 0 ? systemTexts.join('\n\n') : undefined
+  return systemInstruction === undefined ? { contents } : { contents, systemInstruction }
+}
+
+export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest | null {
+  if (typeof input.model !== 'string' || input.model.length === 0) return null
+  if (!Array.isArray(input.messages)) return null
+  if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
+
+  const reformat = reformatForGemini(input.messages as RawChatMessage[])
+  if (reformat.contents.length === 0) return null
+
+  const baseUrl =
+    typeof input.baseUrl === 'string' && input.baseUrl.length > 0
+      ? input.baseUrl
+      : DEFAULT_BASE_URL
+  const maxOutputTokens =
+    typeof input.maxOutputTokens === 'number' &&
+    Number.isFinite(input.maxOutputTokens) &&
+    input.maxOutputTokens > 0
+      ? input.maxOutputTokens
+      : undefined
+  const temperature =
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
+      ? input.temperature
+      : undefined
+  const topP =
+    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topK =
+    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+
+  return {
+    model: input.model,
+    contents: reformat.contents,
+    systemInstruction: reformat.systemInstruction,
+    apiKey: input.apiKey,
+    baseUrl,
+    maxOutputTokens,
+    temperature,
+    topP,
+    topK,
+    signal: input.signal,
+  }
+}
+
+function buildPayload(req: GeminiRequest): Record<string, unknown> {
+  const generationConfig: Record<string, unknown> = {}
+  if (req.maxOutputTokens !== undefined) generationConfig.maxOutputTokens = req.maxOutputTokens
+  if (req.temperature !== undefined) generationConfig.temperature = req.temperature
+  if (req.topP !== undefined) generationConfig.topP = req.topP
+  if (req.topK !== undefined) generationConfig.topK = req.topK
+  const body: Record<string, unknown> = {
+    contents: req.contents,
+    generationConfig,
+  }
+  if (req.systemInstruction !== undefined) {
+    body.systemInstruction = { parts: [{ text: req.systemInstruction }] }
+  }
+  return body
+}
+
+function endpoint(req: GeminiRequest, stream: boolean): string {
+  const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
+  const method = stream ? 'streamGenerateContent' : 'generateContent'
+  const tail = stream ? `:${method}?alt=sse&key=${encodeURIComponent(req.apiKey)}` : `:${method}?key=${encodeURIComponent(req.apiKey)}`
+  return `${base}/models/${req.model}${tail}`
+}
+
+function headers(): Record<string, string> {
+  return { 'content-type': 'application/json' }
+}
+
+interface GeminiPart {
+  text?: unknown
+}
+
+interface GeminiCandidate {
+  content?: { parts?: GeminiPart[] }
+  finishReason?: unknown
+}
+
+interface GeminiResponse {
+  candidates?: GeminiCandidate[]
+  modelVersion?: unknown
+  error?: { message?: unknown; status?: unknown }
+}
+
+function extractText(body: GeminiResponse): string {
+  let text = ''
+  const cands = Array.isArray(body.candidates) ? body.candidates : []
+  for (const c of cands) {
+    const parts = Array.isArray(c?.content?.parts) ? c.content!.parts : []
+    for (const p of parts) {
+      if (typeof p.text === 'string') text += p.text
+    }
+  }
+  return text
+}
+
+function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
+  if (typeof raw !== 'string' || raw.length === 0) return 'stop'
+  if (raw === 'STOP') return 'stop'
+  if (raw === 'MAX_TOKENS') return 'length'
+  if (raw === 'SAFETY') return 'content_filter'
+  return raw.toLowerCase()
+}
+
+export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
+  if (req.signal.aborted) {
+    return { type: 'fail', result: 'aborted', aborted: true }
+  }
+
+  let response: Response
+  try {
+    response = await fetch(endpoint(req, false), {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(buildPayload(req)),
+      signal: req.signal,
+    })
+  } catch (err) {
+    if (req.signal.aborted) {
+      return { type: 'fail', result: 'aborted', aborted: true }
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    return { type: 'fail', result: `upstream fetch failed: ${msg}` }
+  }
+
+  let raw: string
+  try {
+    raw = await response.text()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { type: 'fail', result: `invalid upstream body: ${msg}` }
+  }
+
+  if (!response.ok) {
+    // Gemini's error body shape is `{error: {message, status}}`. Surface the
+    // message when present; otherwise pass the raw text through so callers
+    // can inspect the upstream payload.
+    try {
+      const parsed = JSON.parse(raw) as GeminiResponse
+      if (typeof parsed.error?.message === 'string') {
+        return { type: 'fail', result: parsed.error.message }
+      }
+    } catch {
+      // ignore parse failure, fall through to raw
+    }
+    return { type: 'fail', result: raw }
+  }
+
+  let body: GeminiResponse
+  try {
+    body = JSON.parse(raw) as GeminiResponse
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
+  }
+
+  const text = extractText(body)
+  if (text.length === 0) {
+    return { type: 'fail', result: 'upstream returned no text content' }
+  }
+  const result: CompletionResult = { type: 'success', result: text }
+  if (typeof body.modelVersion === 'string') result.model = body.modelVersion
+  return result
+}
+
+export async function* runGeminiStream(
+  req: GeminiRequest,
+): AsyncGenerator<CompletionStreamFrame, void, void> {
+  if (req.signal.aborted) return
+
+  let response: Response
+  try {
+    response = await fetch(endpoint(req, true), {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(buildPayload(req)),
+      signal: req.signal,
+    })
+  } catch {
+    return
+  }
+
+  if (!response.ok || !response.body) {
+    return
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
+
+  try {
+    while (true) {
+      if (req.signal.aborted) return
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+
+      let sepIdx = buf.indexOf('\n\n')
+      while (sepIdx !== -1) {
+        const block = buf.slice(0, sepIdx)
+        buf = buf.slice(sepIdx + 2)
+        sepIdx = buf.indexOf('\n\n')
+        // Gemini SSE emits `data: <json>` lines. Concatenate any data lines
+        // in the block then parse.
+        let data = ''
+        for (const line of block.split('\n')) {
+          if (line.startsWith('data: ')) data += line.slice(6)
+          else if (line.startsWith('data:')) data += line.slice(5)
+        }
+        if (data.length === 0) continue
+        let frame: GeminiResponse
+        try {
+          frame = JSON.parse(data) as GeminiResponse
+        } catch {
+          continue
+        }
+        const text = extractText(frame)
+        if (text.length > 0) {
+          yield { kind: 'token', content: text }
+        }
+        const fr = Array.isArray(frame.candidates) ? frame.candidates[0]?.finishReason : undefined
+        if (fr !== undefined) {
+          finishReason = mapFinishReason(fr)
+        }
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {
+      // swallow
+    })
+  }
+
+  if (!req.signal.aborted) {
+    yield { kind: 'done', finishReason }
+  }
+}

@@ -107,6 +107,14 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.Cohere)).toBe('cohere')
   })
 
+  it('maps GoogleCloud (vanilla Google AI) to "gemini"', () => {
+    expect(formatToServerProvider(LLMFormat.GoogleCloud)).toBe('gemini')
+  })
+
+  it('returns null for VertexAIGemini (Vertex auth not yet server-side)', () => {
+    expect(formatToServerProvider(LLMFormat.VertexAIGemini)).toBeNull()
+  })
+
   it('returns null for AWSBedrockClaude (not yet server-routable)', () => {
     expect(formatToServerProvider(LLMFormat.AWSBedrockClaude)).toBeNull()
   })
@@ -350,6 +358,33 @@ describe('getServerCompletionProvider', () => {
           id: 'deepseek-chat',
           format: LLMFormat.OpenAICompatible,
           keyIdentifier: 'deepseek',
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes a vanilla GoogleCloud-format model to provider "gemini"', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'dynamic_google_gemini-2.5-flash',
+        modelInfo: {
+          id: 'dynamic_google_gemini-2.5-flash',
+          internalID: 'gemini-2.5-flash',
+          format: LLMFormat.GoogleCloud,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('gemini')
+  })
+
+  it('refuses reverse_proxy under GoogleCloud', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.GoogleCloud,
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
     )
@@ -655,6 +690,60 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     await requestServerCompletion(targ, 'cohere', null)
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.options.cohere).toEqual({ apiKey: 'co-fixture' })
+  })
+
+  it('emits options.gemini with apiKey from db.google.accessToken; wire model uses internalID (stripped of models/ prefix)', async () => {
+    seedDb({
+      google: { accessToken: 'goog-fixture' },
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'dynamic_google_gemini-2.5-flash',
+      modelInfo: {
+        id: 'dynamic_google_gemini-2.5-flash',
+        // Dynamic-registered Gemini entries store the upstream API's
+        // `name: 'models/<id>'` here; the wire URL is /models/<id> so the
+        // adapter must strip the leading `models/` to avoid doubling it.
+        internalID: 'models/gemini-2.5-flash',
+        format: LLMFormat.GoogleCloud,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 200,
+      temperature: 0.5,
+    })
+    await requestServerCompletion(targ, 'gemini', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('gemini')
+    expect(sent.model).toBe('gemini-2.5-flash')
+    expect(sent.options.gemini).toEqual({
+      apiKey: 'goog-fixture',
+      maxOutputTokens: 200,
+      temperature: 0.5,
+    })
+  })
+
+  it('falls back to modelInfo.id for the wire model when internalID is missing', async () => {
+    seedDb({ google: { accessToken: 'k' } } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'gemini-2.5-pro',
+      modelInfo: {
+        id: 'gemini-2.5-pro',
+        format: LLMFormat.GoogleCloud,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'gemini', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('gemini-2.5-pro')
   })
 
   it('emits options.openrouter and overrides the wire model with db.openrouterRequestModel', async () => {

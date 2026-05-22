@@ -1,0 +1,340 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  reformatForGemini,
+  resolveGeminiRequest,
+  runGemini,
+  runGeminiStream,
+} from '../src/generation/gemini.js'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('reformatForGemini', () => {
+  it('maps assistant→model and keeps user role; emits no systemInstruction', () => {
+    const r = reformatForGemini([
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: 'a' },
+    ])
+    expect(r.systemInstruction).toBeUndefined()
+    expect(r.contents).toEqual([
+      { role: 'user', parts: [{ text: 'q' }] },
+      { role: 'model', parts: [{ text: 'a' }] },
+    ])
+  })
+
+  it('lifts system rows into a joined systemInstruction', () => {
+    const r = reformatForGemini([
+      { role: 'system', content: 'rule 1' },
+      { role: 'system', content: 'rule 2' },
+      { role: 'user', content: 'hi' },
+    ])
+    expect(r.systemInstruction).toBe('rule 1\n\nrule 2')
+    expect(r.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }])
+  })
+
+  it('coalesces consecutive same-role messages with newline join', () => {
+    const r = reformatForGemini([
+      { role: 'user', content: 'a' },
+      { role: 'user', content: 'b' },
+      { role: 'assistant', content: 'c' },
+      { role: 'assistant', content: 'd' },
+    ])
+    expect(r.contents).toEqual([
+      { role: 'user', parts: [{ text: 'a\nb' }] },
+      { role: 'model', parts: [{ text: 'c\nd' }] },
+    ])
+  })
+
+  it('drops function/tool roles entirely', () => {
+    const r = reformatForGemini([
+      { role: 'user', content: 'q' },
+      { role: 'function', content: 'tool out' },
+      { role: 'assistant', content: 'a' },
+    ])
+    expect(r.contents).toEqual([
+      { role: 'user', parts: [{ text: 'q' }] },
+      { role: 'model', parts: [{ text: 'a' }] },
+    ])
+  })
+
+  it('skips empty-content system messages without crashing', () => {
+    const r = reformatForGemini([
+      { role: 'system', content: '' },
+      { role: 'user', content: 'hi' },
+    ])
+    expect(r.systemInstruction).toBeUndefined()
+    expect(r.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }])
+  })
+})
+
+describe('resolveGeminiRequest', () => {
+  it('returns null when apiKey is missing', () => {
+    const r = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: '',
+      signal: new AbortController().signal,
+    })
+    expect(r).toBeNull()
+  })
+
+  it('returns null when contents would be empty after reformat (system-only conversation)', () => {
+    const r = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'system', content: 'system-only' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })
+    expect(r).toBeNull()
+  })
+
+  it('defaults baseUrl and applies generation_config params', () => {
+    const r = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      maxOutputTokens: 200,
+      temperature: 0.7,
+      topP: 0.9,
+      topK: 40,
+      signal: new AbortController().signal,
+    })
+    expect(r?.baseUrl).toBe('https://generativelanguage.googleapis.com/v1beta')
+    expect(r?.maxOutputTokens).toBe(200)
+    expect(r?.temperature).toBe(0.7)
+    expect(r?.topP).toBe(0.9)
+    expect(r?.topK).toBe(40)
+  })
+})
+
+function ok(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+describe('runGemini', () => {
+  it('posts to /models/<model>:generateContent?key=... and extracts candidates[*].content.parts[*].text', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return ok({
+        modelVersion: 'gemini-2.5-flash',
+        candidates: [
+          { content: { parts: [{ text: 'hi' }, { text: ' there' }] }, finishReason: 'STOP' },
+        ],
+      })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: 'be brief' },
+        { role: 'user', content: 'hello' },
+      ],
+      apiKey: 'goog-test',
+      maxOutputTokens: 128,
+      temperature: 0.4,
+      signal: new AbortController().signal,
+    })!
+    const r = await runGemini(resolved)
+    expect(r).toEqual({ type: 'success', result: 'hi there', model: 'gemini-2.5-flash' })
+
+    expect(captured!.url).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=goog-test',
+    )
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.contents).toEqual([{ role: 'user', parts: [{ text: 'hello' }] }])
+    expect(sent.systemInstruction).toEqual({ parts: [{ text: 'be brief' }] })
+    expect(sent.generationConfig).toEqual({ maxOutputTokens: 128, temperature: 0.4 })
+  })
+
+  it('url-encodes the apiKey so chars like & or = stay intact', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'a&b=c',
+      signal: new AbortController().signal,
+    })!
+    await runGemini(resolved)
+    expect(capturedUrl).toContain('key=a%26b%3Dc')
+  })
+
+  it('omits systemInstruction when no system rows are present', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    await runGemini(resolved)
+    expect(JSON.parse(captured!.init.body as string).systemInstruction).toBeUndefined()
+  })
+
+  it('returns fail with upstream error.message on non-2xx', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return new Response(
+        JSON.stringify({ error: { message: 'API_KEY_INVALID', status: 'INVALID_ARGUMENT' } }),
+        { status: 400 },
+      )
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'bad',
+      signal: new AbortController().signal,
+    })!
+    expect(await runGemini(resolved)).toEqual({ type: 'fail', result: 'API_KEY_INVALID' })
+  })
+
+  it('falls back to raw body when upstream non-2xx is not JSON', async () => {
+    vi.stubGlobal('fetch', async () => new Response('upstream down', { status: 503 }))
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    expect(await runGemini(resolved)).toEqual({ type: 'fail', result: 'upstream down' })
+  })
+
+  it('returns fail when candidates produce no text', async () => {
+    vi.stubGlobal('fetch', async () => ok({ candidates: [{ content: { parts: [] } }] }))
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    expect(await runGemini(resolved)).toEqual({
+      type: 'fail',
+      result: 'upstream returned no text content',
+    })
+  })
+
+  it('returns aborted=true when signal is pre-aborted', async () => {
+    const c = new AbortController()
+    c.abort()
+    let called = false
+    vi.stubGlobal('fetch', async () => {
+      called = true
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: c.signal,
+    })!
+    const r = await runGemini(resolved)
+    expect(r.aborted).toBe(true)
+    expect(called).toBe(false)
+  })
+})
+
+function sseUpstream(chunks: string[]): Response {
+  const enc = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const c of chunks) controller.enqueue(enc.encode(c))
+      controller.close()
+    },
+  })
+  return new Response(stream, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  })
+}
+
+function geminiFrame(text: string, finishReason?: string): string {
+  const payload: Record<string, unknown> = {
+    candidates: [{ content: { parts: [{ text }] } }],
+  }
+  if (finishReason !== undefined) {
+    ;(payload.candidates as Array<Record<string, unknown>>)[0].finishReason = finishReason
+  }
+  return `data: ${JSON.stringify(payload)}\n\n`
+}
+
+describe('runGeminiStream', () => {
+  it('hits :streamGenerateContent?alt=sse and translates per-frame text into kind:token', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return sseUpstream([geminiFrame('hi'), geminiFrame(' there', 'STOP')])
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
+    expect(capturedUrl).toContain(':streamGenerateContent?alt=sse&key=k')
+    expect(frames).toEqual([
+      { kind: 'token', content: 'hi' },
+      { kind: 'token', content: ' there' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('maps MAX_TOKENS finishReason to "length"', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream([geminiFrame('cut', 'MAX_TOKENS')]))
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
+    expect(frames.at(-1)).toEqual({ kind: 'done', finishReason: 'length' })
+  })
+
+  it('yields nothing when signal is pre-aborted', async () => {
+    const c = new AbortController()
+    c.abort()
+    vi.stubGlobal('fetch', async () => sseUpstream([geminiFrame('x', 'STOP')]))
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: c.signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
+    expect(frames).toEqual([])
+  })
+
+  it('reassembles a frame split across two reader reads', async () => {
+    const big = JSON.stringify({ candidates: [{ content: { parts: [{ text: 'split' }] } }] })
+    const mid = Math.floor(big.length / 2)
+    const part1 = `data: ${big.slice(0, mid)}`
+    const part2 = `${big.slice(mid)}\n\n`
+    vi.stubGlobal('fetch', async () => sseUpstream([part1, part2]))
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'token', content: 'split' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+})

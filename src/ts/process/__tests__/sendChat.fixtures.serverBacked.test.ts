@@ -108,6 +108,7 @@ const DUAL_MODE_FIXTURES = [
   'mistral-basic',
   'cohere-basic',
   'deepseek-basic',
+  'gemini-basic',
 ] as const
 
 interface ExpectedCall {
@@ -161,6 +162,19 @@ const EXPECTED_CALL: Record<(typeof DUAL_MODE_FIXTURES)[number], ExpectedCall> =
         apiKey: 'deepseek-fixture-key',
         baseUrl: 'https://api.deepseek.com/beta',
         maxTokens: 200,
+      },
+    },
+  },
+  'gemini-basic': {
+    provider: 'gemini',
+    // Wire-level model derived from modelInfo.internalID, stripped of any
+    // `models/` prefix that dynamic-registered entries carry.
+    model: 'gemini-2.5-flash',
+    stream: false,
+    options: {
+      gemini: {
+        apiKey: 'gemini-fixture-key',
+        maxOutputTokens: 200,
       },
     },
   },

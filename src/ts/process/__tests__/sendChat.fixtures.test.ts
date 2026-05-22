@@ -169,6 +169,7 @@ const FIXTURES = [
   'mistral-basic',
   'cohere-basic',
   'deepseek-basic',
+  'gemini-basic',
 ] as const
 
 describe('sendChat fixtures', () => {

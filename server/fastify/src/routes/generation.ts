@@ -13,6 +13,11 @@ import {
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
 import {
+  resolveGeminiRequest,
+  runGemini,
+  runGeminiStream,
+} from '../generation/gemini.js'
+import {
   resolveMistralRequest,
   runMistral,
   runMistralStream,
@@ -32,6 +37,7 @@ const SUPPORTED_PROVIDERS = new Set([
   'anthropic',
   'mistral',
   'cohere',
+  'gemini',
 ])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -106,6 +112,15 @@ interface CohereOptions {
   topP?: unknown
   presencePenalty?: unknown
   frequencyPenalty?: unknown
+}
+
+interface GeminiOptions {
+  apiKey?: unknown
+  baseUrl?: unknown
+  maxOutputTokens?: unknown
+  temperature?: unknown
+  topP?: unknown
+  topK?: unknown
 }
 
 interface OpenAICompatibleVariant {
@@ -304,6 +319,73 @@ async function handleAnthropicBuffered(
       return
     }
     const result = await runAnthropic(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
+      type: result.type,
+      result: result.result,
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleGeminiStreaming(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: GeminiOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveGeminiRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      maxOutputTokens: options.maxOutputTokens,
+      temperature: options.temperature,
+      topP: options.topP,
+      topK: options.topK,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.gemini.apiKey is required (and contents must be non-empty)')
+      return
+    }
+    await pipeStream(reply, runGeminiStream(resolved))
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleGeminiBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: GeminiOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveGeminiRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      maxOutputTokens: options.maxOutputTokens,
+      temperature: options.temperature,
+      topP: options.topP,
+      topK: options.topK,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.gemini.apiKey is required (and contents must be non-empty)')
+      return
+    }
+    const result = await runGemini(resolved)
     if (result.aborted === true) return
     const payload: { type: string; result: string; model?: string } = {
       type: result.type,
@@ -534,6 +616,7 @@ export function registerGenerationRoutes(
       anthropic?: AnthropicOptions
       mistral?: MistralOptions
       cohere?: CohereOptions
+      gemini?: GeminiOptions
     }
 
     if (provider === 'echo') {
@@ -577,6 +660,16 @@ export function registerGenerationRoutes(
       }
       const cohereOpts = options.cohere ?? {}
       await handleCohereBuffered(req, reply, body.model, messages, cohereOpts)
+      return
+    }
+
+    if (provider === 'gemini') {
+      const geminiOpts = options.gemini ?? {}
+      if (body.stream === true) {
+        await handleGeminiStreaming(req, reply, body.model, messages, geminiOpts)
+        return
+      }
+      await handleGeminiBuffered(req, reply, body.model, messages, geminiOpts)
       return
     }
 

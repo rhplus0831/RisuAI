@@ -32,6 +32,7 @@ const DEFAULT_ANTHROPIC_RESULT = 'fixture claude reply'
 const DEFAULT_MISTRAL_RESULT = 'fixture mistral reply'
 const DEFAULT_COHERE_RESULT = 'fixture cohere reply'
 const DEFAULT_DEEPSEEK_RESULT = 'fixture deepseek reply'
+const DEFAULT_GEMINI_RESULT = 'fixture gemini reply'
 
 interface State {
   calls: ServerCompletionCall[]
@@ -40,6 +41,7 @@ interface State {
   mistralResult: string
   cohereResult: string
   deepseekResult: string
+  geminiResult: string
 }
 
 const state: State = {
@@ -49,6 +51,7 @@ const state: State = {
   mistralResult: DEFAULT_MISTRAL_RESULT,
   cohereResult: DEFAULT_COHERE_RESULT,
   deepseekResult: DEFAULT_DEEPSEEK_RESULT,
+  geminiResult: DEFAULT_GEMINI_RESULT,
 }
 
 export function getServerCompletionCalls(): ServerCompletionCall[] {
@@ -62,6 +65,7 @@ export function resetServerCompletionCalls(): void {
   state.mistralResult = DEFAULT_MISTRAL_RESULT
   state.cohereResult = DEFAULT_COHERE_RESULT
   state.deepseekResult = DEFAULT_DEEPSEEK_RESULT
+  state.geminiResult = DEFAULT_GEMINI_RESULT
 }
 
 export function setOpenAIResult(text: string): void {
@@ -82,6 +86,10 @@ export function setCohereResult(text: string): void {
 
 export function setDeepSeekResult(text: string): void {
   state.deepseekResult = text
+}
+
+export function setGeminiResult(text: string): void {
+  state.geminiResult = text
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -171,6 +179,11 @@ export async function serverCompletionFetch(
   if (provider === 'cohere') {
     // Cohere is non-streaming-only; the route 400s on stream=true.
     return jsonResponse({ type: 'success', result: state.cohereResult, model })
+  }
+
+  if (provider === 'gemini') {
+    if (stream) return sseResponse(state.geminiResult)
+    return jsonResponse({ type: 'success', result: state.geminiResult, model })
   }
 
   return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)

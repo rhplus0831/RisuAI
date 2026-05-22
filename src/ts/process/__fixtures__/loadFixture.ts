@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { LLMModel } from '../../model/types'
 import { DBState, selectedCharID } from '../../stores.svelte'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 
@@ -23,6 +24,14 @@ export interface Fixture {
    * has already cancelled before the function runs.
    */
   aborted?: boolean
+  /**
+   * Optional list of model entries to push into LLMModels for the duration of
+   * the test. Useful for providers (e.g. Gemini) whose entries are normally
+   * registered dynamically via registerModelDynamic; tests need the entry
+   * present so getModelInfo resolves correctly. The cleanup callback restores
+   * the prior LLMModels contents.
+   */
+  injectedModels?: LLMModel[]
 }
 
 export interface LoadedFixture {
@@ -60,6 +69,22 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
   const selectId = fixture.selectedCharID ?? 0
   selectedCharID.set(selectId)
 
+  // Push injected models (Gemini, future AWS Bedrock, etc.) and remember each
+  // one's index for cleanup. We splice from the end on cleanup to avoid
+  // disturbing other indices. modellist is imported lazily so loading a
+  // fixture without injectedModels does not drag the entire model registry
+  // (and its `$effect` chain) into the dependency graph eagerly.
+  const injectedIndices: number[] = []
+  const toInject = fixture.injectedModels ?? []
+  let modelRegistry: { LLMModels: LLMModel[] } | null = null
+  if (toInject.length > 0) {
+    modelRegistry = await import('../../model/modellist')
+    for (const m of toInject) {
+      injectedIndices.push(modelRegistry.LLMModels.length)
+      modelRegistry.LLMModels.push(m)
+    }
+  }
+
   return {
     name,
     fixture,
@@ -69,6 +94,13 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
       // fire reactively on those writes, and tearing them back to `{}` mid-run
       // surfaces as an unhandled error. Each fixture's loadFixture() reseeds
       // DBState wholesale, so leaving stale state between tests is safe.
+      // Remove injected models in reverse order so each splice doesn't shift
+      // the remaining indices.
+      if (modelRegistry !== null) {
+        for (let i = injectedIndices.length - 1; i >= 0; i--) {
+          modelRegistry.LLMModels.splice(injectedIndices[i], 1)
+        }
+      }
     },
   }
 }

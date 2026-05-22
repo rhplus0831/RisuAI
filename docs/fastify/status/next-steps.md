@@ -17,12 +17,12 @@ snapshot is summarized here.
    normalized SSE envelope, client adapter, and dual-mode fixture
    harness are in place for echo, vanilla OpenAI, NanoGPT,
    OpenRouter, vanilla Anthropic, vanilla Mistral, vanilla Cohere
-   (non-streaming), and the OAI-compat keyIdentifier path
-   (DeepSeek + DeepInfra ride the openai dispatcher with a derived
-   baseUrl + `db.OaiCompAPIKeys[...]` lookup). The next Phase 6
-   slice should pick one uncovered provider family or helper
-   route. Keep the 32 local sendChat snapshots, the 6-fixture
-   server-backed sweep, and the Fastify generation tests green.
+   (non-streaming), the OAI-compat keyIdentifier path (DeepSeek +
+   DeepInfra), and vanilla Google AI Gemini (LLMFormat.GoogleCloud
+   with streaming). The next Phase 6 slice should pick one
+   uncovered provider family or helper route. Keep the 33 local
+   sendChat snapshots, the 7-fixture server-backed sweep, and the
+   Fastify generation tests green.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -41,6 +41,96 @@ snapshot is summarized here.
 <!-- prettier-ignore-start -->
 
 ## Completed Slices
+
+- **Phase 6-9 - gemini end-to-end (vanilla Google AI).** Done
+  2026-05-22. First Phase 6 provider with a fully new request/
+  response wire shape (`contents[].parts[]` + top-level
+  `systemInstruction.parts[]` + `generationConfig`). Scope:
+  vanilla Google AI (LLMFormat.GoogleCloud, key from
+  `db.google.accessToken`); explicitly defers Vertex AI
+  (LLMFormat.VertexAIGemini — needs server-side JWT auth +
+  project ID / region, Phase 9), tools, multimodal,
+  audio/image output, gemini-3 thinkingLevel handling,
+  response_schema, and antiServerOverloads global fallback.
+  New `server/fastify/src/generation/gemini.ts` ships
+  `reformatForGemini` (system rows → joined systemInstruction;
+  user → user role; assistant → model role; consecutive same-role
+  coalesce with newline join; function/tool rows dropped),
+  `resolveGeminiRequest` (defaults baseUrl
+  `https://generativelanguage.googleapis.com/v1beta`; null when
+  reformatted contents would be empty; accepts optional
+  `maxOutputTokens`, `temperature`, `topP`, `topK`), `runGemini`
+  (non-streaming POST to
+  `/models/<model>:generateContent?key=<apiKey>`; api key is
+  url-encoded; extracts every `candidates[*].content.parts[*].text`
+  concatenated; surfaces `body.error.message` on non-2xx then
+  falls back to raw text; passes `modelVersion` into the
+  result's model field on success), and `runGeminiStream`
+  (hits `:streamGenerateContent?alt=sse&key=...`; each upstream
+  SSE frame is itself a full Gemini response shape — yields one
+  `kind: 'token'` per frame using the same extractor; emits a
+  trailing `kind: 'done'` with `finishReason` derived from the
+  last frame's `candidates[0].finishReason` mapped via
+  `STOP → stop`, `MAX_TOKENS → length`, `SAFETY → content_filter`,
+  others lower-cased). Route changes: `'gemini'` added to
+  SUPPORTED_PROVIDERS with its own `GeminiOptions` (`apiKey`,
+  optional `baseUrl` / `maxOutputTokens` / `temperature` / `topP`
+  / `topK`). 501-case route test moved from `'gemini'` →
+  `'kobold'` to free up the gemini tag. Client adapter:
+  `formatToServerProvider(LLMFormat.GoogleCloud) → 'gemini'`
+  gated by `isVanillaGemini` (refuses reverse_proxy, xcustom:::,
+  endpoint override). `formatToServerProvider(VertexAIGemini)`
+  stays null. `buildProviderOptions` emits
+  `{apiKey: db.google.accessToken, maxOutputTokens, temperature}`
+  under `options.gemini`. `resolveProviderModel` gained a Gemini
+  branch that reads `modelInfo.internalID ?? modelInfo.id ??
+  aiModel` and strips a leading `'models/'` prefix (dynamic-
+  registered entries carry the full `name: 'models/<id>'` form
+  from the Google API; the dispatcher's `/models/<model>` URL
+  would otherwise double up). `loadFixture.ts` gained an
+  optional `injectedModels: LLMModel[]` field for test-time
+  model registration: each entry is pushed into `LLMModels`
+  before the test runs and spliced out on cleanup so the
+  production registry stays untouched. modellist is imported
+  lazily (dynamic import only when injection is requested) to
+  avoid a Vite SSR circular-import that fires the moduleUpdate
+  $effect chain at module load. New `gemini-basic` dual-mode
+  fixture (`aiModel: 'gemini-2.5-flash'` matching the injected
+  model id, `internalID: 'gemini-2.5-flash'`,
+  `db.google.accessToken: 'gemini-fixture-key'`, `tokenizer:
+  LLMTokenizer.Unknown` so prompt-counting falls through to tikJS
+  and avoids the `@huggingface/transformers` dynamic import in
+  the gemmaTokenize path). Shared snapshot pins stages
+  `[1, 3, 4]`, `runInlayScreen` fires, assistant text
+  `'fixture gemini reply'`, `inputTokens: 226` (real
+  tiktoken counts more than the WASM mock's whitespace-split,
+  which is why this fixture's count is higher than 176).
+  `serverCompletionFetch` gains a `'gemini'` branch (streaming
+  + non-streaming, overridable via `setGeminiResult`). Tests:
+  gemini dispatcher gains 19 cases (`reformatForGemini` 5 cases —
+  assistant→model + no systemInstruction, system rows joined,
+  consecutive-role coalesce, function/tool drop, empty-system
+  skip; `resolveGeminiRequest` 3 cases — null on missing apiKey,
+  null when contents would be empty, full-param applied;
+  `runGemini` 7 cases — URL + systemInstruction + generationConfig
+  + apiKey-url-encoding, omits systemInstruction when no system
+  rows, upstream error.message, raw-body fallback on non-2xx
+  non-JSON, no-text fail, pre-aborted no-op, modelVersion → model;
+  `runGeminiStream` 4 cases — URL contains
+  `:streamGenerateContent?alt=sse`, per-frame text → token,
+  MAX_TOKENS → length mapping, pre-aborted no-op, partial-frame
+  reassembly). Route test file gains 3 cases (gemini 400 on
+  missing apiKey, non-stream forward to /models/<m>:generateContent
+  with contents + systemInstruction + generationConfig, streaming
+  per-frame relay). Adapter test file gains 5 cases
+  (`formatToServerProvider(GoogleCloud) → 'gemini'`;
+  `formatToServerProvider(VertexAIGemini) → null`; vanilla
+  GoogleCloud routes; reverse_proxy refused; `internalID` strip of
+  `'models/'` prefix; `modelInfo.id` fallback when internalID
+  absent). Verification: `pnpm test` (526 across 46 files, +8 = 6
+  adapter + 1 local + 1 server-backed), `pnpm api:test` (258
+  across 17 files, +22 = 19 dispatcher + 3 route), `pnpm check`,
+  `pnpm build` all green.
 
 - **Phase 6-8 - deepseek + deepinfra (OAI-compat key path).** Done
   2026-05-22. Lifts the `modelInfo.keyIdentifier` refusal in
