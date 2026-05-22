@@ -13,7 +13,11 @@ import {
 } from '../generation/openai.js'
 import { requireAuth } from '../http.js'
 
-const SUPPORTED_PROVIDERS = new Set(['echo', 'openai'])
+const SUPPORTED_PROVIDERS = new Set(['echo', 'openai', 'nanogpt', 'openrouter'])
+
+const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
+const NANOGPT_SUBSCRIPTION_BASE_URL = 'https://nano-gpt.com/api/subscription/v1'
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 
 interface ChatMessage {
   role: string
@@ -38,6 +42,67 @@ interface OpenAIOptions {
   baseUrl?: unknown
   maxTokens?: unknown
   temperature?: unknown
+}
+
+interface NanoGPTOptions {
+  apiKey?: unknown
+  providerHint?: unknown
+  useSubscription?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+}
+
+interface OpenRouterOptions {
+  apiKey?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+}
+
+interface OpenAICompatibleVariant {
+  apiKey: string
+  baseUrl: string
+  maxTokens?: unknown
+  temperature?: unknown
+  extraHeaders?: Record<string, string>
+}
+
+function resolveOpenAIVariant(o: OpenAIOptions): OpenAICompatibleVariant | null {
+  if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) return null
+  const baseUrl =
+    typeof o.baseUrl === 'string' && o.baseUrl.length > 0
+      ? o.baseUrl
+      : 'https://api.openai.com/v1'
+  return { apiKey: o.apiKey, baseUrl, maxTokens: o.maxTokens, temperature: o.temperature }
+}
+
+function resolveNanoGPTVariant(o: NanoGPTOptions): OpenAICompatibleVariant | null {
+  if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) return null
+  const baseUrl = o.useSubscription === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL
+  const extraHeaders: Record<string, string> = {}
+  if (typeof o.providerHint === 'string' && o.providerHint.length > 0) {
+    extraHeaders['X-Provider'] = o.providerHint
+  }
+  return {
+    apiKey: o.apiKey,
+    baseUrl,
+    maxTokens: o.maxTokens,
+    temperature: o.temperature,
+    extraHeaders,
+  }
+}
+
+function resolveOpenRouterVariant(o: OpenRouterOptions): OpenAICompatibleVariant | null {
+  if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) return null
+  return {
+    apiKey: o.apiKey,
+    baseUrl: OPENROUTER_BASE_URL,
+    maxTokens: o.maxTokens,
+    temperature: o.temperature,
+    extraHeaders: {
+      'X-Title': 'RisuAI',
+      'HTTP-Referer': 'https://risuai.xyz',
+    },
+  }
 }
 
 function validateMessages(messages: unknown): ChatMessage[] | null {
@@ -134,26 +199,27 @@ async function handleEchoBuffered(
   }
 }
 
-async function handleOpenAIStreaming(
+async function handleOpenAICompatibleStreaming(
   req: FastifyRequest,
   reply: FastifyReply,
   model: string,
   messages: unknown[],
-  options: OpenAIOptions,
+  variant: OpenAICompatibleVariant,
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
     const resolved = resolveOpenAIRequest({
       model,
       messages,
-      apiKey: options.apiKey,
-      baseUrl: options.baseUrl,
-      maxTokens: options.maxTokens,
-      temperature: options.temperature,
+      apiKey: variant.apiKey,
+      baseUrl: variant.baseUrl,
+      maxTokens: variant.maxTokens,
+      temperature: variant.temperature,
+      extraHeaders: variant.extraHeaders,
       signal,
     })
     if (!resolved) {
-      badRequest(reply, 'options.openai.apiKey is required')
+      badRequest(reply, 'apiKey is required')
       return
     }
     await pipeStream(reply, runOpenAIStream(resolved))
@@ -162,26 +228,27 @@ async function handleOpenAIStreaming(
   }
 }
 
-async function handleOpenAIBuffered(
+async function handleOpenAICompatibleBuffered(
   req: FastifyRequest,
   reply: FastifyReply,
   model: string,
   messages: unknown[],
-  options: OpenAIOptions,
+  variant: OpenAICompatibleVariant,
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
     const resolved = resolveOpenAIRequest({
       model,
       messages,
-      apiKey: options.apiKey,
-      baseUrl: options.baseUrl,
-      maxTokens: options.maxTokens,
-      temperature: options.temperature,
+      apiKey: variant.apiKey,
+      baseUrl: variant.baseUrl,
+      maxTokens: variant.maxTokens,
+      temperature: variant.temperature,
+      extraHeaders: variant.extraHeaders,
       signal,
     })
     if (!resolved) {
-      badRequest(reply, 'options.openai.apiKey is required')
+      badRequest(reply, 'apiKey is required')
       return
     }
     const result = await runOpenAI(resolved)
@@ -231,6 +298,8 @@ export function registerGenerationRoutes(
     const options = (body.options ?? {}) as {
       echo?: EchoOptions
       openai?: OpenAIOptions
+      nanogpt?: NanoGPTOptions
+      openrouter?: OpenRouterOptions
     }
 
     if (provider === 'echo') {
@@ -243,14 +312,27 @@ export function registerGenerationRoutes(
       return
     }
 
+    let variant: OpenAICompatibleVariant | null = null
+    let variantLabel = ''
     if (provider === 'openai') {
-      const openaiOpts = options.openai ?? {}
-      if (body.stream === true) {
-        await handleOpenAIStreaming(req, reply, body.model, messages, openaiOpts)
-        return
-      }
-      await handleOpenAIBuffered(req, reply, body.model, messages, openaiOpts)
+      variant = resolveOpenAIVariant(options.openai ?? {})
+      variantLabel = 'options.openai.apiKey'
+    } else if (provider === 'nanogpt') {
+      variant = resolveNanoGPTVariant(options.nanogpt ?? {})
+      variantLabel = 'options.nanogpt.apiKey'
+    } else if (provider === 'openrouter') {
+      variant = resolveOpenRouterVariant(options.openrouter ?? {})
+      variantLabel = 'options.openrouter.apiKey'
+    }
+
+    if (variant === null) {
+      return badRequest(reply, `${variantLabel} is required`)
+    }
+
+    if (body.stream === true) {
+      await handleOpenAICompatibleStreaming(req, reply, body.model, messages, variant)
       return
     }
+    await handleOpenAICompatibleBuffered(req, reply, body.model, messages, variant)
   })
 }

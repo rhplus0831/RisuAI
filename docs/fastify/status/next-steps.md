@@ -44,6 +44,47 @@ are below under "Completed Slices".
 
 ## Completed Slices
 
+- **Phase 6-4c - nanogpt + openrouter variants.** Done 2026-05-22.
+  Extends the openai dispatcher with hardcoded baseUrl + extra
+  request headers per variant. The dispatcher itself gained an
+  optional `extraHeaders` field on `OpenAIRequest`; the route
+  factored its openai-handlers into `handleOpenAICompatible{Buffered,Streaming}`
+  taking a pre-resolved `OpenAICompatibleVariant`. New variants:
+  `nanogpt` routes to `https://nano-gpt.com/api/v1` (or
+  `/api/subscription/v1` when `options.nanogpt.useSubscription === true`),
+  optionally adds `X-Provider: <hint>`. `openrouter` routes to
+  `https://openrouter.ai/api/v1` with hardcoded
+  `X-Title: RisuAI` + `HTTP-Referer: https://risuai.xyz`. Client
+  side: `formatToServerProvider(NanoGPT) → 'nanogpt'`; the
+  OpenAICompatible branch now goes through `selectOpenAIVariant`
+  which routes `aiModel === 'openrouter'` to `'openrouter'` and
+  everything else (modulo reverse_proxy / xcustom::: / keyIdentifier
+  / endpoint refusals) to `'openai'`. New `resolveProviderModel`
+  helper overrides the wire-level `model` field with
+  `db.nanogptRequestModel` / `db.openrouterRequestModel` for the
+  two variants (the vanilla openai path keeps using
+  `aiModel`/`modelInfo.id`), matching what the local
+  `request/openAI/requests.ts:255-262` already does.
+  `buildProviderOptions` gained `nanogpt` and `openrouter`
+  branches (key from `db.nanogptKey` / `db.openrouterKey`,
+  `useSubscription` from `db.nanogptUseSubscriptionEndpoint`,
+  `providerHint` from `db.nanogptProvider`, `maxTokens` /
+  `temperature` pulled from `targ`). Tests: openai dispatcher
+  gained 1 case (extraHeaders reaching upstream),
+  `generation.completion.test.ts` gained 5 cases (nanogpt 400 on
+  missing apiKey, nanogpt forward with X-Provider, nanogpt
+  subscription endpoint, openrouter 400 on missing apiKey,
+  openrouter forward with X-Title + HTTP-Referer); adapter test
+  changed the dropped-NanoGPT-under-OpenAICompatible case into
+  routes-NanoGPT-to-'nanogpt' + routes-openrouter-to-'openrouter',
+  added per-provider request-body cases for nanogpt and
+  openrouter (apiKey / useSubscription / providerHint / wire-model
+  override). No new fixtures: both variants share the openai wire
+  shape on the SPA-to-server hop, so `openai-basic` covers the
+  orchestrator parity contract. Verification: `pnpm test` (489
+  across 46 files, +3 adapter cases), `pnpm api:test` (171 across
+  13 files, +6), `pnpm check`, `pnpm build` all green.
+
 - **Phase 6-4b - openai client adapter + dual-mode fixture.** Done
   2026-05-22. Extends the Phase 6-2 adapter and the Phase 6-3
   dual-mode harness to cover OpenAI Chat Completions, closing

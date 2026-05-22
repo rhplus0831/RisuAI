@@ -177,29 +177,30 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
-  it('refuses NanoGPT / OpenRouter aliases under OpenAICompatible', () => {
-    expect(
-      getServerCompletionProvider(
-        makeTarg({
-          aiModel: 'nanogpt',
-          modelInfo: {
-            id: 'nanogpt',
-            format: LLMFormat.OpenAICompatible,
-          } as unknown as RequestDataArgumentExtended['modelInfo'],
-        }),
-      ),
-    ).toBeNull()
-    expect(
-      getServerCompletionProvider(
-        makeTarg({
-          aiModel: 'openrouter',
-          modelInfo: {
-            id: 'openrouter',
-            format: LLMFormat.OpenAICompatible,
-          } as unknown as RequestDataArgumentExtended['modelInfo'],
-        }),
-      ),
-    ).toBeNull()
+  it('routes the openrouter alias to provider "openrouter"', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'openrouter',
+        modelInfo: {
+          id: 'openrouter',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openrouter')
+  })
+
+  it('routes a NanoGPT-format model to provider "nanogpt"', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'nanogpt',
+        modelInfo: {
+          id: 'nanogpt',
+          format: LLMFormat.NanoGPT,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('nanogpt')
   })
 
   it('refuses models with a keyIdentifier (DeepInfra/DeepSeek style)', () => {
@@ -282,6 +283,72 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     await requestServerCompletion(targ, 'openai', null)
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.options.openai).toEqual({ apiKey: 'sk-x' })
+  })
+
+  it('emits options.nanogpt and overrides the wire model with db.nanogptRequestModel', async () => {
+    seedDb({
+      nanogptKey: 'nk-fixture',
+      nanogptRequestModel: 'meta-llama/Meta-Llama-3-70B',
+      nanogptUseSubscriptionEndpoint: true,
+      nanogptProvider: 'meta',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), {
+        status: 200,
+      })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'nanogpt',
+      modelInfo: {
+        id: 'nanogpt',
+        format: LLMFormat.NanoGPT,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 128,
+    })
+    await requestServerCompletion(targ, 'nanogpt', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('nanogpt')
+    expect(sent.model).toBe('meta-llama/Meta-Llama-3-70B')
+    expect(sent.options.nanogpt).toEqual({
+      apiKey: 'nk-fixture',
+      useSubscription: true,
+      providerHint: 'meta',
+      maxTokens: 128,
+    })
+  })
+
+  it('emits options.openrouter and overrides the wire model with db.openrouterRequestModel', async () => {
+    seedDb({
+      openrouterKey: 'or-fixture',
+      openrouterRequestModel: 'anthropic/claude-3.5-sonnet',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), {
+        status: 200,
+      })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'openrouter',
+      modelInfo: {
+        id: 'openrouter',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      temperature: 0.7,
+    })
+    await requestServerCompletion(targ, 'openrouter', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openrouter')
+    expect(sent.model).toBe('anthropic/claude-3.5-sonnet')
+    expect(sent.options.openrouter).toEqual({
+      apiKey: 'or-fixture',
+      temperature: 0.7,
+    })
   })
 })
 

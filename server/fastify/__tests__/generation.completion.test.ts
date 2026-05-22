@@ -347,3 +347,131 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     )
   })
 })
+
+describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', () => {
+  const okOpenAIResponse = (text: string) =>
+    new Response(
+      JSON.stringify({ choices: [{ message: { content: text }, finish_reason: 'stop' }] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )
+
+  it('nanogpt 400s when options.nanogpt.apiKey is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'nanogpt',
+        model: 'nanogpt',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { nanogpt: {} },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'options.nanogpt.apiKey is required' })
+  })
+
+  it('nanogpt forwards to nano-gpt.com with optional X-Provider', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return okOpenAIResponse('hi from nano')
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'nanogpt',
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { nanogpt: { apiKey: 'nk-test', providerHint: 'openai' } },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'hi from nano' })
+
+    expect(captured!.url).toBe('https://nano-gpt.com/api/v1/chat/completions')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer nk-test')
+    expect(headers['X-Provider']).toBe('openai')
+  })
+
+  it('nanogpt routes the subscription endpoint when useSubscription=true', async () => {
+    let capturedUrl = ''
+    globalThis.fetch = (async (url: string) => {
+      capturedUrl = url
+      return okOpenAIResponse('sub')
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'nanogpt',
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { nanogpt: { apiKey: 'nk-test', useSubscription: true } },
+      },
+    })
+    expect(capturedUrl).toBe(
+      'https://nano-gpt.com/api/subscription/v1/chat/completions',
+    )
+  })
+
+  it('openrouter 400s when options.openrouter.apiKey is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openrouter',
+        model: 'openrouter-model',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { openrouter: {} },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'options.openrouter.apiKey is required' })
+  })
+
+  it('openrouter forwards to openrouter.ai with X-Title + HTTP-Referer', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return okOpenAIResponse('openrouter ok')
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-3.5-sonnet',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { openrouter: { apiKey: 'or-test' } },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'openrouter ok' })
+
+    expect(captured!.url).toBe('https://openrouter.ai/api/v1/chat/completions')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer or-test')
+    expect(headers['X-Title']).toBe('RisuAI')
+    expect(headers['HTTP-Referer']).toBe('https://risuai.xyz')
+  })
+})

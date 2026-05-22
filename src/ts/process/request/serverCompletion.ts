@@ -12,6 +12,8 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       return 'echo'
     case LLMFormat.OpenAICompatible:
       return 'openai'
+    case LLMFormat.NanoGPT:
+      return 'nanogpt'
     default:
       return null
   }
@@ -19,19 +21,19 @@ export function formatToServerProvider(format: LLMFormat): string | null {
 
 /**
  * `LLMFormat.OpenAICompatible` covers vanilla OpenAI plus several derivatives
- * that share the wire shape but route through different upstreams + keys
- * (NanoGPT, OpenRouter, reverse_proxy, xcustom:::, anything carrying
- * `keyIdentifier`/`endpoint`). Phase 6-4 only ships the vanilla path; the
- * derivatives keep using local dispatch until their per-provider slice lands.
+ * that share the wire shape. The vanilla path goes to `provider: 'openai'`;
+ * `aiModel === 'openrouter'` routes to `provider: 'openrouter'`. The
+ * derivatives still on local dispatch are reverse_proxy, xcustom:::, and
+ * anything carrying `keyIdentifier`/`endpoint` (each gets its own slice).
  */
-function isVanillaOpenAI(targ: RequestDataArgumentExtended): boolean {
+function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
-  if (aiModel === 'nanogpt' || aiModel === 'openrouter') return false
-  if (targ.modelInfo?.keyIdentifier) return false
-  if (targ.modelInfo?.endpoint) return false
-  return true
+  if (aiModel === 'openrouter') return 'openrouter'
+  if (aiModel === 'reverse_proxy') return null
+  if (aiModel.startsWith('xcustom:::')) return null
+  if (targ.modelInfo?.keyIdentifier) return null
+  if (targ.modelInfo?.endpoint) return null
+  return 'openai'
 }
 
 export function getServerCompletionProvider(
@@ -44,8 +46,24 @@ export function getServerCompletionProvider(
   if (!targ.modelInfo) return null
   const provider = formatToServerProvider(targ.modelInfo.format)
   if (provider === null) return null
-  if (provider === 'openai' && !isVanillaOpenAI(targ)) return null
+  if (provider === 'openai') return selectOpenAIVariant(targ)
   return provider
+}
+
+/**
+ * Wire-level `model` for the upstream. Vanilla OpenAI sends `aiModel`
+ * verbatim; nanogpt and openrouter override with the user's
+ * `db.nanogptRequestModel` / `db.openrouterRequestModel` because the local
+ * dispatcher does the same in `request/openAI/requests.ts:255-262`.
+ */
+export function resolveProviderModel(
+  targ: RequestDataArgumentExtended,
+  provider: string,
+): string {
+  const db = getDatabase()
+  if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
+  if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
+  return targ.modelInfo?.id ?? targ.aiModel ?? ''
 }
 
 function buildProviderOptions(
@@ -62,12 +80,26 @@ function buildProviderOptions(
     }
   }
   if (provider === 'openai') {
-    const openai: Record<string, unknown> = {
-      apiKey: db.openAIKey ?? '',
-    }
+    const openai: Record<string, unknown> = { apiKey: db.openAIKey ?? '' }
     if (typeof targ.maxTokens === 'number') openai.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') openai.temperature = targ.temperature
     return { openai }
+  }
+  if (provider === 'nanogpt') {
+    const nanogpt: Record<string, unknown> = { apiKey: db.nanogptKey ?? '' }
+    if (db.nanogptUseSubscriptionEndpoint === true) nanogpt.useSubscription = true
+    if (typeof db.nanogptProvider === 'string' && db.nanogptProvider.length > 0) {
+      nanogpt.providerHint = db.nanogptProvider
+    }
+    if (typeof targ.maxTokens === 'number') nanogpt.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') nanogpt.temperature = targ.temperature
+    return { nanogpt }
+  }
+  if (provider === 'openrouter') {
+    const openrouter: Record<string, unknown> = { apiKey: db.openrouterKey ?? '' }
+    if (typeof targ.maxTokens === 'number') openrouter.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') openrouter.temperature = targ.temperature
+    return { openrouter }
   }
   return {}
 }
@@ -160,7 +192,7 @@ export async function requestServerCompletion(
   const auth = await getNodeServerProxyAuth()
   const payload = {
     provider,
-    model: targ.modelInfo?.id ?? targ.aiModel ?? '',
+    model: resolveProviderModel(targ, provider),
     messages: targ.formated,
     stream: useStreaming,
     options: buildProviderOptions(targ, provider),

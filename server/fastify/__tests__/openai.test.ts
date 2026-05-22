@@ -108,6 +108,25 @@ describe('runOpenAI (non-streaming)', () => {
     })
   })
 
+  it('merges extraHeaders into the upstream request', async () => {
+    let capturedHeaders: Record<string, string> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      capturedHeaders = init.headers as Record<string, string>
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      extraHeaders: { 'X-Title': 'RisuAI', 'HTTP-Referer': 'https://risuai.xyz' },
+      signal: new AbortController().signal,
+    })
+    expect(capturedHeaders['X-Title']).toBe('RisuAI')
+    expect(capturedHeaders['HTTP-Referer']).toBe('https://risuai.xyz')
+    expect(capturedHeaders.authorization).toBe('Bearer k')
+  })
+
   it('strips a trailing slash from baseUrl', async () => {
     let capturedUrl = ''
     vi.stubGlobal('fetch', async (url: string) => {

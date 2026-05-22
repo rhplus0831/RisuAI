@@ -7,6 +7,7 @@ export interface OpenAIRequest {
   baseUrl: string
   maxTokens?: number
   temperature?: number
+  extraHeaders?: Record<string, string>
   signal: AbortSignal
 }
 
@@ -17,6 +18,7 @@ interface OpenAIResolveInput {
   baseUrl?: unknown
   maxTokens?: unknown
   temperature?: unknown
+  extraHeaders?: Record<string, string>
   signal: AbortSignal
 }
 
@@ -47,6 +49,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     baseUrl,
     maxTokens,
     temperature,
+    extraHeaders: input.extraHeaders,
     signal: input.signal,
   }
 }
@@ -71,6 +74,7 @@ function headers(req: OpenAIRequest): Record<string, string> {
   return {
     'content-type': 'application/json',
     authorization: `Bearer ${req.apiKey}`,
+    ...(req.extraHeaders ?? {}),
   }
 }
 
