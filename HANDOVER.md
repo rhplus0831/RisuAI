@@ -2,168 +2,73 @@
 
 Date: 2026-05-22
 Branch: `fastify`
-Head: `05a4e248 docs: backfill Phase 6-22 commit hash in next-steps.md`
+Head: `067414ff docs: backfill Phase 6-27 commit hash in next-steps.md`
 
 This file is the working handover from the previous agent. Read
-`docs/fastify/phases/phase-6-server-generation.md` for the phase
-goal and `docs/fastify/status/next-steps.md` for the per-slice
-history; this HANDOVER focuses on **what's queued next** so you
-can pick it up without re-deriving context.
+`docs/fastify/phases/phase-6-server-generation.md` for the closed
+Phase 6 scope (see "Closeout" section at the bottom of that doc)
+and `docs/fastify/phases/phase-7-prompt-assembly.md` for the
+phase that follows. `docs/fastify/status/next-steps.md` carries
+the per-slice history.
 
-## Where things stand
+## Phase 6 is closed
 
-Phase 6 has shipped a server-side `POST /api/v1/generate/completion`
-route, the normalized SSE envelope, the client adapter, and the
-dual-mode fixture sweep. The following provider mappings are
-live:
+As of `cb6d876c` + `067414ff` (Phase 6-27 fixture sweep), the
+`/completion` part of Phase 6 is done. The phase doc has a full
+closeout section listing what landed, what was deferred to Phase 7,
+and what was deferred until a fixture demands it.
 
-- Vanilla wire formats: `echo`, `openai`, `nanogpt`, `openrouter`,
-  `anthropic`, `mistral`, `cohere`, `gemini` (Studio + Vertex),
-  `openai-legacy-instruct`, `openai-responses`, `kobold`,
-  `ooba-legacy`, `ollama` (native `/api/chat`), `bedrock` (AWS
-  SigV4), `horde` (async polling).
-- Variant routings on existing dispatchers: AnthropicLegacy,
-  NanoGPT Messages, NanoGPT Legacy, NanoGPT Responses, DeepSeek +
-  DeepInfra (OAI-compat keyIdentifier), Ollama cloud
-  (openai / openai-responses / anthropic per
-  `db.ollamaRequestFormat`), `xcustom:::<id>` under
-  OpenAICompatible **and** Anthropic, `reverse_proxy` under
-  OpenAICompatible (with `risu::` header lift, URL autofill,
-  `db.reverseProxyOobaMode` system hoisting) **and** Anthropic.
+Test counts at closeout:
 
-Shared server-side infrastructure that now exists:
-
-- `additionalParams.ts` — body/header overlay DSL ported from the
-  SPA (used by openai + anthropic dispatchers; ready to wire into
-  other dispatchers when their reverse_proxy / xcustom slices
-  land).
-- `vertexAuth.ts` — RS256 JWT signing + in-process Bearer cache.
-- `sigv4.ts` — pure-JS AWS SigV4 signer.
-- `applyOobaSystemHoist` in `openai.ts` — system-message hoist
-  for `db.reverseProxyOobaMode`.
-
-Latest verification (Phase 6-22 closeout):
-
-- `pnpm api:test`: 419 across 27 files
-- `pnpm test`: 570 across 46 files (+ 4 skipped)
+- `pnpm api:test`: 434 across 27 files
+- `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: clean
 
-The dual-mode fixture sweep still covers the original 7
-fixtures (`echo-basic`, `openai-basic`, `anthropic-basic`,
-`mistral-basic`, `cohere-basic`, `deepseek-basic`,
-`gemini-basic`). Local sendChat sweep still covers 33 fixtures.
+## What's next
 
-## What to do next
+The next thing to start is **Phase 7 (prompt assembly)**. Phase 6
+deliberately did not move prompt assembly server-side; that's
+Phase 7's whole job. Three providers (Ooba OAI-compat, NovelAI
+text, NovelList) were explicitly deferred to Phase 7 because
+their prompt flatten needs server-owned character + user state.
+The memos describe the trade-offs:
 
-Three categories of work remain. All three are well-scoped; pick
-based on appetite and risk tolerance.
+- [`docs/fastify/design/ooba-oai-compat.md`](docs/fastify/design/ooba-oai-compat.md)
+- [`docs/fastify/design/novelai-novellist-stringlize.md`](docs/fastify/design/novelai-novellist-stringlize.md)
 
-### 1. Mechanical batch — extend additionalParams to other format dispatchers
+The Horde slice (Phase 6-22) shipped a **client-side option-B**
+pattern as an interim — client pre-flattens via `applyChatTemplate`,
+server takes a `prompt` string, client unstringlizes the result.
+If Phase 7 decides to ship Ooba / NovelAI / NovelList with the
+same pattern instead of moving the flatten server-side, each is
+~150 LOC and unblocks immediately. The current memos lean toward
+server-side flatten, but the option-B pivot is on the table.
 
-`reverse_proxy` and `xcustom:::<id>` users can target any
-`LLMFormat` via `db.customAPIFormat` / `customModels[].format`.
-Today only OpenAICompatible and Anthropic are routed; Mistral,
-Cohere, Gemini Studio, OpenAI Responses, OpenAI Legacy Instruct,
-Kobold, ooba-legacy are all refused.
+The Phase 7 doc (`docs/fastify/phases/phase-7-prompt-assembly.md`)
+should be your starting point for understanding the prompt-assembly
+move. Open question for the user before starting Phase 7: ship
+Ooba / NovelAI / NovelList with option B now or hold them until
+the server flatten is built?
 
-Each one follows the same recipe established by Phases 6-17
-(xcustom OAI-compat) and 6-19 (Anthropic): port `additionalParams`
-into the target dispatcher, drop the blanket refusal in the
-adapter gate, add an autofill helper if the URL shape differs
-from the wire's natural path.
+## Other Phase 6 follow-ups (not blocking Phase 7)
 
-Per-slice cost is small (~150 LOC + tests):
+These can land at any time without re-opening Phase 6:
 
-- **Mistral** (`reverse_proxy`/`xcustom` under `LLMFormat.Mistral`):
-  Mistral's wire is OpenAI-compat-shaped, so URL autofill is
-  same as OAI's `/v1/chat/completions`. The mistral dispatcher
-  needs the same `buildRequestInit` consolidation we did for
-  openai + anthropic.
-- **Cohere** (`reverse_proxy`/`xcustom` under `LLMFormat.Cohere`):
-  Cohere wire is `/chat` (no `/completions`). URL autofill helper
-  needed.
-- **OpenAI Responses** (`reverse_proxy`/`xcustom` under
-  `LLMFormat.OpenAIResponseAPI`): wire path is `/responses`;
-  autofill helper. Already accepts a `baseUrl` override.
-- **OpenAI Legacy Instruct** (`reverse_proxy` under
-  `LLMFormat.OpenAILegacyInstruct`): wire path is
-  `/v1/completions`; autofill. Note that the SPA has an Ooba
-  OAI-compat case too (see open question below).
-- **Native Ollama**: probably skip — reverse_proxy onto a native
-  Ollama server is an unusual config; xcustom can carry a custom
-  baseUrl already.
-- **Kobold / ooba-legacy**: same — these targets already accept
-  an arbitrary baseUrl via their `options.kobold.baseUrl` /
-  `options['ooba-legacy'].baseUrl`. A user who wants a
-  reverse-proxied Kobold can configure it directly.
-
-Recommended next: Mistral first (smallest), then Cohere, then
-OpenAI Responses. The OpenAI Legacy Instruct one is entangled
-with the Ooba memo decision (see below).
-
-### 2. Other remaining gaps
-
-- **Streaming for buffered-only providers**: Cohere, OpenAI Responses,
-  OpenAI Legacy Instruct, Kobold, ooba-legacy, Bedrock, and Horde
-  all ship buffered-only today. Each has its own reason (Cohere
-  + legacy-instruct match local; Bedrock needs EventStream parser;
-  Horde wire isn't incrementally streamable). The Bedrock
-  EventStream parser is the most interesting follow-up: AWS
-  EventStream is a binary length-prefixed framing protocol used
-  by `:invoke-with-response-stream`. ~150 LOC for the parser +
-  another ~100 LOC of wiring.
-- **OpenAI MultiGen (`body.n = db.genTime`)**: deferred from
-  reverse_proxy. Incompatible with the one-stream-per-completion
-  SSE envelope as currently designed; would need a multi-result
-  return shape.
-
-### 3. Phase 7 prep — deferred prompt-assembly slices
-
-Three providers were explicitly deferred to Phase 7 because they
-all need server-owned character / user context to do their
-prompt flatten properly:
-
-- **Ooba OAI-compat** (`/v1/completions` against
-  `db.textgenWebUIBlockingURL`). Memo:
-  [`docs/fastify/design/ooba-oai-compat.md`](docs/fastify/design/ooba-oai-compat.md).
-  Local uses `applyChatTemplate` (Jinja); routing through the
-  existing `## User` flatten would silently change prompt format.
-- **NovelAI + NovelList**. Memo:
-  [`docs/fastify/design/novelai-novellist-stringlize.md`](docs/fastify/design/novelai-novellist-stringlize.md).
-  Same shape — `stringlizeNAIChat` / `stringlizeAINChat` /
-  `unstringlizeChat` need character + user state.
-
-The Horde slice (6-22) used the option-B pattern from the
-NovelAI memo: client pre-flattens via `applyChatTemplate`, ships
-a `prompt` string, and unstringlizes the result client-side.
-If the same pattern is acceptable for Ooba / NovelAI / NovelList,
-those slices unblock immediately (~150 LOC each). Decision is
-still open and worth raising with the user.
-
-## Open questions for the user
-
-If you keep going on Phase 6 without check-in, the safe picks are
-the **mechanical batch** items above (Mistral / Cohere / OpenAI
-Responses reverse_proxy + xcustom). They have no design
-questions.
-
-For the bigger decisions:
-
-1. **Ooba / NovelAI / NovelList**: ship now using the Horde
-   pattern (client pre-flattens + ships `prompt`), or defer to
-   Phase 7 as the existing memos recommend?
-2. **Bedrock streaming**: implement now (~250 LOC for the
-   EventStream parser + plumbing) or defer until a fixture
-   demands it?
-3. **Phase 6 closeout**: is the current scope (15+ providers,
-   shared infrastructure for additionalParams / SigV4 / Vertex
-   JWT) enough to call Phase 6 done and move to Phase 7?
+- **Other `/generate/*` routes**: `/translate`, `/tts`, `/image`,
+  `/count-tokens`, `/encodings`, `/triggers/run`. Each is its own
+  slice; they don't gate completion or Phase 7.
+- **Bedrock streaming**: AWS EventStream parser (~150 LOC) +
+  plumbing (~100 LOC). Currently buffered-only; the closeout
+  decided to wait for a concrete fixture to demand it.
+- **OpenAI MultiGen** (`body.n = db.genTime`): incompatible with
+  the current one-stream-per-completion SSE envelope; would need
+  a multi-result return shape.
 
 ## Patterns to follow
 
-When adding a provider, copy the structure from a similar recent
-slice. The cleanest references:
+When extending the completion route or adding a new provider,
+copy the structure from a similar recent slice:
 
 - **OpenAI-compat wire shape**: copy `mistral.ts` (Phase 6-6).
 - **New wire shape with streaming**: copy `gemini.ts` (Phase 6-9).
@@ -174,13 +79,21 @@ slice. The cleanest references:
   Phase 6-11 anthropic-legacy / NanoGPT-messages is the smallest
   example.
 - **additionalParams overlay through an existing dispatcher**:
-  copy the openai (Phase 6-17) or anthropic (Phase 6-19) work.
-- **reverse_proxy with URL autofill**: copy Phase 6-18 (OAI-compat)
-  or 6-19 (Anthropic).
+  copy the openai (Phase 6-17), anthropic (Phase 6-19), mistral
+  (Phase 6-23), cohere (Phase 6-24), openai-responses (Phase 6-25),
+  or openai-legacy-instruct (Phase 6-26) work.
+- **reverse_proxy with URL autofill**: copy Phase 6-18 (OAI-compat),
+  6-19 (Anthropic), 6-23 (Mistral, reuses OAI helper), 6-24
+  (Cohere, dedicated helper), 6-25 (Responses, dedicated helper),
+  or 6-26 (Legacy Instruct, dedicated helper).
 - **JWT auth + token cache**: copy `vertexAuth.ts` (Phase 6-20).
 - **SigV4 / new pure-JS crypto**: copy `sigv4.ts` (Phase 6-21).
 - **Async polling loop with abort cleanup**: copy `horde.ts`
   (Phase 6-22).
+- **Dual-mode fixture for a routed provider**: copy any of the
+  five fixtures added in Phase 6-27. Each is a JSON db, a
+  one-line `upstream/<name>.jsonl` carrying `{type, result, model}`,
+  and an auto-recorded expected snapshot.
 
 The dispatcher tests live in `server/fastify/__tests__/` (one
 file per dispatcher). The route-level test cases append to
@@ -189,9 +102,11 @@ adapter test cases (format-map + buildProviderOptions + gate
 refusals) go in `src/ts/process/request/tests/serverCompletion.test.ts`.
 
 If a slice adds a dual-mode fixture, follow Phase 6-9's pattern
-(`gemini-basic`): the fixture JSON can include an
-`injectedModels` field that `loadFixture.ts` pushes into
-`LLMModels` for the test only.
+(`gemini-basic`): the fixture JSON can include an `injectedModels`
+field that `loadFixture.ts` pushes into `LLMModels` for the test
+only. New fixtures need a per-provider result setter wired in
+`sendChat.fixtures.serverBacked.test.ts` so both sweeps see the
+same reply text.
 
 ## Commit convention
 
@@ -212,9 +127,16 @@ After a slice lands, update `docs/fastify/status/next-steps.md`:
 
 ## Slice numbering note
 
-The original HANDOVER (`f33b15fb`) used 6-19 / 6-20 / 6-21 for
-Vertex / AWS / Horde. Subsequent slices took those numbers
-instead (6-16 native ollama through 6-22 horde). The
-`docs/fastify/status/next-steps.md` table is authoritative for
-current numbering; the pending task entries (#125-#127) still
-carry historical labels but reflect completed work.
+The Phase 6 numbering went from 6-1 through 6-27. Slices 6-14
+through 6-22 were a mix of provider variants, Native Ollama, and
+the deferred Vertex / Bedrock / Horde slices. Slices 6-23 through
+6-26 ported `additionalParams` to the remaining non-OAI
+dispatchers (Mistral, Cohere, OpenAI Responses, OpenAI Legacy
+Instruct). Slice 6-27 extended the dual-mode fixture sweep with
+five fixtures for the providers that were never covered by the
+original 7-fixture set. `docs/fastify/status/next-steps.md` is
+authoritative for current numbering and commit hashes.
+
+Phase 7 starts fresh — its slices will be `Phase 7-1`, `Phase 7-2`,
+etc., tracked in `docs/fastify/status/next-steps.md` alongside
+the Phase 6 history.

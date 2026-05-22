@@ -15,18 +15,30 @@ calls and streams the results.
 - Phase 3 closed (proxy is server-side).
 - Phase 5 closed (Stage 3 is its own browser module already).
 
+## Status: closed (2026-05-22)
+
+The `/completion` part of Phase 6 closes here. The translation /
+TTS / image / token-counting / triggers routes listed under "Scope"
+below stay on the roadmap but are not part of the closeout —
+they're tracked separately and can land at any time without
+re-opening Phase 6. See [closeout below](#closeout-2026-05-22) for
+the explicit exit scope and the items that were deferred to other
+phases or a fixture-driven trigger.
+
 ## Landed So Far
 
 As of 2026-05-22, Phase 6 has landed `POST
 /api/v1/generate/completion`, the normalized SSE envelope, the
 server-backed client adapter, and provider dispatch through
-Phase 6-22 (`5e2975ec`), ending with Stable Horde text. The
-dual-mode fixture sweep still covers the seven provider-parity
-fixtures listed in
-[`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md);
-newer provider variants are covered by route, dispatcher, and
+Phase 6-27 (`cb6d876c`), ending with the dual-mode fixture sweep
+extended to cover the providers routed after the original 7-fixture
+set. The dual-mode fixture sweep now covers twelve fixtures (the
+seven provider-parity originals plus Vertex Gemini, Bedrock, Horde,
+Mistral reverse_proxy, and Anthropic reverse_proxy). Newer provider
+variants beyond those twelve are covered by route, dispatcher, and
 adapter tests. The rest of this document describes the full Phase
-6 target scope and the remaining provider/helper work.
+6 target scope; the closeout section spells out what's intentionally
+deferred.
 
 ## Scope
 
@@ -162,3 +174,107 @@ both modes side by side until Phase 9.
 - `risuai-metatron`'s `chat_generation/providers.py` (7370 lines!)
   is the cautionary tale: keep `generate/router.ts` and each
   provider file small. Avoid building one big shared planner.
+
+## Closeout (2026-05-22)
+
+### What landed
+
+- `POST /api/v1/generate/completion` with auth gate, normalized
+  SSE envelope, abort plumbing, and a Phase-6-2 client adapter
+  flag-gated on `db.useServerGeneration`.
+- Provider dispatch for 15+ wire shapes plus their variant
+  routings: echo, OpenAI Chat (+ NanoGPT chat, OpenRouter, DeepSeek
+  / DeepInfra keyIdentifier path, Ollama Cloud OAI), Anthropic
+  Messages (+ Anthropic Legacy, NanoGPT Messages, Ollama Cloud
+  Anthropic), Mistral, Cohere, OpenAI Legacy Instruct (+ NanoGPT
+  Legacy), OpenAI Responses (+ NanoGPT Responses, Ollama Cloud
+  Responses), Kobold, ooba legacy, native Ollama `/api/chat`,
+  Google AI Gemini, Vertex AI Gemini (RS256 JWT + in-process Bearer
+  cache), AWS Bedrock Claude (pure-JS SigV4), Stable Horde text
+  (async polling), and `reverse_proxy` + `xcustom:::id` rides
+  through openai / anthropic / mistral / cohere / openai-responses /
+  openai-legacy-instruct (each with the shared `additionalParams`
+  body/header overlay DSL ported into the dispatcher via a
+  `buildRequestInit` refactor).
+- Shared server-side infrastructure: `additionalParams.ts` DSL,
+  `vertexAuth.ts` JWT signer + Bearer cache, `sigv4.ts` AWS
+  signer, `applyOobaSystemHoist` for reverse_proxy ooba mode, and
+  a handful of URL autofill helpers (`resolveReverseProxyUrl`,
+  `resolveReverseProxyAnthropicUrl`, `resolveReverseProxyCohereUrl`,
+  `resolveReverseProxyResponsesUrl`,
+  `resolveReverseProxyLegacyInstructUrl`).
+- Dual-mode fixture sweep: 12 fixtures (echo, openai, anthropic,
+  mistral, cohere, deepseek, gemini, gemini-vertex, bedrock, horde,
+  mistral-reverse-proxy, anthropic-reverse-proxy). Local sweep
+  (33 fixtures) covers the broader sendChat snapshot set.
+
+### Test counts at closeout
+
+- `pnpm api:test`: 434 across 27 files
+- `pnpm test`: 601 across 46 files (+ 4 skipped)
+- `pnpm check`: 0 errors / 0 warnings
+- `pnpm build`: clean
+
+### Deferred to Phase 7
+
+These providers can't ship their server slices until Phase 7 lands
+server-owned character/user state, since their prompt flatten
+needs the full character context:
+
+- Ooba OAI-compatible `/v1/completions` against
+  `db.textgenWebUIBlockingURL`. Memo:
+  [`../design/ooba-oai-compat.md`](../design/ooba-oai-compat.md).
+- NovelAI text + NovelList. Memo:
+  [`../design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md).
+
+The Horde slice (6-22) used the option-B pattern — client
+pre-flattens via `applyChatTemplate`, server takes a `prompt`
+string, client unstringlizes the result. The same pattern is
+available for the three deferred providers if Phase 7 chooses to
+ship them that way instead of moving the flatten server-side.
+
+### Deferred until a fixture demands it
+
+- **Bedrock streaming.** AWS EventStream is a binary
+  length-prefixed framing protocol on
+  `:invoke-with-response-stream` (~250 LOC for parser + plumbing).
+  No fixture currently demands streaming; buffered-only is
+  honest about the current need. When a fixture lands later, the
+  next agent should add an EventStream parser alongside the
+  existing `sigv4.ts`.
+- **OpenAI MultiGen (`body.n = db.genTime`).** Deferred from the
+  reverse_proxy slice. Incompatible with the one-stream-per-completion
+  SSE envelope as currently designed; would need a multi-result
+  return shape (or per-result envelopes).
+- **ooba-legacy streaming via WebSocket.** Local uses a WS stream;
+  the fetch SSE envelope doesn't apply. Deferred.
+- **Cohere / OpenAI Responses / Legacy Instruct / Kobold streaming.**
+  Each is buffered-only in the local path too; no fixture demands
+  it.
+
+### Out of scope for this phase
+
+These remain on the Phase 6 roadmap above but were never part of
+the `/completion` closeout. They each get their own slice when
+prioritized; they don't gate Phase 7:
+
+- `POST /api/v1/generate/translate` (DeepL, DeepLX, Google
+  Translate, Bergamot, LLM translation).
+- `POST /api/v1/generate/tts`.
+- `POST /api/v1/generate/image`.
+- `POST /api/v1/generate/count-tokens` + `GET
+  /api/v1/generate/encodings`.
+- `POST /api/v1/generate/triggers/run` (worker_threads sandbox).
+
+### Exit criteria check
+
+- ✅ Every LLM provider in `src/ts/model/modellist.ts` that doesn't
+  need character/user state has a server-side dispatch path. The
+  ones that do need it (Ooba OAI, NovelAI, NovelList) are
+  documented memos and deferred to Phase 7.
+- ✅ `pnpm api:test` covers each provider's request shaping +
+  response normalization with a dispatcher + route test suite.
+- ✅ The dual-mode fixture sweep covers 12 fixtures across the
+  major routed providers and produces identical observable output
+  in both modes.
+- ✅ `pnpm test`, `pnpm check`, `pnpm build`, `pnpm api:test` green.

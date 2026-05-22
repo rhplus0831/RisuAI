@@ -5,72 +5,32 @@ Date: 2026-05-22
 Use this list to pick the next chunk of work. Phase 5 closed on
 2026-05-22 with all 28 extraction slices landed; the historical
 slice record now lives in
-[`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 is active,
-and commit history through Phase 6-27 shows provider coverage
-landed through OpenAI Legacy Instruct `reverse_proxy` +
-`xcustom:::id` — the mechanical batch of additionalParams ports
-is complete, and the dual-mode fixture sweep has been extended
-to cover the newly-routed providers (Vertex Gemini, Bedrock,
-Horde, Mistral reverse_proxy, Anthropic reverse_proxy).
+[`sendchat-slicing.md`](sendchat-slicing.md). The `/completion`
+part of Phase 6 closed on 2026-05-22 with 27 slices landed; see
+the "Closeout" section in
+[`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
+for what landed, what was deferred to Phase 7, and what's
+deferred until a fixture demands it. Phase 7 (prompt assembly)
+is the next phase to start.
 
 ## Immediate
 
-1. **Continue Phase 6 provider coverage.** The completion route,
-   normalized SSE envelope, client adapter, and dual-mode fixture
-   harness are in place. Current completion coverage includes
-   echo, vanilla OpenAI, NanoGPT chat, OpenRouter, vanilla
-   Anthropic (+ Anthropic Legacy and NanoGPT Messages), vanilla
-   Mistral, vanilla Cohere (buffered only), the DeepSeek /
-   DeepInfra OpenAI-compatible keyIdentifier path, vanilla Google
-   AI Gemini, OpenAI Legacy Instruct (+ NanoGPT Legacy), OpenAI
-   Responses API (+ NanoGPT Responses), Ollama Cloud variants,
-   Kobold, ooba legacy, native Ollama `/api/chat` (buffered +
-   NDJSON streaming), `xcustom:::id` OAI-compat with the
-   `additionalParams` body/header overlay DSL, the
-   `reverse_proxy` path under OpenAI-compatible (URL autofill,
-   `risu::` → `X-Proxy-Risu` header lift, `db.reverseProxyOobaMode`
-   system hoisting), `reverse_proxy` + `xcustom:::id` under the
-   Anthropic format (URL autofill to `/v1/messages`, shared
-   additionalParams DSL), `reverse_proxy` + `xcustom:::id` under
-   the Mistral format (URL autofill to `/v1/chat/completions`
-   via the same OAI-compat helper, plus the shared additionalParams
-   overlay through a `buildRequestInit` refactor of the mistral
-   dispatcher), `reverse_proxy` + `xcustom:::id` under the Cohere
-   format (URL autofill to `/v1/chat` via a dedicated
-   `resolveReverseProxyCohereUrl` helper, plus shared
-   additionalParams via the cohere `buildRequestInit` refactor),
-   `reverse_proxy` + `xcustom:::id` under the OpenAI Responses
-   format (URL autofill to `/v1/responses` via a dedicated
-   `resolveReverseProxyResponsesUrl` helper, plus shared
-   additionalParams via the openai-responses `buildRequestInit`
-   refactor), `reverse_proxy` + `xcustom:::id` under the OpenAI
-   Legacy Instruct format (URL autofill to `/v1/completions` via
-   a dedicated `resolveReverseProxyLegacyInstructUrl` helper, plus
-   shared additionalParams via the legacy-instruct
-   `buildRequestInit` refactor), and Vertex AI Gemini (RS256 JWT signed
-   with Node `crypto`, in-process Bearer cache keyed by
-   service-account email, `<region>-aiplatform.googleapis.com`
-   URL with the `global` carveout for Gemini 3 preview models),
-   AWS Bedrock Claude (buffered-only with a pure-JS SigV4
-   signer; `us.` / `global.` wire model prefix per the
-   claude-4.5+ heuristic from
-   `src/ts/process/request/anthropic.ts:446-461`), and Stable
-   Horde text (buffered-only with a 2 s poll loop, 5 min
-   wall-clock timeout, fire-and-forget DELETE on abort). The
-   Horde path takes a pre-flattened `prompt` string on the wire
-   — client-side `applyChatTemplate` flatten and
-   `unstringlizeChat` post-processing, same option-B pattern
-   sketched in
-   [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md);
-   server-side flatten moves with Phase 7. Still remaining:
-   NovelAI / NovelList (deferred to Phase 7 per the same memo),
-   ooba OAI-compatible `/v1/completions` (deferred to Phase 7
-   per [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md)),
-   the mechanical batch of additionalParams ports across non-OAI
-   dispatchers is complete. Keep the 33 local sendChat snapshots,
-   the 12-fixture server-backed sweep, and the Fastify generation
-   tests green (`pnpm api:test`: 434, `pnpm test`: 601 + 4
-   skipped).
+1. **Start Phase 7 (prompt assembly).** Phase 6 is closed; see
+   [`../phases/phase-6-server-generation.md#closeout-2026-05-22`](../phases/phase-6-server-generation.md#closeout-2026-05-22)
+   for the full landed inventory. The natural Phase 7 starting
+   point is the three deferred providers whose prompt flatten
+   needs server-owned character/user state: Ooba OAI-compatible
+   `/v1/completions`, NovelAI text, and NovelList. Memos:
+   [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md),
+   [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md).
+   The Horde slice (6-22) shipped an interim option-B pattern
+   (client pre-flattens via `applyChatTemplate`, server takes a
+   `prompt` string, client unstringlizes the result); Phase 7
+   needs to decide whether to apply that pattern to the three
+   deferred providers or move the flatten server-side. Keep the
+   33 local sendChat snapshots, the 12-fixture server-backed
+   sweep, and the Fastify generation tests green (`pnpm api:test`:
+   434, `pnpm test`: 601 + 4 skipped) while Phase 7 lands.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments
@@ -111,6 +71,7 @@ Horde, Mistral reverse_proxy, Anthropic reverse_proxy).
 | 6-25  | `9497a9fd` | Ported the `additionalParams` overlay to the openai-responses dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.OpenAIResponseAPI` with a dedicated `resolveReverseProxyResponsesUrl` autofill helper for the `/v1/responses` wire path. |
 | 6-26  | `7ae69fd8` | Ported the `additionalParams` overlay to the openai-legacy-instruct dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.OpenAILegacyInstruct` with a dedicated `resolveReverseProxyLegacyInstructUrl` autofill helper for the `/v1/completions` wire path. |
 | 6-27  | `cb6d876c` | Extended the dual-mode fixture sweep with five fixtures for the newly-routed providers: `gemini-vertex-basic`, `bedrock-basic`, `horde-basic`, `mistral-reverse-proxy-basic`, and `anthropic-reverse-proxy-basic`. Added bedrock and horde branches to the server fetch stub; wired each fixture's upstream jsonl `result` + `model` through per-provider result setters so both sweeps assert against the same snapshot. |
+| 6-28  | _pending_  | Phase 6 closeout: refreshed `phases/phase-6-server-generation.md` with an explicit "Closeout" section enumerating what landed, what was deferred to Phase 7 (Ooba / NovelAI / NovelList), and what's deferred until a fixture demands it (Bedrock streaming, MultiGen, etc.). Refreshed HANDOVER.md for the next agent and flipped `next-steps.md` Immediate to point at Phase 7. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
