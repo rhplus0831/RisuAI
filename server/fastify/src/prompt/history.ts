@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type {
   Chat,
   Message,
@@ -5,24 +6,47 @@ import type {
 } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
+import { processScript } from './scripts.js'
 
 /**
- * Phase 7-5a minimal history walk ported from the SPA's
- * `src/ts/process/promptAssembly/buildHistoryWindow.ts` and
- * `src/ts/process/exampleMessages.ts`.
+ * Phase 7-5a/b history walk ported from the SPA's
+ * `src/ts/process/promptAssembly/buildHistoryWindow.ts`,
+ * `formatHistoryMessage.ts`, and `src/ts/process/exampleMessages.ts`.
  *
- * Implements only the deterministic part:
- *   - example messages block
- *   - `[Start a new chat]` marker gated by
- *     `!aiModel.startsWith('novelai') && !promptSettings.trimStartNewChat`
- *   - first message from `firstMessage` / `alternateGreetings[fmIndex]`
- *   - `makeMs` filter for `disabled === true` and `disabled === 'allBefore'`
- *   - per-message role mapping (`'user' -> 'user'`, anything else -> `'assistant'`)
+ * 7-5a (landed): examples block, `[Start a new chat]` marker gated by
+ * `!aiModel.startsWith('novelai') && !promptSettings.trimStartNewChat`,
+ * first-message selection, `makeMs` filter for `disabled === true` /
+ * `'allBefore'`, and per-message role mapping.
  *
- * Deferred to later 7-5 sub-slices: `processScript` editprocess, `sendName`
- * prefix, `<Thoughts>` extraction, multimodal inlays, `{{asset_prompt::}}`,
- * start trigger / `runTrigger`, tokenizer accumulation, depth-prompt preflight.
+ * 7-5b (this slice):
+ *   - First message and per-message bodies flow through
+ *     `processScript(ctx, char, data, 'editprocess', cbsConditions)`
+ *     after a pre-pass through `expandVariables` (mirrors the SPA's
+ *     `processScriptFull(char, risuChatParser(data, {chara, role}), 'editprocess', ...)`
+ *     call at `formatHistoryMessage.ts:44-52`).
+ *   - First message and per-message `sendName` wrapper (gated by
+ *     `usingPromptTemplate && db.promptSettings.sendName`). The first
+ *     message gets a `${char.name}: ` prefix and `attr: ['nameAdded']`.
+ *     Per-message bodies get wrapped in
+ *     `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>` with
+ *     `{{char}}` resolved against the active `currentChar` (matches the
+ *     SPA's effective behavior — the `chara: msg.saying` override at
+ *     formatHistoryMessage.ts:140 is shadowed by the cbs `char` callback
+ *     reading currentChar from scope first; see cbs.ts:184).
+ *   - `<Thoughts>...</Thoughts>` extraction with the
+ *     `maxThoughtTagDepth` clamp: always stripped from `content`,
+ *     captured into `chat.thoughts: string[]` when
+ *     `maxThoughtDepth === -1 || maxThoughtDepth - totalCount <= index`.
+ *   - Per-message `memo` defaults to `msg.chatId`, backfilling
+ *     `msg.chatId` with a UUID v4 when missing (mirrors `formatHistoryMessage.ts:69-71`).
+ *
+ * Deferred to later sub-slices: multimodal inlays + `{{asset_prompt::}}`
+ * (7-5c), start trigger / `runTrigger` (7-5d), tokenizer accumulation +
+ * depth-prompt preflight (7-5e).
  */
+
+const SEND_NAME_WRAPPER = `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>`
+const THOUGHTS_RE = /<Thoughts>(.+?)<\/Thoughts>/gms
 
 export function exampleMessage(
   ctx: ExpandContext,
@@ -89,6 +113,80 @@ export function exampleMessage(
   })
 }
 
+function extractThoughts(
+  content: string,
+  index: number,
+  totalCount: number,
+  maxThoughtDepth: number,
+): { content: string; thoughts: string[] } {
+  const thoughts: string[] = []
+  const stripped = content.replace(THOUGHTS_RE, (_match, body: string) => {
+    if (maxThoughtDepth === -1 || maxThoughtDepth - totalCount <= index) {
+      thoughts.push(body)
+    }
+    return ''
+  })
+  return { content: stripped, thoughts }
+}
+
+function formatHistoryMessage(
+  ctx: ExpandContext,
+  currentChar: character,
+  msg: Message,
+  index: number,
+  totalCount: number,
+  usingPromptTemplate: boolean,
+): OpenAIChat {
+  const db = ctx.database
+  const sendName = !!db.promptSettings?.sendName
+  const maxThoughtDepth = db.promptSettings?.maxThoughtTagDepth ?? -1
+
+  const preExpanded = expandVariables(msg.data ?? '', {
+    ...ctx,
+    chara: currentChar,
+    role: msg.role,
+  }).text
+
+  let formatted = processScript(
+    ctx,
+    currentChar,
+    preExpanded,
+    'editprocess',
+    { chatRole: msg.role },
+  )
+
+  if (!msg.chatId) {
+    msg.chatId = randomUUID()
+  }
+
+  if (usingPromptTemplate && sendName) {
+    // SPA passes `chara: findCharacterbyIdwithCache(msg.saying).name` here,
+    // but the `{{char}}` cbs callback reads the active currentChar from
+    // scope before consulting `matcherArg.chara` (cbs.ts:184), so the
+    // override is dead code in practice. We mirror the effective behavior.
+    const wrapped = expandVariables(SEND_NAME_WRAPPER, {
+      ...ctx,
+      chara: currentChar,
+    }).text
+    formatted = wrapped.replace('{{slot}}', formatted)
+  }
+
+  const { content, thoughts } = extractThoughts(
+    formatted,
+    index,
+    totalCount,
+    maxThoughtDepth,
+  )
+
+  const chat: OpenAIChat = {
+    role: msg.role === 'user' ? 'user' : 'assistant',
+    content,
+    memo: msg.chatId,
+  }
+  if (thoughts.length > 0) chat.thoughts = thoughts
+  return chat
+}
+
 export interface HistoryWindowResult {
   messages: OpenAIChat[]
 }
@@ -97,6 +195,7 @@ export function buildHistoryWindow(
   ctx: ExpandContext,
   currentChar: character,
   currentChat: Chat,
+  usingPromptTemplate: boolean = false,
 ): HistoryWindowResult {
   const db = ctx.database
   const messages: OpenAIChat[] = []
@@ -131,18 +230,35 @@ export function buildHistoryWindow(
       fmIndex === -1
         ? currentChar.firstMessage ?? ''
         : currentChar.alternateGreetings?.[fmIndex] ?? ''
-    messages.push({
-      role: 'assistant',
-      content: expandVariables(firstMsgSource, { ...ctx, chara: currentChar })
-        .text,
-    })
+    const preExpanded = expandVariables(firstMsgSource, {
+      ...ctx,
+      chara: currentChar,
+    }).text
+    let content = processScript(
+      ctx,
+      currentChar,
+      preExpanded,
+      'editprocess',
+    )
+    const firstMessage: OpenAIChat = { role: 'assistant', content }
+    if (usingPromptTemplate && db.promptSettings?.sendName) {
+      firstMessage.content = `${currentChar.name}: ${content}`
+      firstMessage.attr = ['nameAdded']
+    }
+    messages.push(firstMessage)
   }
 
-  for (const msg of ms) {
-    messages.push({
-      role: msg.role === 'user' ? 'user' : 'assistant',
-      content: expandVariables(msg.data, { ...ctx, chara: currentChar }).text,
-    })
+  for (let i = 0; i < ms.length; i++) {
+    messages.push(
+      formatHistoryMessage(
+        ctx,
+        currentChar,
+        ms[i],
+        i,
+        ms.length,
+        usingPromptTemplate,
+      ),
+    )
   }
 
   return { messages }
