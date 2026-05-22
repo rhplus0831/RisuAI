@@ -63,7 +63,7 @@ DSL.
 | 6-13  | `76ec283c` | Routed Ollama Cloud through OpenAI / Responses / Anthropic dispatchers based on `db.ollamaRequestFormat`.                 |
 | 6-14  | `f6b88f01` | Added Kobold and ooba legacy buffered dispatchers and tests.                                                              |
 | 6-16  | `c919e683` | Added native Ollama `/api/chat` dispatcher with NDJSON streaming, adapter `db.ollamaURL` gate, and route + dispatcher tests. |
-| 6-17  | _pending_  | Routed `xcustom:::<id>` OAI-compat through the openai dispatcher with the `additionalParams` body/header overlay DSL ported server-side. |
+| 6-17  | `da7d05b8` | Routed `xcustom:::<id>` OAI-compat through the openai dispatcher with the `additionalParams` body/header overlay DSL ported server-side. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
