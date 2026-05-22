@@ -1,5 +1,5 @@
 import type { Database, character, loreBook } from './storage/database.svelte'
-import type { CbsConditions } from './parser/parser.svelte'
+import type { CbsConditions } from './parser/risuChatParserHelpers'
 import type { RisuModule } from './process/modules'
 import type { LLMModel } from './model/modellist'
 
@@ -63,8 +63,8 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
 
 export type matcherArg = {
   chatID: number
-  db: Database
-  chara: character | string
+  db: Database | null
+  chara: character | string | null
   rmVar: boolean
   var?: { [key: string]: string }
   tokenizeAccurate?: boolean

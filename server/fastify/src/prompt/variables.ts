@@ -4,7 +4,7 @@
  *
  * Browser source to port:
  *   - `src/ts/parser/parser.svelte.ts` (`risuChatParser`)
- *   - `src/ts/process/cbs.ts` (callbacks consumed by the parser)
+ *   - `src/ts/cbs.ts` (callbacks consumed by the parser)
  *   - `src/ts/process/dynamicutils/`
  *
  * Slice 7-2 (next): ship the pure-function port of `risuChatParser` for
