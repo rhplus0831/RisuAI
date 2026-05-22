@@ -1,18 +1,19 @@
 # sendChat Fixtures
 
-Date: 2026-05-22 (29 snapshots; Phase 6 active)
+Date: 2026-05-22 (33 snapshots; Phase 6 active)
 
-Status: the 17 initial Phase 4 fixtures landed, and Phase 5 has
-added nine narrow gate fixtures. Phase 6 added three provider
-parity fixtures (`echo-basic`, `openai-basic`, `anthropic-basic`)
-that also run through the server-backed sweep. The harness pins
-the entry path, multiline reroll, upstream fail, auto-continue,
-prompt-shape variations, Hypa V3 memory, trigger transformations,
-prompt-template gates, lorebook placement, history-media fallback,
-start-trigger mutation / stop, prompt-info text capture,
-preview-prompt early return, pre-aborted-signal exit, and the
-first server-backed provider adapters. The historical gate list
-lives in
+Status: the 17 initial Phase 4 fixtures landed, Phase 5 added nine
+narrow gate fixtures, and Phase 6 added seven provider parity
+fixtures (`echo-basic`, `openai-basic`, `anthropic-basic`,
+`mistral-basic`, `cohere-basic`, `deepseek-basic`,
+`gemini-basic`) that also run through the server-backed sweep. The
+harness pins the entry path, multiline reroll, upstream fail,
+auto-continue, prompt-shape variations, Hypa V3 memory, trigger
+transformations, prompt-template gates, lorebook placement,
+history-media fallback, start-trigger mutation / stop, prompt-info
+text capture, preview-prompt early return, pre-aborted-signal exit,
+and the server-backed provider adapters represented by fixtures.
+The historical gate list lives in
 [`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
 
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
@@ -54,6 +55,10 @@ all current snapshots assert it is `false`.
 | `echo-basic` | Minimal echo provider turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts `{provider: 'echo', model: 'echo_model', stream: false}` and `options.echo`. | landed |
 | `openai-basic` | Minimal vanilla OpenAI Chat Completions turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts provider/model/options for `openai`. | landed |
 | `anthropic-basic` | Minimal vanilla Anthropic Messages turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts provider/model/options for `anthropic`. | landed |
+| `mistral-basic` | Minimal vanilla Mistral turn. Shared local/server-backed snapshot pins provider `mistral`, model `mistral-large-latest`, and `options.mistral`. | landed |
+| `cohere-basic` | Minimal non-streaming Cohere turn. Pins provider `cohere`, model `cohere-command-r-plus-04-2024`, and the newer command-r no-`safetyMode` option shape. | landed |
+| `deepseek-basic` | DeepSeek / DeepInfra-style OpenAI-compatible keyIdentifier route. Pins provider `openai`, `db.OaiCompAPIKeys.deepseek`, and base URL derivation from `modelInfo.endpoint`. | landed |
+| `gemini-basic` | Minimal vanilla Google AI Gemini turn. Pins provider `gemini`, model derivation from `modelInfo.internalID`, and `options.gemini`. | landed |
 
 ## Loader
 
@@ -101,11 +106,13 @@ snapshot.
 ## Server-backed sweep
 
 `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-runs `echo-basic`, `openai-basic`, and `anthropic-basic` with
-`platform.isFastifyServer === true` and `db.useServerGeneration === true`.
-It compares the same expected snapshots as the local sweep after
-dropping `providerCalls`, then asserts the recorded fetch call to
-`/api/v1/generate/completion` separately.
+runs `echo-basic`, `openai-basic`, `anthropic-basic`,
+`mistral-basic`, `cohere-basic`, `deepseek-basic`, and
+`gemini-basic` with `platform.isFastifyServer === true` and
+`db.useServerGeneration === true`. It compares the same expected
+snapshots as the local sweep after dropping `providerCalls`, then
+asserts the recorded fetch call to `/api/v1/generate/completion`
+separately.
 
 ## Side-effect mocks
 

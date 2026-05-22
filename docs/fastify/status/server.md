@@ -7,8 +7,8 @@ Date: 2026-05-22
 Phase 1, the server-side Phase 2 storage slice, Phase 3 in
 full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
-Express deletion), and the first Phase 6 completion-route slices
-all exist on the `fastify` branch:
+Express deletion), and Phase 6 completion-route slices through
+6-14 all exist on the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -48,7 +48,7 @@ all exist on the `fastify` branch:
   `GET /api/v1/storage/read`, `POST /api/v1/storage/write`, and
   `POST /api/v1/storage/remove`, and the
   `/api/v1/generate/completion` POST route.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,echo,openai,anthropic}.test.ts`
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,echo,openai,anthropic,mistral,cohere,gemini,openaiLegacyInstruct,openaiResponses,kobold,oobaLegacy}.test.ts`
   cover the implemented Fastify routes, provider dispatchers, and
   static serving through `pnpm api:test`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
@@ -102,11 +102,16 @@ all exist on the `fastify` branch:
 - `server/fastify/src/routes/generation.ts` adds the Phase 6
   completion route. It validates the provider, model, messages,
   stream flag, and options body; requires auth; streams through the
-  normalized `event: chunk` / `event: done` envelope; and dispatches to
-  `server/fastify/src/generation/{echo,openai,anthropic}.ts`.
-  The route supports `echo`, `openai`, `nanogpt`, `openrouter`,
-  and `anthropic`; other provider strings return
+  normalized `event: chunk` / `event: done` envelope when the
+  selected provider supports streaming; and dispatches through the
+  provider files in `server/fastify/src/generation/`. The route
+  supports `echo`, `openai`, `nanogpt`, `openrouter`,
+  `anthropic`, `mistral`, `cohere`, `gemini`,
+  `openai-legacy-instruct`, `openai-responses`, `kobold`, and
+  `ooba-legacy`; unsupported provider strings return
   `{ reason: 'provider not implemented yet: <name>' }` with 501.
+  Cohere, legacy instruct, Responses, Kobold, and ooba legacy are
+  currently buffered-only and reject `stream: true` with a 400.
 - Known limitation: `ANY /api/v1/hub/*` keeps `requireAuth`, so
   on password-protected deployments browser-loaded resources
   (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401
@@ -155,10 +160,15 @@ been removed; `server/node/` no longer exists.
   node-html-parser dependencies have been removed.
 - **Phase 6.** In progress since 2026-05-22. Landed so far:
   `POST /api/v1/generate/completion`, the normalized SSE envelope,
-  echo, OpenAI Chat Completions, NanoGPT, OpenRouter, and
-  Anthropic Messages. Translation, TTS, image, Stable Horde,
-  token-counting, and remaining LLM provider families are still
-  open.
+  echo, OpenAI Chat Completions, NanoGPT chat, OpenRouter,
+  Anthropic Messages / legacy / NanoGPT Messages, Mistral,
+  Cohere, Gemini, DeepSeek / DeepInfra via the OpenAI-compatible
+  key path, OpenAI legacy instruct / NanoGPT legacy, OpenAI
+  Responses / NanoGPT Responses, Ollama Cloud variants, Kobold,
+  and ooba legacy. Translation, TTS, image, Stable Horde,
+  token-counting, NovelAI, NovelList, native Ollama, ooba
+  OAI-compatible, Vertex AI Gemini, and AWS Bedrock Claude are
+  still open.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 

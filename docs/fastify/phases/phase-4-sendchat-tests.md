@@ -23,8 +23,8 @@ Done 2026-05-20. The landed harness lives at
 `src/ts/process/__tests__/sendChat.fixtures.test.ts` and
 `src/ts/process/__fixtures__/`. All 17 initial fixtures listed
 below have expected snapshots; Phase 5 later added 9 narrow gate
-fixtures and Phase 6 added 3 provider parity fixtures, bringing
-the active local suite to 29 snapshots.
+fixtures and Phase 6 added 7 provider parity fixtures, bringing
+the active local suite to 33 snapshots.
 
 ## Scope
 
@@ -83,7 +83,7 @@ chat under specific conditions:
   no memory, no triggers.
 - `continue` - resume an assistant message.
 - `regenerate` - reroll an existing assistant message.
-- `preview` - preview-prompt mode; assert no provider call.
+- `preview` - preview mode; assert no provider call.
 - `lorebook-keyword` - one keyword-activated entry.
 - `lorebook-constant` - one constant entry.
 - `lorebook-recursive` - recursion within budget.

@@ -7,9 +7,9 @@ how to read or extend the tests. Phase 1, Phase 2, and Phase 3
 Fastify route tests exist, the Phase 4 `sendChat`
 characterization fixtures have landed, and Phase 5 helper tests now
 cover extracted browser-side seams. Phase 6 route and provider
-tests have started with `/api/v1/generate/completion`; later Phase
-6 helpers and Phases 7-9 remain planning artifacts until their
-routes land.
+tests cover the current `/api/v1/generate/completion` slices;
+later Phase 6 helpers and Phases 7-9 remain planning artifacts
+until their routes land.
 
 ## Shards
 

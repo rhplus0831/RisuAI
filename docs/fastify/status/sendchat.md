@@ -47,13 +47,12 @@ tokenizer and maxContextTokens setup), and the coordinator closeout
 (dead-locals cleanup, single hoisted `setProcessStage` callback,
 `let → const` conversions where no reassignment happens).
 
-`src/ts/process/index.svelte.ts` went from **1625 → 445 lines**
+`src/ts/process/index.svelte.ts` went from **1625 -> 445 lines**
 across 28 slices (a **73% reduction**), with 29 extracted modules
 under `src/ts/process/` and its `promptAssembly/`, `promptBudget/`,
 `postGeneration/`, and `dispatch/` subdirectories. Phase 5 closed
-with 26 sendChat fixtures and recorded 454 unit tests + 127 API
-tests green. Phase 6 has since raised the local fixture count to
-29 and added a 3-fixture server-backed sweep.
+with 26 sendChat fixtures. Phase 6 has since raised the local
+fixture count to 33 and added a 7-fixture server-backed sweep.
 
 Phase 4 remains complete for the original 17 fixtures, and nine
 narrow Phase 5 gate fixtures landed during extraction
@@ -61,18 +60,19 @@ narrow Phase 5 gate fixtures landed during extraction
 `lorebook-position-depth`, `prompt-template-memory-cache`,
 `history-media-fallback`, `start-trigger-control`,
 `start-trigger-stop`, `prompt-info-text`, `preview-prompt`).
-Phase 6 adds `echo-basic`, `openai-basic`, and
-`anthropic-basic`, bringing the local total to 29. All live under
+Phase 6 adds `echo-basic`, `openai-basic`, `anthropic-basic`,
+`mistral-basic`, `cohere-basic`, `deepseek-basic`, and
+`gemini-basic`, bringing the local total to 33. All live under
 `src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
 pin the entry path, every documented exit shape (success, multiline
 reroll, upstream fail, abort, auto-continue recursion), the
 prompt-shape variations under the default `formatingOrder` (author
 note, automatic cache point, persona, keyword / constant /
-recursive lorebook, multimodal image), hypaV3 memory consumption,
-and both trigger transformation hooks (editRequest via
-`runLuaEditTrigger`, editOutput via `customscript` regex). See
-"Phase 4 landed" below for the per-fixture summary.
+recursive lorebook, multimodal image), Hypa V3 memory consumption,
+trigger transformations, and the server-backed provider adapters
+represented by fixtures. See the fixture inventory below for
+per-fixture scope.
 
 Snapshot schema bumped 2026-05-20: `providerCalls` now persists
 the normalized call records (mode + formated + opt-in flags)
@@ -419,10 +419,12 @@ fixture-based characterization harness:
   teardown. This is a production-safe robustness change, not a
   refactor.
 - `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-  runs `echo-basic`, `openai-basic`, and `anthropic-basic` through
-  the server-backed adapter. It shares the local expected snapshots
-  after dropping `providerCalls`, then asserts the recorded
-  `/api/v1/generate/completion` fetch shape separately.
+  runs `echo-basic`, `openai-basic`, `anthropic-basic`,
+  `mistral-basic`, `cohere-basic`, `deepseek-basic`, and
+  `gemini-basic` through the server-backed adapter. It shares the
+  local expected snapshots after dropping `providerCalls`, then
+  asserts the recorded `/api/v1/generate/completion` fetch shape
+  separately.
 
 Existing `process/` helper-surface tests (TTS hooks, request
 additional params, MCP Risu access modules, inlay asset helpers)
@@ -546,6 +548,20 @@ what each fixture pins.
   Pins shared local/server-backed chat state and asserts provider
   `anthropic`, model `claude-opus-4-7`, and `options.anthropic`
   in the server-backed sweep.
+- `mistral-basic` - minimal vanilla Mistral turn. Pins shared
+  local/server-backed chat state and asserts provider `mistral`,
+  model `mistral-large-latest`, and `options.mistral`.
+- `cohere-basic` - minimal vanilla Cohere turn with non-streaming
+  dispatch. Pins provider `cohere`, model
+  `cohere-command-r-plus-04-2024`, and the absence of the older
+  command-r `safetyMode: 'NONE'` option.
+- `deepseek-basic` - DeepSeek / DeepInfra-style
+  OpenAI-compatible keyIdentifier path. Pins provider `openai`,
+  the `db.OaiCompAPIKeys.deepseek` key lookup, and base URL
+  derivation from `modelInfo.endpoint`.
+- `gemini-basic` - minimal vanilla Google AI Gemini turn. Pins
+  provider `gemini`, `modelInfo.internalID` model derivation, and
+  `options.gemini`.
 - `persona` - `db.personaPrompt` set, no `chat.bindedPersona`.
   Pins that the content lands in `unformated.personaPrompt` and -
   under the default OpenAI-flavored `pushPrompts` consecutive-
@@ -615,7 +631,7 @@ what each fixture pins.
 - `doingChat` is set to `true` only when `sendChat` owns the lease,
   and the owned lease is cleared in a `finally` block on every exit
   path. Recursive auto-continue / resend paths explicitly release
-  the flag before re-entering. All 29 snapshots currently pin final
+  the flag before re-entering. All 33 snapshots currently pin final
   `doingChat: false`; the test harness still resets it before each
   fixture defensively.
 - The `uuid` mock counter resets between fixtures so snapshots
@@ -637,10 +653,13 @@ what each fixture pins.
   `promptBudget/*`, and `promptAssembly/*`; the numbered slice
   history lives in [`sendchat-slicing.md`](sendchat-slicing.md).
 - **Phase 6.** Stage 3 dispatch is moving server-side. The current
-  server-backed path covers echo, vanilla OpenAI, NanoGPT,
-  OpenRouter, and vanilla Anthropic through
-  `/api/v1/generate/completion`; uncovered providers stay on the
-  local browser path.
+  server-backed path covers echo, vanilla OpenAI, NanoGPT chat,
+  OpenRouter, vanilla Anthropic / Anthropic Legacy / NanoGPT
+  Messages, Mistral, Cohere, vanilla Gemini, DeepSeek / DeepInfra
+  keyIdentifier models, OpenAI legacy instruct / NanoGPT legacy,
+  OpenAI Responses / NanoGPT Responses, Ollama Cloud variants,
+  Kobold, and ooba legacy through `/api/v1/generate/completion`;
+  uncovered providers stay on the local browser path.
 - **Phase 7.** Stage 2 prompt assembly moves server-side.
 - **Phase 9.** Stages 1 + 4 move server-side; Stage 0 becomes a
   ~50-line bridge that owns the UI lease, abort forwarding, and

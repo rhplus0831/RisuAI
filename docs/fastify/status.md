@@ -24,8 +24,10 @@ under [`status/`](status/).
   per-fixture DB / upstream / expected files plus targeted
   `vi.mock`s for the heavy side-effect modules. Phase 5 added nine
   narrow gate fixtures, and Phase 6 added `echo-basic`,
-  `openai-basic`, and `anthropic-basic`, so the active local
-  snapshot count is 29. The Phase 6 provider fixtures also run
+  `openai-basic`, `anthropic-basic`, `mistral-basic`,
+  `cohere-basic`, `deepseek-basic`, and `gemini-basic`, so the
+  active local snapshot count is 33. The Phase 6 provider fixtures
+  also run
   through `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.
 - Phase 5 sendChat extraction closed on 2026-05-22. Commits
   `3c5a92b2` through `a7e2831d` landed all 28 slices: the
@@ -57,11 +59,14 @@ under [`status/`](status/).
   dependencies were removed.
 - Phase 6 is active as of 2026-05-22. The auth-gated
   `POST /api/v1/generate/completion` route implements the
-  normalized SSE envelope plus echo, OpenAI Chat Completions,
-  NanoGPT, OpenRouter, and Anthropic Messages dispatchers. The
-  client adapter is flag-gated by `db.useServerGeneration` and
-  currently routes echo, vanilla OpenAI, NanoGPT, OpenRouter, and
-  vanilla Anthropic models through the server-backed path.
+  normalized SSE envelope plus dispatchers for echo, OpenAI Chat
+  Completions, NanoGPT chat, OpenRouter, Anthropic Messages /
+  legacy / NanoGPT Messages, Mistral, Cohere, Gemini, OpenAI
+  legacy instruct / NanoGPT legacy, OpenAI Responses / NanoGPT
+  Responses, Kobold, and ooba legacy. The client adapter is
+  flag-gated by `db.useServerGeneration` and also routes the
+  DeepSeek / DeepInfra OpenAI-compatible key path and Ollama Cloud
+  variants through the existing completion dispatchers.
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
   dependencies only, and `tsx` plus `@fastify/websocket` are now
@@ -81,7 +86,7 @@ under [`status/`](status/).
 Phase 6 (server-side LLM / translation / TTS / image generation) is
 the active branch work. It starts from the Phase 5 dispatch seam in
 `src/ts/process/dispatch/dispatchRequest.ts`; the current guardrails
-are the 29 local sendChat snapshots, the 3-fixture server-backed
+are the 33 local sendChat snapshots, the 7-fixture server-backed
 sweep, and the Fastify generation provider tests.
 
 Phase 3 closed on 2026-05-21; Fastify owns the proxy / hub /

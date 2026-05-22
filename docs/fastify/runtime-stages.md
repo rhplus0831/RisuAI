@@ -16,9 +16,10 @@ Stage 4 work into browser modules under `src/ts/process/`,
 `src/ts/process/promptAssembly/`, `src/ts/process/promptBudget/`,
 `src/ts/process/dispatch/`, and `src/ts/process/postGeneration/`,
 and Phase 6 has started moving Stage 3 through
-`/api/v1/generate/completion` for the first provider families. The
-ownership described below is still the migration target, not a
-claim that every stage has moved.
+`/api/v1/generate/completion` for the provider families listed in
+[`status/server.md`](status/server.md). The ownership described
+below is still the migration target, not a claim that every stage
+has moved.
 
 ## Stage 0 - UI lease and dispatch
 

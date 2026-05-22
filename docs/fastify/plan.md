@@ -29,7 +29,8 @@ End state:
 
 Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, the Phase 5
-closeout on 2026-05-22, and the first Phase 6 provider slices:
+closeout on 2026-05-22, and Phase 6 provider slices through
+6-14 (`f6b88f01`):
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -63,27 +64,32 @@ closeout on 2026-05-22, and the first Phase 6 provider slices:
   under `src/ts/process/`, `promptAssembly/`, `promptBudget/`,
   `postGeneration/`, and `dispatch/`.
 - `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
-  the current `sendChat` behavior with 29 snapshots under
+  the current `sendChat` behavior with 33 snapshots under
   `src/ts/process/__fixtures__/`: the original 17 Phase 4
   fixtures, nine Phase 5 gate fixtures
   (`prompt-template-basic`, `utility-bot-template`,
   `lorebook-position-depth`, `prompt-template-memory-cache`,
   `history-media-fallback`, `start-trigger-control`,
   `start-trigger-stop`, `prompt-info-text`, `preview-prompt`),
-  and three Phase 6 provider parity fixtures (`echo-basic`,
-  `openai-basic`, `anthropic-basic`).
+  and seven Phase 6 provider parity fixtures (`echo-basic`,
+  `openai-basic`, `anthropic-basic`, `mistral-basic`,
+  `cohere-basic`, `deepseek-basic`, `gemini-basic`).
   The snapshots also assert that
   `doingChat` is false after each fixture; `sendChat` clears the
   lease it owns in a `finally` block.
 - `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-  runs the three Phase 6 provider fixtures through the
+  runs the seven Phase 6 provider fixtures through the
   server-backed adapter, strips the local-only `providerCalls`
   boundary from the shared snapshot, and asserts the recorded
   `/api/v1/generate/completion` call shape separately.
 - Phase 6 has landed the completion route and provider dispatchers
-  for echo, OpenAI Chat Completions, NanoGPT, OpenRouter, and
-  Anthropic Messages. Unsupported provider strings still return
-  a documented `501`.
+  for echo, OpenAI Chat Completions, NanoGPT chat, OpenRouter,
+  Anthropic Messages / legacy / NanoGPT Messages, Mistral,
+  Cohere, Gemini, the DeepSeek / DeepInfra OpenAI-compatible key
+  path, OpenAI legacy instruct / NanoGPT legacy, OpenAI Responses /
+  NanoGPT Responses, Ollama Cloud variants, Kobold, and ooba
+  legacy. Unsupported provider strings still return a documented
+  `501`.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -129,15 +135,16 @@ rules. The headline order:
 4. **sendChat tests** - pin observable behavior of the current
    `sendChat` with fixtures and snapshots before any extraction.
    Done 2026-05-20 with 17 initial fixtures; Phase 5 has since
-   added nine narrow gate fixtures.
+   added nine narrow gate fixtures, and Phase 6 has added seven
+   provider parity fixtures.
 5. **sendChat extraction** - carve the function into stage-shaped
    modules behind the pinned tests. Done 2026-05-22 with all 28
    slices landed through `a7e2831d`.
 6. **Server-side generation** - move provider dispatch, tokenizer,
    translation, TTS, image, and Stable Horde calls server-side.
    In progress since 2026-05-22; completion routing has landed
-   for echo, OpenAI Chat Completions, NanoGPT, OpenRouter, and
-   Anthropic Messages.
+   through Phase 6-14 for the provider families listed in the
+   current baseline above.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
    triggers.

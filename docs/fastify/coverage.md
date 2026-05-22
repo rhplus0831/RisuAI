@@ -8,11 +8,13 @@ shards under [`coverage/`](coverage/).
 ## Snapshot
 
 - Phase 4 `sendChat` characterization tests exist at
-  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 29
+  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 33
   fixture sets under `src/ts/process/__fixtures__/` (17 initial
   Phase 4 fixtures, nine Phase 5 gate fixtures, plus the
-  Phase 6 `echo-basic`, `openai-basic`, and `anthropic-basic`
-  provider fixtures). The three Phase 6 fixtures also run through
+  Phase 6 `echo-basic`, `openai-basic`, `anthropic-basic`,
+  `mistral-basic`, `cohere-basic`, `deepseek-basic`, and
+  `gemini-basic` provider fixtures). The seven Phase 6 fixtures
+  also run through
   `sendChat.fixtures.serverBacked.test.ts`.
 - Phase 5 extraction slices added focused process tests for the
   helper modules that now sit beside the fixture harness:
@@ -44,9 +46,11 @@ shards under [`coverage/`](coverage/).
   `streamJobs.test.ts`, `streamJobsRoutes.test.ts`, `hub.test.ts`,
   and `legacyStorage.test.ts` cover the Phase 3 proxy / hub /
   stream-job / legacy storage surface. `generation.completion.test.ts`,
-  `echo.test.ts`, `openai.test.ts`, and `anthropic.test.ts`
-  cover the current Phase 6 completion-route providers through
-  `pnpm api:test`.
+  `echo.test.ts`, `openai.test.ts`, `anthropic.test.ts`,
+  `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`,
+  `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`,
+  `kobold.test.ts`, and `oobaLegacy.test.ts` cover the current
+  Phase 6 completion-route providers through `pnpm api:test`.
 
 ## Where to look
 

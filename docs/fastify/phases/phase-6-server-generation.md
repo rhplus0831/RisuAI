@@ -18,11 +18,17 @@ server makes the calls and streams the results.
 
 As of 2026-05-22, Phase 6 has landed `POST
 /api/v1/generate/completion`, the normalized SSE envelope, the
-server-backed client adapter, and provider dispatch for echo,
-OpenAI Chat Completions, NanoGPT, OpenRouter, and Anthropic
-Messages. The dual-mode fixture sweep covers `echo-basic`,
-`openai-basic`, and `anthropic-basic`. The rest of this document is
-the remaining target scope for Phase 6.
+server-backed client adapter, and provider dispatch through
+Phase 6-14 (`f6b88f01`): echo, OpenAI Chat Completions, NanoGPT
+chat, OpenRouter, Anthropic Messages / legacy / NanoGPT Messages,
+Mistral, Cohere, Gemini, the DeepSeek / DeepInfra
+OpenAI-compatible key path, OpenAI legacy instruct / NanoGPT
+legacy, OpenAI Responses / NanoGPT Responses, Ollama Cloud
+variants, Kobold, and ooba legacy. The dual-mode fixture sweep
+covers `echo-basic`, `openai-basic`, `anthropic-basic`,
+`mistral-basic`, `cohere-basic`, `deepseek-basic`, and
+`gemini-basic`. The rest of this document describes the full
+Phase 6 target scope and the remaining provider/helper work.
 
 ## Scope
 
@@ -30,19 +36,17 @@ the remaining target scope for Phase 6.
 
 - `POST /api/v1/generate/completion` - OpenAI-shaped Chat
   Completions request. Provider field selects implementation:
-  - OpenAI Chat Completions, OpenAI Responses API, and OpenAI
-    legacy instruct.
-  - OpenAI-compatible custom endpoints, OpenRouter, DeepSeek, and
-    DeepInfra.
-  - NanoGPT chat / responses / messages / legacy formats.
-  - Mistral and Cohere.
-  - Anthropic Messages, Anthropic legacy, and AWS Bedrock Claude.
-  - Gemini / Google and Vertex AI Gemini (with OAuth refresh).
-  - NovelAI text and NovelList.
-  - Local / self-hosted: Ollama, Kobold, ooba
-    (text-generation-webui), and llama.cpp-compatible endpoints.
-  - Stable Horde text generation.
-  - Echo as a local deterministic developer provider.
+  - Landed: echo; OpenAI Chat Completions; OpenRouter; NanoGPT
+    chat; DeepSeek / DeepInfra via the OpenAI-compatible
+    keyIdentifier path; Anthropic Messages / legacy / NanoGPT
+    Messages; Mistral; Cohere; vanilla Google AI Gemini; OpenAI
+    legacy instruct / NanoGPT legacy; OpenAI Responses / NanoGPT
+    Responses; Ollama Cloud variants; Kobold; and ooba legacy.
+  - Remaining: OpenAI-compatible custom / reverse proxy / xcustom
+    paths without the keyIdentifier contract; AWS Bedrock Claude;
+    Vertex AI Gemini; NovelAI text; NovelList; native Ollama
+    `/api/chat`; ooba OAI-compatible `/v1/completions`;
+    llama.cpp-compatible endpoints.
 - `POST /api/v1/generate/horde` - Stable Horde text generation.
 - `POST /api/v1/generate/translate` - DeepL, DeepLX, Google
   Translate free / HTML, Bergamot, and LLM translation. LLM-based
@@ -66,9 +70,9 @@ the remaining target scope for Phase 6.
 
 ### Target streaming contract
 
-Each supported `POST /api/v1/generate/completion` provider returns
-SSE if `stream: true`. The browser subscribes; the server forwards
-upstream chunks with a normalized envelope:
+Each streaming-capable `POST /api/v1/generate/completion` provider
+returns SSE if `stream: true`. The browser subscribes; the server
+forwards upstream chunks with a normalized envelope:
 
 ```
 event: chunk
@@ -81,9 +85,10 @@ event: done
 data: { "finishReason": "stop" }
 ```
 
-Usage frames are optional; the currently landed providers emit
-token chunks plus a final `done`. Client disconnect aborts the
-upstream via `AbortController`.
+Usage frames are optional. Streaming-capable landed providers emit
+token chunks plus a final `done`; buffered-only providers currently
+return a normal JSON result and reject `stream: true` with a 400.
+Client disconnect aborts the upstream via `AbortController`.
 
 ### Browser changes
 

@@ -4,7 +4,7 @@ Date: 2026-05-22
 
 **Phase 5 is closed.** All 28 slices landed; Phase 5 closed with
 26 sendChat fixtures (17 from Phase 4, 9 from the Phase 5 gate
-fixtures listed below). Phase 6 has since added provider parity
+fixtures listed below). Phase 6 has since added 7 provider parity
 fixtures, tracked in
 [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md).
 The coordinator at

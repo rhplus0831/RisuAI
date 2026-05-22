@@ -2,7 +2,7 @@
 
 Date: 2026-05-22
 
-Status: Phase 1, Phase 2, Phase 3, and the first Phase 6
+Status: Phase 1, Phase 2, Phase 3, and the current Phase 6
 completion-route tests exist under `server/fastify/__tests__/`.
 Unlanded Phase 6 helpers plus Phases 7-9 remain target test rows.
 
@@ -63,7 +63,7 @@ stay client-side until Phase 9.
 
 | Route                                      | Pinned behavior                            | Status      |
 | ------------------------------------------ | ------------------------------------------ | ----------- |
-| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, and buffered/streaming dispatch for echo, OpenAI Chat Completions, NanoGPT, OpenRouter, and Anthropic Messages. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, and `anthropic.test.ts` |
+| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, and buffered/streaming dispatch for echo, OpenAI Chat Completions, NanoGPT chat, OpenRouter, Anthropic Messages / legacy / NanoGPT Messages, Mistral, Cohere, Gemini, OpenAI legacy instruct / NanoGPT legacy, OpenAI Responses / NanoGPT Responses, DeepSeek / DeepInfra via OpenAI-compatible routing, Ollama Cloud variants, Kobold, and ooba legacy. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
 | `POST /api/v1/generate/horde`              | Stable Horde request shape.                | not started |
 | `POST /api/v1/generate/translate`          | DeepL / DeepLX / Google.                   | not started |
 | `POST /api/v1/generate/tts`                | OpenAI / ElevenLabs / NovelAI / Hugging Face API Inference. | not started |
