@@ -90,7 +90,29 @@ import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelt
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-const DUAL_MODE_FIXTURES = ['echo-basic'] as const
+const DUAL_MODE_FIXTURES = ['echo-basic', 'openai-basic'] as const
+
+interface ExpectedCall {
+  provider: string
+  model: string
+  stream: boolean
+  options: unknown
+}
+
+const EXPECTED_CALL: Record<(typeof DUAL_MODE_FIXTURES)[number], ExpectedCall> = {
+  'echo-basic': {
+    provider: 'echo',
+    model: 'echo_model',
+    stream: false,
+    options: { echo: { message: 'fixture echo reply', delayMs: 0 } },
+  },
+  'openai-basic': {
+    provider: 'openai',
+    model: 'gpt-4o',
+    stream: false,
+    options: { openai: { apiKey: 'sk-fixture', maxTokens: 200 } },
+  },
+}
 
 async function loadExpected(name: string): Promise<FixtureSnapshot> {
   const path = resolve(HERE, '..', '__fixtures__', 'expected', `${name}.json`)
@@ -145,18 +167,15 @@ describe('sendChat fixtures (server-backed)', () => {
     expect(sharedCaptured).toEqual(sharedExpected)
     expect(capturedPC).toEqual([])
 
-    // Adapter telemetry: one POST to /api/v1/generate/completion, provider
-    // resolved to 'echo', auth header present, options derived from db.
+    // Adapter telemetry: one POST to /api/v1/generate/completion. Per-fixture
+    // shape is in EXPECTED_CALL above.
     const calls = getServerCompletionCalls()
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       url: '/api/v1/generate/completion',
       method: 'POST',
-      provider: 'echo',
-      model: 'echo_model',
-      stream: false,
       authHeader: 'fixture-auth-token',
-      options: { echo: { message: 'fixture echo reply', delayMs: 0 } },
+      ...EXPECTED_CALL[name],
     })
   })
 })

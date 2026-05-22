@@ -94,8 +94,8 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.Echo)).toBe('echo')
   })
 
-  it('returns null for OpenAICompatible (not yet server-routable)', () => {
-    expect(formatToServerProvider(LLMFormat.OpenAICompatible)).toBeNull()
+  it('maps OpenAICompatible to "openai"', () => {
+    expect(formatToServerProvider(LLMFormat.OpenAICompatible)).toBe('openai')
   })
 
   it('returns null for AWSBedrockClaude (not yet server-routable)', () => {
@@ -130,12 +130,158 @@ describe('getServerCompletionProvider', () => {
     const r = getServerCompletionProvider(
       makeTarg({
         modelInfo: {
+          id: 'claude-3-5-sonnet',
+          format: LLMFormat.AWSBedrockClaude,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('maps a vanilla OpenAI model to "openai"', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'gpt-4o',
+        modelInfo: {
           id: 'gpt-4o',
           format: LLMFormat.OpenAICompatible,
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
     )
+    expect(r).toBe('openai')
+  })
+
+  it('refuses reverse_proxy under OpenAICompatible (browser holds the custom URL)', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
     expect(r).toBeNull()
+  })
+
+  it('refuses xcustom::: models under OpenAICompatible', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::my-model',
+        modelInfo: {
+          id: 'xcustom:::my-model',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses NanoGPT / OpenRouter aliases under OpenAICompatible', () => {
+    expect(
+      getServerCompletionProvider(
+        makeTarg({
+          aiModel: 'nanogpt',
+          modelInfo: {
+            id: 'nanogpt',
+            format: LLMFormat.OpenAICompatible,
+          } as unknown as RequestDataArgumentExtended['modelInfo'],
+        }),
+      ),
+    ).toBeNull()
+    expect(
+      getServerCompletionProvider(
+        makeTarg({
+          aiModel: 'openrouter',
+          modelInfo: {
+            id: 'openrouter',
+            format: LLMFormat.OpenAICompatible,
+          } as unknown as RequestDataArgumentExtended['modelInfo'],
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('refuses models with a keyIdentifier (DeepInfra/DeepSeek style)', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'deepinfra_meta-llama-3-70b',
+        modelInfo: {
+          id: 'deepinfra_meta-llama-3-70b',
+          format: LLMFormat.OpenAICompatible,
+          keyIdentifier: 'deepinfra',
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses models with a hardcoded endpoint override', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'foo',
+        modelInfo: {
+          id: 'foo',
+          format: LLMFormat.OpenAICompatible,
+          endpoint: 'https://special.example.com/v1/chat/completions',
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+})
+
+describe('buildProviderOptions (via requestServerCompletion request body)', () => {
+  it('emits options.openai with apiKey / maxTokens / temperature for openai', async () => {
+    seedDb({ openAIKey: 'sk-from-db' } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'pong' }), {
+        status: 200,
+      })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'gpt-4o',
+      modelInfo: {
+        id: 'gpt-4o',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 256,
+      temperature: 0.4,
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openai')
+    expect(sent.model).toBe('gpt-4o')
+    expect(sent.options.openai).toEqual({
+      apiKey: 'sk-from-db',
+      maxTokens: 256,
+      temperature: 0.4,
+    })
+  })
+
+  it('omits maxTokens / temperature from options.openai when targ does not carry them', async () => {
+    seedDb({ openAIKey: 'sk-x' } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), {
+        status: 200,
+      })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'gpt-4o',
+      modelInfo: {
+        id: 'gpt-4o',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.openai).toEqual({ apiKey: 'sk-x' })
   })
 })
 

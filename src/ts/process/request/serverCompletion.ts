@@ -10,9 +10,28 @@ export function formatToServerProvider(format: LLMFormat): string | null {
   switch (format) {
     case LLMFormat.Echo:
       return 'echo'
+    case LLMFormat.OpenAICompatible:
+      return 'openai'
     default:
       return null
   }
+}
+
+/**
+ * `LLMFormat.OpenAICompatible` covers vanilla OpenAI plus several derivatives
+ * that share the wire shape but route through different upstreams + keys
+ * (NanoGPT, OpenRouter, reverse_proxy, xcustom:::, anything carrying
+ * `keyIdentifier`/`endpoint`). Phase 6-4 only ships the vanilla path; the
+ * derivatives keep using local dispatch until their per-provider slice lands.
+ */
+function isVanillaOpenAI(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (aiModel === 'reverse_proxy') return false
+  if (aiModel.startsWith('xcustom:::')) return false
+  if (aiModel === 'nanogpt' || aiModel === 'openrouter') return false
+  if (targ.modelInfo?.keyIdentifier) return false
+  if (targ.modelInfo?.endpoint) return false
+  return true
 }
 
 export function getServerCompletionProvider(
@@ -23,21 +42,34 @@ export function getServerCompletionProvider(
   if (db.useServerGeneration !== true) return null
   if (targ.previewBody === true) return null
   if (!targ.modelInfo) return null
-  return formatToServerProvider(targ.modelInfo.format)
+  const provider = formatToServerProvider(targ.modelInfo.format)
+  if (provider === null) return null
+  if (provider === 'openai' && !isVanillaOpenAI(targ)) return null
+  return provider
 }
 
 function buildProviderOptions(
   targ: RequestDataArgumentExtended,
   provider: string,
 ): Record<string, unknown> {
-  if (provider !== 'echo') return {}
   const db = getDatabase()
-  return {
-    echo: {
-      message: db.echoMessage ?? 'Echo Message',
-      delayMs: (db.echoDelay ?? 0) * 1000,
-    },
+  if (provider === 'echo') {
+    return {
+      echo: {
+        message: db.echoMessage ?? 'Echo Message',
+        delayMs: (db.echoDelay ?? 0) * 1000,
+      },
+    }
   }
+  if (provider === 'openai') {
+    const openai: Record<string, unknown> = {
+      apiKey: db.openAIKey ?? '',
+    }
+    if (typeof targ.maxTokens === 'number') openai.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') openai.temperature = targ.temperature
+    return { openai }
+  }
+  return {}
 }
 
 interface CompletionJsonResponse {

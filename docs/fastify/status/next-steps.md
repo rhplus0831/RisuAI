@@ -44,6 +44,60 @@ are below under "Completed Slices".
 
 ## Completed Slices
 
+- **Phase 6-4b - openai client adapter + dual-mode fixture.** Done
+  2026-05-22. Extends the Phase 6-2 adapter and the Phase 6-3
+  dual-mode harness to cover OpenAI Chat Completions, closing
+  the Phase 6-4a server route end-to-end. Three changes:
+  - `formatToServerProvider(LLMFormat.OpenAICompatible)` now
+    returns `'openai'` (was `null`). The pure-format function
+    stays a one-line lookup.
+  - `getServerCompletionProvider` gained a second-stage
+    `isVanillaOpenAI(targ)` gate. The OpenAICompatible format
+    covers many derivatives that share the wire shape but route
+    through different upstreams + keys; the gate refuses
+    `aiModel === 'reverse_proxy'`, `aiModel.startsWith('xcustom:::')`,
+    `aiModel === 'nanogpt' | 'openrouter'`,
+    `modelInfo.keyIdentifier` (DeepInfra/DeepSeek/etc. OaiCompAPIKeys
+    path), and `modelInfo.endpoint` (any hardcoded URL override).
+    Each derivative gets its own slice when its upstream is wired.
+  - `buildProviderOptions` emits `options.openai = { apiKey,
+    maxTokens?, temperature? }`. `apiKey` comes from `db.openAIKey`;
+    `maxTokens` / `temperature` are pulled from `targ` (resolved
+    by `requestChatDataMain` from `db.maxResponse` /
+    `db.temperature / 100`). Both numeric fields are omitted when
+    `targ` does not carry them.
+  - New `openai-basic` dual-mode fixture: `aiModel: 'gpt-4o'`,
+    `db.openAIKey: 'sk-fixture'`, single user turn. Shared
+    snapshot is identical between local and server-backed paths
+    (stages `[1, 3, 4]`, `runInlayScreen` fires, assistant text
+    `'fixture openai reply'`).
+  - `serverCompletionFetch.ts` gained an `'openai'` branch that
+    returns `{type: 'success', result, model}` for non-streaming
+    or the same payload via the SSE envelope when `stream: true`.
+    Result text is module-scoped (`setOpenAIResult` for future
+    multi-fixture flexibility; defaults to `'fixture openai reply'`).
+  - The server-backed sweep's per-fixture call assertion is now a
+    table keyed on fixture name; both `echo-basic` and
+    `openai-basic` carry their own expected `{provider, model,
+    stream, options}` shape.
+  Test changes: `serverCompletion.test.ts` updated the
+  OpenAICompatible mapping assertion and added 6 gate cases
+  (vanilla OpenAI, reverse_proxy, xcustom:::, NanoGPT/OpenRouter
+  aliases, keyIdentifier set, endpoint set) plus 2 request-shape
+  cases (`options.openai` carries `apiKey + maxTokens + temperature`;
+  omits the numeric fields when targ lacks them). 28 cases total
+  (up from 20). The 5 gate-test cases for `getServerCompletionProvider`
+  also gain coverage of the openai path through the
+  `'returns the provider when every gate passes'` style fixture.
+  Out of scope: NanoGPT / OpenRouter / DeepInfra / DeepSeek /
+  reverse_proxy / xcustom::: server-side dispatchers (each its
+  own slice); tools / vision / multi-gen / schema mode on openai
+  (each its own slice); browser-passes-key → server-reads-key
+  swap (Phase 9). Verification: `pnpm test` (486 across 46 files,
+  up from 476; +8 adapter cases + 1 local fixture + 1
+  server-backed fixture), `pnpm check`, `pnpm api:test` (165
+  unchanged — client-only), `pnpm build` all green.
+
 - **Phase 6-4a - openai server dispatcher + route.** Done
   2026-05-22. First real provider on the Phase 6 server boundary.
   Server-only slice; client wiring lands in 6-4b. New files:

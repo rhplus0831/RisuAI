@@ -24,7 +24,14 @@ interface CompletionPayload {
   options?: unknown
 }
 
-const state: { calls: ServerCompletionCall[] } = { calls: [] }
+const DEFAULT_OPENAI_RESULT = 'fixture openai reply'
+
+interface State {
+  calls: ServerCompletionCall[]
+  openaiResult: string
+}
+
+const state: State = { calls: [], openaiResult: DEFAULT_OPENAI_RESULT }
 
 export function getServerCompletionCalls(): ServerCompletionCall[] {
   return state.calls
@@ -32,6 +39,11 @@ export function getServerCompletionCalls(): ServerCompletionCall[] {
 
 export function resetServerCompletionCalls(): void {
   state.calls = []
+  state.openaiResult = DEFAULT_OPENAI_RESULT
+}
+
+export function setOpenAIResult(text: string): void {
+  state.openaiResult = text
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -92,15 +104,17 @@ export async function serverCompletionFetch(
     authHeader: auth,
   })
 
-  if (provider !== 'echo') {
-    return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)
+  if (provider === 'echo') {
+    const echoOpts = (body.options as { echo?: { message?: string } } | undefined)?.echo
+    const message = typeof echoOpts?.message === 'string' ? echoOpts.message : 'Echo Message'
+    if (stream) return sseResponse(message)
+    return jsonResponse({ type: 'success', result: message })
   }
 
-  const echoOpts = (body.options as { echo?: { message?: string } } | undefined)?.echo
-  const message = typeof echoOpts?.message === 'string' ? echoOpts.message : 'Echo Message'
-
-  if (stream) {
-    return sseResponse(message)
+  if (provider === 'openai') {
+    if (stream) return sseResponse(state.openaiResult)
+    return jsonResponse({ type: 'success', result: state.openaiResult, model })
   }
-  return jsonResponse({ type: 'success', result: message })
+
+  return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)
 }

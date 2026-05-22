@@ -144,6 +144,7 @@ const FIXTURES = [
   'prompt-info-text',
   'preview-prompt',
   'echo-basic',
+  'openai-basic',
 ] as const
 
 describe('sendChat fixtures', () => {
