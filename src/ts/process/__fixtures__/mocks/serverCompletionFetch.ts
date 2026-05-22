@@ -33,6 +33,8 @@ const DEFAULT_MISTRAL_RESULT = 'fixture mistral reply'
 const DEFAULT_COHERE_RESULT = 'fixture cohere reply'
 const DEFAULT_DEEPSEEK_RESULT = 'fixture deepseek reply'
 const DEFAULT_GEMINI_RESULT = 'fixture gemini reply'
+const DEFAULT_BEDROCK_RESULT = 'fixture bedrock claude reply'
+const DEFAULT_HORDE_RESULT = 'fixture horde reply'
 
 interface State {
   calls: ServerCompletionCall[]
@@ -42,6 +44,8 @@ interface State {
   cohereResult: string
   deepseekResult: string
   geminiResult: string
+  bedrockResult: string
+  hordeResult: string
 }
 
 const state: State = {
@@ -52,6 +56,8 @@ const state: State = {
   cohereResult: DEFAULT_COHERE_RESULT,
   deepseekResult: DEFAULT_DEEPSEEK_RESULT,
   geminiResult: DEFAULT_GEMINI_RESULT,
+  bedrockResult: DEFAULT_BEDROCK_RESULT,
+  hordeResult: DEFAULT_HORDE_RESULT,
 }
 
 export function getServerCompletionCalls(): ServerCompletionCall[] {
@@ -66,6 +72,8 @@ export function resetServerCompletionCalls(): void {
   state.cohereResult = DEFAULT_COHERE_RESULT
   state.deepseekResult = DEFAULT_DEEPSEEK_RESULT
   state.geminiResult = DEFAULT_GEMINI_RESULT
+  state.bedrockResult = DEFAULT_BEDROCK_RESULT
+  state.hordeResult = DEFAULT_HORDE_RESULT
 }
 
 export function setOpenAIResult(text: string): void {
@@ -90,6 +98,14 @@ export function setDeepSeekResult(text: string): void {
 
 export function setGeminiResult(text: string): void {
   state.geminiResult = text
+}
+
+export function setBedrockResult(text: string): void {
+  state.bedrockResult = text
+}
+
+export function setHordeResult(text: string): void {
+  state.hordeResult = text
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -184,6 +200,16 @@ export async function serverCompletionFetch(
   if (provider === 'gemini') {
     if (stream) return sseResponse(state.geminiResult)
     return jsonResponse({ type: 'success', result: state.geminiResult, model })
+  }
+
+  if (provider === 'bedrock') {
+    // Bedrock streaming is buffered-only server-side; the route 400s on stream=true.
+    return jsonResponse({ type: 'success', result: state.bedrockResult, model })
+  }
+
+  if (provider === 'horde') {
+    // Horde is buffered-only; the route 400s on stream=true.
+    return jsonResponse({ type: 'success', result: state.hordeResult, model })
   }
 
   return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)

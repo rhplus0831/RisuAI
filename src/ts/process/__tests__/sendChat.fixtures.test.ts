@@ -170,6 +170,11 @@ const FIXTURES = [
   'cohere-basic',
   'deepseek-basic',
   'gemini-basic',
+  'gemini-vertex-basic',
+  'bedrock-basic',
+  'horde-basic',
+  'mistral-reverse-proxy-basic',
+  'anthropic-reverse-proxy-basic',
 ] as const
 
 describe('sendChat fixtures', () => {

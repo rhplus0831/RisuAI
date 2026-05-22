@@ -6,10 +6,12 @@ Use this list to pick the next chunk of work. Phase 5 closed on
 2026-05-22 with all 28 extraction slices landed; the historical
 slice record now lives in
 [`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 is active,
-and commit history through Phase 6-26 shows provider coverage
+and commit history through Phase 6-27 shows provider coverage
 landed through OpenAI Legacy Instruct `reverse_proxy` +
-`xcustom:::id` — the mechanical batch of additionalParams
-ports is complete.
+`xcustom:::id` — the mechanical batch of additionalParams ports
+is complete, and the dual-mode fixture sweep has been extended
+to cover the newly-routed providers (Vertex Gemini, Bedrock,
+Horde, Mistral reverse_proxy, Anthropic reverse_proxy).
 
 ## Immediate
 
@@ -66,8 +68,8 @@ ports is complete.
    per [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md)),
    the mechanical batch of additionalParams ports across non-OAI
    dispatchers is complete. Keep the 33 local sendChat snapshots,
-   the 7-fixture server-backed sweep, and the Fastify generation
-   tests green (`pnpm api:test`: 434, `pnpm test`: 591 + 4
+   the 12-fixture server-backed sweep, and the Fastify generation
+   tests green (`pnpm api:test`: 434, `pnpm test`: 601 + 4
    skipped).
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -108,6 +110,7 @@ ports is complete.
 | 6-24  | `691daa0f` | Ported the `additionalParams` overlay to the cohere dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.Cohere` with a dedicated `resolveReverseProxyCohereUrl` autofill helper for the `/v1/chat` wire path. |
 | 6-25  | `9497a9fd` | Ported the `additionalParams` overlay to the openai-responses dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.OpenAIResponseAPI` with a dedicated `resolveReverseProxyResponsesUrl` autofill helper for the `/v1/responses` wire path. |
 | 6-26  | `7ae69fd8` | Ported the `additionalParams` overlay to the openai-legacy-instruct dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.OpenAILegacyInstruct` with a dedicated `resolveReverseProxyLegacyInstructUrl` autofill helper for the `/v1/completions` wire path. |
+| 6-27  | _pending_  | Extended the dual-mode fixture sweep with five fixtures for the newly-routed providers: `gemini-vertex-basic`, `bedrock-basic`, `horde-basic`, `mistral-reverse-proxy-basic`, and `anthropic-reverse-proxy-basic`. Added bedrock and horde branches to the server fetch stub; wired each fixture's upstream jsonl `result` + `model` through per-provider result setters so both sweeps assert against the same snapshot. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
