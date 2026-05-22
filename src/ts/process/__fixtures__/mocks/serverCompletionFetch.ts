@@ -29,17 +29,20 @@ interface CompletionPayload {
 
 const DEFAULT_OPENAI_RESULT = 'fixture openai reply'
 const DEFAULT_ANTHROPIC_RESULT = 'fixture claude reply'
+const DEFAULT_MISTRAL_RESULT = 'fixture mistral reply'
 
 interface State {
   calls: ServerCompletionCall[]
   openaiResult: string
   anthropicResult: string
+  mistralResult: string
 }
 
 const state: State = {
   calls: [],
   openaiResult: DEFAULT_OPENAI_RESULT,
   anthropicResult: DEFAULT_ANTHROPIC_RESULT,
+  mistralResult: DEFAULT_MISTRAL_RESULT,
 }
 
 export function getServerCompletionCalls(): ServerCompletionCall[] {
@@ -50,6 +53,7 @@ export function resetServerCompletionCalls(): void {
   state.calls = []
   state.openaiResult = DEFAULT_OPENAI_RESULT
   state.anthropicResult = DEFAULT_ANTHROPIC_RESULT
+  state.mistralResult = DEFAULT_MISTRAL_RESULT
 }
 
 export function setOpenAIResult(text: string): void {
@@ -58,6 +62,10 @@ export function setOpenAIResult(text: string): void {
 
 export function setAnthropicResult(text: string): void {
   state.anthropicResult = text
+}
+
+export function setMistralResult(text: string): void {
+  state.mistralResult = text
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -134,6 +142,11 @@ export async function serverCompletionFetch(
   if (provider === 'anthropic') {
     if (stream) return sseResponse(state.anthropicResult)
     return jsonResponse({ type: 'success', result: state.anthropicResult, model })
+  }
+
+  if (provider === 'mistral') {
+    if (stream) return sseResponse(state.mistralResult)
+    return jsonResponse({ type: 'success', result: state.mistralResult, model })
   }
 
   return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)

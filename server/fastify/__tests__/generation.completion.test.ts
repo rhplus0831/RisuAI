@@ -580,3 +580,106 @@ describe('Phase 6-5 POST /api/v1/generate/completion (anthropic)', () => {
   })
 })
 
+describe('Phase 6-6 POST /api/v1/generate/completion (mistral)', () => {
+  const mistralPayload = {
+    provider: 'mistral',
+    model: 'mistral-large-latest',
+    messages: [
+      { role: 'user', content: 'first' },
+      { role: 'user', content: 'second' },
+    ],
+    stream: false,
+    options: {
+      mistral: { apiKey: 'mk-test', maxTokens: 256, temperature: 0.4 },
+    },
+  }
+
+  it('400s when options.mistral.apiKey is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...mistralPayload, options: { mistral: {} } },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'options.mistral.apiKey is required' })
+  })
+
+  it('non-streaming forwards to api.mistral.ai with Bearer auth, safe_prompt=false, and the reformatted messages', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'mistral-large-latest',
+          choices: [{ message: { content: 'mistral ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: mistralPayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      type: 'success',
+      result: 'mistral ok',
+      model: 'mistral-large-latest',
+    })
+
+    expect(captured!.url).toBe('https://api.mistral.ai/v1/chat/completions')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer mk-test')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('mistral-large-latest')
+    expect(sent.safe_prompt).toBe(false)
+    expect(sent.max_tokens).toBe(256)
+    expect(sent.temperature).toBe(0.4)
+    // The two consecutive user turns must be coalesced before the upstream
+    // sees them. That collapse happens server-side, not in the SPA payload.
+    expect(sent.messages).toEqual([{ role: 'user', content: 'first\nsecond' }])
+  })
+
+  it('streaming relays upstream SSE deltas through the normalized envelope', async () => {
+    const enc = new TextEncoder()
+    const upstreamFrames = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'mis' } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'tral' }, finish_reason: 'stop' }] })}\n\n`,
+      `data: [DONE]\n\n`,
+    ]
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const f of upstreamFrames) controller.enqueue(enc.encode(f))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...mistralPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'mis' })}\n\n` +
+        `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'tral' })}\n\n` +
+        `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
+    )
+  })
+})
+

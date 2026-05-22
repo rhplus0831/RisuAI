@@ -99,6 +99,10 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.OpenAICompatible)).toBe('openai')
   })
 
+  it('maps Mistral to "mistral"', () => {
+    expect(formatToServerProvider(LLMFormat.Mistral)).toBe('mistral')
+  })
+
   it('returns null for AWSBedrockClaude (not yet server-routable)', () => {
     expect(formatToServerProvider(LLMFormat.AWSBedrockClaude)).toBeNull()
   })
@@ -211,6 +215,46 @@ describe('getServerCompletionProvider', () => {
         modelInfo: {
           id: 'reverse_proxy',
           format: LLMFormat.Anthropic,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes a vanilla Mistral-format model to provider "mistral"', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'mistral-large-latest',
+        modelInfo: {
+          id: 'mistral-large-latest',
+          format: LLMFormat.Mistral,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('mistral')
+  })
+
+  it('refuses reverse_proxy under Mistral (custom URL stays on local dispatch)', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.Mistral,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses Mistral-format models with an endpoint override', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'mistral-large-latest',
+        modelInfo: {
+          id: 'mistral-large-latest',
+          format: LLMFormat.Mistral,
+          endpoint: 'https://self-hosted-mistral.example.com/v1/chat/completions',
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
     )
@@ -382,6 +426,68 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
       maxTokens: 512,
       system: 'be concise\n\nno emoji',
     })
+  })
+
+  it('emits options.mistral with apiKey + maxTokens + temperature; reformat is NOT done client-side', async () => {
+    seedDb({ mistralKey: 'mk-fixture' } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), {
+        status: 200,
+      })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'mistral-large-latest',
+      modelInfo: {
+        id: 'mistral-large-latest',
+        format: LLMFormat.Mistral,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 256,
+      temperature: 0.4,
+      // Two consecutive user turns: the SPA payload still carries them as
+      // separate rows. The server-side dispatcher is what coalesces them.
+      formated: [
+        { role: 'user', content: 'a' },
+        { role: 'user', content: 'b' },
+      ],
+    })
+    await requestServerCompletion(targ, 'mistral', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('mistral')
+    expect(sent.model).toBe('mistral-large-latest')
+    expect(sent.options.mistral).toEqual({
+      apiKey: 'mk-fixture',
+      maxTokens: 256,
+      temperature: 0.4,
+    })
+    expect(sent.messages).toEqual([
+      { role: 'user', content: 'a' },
+      { role: 'user', content: 'b' },
+    ])
+  })
+
+  it('omits maxTokens / temperature from options.mistral when targ does not carry them', async () => {
+    seedDb({ mistralKey: 'mk-x' } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), {
+        status: 200,
+      })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'mistral-large-latest',
+      modelInfo: {
+        id: 'mistral-large-latest',
+        format: LLMFormat.Mistral,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'mistral', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.mistral).toEqual({ apiKey: 'mk-x' })
   })
 
   it('emits options.openrouter and overrides the wire model with db.openrouterRequestModel', async () => {

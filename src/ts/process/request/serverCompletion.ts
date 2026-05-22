@@ -16,6 +16,8 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       return 'nanogpt'
     case LLMFormat.Anthropic:
       return 'anthropic'
+    case LLMFormat.Mistral:
+      return 'mistral'
     default:
       return null
   }
@@ -46,6 +48,20 @@ function isVanillaAnthropic(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+/**
+ * Mistral derivatives (reverse_proxy targeting Mistral, xcustom::: with a
+ * Mistral-format model id, or any model carrying a hardcoded `endpoint` for a
+ * self-hosted Mistral deployment) stay on the local dispatch path. Each gets
+ * its own slice when the variant routing is wired.
+ */
+function isVanillaMistral(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (aiModel === 'reverse_proxy') return false
+  if (aiModel.startsWith('xcustom:::')) return false
+  if (targ.modelInfo?.endpoint) return false
+  return true
+}
+
 export function getServerCompletionProvider(
   targ: RequestDataArgumentExtended,
 ): string | null {
@@ -58,6 +74,7 @@ export function getServerCompletionProvider(
   if (provider === null) return null
   if (provider === 'openai') return selectOpenAIVariant(targ)
   if (provider === 'anthropic' && !isVanillaAnthropic(targ)) return null
+  if (provider === 'mistral' && !isVanillaMistral(targ)) return null
   return provider
 }
 
@@ -140,6 +157,15 @@ function buildProviderOptions(
     if (typeof targ.maxTokens === 'number') anthropic.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') anthropic.temperature = targ.temperature
     return { anthropic }
+  }
+  if (provider === 'mistral') {
+    const mistral: Record<string, unknown> = { apiKey: db.mistralKey ?? '' }
+    if (typeof targ.maxTokens === 'number') mistral.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') mistral.temperature = targ.temperature
+    // presence/frequency/top_p parity with the local Mistral path is deferred
+    // until the wider db→options parameter pipeline is sorted (the local code
+    // pulls them from db.* via applyParameters, not from targ).
+    return { mistral }
   }
   return {}
 }

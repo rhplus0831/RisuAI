@@ -1,30 +1,96 @@
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+import { parseOpenAIStyleSseData } from './openai.js'
 
-export interface OpenAIRequest {
+export interface MistralRequest {
   model: string
-  messages: unknown[]
+  messages: MistralChatMessage[]
   apiKey: string
   baseUrl: string
+  safePrompt: boolean
   maxTokens?: number
   temperature?: number
-  extraHeaders?: Record<string, string>
+  presencePenalty?: number
+  frequencyPenalty?: number
+  topP?: number
   signal: AbortSignal
 }
 
-interface OpenAIResolveInput {
+interface MistralResolveInput {
   model?: unknown
   messages?: unknown
   apiKey?: unknown
   baseUrl?: unknown
+  safePrompt?: unknown
   maxTokens?: unknown
   temperature?: unknown
-  extraHeaders?: Record<string, string>
+  presencePenalty?: unknown
+  frequencyPenalty?: unknown
+  topP?: unknown
   signal: AbortSignal
 }
 
-const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
+interface RawChatMessage {
+  role?: unknown
+  content?: unknown
+}
 
-export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest | null {
+export interface MistralChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+const DEFAULT_BASE_URL = 'https://api.mistral.ai/v1'
+
+/**
+ * Mistral enforces a stricter conversation shape than OpenAI: roles must
+ * alternate, the first message cannot be assistant, and the only valid roles
+ * are system / user / assistant. Coalesce consecutive same-role messages,
+ * inline `system` content into the surrounding user turn, and demote
+ * `function` rows to user. Mirrors the local browser path in
+ * src/ts/process/request/openAI/requests.ts:281-323.
+ */
+export function reformatForMistral(messages: RawChatMessage[]): MistralChatMessage[] {
+  const out: MistralChatMessage[] = []
+  for (let i = 0; i < messages.length; i++) {
+    const chat = messages[i]
+    const role = typeof chat.role === 'string' ? chat.role : ''
+    const content = typeof chat.content === 'string' ? chat.content : ''
+    if (i === 0) {
+      if (role === 'user' || role === 'system') {
+        out.push({ role, content })
+      } else {
+        out.push({ role: 'system', content: `${role}:${content}` })
+      }
+      continue
+    }
+    const prev = out[out.length - 1]
+    if (prev !== undefined && prev.role === role && (role === 'user' || role === 'assistant' || role === 'system')) {
+      prev.content += `\n${content}`
+      continue
+    }
+    if (role === 'system') {
+      if (prev !== undefined && prev.role === 'user') {
+        prev.content += `\nSystem:${content}`
+      } else {
+        out.push({ role: 'user', content: `System:${content}` })
+      }
+      continue
+    }
+    if (role === 'function') {
+      out.push({ role: 'user', content })
+      continue
+    }
+    if (role === 'user' || role === 'assistant') {
+      out.push({ role, content })
+    } else {
+      // Unknown role: drop into user turn rather than discard the text.
+      out.push({ role: 'user', content })
+    }
+  }
+  return out
+}
+
+export function resolveMistralRequest(input: MistralResolveInput): MistralRequest | null {
   if (typeof input.model !== 'string' || input.model.length === 0) return null
   if (!Array.isArray(input.messages)) return null
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
@@ -33,6 +99,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     typeof input.baseUrl === 'string' && input.baseUrl.length > 0
       ? input.baseUrl
       : DEFAULT_BASE_URL
+  const safePrompt = input.safePrompt === true
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
@@ -41,55 +108,71 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     typeof input.temperature === 'number' && Number.isFinite(input.temperature)
       ? input.temperature
       : undefined
+  const presencePenalty =
+    typeof input.presencePenalty === 'number' && Number.isFinite(input.presencePenalty)
+      ? input.presencePenalty
+      : undefined
+  const frequencyPenalty =
+    typeof input.frequencyPenalty === 'number' && Number.isFinite(input.frequencyPenalty)
+      ? input.frequencyPenalty
+      : undefined
+  const topP =
+    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
 
   return {
     model: input.model,
-    messages: input.messages,
+    messages: reformatForMistral(input.messages as RawChatMessage[]),
     apiKey: input.apiKey,
     baseUrl,
+    safePrompt,
     maxTokens,
     temperature,
-    extraHeaders: input.extraHeaders,
+    presencePenalty,
+    frequencyPenalty,
+    topP,
     signal: input.signal,
   }
 }
 
-function buildPayload(req: OpenAIRequest, stream: boolean): Record<string, unknown> {
+function buildPayload(req: MistralRequest, stream: boolean): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: req.model,
     messages: req.messages,
+    safe_prompt: req.safePrompt,
     stream,
   }
   if (req.maxTokens !== undefined) body.max_tokens = req.maxTokens
   if (req.temperature !== undefined) body.temperature = req.temperature
+  if (req.presencePenalty !== undefined) body.presence_penalty = req.presencePenalty
+  if (req.frequencyPenalty !== undefined) body.frequency_penalty = req.frequencyPenalty
+  if (req.topP !== undefined) body.top_p = req.topP
   return body
 }
 
-function endpoint(req: OpenAIRequest): string {
+function endpoint(req: MistralRequest): string {
   const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
   return `${base}/chat/completions`
 }
 
-function headers(req: OpenAIRequest): Record<string, string> {
+function headers(req: MistralRequest): Record<string, string> {
   return {
     'content-type': 'application/json',
     authorization: `Bearer ${req.apiKey}`,
-    ...(req.extraHeaders ?? {}),
   }
 }
 
-interface OpenAINonStreamChoice {
+interface MistralNonStreamChoice {
   message?: { content?: unknown }
   finish_reason?: unknown
 }
 
-interface OpenAINonStreamResponse {
-  choices?: OpenAINonStreamChoice[]
+interface MistralNonStreamResponse {
+  choices?: MistralNonStreamChoice[]
   model?: unknown
   error?: { message?: unknown }
 }
 
-export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
+export async function runMistral(req: MistralRequest): Promise<CompletionResult> {
   if (req.signal.aborted) {
     return { type: 'fail', result: 'aborted', aborted: true }
   }
@@ -110,9 +193,9 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
     return { type: 'fail', result: `upstream fetch failed: ${msg}` }
   }
 
-  let body: OpenAINonStreamResponse
+  let body: MistralNonStreamResponse
   try {
-    body = (await response.json()) as OpenAINonStreamResponse
+    body = (await response.json()) as MistralNonStreamResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
@@ -120,9 +203,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
 
   if (!response.ok) {
     const upstreamMsg =
-      typeof body.error?.message === 'string'
-        ? body.error.message
-        : `HTTP ${response.status}`
+      typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
     return { type: 'fail', result: upstreamMsg }
   }
 
@@ -137,17 +218,17 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
   return result
 }
 
-interface OpenAIDelta {
+interface MistralDelta {
   content?: unknown
 }
 
-interface OpenAIStreamChoice {
-  delta?: OpenAIDelta
+interface MistralStreamChoice {
+  delta?: MistralDelta
   finish_reason?: unknown
 }
 
-interface OpenAIStreamFrame {
-  choices?: OpenAIStreamChoice[]
+interface MistralStreamFrame {
+  choices?: MistralStreamChoice[]
 }
 
 function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
@@ -155,22 +236,8 @@ function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   return raw
 }
 
-/**
- * Parse one SSE event block from an OpenAI-shape stream. Upstream sends
- * `data: <json>` lines plus a trailing `data: [DONE]` sentinel. Exported so
- * other OpenAI-wire-shape providers (Mistral, etc.) can share the framing.
- */
-export function parseOpenAIStyleSseData(block: string): string | null {
-  let data = ''
-  for (const line of block.split('\n')) {
-    if (line.startsWith('data: ')) data += line.slice(6)
-    else if (line.startsWith('data:')) data += line.slice(5)
-  }
-  return data.length > 0 ? data : null
-}
-
-export async function* runOpenAIStream(
-  req: OpenAIRequest,
+export async function* runMistralStream(
+  req: MistralRequest,
 ): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
@@ -213,9 +280,9 @@ export async function* runOpenAIStream(
           yield { kind: 'done', finishReason }
           return
         }
-        let frame: OpenAIStreamFrame
+        let frame: MistralStreamFrame
         try {
-          frame = JSON.parse(data) as OpenAIStreamFrame
+          frame = JSON.parse(data) as MistralStreamFrame
         } catch {
           continue
         }

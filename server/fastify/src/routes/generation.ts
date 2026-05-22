@@ -12,13 +12,25 @@ import {
 } from '../generation/echo.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import {
+  resolveMistralRequest,
+  runMistral,
+  runMistralStream,
+} from '../generation/mistral.js'
+import {
   resolveOpenAIRequest,
   runOpenAI,
   runOpenAIStream,
 } from '../generation/openai.js'
 import { requireAuth } from '../http.js'
 
-const SUPPORTED_PROVIDERS = new Set(['echo', 'openai', 'nanogpt', 'openrouter', 'anthropic'])
+const SUPPORTED_PROVIDERS = new Set([
+  'echo',
+  'openai',
+  'nanogpt',
+  'openrouter',
+  'anthropic',
+  'mistral',
+])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
 const NANOGPT_SUBSCRIPTION_BASE_URL = 'https://nano-gpt.com/api/subscription/v1'
@@ -70,6 +82,17 @@ interface AnthropicOptions {
   system?: unknown
   maxTokens?: unknown
   temperature?: unknown
+}
+
+interface MistralOptions {
+  apiKey?: unknown
+  baseUrl?: unknown
+  safePrompt?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+  presencePenalty?: unknown
+  frequencyPenalty?: unknown
+  topP?: unknown
 }
 
 interface OpenAICompatibleVariant {
@@ -280,6 +303,77 @@ async function handleAnthropicBuffered(
   }
 }
 
+async function handleMistralStreaming(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: MistralOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveMistralRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      safePrompt: options.safePrompt,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      presencePenalty: options.presencePenalty,
+      frequencyPenalty: options.frequencyPenalty,
+      topP: options.topP,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.mistral.apiKey is required')
+      return
+    }
+    await pipeStream(reply, runMistralStream(resolved))
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleMistralBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: MistralOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveMistralRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      safePrompt: options.safePrompt,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      presencePenalty: options.presencePenalty,
+      frequencyPenalty: options.frequencyPenalty,
+      topP: options.topP,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.mistral.apiKey is required')
+      return
+    }
+    const result = await runMistral(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
+      type: result.type,
+      result: result.result,
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
 async function handleOpenAICompatibleStreaming(
   req: FastifyRequest,
   reply: FastifyReply,
@@ -382,6 +476,7 @@ export function registerGenerationRoutes(
       nanogpt?: NanoGPTOptions
       openrouter?: OpenRouterOptions
       anthropic?: AnthropicOptions
+      mistral?: MistralOptions
     }
 
     if (provider === 'echo') {
@@ -401,6 +496,16 @@ export function registerGenerationRoutes(
         return
       }
       await handleAnthropicBuffered(req, reply, body.model, messages, anthropicOpts)
+      return
+    }
+
+    if (provider === 'mistral') {
+      const mistralOpts = options.mistral ?? {}
+      if (body.stream === true) {
+        await handleMistralStreaming(req, reply, body.model, messages, mistralOpts)
+        return
+      }
+      await handleMistralBuffered(req, reply, body.model, messages, mistralOpts)
       return
     }
 

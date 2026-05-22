@@ -101,7 +101,12 @@ import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelt
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-const DUAL_MODE_FIXTURES = ['echo-basic', 'openai-basic', 'anthropic-basic'] as const
+const DUAL_MODE_FIXTURES = [
+  'echo-basic',
+  'openai-basic',
+  'anthropic-basic',
+  'mistral-basic',
+] as const
 
 interface ExpectedCall {
   provider: string
@@ -128,6 +133,12 @@ const EXPECTED_CALL: Record<(typeof DUAL_MODE_FIXTURES)[number], ExpectedCall> =
     model: 'claude-opus-4-7',
     stream: false,
     options: { anthropic: { apiKey: 'sk-ant-fixture', maxTokens: 200 } },
+  },
+  'mistral-basic': {
+    provider: 'mistral',
+    model: 'mistral-large-latest',
+    stream: false,
+    options: { mistral: { apiKey: 'mistral-fixture-key', maxTokens: 200 } },
   },
 }
 

@@ -16,12 +16,13 @@ snapshot is summarized here.
 1. **Continue Phase 6 provider coverage.** The completion route,
    normalized SSE envelope, client adapter, and dual-mode fixture
    harness are in place for echo, vanilla OpenAI, NanoGPT,
-   OpenRouter, and vanilla Anthropic. The next Phase 6 slice should
-   pick one uncovered provider family or helper route, add server
-   request/response tests, and add a dual-mode fixture when the
-   provider is eligible for the server-backed adapter. Keep the 29
-   local sendChat snapshots, the 3-fixture server-backed sweep, and
-   the Fastify generation tests green.
+   OpenRouter, vanilla Anthropic, and vanilla Mistral. The next
+   Phase 6 slice should pick one uncovered provider family or
+   helper route, add server request/response tests, and add a
+   dual-mode fixture when the provider is eligible for the
+   server-backed adapter. Keep the 30 local sendChat snapshots,
+   the 4-fixture server-backed sweep, and the Fastify generation
+   tests green.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -40,6 +41,87 @@ snapshot is summarized here.
 <!-- prettier-ignore-start -->
 
 ## Completed Slices
+
+- **Phase 6-6 - mistral end-to-end.** Done 2026-05-22. First
+  Phase 6 provider that needs server-side message-shape adaptation:
+  Mistral enforces strict role alternation, rejects assistant-first
+  turns, and accepts only system / user / assistant. New
+  `server/fastify/src/generation/mistral.ts` ships
+  `reformatForMistral` (mirrors the local browser path in
+  `src/ts/process/request/openAI/requests.ts:281-323`: coalesces
+  consecutive same-role turns into one newline-joined message,
+  inlines a system row after a user turn with a `\nSystem:` prefix,
+  promotes a system-after-assistant row to a new user turn with a
+  `System:` prefix, demotes function rows to user, and demotes any
+  non-user-non-system first row to system with a `<role>:<content>`
+  prefix), `resolveMistralRequest` (defaults baseUrl
+  `https://api.mistral.ai/v1`, `safePrompt: false`; accepts
+  optional `maxTokens`, `temperature`, `presencePenalty`,
+  `frequencyPenalty`, `topP`), `runMistral` (non-streaming POST to
+  `{baseUrl}/chat/completions` with `Bearer <apiKey>`; body adds
+  `safe_prompt` plus the standard OpenAI parameter set; reuses the
+  same `choices[0].message.content` extraction + `error.message`
+  fallback as openai), and `runMistralStream` (consumes
+  OpenAI-shape `data: <json>` + `[DONE]` sentinel; same finish-
+  reason propagation). Pre-slice refactor extracted
+  `parseUpstreamData` from `openai.ts` into a shared exported
+  `parseOpenAIStyleSseData` so `mistral.ts` (and future
+  DeepSeek / DeepInfra / NanoGPT-Responses / Ollama-OAI
+  dispatchers) can reuse the SSE line parser without duplicating
+  the framing logic. Route changes: `'mistral'` added to
+  SUPPORTED_PROVIDERS, dispatched ahead of the OpenAI-compatible
+  branch with its own `MistralOptions` (`apiKey`, optional
+  `baseUrl` / `safePrompt` / `maxTokens` / `temperature` /
+  `presencePenalty` / `frequencyPenalty` / `topP`). Client adapter:
+  `formatToServerProvider(LLMFormat.Mistral) → 'mistral'` gated by
+  `isVanillaMistral` (refuses reverse_proxy, xcustom:::, and any
+  model with a hardcoded `endpoint`; self-hosted Mistral
+  deployments get their own slice later). `buildProviderOptions`
+  emits `{apiKey: db.mistralKey, maxTokens?, temperature?}` under
+  `options.mistral` (presence / frequency / top_p parity is
+  deferred until the wider `db.*` → options parameter pipeline is
+  sorted; the local Mistral path pulls those from `db.*` via
+  `applyParameters`, not from `targ`). The role-reformat lives on
+  the server, not the client: the SPA payload still carries the
+  canonical OpenAI-shaped messages array. New `mistral-basic`
+  dual-mode fixture (`aiModel: 'mistral-large-latest'`,
+  `db.mistralKey: 'mistral-fixture-key'`, single user turn,
+  `db.useStreaming: false`). Shared snapshot pins stages
+  `[1, 3, 4]`, `runInlayScreen` fires, assistant text
+  `'fixture mistral reply'`, `inputTokens: 176` (Mistral lacks the
+  consecutive-system coalesce that gpt/claude/openrouter have, so
+  the description gets its own system row in the formated array —
+  explaining the +3 token delta vs `anthropic-basic`).
+  `serverCompletionFetch` gains a `'mistral'` branch returning the
+  canned reply (default overridable via `setMistralResult`). Per-
+  fixture expected-call table in the server-backed sweep gains the
+  mistral entry. Tests: mistral dispatcher gains 25 cases
+  (`reformatForMistral` 7 cases — single-user passthrough,
+  assistant-first demotion to system with role prefix, consecutive
+  same-role coalesce, system-after-user inline with `Systen:`
+  prefix, system-after-assistant promotion, function-to-user
+  demotion, no-input-mutation; `resolveMistralRequest` 5 cases —
+  null on missing apiKey / model / array messages, defaults
+  applied + reformat invoked, full-param passthrough;
+  `runMistral` 8 cases — Bearer + reformatted body, omit-when-
+  absent parameters, safe_prompt opt-in, trailing-slash baseUrl
+  normalization, upstream error.message, HTTP-status fallback,
+  empty choices, pre-aborted no-op; `runMistralStream` 5 cases —
+  token delta + done, finish_reason propagation, no-`[DONE]`
+  fallback, pre-aborted, partial-frame reassembly). Route test
+  file gains 3 cases (mistral 400 on missing apiKey, non-stream
+  forward with Bearer + reformat applied at the server boundary
+  + the consecutive user-turn collapse verified at the sent
+  payload, streaming SSE relay). Adapter test file gains 4 cases
+  (`formatToServerProvider(Mistral) → 'mistral'`, vanilla Mistral
+  routes to provider, reverse_proxy refused, endpoint-override
+  refused) plus 2 request-shape cases (options.mistral carries
+  apiKey + maxTokens + temperature with reformat-not-done-client-
+  side asserted; options.mistral omits the numeric fields when
+  targ lacks them). Verification: `pnpm test` (505 across 46
+  files, +8 = 6 adapter + 1 local + 1 server-backed), `pnpm
+  api:test` (216 across 15 files, +28 = 25 dispatcher + 3 route),
+  `pnpm check`, `pnpm build` all green.
 
 - **Phase 6-5 - anthropic messages end-to-end.** Done 2026-05-22.
   First non-OpenAI-compatible provider lands. New
