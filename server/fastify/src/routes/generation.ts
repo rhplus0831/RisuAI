@@ -17,6 +17,7 @@ import {
   runBedrock,
 } from '../generation/bedrock.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
+import { resolveHordeRequest, runHorde } from '../generation/horde.js'
 import {
   resolveGeminiRequest,
   runGemini,
@@ -65,6 +66,7 @@ const SUPPORTED_PROVIDERS = new Set([
   'ooba-legacy',
   'ollama',
   'bedrock',
+  'horde',
 ])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -245,6 +247,18 @@ interface BedrockOptions {
   topP?: unknown
   topK?: unknown
   additionalParams?: unknown
+}
+
+interface HordeOptions {
+  prompt?: unknown
+  apiKey?: unknown
+  maxTokens?: unknown
+  maxContextLength?: unknown
+  temperature?: unknown
+  topK?: unknown
+  topP?: unknown
+  pollIntervalMs?: unknown
+  timeoutMs?: unknown
 }
 
 interface OpenAICompatibleVariant {
@@ -686,6 +700,39 @@ async function handleOllamaBuffered(
     }
     if (result.model !== undefined) payload.model = result.model
     reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleHordeBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  options: HordeOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveHordeRequest({
+      prompt: options.prompt,
+      model,
+      apiKey: options.apiKey,
+      maxTokens: options.maxTokens,
+      maxContextLength: options.maxContextLength,
+      temperature: options.temperature,
+      topK: options.topK,
+      topP: options.topP,
+      pollIntervalMs: options.pollIntervalMs,
+      timeoutMs: options.timeoutMs,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.horde.prompt is required (and model must be non-empty)')
+      return
+    }
+    const result = await runHorde(resolved)
+    if (result.aborted === true) return
+    reply.code(200).send({ type: result.type, result: result.result })
   } finally {
     cleanup()
   }
@@ -1142,6 +1189,7 @@ export function registerGenerationRoutes(
       'ooba-legacy'?: OobaLegacyOptions
       ollama?: OllamaOptions
       bedrock?: BedrockOptions
+      horde?: HordeOptions
     }
 
     if (provider === 'echo') {
@@ -1267,6 +1315,19 @@ export function registerGenerationRoutes(
         return
       }
       await handleBedrockBuffered(req, reply, body.model, messages, options.bedrock ?? {})
+      return
+    }
+
+    if (provider === 'horde') {
+      if (body.stream === true) {
+        // Horde's poll-loop wire isn't incremental; one final payload
+        // either lands or doesn't. Streaming envelope deferred.
+        reply.code(400).send({
+          error: 'horde streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      await handleHordeBuffered(req, reply, body.model, options.horde ?? {})
       return
     }
 

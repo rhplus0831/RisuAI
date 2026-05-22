@@ -23,7 +23,7 @@ vi.mock('../../modules', async (importActual) => {
 
 import { LLMFormat } from '../../../model/types'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
-import { DBState } from '../../../stores.svelte'
+import { DBState, selectedCharID } from '../../../stores.svelte'
 import type { RequestDataArgumentExtended } from '../request'
 import {
   extractAnthropicSystem,
@@ -84,6 +84,12 @@ function makeTarg(
 beforeEach(() => {
   platformState.isFastifyServer = true
   seedDb()
+  // `vi.unstubAllGlobals()` in our afterEach also strips the
+  // safeStructuredClone polyfill that vitest.setup.ts installs. Reapply
+  // it before each test so chatTemplate.ts (used by the horde adapter
+  // path) doesn't ReferenceError.
+  ;(globalThis as Record<string, unknown>).safeStructuredClone = (v: unknown) =>
+    JSON.parse(JSON.stringify(v))
 })
 
 afterEach(() => {
@@ -113,6 +119,10 @@ describe('formatToServerProvider', () => {
 
   it('maps VertexAIGemini to "gemini" (the dispatcher branches on options.gemini.vertex)', () => {
     expect(formatToServerProvider(LLMFormat.VertexAIGemini)).toBe('gemini')
+  })
+
+  it('maps Horde to "horde"', () => {
+    expect(formatToServerProvider(LLMFormat.Horde)).toBe('horde')
   })
 
   it('maps OpenAILegacyInstruct + NanoGPTLegacy to "openai-legacy-instruct"', () => {
@@ -382,6 +392,56 @@ describe('getServerCompletionProvider', () => {
         modelInfo: {
           id: 'claude-3-5-sonnet-bedrock',
           format: LLMFormat.AWSBedrockClaude,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes a Horde model to provider "horde" when aiModel starts with horde::: and instructChatTemplate is set', () => {
+    seedDb({
+      instructChatTemplate: 'chatml',
+      hordeConfig: { apiKey: 'k', model: '', softPrompt: '' },
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'horde:::koboldcpp/Mistral-7B',
+        modelInfo: {
+          id: 'horde:::koboldcpp/Mistral-7B',
+          format: LLMFormat.Horde,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('horde')
+  })
+
+  it('refuses Horde when db.instructChatTemplate is empty (Phase 7 work)', () => {
+    seedDb({
+      instructChatTemplate: '',
+      hordeConfig: { apiKey: '', model: '', softPrompt: '' },
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'horde:::koboldcpp/Mistral-7B',
+        modelInfo: {
+          id: 'horde:::koboldcpp/Mistral-7B',
+          format: LLMFormat.Horde,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses Horde when aiModel lacks the horde::: prefix', () => {
+    seedDb({
+      instructChatTemplate: 'chatml',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'not-horde-prefixed',
+        modelInfo: {
+          id: 'not-horde-prefixed',
+          format: LLMFormat.Horde,
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
     )
@@ -1372,6 +1432,77 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     await requestServerCompletion(targ, 'cohere', null)
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.options.cohere).toEqual({ apiKey: 'co-fixture' })
+  })
+
+  it('emits options.horde.prompt flattened via applyChatTemplate; wire model is the part after horde:::', async () => {
+    seedDb({
+      instructChatTemplate: 'chatml',
+      hordeConfig: { apiKey: 'horde-secret-key', model: '', softPrompt: '' },
+      maxContext: 4000,
+      top_p: 0.9,
+      top_k: 40,
+      characters: [{ name: 'Char' } as never],
+    } as unknown as Partial<Database>)
+    selectedCharID.set(0)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'horde:::koboldcpp/Mistral-7B',
+      modelInfo: {
+        id: 'horde:::koboldcpp/Mistral-7B',
+        format: LLMFormat.Horde,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 256,
+      temperature: 0.7,
+      formated: [
+        { role: 'user', content: 'hello' },
+      ] as unknown as RequestDataArgumentExtended['formated'],
+    })
+    await requestServerCompletion(targ, 'horde', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('horde')
+    expect(sent.model).toBe('koboldcpp/Mistral-7B')
+    // chatml template wraps each turn in <|im_start|>{role}\n{content}<|im_end|>
+    // and appends the assistant generation prompt at the end.
+    expect(sent.options.horde.prompt).toContain('<|im_start|>user')
+    expect(sent.options.horde.prompt).toContain('hello')
+    expect(sent.options.horde.prompt).toContain('<|im_start|>assistant')
+    expect(sent.options.horde.apiKey).toBe('horde-secret-key')
+    expect(sent.options.horde.maxTokens).toBe(256)
+    // db.maxContext + 100 mirrors the local code at request.ts:1442.
+    expect(sent.options.horde.maxContextLength).toBe(4100)
+    expect(sent.options.horde.temperature).toBe(0.7)
+    expect(sent.options.horde.topP).toBe(0.9)
+    expect(sent.options.horde.topK).toBe(40)
+  })
+
+  it('omits options.horde.apiKey for short / empty keys (anonymous Horde uses 0000000000)', async () => {
+    seedDb({
+      instructChatTemplate: 'chatml',
+      hordeConfig: { apiKey: '', model: '', softPrompt: '' },
+      characters: [{ name: 'Char' } as never],
+    } as unknown as Partial<Database>)
+    selectedCharID.set(0)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'horde:::auto',
+      modelInfo: {
+        id: 'horde:::auto',
+        format: LLMFormat.Horde,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'horde', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.horde.apiKey).toBeUndefined()
   })
 
   it('emits options.bedrock with parsed credentials + extracts system message; wire model gets us./global. prefix', async () => {

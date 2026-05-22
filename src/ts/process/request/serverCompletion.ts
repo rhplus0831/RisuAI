@@ -2,6 +2,9 @@ import { LLMFormat } from '../../model/types'
 import { isFastifyServer } from '../../platform'
 import { getDatabase } from '../../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
+import { applyChatTemplate } from '../templates/chatTemplate'
+import { unstringlizeChat } from '../stringlize'
+import type { OpenAIChat } from '../index.svelte'
 import type { RequestDataArgumentExtended, requestDataResponse } from './request'
 
 const COMPLETION_ENDPOINT = '/api/v1/generate/completion'
@@ -40,6 +43,8 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       return 'ollama'
     case LLMFormat.AWSBedrockClaude:
       return 'bedrock'
+    case LLMFormat.Horde:
+      return 'horde'
     case LLMFormat.Kobold:
       return 'kobold'
     case LLMFormat.OobaLegacy:
@@ -327,6 +332,25 @@ function isVanillaBedrock(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+function isVanillaHorde(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (!aiModel.startsWith('horde:::')) return false
+  const realModel = aiModel.slice('horde:::'.length)
+  if (realModel.length === 0) return false
+  const db = getDatabase()
+  // The local Horde path flattens via applyChatTemplate (Jinja-driven by
+  // db.instructChatTemplate). The server-routed slice mirrors that by
+  // pre-flattening on the client; if the user hasn't picked a template
+  // we'd otherwise throw in buildProviderOptions, so refuse here.
+  if (typeof db.instructChatTemplate !== 'string' || db.instructChatTemplate.length === 0) {
+    return false
+  }
+  if (db.instructChatTemplate === 'jinja') {
+    if (typeof db.JinjaTemplate !== 'string' || db.JinjaTemplate.length === 0) return false
+  }
+  return true
+}
+
 function isVanillaResponses(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
   if (aiModel === 'reverse_proxy') return false
@@ -371,6 +395,7 @@ export function getServerCompletionProvider(
   if (provider === 'openai-legacy-instruct' && !isVanillaLegacyInstruct(targ)) return null
   if (provider === 'openai-responses' && !isVanillaResponses(targ)) return null
   if (provider === 'bedrock' && !isVanillaBedrock(targ)) return null
+  if (provider === 'horde' && !isVanillaHorde(targ)) return null
   if (provider === 'ollama') {
     // Translate the routing decision the local code makes for ollama-cloud.
     return resolveOllamaProvider(targ)
@@ -433,6 +458,10 @@ export function resolveProviderModel(
     // prefix (per the SPA's claude4.5+ heuristic at anthropic.ts:446-461).
     const internalId = targ.modelInfo?.internalID ?? ''
     return resolveBedrockWireModel(internalId)
+  }
+  if (provider === 'horde') {
+    // Horde aiModel is `horde:::<modelId>`; the wire model is the suffix.
+    return aiModel.startsWith('horde:::') ? aiModel.slice('horde:::'.length) : aiModel
   }
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
@@ -628,6 +657,23 @@ function buildProviderOptions(
     if (typeof targ.maxTokens === 'number') bedrock.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') bedrock.temperature = targ.temperature
     return { bedrock }
+  }
+  if (provider === 'horde') {
+    // Horde's wire takes a pre-flattened `prompt` string. The local code
+    // flattens via applyChatTemplate; mirror that here. unstringlize on
+    // the response side runs in requestServerCompletion below since the
+    // server returns the raw generation.
+    const horde: Record<string, unknown> = {
+      prompt: applyChatTemplate((targ.formated ?? []) as OpenAIChat[]),
+    }
+    const apiKey = db.hordeConfig?.apiKey ?? ''
+    if (apiKey.length > 2) horde.apiKey = apiKey
+    if (typeof targ.maxTokens === 'number') horde.maxTokens = targ.maxTokens
+    if (typeof db.maxContext === 'number') horde.maxContextLength = db.maxContext + 100
+    if (typeof targ.temperature === 'number') horde.temperature = targ.temperature
+    if (typeof db.top_p === 'number') horde.topP = db.top_p
+    if (typeof db.top_k === 'number') horde.topK = db.top_k
+    return { horde }
   }
   if (provider === 'gemini') {
     const gemini: Record<string, unknown> = {}
@@ -881,7 +927,18 @@ export async function requestServerCompletion(
     return { type: 'fail', result: `Invalid response: ${msg}` }
   }
   const type = json.type === 'fail' ? 'fail' : 'success'
-  const result = typeof json.result === 'string' ? json.result : ''
+  let result = typeof json.result === 'string' ? json.result : ''
+  // Horde returns the raw model continuation, which includes the
+  // flattened-prompt prefix in some templates. unstringlize trims it
+  // back to just the assistant turn — mirrors the local code at
+  // src/ts/process/request/request.ts:1513.
+  if (provider === 'horde' && type === 'success' && result.length > 0) {
+    result = unstringlizeChat(
+      result,
+      (targ.formated ?? []) as OpenAIChat[],
+      targ.currentChar?.name ?? '',
+    )
+  }
   if (typeof json.model === 'string') {
     return { type, result, model: json.model }
   }

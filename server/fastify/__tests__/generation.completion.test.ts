@@ -1095,6 +1095,92 @@ describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)',
   })
 })
 
+describe('Phase 6-22 POST /api/v1/generate/completion (horde)', () => {
+  it('400s when options.horde.prompt is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'horde',
+        model: 'koboldcpp/Mistral',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { horde: {} },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\.horde\.prompt/)
+  })
+
+  it('400s when stream=true is requested', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'horde',
+        model: 'koboldcpp/Mistral',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+        options: { horde: { prompt: 'flattened' } },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/horde streaming is not yet supported/)
+  })
+
+  it('submits async + polls + returns generations[0].text', async () => {
+    let pollCount = 0
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/generate/text/async')) {
+        return new Response(JSON.stringify({ id: 'route-job' }), {
+          status: 202,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (init?.method === 'DELETE') {
+        return new Response('{}', { status: 200 })
+      }
+      pollCount++
+      if (pollCount < 2) {
+        return new Response(JSON.stringify({ done: false }), { status: 200 })
+      }
+      return new Response(
+        JSON.stringify({ done: true, generations: [{ text: 'horde route ok' }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'horde',
+        model: 'koboldcpp/Mistral',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          horde: {
+            prompt: 'flattened user: hi',
+            apiKey: 'my-key',
+            // Short poll interval keeps the test fast without fake timers
+            // (the route hits real timers under hood).
+            pollIntervalMs: 10,
+            timeoutMs: 5000,
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'horde route ok' })
+  })
+})
+
 describe('Phase 6-21 POST /api/v1/generate/completion (bedrock)', () => {
   it('400s when options.bedrock.credentials is missing', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
