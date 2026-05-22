@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `7ad226b9 feat: per-message scripts + sendName + Thoughts (Phase 7-5b)`
+Head: `8414d5c7 feat: scripts special action prefixes (Phase 7-6b)`
 
 This is the short runbook for picking up **Phase 7 in progress**.
 Phases 0-6 are closed. The detailed Phase 7 roadmap lives in
@@ -25,6 +25,7 @@ Landed Phase 7 slices:
 | 7-5a  | `c44e53fc` | Ported the minimal history walk: examples, start-new-chat marker, first message, makeMs filter, per-message role mapping.    |
 | 7-6a  | `9a60380d` | Ported the minimal regex script processor: preset+character regex chain, mode filter, flag sanitization, CBS in replacement. |
 | 7-5b  | `7ad226b9` | Added per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill on the history walk.             |
+| 7-6b  | `8414d5c7` | Added scripts `@@`-action prefixes: `@@emo` (no-op), `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`.             |
 
 What is real in code:
 
@@ -35,52 +36,57 @@ What is real in code:
   `variables.ts`, `staticSections.ts`, `plainSections.ts`,
   `history.ts` (deterministic walk + per-message scripts +
   sendName wrapper + `<Thoughts>` extraction + memo/UUID
-  backfill), and `scripts.ts` (regex-only `processScript`) are
-  implemented and tested.
+  backfill), and `scripts.ts` (regex + five `@@`-action prefixes)
+  are implemented and tested.
 - `assemble.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
   `triggers.ts` still throw Phase 7 not-implemented errors.
 - `history.ts` does not yet handle multimodal inlays,
   `{{asset_prompt::}}`, start triggers, tokenizer accumulation, or
   depth prompts (7-5c/d/e).
-- `scripts.ts` does not yet handle special action prefixes
-  (`@@emo`, `@@move_top`, `@@move_bottom`, `@@inject`,
-  `@@repeat_back`), the `ableFlag` `<order, actions>` DSL,
-  script-cache, `runLuaEditTrigger`, `runTrigger('display', …)`,
-  `pluginV2` hooks, or module regex scripts (7-6b/c/d/e).
+- `scripts.ts` does not yet handle the `ableFlag` `<order, actions>`
+  DSL, script-cache, `runLuaEditTrigger`, `runTrigger('display', …)`,
+  `pluginV2` hooks, or module regex scripts (7-6c/d/e).
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-5b:
+Last recorded baselines after 7-6b:
 
-- `pnpm api:test`: 529 across 33 files
+- `pnpm api:test`: 545 across 33 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: clean
 
 ## Next Slice
 
-Pick up **7-6b - scripts special action prefixes**.
+Pick up **7-6c - scripts `ableFlag` DSL parsing**.
 
-`scripts.ts` currently only honors the plain regex branch. Port
-the four deterministic special-action prefixes that the SPA's
-`executeScript` recognizes (`scripts.ts:218-325`):
+When `script.ableFlag === true` and `script.flag` contains
+`<…>`-bracketed meta tokens, the SPA parses out an `order` integer
+and an `actions[]` list (`scripts.ts:333-366`). The actions are
+case-equivalents of the `@@`-prefixes already landed in 7-6b
+(`'inject'`, `'move_top'`, `'move_bottom'`, `'repeat_back'`,
+`'cbs'`, `'no_end_nl'`). After parsing, the script list gets
+stable-sorted in descending order if any script declared one.
 
-- `@@move_top` / `@@move_bottom` — extract matched text via
-  `data.matchAll(reg)`, rewrite with the SPA's `$1` / `$&` / `$<n>`
-  substitution helper, then re-prepend or append to `data`.
-- `@@inject` — mutate the message at `chatID` in place
-  (writes `currentChat.message[chatID].data = data`) and strip
-  the matched text from `data`. Server signature accepts an
-  optional `chatID` like the SPA.
-- `@@repeat_back` — read the previous same-role message body,
-  copy its first match to the current `data` (positions: bare,
-  `end`, `start`, `end_nl`, `start_nl`).
+Slice scope:
 
-`@@emo` stays as a no-op on the server (browser-only emotion-image
-side effect; document the skip).
+- Add an `ableFlag` parse step before the `script.type === mode`
+  filter. Extract the `<order N, action1, action2>` segments out
+  of `script.flag` and produce a `parsedScript = { script, order,
+actions }` shape per entry.
+- Re-route the `@@`-action dispatch to ALSO fire when
+  `actions.includes('inject' | 'move_top' | 'move_bottom' |
+'repeat_back')`. Keep the `@@`-prefix detection as a fallback for
+  scripts that don't use the DSL.
+- Implement the `'cbs'` action: when set, pre-expand `script.in`
+  through `expandVariables` before compiling the RegExp
+  (`scripts.ts:211-213`).
+- Implement the `'no_end_nl'` action: suppress the `\n` suffix the
+  SPA tacks onto outputs ending in `>` (`scripts.ts:194-196`).
+- Stable-sort the parsed list by `order desc` when `orderChanged`
+  flips during parsing.
 
-Deferred to later sub-slices: `ableFlag` `<order, actions>` DSL
-parsing (7-6c), script-cache (7-6c), module regex scripts (7-6d),
-`runTrigger('display', …)` for `editdisplay` mode (7-6e).
+Skip-list (defer to 7-6d/e): script-cache, module regex scripts,
+`runTrigger('display', …)` for `editdisplay` mode.
 
 Other Tier 1 candidates remain unblocked: **7-5c** (multimodal
 inlays + `{{asset_prompt::}}`; the assets path benefits from a
@@ -89,8 +95,8 @@ shape - reasonable to wait) and **7-7a** (constant lorebook; the
 SPA orchestrator still doesn't slice cleanly without porting the
 decorator system first - revisit).
 
-Same rhythm as prior slices: boot prompt-variable infra in tests
-with `beforeAll(() => bootPromptVariables())`, small database
+Same rhythm: boot prompt-variable infra in tests with
+`beforeAll(() => bootPromptVariables())`, small database
 fixtures, and run all four bars (`pnpm check`, `pnpm api:test`,
 `pnpm test`, `pnpm build`) before reporting back.
 
