@@ -4,12 +4,19 @@ import type {
   Message,
   character,
 } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type {
+  MultiModal,
+  OpenAIChat,
+} from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { processScript } from './scripts.js'
+import {
+  getActiveModules,
+  getModuleAssets,
+} from './modules.js'
 
 /**
- * Phase 7-5a/b history walk ported from the SPA's
+ * Phase 7-5a/b/c history walk ported from the SPA's
  * `src/ts/process/promptAssembly/buildHistoryWindow.ts`,
  * `formatHistoryMessage.ts`, and `src/ts/process/exampleMessages.ts`.
  *
@@ -40,10 +47,61 @@ import { processScript } from './scripts.js'
  *   - Per-message `memo` defaults to `msg.chatId`, backfilling
  *     `msg.chatId` with a UUID v4 when missing (mirrors `formatHistoryMessage.ts:69-71`).
  *
- * Deferred to later sub-slices: multimodal inlays + `{{asset_prompt::}}`
- * (7-5c), start trigger / `runTrigger` (7-5d), tokenizer accumulation +
- * depth-prompt preflight (7-5e).
+ * 7-5c (this slice): multimodal inlays + `{{asset_prompt::}}`. Adds an
+ * `AssetLookup` DI seam so the route layer can resolve inlay ids and
+ * asset names to `MultiModal` bytes from request-body `inlayAssets` and
+ * the Phase 2 assets store. Defaults to a no-op lookup so prompt-leaf
+ * tests can assert tag stripping without standing up the storage path.
+ *
+ * Inlay tag handling mirrors `formatHistoryMessage.ts:73-132`:
+ *   - `char` role: strip ALL three tag types from content; only
+ *     `{{inlayeddata::id}}` ids reach the lookup. (The SPA quirk —
+ *     `inlay::` / `inlayed::` get stripped from text but their assets
+ *     aren't surfaced even if they exist.)
+ *   - non-`char` role: collect all three tag types, look each one up,
+ *     then strip from content.
+ *   - `video` / `audio` cap at one entry in `multimodals` total (SPA
+ *     `formatHistoryMessage.ts:116-122`).
+ *   - The SPA's `runImageEmbedding` caption fallback for non-vision
+ *     models is browser-only and skipped on the server.
+ *
+ * `{{asset_prompt::name}}` handling mirrors `formatHistoryMessage.ts:153-181`:
+ *   - match against `currentChar.additionalAssets ∪ moduleAssets`.
+ *   - on a match, resolve via `assetLookup.getAsset(name)`.
+ *   - on `name === 'icon'` with no asset match, resolve via
+ *     `assetLookup.getCharIcon()`.
+ *   - tag always stripped from content even when no asset resolves.
+ *   - regex accepts both `asset_prompt::` and `assetprompt::` (the SPA
+ *     uses `asset_?prompt::` with `i` flag).
+ *
+ * Deferred to later sub-slices: start trigger / `runTrigger` (7-5d),
+ * tokenizer accumulation + depth-prompt preflight (7-5e).
  */
+
+export interface AssetLookup {
+  /** Resolves an inlay id from `{{inlay/inlayed/inlayeddata::id}}`. */
+  getInlay?(id: string): MultiModal | undefined
+  /** Resolves an `{{asset_prompt::name}}` against char + module assets. */
+  getAsset?(name: string): MultiModal | undefined
+  /** Resolves the `{{asset_prompt::icon}}` fallback. */
+  getCharIcon?(): MultiModal | undefined
+}
+
+const NO_ASSETS: AssetLookup = {}
+const INLAY_RE = /\{\{(inlay|inlayed|inlayeddata)::(.+?)\}\}/g
+const ASSET_PROMPT_RE = /\{\{asset_?prompt::(.+?)\}\}/gimsu
+
+/**
+ * `video` and `audio` inlays cap at one entry total
+ * (`formatHistoryMessage.ts:116-122`). Other types append freely.
+ */
+function pushMultimodal(arr: MultiModal[], m: MultiModal): void {
+  if (m.type === 'video' || m.type === 'audio') {
+    if (arr.length === 0) arr.push(m)
+    return
+  }
+  arr.push(m)
+}
 
 const SEND_NAME_WRAPPER = `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>`
 const THOUGHTS_RE = /<Thoughts>(.+?)<\/Thoughts>/gms
@@ -129,6 +187,59 @@ function extractThoughts(
   return { content: stripped, thoughts }
 }
 
+function processInlays(
+  text: string,
+  role: Message['role'],
+  lookup: AssetLookup,
+): { text: string; multimodals: MultiModal[] } {
+  let formatted = text
+  const multimodals: MultiModal[] = []
+
+  if (role === 'char') {
+    const ids: string[] = []
+    formatted = formatted.replace(INLAY_RE, (_match, tag: string, id: string) => {
+      if (id && tag === 'inlayeddata') ids.push(id)
+      return ''
+    })
+    for (const id of ids) {
+      const resolved = lookup.getInlay?.(id)
+      if (resolved) pushMultimodal(multimodals, resolved)
+    }
+  } else {
+    const matches = Array.from(formatted.matchAll(INLAY_RE))
+    for (const match of matches) {
+      const id = match[2]
+      const resolved = lookup.getInlay?.(id)
+      if (resolved) pushMultimodal(multimodals, resolved)
+      formatted = formatted.replace(match[0], '')
+    }
+  }
+
+  return { text: formatted, multimodals }
+}
+
+function processAssetPrompts(
+  text: string,
+  currentChar: character,
+  moduleAssets: [string, string, string][],
+  lookup: AssetLookup,
+): { text: string; multimodals: MultiModal[] } {
+  const multimodals: MultiModal[] = []
+  const assetTable = (currentChar.additionalAssets ?? []).concat(moduleAssets)
+  const formatted = text.replace(ASSET_PROMPT_RE, (_match, name: string) => {
+    const asset = assetTable.find((v) => v[0] === name)
+    if (asset) {
+      const resolved = lookup.getAsset?.(name)
+      if (resolved) multimodals.push(resolved)
+    } else if (name === 'icon') {
+      const resolved = lookup.getCharIcon?.()
+      if (resolved) multimodals.push(resolved)
+    }
+    return ''
+  })
+  return { text: formatted, multimodals }
+}
+
 function formatHistoryMessage(
   ctx: ExpandContext,
   currentChar: character,
@@ -137,6 +248,8 @@ function formatHistoryMessage(
   index: number,
   totalCount: number,
   usingPromptTemplate: boolean,
+  assetLookup: AssetLookup,
+  moduleAssets: [string, string, string][],
 ): OpenAIChat {
   const db = ctx.database
   const sendName = !!db.promptSettings?.sendName
@@ -162,6 +275,12 @@ function formatHistoryMessage(
     msg.chatId = randomUUID()
   }
 
+  const multimodals: MultiModal[] = []
+
+  const inlayResult = processInlays(formatted, msg.role, assetLookup)
+  formatted = inlayResult.text
+  for (const m of inlayResult.multimodals) pushMultimodal(multimodals, m)
+
   if (usingPromptTemplate && sendName) {
     // SPA passes `chara: findCharacterbyIdwithCache(msg.saying).name` here,
     // but the `{{char}}` cbs callback reads the active currentChar from
@@ -174,19 +293,30 @@ function formatHistoryMessage(
     formatted = wrapped.replace('{{slot}}', formatted)
   }
 
-  const { content, thoughts } = extractThoughts(
+  const { content: postThoughts, thoughts } = extractThoughts(
     formatted,
     index,
     totalCount,
     maxThoughtDepth,
   )
+  formatted = postThoughts
+
+  const assetResult = processAssetPrompts(
+    formatted,
+    currentChar,
+    moduleAssets,
+    assetLookup,
+  )
+  formatted = assetResult.text
+  for (const m of assetResult.multimodals) pushMultimodal(multimodals, m)
 
   const chat: OpenAIChat = {
     role: msg.role === 'user' ? 'user' : 'assistant',
-    content,
+    content: formatted,
     memo: msg.chatId,
   }
   if (thoughts.length > 0) chat.thoughts = thoughts
+  if (multimodals.length > 0) chat.multimodals = multimodals
   return chat
 }
 
@@ -199,9 +329,13 @@ export function buildHistoryWindow(
   currentChar: character,
   currentChat: Chat,
   usingPromptTemplate: boolean = false,
+  assetLookup: AssetLookup = NO_ASSETS,
 ): HistoryWindowResult {
   const db = ctx.database
   const messages: OpenAIChat[] = []
+  const moduleAssets = getModuleAssets(
+    getActiveModules(db, currentChar, currentChat),
+  )
 
   messages.push(...exampleMessage(ctx, currentChar))
 
@@ -261,6 +395,8 @@ export function buildHistoryWindow(
         i,
         ms.length,
         usingPromptTemplate,
+        assetLookup,
+        moduleAssets,
       ),
     )
   }

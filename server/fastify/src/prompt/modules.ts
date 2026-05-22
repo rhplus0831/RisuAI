@@ -69,3 +69,17 @@ export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {
   }
   return out
 }
+
+/**
+ * Returns the active modules' `[name, id, type]` asset triples. Mirrors
+ * `src/ts/process/modules.ts:421-433` `getModuleAssets()` for the prompt
+ * leaf's `{{asset_prompt::…}}` resolution in 7-5c.
+ */
+export function getModuleAssets(modules: RisuModule[]): [string, string, string][] {
+  const out: [string, string, string][] = []
+  for (const m of modules) {
+    if (!m?.assets) continue
+    for (const a of m.assets) out.push(a)
+  }
+  return out
+}

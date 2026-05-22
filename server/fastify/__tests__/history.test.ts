@@ -8,7 +8,9 @@ import type {
 import {
   buildHistoryWindow,
   exampleMessage,
+  type AssetLookup,
 } from '../src/prompt/history.js'
+import type { MultiModal } from '../../../src/ts/process/index.svelte'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 
@@ -795,5 +797,455 @@ describe('Phase 7-5b buildHistoryWindow <Thoughts> extraction', () => {
     const msg = result.messages.find((m) => m.memo !== undefined && m.role === 'assistant')
     expect(msg?.content).toBe('visible')
     expect(msg?.thoughts).toBeUndefined()
+  })
+})
+
+function imageMM(base64 = 'IMG'): MultiModal {
+  return { type: 'image', base64 }
+}
+
+function findUser(messages: import('vitest').Mock extends never ? never : any) {
+  return messages.find((m: any) => m.role === 'user' && m.memo !== undefined)
+}
+
+describe('Phase 7-5c char-role inlay tag handling', () => {
+  it('strips {{inlay::x}} from char-role content without pushing a multimodal', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'char',
+                  data: 'pre {{inlay::asset-1}} post',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getInlay: () => imageMM('UNEXPECTED'),
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = result.messages.find(
+      (m) => m.role === 'assistant' && m.memo !== undefined,
+    )
+    expect(msg?.content).toBe('pre  post')
+    expect(msg?.multimodals).toBeUndefined()
+  })
+
+  it('strips {{inlayed::x}} without pushing a multimodal', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'char',
+                  data: 'A {{inlayed::asset-2}} B',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getInlay: () => imageMM('UNEXPECTED'),
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = result.messages.find(
+      (m) => m.role === 'assistant' && m.memo !== undefined,
+    )
+    expect(msg?.content).toBe('A  B')
+    expect(msg?.multimodals).toBeUndefined()
+  })
+
+  it('strips {{inlayeddata::x}} and pushes the resolved multimodal', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'char',
+                  data: 'before {{inlayeddata::sig-7}} after',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getInlay: (id) =>
+        id === 'sig-7' ? { type: 'image', base64: 'SIG7' } : undefined,
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = result.messages.find(
+      (m) => m.role === 'assistant' && m.memo !== undefined,
+    )
+    expect(msg?.content).toBe('before  after')
+    expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'SIG7' }])
+  })
+
+  it('strips inlay tag even when the lookup returns nothing', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'char',
+                  data: 'x {{inlayeddata::missing}} y',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+    )
+    const msg = result.messages.find(
+      (m) => m.role === 'assistant' && m.memo !== undefined,
+    )
+    expect(msg?.content).toBe('x  y')
+    expect(msg?.multimodals).toBeUndefined()
+  })
+})
+
+describe('Phase 7-5c user-role inlay tag handling', () => {
+  it('looks up and strips all three inlay tag types', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'user',
+                  data: 'see {{inlay::u-1}} and {{inlayeddata::u-2}}',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getInlay: (id) =>
+        id === 'u-1' || id === 'u-2'
+          ? { type: 'image', base64: `data-${id}` }
+          : undefined,
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = findUser(result.messages)
+    expect(msg?.content).toBe('see  and ')
+    expect(msg?.multimodals).toEqual([
+      { type: 'image', base64: 'data-u-1' },
+      { type: 'image', base64: 'data-u-2' },
+    ])
+  })
+
+  it('caps video / audio multimodals at one entry total', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'user',
+                  data: '{{inlayeddata::v1}} {{inlayeddata::v2}}',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getInlay: (id) => ({
+        type: 'video',
+        base64: `vid-${id}`,
+      }),
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = findUser(result.messages)
+    expect(msg?.multimodals).toEqual([{ type: 'video', base64: 'vid-v1' }])
+  })
+})
+
+describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
+  it('resolves a matching additionalAssets entry into a multimodal', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          additionalAssets: [['logo', 'asset-id-1', 'image']],
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'user',
+                  data: 'see {{asset_prompt::logo}} thanks',
+                }),
+              ],
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getAsset: (name) =>
+        name === 'logo' ? { type: 'image', base64: 'LOGO' } : undefined,
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = findUser(result.messages)
+    expect(msg?.content).toBe('see  thanks')
+    expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'LOGO' }])
+  })
+
+  it("falls through to getCharIcon when the name is 'icon' and no asset matches", () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({ role: 'user', data: '{{asset_prompt::icon}}' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getCharIcon: () => ({ type: 'image', base64: 'ICON' }),
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = findUser(result.messages)
+    expect(msg?.content).toBe('')
+    expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'ICON' }])
+  })
+
+  it('strips the tag even when no asset matches and the name is not "icon"', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({ role: 'user', data: 'pre {{asset_prompt::unknown}} post' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+    )
+    const msg = findUser(result.messages)
+    expect(msg?.content).toBe('pre  post')
+    expect(msg?.multimodals).toBeUndefined()
+  })
+
+  it('also matches the underscore-less {{assetprompt::name}} syntax (SPA `asset_?prompt`)', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          additionalAssets: [['logo', 'asset-id-1', 'image']],
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({ role: 'user', data: '{{assetprompt::logo}}' }),
+              ],
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getAsset: () => ({ type: 'image', base64: 'LOGO' }),
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = findUser(result.messages)
+    expect(msg?.content).toBe('')
+    expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'LOGO' }])
+  })
+
+  it('pulls asset names from active modules as well as the character', () => {
+    const db = makeDatabase({
+      enabledModules: ['m1'],
+      modules: [
+        {
+          name: 'm1',
+          description: '',
+          id: 'm1',
+          assets: [['shared', 'shared-id', 'image']],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({ role: 'user', data: '{{asset_prompt::shared}}' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const lookup: AssetLookup = {
+      getAsset: (name) =>
+        name === 'shared' ? { type: 'image', base64: 'SHARED' } : undefined,
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = findUser(result.messages)
+    expect(msg?.content).toBe('')
+    expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'SHARED' }])
+  })
+
+  it('omits the multimodals field entirely when nothing resolves', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({ role: 'user', data: 'plain content' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+    )
+    const msg = findUser(result.messages)
+    expect(msg).toBeDefined()
+    expect(Object.prototype.hasOwnProperty.call(msg, 'multimodals')).toBe(false)
+  })
+})
+
+describe('Phase 7-5c multimodals + thoughts coexist on the same chat', () => {
+  it('keeps both fields on a single char-role message', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'char',
+                  data:
+                    'visible<Thoughts>secret</Thoughts> {{inlayeddata::pic}}',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    const lookup: AssetLookup = {
+      getInlay: (id) =>
+        id === 'pic' ? { type: 'image', base64: 'PIC' } : undefined,
+    }
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      lookup,
+    )
+    const msg = result.messages.find(
+      (m) => m.role === 'assistant' && m.memo !== undefined,
+    )
+    expect(msg?.content).toBe('visible ')
+    expect(msg?.thoughts).toEqual(['secret'])
+    expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'PIC' }])
   })
 })
