@@ -136,6 +136,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-2b  | `bb2c78b5`   | Lifted `risuChatParser` + helpers into Svelte-free `src/ts/parser/risuChatParser.ts` + `risuChatParserHelpers.ts`. `parser.svelte.ts` re-exports. `parserStateBackend.ts` carries the `DBState.db` / `selectedCharID` fallback through DI. The 65-test parser oracle stays green. |
 | 7-2c  | `7ed156e6`   | Server adapter: `promptScope.ts` (single-user module-level scope), `cbsAdapter.ts` (24-field `CBSRegisterArg`), `promptVariablesBoot.ts` (one-time wiring), real `expandVariables` returning `{text, dirty}`. 17-test smoke suite asserts the canonical parser runs server-side against a request-scoped `Database` snapshot. |
 | 7-3   | `d0a2a7f3`   | Static prompt sections: `staticSections.ts` ports `buildDescription`, `buildAuthorNote`, `buildPersona`, `buildCotInstruction` from `src/ts/process/promptAssembly/`. All four normalize to `OpenAIChat[]` (Option B). Deferred: `buildInlayViewInstruction` (image-gen), `additionalInformations` (Phase 8 memory). 15-test suite. |
+| 7-4   | `051a5dcd`   | Plain prompt sections: `plainSections.ts` ports `buildPlainPromptSections`. Returns `{main, jailbreak, globalNote}`. Honors `{{original}}` substitution, `jailbreakToggle` gating, `additionalPrompt` gated by `promptPreprocess`, and `@@@?(user|assistant|system)\n` role splitting. 12-test suite. |
 
 ## Reference
 
