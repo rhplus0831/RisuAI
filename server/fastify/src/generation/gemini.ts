@@ -1,10 +1,28 @@
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+import { resolveVertexBearer } from './vertexAuth.js'
+
+export interface VertexAuthInput {
+  projectId: string
+  region: string
+  clientEmail: string
+  privateKey: string
+}
 
 export interface GeminiRequest {
   model: string
   contents: GeminiContent[]
   systemInstruction?: string
-  apiKey: string
+  /**
+   * Vanilla Google AI Studio path: query-string `key=<apiKey>` against
+   * `generativelanguage.googleapis.com`.
+   */
+  apiKey?: string
+  /**
+   * Vertex AI path: Bearer-auth against
+   * `<region>-aiplatform.googleapis.com` (or the `global` endpoint when
+   * `region === 'global'`). When `vertex` is set, `apiKey` is ignored.
+   */
+  vertex?: VertexAuthInput
   baseUrl: string
   maxOutputTokens?: number
   temperature?: number
@@ -22,6 +40,7 @@ interface GeminiResolveInput {
   model?: unknown
   messages?: unknown
   apiKey?: unknown
+  vertex?: VertexAuthInput
   baseUrl?: unknown
   maxOutputTokens?: unknown
   temperature?: unknown
@@ -79,11 +98,24 @@ export function reformatForGemini(messages: RawChatMessage[]): GeminiReformatRes
 export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest | null {
   if (typeof input.model !== 'string' || input.model.length === 0) return null
   if (!Array.isArray(input.messages)) return null
-  if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
+  const hasApiKey = typeof input.apiKey === 'string' && (input.apiKey as string).length > 0
+  const hasVertex =
+    !!input.vertex &&
+    typeof input.vertex.projectId === 'string' &&
+    input.vertex.projectId.length > 0 &&
+    typeof input.vertex.region === 'string' &&
+    input.vertex.region.length > 0 &&
+    typeof input.vertex.clientEmail === 'string' &&
+    input.vertex.clientEmail.length > 0 &&
+    typeof input.vertex.privateKey === 'string' &&
+    input.vertex.privateKey.length > 0
+  if (!hasApiKey && !hasVertex) return null
 
   const reformat = reformatForGemini(input.messages as RawChatMessage[])
   if (reformat.contents.length === 0) return null
 
+  // Vertex requests don't take a baseUrl override — the URL is derived from
+  // projectId + region. Only Studio respects baseUrl.
   const baseUrl =
     typeof input.baseUrl === 'string' && input.baseUrl.length > 0
       ? input.baseUrl
@@ -107,7 +139,8 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     model: input.model,
     contents: reformat.contents,
     systemInstruction: reformat.systemInstruction,
-    apiKey: input.apiKey,
+    apiKey: hasApiKey ? (input.apiKey as string) : undefined,
+    vertex: hasVertex ? input.vertex : undefined,
     baseUrl,
     maxOutputTokens,
     temperature,
@@ -133,15 +166,61 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
   return body
 }
 
-function endpoint(req: GeminiRequest, stream: boolean): string {
+/**
+ * Some Gemini 3 preview models (as of 2025-12) are only available on the
+ * `global` Vertex endpoint regardless of the user's configured region.
+ * Mirror the SPA check at
+ * `src/ts/process/request/google.ts:457-460`.
+ */
+const VERTEX_GLOBAL_ONLY = /^gemini-3-.*-preview$/
+
+function endpointStudio(req: GeminiRequest, stream: boolean): string {
   const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
   const method = stream ? 'streamGenerateContent' : 'generateContent'
-  const tail = stream ? `:${method}?alt=sse&key=${encodeURIComponent(req.apiKey)}` : `:${method}?key=${encodeURIComponent(req.apiKey)}`
+  const apiKey = req.apiKey as string
+  const tail = stream
+    ? `:${method}?alt=sse&key=${encodeURIComponent(apiKey)}`
+    : `:${method}?key=${encodeURIComponent(apiKey)}`
   return `${base}/models/${req.model}${tail}`
+}
+
+function endpointVertex(req: GeminiRequest, stream: boolean): string {
+  const vertex = req.vertex as VertexAuthInput
+  const region = VERTEX_GLOBAL_ONLY.test(req.model) ? 'global' : vertex.region
+  const method = stream ? 'streamGenerateContent' : 'generateContent'
+  const query = stream ? '?alt=sse' : ''
+  const host =
+    region === 'global'
+      ? 'https://aiplatform.googleapis.com'
+      : `https://${region}-aiplatform.googleapis.com`
+  return `${host}/v1/projects/${vertex.projectId}/locations/${region}/publishers/google/models/${req.model}:${method}${query}`
+}
+
+function endpoint(req: GeminiRequest, stream: boolean): string {
+  return req.vertex !== undefined ? endpointVertex(req, stream) : endpointStudio(req, stream)
 }
 
 function headers(): Record<string, string> {
   return { 'content-type': 'application/json' }
+}
+
+/**
+ * For Vertex requests, fetch a fresh (or cached) Bearer and set
+ * `Authorization: Bearer ...`. Returns `null` if the token exchange
+ * failed; callers propagate the error to the caller as a `fail` result.
+ */
+async function vertexHeaders(req: GeminiRequest): Promise<
+  { ok: true; headers: Record<string, string> } | { ok: false; error: string }
+> {
+  const base = headers()
+  if (req.vertex === undefined) return { ok: true, headers: base }
+  const bearer = await resolveVertexBearer(
+    req.vertex.clientEmail,
+    req.vertex.privateKey,
+    req.signal,
+  )
+  if (!bearer.ok) return { ok: false, error: bearer.error }
+  return { ok: true, headers: { ...base, authorization: `Bearer ${bearer.token}` } }
 }
 
 interface GeminiPart {
@@ -184,11 +263,19 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
     return { type: 'fail', result: 'aborted', aborted: true }
   }
 
+  const h = await vertexHeaders(req)
+  if (!h.ok) {
+    if (req.signal.aborted) {
+      return { type: 'fail', result: 'aborted', aborted: true }
+    }
+    return { type: 'fail', result: h.error }
+  }
+
   let response: Response
   try {
     response = await fetch(endpoint(req, false), {
       method: 'POST',
-      headers: headers(),
+      headers: h.headers,
       body: JSON.stringify(buildPayload(req)),
       signal: req.signal,
     })
@@ -245,11 +332,14 @@ export async function* runGeminiStream(
 ): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
+  const h = await vertexHeaders(req)
+  if (!h.ok) return
+
   let response: Response
   try {
     response = await fetch(endpoint(req, true), {
       method: 'POST',
-      headers: headers(),
+      headers: h.headers,
       body: JSON.stringify(buildPayload(req)),
       signal: req.signal,
     })

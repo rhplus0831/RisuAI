@@ -23,6 +23,7 @@ export function formatToServerProvider(format: LLMFormat): string | null {
     case LLMFormat.Cohere:
       return 'cohere'
     case LLMFormat.GoogleCloud:
+    case LLMFormat.VertexAIGemini:
       return 'gemini'
     case LLMFormat.OpenAILegacyInstruct:
     case LLMFormat.NanoGPTLegacy:
@@ -240,15 +241,25 @@ function isVanillaCohere(targ: RequestDataArgumentExtended): boolean {
 }
 
 /**
- * Vanilla Google AI (LLMFormat.GoogleCloud) only. VertexAIGemini stays local
- * for now — it needs the project ID, region, and a JWT-derived bearer token
- * which we don't yet own server-side.
+ * Server-routable Gemini gates: vanilla Google AI Studio
+ * (LLMFormat.GoogleCloud) needs `db.google.accessToken`; Vertex AI
+ * (LLMFormat.VertexAIGemini) needs the project ID + region +
+ * service-account credentials. Reverse-proxy / xcustom Gemini variants
+ * stay on local dispatch (each would need its own slice).
  */
 function isVanillaGemini(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
   if (aiModel === 'reverse_proxy') return false
   if (aiModel.startsWith('xcustom:::')) return false
   if (targ.modelInfo?.endpoint) return false
+  if (targ.modelInfo?.format === LLMFormat.VertexAIGemini) {
+    const db = getDatabase()
+    if (typeof db.google?.projectId !== 'string' || db.google.projectId.length === 0) return false
+    if (typeof db.vertexRegion !== 'string' || db.vertexRegion.length === 0) return false
+    if (typeof db.vertexClientEmail !== 'string' || db.vertexClientEmail.length === 0) return false
+    if (typeof db.vertexPrivateKey !== 'string' || db.vertexPrivateKey.length === 0) return false
+    return true
+  }
   return true
 }
 
@@ -534,7 +545,17 @@ function buildProviderOptions(
     return { cohere }
   }
   if (provider === 'gemini') {
-    const gemini: Record<string, unknown> = { apiKey: db.google?.accessToken ?? '' }
+    const gemini: Record<string, unknown> = {}
+    if (targ.modelInfo?.format === LLMFormat.VertexAIGemini) {
+      gemini.vertex = {
+        projectId: db.google?.projectId ?? '',
+        region: db.vertexRegion ?? '',
+        clientEmail: db.vertexClientEmail ?? '',
+        privateKey: db.vertexPrivateKey ?? '',
+      }
+    } else {
+      gemini.apiKey = db.google?.accessToken ?? ''
+    }
     if (typeof targ.maxTokens === 'number') gemini.maxOutputTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') gemini.temperature = targ.temperature
     return { gemini }

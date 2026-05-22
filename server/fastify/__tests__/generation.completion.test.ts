@@ -1095,6 +1095,94 @@ describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)',
   })
 })
 
+describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
+  it('400s when options.gemini.vertex is partially populated', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'gemini',
+        model: 'gemini-2.5-pro',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          gemini: {
+            vertex: { projectId: 'p', region: 'us-central1' },
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\.gemini\.vertex\.clientEmail/)
+  })
+
+  it('routes a buffered Vertex request through token exchange then the vertex prediction endpoint', async () => {
+    const { generateKeyPairSync } = await import('node:crypto')
+    const { privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    })
+    const { _resetVertexTokenCacheForTesting } = await import(
+      '../src/generation/vertexAuth.js'
+    )
+    _resetVertexTokenCacheForTesting()
+
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init })
+      if (url === 'https://oauth2.googleapis.com/token') {
+        return new Response(
+          JSON.stringify({ access_token: 'ya29.route-token', expires_in: 3599 }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          modelVersion: 'gemini-2.5-pro',
+          candidates: [
+            { content: { parts: [{ text: 'vertex route ok' }] }, finishReason: 'STOP' },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'gemini',
+        model: 'gemini-2.5-pro',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          gemini: {
+            vertex: {
+              projectId: 'my-project',
+              region: 'us-central1',
+              clientEmail: 'svc@my-project.iam.gserviceaccount.com',
+              privateKey,
+            },
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'vertex route ok' })
+    expect(calls.map((c) => c.url)).toEqual([
+      'https://oauth2.googleapis.com/token',
+      'https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent',
+    ])
+    const headers = calls[1].init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer ya29.route-token')
+  })
+})
+
 describe('Phase 6-9 POST /api/v1/generate/completion (gemini)', () => {
   const geminiPayload = {
     provider: 'gemini',

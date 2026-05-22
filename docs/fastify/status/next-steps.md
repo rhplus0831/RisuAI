@@ -6,9 +6,9 @@ Use this list to pick the next chunk of work. Phase 5 closed on
 2026-05-22 with all 28 extraction slices landed; the historical
 slice record now lives in
 [`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 is active,
-and commit history through Phase 6-19 shows provider coverage
-landed through reverse_proxy + xcustom under the Anthropic
-format.
+and commit history through Phase 6-20 shows provider coverage
+landed through Vertex AI Gemini (service-account JWT + in-process
+Bearer cache).
 
 ## Immediate
 
@@ -26,20 +26,23 @@ format.
    `additionalParams` body/header overlay DSL, the
    `reverse_proxy` path under OpenAI-compatible (URL autofill,
    `risu::` → `X-Proxy-Risu` header lift, `db.reverseProxyOobaMode`
-   system hoisting), and `reverse_proxy` + `xcustom:::id` under
-   the Anthropic format (URL autofill to `/v1/messages`, shared
-   additionalParams DSL). Still remaining: NovelAI / NovelList
-   (deferred to Phase 7 per
+   system hoisting), `reverse_proxy` + `xcustom:::id` under the
+   Anthropic format (URL autofill to `/v1/messages`, shared
+   additionalParams DSL), and Vertex AI Gemini (RS256 JWT signed
+   with Node `crypto`, in-process Bearer cache keyed by
+   service-account email, `<region>-aiplatform.googleapis.com`
+   URL with the `global` carveout for Gemini 3 preview models).
+   Still remaining: NovelAI / NovelList (deferred to Phase 7 per
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)),
    ooba OAI-compatible `/v1/completions` (deferred to Phase 7
    per [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md)),
-   Vertex AI Gemini, AWS Bedrock Claude, Stable Horde, and
+   AWS Bedrock Claude (SigV4), Stable Horde (async polling), and
    reverse_proxy / xcustom variants whose `db.customAPIFormat`
    points at Mistral / Cohere / etc. (need their own slices to
    port the additionalParams overlay to those dispatchers). Keep
    the 33 local sendChat snapshots, the 7-fixture server-backed
    sweep, and the Fastify generation tests green
-   (`pnpm api:test`: 355, `pnpm test`: 554 + 4 skipped).
+   (`pnpm api:test`: 372, `pnpm test`: 558 + 4 skipped).
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments
@@ -72,6 +75,7 @@ format.
 | 6-17  | `da7d05b8` | Routed `xcustom:::<id>` OAI-compat through the openai dispatcher with the `additionalParams` body/header overlay DSL ported server-side. |
 | 6-18  | `425d8302` | Routed `reverse_proxy` OAI-compat through the openai dispatcher with URL autofill, `risu::` → `X-Proxy-Risu` header lift, server-side `oobaSystemHoist`, and `db.additionalParams` overlay. |
 | 6-19  | `af7c15f7` | Ported the `additionalParams` overlay to the anthropic dispatcher; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.Anthropic` with URL autofill to `/v1/messages`. |
+| 6-20  | _pending_  | Added Vertex AI Gemini: RS256 JWT signed with Node `crypto`, in-process Bearer cache, `<region>-aiplatform.googleapis.com` URL with `global` carveout for Gemini 3 preview models. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

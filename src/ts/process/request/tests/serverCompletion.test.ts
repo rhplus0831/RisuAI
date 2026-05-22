@@ -111,8 +111,8 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.GoogleCloud)).toBe('gemini')
   })
 
-  it('returns null for VertexAIGemini (Vertex auth not yet server-side)', () => {
-    expect(formatToServerProvider(LLMFormat.VertexAIGemini)).toBeNull()
+  it('maps VertexAIGemini to "gemini" (the dispatcher branches on options.gemini.vertex)', () => {
+    expect(formatToServerProvider(LLMFormat.VertexAIGemini)).toBe('gemini')
   })
 
   it('maps OpenAILegacyInstruct + NanoGPTLegacy to "openai-legacy-instruct"', () => {
@@ -580,6 +580,64 @@ describe('getServerCompletionProvider', () => {
       }),
     )
     expect(r).toBe('gemini')
+  })
+
+  it('routes VertexAIGemini to provider "gemini" when projectId + region + clientEmail + privateKey are populated', () => {
+    seedDb({
+      google: { projectId: 'my-project', accessToken: '' },
+      vertexRegion: 'us-central1',
+      vertexClientEmail: 'svc@my-project.iam.gserviceaccount.com',
+      vertexPrivateKey: '-----BEGIN PRIVATE KEY-----\nABCD\n-----END PRIVATE KEY-----',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'gemini-2.5-pro',
+        modelInfo: {
+          id: 'gemini-2.5-pro',
+          internalID: 'gemini-2.5-pro',
+          format: LLMFormat.VertexAIGemini,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('gemini')
+  })
+
+  it('refuses VertexAIGemini when projectId is empty', () => {
+    seedDb({
+      google: { projectId: '', accessToken: '' },
+      vertexRegion: 'us-central1',
+      vertexClientEmail: 'svc@my-project.iam.gserviceaccount.com',
+      vertexPrivateKey: '-----BEGIN PRIVATE KEY-----\nABCD\n-----END PRIVATE KEY-----',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'gemini-2.5-pro',
+        modelInfo: {
+          id: 'gemini-2.5-pro',
+          format: LLMFormat.VertexAIGemini,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses VertexAIGemini when privateKey is empty', () => {
+    seedDb({
+      google: { projectId: 'my-project', accessToken: '' },
+      vertexRegion: 'us-central1',
+      vertexClientEmail: 'svc@my-project.iam.gserviceaccount.com',
+      vertexPrivateKey: '',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'gemini-2.5-pro',
+        modelInfo: {
+          id: 'gemini-2.5-pro',
+          format: LLMFormat.VertexAIGemini,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
   })
 
   it('refuses reverse_proxy under GoogleCloud', () => {
@@ -1296,6 +1354,44 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
       maxOutputTokens: 200,
       temperature: 0.5,
     })
+  })
+
+  it('emits options.gemini.vertex (instead of apiKey) when modelInfo.format is VertexAIGemini', async () => {
+    seedDb({
+      google: { projectId: 'my-project', accessToken: 'should-not-be-used' },
+      vertexRegion: 'us-central1',
+      vertexClientEmail: 'svc@my-project.iam.gserviceaccount.com',
+      vertexPrivateKey: '-----BEGIN PRIVATE KEY-----\nXXXX\n-----END PRIVATE KEY-----',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'gemini-2.5-pro',
+      modelInfo: {
+        id: 'gemini-2.5-pro',
+        internalID: 'gemini-2.5-pro',
+        format: LLMFormat.VertexAIGemini,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 200,
+      temperature: 0.5,
+    })
+    await requestServerCompletion(targ, 'gemini', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('gemini')
+    expect(sent.model).toBe('gemini-2.5-pro')
+    expect(sent.options.gemini.apiKey).toBeUndefined()
+    expect(sent.options.gemini.vertex).toEqual({
+      projectId: 'my-project',
+      region: 'us-central1',
+      clientEmail: 'svc@my-project.iam.gserviceaccount.com',
+      privateKey: '-----BEGIN PRIVATE KEY-----\nXXXX\n-----END PRIVATE KEY-----',
+    })
+    expect(sent.options.gemini.maxOutputTokens).toBe(200)
+    expect(sent.options.gemini.temperature).toBe(0.5)
   })
 
   it('falls back to modelInfo.id for the wire model when internalID is missing', async () => {

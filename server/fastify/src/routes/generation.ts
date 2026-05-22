@@ -160,6 +160,18 @@ interface GeminiOptions {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+  /**
+   * When set, the gemini dispatcher routes to Vertex AI instead of the
+   * Studio (`generativelanguage.googleapis.com`) endpoint: signs a
+   * service-account JWT, exchanges for a Bearer, and posts to
+   * `<region>-aiplatform.googleapis.com`. `apiKey` is ignored in this mode.
+   */
+  vertex?: {
+    projectId?: unknown
+    region?: unknown
+    clientEmail?: unknown
+    privateKey?: unknown
+  }
 }
 
 interface LegacyInstructOptions {
@@ -227,6 +239,55 @@ interface OpenAICompatibleVariant {
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
+}
+
+interface VertexAuthCoerced {
+  projectId: string
+  region: string
+  clientEmail: string
+  privateKey: string
+}
+
+/**
+ * Validate the `options.gemini.vertex` block. Returns null when the block
+ * is absent/empty (caller falls back to apiKey), `{ok:true, value}` when
+ * all four required fields are non-empty strings, or `{ok:false, error}`
+ * when partially populated (configuration mistake worth reporting back).
+ */
+function coerceVertexAuth(
+  raw: unknown,
+):
+  | null
+  | { ok: true; value: VertexAuthCoerced }
+  | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== 'object') {
+    return { ok: false, error: 'options.gemini.vertex must be an object' }
+  }
+  const v = raw as Record<string, unknown>
+  const projectId = v.projectId
+  const region = v.region
+  const clientEmail = v.clientEmail
+  const privateKey = v.privateKey
+  const allBlank =
+    (projectId === undefined || projectId === '') &&
+    (region === undefined || region === '') &&
+    (clientEmail === undefined || clientEmail === '') &&
+    (privateKey === undefined || privateKey === '')
+  if (allBlank) return null
+  if (typeof projectId !== 'string' || projectId.length === 0) {
+    return { ok: false, error: 'options.gemini.vertex.projectId is required' }
+  }
+  if (typeof region !== 'string' || region.length === 0) {
+    return { ok: false, error: 'options.gemini.vertex.region is required' }
+  }
+  if (typeof clientEmail !== 'string' || clientEmail.length === 0) {
+    return { ok: false, error: 'options.gemini.vertex.clientEmail is required' }
+  }
+  if (typeof privateKey !== 'string' || privateKey.length === 0) {
+    return { ok: false, error: 'options.gemini.vertex.privateKey is required' }
+  }
+  return { ok: true, value: { projectId, region, clientEmail, privateKey } }
 }
 
 function resolveOpenAIVariant(
@@ -701,10 +762,16 @@ async function handleGeminiStreaming(
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
+    const vertex = coerceVertexAuth(options.vertex)
+    if (vertex !== null && !vertex.ok) {
+      badRequest(reply, vertex.error)
+      return
+    }
     const resolved = resolveGeminiRequest({
       model,
       messages,
       apiKey: options.apiKey,
+      vertex: vertex !== null ? vertex.value : undefined,
       baseUrl: options.baseUrl,
       maxOutputTokens: options.maxOutputTokens,
       temperature: options.temperature,
@@ -713,7 +780,10 @@ async function handleGeminiStreaming(
       signal,
     })
     if (!resolved) {
-      badRequest(reply, 'options.gemini.apiKey is required (and contents must be non-empty)')
+      badRequest(
+        reply,
+        'options.gemini.apiKey or options.gemini.vertex is required (and contents must be non-empty)',
+      )
       return
     }
     await pipeStream(reply, runGeminiStream(resolved))
@@ -731,10 +801,16 @@ async function handleGeminiBuffered(
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
+    const vertex = coerceVertexAuth(options.vertex)
+    if (vertex !== null && !vertex.ok) {
+      badRequest(reply, vertex.error)
+      return
+    }
     const resolved = resolveGeminiRequest({
       model,
       messages,
       apiKey: options.apiKey,
+      vertex: vertex !== null ? vertex.value : undefined,
       baseUrl: options.baseUrl,
       maxOutputTokens: options.maxOutputTokens,
       temperature: options.temperature,
@@ -743,7 +819,10 @@ async function handleGeminiBuffered(
       signal,
     })
     if (!resolved) {
-      badRequest(reply, 'options.gemini.apiKey is required (and contents must be non-empty)')
+      badRequest(
+        reply,
+        'options.gemini.apiKey or options.gemini.vertex is required (and contents must be non-empty)',
+      )
       return
     }
     const result = await runGemini(resolved)
