@@ -131,7 +131,7 @@ thin adapters in server-backed mode. The coordinator posts to
 
 | Slice | Commit       | Summary                                                                                                                                                                                                                            |
 | ----- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7-1   | _pending_    | Scaffolded `POST /api/v1/generate/chat`: locked the 9-event SSE taxonomy in `server/fastify/src/prompt/sseEvents.ts`, stubbed the seven assembly modules under `server/fastify/src/prompt/`, wired auth + validation + a validate→error→done stream that returns `phase-7 prompt assembly not yet implemented`. |
+| 7-1   | `3d2426c4`   | Scaffolded `POST /api/v1/generate/chat`: locked the 9-event SSE taxonomy in `server/fastify/src/prompt/sseEvents.ts`, stubbed the seven assembly modules under `server/fastify/src/prompt/`, wired auth + validation + a validate→error→done stream that returns `phase-7 prompt assembly not yet implemented`. |
 
 ## Reference
 
