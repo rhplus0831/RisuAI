@@ -1,10 +1,12 @@
 # Server Route Tests
 
-Date: 2026-05-22
+Date: 2026-05-23
 
-Status: Phase 1, Phase 2, Phase 3, and the closed Phase 6
-completion-route tests exist under `server/fastify/__tests__/`.
-Unlanded Phase 6 helpers plus Phases 7-9 remain target test rows.
+Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
+completion-route tests, and the Phase 7 chat scaffold / prompt leaf
+tests exist under `server/fastify/__tests__/`. Unlanded helper
+routes plus the remaining Phase 7 work and Phases 8-9 remain target
+test rows.
 
 ## Phase 1: Foundation
 
@@ -78,14 +80,18 @@ Per-provider request / response coverage lives in
 
 | Route                                       | Pinned behavior                           | Status      |
 | ------------------------------------------- | ----------------------------------------- | ----------- |
-| `POST /api/v1/generate/chat` (send)         | Full pipeline: assemble + dispatch.       | not started |
+| `POST /api/v1/generate/chat` (scaffold)     | Auth, body validation for modes/ids/options, `text/event-stream` response, and validate -> `phase-7 prompt assembly not yet implemented` -> done SSE sequence. | covered by `server/fastify/__tests__/generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (send)         | Full pipeline: assemble + dispatch.       | route scaffolded; assembly not started |
 | `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | not started |
 | `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | not started |
-| `POST /api/v1/generate/chat` (preview)      | Returns assembled prompt only.            | not started |
+| `POST /api/v1/generate/chat` (preview)      | Returns assembled prompt only.            | mode accepted by scaffold; assembly not started |
 | `POST /api/v1/generate/preview-prompt`      | Same shape as preview mode.               | not started |
 
 Plus: prompt snapshot tests - given a canned DB + preset + chat
 state, the assembled `messages[]` matches a recorded snapshot.
+Prompt leaf tests already exist for `variables.ts`,
+`staticSections.ts`, and `plainSections.ts`; the root prompt
+snapshot suite waits until `assemble.ts` is real.
 
 ## Phase 8: Memory
 

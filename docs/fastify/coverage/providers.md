@@ -1,6 +1,6 @@
 # Provider Tests
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 Status: Phase 6 completion routing closed in Phase 6-28
 (`398a3ae6`; hash backfilled by `a8cb123b`). The table below
@@ -59,9 +59,9 @@ in `src/ts/model/types.ts`, `src/ts/model/modellist.ts`, and
 | Stable Horde text                       | `/v2/generate/text/async` submit + status polling | no; buffered poll loop | covered by `horde.test.ts`, `generation.completion.test.ts`, `serverCompletion.test.ts`, and dual-mode fixture `horde-basic` |
 | OpenAI-compatible fixed endpoint without keyIdentifier | User endpoint with no defined key lookup | local only | client gate refuses until the auth path is defined |
 | Gemini `reverse_proxy` / `xcustom:::` and other unproven custom formats | Provider-specific variants without a routed auth / request-shape slice | local only | deferred until a concrete fixture demands the path |
-| NovelAI text                            | NovelAI text-generation API               | local only | deferred to Phase 7; see `../design/novelai-novellist-stringlize.md` |
-| NovelList                               | NovelList API                             | local only | deferred to Phase 7; see `../design/novelai-novellist-stringlize.md` |
-| ooba OAI-compatible                     | `/v1/completions` with Jinja chat template flattening | local only | deferred to Phase 7; see `../design/ooba-oai-compat.md` |
+| NovelAI text                            | NovelAI text-generation API               | local only | waits for Phase 7 server-owned flatten; see `../design/novelai-novellist-stringlize.md` |
+| NovelList                               | NovelList API                             | local only | waits for Phase 7 server-owned flatten; see `../design/novelai-novellist-stringlize.md` |
+| ooba OAI-compatible                     | `/v1/completions` with Jinja chat template flattening | local only | waits for Phase 7 server-owned flatten; see `../design/ooba-oai-compat.md` |
 
 Providers/features that stay browser-local, LAN-local, or
 plugin-local should return a documented `501` from the server route

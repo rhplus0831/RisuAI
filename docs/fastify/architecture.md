@@ -1,12 +1,13 @@
 # Architecture
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
-Phase 3, and Phase 6 completion-route files through closeout slice
-6-28 already exist; modules marked by later phases are target
-layout, not current implementation.
+Phase 3, the Phase 6 completion-route files through closeout slice
+6-28, and Phase 7 slices 7-1 through 7-4 already exist; modules
+marked by later phases are target layout, not current
+implementation.
 
 ## Server module layout
 
@@ -34,6 +35,7 @@ server/fastify/
       hub.ts
       legacyStorage.ts
       generation.ts       POST /api/v1/generate/completion
+      generationChat.ts   POST /api/v1/generate/chat scaffold
     generation/
       frames.ts           shared completion result/frame types
       additionalParams.ts body/header overlay helper
@@ -53,15 +55,25 @@ server/fastify/
       sigv4.ts            Bedrock signing helper
       vertexAuth.ts       Vertex AI service-account JWT exchange
     events.ts           SSE event bus (planned Phase 9)
-    tokenizer.ts        tiktoken + web-tokenizers encoders (planned Phase 6)
+    tokenizer.ts        tiktoken + web-tokenizers encoders (planned helper)
     generate/
       router.ts         POST /api/v1/generate/* routes
       providers/        one file per provider family
       streaming.ts      SSE forwarder + abort propagation
     prompt/
-      assemble.ts       prompt template walker
-      lorebook.ts       activation, recursion, budget
-      tokens.ts         budget accounting
+      sseEvents.ts        9-event chat SSE taxonomy
+      variables.ts        server-side risuChatParser adapter
+      promptScope.ts      request-scoped parser state singleton
+      cbsAdapter.ts       CBS callback adapter over promptScope
+      promptVariablesBoot.ts one-time parser backend wiring
+      staticSections.ts   description, author note, persona, cot
+      plainSections.ts    main/jailbreak/globalNote sections
+      assemble.ts         prompt template walker (stub)
+      history.ts          history shaping (stub)
+      lorebook.ts         activation, recursion, budget (stub)
+      templates.ts        prompt-template cards (stub)
+      tokens.ts           budget accounting (stub)
+      triggers.ts         editInput/editRequest hooks (stub)
     memory/
       hypav3.ts         server-side Hypa V3 adapter
       jobs.ts           async embedding + summary queue
@@ -120,6 +132,10 @@ Implemented now:
   Anthropic, Mistral, Cohere, OpenAI Responses, and OpenAI legacy
   instruct formats, plus Vertex AI Gemini, AWS Bedrock Claude, and
   Stable Horde text. Unsupported provider strings return `501`.
+- `POST /api/v1/generate/chat` - Phase 7 scaffold. It is
+  auth-gated, validates `chatId`, `characterId`, mode-specific
+  fields, and emits the current validate -> error -> done SSE
+  sequence with `phase-7 prompt assembly not yet implemented`.
 - Optional static serving from `RISU_API_STATIC_ROOT`, including
   `GET /` and non-API GET SPA fallback.
 
@@ -136,6 +152,8 @@ list):
   in the current tree.
 - `POST /api/v1/generate/count-tokens`,
   `GET /api/v1/generate/encodings`.
+- Full `/api/v1/generate/chat` assembly + dispatch wiring and
+  `POST /api/v1/generate/preview-prompt`.
 - `GET /api/v1/export/risusave`, `GET /api/v1/export/bundle`, and
   multipart `.risu` import in Phase 9, after the server owns the
   final per-resource schema. No Phase 2 server export route exists.
@@ -203,21 +221,22 @@ fetch-based subscribers).
 
 ## Boundary rules
 
-Server owns:
+At the target state, the server owns:
 
 - Persisted state. The browser never writes to localForage in
   server-backed mode.
 - Provider API keys for fully server-owned flows. During the current
-  Phase 6 slices, the client adapter still reads the existing DB key
-  fields and sends only the selected provider's key in the
-  `/generate/completion` options body; bootstrap masking under
-  `RISU_MASK_SERVER_KEYS=1` waits until the server owns every
+  migration window, the Phase 6 client adapter still reads the
+  existing DB key fields and sends only the selected provider's key
+  in the `/generate/completion` options body; bootstrap masking
+  under `RISU_MASK_SERVER_KEYS=1` waits until the server owns every
   provider path a deployment needs.
 - Outbound HTTP for generation providers covered by the
   server-backed adapter. Uncovered providers continue through the
-  local browser dispatch path until their Phase 6 slice lands.
-- Prompt assembly, tokenization, lorebook activation, Hypa V3
-  memory.
+  local browser dispatch path until a routed server slice lands.
+- Prompt assembly, tokenization, lorebook activation, and Hypa V3
+  memory after Phases 7-8 close. Today only the Phase 7 variable,
+  static-section, and plain-section leaves are server-side.
 
 Browser owns:
 

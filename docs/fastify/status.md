@@ -1,6 +1,6 @@
 # Migration Status
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 This is the status router. Concrete inventories live in the shards
 under [`status/`](status/).
@@ -64,6 +64,13 @@ under [`status/`](status/).
   The client adapter is flag-gated by `db.useServerGeneration`; the
   current matrix and remaining local-only paths are tracked in
   [`coverage/providers.md`](coverage/providers.md).
+- Phase 7 prompt assembly is in progress. Slices 7-1 through 7-4
+  landed the auth-gated `POST /api/v1/generate/chat` scaffold,
+  the locked nine-event prompt SSE taxonomy, server-side
+  `expandVariables`, static prompt sections, and plain prompt
+  sections. `assemble`, `history`, `lorebook`, `templates`,
+  `tokens`, and `triggers` remain stubs; next work is slice
+  7-5a (minimal history walk).
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
   dependencies only, and `tsx` plus `@fastify/websocket` are now
@@ -78,13 +85,13 @@ under [`status/`](status/).
   that implements Phases 1-6; it is reference material, not the
   plan.
 
-## Next phase
+## Current phase
 
-Phase 7 (server-side prompt assembly) is next. It starts from the
-Phase 5 prompt-assembly modules and calls the Phase 6 completion
-route after assembling the payload. The current guardrails are the
-38 local sendChat snapshots, the 12-fixture server-backed sweep,
-and the Fastify generation provider tests.
+Phase 7 (server-side prompt assembly) is active. It starts from
+the Phase 5 prompt-assembly modules and will call the Phase 6
+completion route after assembling the payload. The current
+guardrails are the 38 local sendChat snapshots, the 12-fixture
+server-backed sweep, and the Fastify generation provider tests.
 
 Phase 3 closed on 2026-05-21; Fastify owns the proxy / hub /
 stream-job / storage / auth / crypto surface and Express is deleted.

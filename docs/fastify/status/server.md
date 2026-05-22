@@ -1,6 +1,6 @@
 # Server Status
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 ## Current state
 
@@ -8,7 +8,9 @@ Phase 1, the server-side Phase 2 storage slice, Phase 3 in
 full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
 Express deletion), and Phase 6 completion-route slices through
-the 6-28 closeout all exist on the `fastify` branch:
+the 6-28 closeout all exist on the `fastify` branch. Phase 7
+slices 7-1 through 7-4 have also landed the chat-route scaffold
+and first prompt-assembly leaves:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -17,8 +19,9 @@ the 6-28 closeout all exist on the `fastify` branch:
   asset content types, registers `@fastify/websocket`, opens the
   SQLite metadata DB, registers the health/auth/bootstrap/import/
   assets/backups/proxy/stream-job/hub/legacy-storage/generation
-  routes, and serves `RISU_API_STATIC_ROOT` via `@fastify/static`
-  when that directory exists.
+  routes, registers the Phase 7 chat scaffold, boots the
+  prompt-variable parser backend, and serves `RISU_API_STATIC_ROOT`
+  via `@fastify/static` when that directory exists.
 - `server/fastify/src/config.ts` reads `RISU_API_HOST`,
   `RISU_API_PORT`, `RISU_API_DATA_DIR`, `RISU_API_BODY_LIMIT`,
   `RISU_API_STATIC_ROOT`, `TRUST_PROXY`, and `RISU_HUB_URL`
@@ -45,10 +48,10 @@ the 6-28 closeout all exist on the `fastify` branch:
   `DELETE /api/v1/proxy/stream-jobs/:id`, the WebSocket upgrade
   at `GET /api/v1/proxy/stream-jobs/:id/ws`,
   `ANY /api/v1/hub/*`, `GET /api/v1/storage/list`,
-  `GET /api/v1/storage/read`, `POST /api/v1/storage/write`, and
-  `POST /api/v1/storage/remove`, and the
-  `/api/v1/generate/completion` POST route.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,echo,openai,additionalParams,anthropic,mistral,cohere,gemini,vertexAuth,openaiLegacyInstruct,openaiResponses,kobold,oobaLegacy,ollama,bedrock,sigv4,horde}.test.ts`
+  `GET /api/v1/storage/read`, `POST /api/v1/storage/write`,
+  `POST /api/v1/storage/remove`, `POST /api/v1/generate/completion`,
+  and `POST /api/v1/generate/chat`.
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,generation.chat,promptVariables,staticSections,plainSections,echo,openai,additionalParams,anthropic,mistral,cohere,gemini,vertexAuth,openaiLegacyInstruct,openaiResponses,kobold,oobaLegacy,ollama,bedrock,sigv4,horde}.test.ts`
   cover the implemented Fastify routes, provider dispatchers, and
   static serving through `pnpm api:test`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
@@ -118,6 +121,15 @@ the 6-28 closeout all exist on the `fastify` branch:
   Cohere, legacy instruct, Responses, Kobold, ooba legacy,
   Bedrock, and Horde are currently buffered-only and reject
   `stream: true` with a 400.
+- `server/fastify/src/routes/generationChat.ts` adds the Phase 7
+  chat scaffold. It validates `chatId`, `characterId`, mode, and
+  mode-specific fields, then streams `stage: validate` start/end,
+  an `error` event with `phase-7 prompt assembly not yet implemented`,
+  and `done`. The route does not call `assemble.ts` yet.
+- `server/fastify/src/prompt/variables.ts`, `staticSections.ts`,
+  and `plainSections.ts` are real Phase 7 leaves. `assemble.ts`,
+  `history.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
+  `triggers.ts` still throw Phase 7 not-implemented errors.
 - Known limitation: `ANY /api/v1/hub/*` keeps `requireAuth`, so
   on password-protected deployments browser-loaded resources
   (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401
@@ -181,6 +193,10 @@ been removed; `server/node/` no longer exists.
   because they need server-owned character / user state for prompt
   flattening.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
+  In progress. Slices 7-1 through 7-4 landed the
+  `/api/v1/generate/chat` scaffold, nine-event prompt SSE taxonomy,
+  server-side variable expansion, static prompt sections, and plain
+  prompt sections. Next slice is 7-5a, the minimal history walk.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 
 ## Reference: what move-to-fastify shipped

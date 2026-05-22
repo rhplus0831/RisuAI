@@ -1,6 +1,6 @@
 # Fastify Migration Roadmap
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 This directory is the working roadmap for moving Risuai from a thick
 browser app to a Fastify backend with a display-only client. The
@@ -13,15 +13,18 @@ it needs.
 
 ## Scope
 
-Current status: Phases 0-6 are closed and Phase 7 is next.
+Current status: Phases 0-6 are closed and Phase 7 is in progress.
 Fastify owns bootstrap, JSON import, content-addressed assets,
 backups, static SPA serving, provider proxy fetch, stream-job
 WebSocket transport, Risu hub passthrough, the legacy NodeStorage
 key-value surface, and the closed `/api/v1/generate/completion`
-provider matrix. Express has been deleted. The Dockerfile
-and compose file target Fastify on port 6002 with `/app/data`
-persisted; `tsx` and `@fastify/websocket` are runtime dependencies
-after `1eddbfba`.
+provider matrix. Phase 7 has landed the `/api/v1/generate/chat`
+scaffold plus server-side variable expansion, static prompt
+sections, and plain prompt sections; the root assembler, history,
+lorebook, template, token, and trigger modules are still stubs.
+Express has been deleted. The Dockerfile and compose file target
+Fastify on port 6002 with `/app/data` persisted; `tsx` and
+`@fastify/websocket` are runtime dependencies after `1eddbfba`.
 
 Phase 5 closed on 2026-05-22: commits `3c5a92b2` through
 `a7e2831d` reduced `src/ts/process/index.svelte.ts` from 1625 to
@@ -46,10 +49,10 @@ In scope:
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 closed
   the completion route in Phase 6-28 (`398a3ae6`, hash backfilled by
-  `a8cb123b`). The current provider matrix lives in
-  [`coverage/providers.md`](coverage/providers.md), and the
-  per-slice commit history lives in
-  [`status/next-steps.md`](status/next-steps.md).
+  `a8cb123b`). Phase 7 slices 7-1 through 7-4 are now landed; the
+  current provider matrix lives in
+  [`coverage/providers.md`](coverage/providers.md), and the active
+  slice history lives in [`status/next-steps.md`](status/next-steps.md).
 - A display-only browser client in server-backed mode.
 
 Out of scope (see [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md)):

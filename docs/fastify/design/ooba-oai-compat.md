@@ -1,7 +1,9 @@
 # Ooba OAI-compat (LLMFormat.Ooba) - Deferred Phase 6 Design Memo
 
-Date: 2026-05-22
-Status: decision recorded; defer to Phase 7 unless the triggers below fire
+Date: 2026-05-23
+Status: decision recorded; still local while Phase 7 prompt
+assembly is incomplete. Revisit when server-owned prompt
+flattening reaches provider-specific templates.
 
 ## The question
 
@@ -19,7 +21,7 @@ modern endpoint at `db.textgenWebUIBlockingURL/v1/completions`
 accepts the same wire shape as OpenAI's legacy `/v1/completions`:
 
 - Request: `{model, prompt, max_tokens, temperature, top_p, stop,
-  presence_penalty, frequency_penalty, ...}`
+presence_penalty, frequency_penalty, ...}`
 - Response: `{choices: [{text}]}`
 
 The wire shape is the same — but the **prompt formatting** is not.
@@ -30,15 +32,15 @@ calls `applyChatTemplate(formated)`. That helper
 renderer (`@huggingface/jinja`) driven by
 `db.instructChatTemplate`. Eight built-in templates ship:
 
-| Template | Shape |
-| --- | --- |
-| `llama3` | `<\|start_header_id\|>{role}<\|end_header_id\|>\n\n{content}<\|eot_id\|>` |
-| `llama2` | `[INST] {content} [/INST]` with `<<SYS>>` blocks |
-| `chatml` / `gpt2` | `<\|im_start\|>{role}\n{content}<\|im_end\|>\n` |
-| `gemma` | `<start_of_turn>{role}\n{content}<end_of_turn>\n`, no system rows |
-| `vicuna` | `USER: ...\nASSISTANT: ...</s>\n` |
-| `alpaca` | `### Instruction:\n{content}\n\n### Response:\n` |
-| `mistral` | `[INST] ... [/INST]` with role alternation, no system rows |
+| Template          | Shape                                                                     |
+| ----------------- | ------------------------------------------------------------------------- |
+| `llama3`          | `<\|start_header_id\|>{role}<\|end_header_id\|>\n\n{content}<\|eot_id\|>` |
+| `llama2`          | `[INST] {content} [/INST]` with `<<SYS>>` blocks                          |
+| `chatml` / `gpt2` | `<\|im_start\|>{role}\n{content}<\|im_end\|>\n`                           |
+| `gemma`           | `<start_of_turn>{role}\n{content}<end_of_turn>\n`, no system rows         |
+| `vicuna`          | `USER: ...\nASSISTANT: ...</s>\n`                                         |
+| `alpaca`          | `### Instruction:\n{content}\n\n### Response:\n`                          |
+| `mistral`         | `[INST] ... [/INST]` with role alternation, no system rows                |
 
 Plus a `jinja` mode that takes `db.JinjaTemplate` as a custom
 Jinja string.
@@ -85,7 +87,7 @@ and ships the string.
 - **Cost:** ~80 LOC. New `options.openai-legacy-instruct.prompt`
   opt-in path; client-side branch in `requestServerCompletion`
   that calls `applyChatTemplate(formated,
-  {type: db.instructChatTemplate, custom: db.JinjaTemplate})`;
+{type: db.instructChatTemplate, custom: db.JinjaTemplate})`;
   the server stops accepting `messages` when this mode is on.
 - **Benefit:** Keeps the existing Jinja templating intact. No
   new server-side dep.
@@ -156,21 +158,22 @@ work.
   is where character context becomes a first-class server
   concept.
 
-Option B is interesting if Phase 7 is many months out and we
-really need all providers server-routed before then — but the
-rendered-string contract introduces an asymmetry that survives
-long after Phase 7, even if we deprecate it.
+Option B is interesting only if all providers must be server-routed
+before the Phase 7 assembler reaches provider-specific flattening.
+The rendered-string contract introduces an asymmetry that survives
+after server-owned prompt assembly, even if deprecated later.
 
-If you'd rather not wait for Phase 7, the next-best is C: do
-the Jinja port server-side now, accept the `@huggingface/jinja`
-server dep, and treat it as Phase 7 work pulled forward. That's
-a clean answer; it's just bigger than what HANDOVER described.
+If provider routing becomes urgent before `assemble.ts` lands, the
+next-best answer is C: do the Jinja port server-side, accept the
+`@huggingface/jinja` server dependency, and treat it as Phase 7
+work pulled forward.
 
 ## Triggers to revisit
 
-- Phase 7 slips significantly past Phase 6 closeout **and** the
-  "all providers server-routed" goal becomes load-bearing for
-  another slice (e.g., a future client-thinning step).
+- Phase 7's provider-specific flattening work slips behind the
+  core chat route **and** the "all providers server-routed" goal
+  becomes load-bearing for another slice (for example, client
+  thinning).
 - A user reports Ooba quality drops because the local
   `applyChatTemplate` diverges from the model's expected
   template — that's a sign the Jinja-port discussion needs to

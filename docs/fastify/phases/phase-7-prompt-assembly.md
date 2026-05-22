@@ -1,6 +1,6 @@
 # Phase 7 - Server-Side Prompt Assembly
 
-Date: 2026-05-21
+Date: 2026-05-23
 
 Status: in-progress (6 slices landed as of 2026-05-23). `variables.ts`,
 `staticSections.ts`, `plainSections.ts` are real. The remaining
@@ -72,11 +72,13 @@ Under `server/fastify/src/prompt/`:
   fold-in, ChatML-style assembly).
 - `templates.ts` - prompt template cards (chat ranges, cache
   markers, systemized chat, position slots).
-- `tokens.ts` - budget pruning. Reuses the tokenizer from Phase 6.
+- `tokens.ts` - budget pruning. Reuses or ports the existing
+  tokenizer dispatcher when the 7-8 token slice lands.
 - `variables.ts` - `risuChatParser` port for variable expansion,
   `#when`, conditional cards.
 - `triggers.ts` - hooks `editInput` / `editRequest` into the
-  trigger sandbox from Phase 6.
+  server-side trigger/script processor port that lands in this
+  phase.
 
 ### SSE events
 
@@ -131,14 +133,14 @@ thin adapters in server-backed mode. The coordinator posts to
 
 ## Landed slices
 
-| Slice | Commit       | Summary                                                                                                                                                                                                                            |
-| ----- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7-1   | `3d2426c4`   | Scaffolded `POST /api/v1/generate/chat`: locked the 9-event SSE taxonomy in `server/fastify/src/prompt/sseEvents.ts`, stubbed the seven assembly modules under `server/fastify/src/prompt/`, wired auth + validation + a validate→error→done stream that returns `phase-7 prompt assembly not yet implemented`. |
-| 7-2a  | `9eed5093`   | Introduced two DI seams: `src/ts/parser/chatVarBackend.ts` for `getChatVar`/`setChatVar`/`getGlobalChatVar`, and `getCurrentTriggerId` on `CBSRegisterArg`. Removed the direct `CurrentTriggerIdStore` import from `cbs.ts`. The browser bridges via `chatVar.svelte`'s module init. |
-| 7-2b  | `bb2c78b5`   | Lifted `risuChatParser` + helpers into Svelte-free `src/ts/parser/risuChatParser.ts` + `risuChatParserHelpers.ts`. `parser.svelte.ts` re-exports. `parserStateBackend.ts` carries the `DBState.db` / `selectedCharID` fallback through DI. The 65-test parser oracle stays green. |
-| 7-2c  | `7ed156e6`   | Server adapter: `promptScope.ts` (single-user module-level scope), `cbsAdapter.ts` (24-field `CBSRegisterArg`), `promptVariablesBoot.ts` (one-time wiring), real `expandVariables` returning `{text, dirty}`. 17-test smoke suite asserts the canonical parser runs server-side against a request-scoped `Database` snapshot. |
-| 7-3   | `d0a2a7f3`   | Static prompt sections: `staticSections.ts` ports `buildDescription`, `buildAuthorNote`, `buildPersona`, `buildCotInstruction` from `src/ts/process/promptAssembly/`. All four normalize to `OpenAIChat[]` (Option B). Deferred: `buildInlayViewInstruction` (image-gen), `additionalInformations` (Phase 8 memory). 15-test suite. |
-| 7-4   | `051a5dcd`   | Plain prompt sections: `plainSections.ts` ports `buildPlainPromptSections`. Returns `{main, jailbreak, globalNote}`. Honors `{{original}}` substitution, `jailbreakToggle` gating, `additionalPrompt` gated by `promptPreprocess`, and `@@@?(user|assistant|system)\n` role splitting. 12-test suite. |
+| Slice | Commit     | Summary                                                                                                                                                                                                                                                                                                                             |
+| ----- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ----------------------------------------- |
+| 7-1   | `3d2426c4` | Scaffolded `POST /api/v1/generate/chat`: locked the 9-event SSE taxonomy in `server/fastify/src/prompt/sseEvents.ts`, stubbed the seven assembly modules under `server/fastify/src/prompt/`, wired auth + validation + a validate→error→done stream that returns `phase-7 prompt assembly not yet implemented`.                     |
+| 7-2a  | `9eed5093` | Introduced two DI seams: `src/ts/parser/chatVarBackend.ts` for `getChatVar`/`setChatVar`/`getGlobalChatVar`, and `getCurrentTriggerId` on `CBSRegisterArg`. Removed the direct `CurrentTriggerIdStore` import from `cbs.ts`. The browser bridges via `chatVar.svelte`'s module init.                                                |
+| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` + helpers into Svelte-free `src/ts/parser/risuChatParser.ts` + `risuChatParserHelpers.ts`. `parser.svelte.ts` re-exports. `parserStateBackend.ts` carries the `DBState.db` / `selectedCharID` fallback through DI. The 65-test parser oracle stays green.                                                   |
+| 7-2c  | `7ed156e6` | Server adapter: `promptScope.ts` (single-user module-level scope), `cbsAdapter.ts` (24-field `CBSRegisterArg`), `promptVariablesBoot.ts` (one-time wiring), real `expandVariables` returning `{text, dirty}`. 17-test smoke suite asserts the canonical parser runs server-side against a request-scoped `Database` snapshot.       |
+| 7-3   | `d0a2a7f3` | Static prompt sections: `staticSections.ts` ports `buildDescription`, `buildAuthorNote`, `buildPersona`, `buildCotInstruction` from `src/ts/process/promptAssembly/`. All four normalize to `OpenAIChat[]` (Option B). Deferred: `buildInlayViewInstruction` (image-gen), `additionalInformations` (Phase 8 memory). 15-test suite. |
+| 7-4   | `051a5dcd` | Plain prompt sections: `plainSections.ts` ports `buildPlainPromptSections`. Returns `{main, jailbreak, globalNote}`. Honors `{{original}}` substitution, `jailbreakToggle` gating, `additionalPrompt` gated by `promptPreprocess`, and `@@@?(user                                                                                   | assistant | system)\n` role splitting. 12-test suite. |
 
 ## Remaining roadmap
 
@@ -158,8 +160,8 @@ SPA modules are tightly coupled to Tier 2 infrastructure; split
 along the dependency seams:
 
 - **7-5a** — Minimal walk. Examples + `[Start a new chat]` marker
-  + first message + `makeMs` filter (`disabled`/`allBefore`) +
-  role mapping. ~150 LOC, ~12 tests. Independently shippable.
+  - first message + `makeMs` filter (`disabled`/`allBefore`) +
+    role mapping. ~150 LOC, ~12 tests. Independently shippable.
 - **7-5b** — Per-message script processing + `sendName` wrapper +
   `<Thoughts>` extraction. Depends on Scripts (7-6).
 - **7-5c** — Multimodal inlays + `{{asset_prompt::}}` replacement.
@@ -226,7 +228,7 @@ must be real before these land.
   lorebook + history + tokens through templates.
 - **7-11b** — Wire `POST /api/v1/generate/chat` (currently emits
   "not yet implemented") to call `assemble.ts` and emit `prompt`
-  + `done` SSE events.
+  - `done` SSE events.
 - **7-11c** — Add `POST /api/v1/generate/preview-prompt` shortcut.
 - **7-11d** — SSE telemetry: `info` event (timings, token counts),
   `message_patch` for chat-row deltas.

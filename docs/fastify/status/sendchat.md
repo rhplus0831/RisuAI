@@ -1,6 +1,6 @@
 # sendChat Status
 
-Date: 2026-05-22 (Phase 5 closed; all 28 slices landed)
+Date: 2026-05-23 (Phase 5 closed; Phase 7 in progress)
 
 Updated 2026-05-22: **Phase 5 is closed.** All 28 slices landed:
 auto-continue, owned `doingChat` lifecycle, error
@@ -421,12 +421,14 @@ fixture-based characterization harness:
   teardown. This is a production-safe robustness change, not a
   refactor.
 - `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-  runs `echo-basic`, `openai-basic`, `anthropic-basic`,
-  `mistral-basic`, `cohere-basic`, `deepseek-basic`, and
-  `gemini-basic` through the server-backed adapter. It shares the
-  local expected snapshots after dropping `providerCalls`, then
-  asserts the recorded `/api/v1/generate/completion` fetch shape
-  separately.
+  runs the twelve Phase 6 provider fixtures through the
+  server-backed adapter: `echo-basic`, `openai-basic`,
+  `anthropic-basic`, `mistral-basic`, `cohere-basic`,
+  `deepseek-basic`, `gemini-basic`, `gemini-vertex-basic`,
+  `bedrock-basic`, `horde-basic`, `mistral-reverse-proxy-basic`,
+  and `anthropic-reverse-proxy-basic`. It shares the local
+  expected snapshots after dropping `providerCalls`, then asserts
+  the recorded `/api/v1/generate/completion` fetch shape separately.
 
 Existing `process/` helper-surface tests (TTS hooks, request
 additional params, MCP Risu access modules, inlay asset helpers)
@@ -680,7 +682,11 @@ what each fixture pins.
   text, and routed `reverse_proxy` / `xcustom:::` overlays through
   `/api/v1/generate/completion`. Prompt-flattening providers such
   as NovelAI, NovelList, and ooba OAI-compatible move with Phase 7.
-- **Phase 7.** Stage 2 prompt assembly moves server-side.
+- **Phase 7.** Stage 2 prompt assembly moves server-side. In
+  progress: the server has the `/api/v1/generate/chat` scaffold
+  plus variable expansion, static sections, and plain sections;
+  the root assembler and the history/lorebook/template/token/trigger
+  leaves remain to land.
 - **Phase 9.** Stages 1 + 4 move server-side; Stage 0 becomes a
   ~50-line bridge that owns the UI lease, abort forwarding, and
   side-effect dispatch.

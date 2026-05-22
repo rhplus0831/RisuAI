@@ -1,6 +1,6 @@
 # Test Coverage
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 This is the coverage router. Detail per area lives in the
 shards under [`coverage/`](coverage/).
@@ -56,6 +56,9 @@ shards under [`coverage/`](coverage/).
   `bedrock.test.ts`, `sigv4.test.ts`, and `horde.test.ts` cover
   the closed Phase 6 completion-route providers through
   `pnpm api:test`.
+- Phase 7 has route-scaffold coverage in `generation.chat.test.ts`
+  plus prompt leaf coverage in `promptVariables.test.ts`,
+  `staticSections.test.ts`, and `plainSections.test.ts`.
 
 ## Where to look
 

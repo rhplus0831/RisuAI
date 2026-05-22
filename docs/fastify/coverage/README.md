@@ -1,15 +1,16 @@
 # Test Coverage Shards
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 Each shard is a list of what is pinned + a brief explanation of
 how to read or extend the tests. Phase 1, Phase 2, and Phase 3
 Fastify route tests exist, the Phase 4 `sendChat`
 characterization fixtures have landed, and Phase 5 helper tests now
 cover extracted browser-side seams. Phase 6 route and provider
-tests cover the current `/api/v1/generate/completion` slices;
-later Phase 6 helpers and Phases 7-9 remain planning artifacts
-until their routes land.
+tests cover the current `/api/v1/generate/completion` slices.
+Phase 7 now has chat-route scaffold tests plus prompt variable,
+static-section, and plain-section tests; later helper routes and
+Phases 8-9 remain planning artifacts until their routes land.
 
 ## Shards
 

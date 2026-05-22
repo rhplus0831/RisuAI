@@ -1,6 +1,6 @@
 # Migration Plan
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 ## Goal
 
@@ -29,8 +29,9 @@ End state:
 
 Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, the Phase 5
-closeout on 2026-05-22, and the Phase 6 completion-route closeout
-in Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`):
+closeout on 2026-05-22, the Phase 6 completion-route closeout in
+Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`), and
+Phase 7 slices 7-1 through 7-4:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -40,7 +41,8 @@ in Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`):
   raw asset routes, backup routes, `POST /api/v1/proxy/fetch`,
   proxy stream-job HTTP + WebSocket routes, `ANY /api/v1/hub/*`,
   versioned legacy storage routes, `POST /api/v1/auth/crypto`,
-  `POST /api/v1/generate/completion`, and optional static SPA
+  `POST /api/v1/generate/completion`, the Phase 7
+  `POST /api/v1/generate/chat` scaffold, and optional static SPA
   serving.
 - `server/fastify/src/repository.ts` owns the migration-window
   `data/db.json` blob, content-addressed `data/assets/`, and
@@ -93,6 +95,12 @@ in Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`):
   client-side variant gates documented in
   [`coverage/providers.md`](coverage/providers.md). Unsupported
   provider strings still return a documented `501`.
+- Phase 7 is in progress. `server/fastify/src/prompt/variables.ts`,
+  `staticSections.ts`, and `plainSections.ts` are implemented and
+  tested. `assemble.ts`, `history.ts`, `lorebook.ts`,
+  `templates.ts`, `tokens.ts`, and `triggers.ts` are still
+  throwing stubs; `/api/v1/generate/chat` currently validates the
+  request and emits the Phase 7 not-implemented SSE sequence.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -138,7 +146,7 @@ rules. The headline order:
 4. **sendChat tests** - pin observable behavior of the current
    `sendChat` with fixtures and snapshots before any extraction.
    Done 2026-05-20 with 17 initial fixtures; Phase 5 has since
-   added nine narrow gate fixtures, and Phase 6 has added seven
+   added nine narrow gate fixtures, and Phase 6 has added twelve
    provider parity fixtures.
 5. **sendChat extraction** - carve the function into stage-shaped
    modules behind the pinned tests. Done 2026-05-22 with all 28
@@ -151,7 +159,8 @@ rules. The headline order:
    Phase 7.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
-   triggers.
+   triggers. In progress: slices 7-1 through 7-4 landed the route
+   scaffold and the first prompt leaves.
 8. **Memory** - Hypa V3 chunking, embeddings, summarization as an
    async job queue on the server.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation

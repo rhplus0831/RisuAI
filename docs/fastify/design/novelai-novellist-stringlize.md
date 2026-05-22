@@ -1,7 +1,9 @@
 # NovelAI + NovelList stringlize/unstringlize - Deferred Phase 6 Design Memo
 
-Date: 2026-05-22
-Status: decision recorded; keep local through Phase 6 and revisit in Phase 7
+Date: 2026-05-23
+Status: decision recorded; still local while Phase 7 prompt
+assembly is incomplete. Revisit when server-owned prompt
+flattening reaches provider-specific stringlize / unstringlize.
 Sibling memo: [`ooba-oai-compat.md`](./ooba-oai-compat.md)
 
 ## The question
@@ -99,7 +101,7 @@ state that's already in hand).
   server-side helpers; the asymmetry is contained to one field.
 - **Benefit:** Avoids the plumbing detour. NovelAI/NovelList
   don't have an alternative messages-shaped wire that B would
-  break — their native wire *is* a flat `prompt` string, so the
+  break — their native wire _is_ a flat `prompt` string, so the
   contract asymmetry is much weaker than for Ooba.
 - **Catch:** Other server-side concerns (Phase 7 prompt assembly,
   Phase 9 client thinning) still have to either accept a
@@ -130,12 +132,12 @@ server already receives) and produces the trimmed assistant turn
 before returning `{result}`.
 
 - **Cost:** ~600 LOC across two dispatchers + the shared helpers
-  + tests. New `ChatMessage` wire fields (`name`, `memo`). Two
-  new options bags (`options.novelai`, `options.novellist`) with
-  ~15 fields each.
+  - tests. New `ChatMessage` wire fields (`name`, `memo`). Two
+    new options bags (`options.novelai`, `options.novellist`) with
+    ~15 fields each.
 - **Benefit:** Server-routed contract stays consistent: messages
   go in, result comes out, all wire shapes use `messages:
-  ChatMessage[]` (with optional `name`/`memo`).
+ChatMessage[]` (with optional `name`/`memo`).
 - **Catch:** The character/user/sampler plumbing is exactly the
   Phase 7 work that the Ooba memo identified as out of scope for
   Phase 6. Doing it for these two providers now means inventing
@@ -169,11 +171,11 @@ The closest call against D is B — and it's closer for NovelAI
 than it was for Ooba. NovelAI/NovelList's native wire is already
 a flat `prompt` string, so the messages-vs-prompt asymmetry
 introduced by B is contained to two providers whose wires are
-*already* asymmetric to the messages-shaped majority. If you
-want to land server-routing for these without waiting for Phase
-7, B is the right answer — the cost is one `prompt`-string fast
-path in the server contract that gets retired when Phase 7
-generalizes character/user context.
+_already_ asymmetric to the messages-shaped majority. If these
+need server-routing before Phase 7 reaches provider flattening, B
+is the right answer — the cost is one `prompt`-string fast path in
+the server contract that gets retired when Phase 7 generalizes
+character/user context.
 
 C is the wrong shape for the same reason as in Ooba: it pulls
 Phase 7 plumbing forward into Phase 6 without earning much.
@@ -181,14 +183,14 @@ Phase 7 plumbing forward into Phase 6 without earning much.
 ## How D differs from the Ooba D
 
 - **Ooba D**: defers because Phase 7 will absorb the
-  `applyChatTemplate` Jinja rendering naturally — *or* because
+  `applyChatTemplate` Jinja rendering naturally — _or_ because
   someone could land B as a stopgap (rendered `prompt` string)
   and accept the asymmetry against the rest of the OpenAI-shaped
   wire family.
 - **NovelAI/NovelList D**: defers because Phase 7 will absorb
   `stringlize{NAI,AIN}Chat` + `unstringlize{Chat,AIN}` naturally
   — but B has a stronger case here because the upstream wire is
-  *already* a `prompt` string, so the asymmetry argument against
+  _already_ a `prompt` string, so the asymmetry argument against
   B applies less.
 
 If we end up taking B for Ooba (e.g., to ship OAI-compat
@@ -197,9 +199,9 @@ to take B for Novel\* too. They're a coherent pair.
 
 ## Triggers to revisit
 
-- Phase 7 slips significantly past Phase 6 closeout **and** the
-  "all providers server-routed" goal becomes load-bearing for a
-  Phase 9 client-thinning slice.
+- Phase 7's provider-specific flattening work slips behind the
+  core chat route **and** the "all providers server-routed" goal
+  becomes load-bearing for a Phase 9 client-thinning slice.
 - A user reports NovelAI / NovelList output quality drops on
   some unusual `db.NAIsettings` configuration that suggests the
   local stringlize and the upstream tokenizer have diverged. (At
@@ -215,10 +217,10 @@ For NovelAI (under option C):
 // server/fastify/src/generation/novelai.ts
 
 interface NovelAIRequest {
-  input: string                  // pre-stringlized OR built server-side
-  model: 'kayra-v1' | 'clio-v1'  // routed from aiModel
-  parameters: NAIParameters      // ~25 sampler fields
-  apiKey: string                 // db.novelai.token
+  input: string // pre-stringlized OR built server-side
+  model: 'kayra-v1' | 'clio-v1' // routed from aiModel
+  parameters: NAIParameters // ~25 sampler fields
+  apiKey: string // db.novelai.token
   signal: AbortSignal
 }
 

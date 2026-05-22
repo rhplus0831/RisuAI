@@ -1,6 +1,6 @@
 # Runtime Stages
 
-Date: 2026-05-22
+Date: 2026-05-23
 
 This doc describes the stages a `sendChat` invocation moves through
 and who owns each stage **after the migration**. Before migration
@@ -17,9 +17,11 @@ Stage 4 work into browser modules under `src/ts/process/`,
 `src/ts/process/dispatch/`, and `src/ts/process/postGeneration/`,
 and Phase 6 has closed Stage 3 completion dispatch through
 `/api/v1/generate/completion` for the provider matrix listed in
-[`status/server.md`](status/server.md). The
-ownership described below is still the migration target, not a
-claim that every stage has moved.
+[`status/server.md`](status/server.md). Phase 7 has landed the
+chat route scaffold plus the variable/static/plain prompt leaves,
+but the root Stage 2 handoff is not wired yet. The ownership
+described below is still the migration target, not a claim that
+every stage has moved.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -133,7 +135,10 @@ the delegated post-generation helpers under
 - Phase 6 (`phases/phase-6-server-generation.md`) moves Stage 3
   (provider dispatch) server-side.
 - Phase 7 (`phases/phase-7-prompt-assembly.md`) moves Stage 2
-  (prompt assembly) server-side.
+  (prompt assembly) server-side. It is in progress: slices 7-1
+  through 7-4 landed the scaffold and first prompt leaves; history,
+  lorebook, templates, tokens, triggers, and root route wiring
+  remain.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
   server-side resource that Stage 2 reads from.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1
