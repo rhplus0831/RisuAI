@@ -1,0 +1,315 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  resolveOpenAIRequest,
+  runOpenAI,
+  runOpenAIStream,
+} from '../src/generation/openai.js'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('resolveOpenAIRequest', () => {
+  it('returns null when apiKey is missing', () => {
+    const r = resolveOpenAIRequest({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: '',
+      signal: new AbortController().signal,
+    })
+    expect(r).toBeNull()
+  })
+
+  it('returns null when messages is not an array', () => {
+    const r = resolveOpenAIRequest({
+      model: 'gpt-4o',
+      messages: 'oops' as unknown as unknown[],
+      apiKey: 'sk-x',
+      signal: new AbortController().signal,
+    })
+    expect(r).toBeNull()
+  })
+
+  it('defaults baseUrl to api.openai.com when not provided', () => {
+    const r = resolveOpenAIRequest({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'sk-x',
+      signal: new AbortController().signal,
+    })
+    expect(r?.baseUrl).toBe('https://api.openai.com/v1')
+  })
+
+  it('drops a non-positive maxTokens', () => {
+    const r = resolveOpenAIRequest({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'sk-x',
+      maxTokens: 0,
+      signal: new AbortController().signal,
+    })
+    expect(r?.maxTokens).toBeUndefined()
+  })
+
+  it('keeps a positive maxTokens and a finite temperature', () => {
+    const r = resolveOpenAIRequest({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'sk-x',
+      maxTokens: 256,
+      temperature: 0.4,
+      signal: new AbortController().signal,
+    })
+    expect(r?.maxTokens).toBe(256)
+    expect(r?.temperature).toBe(0.4)
+  })
+})
+
+describe('runOpenAI (non-streaming)', () => {
+  function ok(body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  it('posts to {baseUrl}/chat/completions with Bearer auth and returns the assistant content', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return ok({
+        model: 'gpt-4o',
+        choices: [{ message: { content: 'hello' }, finish_reason: 'stop' }],
+      })
+    })
+
+    const r = await runOpenAI({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.com/v1',
+      maxTokens: 64,
+      temperature: 0.2,
+      signal: new AbortController().signal,
+    })
+    expect(r).toEqual({ type: 'success', result: 'hello', model: 'gpt-4o' })
+
+    expect(captured!.url).toBe('https://api.openai.com/v1/chat/completions')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer sk-test')
+    expect(headers['content-type']).toBe('application/json')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent).toEqual({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: false,
+      max_tokens: 64,
+      temperature: 0.2,
+    })
+  })
+
+  it('strips a trailing slash from baseUrl', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1/',
+      signal: new AbortController().signal,
+    })
+    expect(capturedUrl).toBe('https://api.openai.com/v1/chat/completions')
+  })
+
+  it('returns fail with upstream error.message on non-2xx', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return new Response(JSON.stringify({ error: { message: 'invalid model' } }), {
+        status: 400,
+      })
+    })
+    const r = await runOpenAI({
+      model: 'badmodel',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })
+    expect(r).toEqual({ type: 'fail', result: 'invalid model' })
+  })
+
+  it('falls back to HTTP <status> when error.message is absent', async () => {
+    vi.stubGlobal('fetch', async () => new Response('{}', { status: 500 }))
+    const r = await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })
+    expect(r).toEqual({ type: 'fail', result: 'HTTP 500' })
+  })
+
+  it('returns fail when upstream returns no content', async () => {
+    vi.stubGlobal('fetch', async () => ok({ choices: [{ message: {} }] }))
+    const r = await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })
+    expect(r).toEqual({ type: 'fail', result: 'upstream returned no content' })
+  })
+
+  it('returns aborted=true when signal is already aborted', async () => {
+    const c = new AbortController()
+    c.abort()
+    let called = false
+    vi.stubGlobal('fetch', async () => {
+      called = true
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    const r = await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: c.signal,
+    })
+    expect(r.aborted).toBe(true)
+    expect(called).toBe(false)
+  })
+})
+
+function sseUpstream(chunks: string[]): Response {
+  const enc = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const c of chunks) controller.enqueue(enc.encode(c))
+      controller.close()
+    },
+  })
+  return new Response(stream, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  })
+}
+
+function tokenFrame(content: string, finish?: string): string {
+  const frame = {
+    choices: [
+      finish ? { delta: { content }, finish_reason: finish } : { delta: { content } },
+    ],
+  }
+  return `data: ${JSON.stringify(frame)}\n\n`
+}
+
+describe('runOpenAIStream', () => {
+  it('translates upstream deltas into our token frames + a trailing done', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return sseUpstream([
+        tokenFrame('hello'),
+        tokenFrame(' world'),
+        `data: [DONE]\n\n`,
+      ])
+    })
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'hello' },
+      { kind: 'token', content: ' world' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('emits a done frame at end-of-stream when upstream omits [DONE]', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream([tokenFrame('only')]))
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'only' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('propagates upstream finish_reason through the done frame', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return sseUpstream([tokenFrame('foo'), tokenFrame('', 'length'), `data: [DONE]\n\n`])
+    })
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'foo' },
+      { kind: 'done', finishReason: 'length' },
+    ])
+  })
+
+  it('yields nothing when the signal is already aborted', async () => {
+    const c = new AbortController()
+    c.abort()
+    vi.stubGlobal('fetch', async () => sseUpstream([tokenFrame('x')]))
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: c.signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([])
+  })
+
+  it('handles a partial frame split across reader chunks', async () => {
+    vi.stubGlobal('fetch', async () => {
+      const half = tokenFrame('chunky')
+      return sseUpstream([
+        half.slice(0, 10),
+        half.slice(10),
+        `data: [DONE]\n\n`,
+      ])
+    })
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'chunky' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+})

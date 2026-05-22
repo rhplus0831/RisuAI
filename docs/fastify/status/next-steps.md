@@ -44,6 +44,60 @@ are below under "Completed Slices".
 
 ## Completed Slices
 
+- **Phase 6-4a - openai server dispatcher + route.** Done
+  2026-05-22. First real provider on the Phase 6 server boundary.
+  Server-only slice; client wiring lands in 6-4b. New files:
+  `server/fastify/src/generation/frames.ts` (shared
+  `CompletionStreamFrame` and `CompletionResult` types so the
+  route's `writeSseChunk` can drive any provider's dispatcher),
+  `server/fastify/src/generation/openai.ts` (`resolveOpenAIRequest`
+  + `runOpenAI` for non-streaming + `runOpenAIStream` async
+  generator). The non-streaming path POSTs
+  `{baseUrl}/chat/completions` with a `Bearer <apiKey>` header,
+  forwards `{model, messages, stream, max_tokens?, temperature?}`,
+  and returns `{type: 'success' | 'fail', result, model?}`. Errors
+  bubble through `body.error.message` when present, otherwise
+  `HTTP <status>`. The streaming path consumes upstream OpenAI SSE
+  (`data: <json>` lines, `data: [DONE]` sentinel), extracts
+  `choices[0].delta.content` from each frame, propagates
+  `finish_reason` into a trailing `{kind: 'done'}` frame, and
+  re-emits in the Phase 6-1 envelope (`event: chunk` /
+  `event: done`). Handles partial frames split across reader
+  reads. `echo.ts` now re-exports its result/frame aliases from
+  `frames.ts` so the two dispatchers share one type. Touched
+  files: `server/fastify/src/routes/generation.ts` factored out
+  `attachAbort` / `pipeStream` / `writeSseChunk` helpers (now
+  generic over `CompletionStreamFrame`), added `'openai'` to
+  `SUPPORTED_PROVIDERS`, added `handleOpenAIBuffered` /
+  `handleOpenAIStreaming` branches behind a provider switch, and
+  changed the 501 reason from
+  `'provider not implemented in Phase 6-1: <name>'` to
+  `'provider not implemented yet: <name>'`. New tests:
+  `server/fastify/__tests__/openai.test.ts` adds 16 cases
+  (`resolveOpenAIRequest` validation, non-streaming happy path /
+  Bearer header / baseUrl trailing slash / upstream error.message
+  / HTTP-status fallback / no-content fail / pre-aborted signal,
+  streaming token-frame relay / no-`[DONE]` fallback /
+  finish_reason propagation / pre-aborted no-op / partial-frame
+  reassembly). `server/fastify/__tests__/generation.completion.test.ts`
+  swaps the 501 case from `'openai'` to `'anthropic'`, threads a
+  per-test `globalThis.fetch` restore through beforeEach/afterEach,
+  and adds 4 openai route cases (missing apiKey → 400, non-stream
+  forwards body + Bearer + returns assistant content,
+  non-stream propagates upstream error message, streaming relays
+  SSE deltas through the normalized envelope). Decisions locked:
+  (1) browser passes `apiKey` in the request body for now; the
+  server-side key store is a Phase 9 concern per the phase doc;
+  (2) tools / schemas / vision / multi-gen / function calling /
+  bias strings are explicitly out of scope; the route accepts
+  the minimal payload (`model`, `messages`, `apiKey`, optional
+  `baseUrl` / `maxTokens` / `temperature`) and each later slice
+  extends as the surface area is needed; (3) shared `frames.ts`
+  rather than per-provider frame types so the route stays
+  provider-agnostic. Verification: `pnpm api:test` (165 across
+  13 files, up from 145/12; +20), `pnpm check`, `pnpm test` (476
+  unchanged — server-only), `pnpm build` all green.
+
 - **Phase 6-3 - dual-mode fixture harness + first echo fixture.**
   Done 2026-05-22. Adds the mechanism for asserting that a sendChat
   fixture produces the same observable output through both the

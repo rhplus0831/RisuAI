@@ -1,20 +1,13 @@
+import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+
 export interface EchoRequest {
   message: string
   delayMs: number
   signal: AbortSignal
 }
 
-export interface EchoResult {
-  type: 'success' | 'fail'
-  result: string
-  aborted?: boolean
-}
-
-export interface EchoStreamFrame {
-  kind: 'token' | 'done'
-  content?: string
-  finishReason?: 'stop'
-}
+export type EchoResult = CompletionResult
+export type EchoStreamFrame = CompletionStreamFrame
 
 const DEFAULT_MESSAGE = 'Echo Message'
 

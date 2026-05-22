@@ -80,12 +80,17 @@ async function setupAuthedClient(app: FastifyInstance): Promise<{ assertion: str
 }
 
 let harness: Harness
+let originalFetch: typeof globalThis.fetch | undefined
 
 beforeEach(async () => {
   harness = await startHarness()
+  originalFetch = globalThis.fetch
 })
 
 afterEach(async () => {
+  if (originalFetch) {
+    globalThis.fetch = originalFetch
+  }
   await stopHarness(harness)
 })
 
@@ -147,17 +152,17 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     expect(res.json().error).toMatch(/stream/)
   })
 
-  it('returns 501 for providers not implemented in Phase 6-1', async () => {
+  it('returns 501 for providers not yet implemented', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/generate/completion',
       headers: { 'risu-auth': assertion },
-      payload: { ...basePayload, provider: 'openai' },
+      payload: { ...basePayload, provider: 'anthropic' },
     })
     expect(res.statusCode).toBe(501)
     expect(res.json()).toEqual({
-      reason: 'provider not implemented in Phase 6-1: openai',
+      reason: 'provider not implemented yet: anthropic',
     })
   })
 
@@ -224,5 +229,121 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     expect(res.statusCode).toBe(200)
     expect(elapsed).toBeGreaterThanOrEqual(30)
     expect(res.json()).toEqual({ type: 'success', result: 'slow' })
+  })
+})
+
+describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
+  const openaiPayload = {
+    provider: 'openai',
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'hi' }],
+    stream: false,
+    options: {
+      openai: {
+        apiKey: 'sk-test',
+        baseUrl: 'https://upstream.example.com/v1',
+      },
+    },
+  }
+
+  it('400s when options.openai.apiKey is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...openaiPayload, options: { openai: { apiKey: '' } } },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'options.openai.apiKey is required',
+    })
+  })
+
+  it('non-streaming forwards model + messages + Bearer auth and returns assistant content', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-4o',
+          choices: [{ message: { content: 'pong' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: openaiPayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ type: 'success', result: 'pong', model: 'gpt-4o' })
+
+    expect(captured!.url).toBe('https://upstream.example.com/v1/chat/completions')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer sk-test')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('gpt-4o')
+    expect(sent.messages).toEqual([{ role: 'user', content: 'hi' }])
+    expect(sent.stream).toBe(false)
+  })
+
+  it('non-streaming propagates upstream error.message as a 200 + type=fail', async () => {
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({ error: { message: 'rate limit hit' } }),
+        { status: 429 },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: openaiPayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ type: 'fail', result: 'rate limit hit' })
+  })
+
+  it('streaming relays upstream SSE deltas through the normalized envelope', async () => {
+    const enc = new TextEncoder()
+    const upstreamFrames = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'hel' } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'lo' }, finish_reason: 'stop' }] })}\n\n`,
+      `data: [DONE]\n\n`,
+    ]
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const f of upstreamFrames) controller.enqueue(enc.encode(f))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...openaiPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'hel' })}\n\n` +
+        `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'lo' })}\n\n` +
+        `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
+    )
   })
 })

@@ -1,14 +1,19 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
-import { requireAuth } from '../http.js'
 import {
   resolveEchoRequest,
   runEcho,
   runEchoStream,
-  type EchoStreamFrame,
 } from '../generation/echo.js'
+import type { CompletionStreamFrame } from '../generation/frames.js'
+import {
+  resolveOpenAIRequest,
+  runOpenAI,
+  runOpenAIStream,
+} from '../generation/openai.js'
+import { requireAuth } from '../http.js'
 
-const SUPPORTED_PROVIDERS = new Set(['echo'])
+const SUPPORTED_PROVIDERS = new Set(['echo', 'openai'])
 
 interface ChatMessage {
   role: string
@@ -28,6 +33,13 @@ interface EchoOptions {
   delayMs?: unknown
 }
 
+interface OpenAIOptions {
+  apiKey?: unknown
+  baseUrl?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+}
+
 function validateMessages(messages: unknown): ChatMessage[] | null {
   if (!Array.isArray(messages)) return null
   for (const m of messages) {
@@ -44,10 +56,7 @@ function badRequest(reply: FastifyReply, error: string): void {
   reply.code(400).send({ error })
 }
 
-async function writeSseChunk(
-  reply: FastifyReply,
-  frame: EchoStreamFrame,
-): Promise<void> {
+function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void {
   const event = frame.kind === 'done' ? 'done' : 'chunk'
   const data =
     frame.kind === 'done'
@@ -56,33 +65,52 @@ async function writeSseChunk(
   reply.raw.write(`event: ${event}\ndata: ${data}\n\n`)
 }
 
-async function handleEchoStreaming(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  options: EchoOptions,
-): Promise<void> {
+function attachAbort(req: FastifyRequest): {
+  signal: AbortSignal
+  cleanup: () => void
+} {
   const controller = new AbortController()
   const onClose = (): void => controller.abort()
   req.raw.on('close', onClose)
+  return {
+    signal: controller.signal,
+    cleanup: () => req.raw.off('close', onClose),
+  }
+}
 
+async function pipeStream(
+  reply: FastifyReply,
+  frames: AsyncGenerator<CompletionStreamFrame, void, void>,
+): Promise<void> {
   reply.raw.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-store',
     connection: 'keep-alive',
   })
+  try {
+    for await (const frame of frames) {
+      writeSseChunk(reply, frame)
+    }
+  } finally {
+    reply.raw.end()
+  }
+}
 
+async function handleEchoStreaming(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  options: EchoOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
   try {
     const echo = resolveEchoRequest({
       message: options.message,
       delayMs: options.delayMs,
-      signal: controller.signal,
+      signal,
     })
-    for await (const frame of runEchoStream(echo)) {
-      await writeSseChunk(reply, frame)
-    }
+    await pipeStream(reply, runEchoStream(echo))
   } finally {
-    req.raw.off('close', onClose)
-    reply.raw.end()
+    cleanup()
   }
 }
 
@@ -91,26 +119,81 @@ async function handleEchoBuffered(
   reply: FastifyReply,
   options: EchoOptions,
 ): Promise<void> {
-  const controller = new AbortController()
-  const onClose = (): void => controller.abort()
-  req.raw.on('close', onClose)
+  const { signal, cleanup } = attachAbort(req)
   try {
     const echo = resolveEchoRequest({
       message: options.message,
       delayMs: options.delayMs,
-      signal: controller.signal,
+      signal,
     })
     const result = await runEcho(echo)
-    if (result.aborted === true) {
-      // Client gave up; nothing to do.
+    if (result.aborted === true) return
+    reply.code(200).send({ type: result.type, result: result.result })
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleOpenAIStreaming(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: OpenAIOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveOpenAIRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.openai.apiKey is required')
       return
     }
-    reply.code(200).send({
+    await pipeStream(reply, runOpenAIStream(resolved))
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleOpenAIBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: OpenAIOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveOpenAIRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.openai.apiKey is required')
+      return
+    }
+    const result = await runOpenAI(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
       type: result.type,
       result: result.result,
-    })
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
   } finally {
-    req.raw.off('close', onClose)
+    cleanup()
   }
 }
 
@@ -140,18 +223,34 @@ export function registerGenerationRoutes(
 
     if (!SUPPORTED_PROVIDERS.has(provider)) {
       reply.code(501).send({
-        reason: `provider not implemented in Phase 6-1: ${provider}`,
+        reason: `provider not implemented yet: ${provider}`,
       })
       return
     }
 
-    const options = (body.options ?? {}) as { echo?: EchoOptions }
-    const echoOpts = (options.echo ?? {}) as EchoOptions
+    const options = (body.options ?? {}) as {
+      echo?: EchoOptions
+      openai?: OpenAIOptions
+    }
 
-    if (body.stream === true) {
-      await handleEchoStreaming(req, reply, echoOpts)
+    if (provider === 'echo') {
+      const echoOpts = options.echo ?? {}
+      if (body.stream === true) {
+        await handleEchoStreaming(req, reply, echoOpts)
+        return
+      }
+      await handleEchoBuffered(req, reply, echoOpts)
       return
     }
-    await handleEchoBuffered(req, reply, echoOpts)
+
+    if (provider === 'openai') {
+      const openaiOpts = options.openai ?? {}
+      if (body.stream === true) {
+        await handleOpenAIStreaming(req, reply, body.model, messages, openaiOpts)
+        return
+      }
+      await handleOpenAIBuffered(req, reply, body.model, messages, openaiOpts)
+      return
+    }
   })
 }
