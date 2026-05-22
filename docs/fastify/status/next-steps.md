@@ -44,6 +44,78 @@ are below under "Completed Slices".
 
 ## Completed Slices
 
+- **Phase 6-5 - anthropic messages end-to-end.** Done 2026-05-22.
+  First non-OpenAI-compatible provider lands. New
+  `server/fastify/src/generation/anthropic.ts` mirrors the openai
+  dispatcher's shape: `resolveAnthropicRequest` (validates +
+  defaults baseUrl `https://api.anthropic.com/v1`, version
+  `2023-06-01`, maxTokens `1024`), `runAnthropic` (non-streaming
+  POST to `/messages` with `x-api-key` + `anthropic-version`
+  headers; concatenates every `content[].type === 'text'` block
+  on success; surfaces `body.error.message` on non-2xx), and
+  `runAnthropicStream` (consumes upstream SSE events
+  `message_start` / `content_block_start` / `content_block_delta`
+  / `message_delta` / `message_stop` / `ping`; emits `kind:
+  'token'` for each `delta.text_delta`; emits the trailing
+  `kind: 'done'` on `message_stop` with `finishReason` derived
+  from the prior `message_delta.stop_reason`, mapping `end_turn`
+  / `stop_sequence` → `stop` and `max_tokens` → `length`).
+  Route changes: `'anthropic'` added to SUPPORTED_PROVIDERS;
+  dispatched ahead of the OpenAI-compatible branch with its own
+  `AnthropicOptions` (`apiKey`, optional `baseUrl` / `version` /
+  `system` / `maxTokens` / `temperature`). Client adapter:
+  `formatToServerProvider(LLMFormat.Anthropic) → 'anthropic'`
+  gated by `isVanillaAnthropic` (refuses reverse_proxy,
+  xcustom:::, and any model carrying a hardcoded `endpoint`;
+  AWSBedrockClaude has a separate format already filtered out).
+  `buildProviderOptions` emits `{apiKey: db.claudeAPIKey,
+  maxTokens?, temperature?}` under `options.anthropic`. New
+  `extractAnthropicSystem(formated)` helper pulls every
+  string-content `role === 'system'` message out of the
+  formated array, joins with `\n\n`, and surfaces them as the
+  top-level `system` field; multimodal-content system messages
+  stay in the messages array (the server-routed multimodal path
+  is a later concern). `requestServerCompletion` invokes the
+  helper only when `provider === 'anthropic'`.
+  New `anthropic-basic` dual-mode fixture
+  (`claude-opus-4-7`, single user turn, `db.claudeAPIKey:
+  'sk-ant-fixture'`, `db.useStreaming: false`). Shared snapshot
+  pins stages `[1, 3, 4]`, `runInlayScreen` fires, assistant
+  text `'fixture claude reply'`. `serverCompletionFetch` gains
+  an `'anthropic'` branch returning the canned reply (default
+  overridable via `setAnthropicResult`); the openai branch also
+  now serves `'nanogpt'` and `'openrouter'` providers (same wire
+  shape on the SPA → server hop). Per-fixture expected-call
+  table in the server-backed sweep gains the anthropic entry.
+  Infrastructure: a new
+  `src/ts/process/__fixtures__/mocks/tokenizerFetch.ts` serves
+  `/token/*` URLs from disk (Phase 6-5 needs the Claude
+  tokenizer for prompt preflight). Both fixture sweep files
+  also `vi.mock('@mlc-ai/web-tokenizers')` with a whitespace
+  splitter because the real WASM module doesn't initialize in
+  happy-dom; this only affects models routed through the
+  `tokenizeWebTokenizers` path (Claude / NovelAI / Llama /
+  Cohere / Mistral / etc.) and snapshots for those fixtures are
+  mock-dependent by design. Tests: anthropic dispatcher gains
+  14 cases (`resolveAnthropicRequest` defaulting, baseUrl
+  /messages + Bearer + version headers, system / temperature
+  omit-when-absent, upstream error.message, no-content fail,
+  pre-aborted no-op, streaming token / max_tokens-mapping /
+  no-message_stop fallback / pre-aborted / ping-and-block-
+  ignored); the route test file gains 3 cases (anthropic 400
+  on missing apiKey, non-stream forward + headers + system
+  pass-through, streaming SSE relay); adapter test file gains 3
+  cases for the Anthropic gate (vanilla maps to 'anthropic',
+  reverse_proxy refused) plus 1 request-shape case (system
+  field extracted + options.anthropic emitted) and a dedicated
+  `extractAnthropicSystem` describe with 3 cases (no-system
+  passthrough, multi-system join with `\n\n`, multimodal
+  preservation). 501 case in the route test updated from
+  `'anthropic'` → `'gemini'`. Verification: `pnpm test` (497
+  across 46 files, +8 = 6 adapter + 1 local + 1 server-backed),
+  `pnpm api:test` (188 across 14 files, +17), `pnpm check`,
+  `pnpm build` all green.
+
 - **Phase 6-4c - nanogpt + openrouter variants.** Done 2026-05-22.
   Extends the openai dispatcher with hardcoded baseUrl + extra
   request headers per variant. The dispatcher itself gained an

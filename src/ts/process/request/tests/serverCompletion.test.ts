@@ -26,6 +26,7 @@ import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { DBState } from '../../../stores.svelte'
 import type { RequestDataArgumentExtended } from '../request'
 import {
+  extractAnthropicSystem,
   formatToServerProvider,
   getServerCompletionProvider,
   requestServerCompletion,
@@ -190,6 +191,32 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBe('openrouter')
   })
 
+  it('routes a vanilla Anthropic-format model to provider "anthropic"', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'claude-3-5-sonnet-20241022',
+        modelInfo: {
+          id: 'claude-3-5-sonnet-20241022',
+          format: LLMFormat.Anthropic,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('anthropic')
+  })
+
+  it('refuses reverse_proxy under Anthropic (browser holds the custom URL)', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.Anthropic,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
   it('routes a NanoGPT-format model to provider "nanogpt"', () => {
     const r = getServerCompletionProvider(
       makeTarg({
@@ -317,6 +344,43 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
       useSubscription: true,
       providerHint: 'meta',
       maxTokens: 128,
+    })
+  })
+
+  it('emits options.anthropic with apiKey + maxTokens; extracts system messages into the system field', async () => {
+    seedDb({
+      claudeAPIKey: 'sk-ant-fixture',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), {
+        status: 200,
+      })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'claude-3-5-sonnet-20241022',
+      modelInfo: {
+        id: 'claude-3-5-sonnet-20241022',
+        format: LLMFormat.Anthropic,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 512,
+      formated: [
+        { role: 'system', content: 'be concise' },
+        { role: 'system', content: 'no emoji' },
+        { role: 'user', content: 'hi' },
+      ],
+    })
+    await requestServerCompletion(targ, 'anthropic', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('anthropic')
+    expect(sent.model).toBe('claude-3-5-sonnet-20241022')
+    expect(sent.messages).toEqual([{ role: 'user', content: 'hi' }])
+    expect(sent.options.anthropic).toEqual({
+      apiKey: 'sk-ant-fixture',
+      maxTokens: 512,
+      system: 'be concise\n\nno emoji',
     })
   })
 
@@ -572,5 +636,42 @@ describe('requestServerCompletion - streaming', () => {
       null,
     )
     expect(r).toEqual({ type: 'fail', result: 'No streaming body returned' })
+  })
+})
+
+describe('extractAnthropicSystem', () => {
+  it('returns no system field when there are no system messages', () => {
+    const r = extractAnthropicSystem([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hi back' },
+    ])
+    expect(r.system).toBeUndefined()
+    expect(r.messages).toEqual([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hi back' },
+    ])
+  })
+
+  it('extracts string-content system messages and joins with \\n\\n', () => {
+    const r = extractAnthropicSystem([
+      { role: 'system', content: 'rule 1' },
+      { role: 'user', content: 'hi' },
+      { role: 'system', content: 'rule 2' },
+    ])
+    expect(r.system).toBe('rule 1\n\nrule 2')
+    expect(r.messages).toEqual([{ role: 'user', content: 'hi' }])
+  })
+
+  it('preserves multimodal-content system messages in the messages array (skip extraction)', () => {
+    const multimodal = [{ type: 'text', text: 'hello' }]
+    const r = extractAnthropicSystem([
+      { role: 'system', content: multimodal },
+      { role: 'user', content: 'hi' },
+    ])
+    expect(r.system).toBeUndefined()
+    expect(r.messages).toEqual([
+      { role: 'system', content: multimodal },
+      { role: 'user', content: 'hi' },
+    ])
   })
 })

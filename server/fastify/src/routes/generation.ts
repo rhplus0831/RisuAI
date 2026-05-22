@@ -1,6 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
 import {
+  resolveAnthropicRequest,
+  runAnthropic,
+  runAnthropicStream,
+} from '../generation/anthropic.js'
+import {
   resolveEchoRequest,
   runEcho,
   runEchoStream,
@@ -13,7 +18,7 @@ import {
 } from '../generation/openai.js'
 import { requireAuth } from '../http.js'
 
-const SUPPORTED_PROVIDERS = new Set(['echo', 'openai', 'nanogpt', 'openrouter'])
+const SUPPORTED_PROVIDERS = new Set(['echo', 'openai', 'nanogpt', 'openrouter', 'anthropic'])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
 const NANOGPT_SUBSCRIPTION_BASE_URL = 'https://nano-gpt.com/api/subscription/v1'
@@ -54,6 +59,15 @@ interface NanoGPTOptions {
 
 interface OpenRouterOptions {
   apiKey?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+}
+
+interface AnthropicOptions {
+  apiKey?: unknown
+  baseUrl?: unknown
+  version?: unknown
+  system?: unknown
   maxTokens?: unknown
   temperature?: unknown
 }
@@ -199,6 +213,73 @@ async function handleEchoBuffered(
   }
 }
 
+async function handleAnthropicStreaming(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: AnthropicOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveAnthropicRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      version: options.version,
+      system: options.system,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.anthropic.apiKey is required')
+      return
+    }
+    await pipeStream(reply, runAnthropicStream(resolved))
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleAnthropicBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: AnthropicOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveAnthropicRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      version: options.version,
+      system: options.system,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options.anthropic.apiKey is required')
+      return
+    }
+    const result = await runAnthropic(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
+      type: result.type,
+      result: result.result,
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
 async function handleOpenAICompatibleStreaming(
   req: FastifyRequest,
   reply: FastifyReply,
@@ -300,6 +381,7 @@ export function registerGenerationRoutes(
       openai?: OpenAIOptions
       nanogpt?: NanoGPTOptions
       openrouter?: OpenRouterOptions
+      anthropic?: AnthropicOptions
     }
 
     if (provider === 'echo') {
@@ -309,6 +391,16 @@ export function registerGenerationRoutes(
         return
       }
       await handleEchoBuffered(req, reply, echoOpts)
+      return
+    }
+
+    if (provider === 'anthropic') {
+      const anthropicOpts = options.anthropic ?? {}
+      if (body.stream === true) {
+        await handleAnthropicStreaming(req, reply, body.model, messages, anthropicOpts)
+        return
+      }
+      await handleAnthropicBuffered(req, reply, body.model, messages, anthropicOpts)
       return
     }
 

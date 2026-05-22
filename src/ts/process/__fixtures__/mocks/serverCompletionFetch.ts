@@ -1,9 +1,12 @@
 /**
  * Fetch stub for the Phase 6-3 dual-mode fixture sweep. Emulates the
  * Phase 6-1 `POST /api/v1/generate/completion` route well enough to round-trip
- * the echo provider. Any other URL is rejected so an accidental escape inside
- * a fixture surfaces loudly.
+ * the echo / openai / anthropic providers. Tokenizer JSON fetches
+ * (`/token/*`) are served from disk via the shared shim. Any other URL is
+ * rejected so an accidental escape inside a fixture surfaces loudly.
  */
+
+import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
 
 export interface ServerCompletionCall {
   url: string
@@ -25,13 +28,19 @@ interface CompletionPayload {
 }
 
 const DEFAULT_OPENAI_RESULT = 'fixture openai reply'
+const DEFAULT_ANTHROPIC_RESULT = 'fixture claude reply'
 
 interface State {
   calls: ServerCompletionCall[]
   openaiResult: string
+  anthropicResult: string
 }
 
-const state: State = { calls: [], openaiResult: DEFAULT_OPENAI_RESULT }
+const state: State = {
+  calls: [],
+  openaiResult: DEFAULT_OPENAI_RESULT,
+  anthropicResult: DEFAULT_ANTHROPIC_RESULT,
+}
 
 export function getServerCompletionCalls(): ServerCompletionCall[] {
   return state.calls
@@ -40,10 +49,15 @@ export function getServerCompletionCalls(): ServerCompletionCall[] {
 export function resetServerCompletionCalls(): void {
   state.calls = []
   state.openaiResult = DEFAULT_OPENAI_RESULT
+  state.anthropicResult = DEFAULT_ANTHROPIC_RESULT
 }
 
 export function setOpenAIResult(text: string): void {
   state.openaiResult = text
+}
+
+export function setAnthropicResult(text: string): void {
+  state.anthropicResult = text
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -79,6 +93,7 @@ export async function serverCompletionFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
   if (!url.endsWith('/api/v1/generate/completion')) {
     throw new Error(`unexpected fetch in dual-mode fixture: ${url}`)
   }
@@ -111,9 +126,14 @@ export async function serverCompletionFetch(
     return jsonResponse({ type: 'success', result: message })
   }
 
-  if (provider === 'openai') {
+  if (provider === 'openai' || provider === 'nanogpt' || provider === 'openrouter') {
     if (stream) return sseResponse(state.openaiResult)
     return jsonResponse({ type: 'success', result: state.openaiResult, model })
+  }
+
+  if (provider === 'anthropic') {
+    if (stream) return sseResponse(state.anthropicResult)
+    return jsonResponse({ type: 'success', result: state.anthropicResult, model })
   }
 
   return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)

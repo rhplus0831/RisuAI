@@ -106,6 +106,22 @@ vi.mock('uuid', () => ({
   v4: () => `uuid-${uuidState.counter++}`,
 }))
 
+// @mlc-ai/web-tokenizers is a WASM module that doesn't init in happy-dom.
+// Anthropic / NovelAI / Llama / Cohere / Mistral / etc. tokenizers route
+// through Tokenizer.fromJSON / fromSentencePiece + .encode. Stub the
+// module with a simple word-splitter so token counts are deterministic and
+// no WASM is touched.
+vi.mock('@mlc-ai/web-tokenizers', () => ({
+  Tokenizer: {
+    fromJSON: async () => ({
+      encode: (text: string) => (text.length === 0 ? [] : text.split(/\s+/)),
+    }),
+    fromSentencePiece: async () => ({
+      encode: (text: string) => (text.length === 0 ? [] : text.split(/\s+/)),
+    }),
+  },
+}))
+
 import { loadFixture } from '../__fixtures__/loadFixture'
 import {
   installProviderScript,
@@ -114,6 +130,10 @@ import {
 } from '../__fixtures__/providerFake'
 import { resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { assertOrRecord, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
+import {
+  isTokenizerUrl,
+  serveTokenizerFetch,
+} from '../__fixtures__/mocks/tokenizerFetch'
 import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelte'
 
 const FIXTURES = [
@@ -145,16 +165,35 @@ const FIXTURES = [
   'preview-prompt',
   'echo-basic',
   'openai-basic',
+  'anthropic-basic',
 ] as const
 
 describe('sendChat fixtures', () => {
+  let originalFetch: typeof globalThis.fetch
+
   beforeAll(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    originalFetch = globalThis.fetch
+    // Intercept the lazy tokenizer JSON/spiece fetches (Claude, NovelAI,
+    // Llama, Cohere, Mistral, ...). Other URLs pass through to the real
+    // fetch — currently nothing else fetches in this sweep, but we keep
+    // the pass-through to avoid masking accidental escapes.
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+      if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
+      return originalFetch(input as Parameters<typeof originalFetch>[0], init)
+    }) as typeof globalThis.fetch
   })
 
   afterAll(() => {
     vi.useRealTimers()
+    globalThis.fetch = originalFetch
   })
 
   beforeEach(() => {

@@ -73,6 +73,17 @@ vi.mock('uuid', () => ({
   v4: () => `uuid-${uuidState.counter++}`,
 }))
 
+vi.mock('@mlc-ai/web-tokenizers', () => ({
+  Tokenizer: {
+    fromJSON: async () => ({
+      encode: (text: string) => (text.length === 0 ? [] : text.split(/\s+/)),
+    }),
+    fromSentencePiece: async () => ({
+      encode: (text: string) => (text.length === 0 ? [] : text.split(/\s+/)),
+    }),
+  },
+}))
+
 import { loadFixture } from '../__fixtures__/loadFixture'
 import {
   getServerCompletionCalls,
@@ -90,7 +101,7 @@ import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelt
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-const DUAL_MODE_FIXTURES = ['echo-basic', 'openai-basic'] as const
+const DUAL_MODE_FIXTURES = ['echo-basic', 'openai-basic', 'anthropic-basic'] as const
 
 interface ExpectedCall {
   provider: string
@@ -111,6 +122,12 @@ const EXPECTED_CALL: Record<(typeof DUAL_MODE_FIXTURES)[number], ExpectedCall> =
     model: 'gpt-4o',
     stream: false,
     options: { openai: { apiKey: 'sk-fixture', maxTokens: 200 } },
+  },
+  'anthropic-basic': {
+    provider: 'anthropic',
+    model: 'claude-opus-4-7',
+    stream: false,
+    options: { anthropic: { apiKey: 'sk-ant-fixture', maxTokens: 200 } },
   },
 }
 

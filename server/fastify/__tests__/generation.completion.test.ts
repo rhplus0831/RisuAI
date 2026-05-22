@@ -158,11 +158,11 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       method: 'POST',
       url: '/api/v1/generate/completion',
       headers: { 'risu-auth': assertion },
-      payload: { ...basePayload, provider: 'anthropic' },
+      payload: { ...basePayload, provider: 'gemini' },
     })
     expect(res.statusCode).toBe(501)
     expect(res.json()).toEqual({
-      reason: 'provider not implemented yet: anthropic',
+      reason: 'provider not implemented yet: gemini',
     })
   })
 
@@ -475,3 +475,108 @@ describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', (
     expect(headers['HTTP-Referer']).toBe('https://risuai.xyz')
   })
 })
+
+describe('Phase 6-5 POST /api/v1/generate/completion (anthropic)', () => {
+  const anthropicPayload = {
+    provider: 'anthropic',
+    model: 'claude-3-5-sonnet-20241022',
+    messages: [{ role: 'user', content: 'hi' }],
+    stream: false,
+    options: {
+      anthropic: { apiKey: 'sk-ant-test', maxTokens: 512 },
+    },
+  }
+
+  it('400s when options.anthropic.apiKey is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...anthropicPayload, options: { anthropic: {} } },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'options.anthropic.apiKey is required' })
+  })
+
+  it('non-streaming forwards to /messages with x-api-key + anthropic-version and returns text', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'claude-3-5-sonnet-20241022',
+          content: [{ type: 'text', text: 'hi from claude' }],
+          stop_reason: 'end_turn',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...anthropicPayload,
+        options: {
+          anthropic: { apiKey: 'sk-ant-test', maxTokens: 512, system: 'be brief' },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      type: 'success',
+      result: 'hi from claude',
+      model: 'claude-3-5-sonnet-20241022',
+    })
+
+    expect(captured!.url).toBe('https://api.anthropic.com/v1/messages')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['x-api-key']).toBe('sk-ant-test')
+    expect(headers['anthropic-version']).toBe('2023-06-01')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('claude-3-5-sonnet-20241022')
+    expect(sent.max_tokens).toBe(512)
+    expect(sent.system).toBe('be brief')
+    expect(sent.stream).toBe(false)
+  })
+
+  it('streaming relays content_block_delta + message_stop into the normalized envelope', async () => {
+    const enc = new TextEncoder()
+    const upstreamFrames = [
+      `event: message_start\ndata: {}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ delta: { type: 'text_delta', text: 'hi' } })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ delta: { stop_reason: 'end_turn' } })}\n\n`,
+      `event: message_stop\ndata: {}\n\n`,
+    ]
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const f of upstreamFrames) controller.enqueue(enc.encode(f))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...anthropicPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'hi' })}\n\n` +
+        `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
+    )
+  })
+})
+

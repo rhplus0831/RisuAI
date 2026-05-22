@@ -14,6 +14,8 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       return 'openai'
     case LLMFormat.NanoGPT:
       return 'nanogpt'
+    case LLMFormat.Anthropic:
+      return 'anthropic'
     default:
       return null
   }
@@ -36,6 +38,14 @@ function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
   return 'openai'
 }
 
+function isVanillaAnthropic(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (aiModel === 'reverse_proxy') return false
+  if (aiModel.startsWith('xcustom:::')) return false
+  if (targ.modelInfo?.endpoint) return false
+  return true
+}
+
 export function getServerCompletionProvider(
   targ: RequestDataArgumentExtended,
 ): string | null {
@@ -47,6 +57,7 @@ export function getServerCompletionProvider(
   const provider = formatToServerProvider(targ.modelInfo.format)
   if (provider === null) return null
   if (provider === 'openai') return selectOpenAIVariant(targ)
+  if (provider === 'anthropic' && !isVanillaAnthropic(targ)) return null
   return provider
 }
 
@@ -64,6 +75,29 @@ export function resolveProviderModel(
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
   return targ.modelInfo?.id ?? targ.aiModel ?? ''
+}
+
+/**
+ * Anthropic doesn't accept role='system' in the messages array — system
+ * prompts go to a top-level `system` field. Extract every string-content
+ * system message from the formated array, concatenate with `\n\n`, and
+ * return both pieces. Multimodal-content system messages are skipped (not
+ * yet supported on the server-routed path).
+ */
+export function extractAnthropicSystem(
+  formated: Array<{ role: string; content: unknown }>,
+): { messages: typeof formated; system?: string } {
+  const systemTexts: string[] = []
+  const messages: typeof formated = []
+  for (const m of formated) {
+    if (m.role === 'system' && typeof m.content === 'string' && m.content.length > 0) {
+      systemTexts.push(m.content)
+      continue
+    }
+    messages.push(m)
+  }
+  const system = systemTexts.length > 0 ? systemTexts.join('\n\n') : undefined
+  return system === undefined ? { messages } : { messages, system }
 }
 
 function buildProviderOptions(
@@ -100,6 +134,12 @@ function buildProviderOptions(
     if (typeof targ.maxTokens === 'number') openrouter.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') openrouter.temperature = targ.temperature
     return { openrouter }
+  }
+  if (provider === 'anthropic') {
+    const anthropic: Record<string, unknown> = { apiKey: db.claudeAPIKey ?? '' }
+    if (typeof targ.maxTokens === 'number') anthropic.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') anthropic.temperature = targ.temperature
+    return { anthropic }
   }
   return {}
 }
@@ -190,12 +230,25 @@ export async function requestServerCompletion(
 ): Promise<requestDataResponse> {
   const useStreaming = targ.useStreaming === true
   const auth = await getNodeServerProxyAuth()
+  let messages: unknown = targ.formated
+  const options = buildProviderOptions(targ, provider)
+  if (provider === 'anthropic' && Array.isArray(targ.formated)) {
+    const extracted = extractAnthropicSystem(
+      targ.formated as Array<{ role: string; content: unknown }>,
+    )
+    messages = extracted.messages
+    if (extracted.system !== undefined) {
+      const anthropic = (options.anthropic ?? {}) as Record<string, unknown>
+      anthropic.system = extracted.system
+      options.anthropic = anthropic
+    }
+  }
   const payload = {
     provider,
     model: resolveProviderModel(targ, provider),
-    messages: targ.formated,
+    messages,
     stream: useStreaming,
-    options: buildProviderOptions(targ, provider),
+    options,
   }
 
   let response: Response
