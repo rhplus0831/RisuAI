@@ -65,7 +65,7 @@ system hoist + risu:: header).
 | 6-14  | `f6b88f01` | Added Kobold and ooba legacy buffered dispatchers and tests.                                                              |
 | 6-16  | `c919e683` | Added native Ollama `/api/chat` dispatcher with NDJSON streaming, adapter `db.ollamaURL` gate, and route + dispatcher tests. |
 | 6-17  | `da7d05b8` | Routed `xcustom:::<id>` OAI-compat through the openai dispatcher with the `additionalParams` body/header overlay DSL ported server-side. |
-| 6-18  | _pending_  | Routed `reverse_proxy` OAI-compat through the openai dispatcher with URL autofill, `risu::` → `X-Proxy-Risu` header lift, server-side `oobaSystemHoist`, and `db.additionalParams` overlay. |
+| 6-18  | `425d8302` | Routed `reverse_proxy` OAI-compat through the openai dispatcher with URL autofill, `risu::` → `X-Proxy-Risu` header lift, server-side `oobaSystemHoist`, and `db.additionalParams` overlay. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
