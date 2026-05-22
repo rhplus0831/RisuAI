@@ -677,6 +677,65 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
+  it('routes reverse_proxy under Cohere to provider "cohere" when db.forceReplaceUrl and db.proxyKey are set', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/chat',
+      proxyKey: 'sk-proxy',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.Cohere,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('cohere')
+  })
+
+  it('refuses reverse_proxy under Cohere when db.proxyKey is empty', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/chat',
+      proxyKey: '',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.Cohere,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes xcustom::: under Cohere to provider "cohere" when entry.format is Cohere', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::cohere-clone',
+          internalId: 'command-fake',
+          url: 'https://example.com/v1/chat',
+          key: 'sk-x',
+          format: LLMFormat.Cohere,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::cohere-clone',
+        modelInfo: {
+          id: 'xcustom:::cohere-clone',
+          format: LLMFormat.Cohere,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('cohere')
+  })
+
   it('refuses Mistral-format models with an endpoint override', () => {
     const r = getServerCompletionProvider(
       makeTarg({
@@ -1610,6 +1669,82 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     await requestServerCompletion(targ, 'cohere', null)
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.options.cohere).toEqual({ apiKey: 'co-fixture' })
+  })
+
+  it('emits options.cohere with proxyKey + autofilled baseUrl + additionalParams for reverse_proxy under Cohere', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      customProxyRequestModel: 'command-on-proxy',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Custom', 'cool'],
+        ['extra.knob', '1'],
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.Cohere,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'cohere', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('cohere')
+    expect(sent.options.cohere.apiKey).toBe('sk-proxy')
+    expect(sent.options.cohere.baseUrl).toBe('https://proxy.example.com/v1')
+    // safetyMode='NONE' is the older-variant default; reverse_proxy aiModel
+    // doesn't match the two newer command-r releases, so this stays on.
+    expect(sent.options.cohere.safetyMode).toBe('NONE')
+    expect(sent.options.cohere.additionalParams).toEqual([
+      ['header::X-Custom', 'cool'],
+      ['extra.knob', '1'],
+    ])
+  })
+
+  it('routes xcustom::: under Cohere with entry url/key + parsed additionalParams', async () => {
+    seedDb({
+      cohereAPIKey: 'co-not-used',
+      customModels: [
+        {
+          id: 'xcustom:::cohere-clone',
+          internalId: 'command-acme',
+          url: 'https://acme.example.com/v1/chat',
+          key: 'sk-acme',
+          format: LLMFormat.Cohere,
+          params: 'header::X-Custom=cool\nextra.flag=true',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'xcustom:::cohere-clone',
+      modelInfo: {
+        id: 'xcustom:::cohere-clone',
+        format: LLMFormat.Cohere,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'cohere', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('cohere')
+    expect(sent.options.cohere.apiKey).toBe('sk-acme')
+    expect(sent.options.cohere.baseUrl).toBe('https://acme.example.com/v1')
+    expect(sent.options.cohere.additionalParams).toEqual([
+      ['header::X-Custom', 'cool'],
+      ['extra.flag', 'true'],
+    ])
   })
 
   it('emits options.horde.prompt flattened via applyChatTemplate; wire model is the part after horde:::', async () => {

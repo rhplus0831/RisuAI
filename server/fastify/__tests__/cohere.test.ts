@@ -185,6 +185,70 @@ describe('runCohere', () => {
     expect(sent.p).toBe(0.85)
   })
 
+  it('forwards extraHeaders into the upstream request alongside Bearer', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ text: 'ok' })
+    })
+    const resolved = resolveCohereRequest({
+      model: 'command-r-plus',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'co',
+      extraHeaders: { 'X-Proxy-Risu': 'RisuAI' },
+      signal: new AbortController().signal,
+    })!
+    await runCohere(resolved)
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(headers.authorization).toBe('Bearer co')
+  })
+
+  it('applies additionalParams to the body + headers after the default payload is built', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ text: 'ok' })
+    })
+    const resolved = resolveCohereRequest({
+      model: 'command-r-plus',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'co',
+      temperature: 0.5,
+      additionalParams: [
+        ['header::X-Custom', 'one'],
+        ['extra.flag', 'true'],
+        ['extra.nested.value', 'json::[1, 2]'],
+        ['temperature', '{{none}}'],
+      ],
+      signal: new AbortController().signal,
+    })!
+    await runCohere(resolved)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.temperature).toBeUndefined()
+    expect(sent.extra).toEqual({ flag: true, nested: { value: [1, 2] } })
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Custom']).toBe('one')
+    expect(headers.authorization).toBe('Bearer co')
+  })
+
+  it('strips a trailing slash from baseUrl before appending /chat', async () => {
+    let captured: { url: string } | null = null
+    vi.stubGlobal('fetch', async (url: string) => {
+      captured = { url }
+      return ok({ text: 'x' })
+    })
+    const resolved = resolveCohereRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'co',
+      baseUrl: 'https://proxy.example.com/v1/',
+      signal: new AbortController().signal,
+    })!
+    await runCohere(resolved)
+    expect(captured!.url).toBe('https://proxy.example.com/v1/chat')
+  })
+
   it('folds preamble into the message with `system:` prefix when there is no chat history', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

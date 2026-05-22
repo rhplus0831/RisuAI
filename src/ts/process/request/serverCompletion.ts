@@ -100,6 +100,30 @@ function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
 }
 
 /**
+ * Cohere counterpart to `resolveReverseProxyUrl`: mirror the local URL
+ * shape at `src/ts/process/request/request.ts:1377` (which talks to
+ * `/v1/chat`), then strip the trailing `/chat` so the server-side
+ * dispatcher can re-append it itself. Cohere has no `risu::` prefix
+ * handling.
+ */
+function resolveReverseProxyCohereUrl(rawUrl: string, autofill: boolean): string {
+  let url = rawUrl
+  if (autofill) {
+    if (url.endsWith('v1')) {
+      url += '/chat'
+    } else if (url.endsWith('v1/')) {
+      url += 'chat'
+    } else if (!(url.endsWith('chat') || url.endsWith('chat/'))) {
+      url += url.endsWith('/') ? 'v1/chat' : '/v1/chat'
+    }
+  }
+  // Strip trailing /chat (or /chat/) since the server appends it.
+  const trimmed = url.replace(/\/+$/, '')
+  if (trimmed.endsWith('/chat')) return trimmed.slice(0, -'/chat'.length)
+  return trimmed
+}
+
+/**
  * Anthropic counterpart to `resolveReverseProxyUrl`: mirror the local
  * autofill at `src/ts/process/request/anthropic.ts:90-101` (which appends
  * `/v1/messages` onto bare URLs), then strip the trailing `/messages` so
@@ -252,10 +276,29 @@ function isVanillaMistral(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+/**
+ * Cohere has its own wire shape (`POST /chat` with `message` + `chat_history`).
+ * reverse_proxy + xcustom Cohere ride the existing cohere dispatcher with a
+ * Cohere-specific URL autofill helper. `request.ts` mutates
+ * `targ.modelInfo.format = db.customAPIFormat` before the adapter runs, so
+ * reverse_proxy with `customAPIFormat = Cohere` shows up to the gate with
+ * `format === LLMFormat.Cohere`. Hardcoded-endpoint models keep their local
+ * dispatch path.
+ */
 function isVanillaCohere(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
+  if (aiModel === 'reverse_proxy') {
+    const db = getDatabase()
+    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
+    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
+    return true
+  }
+  if (aiModel.startsWith('xcustom:::')) {
+    const entry = findXcustomEntry(aiModel)
+    if (entry === null) return false
+    if (entry.format !== LLMFormat.Cohere) return false
+    return true
+  }
   if (targ.modelInfo?.endpoint) return false
   return true
 }
@@ -670,13 +713,38 @@ function buildProviderOptions(
     return { mistral }
   }
   if (provider === 'cohere') {
-    const cohere: Record<string, unknown> = { apiKey: db.cohereAPIKey ?? '' }
+    const cohere: Record<string, unknown> = {}
+    const aiModel = targ.aiModel ?? ''
+    if (aiModel === 'reverse_proxy') {
+      cohere.apiKey = db.proxyKey ?? ''
+      const autofill = db.autofillRequestUrl !== false
+      cohere.baseUrl = resolveReverseProxyCohereUrl(db.forceReplaceUrl ?? '', autofill)
+      if (Array.isArray(db.additionalParams) && db.additionalParams.length > 0) {
+        cohere.additionalParams = db.additionalParams
+      }
+    } else if (aiModel.startsWith('xcustom:::')) {
+      const entry = findXcustomEntry(aiModel)
+      if (entry !== null) {
+        cohere.apiKey = entry.key
+        // xcustom URL is stored as the full /v1/chat URL; strip the trailing
+        // /chat so the server can re-append it.
+        const trimmed = entry.url.replace(/\/+$/, '')
+        cohere.baseUrl = trimmed.endsWith('/chat')
+          ? trimmed.slice(0, -'/chat'.length)
+          : trimmed
+        const params = parseXcustomParams(entry.params)
+        if (params.length > 0) cohere.additionalParams = params
+      }
+    } else {
+      cohere.apiKey = db.cohereAPIKey ?? ''
+    }
     if (typeof targ.temperature === 'number') cohere.temperature = targ.temperature
     // Older Cohere command-r variants accept safety_mode='NONE'; the two newer
     // command-r releases reject it. Mirror the local switch.
-    const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+    const modelIdForSafety = aiModel || (targ.modelInfo?.id ?? '')
     const isNewerCommandR =
-      aiModel === 'cohere-command-r-03-2024' || aiModel === 'cohere-command-r-plus-04-2024'
+      modelIdForSafety === 'cohere-command-r-03-2024' ||
+      modelIdForSafety === 'cohere-command-r-plus-04-2024'
     if (!isNewerCommandR) cohere.safetyMode = 'NONE'
     return { cohere }
   }

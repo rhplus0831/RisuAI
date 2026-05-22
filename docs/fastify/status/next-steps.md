@@ -6,8 +6,8 @@ Use this list to pick the next chunk of work. Phase 5 closed on
 2026-05-22 with all 28 extraction slices landed; the historical
 slice record now lives in
 [`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 is active,
-and commit history through Phase 6-23 shows provider coverage
-landed through Mistral `reverse_proxy` + `xcustom:::id` with the
+and commit history through Phase 6-24 shows provider coverage
+landed through Cohere `reverse_proxy` + `xcustom:::id` with the
 shared `additionalParams` overlay.
 
 ## Immediate
@@ -32,7 +32,11 @@ shared `additionalParams` overlay.
    the Mistral format (URL autofill to `/v1/chat/completions`
    via the same OAI-compat helper, plus the shared additionalParams
    overlay through a `buildRequestInit` refactor of the mistral
-   dispatcher), and Vertex AI Gemini (RS256 JWT signed
+   dispatcher), `reverse_proxy` + `xcustom:::id` under the Cohere
+   format (URL autofill to `/v1/chat` via a dedicated
+   `resolveReverseProxyCohereUrl` helper, plus shared
+   additionalParams via the cohere `buildRequestInit` refactor),
+   and Vertex AI Gemini (RS256 JWT signed
    with Node `crypto`, in-process Bearer cache keyed by
    service-account email, `<region>-aiplatform.googleapis.com`
    URL with the `global` carveout for Gemini 3 preview models),
@@ -52,12 +56,12 @@ shared `additionalParams` overlay.
    ooba OAI-compatible `/v1/completions` (deferred to Phase 7
    per [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md)),
    and reverse_proxy / xcustom variants whose
-   `db.customAPIFormat` points at Cohere / OpenAI Responses /
-   OpenAI Legacy Instruct (each needs its own slice to port the
-   additionalParams overlay to those dispatchers). Keep the 33
-   local sendChat snapshots, the 7-fixture server-backed sweep,
-   and the Fastify generation tests green (`pnpm api:test`: 423,
-   `pnpm test`: 576 + 4 skipped).
+   `db.customAPIFormat` points at OpenAI Responses / OpenAI Legacy
+   Instruct (each needs its own slice to port the additionalParams
+   overlay to those dispatchers). Keep the 33 local sendChat
+   snapshots, the 7-fixture server-backed sweep, and the Fastify
+   generation tests green (`pnpm api:test`: 428,
+   `pnpm test`: 581 + 4 skipped).
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments
@@ -94,6 +98,7 @@ shared `additionalParams` overlay.
 | 6-21  | `704c1313` | Added AWS Bedrock Claude (buffered-only): pure-JS SigV4 helper, Anthropic Messages body with `anthropic_version: bedrock-2023-05-31`, `us.` / `global.` model prefix per claude-4.5+ heuristic. |
 | 6-22  | `5e2975ec` | Added Stable Horde text dispatcher (buffered-only): 2 s poll loop on `/v2/generate/text/status/<id>` with a 5 min wall-clock timeout, fire-and-forget DELETE on abort. Client pre-flattens via `applyChatTemplate` and unstringlizes the result. |
 | 6-23  | `755bbe83` | Ported the `additionalParams` overlay to the mistral dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.Mistral` with URL autofill to `/v1/chat/completions` (reuses the OAI-compat `resolveReverseProxyUrl` helper) and the `risu::` → `X-Proxy-Risu` header lift. |
+| 6-24  | _pending_  | Ported the `additionalParams` overlay to the cohere dispatcher via a `buildRequestInit` refactor; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.Cohere` with a dedicated `resolveReverseProxyCohereUrl` autofill helper for the `/v1/chat` wire path. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

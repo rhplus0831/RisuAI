@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 
 export interface CohereRequest {
@@ -13,6 +14,19 @@ export interface CohereRequest {
   topP?: number
   presencePenalty?: number
   frequencyPenalty?: number
+  /**
+   * Headers to merge into the upstream request. Used by reverse_proxy to
+   * forward `X-Proxy-Risu: RisuAI` when the user prefixed their URL with
+   * `risu::`.
+   */
+  extraHeaders?: Record<string, string>
+  /**
+   * Pre-validated `[key, value][]` pairs from the SPA's additionalParams /
+   * xcustom `params` DSL. Applied after the dispatcher builds its default
+   * body + headers, so the user DSL has the last word. See
+   * `./additionalParams.ts` for semantics.
+   */
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -32,6 +46,8 @@ interface CohereResolveInput {
   topP?: unknown
   presencePenalty?: unknown
   frequencyPenalty?: unknown
+  extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -165,6 +181,8 @@ export function resolveCohereRequest(input: CohereResolveInput): CohereRequest |
     topP,
     presencePenalty,
     frequencyPenalty,
+    extraHeaders: input.extraHeaders,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
@@ -198,11 +216,26 @@ function endpoint(req: CohereRequest): string {
   return `${base}/chat`
 }
 
-function headers(req: CohereRequest): Record<string, string> {
-  return {
+function buildHeaders(req: CohereRequest): Record<string, string> {
+  const headers: Record<string, string> = {
     'content-type': 'application/json',
     authorization: `Bearer ${req.apiKey}`,
   }
+  if (req.extraHeaders !== undefined) {
+    for (const [k, v] of Object.entries(req.extraHeaders)) headers[k] = v
+  }
+  return headers
+}
+
+function buildRequestInit(
+  req: CohereRequest,
+): { body: string; headers: Record<string, string> } {
+  const body = buildPayload(req)
+  const headers = buildHeaders(req)
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, headers, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers }
 }
 
 interface CohereResponse {
@@ -217,12 +250,13 @@ export async function runCohere(req: CohereRequest): Promise<CompletionResult> {
     return { type: 'fail', result: 'aborted', aborted: true }
   }
 
+  const init = buildRequestInit(req)
   let response: Response
   try {
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {

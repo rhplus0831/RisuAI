@@ -166,6 +166,13 @@ interface CohereOptions {
   topP?: unknown
   presencePenalty?: unknown
   frequencyPenalty?: unknown
+  additionalParams?: unknown
+  /**
+   * Headers to merge into the upstream request. Used by reverse_proxy to
+   * inject `X-Proxy-Risu: RisuAI` when the user prefixed their URL with
+   * `risu::`.
+   */
+  extraHeaders?: Record<string, string>
 }
 
 interface GeminiOptions {
@@ -507,6 +514,20 @@ function coerceMistralAdditionalParams(
     return {
       ok: false,
       error: 'options.mistral.additionalParams must be an array of [string, string] pairs',
+    }
+  }
+  return { ok: true, value: coerced.length > 0 ? coerced : undefined }
+}
+
+function coerceCohereAdditionalParams(
+  options: CohereOptions,
+): { ok: true; value: Array<[string, string]> | undefined } | { ok: false; error: string } {
+  if (options.additionalParams === undefined) return { ok: true, value: undefined }
+  const coerced = coerceAdditionalParams(options.additionalParams)
+  if (coerced === null) {
+    return {
+      ok: false,
+      error: 'options.cohere.additionalParams must be an array of [string, string] pairs',
     }
   }
   return { ok: true, value: coerced.length > 0 ? coerced : undefined }
@@ -994,6 +1015,11 @@ async function handleCohereBuffered(
       badRequest(reply, 'options.cohere.apiKey is required')
       return
     }
+    const ap = coerceCohereAdditionalParams(options)
+    if (!ap.ok) {
+      badRequest(reply, ap.error)
+      return
+    }
     const resolved = resolveCohereRequest({
       model,
       messages,
@@ -1005,6 +1031,8 @@ async function handleCohereBuffered(
       topP: options.topP,
       presencePenalty: options.presencePenalty,
       frequencyPenalty: options.frequencyPenalty,
+      extraHeaders: options.extraHeaders,
+      additionalParams: ap.value,
       signal,
     })
     if (!resolved) {

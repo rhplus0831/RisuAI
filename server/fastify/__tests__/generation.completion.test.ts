@@ -1066,6 +1066,75 @@ describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
   })
 })
 
+describe('Phase 6-24 POST /api/v1/generate/completion (cohere additionalParams + reverse_proxy)', () => {
+  it('applies additionalParams overlay to the cohere body + headers', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(JSON.stringify({ text: 'rp ok' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'cohere',
+        model: 'command-on-proxy',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          cohere: {
+            apiKey: 'sk-proxy',
+            baseUrl: 'https://proxy.example.com/v1',
+            extraHeaders: { 'X-Proxy-Risu': 'RisuAI' },
+            additionalParams: [
+              ['header::X-Custom', 'cool'],
+              ['extra.flag', 'true'],
+            ],
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'rp ok' })
+    expect(captured!.url).toBe('https://proxy.example.com/v1/chat')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.extra).toEqual({ flag: true })
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Custom']).toBe('cool')
+    expect(headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(headers.authorization).toBe('Bearer sk-proxy')
+  })
+
+  it('400s with a specific error when options.cohere.additionalParams is malformed', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'cohere',
+        model: 'command-r-plus-04-2024',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          cohere: {
+            apiKey: 'co-test',
+            additionalParams: 'oops',
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\.cohere\.additionalParams/)
+  })
+})
+
 describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () => {
   it('forwards to /v1/responses with input items', async () => {
     let captured: { url: string; init: RequestInit } | null = null
