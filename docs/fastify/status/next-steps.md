@@ -11,21 +11,23 @@ the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
 deferred until a fixture demands it. Phase 7 (prompt assembly)
-is in progress as of 2026-05-23 — eleven slices landed (7-1
+is in progress as of 2026-05-23 — twelve slices landed (7-1
 scaffold; 7-2a/b/c canonical `risuChatParser` extracted
 Svelte-free + wired into the server via `expandVariables`; 7-3
 static prompt sections; 7-4 plain prompt sections; 7-5a minimal
 history walk; 7-6a minimal regex script processor; 7-5b
 per-message scripts + sendName + `<Thoughts>`; 7-6b scripts
 `@@`-action prefixes; 7-6c `ableFlag` DSL + outScript prep + flag
-defaults). The remaining assembly modules under
-`server/fastify/src/prompt/` (`assemble`, `lorebook`, `templates`,
-`tokens`, `triggers`) are still stubs; `history.ts` now covers
-the deterministic walk, per-message scripts, the sendName
-wrapper, and `<Thoughts>` extraction (remaining skip list in
-7-5b), and `scripts.ts` covers the regex chain, five `@@`-action
-prefixes, and the `ableFlag` DSL with `cbs` / `no_end_nl` actions
-(remaining skip list in 7-6c). The tiered roadmap for the rest of
+defaults; 7-6d module regex scripts). The remaining assembly
+modules under `server/fastify/src/prompt/` (`assemble`,
+`lorebook`, `templates`, `tokens`, `triggers`) are still stubs;
+`history.ts` now covers the deterministic walk, per-message
+scripts, the sendName wrapper, and `<Thoughts>` extraction
+(remaining skip list in 7-5b), and `scripts.ts` covers the full
+SPA-parity regex chain (preset + character + module regex,
+`@@`-actions, `ableFlag` DSL, `cbs` / `no_end_nl` actions).
+[`ROADMAP.md`](../../../ROADMAP.md) at the repo root has the
+strategic view of the remaining ~25 slices. The tiered roadmap for the rest of
 Phase 7 lives in the
 [Remaining roadmap](../phases/phase-7-prompt-assembly.md#remaining-roadmap)
 section of the phase doc; [`HANDOVER.md`](../../../HANDOVER.md) is
@@ -33,49 +35,47 @@ the short pickup runbook.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-6d — module regex scripts.**
-   `processScript` currently builds its script chain from
-   `db.presetRegex` + `char.customscript`. The SPA also concats
-   `getModuleRegexScripts()` (`src/ts/process/scripts.ts:161`),
-   which walks the active modules and joins their `regex[]`.
+1. **Continue Phase 7 with slice 7-5c — history multimodal
+   inlays + `{{asset_prompt::}}`.** `history.ts` currently does
+   not parse inlay tags or asset prompts; the SPA's
+   `formatHistoryMessage` strips `{{inlay::…}}` /
+   `{{inlayed::…}}` / `{{inlayeddata::…}}` from `char`-role
+   message content, resolves each inlay id, and folds the
+   result into a `multimodals: MultiModal[]` array on the
+   `OpenAIChat`. It also walks `{{asset_prompt::…}}` against
+   `currentChar.additionalAssets` + module assets and pushes
+   matching images into the same array.
 
    Slice scope:
-   - Add a helper mirroring
-     `src/ts/process/modules.ts:381-405` `getModules()`: resolve
-     the active module id list from `db.enabledModules`,
-     `currentChat.modules`, `currentChar.modules`, and
-     `db.moduleIntergration` (comma-separated); then filter
-     `db.modules` by `id` or `namespace` match and dedupe by `id`.
-     Skip the SPA's `lastModules` / `lastModuleData` memoization
-     (server runs the chain once per assembly).
-   - Add `getModuleRegexScripts(modules)` returning the
-     concatenated `regex[]` (`modules.ts:454-466`).
-   - Wire `processScript` to append module regex after
-     `char.customscript` so the chain stays
-     `presetRegex` → `char.customscript` → `moduleRegex`.
+   - Add an inlay-lookup seam to `history.ts` that the route
+     layer can populate with a `Map<string, InlayAsset>` from
+     request-body `inlayAssets`. For prompt-leaf testing the
+     seam defaults to an empty map.
+   - Parse `{{inlay::…}}` / `{{inlayed::…}}` /
+     `{{inlayeddata::…}}` out of `char`-role message content
+     (always stripped; `user` role keeps the tag literal per
+     `formatHistoryMessage.ts:84-91`). Push matched inlays to
+     `chat.multimodals` (image / video / audio / signature).
+   - Walk `{{asset_prompt::…}}` against
+     `currentChar.additionalAssets` and module assets (port a
+     `getModuleAssets()` helper via the existing
+     `getActiveModules` plumbing from 7-6d).
 
-   Skip-list (defer to 7-6e or beyond): `module.trigger` /
-   `module.lorebook` / `module.assets` / `module.cjs` (their
-   consumers ship in 7-5c, 7-7, 7-9); script-cache (pure
-   optimization — server runs each chain fresh per assembly);
-   `runTrigger('display', …)` for `editdisplay` mode (blocked on
-   Triggers 7-9); `runLuaEditTrigger` and `pluginV2[mode]`
-   (browser-only).
+   Skip-list: the SPA's `readImage` byte resolution (we never
+   read bytes off disk in the prompt leaf — the route layer
+   hands them in); `runImageEmbedding` (transformers,
+   browser-only); `getInlayAsset` IndexedDB read; start trigger
+   (7-5d, blocked on 7-9c); tokenizer accumulation + depth
+   prompts (7-5e, blocked on 7-7e + 7-8c).
 
-   Other Tier 1 candidates remain available: **7-5c** (multimodal
-   inlays + `{{asset_prompt::}}`; the assets path benefits from a
-   clearer request-body inlay payload interface that Tier 3 will
-   shape — reasonable to wait) and **7-7a** (constant lorebook;
-   the SPA orchestrator still doesn't slice cleanly without
-   porting the decorator system first — revisit). The decision on
-   the three deferred providers (Ooba OAI-compatible, NovelAI
-   text, NovelList) remains **D — wait for the server-side
-   flatten**; memos in
+   The decision on the three deferred providers (Ooba
+   OAI-compatible, NovelAI text, NovelList) remains **D — wait
+   for the server-side flatten**; memos in
    [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md) and
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 557
+   tests green. Last recorded baselines are `pnpm api:test`: 569
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -134,6 +134,7 @@ the short pickup runbook.
 | 7-5b  | `7ad226b9` | Per-message scripts + sendName wrapper + `<Thoughts>` extraction on the history walk. Each history message body now flows through `expandVariables` (chara + role) then `processScript('editprocess', {chatRole})`; first message body also runs through `processScript`. Optional `usingPromptTemplate` arg (defaults `false`) gates the sendName wrappers — first message gets `${currentChar.name}: ` + `attr: ['nameAdded']`, per-message gets `<{{char}}'s Message>\n{slot}\n</{{char}}'s Message>` resolved against the active currentChar (the SPA's `chara: msg.saying` override at `formatHistoryMessage.ts:140` is shadowed by `cbs.ts:184` reading currentChar from scope first; documented inline). `<Thoughts>` always stripped from content, captured to `chat.thoughts` when `maxThoughtTagDepth === -1 \|\| maxThoughtTagDepth - totalCount <= index`. `memo` defaults to `msg.chatId`; missing chatIds get backfilled with `randomUUID()`. 13 new tests (api:test 516 → 529). Defers multimodal inlays + `{{asset_prompt::}}` (7-5c), start trigger (7-5d), tokenizer accumulation + depth prompts (7-5e).                                                                             |
 | 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes added to `processScript`. Five paths: `@@emo` no-op (documented server skip), `@@inject` (mutates `currentChat.message[chatID].data` with the pre-strip data and strips the match — Tier 3 routes will persist the chat blob after assembly), `@@move_top` / `@@move_bottom` (matchAll-aware extraction with `$1` / `$&` / `$<…>` substitution, prepend/append with `\n`), `@@repeat_back` (no-match branch only, walks previous same-role with `firstMessage` / `alternateGreetings[fmIndex]` fallback, four positional modifiers). Public signature grew `chatID = -1` and `currentChat?: Chat` positional args; `history.ts` threads `index` + `currentChat` so per-message `@@inject` and `@@repeat_back` fire correctly. Two documented SPA divergences: resets `reg.lastIndex = 0` after the dispatching `reg.test()` so `@@move_top g` finds all matches (SPA loses the first one via lastIndex leak at `scripts.ts:216/254`); adds an r-null guard in `@@repeat_back` (SPA accesses `r[0]` without one at `scripts.ts:306`). 16 new tests (api:test 529 → 545). Defers `ableFlag` `<order, actions>` DSL (7-6c), script-cache (7-6d), module regex scripts (7-6e). |
 | 7-6c  | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + flag defaults. Added `parseScripts()` for the `<order N, action…>` meta DSL with stable-sort by `order desc`; plumbed `actions[]` into the dispatcher so `<inject>` / `<move_top>` / `<move_bottom>` / `<repeat_back>` match the `@@`-prefix paths (7-6b); added `cbs` (pre-expand `script.in`) and `no_end_nl` (suppress trailing-`>` newline) actions; ported the outScript prep pipeline (`{{data}}` self-substitute is a SPA no-op kept for parity; `>`-ending auto-newline gated by `no_end_nl`). Fixed two SPA-parity bugs the earlier 7-6a tests silently asserted wrong: default flag is `'g'` (not `'u'`); `script.flag` is honored only when `ableFlag === true` (without it the SPA silently overrides to `'g'`). `@@move_top` / `@@move_bottom` now strip `g` (SPA "temperary fix"). 12 new tests + 4 existing assertions corrected (api:test 545 → 557). Defers script-cache and module regex scripts to 7-6d/e.                                                                                                                                                                                                                      |
+| 7-6d  | `cb5675d8` | Module regex scripts wired into `processScript`. New `server/fastify/src/prompt/modules.ts` ports `getModules()` + `getModuleRegexScripts()` from `src/ts/process/modules.ts`. `getActiveModules(database, currentChar?, currentChat?)` resolves the id list from `db.enabledModules`, `currentChat.modules`, `currentChar.modules`, and the comma-split `db.moduleIntergration`; filters `db.modules` by `id` / `namespace`; dedupes by `id`. `processScript` chain is now `presetRegex` → `char.customscript` → `moduleRegex`. Skips the SPA's `lastModules` / `lastModuleData` memoization (server runs each chain fresh per assembly). Module triggers/lorebooks/assets/cjs stay browser-side; their consumers ship in 7-5c, 7-7, and 7-9. 9 helper unit tests in `modules.test.ts` + 3 integration tests in `scripts.test.ts` (api:test 557 → 569).                                                                                                                                                                                                                                                                                                                                                |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

@@ -2,7 +2,11 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `5aae492b feat: ableFlag <order, actions> DSL + outScript prep (Phase 7-6c)`
+Head: `cb5675d8 feat: module regex scripts join the script chain (Phase 7-6d)`
+
+The strategic view of remaining Phase 7 slices lives in
+[`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
+handoff with the current head, baselines, and the next pickup.
 
 This is the short runbook for picking up **Phase 7 in progress**.
 Phases 0-6 are closed. The detailed Phase 7 roadmap lives in
@@ -27,6 +31,7 @@ Landed Phase 7 slices:
 | 7-5b  | `7ad226b9` | Added per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill on the history walk.             |
 | 7-6b  | `8414d5c7` | Added scripts `@@`-action prefixes: `@@emo` (no-op), `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`.             |
 | 7-6c  | `5aae492b` | Added `ableFlag <order, actions>` DSL, `cbs`/`no_end_nl` actions, outScript prep, and SPA-parity flag defaults.              |
+| 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain via new `getActiveModules` + `getModuleRegexScripts` helpers.               |
 
 What is real in code:
 
@@ -37,69 +42,70 @@ What is real in code:
   `variables.ts`, `staticSections.ts`, `plainSections.ts`,
   `history.ts` (deterministic walk + per-message scripts +
   sendName wrapper + `<Thoughts>` extraction + memo/UUID
-  backfill), and `scripts.ts` (regex chain + five `@@`-action
-  prefixes + `ableFlag` `<order, actions>` DSL + `cbs` /
-  `no_end_nl` actions + outScript prep + SPA-parity flag
-  defaults) are implemented and tested.
+  backfill), `scripts.ts` (full SPA-parity regex chain: preset +
+  character + module regex, `@@`-actions, `ableFlag` DSL, `cbs`
+  / `no_end_nl` actions, outScript prep), and `modules.ts`
+  (`getActiveModules` + `getModuleRegexScripts`) are implemented
+  and tested.
 - `assemble.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
   `triggers.ts` still throw Phase 7 not-implemented errors.
 - `history.ts` does not yet handle multimodal inlays,
   `{{asset_prompt::}}`, start triggers, tokenizer accumulation, or
   depth prompts (7-5c/d/e).
-- `scripts.ts` does not yet handle module regex scripts,
-  script-cache, `runLuaEditTrigger`, `runTrigger('display', …)`,
-  or `pluginV2` hooks (7-6d/e).
+- `scripts.ts` does not yet handle script-cache,
+  `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
+  hooks — all 7-6e or out-of-scope.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-6c:
+Last recorded baselines after 7-6d:
 
-- `pnpm api:test`: 557 across 33 files
+- `pnpm api:test`: 569 across 34 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: clean
 
 ## Next Slice
 
-Pick up **7-6d - module regex scripts**.
+Pick up **7-5c - history multimodal inlays + `{{asset_prompt::}}`**.
 
-The SPA's `processScriptFull` extends the script chain with
-`getModuleRegexScripts()` (`scripts.ts:161`), which walks the
-enabled modules and concatenates their `regex` arrays. Server
-needs to read the active module list from the database snapshot.
+`history.ts` currently strips inlay-style tags only implicitly
+(via `expandVariables`). The SPA's `formatHistoryMessage` parses
+`{{inlay::…}}` / `{{inlayed::…}}` / `{{inlayeddata::…}}` tags
+out of `char`-role messages, resolves each inlay id, and folds
+the result into a `multimodals: MultiModal[]` array on the
+`OpenAIChat`. It also walks `{{asset_prompt::…}}` against
+`currentChar.additionalAssets` + module assets and pushes
+matching images into the same array.
 
 Slice scope:
 
-- Add a helper that mirrors `modules.ts:381-405`
-  `getModules()`: derives the active module id list from
-  `db.enabledModules`, `currentChat.modules`,
-  `currentChar.modules`, and `db.moduleIntergration` (comma list),
-  then filters `db.modules` by `id` or `namespace` match and
-  dedupes by id. Skip the SPA's lastModules / lastModuleData
-  memoization (server runs once per assembly).
-- Add `getModuleRegexScripts(modules)` returning the concatenated
-  `regex[]` from each module (`modules.ts:454-466`).
-- Wire `processScript` to concat
-  `presetRegex` -> `char.customscript` -> module regex into one
-  script list before parsing the `ableFlag` DSL. The ordering
-  matters: presets first, then character, then modules.
+- Add an inlay-lookup seam to `history.ts` that the route layer
+  can populate with a `Map<string, InlayAsset>` from
+  request-body `inlayAssets`. For prompt-leaf testing the seam
+  defaults to an empty map.
+- Parse `{{inlay::…}}` / `{{inlayed::…}}` / `{{inlayeddata::…}}`
+  out of `char`-role message content (always stripped; `user`
+  role keeps the tag literal per `formatHistoryMessage.ts:84-91`).
+- Push matched inlays to `chat.multimodals` (image / video /
+  audio / signature). Skip the SPA's
+  `runImageEmbedding` fallback (transformers, browser-only).
+- Walk `{{asset_prompt::…}}` against
+  `currentChar.additionalAssets` and module assets
+  (`getModuleAssets()` — port via the existing
+  `getActiveModules` helper from 7-6d).
+- Skip-list: the SPA's `readImage` byte resolution (we never
+  read bytes off disk in the prompt leaf; the route layer hands
+  them in). `runImageEmbedding`. `getInlayAsset` IndexedDB read.
 
-Skip-list (defer to 7-6e or beyond):
+Skip-list (deferred):
 
-- `module.trigger` / `module.lorebook` / `module.assets` / `module.cjs`
-  (their consumers ship in 7-5c, 7-7, 7-9).
-- script-cache (`generateScriptCacheKey` / `getScriptCache` /
-  `cacheScript`): pure optimization; the server runs each script
-  chain fresh per assembly. Revisit if profiling shows a hot path.
-- `runTrigger('display', …)` for `editdisplay` mode: blocked on
-  Triggers (7-9).
-- `runLuaEditTrigger`, `pluginV2[mode]`: browser-only.
+- Start trigger (7-5d, blocked on 7-9c).
+- Tokenizer accumulation + depth prompts (7-5e, blocked on
+  7-7e + 7-8c).
 
-Other Tier 1 candidates remain unblocked: **7-5c** (multimodal
-inlays + `{{asset_prompt::}}`; the assets path benefits from a
-clearer request-body inlay payload interface that Tier 3 will
-shape - reasonable to wait) and **7-7a** (constant lorebook; the
-SPA orchestrator still doesn't slice cleanly without porting the
-decorator system first - revisit).
+After 7-5c, the strategic view in [`ROADMAP.md`](ROADMAP.md)
+lists the next default pickup as **7-7a** (lorebook constants),
+which kicks off the multi-slice lorebook chain.
 
 Same rhythm: boot prompt-variable infra in tests with
 `beforeAll(() => bootPromptVariables())`, small database
