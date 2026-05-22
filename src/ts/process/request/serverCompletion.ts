@@ -60,7 +60,16 @@ export function formatToServerProvider(format: LLMFormat): string | null {
 function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
   if (aiModel === 'openrouter') return 'openrouter'
-  if (aiModel === 'reverse_proxy') return null
+  if (aiModel === 'reverse_proxy') {
+    const db = getDatabase()
+    // `db.customAPIFormat` mutates `modelInfo.format` upstream in request.ts.
+    // Only OAI-compat reverse_proxy routes through this slice; Anthropic /
+    // Mistral / etc. variants get their own slices.
+    if (targ.modelInfo?.format !== LLMFormat.OpenAICompatible) return null
+    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return null
+    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return null
+    return 'openai'
+  }
   if (aiModel.startsWith('xcustom:::')) {
     const entry = findXcustomEntry(aiModel)
     if (entry === null) return null
@@ -80,6 +89,34 @@ function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
   // reverse-proxy deployment whose auth path is not yet defined; stay local.
   if (targ.modelInfo?.endpoint) return null
   return 'openai'
+}
+
+/**
+ * Normalize `db.forceReplaceUrl` into a clean base URL the server-side
+ * dispatcher can append `/chat/completions` to. Mirrors the local autofill
+ * in `src/ts/process/request/openAI/requests.ts:596-614` plus the `risu::`
+ * prefix → `X-Proxy-Risu` header handoff.
+ */
+function resolveReverseProxyUrl(rawUrl: string, autofill: boolean): {
+  baseUrl: string
+  risuIdentify: boolean
+} {
+  let url = rawUrl
+  let risuIdentify = false
+  if (url.startsWith('risu::')) {
+    risuIdentify = true
+    url = url.slice('risu::'.length)
+  }
+  if (autofill) {
+    if (url.endsWith('v1')) {
+      url += '/chat/completions'
+    } else if (url.endsWith('v1/')) {
+      url += 'chat/completions'
+    } else if (!(url.endsWith('completions') || url.endsWith('completions/'))) {
+      url += url.endsWith('/') ? 'v1/chat/completions' : '/v1/chat/completions'
+    }
+  }
+  return { baseUrl: deriveOpenAIBaseUrl(url), risuIdentify }
 }
 
 interface XcustomEntry {
@@ -272,6 +309,7 @@ export function resolveProviderModel(
       return entry.internalId.length > 0 ? entry.internalId : entry.id
     }
   }
+  if (aiModel === 'reverse_proxy') return db.customProxyRequestModel ?? ''
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
   if (provider === 'gemini') {
@@ -345,6 +383,18 @@ function buildProviderOptions(
     if (isOllamaCloud(targ)) {
       openai.apiKey = db.ollamaApiKey ?? ''
       openai.baseUrl = 'https://ollama.com/v1'
+    } else if (aiModel === 'reverse_proxy') {
+      openai.apiKey = db.proxyKey ?? ''
+      const autofill = db.autofillRequestUrl !== false
+      const { baseUrl, risuIdentify } = resolveReverseProxyUrl(db.forceReplaceUrl ?? '', autofill)
+      openai.baseUrl = baseUrl
+      if (risuIdentify) {
+        openai.extraHeaders = { 'X-Proxy-Risu': 'RisuAI' }
+      }
+      if (Array.isArray(db.additionalParams) && db.additionalParams.length > 0) {
+        openai.additionalParams = db.additionalParams
+      }
+      if (db.reverseProxyOobaMode === true) openai.oobaSystemHoist = true
     } else if (aiModel.startsWith('xcustom:::')) {
       const entry = findXcustomEntry(aiModel)
       if (entry !== null) {

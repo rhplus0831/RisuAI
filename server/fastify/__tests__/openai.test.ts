@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  applyOobaSystemHoist,
   resolveOpenAIRequest,
   runOpenAI,
   runOpenAIStream,
@@ -7,6 +8,40 @@ import {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('applyOobaSystemHoist', () => {
+  it('returns the same messages array when no system rows are present', () => {
+    const msgs = [
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+    ]
+    expect(applyOobaSystemHoist(msgs)).toBe(msgs)
+  })
+
+  it('removes systems in place and appends a single trailing system with joined content', () => {
+    const r = applyOobaSystemHoist([
+      { role: 'system', content: 'a' },
+      { role: 'user', content: 'q' },
+      { role: 'system', content: 'b' },
+    ])
+    expect(r).toEqual([
+      { role: 'user', content: 'q' },
+      { role: 'system', content: 'a\nb' },
+    ])
+  })
+
+  it('passes through non-string content (multimodal systems) unchanged', () => {
+    const multimodal = [{ type: 'text', text: 'hello' }]
+    const r = applyOobaSystemHoist([
+      { role: 'system', content: multimodal },
+      { role: 'user', content: 'q' },
+    ])
+    expect(r).toEqual([
+      { role: 'system', content: multimodal },
+      { role: 'user', content: 'q' },
+    ])
+  })
 })
 
 describe('resolveOpenAIRequest', () => {
@@ -125,6 +160,56 @@ describe('runOpenAI (non-streaming)', () => {
     expect(capturedHeaders['X-Title']).toBe('RisuAI')
     expect(capturedHeaders['HTTP-Referer']).toBe('https://risuai.xyz')
     expect(capturedHeaders.authorization).toBe('Bearer k')
+  })
+
+  it('hoists every system message into a single trailing system row when oobaSystemHoist is set', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'm',
+      messages: [
+        { role: 'system', content: 'rule 1' },
+        { role: 'user', content: 'q' },
+        { role: 'system', content: 'rule 2' },
+        { role: 'assistant', content: 'a' },
+      ],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      oobaSystemHoist: true,
+      signal: new AbortController().signal,
+    })
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.messages).toEqual([
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: 'a' },
+      { role: 'system', content: 'rule 1\nrule 2' },
+    ])
+  })
+
+  it('leaves messages untouched when oobaSystemHoist is undefined/false', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'm',
+      messages: [
+        { role: 'system', content: 'rule 1' },
+        { role: 'user', content: 'q' },
+      ],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.messages).toEqual([
+      { role: 'system', content: 'rule 1' },
+      { role: 'user', content: 'q' },
+    ])
   })
 
   it('applies additionalParams to the body + headers after the default payload is built', async () => {

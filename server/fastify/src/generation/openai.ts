@@ -16,6 +16,15 @@ export interface OpenAIRequest {
    * `./additionalParams.ts` for semantics.
    */
   additionalParams?: Array<[string, string]>
+  /**
+   * When true, every `role: 'system'` message is removed from the wire
+   * payload and their contents are joined with `\n` into a single trailing
+   * `role: 'system'` message. Mirrors the local SPA's
+   * `db.reverseProxyOobaMode` behavior (see
+   * `src/ts/process/request/openAI/requests.ts:204-222`). Only used by the
+   * reverse_proxy route today.
+   */
+  oobaSystemHoist?: boolean
   signal: AbortSignal
 }
 
@@ -28,6 +37,7 @@ interface OpenAIResolveInput {
   temperature?: unknown
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
+  oobaSystemHoist?: boolean
   signal: AbortSignal
 }
 
@@ -60,14 +70,43 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     temperature,
     extraHeaders: input.extraHeaders,
     additionalParams: input.additionalParams,
+    oobaSystemHoist: input.oobaSystemHoist === true ? true : undefined,
     signal: input.signal,
   }
 }
 
+interface ChatMessage {
+  role?: unknown
+  content?: unknown
+}
+
+/**
+ * Remove every `role: 'system'` row and append a single trailing system
+ * row whose content is the joined original system contents. Mirrors
+ * `db.reverseProxyOobaMode` in the SPA's
+ * `src/ts/process/request/openAI/requests.ts:204-222`, with the empty-stub
+ * cleanup (`db.newOAIHandle === true` default) folded in.
+ */
+export function applyOobaSystemHoist(messages: unknown[]): unknown[] {
+  const systemTexts: string[] = []
+  const passthrough: unknown[] = []
+  for (const m of messages) {
+    const row = m as ChatMessage
+    if (row && row.role === 'system' && typeof row.content === 'string') {
+      systemTexts.push(row.content)
+      continue
+    }
+    passthrough.push(m)
+  }
+  if (systemTexts.length === 0) return messages
+  return [...passthrough, { role: 'system', content: systemTexts.join('\n') }]
+}
+
 function buildPayload(req: OpenAIRequest, stream: boolean): Record<string, unknown> {
+  const messages = req.oobaSystemHoist === true ? applyOobaSystemHoist(req.messages) : req.messages
   const body: Record<string, unknown> = {
     model: req.model,
-    messages: req.messages,
+    messages,
     stream,
   }
   if (req.maxTokens !== undefined) body.max_tokens = req.maxTokens

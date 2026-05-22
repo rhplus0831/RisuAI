@@ -94,6 +94,17 @@ interface OpenAIOptions {
    * builds the body + headers.
    */
   additionalParams?: unknown
+  /**
+   * Mirrors `db.reverseProxyOobaMode` — hoist every system message into a
+   * single trailing system row before sending. Only used by reverse_proxy.
+   */
+  oobaSystemHoist?: unknown
+  /**
+   * Headers to merge into the upstream request. Used by reverse_proxy to
+   * inject `X-Proxy-Risu: RisuAI` when the user prefixed their URL with
+   * `risu::`.
+   */
+  extraHeaders?: Record<string, string>
 }
 
 interface NanoGPTOptions {
@@ -214,6 +225,7 @@ interface OpenAICompatibleVariant {
   temperature?: unknown
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
+  oobaSystemHoist?: boolean
 }
 
 function resolveOpenAIVariant(
@@ -232,6 +244,9 @@ function resolveOpenAIVariant(
     maxTokens: o.maxTokens,
     temperature: o.temperature,
   }
+  if (o.extraHeaders !== undefined) {
+    variant.extraHeaders = o.extraHeaders
+  }
   if (o.additionalParams !== undefined) {
     const coerced = coerceAdditionalParams(o.additionalParams)
     if (coerced === null) {
@@ -242,6 +257,7 @@ function resolveOpenAIVariant(
     }
     if (coerced.length > 0) variant.additionalParams = coerced
   }
+  if (o.oobaSystemHoist === true) variant.oobaSystemHoist = true
   return { ok: true, variant }
 }
 
@@ -848,6 +864,7 @@ async function handleOpenAICompatibleStreaming(
       temperature: variant.temperature,
       extraHeaders: variant.extraHeaders,
       additionalParams: variant.additionalParams,
+      oobaSystemHoist: variant.oobaSystemHoist,
       signal,
     })
     if (!resolved) {
@@ -878,6 +895,7 @@ async function handleOpenAICompatibleBuffered(
       temperature: variant.temperature,
       extraHeaders: variant.extraHeaders,
       additionalParams: variant.additionalParams,
+      oobaSystemHoist: variant.oobaSystemHoist,
       signal,
     })
     if (!resolved) {

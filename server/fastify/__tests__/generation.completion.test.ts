@@ -777,6 +777,57 @@ describe('Phase 6-17 POST /api/v1/generate/completion (xcustom OAI-compat additi
     expect(headers['X-Custom']).toBe('hello')
   })
 
+  it('applies oobaSystemHoist + extraHeaders for reverse_proxy through the same openai route', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'rp ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openai',
+        model: 'gpt-on-proxy',
+        messages: [
+          { role: 'system', content: 'rule 1' },
+          { role: 'user', content: 'q' },
+          { role: 'system', content: 'rule 2' },
+        ],
+        stream: false,
+        options: {
+          openai: {
+            apiKey: 'sk-proxy',
+            baseUrl: 'https://proxy.example.com/v1',
+            oobaSystemHoist: true,
+            extraHeaders: { 'X-Proxy-Risu': 'RisuAI' },
+            additionalParams: [['header::X-Custom', 'rp-hello']],
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'rp ok' })
+    expect(captured!.url).toBe('https://proxy.example.com/v1/chat/completions')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.messages).toEqual([
+      { role: 'user', content: 'q' },
+      { role: 'system', content: 'rule 1\nrule 2' },
+    ])
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(headers['X-Custom']).toBe('rp-hello')
+    expect(headers.authorization).toBe('Bearer sk-proxy')
+  })
+
   it('400s with a specific error when additionalParams shape is malformed', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({

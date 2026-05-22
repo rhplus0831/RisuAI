@@ -183,7 +183,45 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBe('openai')
   })
 
-  it('refuses reverse_proxy under OpenAICompatible (browser holds the custom URL)', () => {
+  it('routes reverse_proxy under OpenAICompatible to provider "openai" when db.forceReplaceUrl and db.proxyKey are set', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      proxyKey: 'sk-proxy',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai')
+  })
+
+  it('refuses reverse_proxy when db.forceReplaceUrl is empty', () => {
+    seedDb({
+      forceReplaceUrl: '',
+      proxyKey: 'sk-proxy',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses reverse_proxy when db.proxyKey is empty', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      proxyKey: '',
+    } as unknown as Partial<Database>)
     const r = getServerCompletionProvider(
       makeTarg({
         aiModel: 'reverse_proxy',
@@ -638,6 +676,102 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     })
     // The wire-level model field is the original modelInfo.id, unchanged.
     expect(sent.model).toBe('deepseek-chat')
+  })
+
+  it('routes reverse_proxy through provider "openai" with proxyKey + autofilled baseUrl + db.additionalParams + ooba hoist', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      customProxyRequestModel: 'gpt-on-proxy',
+      autofillRequestUrl: true,
+      reverseProxyOobaMode: true,
+      additionalParams: [
+        ['header::X-Custom', 'rp-hello'],
+        ['extra.knob', '1'],
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 256,
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openai')
+    expect(sent.model).toBe('gpt-on-proxy')
+    expect(sent.options.openai.apiKey).toBe('sk-proxy')
+    expect(sent.options.openai.baseUrl).toBe('https://proxy.example.com/v1')
+    expect(sent.options.openai.additionalParams).toEqual([
+      ['header::X-Custom', 'rp-hello'],
+      ['extra.knob', '1'],
+    ])
+    expect(sent.options.openai.oobaSystemHoist).toBe(true)
+    expect(sent.options.openai.extraHeaders).toBeUndefined()
+  })
+
+  it('lifts the risu:: prefix off forceReplaceUrl and forwards X-Proxy-Risu header', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'risu::https://proxy.example.com/v1',
+      customProxyRequestModel: 'gpt-on-proxy',
+      autofillRequestUrl: false,
+      reverseProxyOobaMode: false,
+      additionalParams: [],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.openai.baseUrl).toBe('https://proxy.example.com/v1')
+    expect(sent.options.openai.extraHeaders).toEqual({ 'X-Proxy-Risu': 'RisuAI' })
+    expect(sent.options.openai.additionalParams).toBeUndefined()
+    expect(sent.options.openai.oobaSystemHoist).toBeUndefined()
+  })
+
+  it('autofills a bare reverse_proxy URL (https://host) to the v1 base before stripping /chat/completions', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'https://proxy.example.com',
+      customProxyRequestModel: 'm',
+      autofillRequestUrl: true,
+      additionalParams: [],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.openai.baseUrl).toBe('https://proxy.example.com/v1')
   })
 
   it('routes xcustom::: through provider "openai" with the entry url/key + parsed additionalParams', async () => {
