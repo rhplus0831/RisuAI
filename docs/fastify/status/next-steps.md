@@ -11,30 +11,42 @@ the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
 deferred until a fixture demands it. Phase 7 (prompt assembly)
-is in progress as of 2026-05-23 — slices 7-1 (scaffold) and
-7-2a/b/c (canonical `risuChatParser` extracted Svelte-free + wired
-into the server via `expandVariables`) have landed. The
-remaining assembly modules under `server/fastify/src/prompt/`
-(`assemble`, `lorebook`, `history`, `templates`, `tokens`,
-`triggers`) are still stubs waiting to be filled in by
-subsequent slices.
+is in progress as of 2026-05-23 — six slices landed (7-1
+scaffold; 7-2a/b/c canonical `risuChatParser` extracted
+Svelte-free + wired into the server via `expandVariables`; 7-3
+static prompt sections; 7-4 plain prompt sections). The remaining
+assembly modules under `server/fastify/src/prompt/` (`assemble`,
+`lorebook`, `history`, `templates`, `tokens`, `triggers`) are
+still stubs. The tiered roadmap for the rest of Phase 7 lives in
+[`HANDOVER.md`](../../../HANDOVER.md) and the
+[Remaining roadmap](../phases/phase-7-prompt-assembly.md#remaining-roadmap)
+section of the phase doc.
 
 ## Immediate
 
-1. **Continue Phase 7 with the next leaf assembly slice.** With
-   `expandVariables` live, the natural next moves are the leaves
-   that consume it: persona / description / author-note assembly
-   (mirror `src/ts/process/promptAssembly/buildDescription.ts` +
-   `buildStaticPromptSections.ts`), or lorebook activation
-   (mirror `src/ts/process/lorebook.svelte.ts` +
-   `buildLorebookContext.ts`). The decision on the three deferred
-   providers (Ooba OAI-compatible, NovelAI text, NovelList) is
-   **D — wait for the server-side flatten**; memos in
+1. **Continue Phase 7 with slice 7-5a — minimal history walk.**
+   With `variables.ts`, `staticSections.ts`, and `plainSections.ts`
+   real, the next leaf to land is the deterministic part of
+   `buildHistoryWindow`: examples block + `[Start a new chat]`
+   marker (gated by `aiModel.startsWith('novelai')` +
+   `trimStartNewChat`) + first message from
+   `firstMessage`/`alternateGreetings[fmIndex]` + `makeMs` filter
+   (`disabled === true` / `'allBefore'`) + per-message role
+   mapping. **Skip** script processing, sendName wrapper,
+   thoughts extraction, multimodal, start trigger, tokenizer
+   accumulation, and depthPrompts — each lands as a separate
+   7-5b/c/d/e sub-slice (or in Tier 2 prerequisites; see the
+   roadmap). Also port `exampleMessage` (small helper from
+   `src/ts/process/exampleMessages.ts`). Target: ~150 LOC, ~12
+   tests, api:test rising from 486 to ~498. The decision on the
+   three deferred providers (Ooba OAI-compatible, NovelAI text,
+   NovelList) remains **D — wait for the server-side flatten**;
+   memos in
    [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md) and
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green (`pnpm api:test`: 459, `pnpm test`: 601 + 4 skipped)
+   tests green (`pnpm api:test`: 486, `pnpm test`: 601 + 4 skipped)
    while Phase 7 lands.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is

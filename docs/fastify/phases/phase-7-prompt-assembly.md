@@ -2,11 +2,13 @@
 
 Date: 2026-05-21
 
-Status: in-progress (1 slice landed as of 2026-05-22). The scaffold for
-`POST /api/v1/generate/chat` is in place; the assembly modules under
-`server/fastify/src/prompt/` are still stubs that throw
-`phase-7 ... not yet implemented`. Slice 7-2 (`variables.ts` /
-`risuChatParser` port) is the next planned slice.
+Status: in-progress (6 slices landed as of 2026-05-23). `variables.ts`,
+`staticSections.ts`, `plainSections.ts` are real. The remaining
+assembly modules under `server/fastify/src/prompt/` (`assemble`,
+`lorebook`, `history`, `templates`, `tokens`, `triggers`) are still
+throwing stubs. See [Remaining roadmap](#remaining-roadmap) below for
+the tiered slice plan. [`HANDOVER.md`](../../../HANDOVER.md) is the
+working entry point for picking up Phase 7.
 
 ## Goal
 
@@ -137,6 +139,121 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-2c  | `7ed156e6`   | Server adapter: `promptScope.ts` (single-user module-level scope), `cbsAdapter.ts` (24-field `CBSRegisterArg`), `promptVariablesBoot.ts` (one-time wiring), real `expandVariables` returning `{text, dirty}`. 17-test smoke suite asserts the canonical parser runs server-side against a request-scoped `Database` snapshot. |
 | 7-3   | `d0a2a7f3`   | Static prompt sections: `staticSections.ts` ports `buildDescription`, `buildAuthorNote`, `buildPersona`, `buildCotInstruction` from `src/ts/process/promptAssembly/`. All four normalize to `OpenAIChat[]` (Option B). Deferred: `buildInlayViewInstruction` (image-gen), `additionalInformations` (Phase 8 memory). 15-test suite. |
 | 7-4   | `051a5dcd`   | Plain prompt sections: `plainSections.ts` ports `buildPlainPromptSections`. Returns `{main, jailbreak, globalNote}`. Honors `{{original}}` substitution, `jailbreakToggle` gating, `additionalPrompt` gated by `promptPreprocess`, and `@@@?(user|assistant|system)\n` role splitting. 12-test suite. |
+
+## Remaining roadmap
+
+The work splits into five tiers. Slices inside a tier can run in
+parallel by different agents; the inter-tier dependencies in the
+"Depends on" annotations are real and must hold. **Decide concrete
+LOC + test scope at the start of each slice** — the breakdown below
+is the planning resolution, not a contract.
+
+### Tier 1 — Fill in the assembly module stubs
+
+Order chosen to minimize cross-stub coupling.
+
+**7-5a … 7-5e — History shaping.** Port `buildHistoryWindow` +
+`formatHistoryMessage` from `src/ts/process/promptAssembly/`. The
+SPA modules are tightly coupled to Tier 2 infrastructure; split
+along the dependency seams:
+
+- **7-5a** — Minimal walk. Examples + `[Start a new chat]` marker
+  + first message + `makeMs` filter (`disabled`/`allBefore`) +
+  role mapping. ~150 LOC, ~12 tests. Independently shippable.
+- **7-5b** — Per-message script processing + `sendName` wrapper +
+  `<Thoughts>` extraction. Depends on Scripts (7-6).
+- **7-5c** — Multimodal inlays + `{{asset_prompt::}}` replacement.
+  Depends on the Phase 2 assets API.
+- **7-5d** — Start trigger integration. Depends on Triggers (7-9c).
+- **7-5e** — Tokenizer accumulation + depthPrompts wiring. Depends
+  on Tokens (7-8) and Lorebook (7-7e).
+
+**7-6 — Scripts port.** Port `processScript` + `processScriptFull`
+from `src/ts/process/scripts.ts`. The SPA module is ~700 LOC with
+its own dep tree (regex scripting, custom-script execution, edit
+vs post-time phases). **Almost certainly needs further sub-slicing.**
+Prerequisite for 7-5b. Decide concrete breakdown at the start.
+
+**7-7a … 7-7e — Lorebook activation.** Port
+`src/ts/process/lorebook.svelte.ts` + `buildLorebookContext.ts`.
+Tentative breakdown:
+
+- **7-7a** — Constant entries (always-on).
+- **7-7b** — Keyword matching activation.
+- **7-7c** — Recursive activation within depth limit.
+- **7-7d** — Budget-aware truncation.
+- **7-7e** — Depth-prompt emission for history (consumed by 7-5e).
+
+### Tier 2 — Supporting infrastructure
+
+**7-8a … 7-8c — Tokens / budget.** Port
+`src/ts/process/promptBudget/{preflightTemplateTokens,
+finalizeRequestBudget}.ts`.
+
+- **7-8a** — Tokenizer integration on the server. The SPA's
+  `src/ts/tokenizer.ts` dispatcher is partly environment-agnostic;
+  decide reuse vs port at slice start.
+- **7-8b** — Token preflight accounting.
+- **7-8c** — Budget finalization (pruning order, fallback chains).
+
+**7-9a … 7-9c — Triggers.** Port `src/ts/process/triggers.ts`.
+
+- **7-9a** — Trigger sandbox infrastructure (the
+  `processScriptFull` layer for trigger bodies; may reuse 7-6's
+  port).
+- **7-9b** — `editInput` / `editRequest` hooks.
+- **7-9c** — `start` trigger (consumed by 7-5d).
+
+**7-10a … 7-10e — Preset templates.** Port the template-card
+logic from `src/ts/process/promptAssembly/{normalizeTemplate,
+buildStaticPromptSections, buildPlainPromptSections,
+systemizeChat}.ts` (the static sections themselves already
+landed in 7-3 / 7-4; this tier is about the card-walking +
+preset-structure parser).
+
+- **7-10a** — Card parsing + normalization.
+- **7-10b** — Chat range cards.
+- **7-10c** — Cache markers.
+- **7-10d** — Position slots.
+- **7-10e** — Systemized chat hoisting.
+
+### Tier 3 — Root + route wiring
+
+**7-11a … 7-11d — `assemble.ts` + route.** All Tier 1 + 2 modules
+must be real before these land.
+
+- **7-11a** — `assemble.ts` root entry stitching static + plain +
+  lorebook + history + tokens through templates.
+- **7-11b** — Wire `POST /api/v1/generate/chat` (currently emits
+  "not yet implemented") to call `assemble.ts` and emit `prompt`
+  + `done` SSE events.
+- **7-11c** — Add `POST /api/v1/generate/preview-prompt` shortcut.
+- **7-11d** — SSE telemetry: `info` event (timings, token counts),
+  `message_patch` for chat-row deltas.
+
+### Tier 4 — Browser adapter
+
+After Tier 3 is real. The browser-side prompt extraction modules
+from Phase 5 shrink to thin SSE iterators.
+
+- **7-12a** — Client adapter for `/api/v1/generate/chat`.
+- **7-12b** — Dual-mode fixture sweep: re-run the 12 server-backed
+  sendChat fixtures through the new `/chat` route.
+- **7-12c** — Side-effect dispatch (TTS playback, image preview,
+  `hypav3_progress` UX) via the SSE `side_effect` event.
+- **7-12d** — Restoration on error / abort from the SSE `error`
+  event's restoration payload.
+
+### Tier 5 — Closeout
+
+**7-13 — Phase 7 closeout.** Refresh
+`phase-7-prompt-assembly.md` with the Closeout section. Flip
+[`HANDOVER.md`](../../../HANDOVER.md) and `next-steps.md` to
+Phase 8 (memory) as the next phase. The three providers
+deferred for server-owned flattening (Ooba OAI-compat, NovelAI
+text, NovelList) can now route through `assemble.ts`; that work
+may land as a polish slice before closeout or as the first
+post-closeout follow-up.
 
 ## Reference
 
