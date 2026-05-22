@@ -7,38 +7,50 @@ import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelp
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
- * Phase 7-6a/b regex script processor ported from
+ * Phase 7-6a/b/c regex script processor ported from
  * `src/ts/process/scripts.ts` `processScript` + `executeScript`.
  *
- * Walks `db.presetRegex ?? []` then `char.customscript ?? []`, runs each
- * script where `script.type === mode`. The plain branch is a
- * `RegExp.replace` routed through `expandVariables` (matches the SPA's
- * `risuChatParser(data.replace(reg, outScript), {chatID, cbsConditions})`
- * at scripts.ts:285,328).
+ * Walks `db.presetRegex ?? []` then `char.customscript ?? []`, parses
+ * each entry through the `ableFlag` `<order N, action…>` DSL, stable
+ * sorts by `order desc` when any script declared one, then runs each
+ * script where `script.type === mode`.
  *
- * 7-6b adds the four server-implementable `@@`-prefixed action paths:
- *   - `@@emo …` — browser-only emotion-image side effect; no-op on the
- *     server.
- *   - `@@inject` (chatID !== -1) — overwrites the chat message at
- *     `chatID` with the current `data` and strips the matched portion.
- *   - `@@move_top` / `@@move_bottom` — extract matched text (global flag
- *     respects `g`), substitute `$1` / `$&` / `$<…>` against each match,
- *     then prepend / append the result to `data` with a newline.
- *   - `@@repeat_back [end|start|end_nl|start_nl]` (chatID !== -1) — fires
- *     when the inner regex does NOT match `data`; reads the previous
- *     same-role message body (falls back to `firstMessage` /
- *     `alternateGreetings[fmIndex]`), and appends / prepends its first
- *     match to `data` per the positional modifier.
+ * Action equivalence: `@@inject` / `@@move_top` / `@@move_bottom` /
+ * `@@repeat_back` prefixes and the `inject` / `move_top` /
+ * `move_bottom` / `repeat_back` actions resolve to the same code path
+ * (`scripts.ts:240-326`). `@@emo` is prefix-only (no `'emo'` action in
+ * the SPA either).
  *
- * Deferred to 7-6c/d/e:
- *   - `ableFlag` + `<order, actions>` flag-meta DSL (so per-script
- *     `actions: string[]` stays empty)
- *   - the `cbs` action's pre-script CBS expansion of `script.in`
- *   - script-cache (`generateScriptCacheKey` / `getScriptCache` / `cacheScript`)
+ * Outscript prep (`scripts.ts:180-196`):
+ *   - `$n` literal → `\n`
+ *   - `{{data}}` → `$&` (full-match substitution)
+ *   - `endsWith('>')` && !`no_end_nl` action: append `\n`
+ *
+ * Flag handling (`scripts.ts:182-208`):
+ *   - Default `'g'`. `script.flag` is honored ONLY when
+ *     `script.ableFlag === true` (SPA quirk; without `ableFlag` the
+ *     declared flag is silently ignored).
+ *   - `@@move_top` / `@@move_bottom` and the `move_top` / `move_bottom`
+ *     actions force the `'g'` flag off (SPA "temperary fix").
+ *   - Sanitize to `[dgimsuvy]`, dedupe, fall back to `'u'` when empty.
+ *
+ * `cbs` action (`scripts.ts:211-213`): pre-expand `script.in` through
+ * `expandVariables` before compiling the RegExp.
+ *
+ * Two documented divergences from the SPA carried over from 7-6b:
+ *   - Reset `reg.lastIndex = 0` after the dispatching `reg.test()` so
+ *     `@@move_top g` finds all matches (SPA loses the first one via
+ *     lastIndex leak; the move dispatch later defangs `g` anyway).
+ *   - `@@repeat_back` adds an r-null guard the SPA elides
+ *     (`scripts.ts:306` accesses `r[0]` blindly).
+ *
+ * Deferred to 7-6d/e:
+ *   - script-cache (`generateScriptCacheKey` / `getScriptCache` /
+ *     `cacheScript`)
+ *   - module regex scripts (`getModuleRegexScripts()`)
  *   - `runLuaEditTrigger` (browser-only)
  *   - `runTrigger('display', …)` (orthogonal: `editdisplay` mode only)
  *   - `pluginV2[mode]` browser plugin V2 hooks
- *   - module regex scripts (`getModuleRegexScripts()`)
  *
  * Errors from a single bad regex are swallowed (mirrors the SPA's
  * try/catch at scripts.ts:372-376); the rest of the script list still
@@ -48,15 +60,56 @@ import { expandVariables, type ExpandContext } from './variables.js'
 export type ScriptMode = 'editinput' | 'editoutput' | 'editprocess' | 'editdisplay'
 
 const VALID_FLAG_CHARS = /[^dgimsuvy]/g
+const META_RE = /<(.+?)>/g
+const DATA_RE = /\{\{data\}\}/g
 
-function sanitizeFlag(flag: string | undefined): string {
-  if (!flag) return 'u'
+function sanitizeFlag(flag: string): string {
   let f = flag.trim().replace(VALID_FLAG_CHARS, '')
   f = f
     .split('')
     .filter((v, i, a) => a.indexOf(v) === i)
     .join('')
   return f.length === 0 ? 'u' : f
+}
+
+interface ParsedScript {
+  script: customscript
+  order: number
+  actions: string[]
+}
+
+function parseScripts(rawScripts: customscript[]): {
+  parsed: ParsedScript[]
+  orderChanged: boolean
+} {
+  const parsed: ParsedScript[] = []
+  let orderChanged = false
+  for (const script of rawScripts) {
+    if (script.ableFlag && script.flag?.includes('<')) {
+      const cloned = { ...script }
+      let order = 0
+      const actions: string[] = []
+      cloned.flag = (cloned.flag ?? '').replace(META_RE, (_match, body: string) => {
+        const tokens = body.split(',').map((t) => t.trim())
+        for (const t of tokens) {
+          if (t.startsWith('order ')) {
+            const n = parseInt(t.substring(6))
+            if (!Number.isNaN(n)) {
+              order = n
+              orderChanged = true
+            }
+          } else if (t.length > 0) {
+            actions.push(t)
+          }
+        }
+        return ''
+      })
+      parsed.push({ script: cloned, order, actions })
+    } else {
+      parsed.push({ script, order: 0, actions: [] })
+    }
+  }
+  return { parsed, orderChanged }
 }
 
 /**
@@ -176,17 +229,54 @@ function applyOne(
   ctx: ExpandContext,
   char: character,
   data: string,
-  script: customscript,
+  parsed: ParsedScript,
   cbsConditions: CbsConditions | undefined,
   chatID: number,
   currentChat: Chat | undefined,
 ): string {
+  const script = parsed.script
+  const actions = parsed.actions
   if (!script.in) return data
-  const flag = sanitizeFlag(script.flag)
-  const reg = new RegExp(script.in, flag)
-  const outScript = (script.out ?? '').replaceAll('$n', '\n')
 
-  if (outScript.startsWith('@@')) {
+  // Flag default: 'g' (SPA scripts.ts:182). script.flag is honored only
+  // when ableFlag === true (scripts.ts:183-185).
+  let flag = 'g'
+  if (script.ableFlag) {
+    flag = script.flag || 'g'
+  }
+
+  // outScript preparation
+  let outScript = (script.out ?? '')
+    .replaceAll('$n', '\n')
+    .replace(DATA_RE, '$&')
+
+  const isMoveTop =
+    outScript.startsWith('@@move_top') || actions.includes('move_top')
+  const isMoveBottom =
+    outScript.startsWith('@@move_bottom') || actions.includes('move_bottom')
+
+  if (isMoveTop || isMoveBottom) {
+    // SPA "temperary fix" at scripts.ts:191-193 — force non-global so
+    // matchAll doesn't double-count.
+    flag = flag.replace('g', '')
+  }
+
+  if (outScript.endsWith('>') && !actions.includes('no_end_nl')) {
+    outScript += '\n'
+  }
+
+  flag = sanitizeFlag(flag)
+
+  // `cbs` action: pre-expand the input regex source (scripts.ts:211-213).
+  let regexIn = script.in
+  if (actions.includes('cbs')) {
+    regexIn = expandVariables(regexIn, { ...ctx, cbsConditions }).text
+  }
+
+  const reg = new RegExp(regexIn, flag)
+
+  const isAction = outScript.startsWith('@@') || actions.length > 0
+  if (isAction) {
     const matched = reg.test(data)
     // reg.test() advances `lastIndex` when the regex is global; both
     // matchAll() and a sticky-style match would then start past the
@@ -195,21 +285,21 @@ function applyOne(
     reg.lastIndex = 0
     if (matched) {
       if (outScript.startsWith('@@emo ')) return data
-      if (outScript.startsWith('@@inject')) {
+      if (outScript.startsWith('@@inject') || actions.includes('inject')) {
         return applyInject(currentChat, chatID, data, reg)
       }
-      if (outScript.startsWith('@@move_top')) {
-        return applyMove(data, reg, flag, outScript, true)
+      if (isMoveTop || isMoveBottom) {
+        return applyMove(data, reg, flag, outScript, isMoveTop)
       }
-      if (outScript.startsWith('@@move_bottom')) {
-        return applyMove(data, reg, flag, outScript, false)
-      }
-      // Unknown @@ prefix: fall through to plain replace.
+      // Unknown @@ prefix or arbitrary action: fall through to plain replace.
       const replaced = data.replace(reg, outScript)
       return expandVariables(replaced, { ...ctx, cbsConditions }).text
     }
-    // No match: only @@repeat_back fires here.
-    if (outScript.startsWith('@@repeat_back')) {
+    // No match: only @@repeat_back / the 'repeat_back' action fires.
+    if (
+      outScript.startsWith('@@repeat_back') ||
+      actions.includes('repeat_back')
+    ) {
       return applyRepeatBack(char, currentChat, chatID, data, reg, outScript)
     }
     return data
@@ -229,23 +319,27 @@ export function processScript(
   currentChat: Chat | undefined = undefined,
 ): string {
   const db = ctx.database
-  const scripts = (db.presetRegex ?? []).concat(char.customscript ?? [])
+  const rawScripts = (db.presetRegex ?? []).concat(char.customscript ?? [])
+  const { parsed, orderChanged } = parseScripts(rawScripts)
+  if (orderChanged) {
+    parsed.sort((a, b) => b.order - a.order)
+  }
 
   let current = data
-  for (const script of scripts) {
-    if (script.type !== mode) continue
+  for (const p of parsed) {
+    if (p.script.type !== mode) continue
     try {
       current = applyOne(
         ctx,
         char,
         current,
-        script,
+        p,
         cbsConditions,
         chatID,
         currentChat,
       )
     } catch {
-      // Mirror SPA scripts.ts:372-376 - one bad regex shouldn't kill the
+      // Mirror SPA scripts.ts:372-376 — one bad regex shouldn't kill the
       // rest of the script chain. Logging deferred to a later 7-6 slice.
     }
   }
