@@ -57,10 +57,10 @@ deferred.
     `reverse_proxy`; Vertex AI Gemini; AWS Bedrock Claude; and
     Stable Horde text.
   - Remaining: NovelAI text; NovelList; ooba OAI-compatible
-    `/v1/completions`; llama.cpp-compatible endpoints; and
-    `reverse_proxy` / `xcustom` variants whose `db.customAPIFormat`
-    points at Mistral, Cohere, or another dispatcher that does not
-    yet receive the additional-parameters overlay.
+    `/v1/completions`; llama.cpp-compatible endpoints; hardcoded
+    OpenAI-compatible endpoints without a keyIdentifier; and
+    custom-format variants without a routed auth / request-shape
+    slice, such as Gemini `reverse_proxy` / `xcustom`.
   - Stable Horde text lands as provider `horde` on this route; no
     separate `/api/v1/generate/horde` route exists in the current
     tree.
@@ -122,7 +122,7 @@ both modes side by side until Phase 9.
 
 ### Key handling
 
-- During the current Phase 6 slices, the client adapter still reads
+- During the Phase 6 completion-route slices, the client adapter still reads
   the existing DB key fields and sends only the selected provider's
   key in the `/generate/completion` options body. This preserves
   current settings behavior while provider coverage is incomplete.
@@ -206,7 +206,7 @@ both modes side by side until Phase 9.
 - Dual-mode fixture sweep: 12 fixtures (echo, openai, anthropic,
   mistral, cohere, deepseek, gemini, gemini-vertex, bedrock, horde,
   mistral-reverse-proxy, anthropic-reverse-proxy). Local sweep
-  (33 fixtures) covers the broader sendChat snapshot set.
+  (38 fixtures) covers the broader sendChat snapshot set.
 
 ### Test counts at closeout
 
@@ -262,8 +262,7 @@ prioritized; they don't gate Phase 7:
   Translate, Bergamot, LLM translation).
 - `POST /api/v1/generate/tts`.
 - `POST /api/v1/generate/image`.
-- `POST /api/v1/generate/count-tokens` + `GET
-  /api/v1/generate/encodings`.
+- `POST /api/v1/generate/count-tokens` + `GET /api/v1/generate/encodings`.
 - `POST /api/v1/generate/triggers/run` (worker_threads sandbox).
 
 ### Exit criteria check

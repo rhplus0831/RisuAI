@@ -8,7 +8,7 @@ Phase 1, the server-side Phase 2 storage slice, Phase 3 in
 full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
 Express deletion), and Phase 6 completion-route slices through
-6-22 all exist on the `fastify` branch:
+the 6-28 closeout all exist on the `fastify` branch:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -108,8 +108,12 @@ Express deletion), and Phase 6 completion-route slices through
   supports `echo`, `openai`, `nanogpt`, `openrouter`,
   `anthropic`, `mistral`, `cohere`, `gemini`,
   `openai-legacy-instruct`, `openai-responses`, `kobold`,
-  `ooba-legacy`, `ollama`, `bedrock`, and `horde`; unsupported
-  provider strings return
+  `ooba-legacy`, `ollama`, `bedrock`, and `horde`. The client
+  adapter routes supported variants including Ollama Cloud,
+  Vertex AI Gemini, AWS Bedrock Claude, Stable Horde text, and
+  `reverse_proxy` / `xcustom:::` for OpenAI-compatible,
+  Anthropic, Mistral, Cohere, OpenAI Responses, and OpenAI legacy
+  instruct formats. Unsupported provider strings return
   `{ reason: 'provider not implemented yet: <name>' }` with 501.
   Cohere, legacy instruct, Responses, Kobold, ooba legacy,
   Bedrock, and Horde are currently buffered-only and reject
@@ -160,20 +164,22 @@ been removed; `server/node/` no longer exists.
   up the self-host gates). `server/node/`, the `runserver`
   script, and the express / express-rate-limit /
   node-html-parser dependencies have been removed.
-- **Phase 6.** In progress since 2026-05-22. Landed so far:
-  `POST /api/v1/generate/completion`, the normalized SSE envelope,
-  echo, OpenAI Chat Completions, NanoGPT chat, OpenRouter,
-  Anthropic Messages / legacy / NanoGPT Messages, Mistral,
-  Cohere, Gemini, DeepSeek / DeepInfra via the OpenAI-compatible
-  key path, OpenAI legacy instruct / NanoGPT legacy, OpenAI
-  Responses / NanoGPT Responses, Ollama Cloud variants, Kobold,
-  ooba legacy, native Ollama, OAI-compatible `xcustom:::` and
-  `reverse_proxy`, Anthropic-format `xcustom:::` and
-  `reverse_proxy`, Vertex AI Gemini, AWS Bedrock Claude, and
-  Stable Horde text. Translation, TTS, image, token-counting,
-  NovelAI, NovelList, ooba OAI-compatible, llama.cpp-compatible
-  endpoints, and non-OAI/non-Anthropic `reverse_proxy` / `xcustom`
-  variants are still open.
+- **Phase 6.** Completion routing closed on 2026-05-22 in Phase
+  6-28. Landed: `POST /api/v1/generate/completion`, the normalized
+  SSE envelope, echo, OpenAI Chat Completions, NanoGPT chat,
+  OpenRouter, Anthropic Messages / legacy / NanoGPT Messages,
+  Mistral, Cohere, Gemini, DeepSeek / DeepInfra via the
+  OpenAI-compatible key path, OpenAI legacy instruct / NanoGPT
+  legacy, OpenAI Responses / NanoGPT Responses, Ollama Cloud
+  variants, Kobold, ooba legacy, native Ollama, Vertex AI Gemini,
+  AWS Bedrock Claude, Stable Horde text, and `xcustom:::` /
+  `reverse_proxy` overlays for OpenAI-compatible, Anthropic,
+  Mistral, Cohere, OpenAI Responses, and OpenAI legacy instruct
+  formats. Translation, TTS, image, token-counting, and trigger
+  execution helper routes remain follow-up slices. NovelAI,
+  NovelList, and ooba OAI-compatible are deferred to Phase 7
+  because they need server-owned character / user state for prompt
+  flattening.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 

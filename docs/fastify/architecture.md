@@ -4,8 +4,8 @@ Date: 2026-05-22
 
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
-Phase 3, and Phase 6 completion-route files through provider slice
-6-22 already exist; modules marked by later phases are target
+Phase 3, and Phase 6 completion-route files through closeout slice
+6-28 already exist; modules marked by later phases are target
 layout, not current implementation.
 
 ## Server module layout
@@ -116,10 +116,10 @@ Implemented now:
   `kobold`, `ooba-legacy`, `ollama`, `bedrock`, and `horde`.
   The client adapter also routes covered variants such as
   DeepSeek / DeepInfra keyIdentifier models, Ollama Cloud,
-  OAI-compatible `reverse_proxy` / `xcustom:::`, Anthropic
-  `reverse_proxy` / `xcustom:::`, Vertex AI Gemini, AWS Bedrock
-  Claude, and Stable Horde text. Unsupported provider strings
-  return `501`.
+  `reverse_proxy` / `xcustom:::` for OpenAI-compatible,
+  Anthropic, Mistral, Cohere, OpenAI Responses, and OpenAI legacy
+  instruct formats, plus Vertex AI Gemini, AWS Bedrock Claude, and
+  Stable Horde text. Unsupported provider strings return `501`.
 - Optional static serving from `RISU_API_STATIC_ROOT`, including
   `GET /` and non-API GET SPA fallback.
 

@@ -2,141 +2,104 @@
 
 Date: 2026-05-22
 Branch: `fastify`
-Head: `067414ff docs: backfill Phase 6-27 commit hash in next-steps.md`
+Base head before this docs audit: `a8cb123b docs: backfill Phase 6-28 commit hash in next-steps.md`
 
-This file is the working handover from the previous agent. Read
-`docs/fastify/phases/phase-6-server-generation.md` for the closed
-Phase 6 scope (see "Closeout" section at the bottom of that doc)
-and `docs/fastify/phases/phase-7-prompt-assembly.md` for the
-phase that follows. `docs/fastify/status/next-steps.md` carries
-the per-slice history.
+## Current State
 
-## Phase 6 is closed
+Phases 0-6 are closed. Phase 6's `/api/v1/generate/completion`
+work closed in `398a3ae6` (Phase 6-28), with the closeout hash
+backfilled by `a8cb123b`. The phase doc's
+[`Closeout`](docs/fastify/phases/phase-6-server-generation.md#closeout-2026-05-22)
+section is the canonical inventory.
 
-As of `cb6d876c` + `067414ff` (Phase 6-27 fixture sweep), the
-`/completion` part of Phase 6 is done. The phase doc has a full
-closeout section listing what landed, what was deferred to Phase 7,
-and what was deferred until a fixture demands it.
+Fastify currently owns bootstrap, JSON import, assets, backups,
+static SPA serving, provider proxy fetch, stream-job WebSocket,
+hub passthrough, legacy NodeStorage / crypto compatibility, and
+the closed completion provider matrix. Express is deleted; Docker
+runs `pnpm api:start` on port 6002 with `/app/data` persisted.
 
-Test counts at closeout:
+Guardrails at Phase 6 closeout:
 
 - `pnpm api:test`: 434 across 27 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: clean
+- `sendChat` fixtures: 38 local snapshots, 12 of them also run
+  through the server-backed sweep
 
-## What's next
+Recent history to keep in mind:
 
-The next thing to start is **Phase 7 (prompt assembly)**. Phase 6
-deliberately did not move prompt assembly server-side; that's
-Phase 7's whole job. Three providers (Ooba OAI-compat, NovelAI
-text, NovelList) were explicitly deferred to Phase 7 because
-their prompt flatten needs server-owned character + user state.
-The memos describe the trade-offs:
+- `755bbe83` through `7ae69fd8` ported `additionalParams`,
+  `reverse_proxy`, and `xcustom:::` overlays to Mistral, Cohere,
+  OpenAI Responses, and OpenAI legacy instruct.
+- `cb6d876c` (Phase 6-27) added the five newest dual-mode fixtures:
+  `gemini-vertex-basic`, `bedrock-basic`, `horde-basic`,
+  `mistral-reverse-proxy-basic`, and
+  `anthropic-reverse-proxy-basic`.
+- `398a3ae6` (Phase 6-28) closed the completion slice and moved
+  `status/next-steps.md` to Phase 7.
+
+## Next Work
+
+Start **Phase 7: server-side prompt assembly**. Read these first:
+
+- [`docs/fastify/status/next-steps.md`](docs/fastify/status/next-steps.md)
+- [`docs/fastify/phases/phase-7-prompt-assembly.md`](docs/fastify/phases/phase-7-prompt-assembly.md)
+- [`docs/fastify/phases/phase-6-server-generation.md`](docs/fastify/phases/phase-6-server-generation.md)
+- [`docs/fastify/coverage/providers.md`](docs/fastify/coverage/providers.md)
+- [`docs/fastify/coverage/sendchat-fixtures.md`](docs/fastify/coverage/sendchat-fixtures.md)
+
+Open decision before Phase 7 implementation: Ooba OAI-compatible,
+NovelAI text, and NovelList need prompt flattening with character /
+user state. The Horde slice proved an interim option-B pattern
+(client pre-flattens with `applyChatTemplate`, server receives a
+`prompt`, client unstringlizes the result). Phase 7 can either use
+that pattern for the three deferred providers or wait for
+server-owned flattening. Design memos:
 
 - [`docs/fastify/design/ooba-oai-compat.md`](docs/fastify/design/ooba-oai-compat.md)
 - [`docs/fastify/design/novelai-novellist-stringlize.md`](docs/fastify/design/novelai-novellist-stringlize.md)
 
-The Horde slice (Phase 6-22) shipped a **client-side option-B**
-pattern as an interim — client pre-flattens via `applyChatTemplate`,
-server takes a `prompt` string, client unstringlizes the result.
-If Phase 7 decides to ship Ooba / NovelAI / NovelList with the
-same pattern instead of moving the flatten server-side, each is
-~150 LOC and unblocks immediately. The current memos lean toward
-server-side flatten, but the option-B pivot is on the table.
+## Useful Patterns
 
-The Phase 7 doc (`docs/fastify/phases/phase-7-prompt-assembly.md`)
-should be your starting point for understanding the prompt-assembly
-move. Open question for the user before starting Phase 7: ship
-Ooba / NovelAI / NovelList with option B now or hold them until
-the server flatten is built?
+- OpenAI-compatible chat: `server/fastify/src/generation/openai.ts`
+  and `mistral.ts`.
+- Anthropic Messages: `anthropic.ts`.
+- Buffered-only dispatch: `cohere.ts`,
+  `openaiLegacyInstruct.ts`, `openaiResponses.ts`, `bedrock.ts`,
+  and `horde.ts`.
+- Flat-prompt helper: `openaiLegacyInstruct.ts`.
+- Vertex JWT auth: `vertexAuth.ts`.
+- Bedrock SigV4: `sigv4.ts`.
+- Async polling + abort cleanup: `horde.ts`.
+- Variant gates / client adapter: `src/ts/process/request/serverCompletion.ts`.
+- Completion route tests: `server/fastify/__tests__/`.
+- Dual-mode fixtures: `src/ts/process/__fixtures__/` plus
+  `sendChat.fixtures.serverBacked.test.ts`.
 
-## Other Phase 6 follow-ups (not blocking Phase 7)
+## Follow-Ups Not Blocking Phase 7
 
-These can land at any time without re-opening Phase 6:
+- Hub resources still use `requireAuth`; browser-loaded hub assets
+  can 401 on password-protected deployments until session-cookie or
+  public hub proxy support lands.
+- Helper generation routes remain separate slices:
+  `/generate/translate`, `/tts`, `/image`, `/count-tokens`,
+  `/encodings`, and `/triggers/run`.
+- Bedrock streaming, OpenAI MultiGen, ooba-legacy WebSocket
+  streaming, and other buffered-only streaming upgrades are
+  deferred until fixtures demand them.
+- Server-side key masking (`RISU_MASK_SERVER_KEYS=1`) waits until
+  the server owns every provider path a deployment needs.
 
-- **Other `/generate/*` routes**: `/translate`, `/tts`, `/image`,
-  `/count-tokens`, `/encodings`, `/triggers/run`. Each is its own
-  slice; they don't gate completion or Phase 7.
-- **Bedrock streaming**: AWS EventStream parser (~150 LOC) +
-  plumbing (~100 LOC). Currently buffered-only; the closeout
-  decided to wait for a concrete fixture to demand it.
-- **OpenAI MultiGen** (`body.n = db.genTime`): incompatible with
-  the current one-stream-per-completion SSE envelope; would need
-  a multi-result return shape.
+## Commit Convention
 
-## Patterns to follow
+Use `feat:`, `fix:`, `refactor:`, or `docs:` prefixes. Each slice
+gets its own commit. After a slice lands, update
+`docs/fastify/status/next-steps.md` with the new slice row, current
+test counts, and remaining uncovered work.
 
-When extending the completion route or adding a new provider,
-copy the structure from a similar recent slice:
-
-- **OpenAI-compat wire shape**: copy `mistral.ts` (Phase 6-6).
-- **New wire shape with streaming**: copy `gemini.ts` (Phase 6-9).
-- **Non-streaming buffered-only**: copy `cohere.ts` (Phase 6-7).
-- **Flat-prompt with flatten helper**: copy `openaiLegacyInstruct.ts`
-  (Phase 6-10).
-- **Variant routing of an existing dispatcher (no new code)**:
-  Phase 6-11 anthropic-legacy / NanoGPT-messages is the smallest
-  example.
-- **additionalParams overlay through an existing dispatcher**:
-  copy the openai (Phase 6-17), anthropic (Phase 6-19), mistral
-  (Phase 6-23), cohere (Phase 6-24), openai-responses (Phase 6-25),
-  or openai-legacy-instruct (Phase 6-26) work.
-- **reverse_proxy with URL autofill**: copy Phase 6-18 (OAI-compat),
-  6-19 (Anthropic), 6-23 (Mistral, reuses OAI helper), 6-24
-  (Cohere, dedicated helper), 6-25 (Responses, dedicated helper),
-  or 6-26 (Legacy Instruct, dedicated helper).
-- **JWT auth + token cache**: copy `vertexAuth.ts` (Phase 6-20).
-- **SigV4 / new pure-JS crypto**: copy `sigv4.ts` (Phase 6-21).
-- **Async polling loop with abort cleanup**: copy `horde.ts`
-  (Phase 6-22).
-- **Dual-mode fixture for a routed provider**: copy any of the
-  five fixtures added in Phase 6-27. Each is a JSON db, a
-  one-line `upstream/<name>.jsonl` carrying `{type, result, model}`,
-  and an auto-recorded expected snapshot.
-
-The dispatcher tests live in `server/fastify/__tests__/` (one
-file per dispatcher). The route-level test cases append to
-`server/fastify/__tests__/generation.completion.test.ts`. The
-adapter test cases (format-map + buildProviderOptions + gate
-refusals) go in `src/ts/process/request/tests/serverCompletion.test.ts`.
-
-If a slice adds a dual-mode fixture, follow Phase 6-9's pattern
-(`gemini-basic`): the fixture JSON can include an `injectedModels`
-field that `loadFixture.ts` pushes into `LLMModels` for the test
-only. New fixtures need a per-provider result setter wired in
-`sendChat.fixtures.serverBacked.test.ts` so both sweeps see the
-same reply text.
-
-## Commit convention
-
-Each slice gets its own commit. Use `feat:` prefix for code,
-`docs:` for docs-only. Trailer:
+Trailer used by prior slices:
 
 ```
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
-
-After a slice lands, update `docs/fastify/status/next-steps.md`:
-
-1. Bump the "Immediate" item with current test counts and
-   what's still uncovered.
-2. Append a `Phase 6-XX` row to the "Landed Phase 6 Slices" table
-   (mark `_pending_` first, then backfill the commit hash as a
-   separate `docs:` commit).
-
-## Slice numbering note
-
-The Phase 6 numbering went from 6-1 through 6-27. Slices 6-14
-through 6-22 were a mix of provider variants, Native Ollama, and
-the deferred Vertex / Bedrock / Horde slices. Slices 6-23 through
-6-26 ported `additionalParams` to the remaining non-OAI
-dispatchers (Mistral, Cohere, OpenAI Responses, OpenAI Legacy
-Instruct). Slice 6-27 extended the dual-mode fixture sweep with
-five fixtures for the providers that were never covered by the
-original 7-fixture set. `docs/fastify/status/next-steps.md` is
-authoritative for current numbering and commit hashes.
-
-Phase 7 starts fresh — its slices will be `Phase 7-1`, `Phase 7-2`,
-etc., tracked in `docs/fastify/status/next-steps.md` alongside
-the Phase 6 history.

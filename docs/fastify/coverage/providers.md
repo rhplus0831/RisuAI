@@ -2,9 +2,9 @@
 
 Date: 2026-05-22
 
-Status: Phase 6 is active. The server-backed completion route has
-landed provider slices through Phase 6-22 (`5e2975ec`). The table
-below tracks the current implementation matrix and the remaining
+Status: Phase 6 completion routing closed in Phase 6-28
+(`398a3ae6`; hash backfilled by `a8cb123b`). The table below
+tracks the current implementation matrix and the remaining
 local-only provider families.
 
 ## Required per provider
@@ -40,21 +40,25 @@ in `src/ts/model/types.ts`, `src/ts/model/modellist.ts`, and
 | Anthropic legacy / NanoGPT Messages     | Messages-compatible via Anthropic or NanoGPT base URL | SSE | covered by `anthropic.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
 | Anthropic `xcustom:::` / `reverse_proxy` | `/v1/messages` URL autofill with shared `additionalParams` overlay | SSE | covered by `anthropic.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
 | Mistral                                 | Mistral chat                              | SSE    | covered by `mistral.test.ts`, `generation.completion.test.ts`, and dual-mode fixture `mistral-basic` |
+| Mistral `xcustom:::` / `reverse_proxy`  | Mistral chat with URL autofill, `risu::` header lift, and `additionalParams` overlay | SSE | covered by `mistral.test.ts`, `generation.completion.test.ts`, `serverCompletion.test.ts`, and dual-mode fixture `mistral-reverse-proxy-basic` |
 | Cohere                                  | Cohere chat                               | no; buffered only | covered by `cohere.test.ts`, `generation.completion.test.ts`, and dual-mode fixture `cohere-basic` |
+| Cohere `xcustom:::` / `reverse_proxy`   | Cohere `/v1/chat` URL autofill with `additionalParams` overlay | no; buffered only | covered by `cohere.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
 | Gemini / Google AI                      | `generateContent` / `streamGenerateContent` | SSE | covered by `gemini.test.ts`, `generation.completion.test.ts`, and dual-mode fixture `gemini-basic` |
-| Vertex AI Gemini                        | Gemini route with service-account JWT Bearer exchange | SSE | covered by `gemini.test.ts`, `vertexAuth.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
+| Vertex AI Gemini                        | Gemini route with service-account JWT Bearer exchange | SSE | covered by `gemini.test.ts`, `vertexAuth.test.ts`, `generation.completion.test.ts`, `serverCompletion.test.ts`, and dual-mode fixture `gemini-vertex-basic` |
 | OpenAI legacy instruct                  | `/v1/completions` prompt string           | no; buffered only | covered by `openaiLegacyInstruct.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
+| OpenAI legacy instruct `xcustom:::` / `reverse_proxy` | `/v1/completions` URL autofill with `additionalParams` overlay | no; buffered only | covered by `openaiLegacyInstruct.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
 | NanoGPT legacy                          | NanoGPT `/v1/completions` variant         | no; buffered only | covered by `openaiLegacyInstruct.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
 | OpenAI Responses API                    | `/v1/responses`                           | no; buffered only | covered by `openaiResponses.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
+| OpenAI Responses `xcustom:::` / `reverse_proxy` | `/v1/responses` URL autofill with `additionalParams` overlay | no; buffered only | covered by `openaiResponses.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
 | NanoGPT Responses                       | NanoGPT Responses variant                 | no; buffered only | covered by `openaiResponses.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
 | Ollama Cloud                            | Cloud OpenAI / Responses / Anthropic format selected by `db.ollamaRequestFormat` | provider-dependent | adapter covered by `serverCompletion.test.ts`; dispatch reuses OpenAI / Responses / Anthropic tests |
 | Native Ollama                           | `/api/chat`                               | NDJSON normalized to SSE | covered by `ollama.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
 | Kobold                                  | `/api/v1/generate`                        | no; buffered only | covered by `kobold.test.ts` and `generation.completion.test.ts` |
 | ooba / text-generation-webui legacy     | blocking `/api/v1/generate` endpoint      | no; buffered only | covered by `oobaLegacy.test.ts` and `generation.completion.test.ts` |
-| AWS Bedrock Claude                      | Bedrock runtime Anthropic Messages payload with SigV4 | no; buffered only | covered by `bedrock.test.ts`, `sigv4.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
-| Stable Horde text                       | `/v2/generate/text/async` submit + status polling | no; buffered poll loop | covered by `horde.test.ts`, `generation.completion.test.ts`, and `serverCompletion.test.ts` |
+| AWS Bedrock Claude                      | Bedrock runtime Anthropic Messages payload with SigV4 | no; buffered only | covered by `bedrock.test.ts`, `sigv4.test.ts`, `generation.completion.test.ts`, `serverCompletion.test.ts`, and dual-mode fixture `bedrock-basic` |
+| Stable Horde text                       | `/v2/generate/text/async` submit + status polling | no; buffered poll loop | covered by `horde.test.ts`, `generation.completion.test.ts`, `serverCompletion.test.ts`, and dual-mode fixture `horde-basic` |
 | OpenAI-compatible fixed endpoint without keyIdentifier | User endpoint with no defined key lookup | local only | client gate refuses until the auth path is defined |
-| Mistral / Cohere / other `reverse_proxy` or `xcustom` formats | Provider-specific variants needing their own overlay slices | local only | remaining Phase 6 work |
+| Gemini `reverse_proxy` / `xcustom:::` and other unproven custom formats | Provider-specific variants without a routed auth / request-shape slice | local only | deferred until a concrete fixture demands the path |
 | NovelAI text                            | NovelAI text-generation API               | local only | deferred to Phase 7; see `../design/novelai-novellist-stringlize.md` |
 | NovelList                               | NovelList API                             | local only | deferred to Phase 7; see `../design/novelai-novellist-stringlize.md` |
 | ooba OAI-compatible                     | `/v1/completions` with Jinja chat template flattening | local only | deferred to Phase 7; see `../design/ooba-oai-compat.md` |

@@ -52,7 +52,7 @@ across 28 slices (a **73% reduction**), with 29 extracted modules
 under `src/ts/process/` and its `promptAssembly/`, `promptBudget/`,
 `postGeneration/`, and `dispatch/` subdirectories. Phase 5 closed
 with 26 sendChat fixtures. Phase 6 has since raised the local
-fixture count to 33 and added a 7-fixture server-backed sweep.
+fixture count to 38 and added a 12-fixture server-backed sweep.
 
 Phase 4 remains complete for the original 17 fixtures, and nine
 narrow Phase 5 gate fixtures landed during extraction
@@ -62,8 +62,10 @@ narrow Phase 5 gate fixtures landed during extraction
 `start-trigger-stop`, `prompt-info-text`, `preview-prompt`).
 Phase 6 adds `echo-basic`, `openai-basic`, `anthropic-basic`,
 `mistral-basic`, `cohere-basic`, `deepseek-basic`, and
-`gemini-basic`, bringing the local total to 33. All live under
-`src/ts/process/__fixtures__/` and
+`gemini-basic`, plus `gemini-vertex-basic`, `bedrock-basic`,
+`horde-basic`, `mistral-reverse-proxy-basic`, and
+`anthropic-reverse-proxy-basic`, bringing the local total to 38.
+All live under `src/ts/process/__fixtures__/` and
 `src/ts/process/__tests__/sendChat.fixtures.test.ts`. The fixtures
 pin the entry path, every documented exit shape (success, multiline
 reroll, upstream fail, abort, auto-continue recursion), the
@@ -562,6 +564,21 @@ what each fixture pins.
 - `gemini-basic` - minimal vanilla Google AI Gemini turn. Pins
   provider `gemini`, `modelInfo.internalID` model derivation, and
   `options.gemini`.
+- `gemini-vertex-basic` - Vertex AI Gemini turn. Pins provider
+  `gemini`, the service-account auth payload, project / region
+  settings, and `options.gemini.vertex`.
+- `bedrock-basic` - AWS Bedrock Claude turn. Pins provider
+  `bedrock`, the `global.` / `us.` Bedrock model-prefix heuristic,
+  parsed SigV4 credentials, and `options.bedrock`.
+- `horde-basic` - Stable Horde text turn. Pins provider `horde`,
+  client-side `applyChatTemplate` flattening, wire model suffix
+  stripping, and `options.horde`.
+- `mistral-reverse-proxy-basic` - Mistral `reverse_proxy` turn.
+  Pins `db.customAPIFormat = Mistral`, proxy key / base URL
+  derivation, `risu::` header lift, and `additionalParams`.
+- `anthropic-reverse-proxy-basic` - Anthropic `reverse_proxy` turn.
+  Pins `db.customAPIFormat = Anthropic`, proxy key / base URL
+  derivation, top-level system extraction, and `additionalParams`.
 - `persona` - `db.personaPrompt` set, no `chat.bindedPersona`.
   Pins that the content lands in `unformated.personaPrompt` and -
   under the default OpenAI-flavored `pushPrompts` consecutive-
@@ -631,7 +648,7 @@ what each fixture pins.
 - `doingChat` is set to `true` only when `sendChat` owns the lease,
   and the owned lease is cleared in a `finally` block on every exit
   path. Recursive auto-continue / resend paths explicitly release
-  the flag before re-entering. All 33 snapshots currently pin final
+  the flag before re-entering. All 38 snapshots currently pin final
   `doingChat: false`; the test harness still resets it before each
   fixture defensively.
 - The `uuid` mock counter resets between fixtures so snapshots
@@ -652,14 +669,17 @@ what each fixture pins.
   `sendChatErrors.ts`, `dispatch/*`, `postGeneration/*`,
   `promptBudget/*`, and `promptAssembly/*`; the numbered slice
   history lives in [`sendchat-slicing.md`](sendchat-slicing.md).
-- **Phase 6.** Stage 3 dispatch is moving server-side. The current
-  server-backed path covers echo, vanilla OpenAI, NanoGPT chat,
-  OpenRouter, vanilla Anthropic / Anthropic Legacy / NanoGPT
-  Messages, Mistral, Cohere, vanilla Gemini, DeepSeek / DeepInfra
-  keyIdentifier models, OpenAI legacy instruct / NanoGPT legacy,
-  OpenAI Responses / NanoGPT Responses, Ollama Cloud variants,
-  Kobold, and ooba legacy through `/api/v1/generate/completion`;
-  uncovered providers stay on the local browser path.
+- **Phase 6.** Stage 3 completion dispatch is closed for the
+  routed provider matrix. The server-backed path covers echo,
+  vanilla OpenAI, NanoGPT chat, OpenRouter, vanilla Anthropic /
+  Anthropic Legacy / NanoGPT Messages, Mistral, Cohere, vanilla
+  Gemini, Vertex AI Gemini, DeepSeek / DeepInfra keyIdentifier
+  models, OpenAI legacy instruct / NanoGPT legacy, OpenAI
+  Responses / NanoGPT Responses, Ollama Cloud variants, Kobold,
+  ooba legacy, native Ollama, AWS Bedrock Claude, Stable Horde
+  text, and routed `reverse_proxy` / `xcustom:::` overlays through
+  `/api/v1/generate/completion`. Prompt-flattening providers such
+  as NovelAI, NovelList, and ooba OAI-compatible move with Phase 7.
 - **Phase 7.** Stage 2 prompt assembly moves server-side.
 - **Phase 9.** Stages 1 + 4 move server-side; Stage 0 becomes a
   ~50-line bridge that owns the UI lease, abort forwarding, and

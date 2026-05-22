@@ -2,7 +2,7 @@
 
 Date: 2026-05-22
 
-Status: Phase 1, Phase 2, Phase 3, and the current Phase 6
+Status: Phase 1, Phase 2, Phase 3, and the closed Phase 6
 completion-route tests exist under `server/fastify/__tests__/`.
 Unlanded Phase 6 helpers plus Phases 7-9 remain target test rows.
 
@@ -63,7 +63,7 @@ stay client-side until Phase 9.
 
 | Route                                      | Pinned behavior                            | Status      |
 | ------------------------------------------ | ------------------------------------------ | ----------- |
-| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, and buffered/streaming dispatch for the Phase 6-22 provider matrix. Stable Horde text is provider `horde` on this route; no separate Horde route exists. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `vertexAuth.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`, `bedrock.test.ts`, `sigv4.test.ts`, `horde.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
+| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, and buffered/streaming dispatch for the closed Phase 6 provider matrix. Stable Horde text is provider `horde` on this route; no separate Horde route exists. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `vertexAuth.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`, `bedrock.test.ts`, `sigv4.test.ts`, `horde.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
 | `POST /api/v1/generate/translate`          | DeepL / DeepLX / Google.                   | not started |
 | `POST /api/v1/generate/tts`                | OpenAI / ElevenLabs / NovelAI / Hugging Face API Inference. | not started |
 | `POST /api/v1/generate/image`              | Provider routing + body shaping for current `sdProvider` values. | not started |

@@ -13,12 +13,12 @@ it needs.
 
 ## Scope
 
-Current status: Phases 0-5 are closed and Phase 6 is active.
+Current status: Phases 0-6 are closed and Phase 7 is next.
 Fastify owns bootstrap, JSON import, content-addressed assets,
 backups, static SPA serving, provider proxy fetch, stream-job
 WebSocket transport, Risu hub passthrough, the legacy NodeStorage
-key-value surface, and the current `/api/v1/generate/completion`
-server-backed providers. Express has been deleted. The Dockerfile
+key-value surface, and the closed `/api/v1/generate/completion`
+provider matrix. Express has been deleted. The Dockerfile
 and compose file target Fastify on port 6002 with `/app/data`
 persisted; `tsx` and `@fastify/websocket` are runtime dependencies
 after `1eddbfba`.
@@ -28,11 +28,13 @@ Phase 5 closed on 2026-05-22: commits `3c5a92b2` through
 445 lines and extracted prompt assembly, request budgeting,
 provider dispatch, response orchestration, Stage 4 closeout, and
 entry-context setup into focused browser-side modules. The local
-fixture harness now has 33 snapshots: 17 Phase 4 fixtures, 9 Phase
-5 gates, and 7 Phase 6 provider parity fixtures (`echo-basic`,
+fixture harness now has 38 snapshots: 17 Phase 4 fixtures, 9 Phase
+5 gates, and 12 Phase 6 provider parity fixtures (`echo-basic`,
 `openai-basic`, `anthropic-basic`, `mistral-basic`,
-`cohere-basic`, `deepseek-basic`, `gemini-basic`). A separate
-server-backed sweep checks those 7 fixtures through
+`cohere-basic`, `deepseek-basic`, `gemini-basic`,
+`gemini-vertex-basic`, `bedrock-basic`, `horde-basic`,
+`mistral-reverse-proxy-basic`, `anthropic-reverse-proxy-basic`).
+A separate server-backed sweep checks those 12 fixtures through
 `/api/v1/generate/completion`.
 
 In scope:
@@ -42,9 +44,9 @@ In scope:
 - The Phase 0 removal set: Group chat, peer-to-peer multi-user chat,
   Risu Account Sync, Google Drive sync, and the Supa / Hypa V2 /
   Hanurai memory engines have been removed from the client surface.
-- Moving the extracted generation seams server-side. Phase 6 has
-  landed the completion route through Phase 6-22 (`5e2975ec`).
-  The current provider matrix lives in
+- Moving the extracted generation seams server-side. Phase 6 closed
+  the completion route in Phase 6-28 (`398a3ae6`, hash backfilled by
+  `a8cb123b`). The current provider matrix lives in
   [`coverage/providers.md`](coverage/providers.md), and the
   per-slice commit history lives in
   [`status/next-steps.md`](status/next-steps.md).

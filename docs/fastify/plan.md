@@ -29,8 +29,8 @@ End state:
 
 Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, the Phase 5
-closeout on 2026-05-22, and Phase 6 provider slices through
-6-22 (`5e2975ec`):
+closeout on 2026-05-22, and the Phase 6 completion-route closeout
+in Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`):
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -64,28 +64,30 @@ closeout on 2026-05-22, and Phase 6 provider slices through
   under `src/ts/process/`, `promptAssembly/`, `promptBudget/`,
   `postGeneration/`, and `dispatch/`.
 - `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
-  the current `sendChat` behavior with 33 snapshots under
+  the current `sendChat` behavior with 38 snapshots under
   `src/ts/process/__fixtures__/`: the original 17 Phase 4
   fixtures, nine Phase 5 gate fixtures
   (`prompt-template-basic`, `utility-bot-template`,
   `lorebook-position-depth`, `prompt-template-memory-cache`,
   `history-media-fallback`, `start-trigger-control`,
   `start-trigger-stop`, `prompt-info-text`, `preview-prompt`),
-  and seven Phase 6 provider parity fixtures (`echo-basic`,
+  and twelve Phase 6 provider parity fixtures (`echo-basic`,
   `openai-basic`, `anthropic-basic`, `mistral-basic`,
-  `cohere-basic`, `deepseek-basic`, `gemini-basic`).
+  `cohere-basic`, `deepseek-basic`, `gemini-basic`,
+  `gemini-vertex-basic`, `bedrock-basic`, `horde-basic`,
+  `mistral-reverse-proxy-basic`, `anthropic-reverse-proxy-basic`).
   The snapshots also assert that
   `doingChat` is false after each fixture; `sendChat` clears the
   lease it owns in a `finally` block.
 - `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-  runs the seven Phase 6 provider fixtures through the
+  runs those twelve Phase 6 provider fixtures through the
   server-backed adapter, strips the local-only `providerCalls`
   boundary from the shared snapshot, and asserts the recorded
   `/api/v1/generate/completion` call shape separately.
-- Phase 6 has landed the completion route and provider dispatchers
-  through Stable Horde text. Current coverage includes the
-  provider strings `echo`, `openai`, `nanogpt`, `openrouter`,
-  `anthropic`, `mistral`, `cohere`, `gemini`,
+- Phase 6 has closed the completion route and provider dispatchers.
+  Current coverage includes the provider strings `echo`, `openai`,
+  `nanogpt`, `openrouter`, `anthropic`, `mistral`, `cohere`,
+  `gemini`,
   `openai-legacy-instruct`, `openai-responses`, `kobold`,
   `ooba-legacy`, `ollama`, `bedrock`, and `horde`, plus the
   client-side variant gates documented in
@@ -143,9 +145,10 @@ rules. The headline order:
    slices landed through `a7e2831d`.
 6. **Server-side generation** - move provider dispatch plus
    tokenizer, translation, TTS, and image helper calls server-side.
-   In progress since 2026-05-22; completion routing has landed
-   through Phase 6-22 for the provider families listed in the
-   current baseline above.
+   The `/api/v1/generate/completion` slice closed on 2026-05-22;
+   helper routes for translation, TTS, image, token counting, and
+   trigger execution remain follow-up slices that do not block
+   Phase 7.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
    triggers.

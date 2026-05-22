@@ -20,15 +20,13 @@ under [`status/`](status/).
   SPA serving, and route tests for those surfaces.
 - Phase 4 sendChat characterization tests closed on 2026-05-20.
   The original 17 fixtures landed under
-  `src/ts/process/__fixtures__/` with
-  per-fixture DB / upstream / expected files plus targeted
-  `vi.mock`s for the heavy side-effect modules. Phase 5 added nine
-  narrow gate fixtures, and Phase 6 added `echo-basic`,
-  `openai-basic`, `anthropic-basic`, `mistral-basic`,
-  `cohere-basic`, `deepseek-basic`, and `gemini-basic`, so the
-  active local snapshot count is 33. The Phase 6 provider fixtures
-  also run
-  through `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.
+  `src/ts/process/__fixtures__/` with per-fixture DB / upstream /
+  expected files plus targeted `vi.mock`s for the heavy side-effect
+  modules. Phase 5 added nine narrow gate fixtures, and Phase 6
+  added twelve provider parity fixtures, so the active local
+  snapshot count is 38. Those twelve Phase 6 provider fixtures also
+  run through
+  `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.
 - Phase 5 sendChat extraction closed on 2026-05-22. Commits
   `3c5a92b2` through `a7e2831d` landed all 28 slices: the
   coordinator now lives in `src/ts/process/index.svelte.ts` at
@@ -57,13 +55,14 @@ under [`status/`](status/).
   `server/node/` directory, the `runserver` script, and the
   `express` / `express-rate-limit` / `node-html-parser`
   dependencies were removed.
-- Phase 6 is active as of 2026-05-22. The auth-gated
+- Phase 6 completion routing closed on 2026-05-22 in Phase 6-28
+  (`398a3ae6`; hash backfilled by `a8cb123b`). The auth-gated
   `POST /api/v1/generate/completion` route implements the
-  normalized SSE envelope plus provider dispatch through Phase
-  6-22 (`5e2975ec`), including native Ollama, Vertex AI Gemini,
-  AWS Bedrock Claude, and Stable Horde text. The client adapter is
-  flag-gated by `db.useServerGeneration`; the current matrix and
-  remaining local-only paths are tracked in
+  normalized SSE envelope, provider dispatch, native Ollama,
+  Vertex AI Gemini, AWS Bedrock Claude, Stable Horde text, and
+  `reverse_proxy` / `xcustom:::` overlays for the routed formats.
+  The client adapter is flag-gated by `db.useServerGeneration`; the
+  current matrix and remaining local-only paths are tracked in
   [`coverage/providers.md`](coverage/providers.md).
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
@@ -79,13 +78,13 @@ under [`status/`](status/).
   that implements Phases 1-6; it is reference material, not the
   plan.
 
-## Active phase
+## Next phase
 
-Phase 6 (server-side LLM / translation / TTS / image generation) is
-the active branch work. It starts from the Phase 5 dispatch seam in
-`src/ts/process/dispatch/dispatchRequest.ts`; the current guardrails
-are the 33 local sendChat snapshots, the 7-fixture server-backed
-sweep, and the Fastify generation provider tests.
+Phase 7 (server-side prompt assembly) is next. It starts from the
+Phase 5 prompt-assembly modules and calls the Phase 6 completion
+route after assembling the payload. The current guardrails are the
+38 local sendChat snapshots, the 12-fixture server-backed sweep,
+and the Fastify generation provider tests.
 
 Phase 3 closed on 2026-05-21; Fastify owns the proxy / hub /
 stream-job / storage / auth / crypto surface and Express is deleted.

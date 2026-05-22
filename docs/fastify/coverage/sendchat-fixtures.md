@@ -1,18 +1,21 @@
 # sendChat Fixtures
 
-Date: 2026-05-22 (33 snapshots; Phase 6 active)
+Date: 2026-05-22 (38 snapshots; Phase 6 completion closed)
 
 Status: the 17 initial Phase 4 fixtures landed, Phase 5 added nine
-narrow gate fixtures, and Phase 6 added seven provider parity
+narrow gate fixtures, and Phase 6 added twelve provider parity
 fixtures (`echo-basic`, `openai-basic`, `anthropic-basic`,
 `mistral-basic`, `cohere-basic`, `deepseek-basic`,
-`gemini-basic`) that also run through the server-backed sweep. The
-harness pins the entry path, multiline reroll, upstream fail,
-auto-continue, prompt-shape variations, Hypa V3 memory, trigger
-transformations, prompt-template gates, lorebook placement,
-history-media fallback, start-trigger mutation / stop, prompt-info
-text capture, preview-prompt early return, pre-aborted-signal exit,
-and the server-backed provider adapters represented by fixtures.
+`gemini-basic`, `gemini-vertex-basic`, `bedrock-basic`,
+`horde-basic`, `mistral-reverse-proxy-basic`, and
+`anthropic-reverse-proxy-basic`) that also run through the
+server-backed sweep. The harness pins the entry path, multiline
+reroll, upstream fail, auto-continue, prompt-shape variations,
+Hypa V3 memory, trigger transformations, prompt-template gates,
+lorebook placement, history-media fallback, start-trigger mutation
+or stop, prompt-info text capture, preview-prompt early return,
+pre-aborted-signal exit, and the server-backed provider adapters
+represented by fixtures.
 The historical gate list lives in
 [`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
 
@@ -59,6 +62,11 @@ all current snapshots assert it is `false`.
 | `cohere-basic` | Minimal non-streaming Cohere turn. Pins provider `cohere`, model `cohere-command-r-plus-04-2024`, and the newer command-r no-`safetyMode` option shape. | landed |
 | `deepseek-basic` | DeepSeek / DeepInfra-style OpenAI-compatible keyIdentifier route. Pins provider `openai`, `db.OaiCompAPIKeys.deepseek`, and base URL derivation from `modelInfo.endpoint`. | landed |
 | `gemini-basic` | Minimal vanilla Google AI Gemini turn. Pins provider `gemini`, model derivation from `modelInfo.internalID`, and `options.gemini`. | landed |
+| `gemini-vertex-basic` | Vertex AI Gemini turn. Pins provider `gemini`, service-account auth payload, region/project settings, and `options.gemini.vertex`. | landed |
+| `bedrock-basic` | AWS Bedrock Claude turn. Pins provider `bedrock`, `global.` / `us.` model-prefix resolution, parsed SigV4 credentials, and `options.bedrock`. | landed |
+| `horde-basic` | Stable Horde text turn. Pins provider `horde`, client-side `applyChatTemplate` flattening, wire model suffix stripping, and `options.horde`. | landed |
+| `mistral-reverse-proxy-basic` | Mistral `reverse_proxy` turn. Pins `db.customAPIFormat = Mistral`, proxy key/base URL derivation, `risu::` header lift, and `additionalParams`. | landed |
+| `anthropic-reverse-proxy-basic` | Anthropic `reverse_proxy` turn. Pins `db.customAPIFormat = Anthropic`, proxy key/base URL derivation, top-level system extraction, and `additionalParams`. | landed |
 
 ## Loader
 
@@ -106,9 +114,8 @@ snapshot.
 ## Server-backed sweep
 
 `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-runs `echo-basic`, `openai-basic`, `anthropic-basic`,
-`mistral-basic`, `cohere-basic`, `deepseek-basic`, and
-`gemini-basic` with `platform.isFastifyServer === true` and
+runs the twelve Phase 6 provider fixtures with
+`platform.isFastifyServer === true` and
 `db.useServerGeneration === true`. It compares the same expected
 snapshots as the local sweep after dropping `providerCalls`, then
 asserts the recorded fetch call to `/api/v1/generate/completion`

@@ -8,13 +8,15 @@ shards under [`coverage/`](coverage/).
 ## Snapshot
 
 - Phase 4 `sendChat` characterization tests exist at
-  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 33
+  `src/ts/process/__tests__/sendChat.fixtures.test.ts`, with 38
   fixture sets under `src/ts/process/__fixtures__/` (17 initial
   Phase 4 fixtures, nine Phase 5 gate fixtures, plus the
   Phase 6 `echo-basic`, `openai-basic`, `anthropic-basic`,
-  `mistral-basic`, `cohere-basic`, `deepseek-basic`, and
-  `gemini-basic` provider fixtures). The seven Phase 6 fixtures
-  also run through
+  `mistral-basic`, `cohere-basic`, `deepseek-basic`,
+  `gemini-basic`, `gemini-vertex-basic`, `bedrock-basic`,
+  `horde-basic`, `mistral-reverse-proxy-basic`, and
+  `anthropic-reverse-proxy-basic` provider fixtures). The twelve
+  Phase 6 fixtures also run through
   `sendChat.fixtures.serverBacked.test.ts`.
 - Phase 5 extraction slices added focused process tests for the
   helper modules that now sit beside the fixture harness:
@@ -52,7 +54,7 @@ shards under [`coverage/`](coverage/).
   `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`,
   `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`,
   `bedrock.test.ts`, `sigv4.test.ts`, and `horde.test.ts` cover
-  the current Phase 6 completion-route providers through
+  the closed Phase 6 completion-route providers through
   `pnpm api:test`.
 
 ## Where to look
