@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `e7a76f32 docs: organize Phase 7 roadmap for the remaining sub-slices`
+Head: `c44e53fc feat: port minimal history walk (Phase 7-5a)`
 
 This is the short runbook for picking up **Phase 7 in progress**.
 Phases 0-6 are closed. The detailed Phase 7 roadmap lives in
@@ -22,6 +22,7 @@ Landed Phase 7 slices:
 | 7-3   | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                     |
 | 7-4   | `051a5dcd` | Ported plain prompt sections: main, jailbreak, and global note.                                                             |
 | docs  | `e7a76f32` | Organized the remaining Phase 7 roadmap into tiers.                                                                         |
+| 7-5a  | `c44e53fc` | Ported the minimal history walk: examples, start-new-chat marker, first message, makeMs filter, per-message role mapping.   |
 
 What is real in code:
 
@@ -29,42 +30,45 @@ What is real in code:
   bodies and emits `stage(validate)` -> `error` -> `done`; it does
   **not** call `assemble.ts` yet.
 - `server/fastify/src/prompt/sseEvents.ts`,
-  `variables.ts`, `staticSections.ts`, and `plainSections.ts` are
-  implemented and tested.
-- `assemble.ts`, `history.ts`, `lorebook.ts`, `templates.ts`,
-  `tokens.ts`, and `triggers.ts` still throw Phase 7
-  not-implemented errors.
+  `variables.ts`, `staticSections.ts`, `plainSections.ts`, and
+  `history.ts` (minimal walk only) are implemented and tested.
+- `assemble.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
+  `triggers.ts` still throw Phase 7 not-implemented errors.
+- `history.ts` does not yet handle scripts, sendName, `<Thoughts>`,
+  multimodal, `{{asset_prompt::}}`, start triggers, tokenizer
+  accumulation, or depth prompts (7-5b/c/d/e).
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-4, with no code changes since:
+Last recorded baselines after 7-5a:
 
-- `pnpm api:test`: 486 across 31 files
+- `pnpm api:test`: 502 across 32 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: clean
 
 ## Next Slice
 
-Pick up **7-5a - minimal history walk**.
+Pick from the Tier 1 slices that have no outstanding Tier 2
+dependency:
 
-Port the deterministic part of `buildHistoryWindow` plus the small
-`exampleMessage` helper:
+- **7-5c** - multimodal inlays + `{{asset_prompt::}}` replacement.
+  Depends only on the Phase 2 assets API (already closed).
+- **7-6** - scripts port. Standalone. Almost certainly needs
+  further sub-slicing at the start of the slice; the SPA module
+  is ~700 LOC across regex scripting, custom-script execution,
+  and edit vs post-time phases. Unlocks 7-5b.
+- **7-7a** - constant lorebook entries (always-on). Standalone.
+  First leaf in the lorebook tier.
 
-- examples block
-- `[Start a new chat]` marker gated by
-  `aiModel.startsWith('novelai')` and `trimStartNewChat`
-- first message from `firstMessage` / `alternateGreetings[fmIndex]`
-- `makeMs` filter for `disabled === true` and `disabled === 'allBefore'`
-- basic per-message role mapping
+**7-5b is blocked by 7-6**. **7-5d is blocked by 7-9c**. **7-5e is
+blocked by 7-7e and 7-8.** Pick one of 7-5c / 7-6 / 7-7a; report a
+plan with concrete LOC + test scope before starting.
 
-Leave these for later sub-slices: script processing, `sendName`,
-`<Thoughts>` extraction, multimodal inlays, `{{asset_prompt::}}`,
-start triggers, tokenizer accumulation, and depth prompts.
-
-Expected shape: add `server/fastify/src/prompt/history.ts` logic and
-`server/fastify/__tests__/history.test.ts`. Boot prompt-variable
-infrastructure in tests with `beforeAll(() => bootPromptVariables())`.
-Use small database fixtures instead of broad snapshots.
+Same pattern as 7-3 / 7-4 / 7-5a: boot prompt-variable infra in
+tests with `beforeAll(() => bootPromptVariables())`, use small
+database fixtures, normalize structured outputs to `OpenAIChat[]`
+when applicable, and run all four bars (`pnpm check`,
+`pnpm api:test`, `pnpm test`, `pnpm build`) before reporting back.
 
 ## Patterns To Keep
 
