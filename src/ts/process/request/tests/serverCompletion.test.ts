@@ -349,12 +349,87 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBe('anthropic')
   })
 
-  it('refuses reverse_proxy under Anthropic (browser holds the custom URL)', () => {
+  it('routes reverse_proxy under Anthropic to provider "anthropic" when db.forceReplaceUrl and db.proxyKey are set', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/messages',
+      proxyKey: 'sk-proxy',
+    } as unknown as Partial<Database>)
     const r = getServerCompletionProvider(
       makeTarg({
         aiModel: 'reverse_proxy',
         modelInfo: {
           id: 'reverse_proxy',
+          format: LLMFormat.Anthropic,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('anthropic')
+  })
+
+  it('refuses reverse_proxy under Anthropic when db.forceReplaceUrl is empty', () => {
+    seedDb({
+      forceReplaceUrl: '',
+      proxyKey: 'sk-proxy',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.Anthropic,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes xcustom::: under Anthropic to provider "anthropic" when entry.format is Anthropic', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::anthropic-clone',
+          internalId: 'claude-fake',
+          url: 'https://example.com/v1/messages',
+          key: 'sk-x',
+          format: LLMFormat.Anthropic,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::anthropic-clone',
+        modelInfo: {
+          // request.ts mutates modelInfo.format to the customModels entry's
+          // format before the adapter runs; mirror that here.
+          id: 'xcustom:::anthropic-clone',
+          format: LLMFormat.Anthropic,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('anthropic')
+  })
+
+  it('refuses xcustom::: under Anthropic when the customModels entry format mismatches', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::mismatch',
+          internalId: 'foo',
+          url: 'https://example.com/v1/messages',
+          key: 'sk-x',
+          // Entry says Mistral but outer modelInfo says Anthropic — pipeline
+          // mismatch; refuse.
+          format: LLMFormat.Mistral,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::mismatch',
+        modelInfo: {
+          id: 'xcustom:::mismatch',
           format: LLMFormat.Anthropic,
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
@@ -973,6 +1048,115 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
       maxTokens: 512,
       system: 'be concise\n\nno emoji',
     })
+  })
+
+  it('routes reverse_proxy under Anthropic with proxyKey + autofilled baseUrl + db.additionalParams', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      customProxyRequestModel: 'claude-on-proxy',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::anthropic-beta', 'prompt-caching-2024-07-31'],
+        ['extra.knob', '1'],
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.Anthropic,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 512,
+      formated: [
+        { role: 'system', content: 'be concise' },
+        { role: 'user', content: 'hi' },
+      ],
+    })
+    await requestServerCompletion(targ, 'anthropic', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('anthropic')
+    expect(sent.model).toBe('claude-on-proxy')
+    expect(sent.messages).toEqual([{ role: 'user', content: 'hi' }])
+    expect(sent.options.anthropic.apiKey).toBe('sk-proxy')
+    expect(sent.options.anthropic.baseUrl).toBe('https://proxy.example.com/v1')
+    expect(sent.options.anthropic.system).toBe('be concise')
+    expect(sent.options.anthropic.additionalParams).toEqual([
+      ['header::anthropic-beta', 'prompt-caching-2024-07-31'],
+      ['extra.knob', '1'],
+    ])
+  })
+
+  it('autofills a bare reverse_proxy URL (https://host) to the v1 base for Anthropic', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'https://proxy.example.com',
+      customProxyRequestModel: 'claude-on-proxy',
+      autofillRequestUrl: true,
+      additionalParams: [],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.Anthropic,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'anthropic', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.anthropic.baseUrl).toBe('https://proxy.example.com/v1')
+  })
+
+  it('routes xcustom::: under Anthropic with entry url/key + parsed additionalParams', async () => {
+    seedDb({
+      claudeAPIKey: 'sk-not-used',
+      customModels: [
+        {
+          id: 'xcustom:::claude-clone',
+          internalId: 'claude-acme',
+          url: 'https://acme.example.com/v1/messages',
+          key: 'sk-acme',
+          format: LLMFormat.Anthropic,
+          params: 'header::anthropic-beta=cool-beta\nextra.flag=true',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'xcustom:::claude-clone',
+      modelInfo: {
+        id: 'xcustom:::claude-clone',
+        format: LLMFormat.Anthropic,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 256,
+    })
+    await requestServerCompletion(targ, 'anthropic', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('anthropic')
+    expect(sent.model).toBe('claude-acme')
+    expect(sent.options.anthropic.apiKey).toBe('sk-acme')
+    expect(sent.options.anthropic.baseUrl).toBe('https://acme.example.com/v1')
+    expect(sent.options.anthropic.additionalParams).toEqual([
+      ['header::anthropic-beta', 'cool-beta'],
+      ['extra.flag', 'true'],
+    ])
   })
 
   it('emits options.mistral with apiKey + maxTokens + temperature; reformat is NOT done client-side', async () => {

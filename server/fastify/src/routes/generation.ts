@@ -128,6 +128,7 @@ interface AnthropicOptions {
   system?: unknown
   maxTokens?: unknown
   temperature?: unknown
+  additionalParams?: unknown
 }
 
 interface MistralOptions {
@@ -385,6 +386,20 @@ async function handleEchoBuffered(
   }
 }
 
+function coerceAnthropicAdditionalParams(
+  options: AnthropicOptions,
+): { ok: true; value: Array<[string, string]> | undefined } | { ok: false; error: string } {
+  if (options.additionalParams === undefined) return { ok: true, value: undefined }
+  const coerced = coerceAdditionalParams(options.additionalParams)
+  if (coerced === null) {
+    return {
+      ok: false,
+      error: 'options.anthropic.additionalParams must be an array of [string, string] pairs',
+    }
+  }
+  return { ok: true, value: coerced.length > 0 ? coerced : undefined }
+}
+
 async function handleAnthropicStreaming(
   req: FastifyRequest,
   reply: FastifyReply,
@@ -394,6 +409,11 @@ async function handleAnthropicStreaming(
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
+    const ap = coerceAnthropicAdditionalParams(options)
+    if (!ap.ok) {
+      badRequest(reply, ap.error)
+      return
+    }
     const resolved = resolveAnthropicRequest({
       model,
       messages,
@@ -403,6 +423,7 @@ async function handleAnthropicStreaming(
       system: options.system,
       maxTokens: options.maxTokens,
       temperature: options.temperature,
+      additionalParams: ap.value,
       signal,
     })
     if (!resolved) {
@@ -424,6 +445,11 @@ async function handleAnthropicBuffered(
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
+    const ap = coerceAnthropicAdditionalParams(options)
+    if (!ap.ok) {
+      badRequest(reply, ap.error)
+      return
+    }
     const resolved = resolveAnthropicRequest({
       model,
       messages,
@@ -433,6 +459,7 @@ async function handleAnthropicBuffered(
       system: options.system,
       maxTokens: options.maxTokens,
       temperature: options.temperature,
+      additionalParams: ap.value,
       signal,
     })
     if (!resolved) {

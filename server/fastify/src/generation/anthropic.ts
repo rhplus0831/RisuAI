@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 
 export interface AnthropicRequest {
@@ -9,6 +10,13 @@ export interface AnthropicRequest {
   maxTokens: number
   system?: string
   temperature?: number
+  /**
+   * Pre-validated `[key, value][]` pairs from the SPA's additionalParams /
+   * xcustom `params` DSL. Applied after the dispatcher builds its default
+   * body + headers, so the user DSL has the last word. See
+   * `./additionalParams.ts` for semantics.
+   */
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -21,6 +29,7 @@ interface AnthropicResolveInput {
   maxTokens?: unknown
   system?: unknown
   temperature?: unknown
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -60,6 +69,7 @@ export function resolveAnthropicRequest(input: AnthropicResolveInput): Anthropic
     maxTokens,
     system,
     temperature,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
@@ -81,12 +91,24 @@ function endpoint(req: AnthropicRequest): string {
   return `${base}/messages`
 }
 
-function headers(req: AnthropicRequest): Record<string, string> {
+function buildHeaders(req: AnthropicRequest): Record<string, string> {
   return {
     'content-type': 'application/json',
     'x-api-key': req.apiKey,
     'anthropic-version': req.version,
   }
+}
+
+function buildRequestInit(
+  req: AnthropicRequest,
+  stream: boolean,
+): { body: string; headers: Record<string, string> } {
+  const body = buildPayload(req, stream)
+  const headers = buildHeaders(req)
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, headers, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers }
 }
 
 interface AnthropicContentBlock {
@@ -106,12 +128,13 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
     return { type: 'fail', result: 'aborted', aborted: true }
   }
 
+  const init = buildRequestInit(req, false)
   let response: Response
   try {
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req, false)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {
@@ -195,12 +218,13 @@ export async function* runAnthropicStream(
 ): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
+  const init = buildRequestInit(req, true)
   let response: Response
   try {
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req, true)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch {

@@ -92,6 +92,30 @@ function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
 }
 
 /**
+ * Anthropic counterpart to `resolveReverseProxyUrl`: mirror the local
+ * autofill at `src/ts/process/request/anthropic.ts:90-101` (which appends
+ * `/v1/messages` onto bare URLs), then strip the trailing `/messages` so
+ * the server-side dispatcher can re-append it itself. Anthropic has no
+ * `risu::` prefix handling.
+ */
+function resolveReverseProxyAnthropicUrl(rawUrl: string, autofill: boolean): string {
+  let url = rawUrl
+  if (autofill) {
+    if (url.endsWith('v1')) {
+      url += '/messages'
+    } else if (url.endsWith('v1/')) {
+      url += 'messages'
+    } else if (!(url.endsWith('messages') || url.endsWith('messages/'))) {
+      url += url.endsWith('/') ? 'v1/messages' : '/v1/messages'
+    }
+  }
+  // Strip trailing /messages (or /messages/) since the server appends it.
+  const trimmed = url.replace(/\/+$/, '')
+  if (trimmed.endsWith('/messages')) return trimmed.slice(0, -'/messages'.length)
+  return trimmed
+}
+
+/**
  * Normalize `db.forceReplaceUrl` into a clean base URL the server-side
  * dispatcher can append `/chat/completions` to. Mirrors the local autofill
  * in `src/ts/process/request/openAI/requests.ts:596-614` plus the `risu::`
@@ -171,8 +195,24 @@ function deriveOpenAIBaseUrl(endpoint: string): string {
 
 function isVanillaAnthropic(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
+  if (aiModel === 'reverse_proxy') {
+    // reverse_proxy with db.customAPIFormat === Anthropic rides the anthropic
+    // dispatcher with proxyKey + forceReplaceUrl + db.additionalParams.
+    // request.ts mutates modelInfo.format to db.customAPIFormat before the
+    // adapter runs, so by the time isVanillaAnthropic is called, format is
+    // already Anthropic. Validate the supporting db fields here.
+    const db = getDatabase()
+    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
+    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
+    return true
+  }
+  if (aiModel.startsWith('xcustom:::')) {
+    // xcustom with format === Anthropic also rides the anthropic dispatcher.
+    const entry = findXcustomEntry(aiModel)
+    if (entry === null) return false
+    if (entry.format !== LLMFormat.Anthropic) return false
+    return true
+  }
   if (targ.modelInfo?.endpoint) return false
   return true
 }
@@ -309,6 +349,8 @@ export function resolveProviderModel(
       return entry.internalId.length > 0 ? entry.internalId : entry.id
     }
   }
+  // reverse_proxy uses db.customProxyRequestModel as the wire model regardless
+  // of which dispatcher it ends up on (OAI-compat or Anthropic).
   if (aiModel === 'reverse_proxy') return db.customProxyRequestModel ?? ''
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
@@ -436,6 +478,7 @@ function buildProviderOptions(
   }
   if (provider === 'anthropic') {
     const anthropic: Record<string, unknown> = {}
+    const aiModel = targ.aiModel ?? ''
     const isNanoGPT = targ.modelInfo?.format === LLMFormat.NanoGPTMessages
     if (isOllamaCloud(targ)) {
       anthropic.apiKey = db.ollamaApiKey ?? ''
@@ -443,6 +486,26 @@ function buildProviderOptions(
     } else if (isNanoGPT) {
       anthropic.apiKey = db.nanogptKey ?? ''
       anthropic.baseUrl = 'https://nano-gpt.com/api/v1'
+    } else if (aiModel === 'reverse_proxy') {
+      anthropic.apiKey = db.proxyKey ?? ''
+      const autofill = db.autofillRequestUrl !== false
+      anthropic.baseUrl = resolveReverseProxyAnthropicUrl(db.forceReplaceUrl ?? '', autofill)
+      if (Array.isArray(db.additionalParams) && db.additionalParams.length > 0) {
+        anthropic.additionalParams = db.additionalParams
+      }
+    } else if (aiModel.startsWith('xcustom:::')) {
+      const entry = findXcustomEntry(aiModel)
+      if (entry !== null) {
+        anthropic.apiKey = entry.key
+        // xcustom URL is stored as the full /v1/messages URL; strip the
+        // trailing /messages so the server can re-append it.
+        const trimmed = entry.url.replace(/\/+$/, '')
+        anthropic.baseUrl = trimmed.endsWith('/messages')
+          ? trimmed.slice(0, -'/messages'.length)
+          : trimmed
+        const params = parseXcustomParams(entry.params)
+        if (params.length > 0) anthropic.additionalParams = params
+      }
     } else {
       anthropic.apiKey = db.claudeAPIKey ?? ''
     }

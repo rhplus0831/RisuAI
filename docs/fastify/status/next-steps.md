@@ -6,9 +6,9 @@ Use this list to pick the next chunk of work. Phase 5 closed on
 2026-05-22 with all 28 extraction slices landed; the historical
 slice record now lives in
 [`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 is active,
-and commit history through Phase 6-18 shows provider coverage
-landed through reverse_proxy OAI-compat (full DSL + ooba
-system hoist + risu:: header).
+and commit history through Phase 6-19 shows provider coverage
+landed through reverse_proxy + xcustom under the Anthropic
+format.
 
 ## Immediate
 
@@ -23,18 +23,23 @@ system hoist + risu:: header).
    Responses API (+ NanoGPT Responses), Ollama Cloud variants,
    Kobold, ooba legacy, native Ollama `/api/chat` (buffered +
    NDJSON streaming), `xcustom:::id` OAI-compat with the
-   `additionalParams` body/header overlay DSL, and the
+   `additionalParams` body/header overlay DSL, the
    `reverse_proxy` path under OpenAI-compatible (URL autofill,
    `risu::` → `X-Proxy-Risu` header lift, `db.reverseProxyOobaMode`
-   system hoisting). Still remaining: NovelAI, NovelList, ooba
-   OAI-compatible `/v1/completions` (open design question — local
-   path uses Jinja chat templates, not the `## User` flatten),
+   system hoisting), and `reverse_proxy` + `xcustom:::id` under
+   the Anthropic format (URL autofill to `/v1/messages`, shared
+   additionalParams DSL). Still remaining: NovelAI / NovelList
+   (deferred to Phase 7 per
+   [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)),
+   ooba OAI-compatible `/v1/completions` (deferred to Phase 7
+   per [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md)),
    Vertex AI Gemini, AWS Bedrock Claude, Stable Horde, and
-   reverse_proxy variants whose `db.customAPIFormat` points at
-   Anthropic / Mistral / etc. (need their own slices). Keep the
-   33 local sendChat snapshots, the 7-fixture server-backed
+   reverse_proxy / xcustom variants whose `db.customAPIFormat`
+   points at Mistral / Cohere / etc. (need their own slices to
+   port the additionalParams overlay to those dispatchers). Keep
+   the 33 local sendChat snapshots, the 7-fixture server-backed
    sweep, and the Fastify generation tests green
-   (`pnpm api:test`: 352, `pnpm test`: 548 + 4 skipped).
+   (`pnpm api:test`: 355, `pnpm test`: 554 + 4 skipped).
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments
@@ -66,6 +71,7 @@ system hoist + risu:: header).
 | 6-16  | `c919e683` | Added native Ollama `/api/chat` dispatcher with NDJSON streaming, adapter `db.ollamaURL` gate, and route + dispatcher tests. |
 | 6-17  | `da7d05b8` | Routed `xcustom:::<id>` OAI-compat through the openai dispatcher with the `additionalParams` body/header overlay DSL ported server-side. |
 | 6-18  | `425d8302` | Routed `reverse_proxy` OAI-compat through the openai dispatcher with URL autofill, `risu::` → `X-Proxy-Risu` header lift, server-side `oobaSystemHoist`, and `db.additionalParams` overlay. |
+| 6-19  | _pending_  | Ported the `additionalParams` overlay to the anthropic dispatcher; routed `reverse_proxy` + `xcustom:::id` under `LLMFormat.Anthropic` with URL autofill to `/v1/messages`. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

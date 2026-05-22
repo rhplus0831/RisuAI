@@ -114,6 +114,38 @@ describe('runAnthropic (non-streaming)', () => {
     })
   })
 
+  it('applies additionalParams to the body + headers after the default payload is built', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ content: [{ type: 'text', text: 'x' }] })
+    })
+    await runAnthropic({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 512,
+      temperature: 0.5,
+      additionalParams: [
+        ['header::anthropic-beta', 'prompt-caching-2024-07-31'],
+        ['extra.flag', 'true'],
+        ['extra.nested.value', 'json::[1, 2]'],
+        ['temperature', '{{none}}'],
+      ],
+      signal: new AbortController().signal,
+    })
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('m')
+    expect(sent.max_tokens).toBe(512)
+    expect(sent.temperature).toBeUndefined()
+    expect(sent.extra).toEqual({ flag: true, nested: { value: [1, 2] } })
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['anthropic-beta']).toBe('prompt-caching-2024-07-31')
+    expect(headers['x-api-key']).toBe('k')
+  })
+
   it('omits system / temperature when not provided', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
