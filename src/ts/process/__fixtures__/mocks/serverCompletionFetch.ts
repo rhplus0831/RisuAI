@@ -31,6 +31,7 @@ const DEFAULT_OPENAI_RESULT = 'fixture openai reply'
 const DEFAULT_ANTHROPIC_RESULT = 'fixture claude reply'
 const DEFAULT_MISTRAL_RESULT = 'fixture mistral reply'
 const DEFAULT_COHERE_RESULT = 'fixture cohere reply'
+const DEFAULT_DEEPSEEK_RESULT = 'fixture deepseek reply'
 
 interface State {
   calls: ServerCompletionCall[]
@@ -38,6 +39,7 @@ interface State {
   anthropicResult: string
   mistralResult: string
   cohereResult: string
+  deepseekResult: string
 }
 
 const state: State = {
@@ -46,6 +48,7 @@ const state: State = {
   anthropicResult: DEFAULT_ANTHROPIC_RESULT,
   mistralResult: DEFAULT_MISTRAL_RESULT,
   cohereResult: DEFAULT_COHERE_RESULT,
+  deepseekResult: DEFAULT_DEEPSEEK_RESULT,
 }
 
 export function getServerCompletionCalls(): ServerCompletionCall[] {
@@ -58,6 +61,7 @@ export function resetServerCompletionCalls(): void {
   state.anthropicResult = DEFAULT_ANTHROPIC_RESULT
   state.mistralResult = DEFAULT_MISTRAL_RESULT
   state.cohereResult = DEFAULT_COHERE_RESULT
+  state.deepseekResult = DEFAULT_DEEPSEEK_RESULT
 }
 
 export function setOpenAIResult(text: string): void {
@@ -74,6 +78,10 @@ export function setMistralResult(text: string): void {
 
 export function setCohereResult(text: string): void {
   state.cohereResult = text
+}
+
+export function setDeepSeekResult(text: string): void {
+  state.deepseekResult = text
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -143,8 +151,11 @@ export async function serverCompletionFetch(
   }
 
   if (provider === 'openai' || provider === 'nanogpt' || provider === 'openrouter') {
-    if (stream) return sseResponse(state.openaiResult)
-    return jsonResponse({ type: 'success', result: state.openaiResult, model })
+    // DeepSeek / DeepInfra ride provider='openai' but the fixture wants its
+    // own canned reply so the snapshot is self-documenting.
+    const text = model.startsWith('deepseek-') ? state.deepseekResult : state.openaiResult
+    if (stream) return sseResponse(text)
+    return jsonResponse({ type: 'success', result: text, model })
   }
 
   if (provider === 'anthropic') {

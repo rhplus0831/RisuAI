@@ -27,19 +27,45 @@ export function formatToServerProvider(format: LLMFormat): string | null {
 
 /**
  * `LLMFormat.OpenAICompatible` covers vanilla OpenAI plus several derivatives
- * that share the wire shape. The vanilla path goes to `provider: 'openai'`;
- * `aiModel === 'openrouter'` routes to `provider: 'openrouter'`. The
- * derivatives still on local dispatch are reverse_proxy, xcustom:::, and
- * anything carrying `keyIdentifier`/`endpoint` (each gets its own slice).
+ * that share the wire shape. Vanilla goes to `provider: 'openai'`;
+ * `aiModel === 'openrouter'` routes to `'openrouter'`; models that look up
+ * their key under `db.OaiCompAPIKeys[modelInfo.keyIdentifier]` (DeepSeek,
+ * DeepInfra) ride the openai dispatcher with the lookup key + a baseUrl
+ * derived from `modelInfo.endpoint`. reverse_proxy and xcustom::: stay on
+ * local dispatch until their slices land.
  */
 function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
   if (aiModel === 'openrouter') return 'openrouter'
   if (aiModel === 'reverse_proxy') return null
   if (aiModel.startsWith('xcustom:::')) return null
-  if (targ.modelInfo?.keyIdentifier) return null
+  if (targ.modelInfo?.keyIdentifier) {
+    const db = getDatabase()
+    const key = db.OaiCompAPIKeys?.[targ.modelInfo.keyIdentifier]
+    if (typeof key !== 'string' || key.length === 0) return null
+    if (typeof targ.modelInfo.endpoint !== 'string' || targ.modelInfo.endpoint.length === 0) {
+      return null
+    }
+    return 'openai'
+  }
+  // A hardcoded endpoint without a keyIdentifier means a self-hosted /
+  // reverse-proxy deployment whose auth path is not yet defined; stay local.
   if (targ.modelInfo?.endpoint) return null
   return 'openai'
+}
+
+/**
+ * Local model endpoints come as a fully-qualified
+ * `<baseUrl>/chat/completions` URL. The server-side openai dispatcher
+ * appends `/chat/completions` itself, so strip the trailing path component
+ * before forwarding.
+ */
+function deriveOpenAIBaseUrl(endpoint: string): string {
+  const trimmed = endpoint.replace(/\/+$/, '')
+  if (trimmed.endsWith('/chat/completions')) {
+    return trimmed.slice(0, -'/chat/completions'.length)
+  }
+  return trimmed
 }
 
 function isVanillaAnthropic(targ: RequestDataArgumentExtended): boolean {
@@ -142,7 +168,16 @@ function buildProviderOptions(
     }
   }
   if (provider === 'openai') {
-    const openai: Record<string, unknown> = { apiKey: db.openAIKey ?? '' }
+    const openai: Record<string, unknown> = {}
+    const keyId = targ.modelInfo?.keyIdentifier
+    if (typeof keyId === 'string' && keyId.length > 0) {
+      openai.apiKey = db.OaiCompAPIKeys?.[keyId] ?? ''
+      if (typeof targ.modelInfo?.endpoint === 'string') {
+        openai.baseUrl = deriveOpenAIBaseUrl(targ.modelInfo.endpoint)
+      }
+    } else {
+      openai.apiKey = db.openAIKey ?? ''
+    }
     if (typeof targ.maxTokens === 'number') openai.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') openai.temperature = targ.temperature
     return { openai }

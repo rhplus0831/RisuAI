@@ -107,6 +107,7 @@ const DUAL_MODE_FIXTURES = [
   'anthropic-basic',
   'mistral-basic',
   'cohere-basic',
+  'deepseek-basic',
 ] as const
 
 interface ExpectedCall {
@@ -147,6 +148,21 @@ const EXPECTED_CALL: Record<(typeof DUAL_MODE_FIXTURES)[number], ExpectedCall> =
     stream: false,
     // newer command-r releases skip safety_mode='NONE' (server adds nothing).
     options: { cohere: { apiKey: 'cohere-fixture-key' } },
+  },
+  'deepseek-basic': {
+    provider: 'openai',
+    model: 'deepseek-chat',
+    stream: false,
+    // keyIdentifier-keyed deepseek rides the openai variant with a derived
+    // baseUrl (modelInfo.endpoint stripped of /chat/completions) and the
+    // db.OaiCompAPIKeys['deepseek'] lookup as apiKey.
+    options: {
+      openai: {
+        apiKey: 'deepseek-fixture-key',
+        baseUrl: 'https://api.deepseek.com/beta',
+        maxTokens: 200,
+      },
+    },
   },
 }
 

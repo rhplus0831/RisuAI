@@ -16,13 +16,13 @@ snapshot is summarized here.
 1. **Continue Phase 6 provider coverage.** The completion route,
    normalized SSE envelope, client adapter, and dual-mode fixture
    harness are in place for echo, vanilla OpenAI, NanoGPT,
-   OpenRouter, vanilla Anthropic, vanilla Mistral, and vanilla
-   Cohere (non-streaming). The next Phase 6 slice should pick one
-   uncovered provider family or helper route, add server
-   request/response tests, and add a dual-mode fixture when the
-   provider is eligible for the server-backed adapter. Keep the 31
-   local sendChat snapshots, the 5-fixture server-backed sweep,
-   and the Fastify generation tests green.
+   OpenRouter, vanilla Anthropic, vanilla Mistral, vanilla Cohere
+   (non-streaming), and the OAI-compat keyIdentifier path
+   (DeepSeek + DeepInfra ride the openai dispatcher with a derived
+   baseUrl + `db.OaiCompAPIKeys[...]` lookup). The next Phase 6
+   slice should pick one uncovered provider family or helper
+   route. Keep the 32 local sendChat snapshots, the 6-fixture
+   server-backed sweep, and the Fastify generation tests green.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -41,6 +41,59 @@ snapshot is summarized here.
 <!-- prettier-ignore-start -->
 
 ## Completed Slices
+
+- **Phase 6-8 - deepseek + deepinfra (OAI-compat key path).** Done
+  2026-05-22. Lifts the `modelInfo.keyIdentifier` refusal in
+  `selectOpenAIVariant` and routes DeepSeek / DeepInfra style
+  models through the existing openai dispatcher — they share the
+  wire shape with vanilla OpenAI and only differ in (a) which key
+  field they read (`db.OaiCompAPIKeys[modelInfo.keyIdentifier]`
+  vs `db.openAIKey`) and (b) the upstream URL (from
+  `modelInfo.endpoint`, which is a full
+  `<baseUrl>/chat/completions` URL the server-side dispatcher
+  re-derives). New client-side helper `deriveOpenAIBaseUrl(url)`
+  strips a trailing `/chat/completions` (plus a trailing slash if
+  present) so the existing
+  server-side `${baseUrl}/chat/completions` re-assembly produces
+  the same URL the local browser path would have hit. Routing
+  decision recap: a keyIdentifier model needs BOTH a lookup key
+  present in `db.OaiCompAPIKeys` AND a non-empty
+  `modelInfo.endpoint`; otherwise it stays on local dispatch (the
+  prior key-or-endpoint absence cases reduce to refusal). An
+  endpoint-only model (no keyIdentifier) still stays local because
+  its auth path is undefined. `buildProviderOptions` emits
+  `options.openai.apiKey` from the OaiCompAPIKeys map and adds
+  `options.openai.baseUrl` when a keyIdentifier path applies;
+  vanilla openai's apiKey path (db.openAIKey) is unchanged when no
+  keyIdentifier is present. No server-side changes — the existing
+  `resolveOpenAIVariant` route helper already accepts a caller-
+  supplied baseUrl. New `deepseek-basic` dual-mode fixture
+  (`aiModel: 'deepseek-chat'`, modelInfo carrying
+  `keyIdentifier: 'deepseek'` +
+  `endpoint: 'https://api.deepseek.com/beta/chat/completions'`,
+  `db.OaiCompAPIKeys: {deepseek: 'deepseek-fixture-key'}`). Shared
+  snapshot pins stages `[1, 3, 4]`, `runInlayScreen` fires,
+  assistant text `'fixture deepseek reply'`, `inputTokens: 176`
+  (matches mistral/cohere-basic because DeepSeek lacks the
+  consecutive-system coalesce too — the description gets its own
+  row). `serverCompletionFetch` keys off `model.startsWith('deepseek-')`
+  to return the deepseek-flavored canned reply (overridable via
+  `setDeepSeekResult`) so the fixture snapshot stays self-
+  documenting even though the wire path is `provider: 'openai'`.
+  Tests: adapter file rewrites the prior
+  refuse-keyIdentifier case into 3 cases (routes when key + endpoint
+  set, refuses when OaiCompAPIKeys lookup is empty, refuses when
+  endpoint is missing), keeps the endpoint-only refusal as-is, and
+  adds 2 request-shape cases (DeepSeek emits apiKey from
+  OaiCompAPIKeys + derived baseUrl + wire-level model unchanged;
+  vanilla openai path keeps db.openAIKey and omits baseUrl). Route
+  test file gains 1 case (custom baseUrl reaches upstream as
+  `{baseUrl}/chat/completions` with Bearer auth from the supplied
+  apiKey). No new server dispatcher tests — the openai dispatcher
+  already covered the custom-baseUrl path. Verification: `pnpm
+  test` (518 across 46 files, +6 = 4 adapter + 1 local + 1
+  server-backed), `pnpm api:test` (236 across 16 files, +1 route),
+  `pnpm check`, `pnpm build` all green.
 
 - **Phase 6-7 - cohere end-to-end (non-streaming).** Done
   2026-05-22. First Phase 6 provider with a fully non-OpenAI wire

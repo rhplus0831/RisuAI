@@ -683,6 +683,51 @@ describe('Phase 6-6 POST /api/v1/generate/completion (mistral)', () => {
   })
 })
 
+describe('Phase 6-8 POST /api/v1/generate/completion (openai with custom baseUrl)', () => {
+  // DeepSeek / DeepInfra route through provider='openai' with a derived
+  // baseUrl (from modelInfo.endpoint) and a key from db.OaiCompAPIKeys[...].
+  // The wire shape is identical to vanilla openai; only the URL differs.
+  const deepseekPayload = {
+    provider: 'openai',
+    model: 'deepseek-chat',
+    messages: [{ role: 'user', content: 'hi' }],
+    stream: false,
+    options: {
+      openai: {
+        apiKey: 'ds-key',
+        baseUrl: 'https://api.deepseek.com/beta',
+      },
+    },
+  }
+
+  it('routes to {baseUrl}/chat/completions when options.openai.baseUrl is set', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'deepseek-chat',
+          choices: [{ message: { content: 'deepseek ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: deepseekPayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'deepseek ok' })
+    expect(captured!.url).toBe('https://api.deepseek.com/beta/chat/completions')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer ds-key')
+  })
+})
+
 describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
   const coherePayload = {
     provider: 'cohere',

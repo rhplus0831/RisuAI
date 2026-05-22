@@ -305,21 +305,58 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBe('nanogpt')
   })
 
-  it('refuses models with a keyIdentifier (DeepInfra/DeepSeek style)', () => {
+  it('routes a DeepSeek-style keyIdentifier model into provider "openai" when key + endpoint are set', () => {
+    seedDb({
+      OaiCompAPIKeys: { deepseek: 'ds-fixture' },
+    } as unknown as Partial<Database>)
     const r = getServerCompletionProvider(
       makeTarg({
-        aiModel: 'deepinfra_meta-llama-3-70b',
+        aiModel: 'deepseek-chat',
         modelInfo: {
-          id: 'deepinfra_meta-llama-3-70b',
+          id: 'deepseek-chat',
           format: LLMFormat.OpenAICompatible,
-          keyIdentifier: 'deepinfra',
+          endpoint: 'https://api.deepseek.com/beta/chat/completions',
+          keyIdentifier: 'deepseek',
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai')
+  })
+
+  it('refuses a keyIdentifier model when db.OaiCompAPIKeys lacks the lookup key', () => {
+    seedDb({ OaiCompAPIKeys: {} } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'deepseek-chat',
+        modelInfo: {
+          id: 'deepseek-chat',
+          format: LLMFormat.OpenAICompatible,
+          endpoint: 'https://api.deepseek.com/beta/chat/completions',
+          keyIdentifier: 'deepseek',
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
     )
     expect(r).toBeNull()
   })
 
-  it('refuses models with a hardcoded endpoint override', () => {
+  it('refuses a keyIdentifier model without a hardcoded endpoint (no baseUrl to derive)', () => {
+    seedDb({
+      OaiCompAPIKeys: { deepseek: 'ds' },
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'deepseek-chat',
+        modelInfo: {
+          id: 'deepseek-chat',
+          format: LLMFormat.OpenAICompatible,
+          keyIdentifier: 'deepseek',
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses an endpoint-only model (no keyIdentifier auth path defined)', () => {
     const r = getServerCompletionProvider(
       makeTarg({
         aiModel: 'foo',
@@ -363,6 +400,62 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
       maxTokens: 256,
       temperature: 0.4,
     })
+  })
+
+  it('emits options.openai.apiKey from db.OaiCompAPIKeys[keyIdentifier] + baseUrl stripped of /chat/completions for DeepSeek', async () => {
+    seedDb({
+      openAIKey: 'sk-not-used',
+      OaiCompAPIKeys: { deepseek: 'ds-fixture-key' },
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'deepseek-chat',
+      modelInfo: {
+        id: 'deepseek-chat',
+        format: LLMFormat.OpenAICompatible,
+        endpoint: 'https://api.deepseek.com/beta/chat/completions',
+        keyIdentifier: 'deepseek',
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 128,
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.openai).toEqual({
+      apiKey: 'ds-fixture-key',
+      baseUrl: 'https://api.deepseek.com/beta',
+      maxTokens: 128,
+    })
+    // The wire-level model field is the original modelInfo.id, unchanged.
+    expect(sent.model).toBe('deepseek-chat')
+  })
+
+  it('uses the db.openAIKey path when keyIdentifier is absent (vanilla openai unchanged)', async () => {
+    seedDb({
+      openAIKey: 'sk-vanilla',
+      OaiCompAPIKeys: { deepseek: 'ds' },
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'gpt-4o',
+      modelInfo: {
+        id: 'gpt-4o',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.openai.apiKey).toBe('sk-vanilla')
+    expect(sent.options.openai.baseUrl).toBeUndefined()
   })
 
   it('omits maxTokens / temperature from options.openai when targ does not carry them', async () => {
