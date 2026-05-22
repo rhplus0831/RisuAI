@@ -143,6 +143,7 @@ const FIXTURES = [
   'start-trigger-stop',
   'prompt-info-text',
   'preview-prompt',
+  'echo-basic',
 ] as const
 
 describe('sendChat fixtures', () => {

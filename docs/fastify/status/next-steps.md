@@ -44,6 +44,60 @@ are below under "Completed Slices".
 
 ## Completed Slices
 
+- **Phase 6-3 - dual-mode fixture harness + first echo fixture.**
+  Done 2026-05-22. Adds the mechanism for asserting that a sendChat
+  fixture produces the same observable output through both the
+  local dispatch path and the server-backed adapter path, then
+  proves it with one echo fixture. New files:
+  `src/ts/process/__fixtures__/db/echo-basic.json` (minimal
+  one-user-turn fixture: `aiModel: 'echo_model'`,
+  `useStreaming: false`, `useServerGeneration: true`,
+  `echoMessage: 'fixture echo reply'`),
+  `src/ts/process/__fixtures__/upstream/echo-basic.jsonl`
+  (non-streaming success entry for the local provider fake),
+  `src/ts/process/__fixtures__/expected/echo-basic.json` (the
+  recorded shared snapshot: `stages: [1, 3, 4]`, `runInlayScreen`
+  fires, assistant message `"fixture echo reply"`),
+  `src/ts/process/__fixtures__/mocks/serverCompletionFetch.ts`
+  (fetch stub emulating the Phase 6-1 route: echo returns either
+  JSON `{type: 'success', result}` or an SSE `event: chunk + done`
+  pair depending on `body.stream`; other providers return 501;
+  unknown URLs throw; calls recorded into a parallel
+  `getServerCompletionCalls()` array), and
+  `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
+  (server-backed sweep, mirrors the local sweep's mock setup minus
+  `vi.mock('../request/request')`; mocks `../../platform` with the
+  hoisted-getter pattern to force `isFastifyServer: true`; mocks
+  `../../storage/nodeStorage` to short-circuit auth; installs the
+  fetch stub via `vi.stubGlobal`). The existing
+  `sendChat.fixtures.test.ts` appends `'echo-basic'` to FIXTURES
+  so both sweeps assert against the same expected snapshot. Shared
+  snapshot contract: the server-backed runner strips `providerCalls`
+  from both expected and captured before comparing, then asserts
+  `getServerCompletionCalls()` separately (provider `'echo'`,
+  model `'echo_model'`, `stream: false`, `risu-auth` header set,
+  `options.echo` derived from db). Decisions locked: (1) separate
+  test file instead of toggling vi.mock per test — zero risk of
+  drift in the existing 25-fixture sweep; (2) drop `providerCalls`
+  from the shared snapshot — the two modes legitimately observe
+  different things at the request boundary, and the shared
+  snapshot pins everything else (messages, generationInfo, stages,
+  side effects, doingChat); (3) `db.useStreaming: false` in the
+  fixture so the server-backed path uses JSON (the SSE-streaming
+  path is already covered by the Phase 6-2 unit tests); (4)
+  fixture named `echo-basic` rather than encoding dual-mode in the
+  name. Out of scope: converting any of the existing 25 fixtures
+  to dual-mode (they use providers without server-side
+  implementations yet — each becomes eligible as its provider
+  slice lands in Phase 6-4+); booting a real Fastify instance in
+  the SPA test harness (route already covered by
+  `server/fastify/__tests__/generation.completion.test.ts` via
+  app.inject; the dual-mode runner only needs a fetch-shaped
+  fake); orchestrator-level SSE streaming wiring. Verification:
+  `pnpm test` (476 across 46 files, up from 474/45 — +1 local,
+  +1 server-backed), `pnpm check`, `pnpm api:test` (145
+  unchanged), `pnpm build` all green.
+
 - **Phase 6-2 - client adapter for echo (flag-gated).** Done
   2026-05-22. Browser-side adapter that posts to the Phase 6-1
   route. New module `src/ts/process/request/serverCompletion.ts`
