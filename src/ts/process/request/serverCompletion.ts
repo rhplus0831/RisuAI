@@ -38,6 +38,8 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       // its own 'ollama' provider, cloud routes to openai / openai-responses
       // / anthropic per db.ollamaRequestFormat.
       return 'ollama'
+    case LLMFormat.AWSBedrockClaude:
+      return 'bedrock'
     case LLMFormat.Kobold:
       return 'kobold'
     case LLMFormat.OobaLegacy:
@@ -263,6 +265,68 @@ function isVanillaGemini(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+interface BedrockCredentialParts {
+  accessKeyId: string
+  secretAccessKey: string
+  region: string
+}
+
+/**
+ * The SPA stores AWS credentials in `db.claudeAPIKey` as a colon-separated
+ * string `accessKeyId:secretAccessKey:region`. Parse it here so the
+ * adapter can ship a structured `options.bedrock.credentials` object.
+ */
+function parseBedrockCredentials(apiKey: string): BedrockCredentialParts | null {
+  if (typeof apiKey !== 'string') return null
+  const parts = apiKey.split(':')
+  if (parts.length < 3) return null
+  const [accessKeyId, secretAccessKey, region] = parts
+  if (
+    typeof accessKeyId !== 'string' ||
+    accessKeyId.length === 0 ||
+    typeof secretAccessKey !== 'string' ||
+    secretAccessKey.length === 0 ||
+    typeof region !== 'string' ||
+    region.length === 0
+  ) {
+    return null
+  }
+  return { accessKeyId, secretAccessKey, region }
+}
+
+/**
+ * Match the SPA's `useGlobal` heuristic in
+ * `src/ts/process/request/anthropic.ts:446-461`: claude 4.5+ (or any
+ * model with an internalID date stamp >= 20250929) routes to
+ * `global.<modelId>` instead of `us.<modelId>`.
+ */
+function resolveBedrockWireModel(internalId: string): string {
+  let useGlobal = false
+  const dateMatch = internalId.match(/(\d{8})/)
+  const datePart = dateMatch ? Number(dateMatch[1]) : NaN
+  const versionMatch = internalId.match(/claude-(?:opus-|sonnet-|haiku-)?(\d+)-(\d+)/)
+  if (!Number.isNaN(datePart) && datePart > 0) {
+    useGlobal = datePart >= 20250929
+  } else if (versionMatch) {
+    const major = Number(versionMatch[1])
+    const minor = Number(versionMatch[2])
+    useGlobal = major > 4 || (major === 4 && minor >= 5)
+  }
+  return (useGlobal ? 'global.' : 'us.') + internalId
+}
+
+function isVanillaBedrock(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (aiModel === 'reverse_proxy') return false
+  if (aiModel.startsWith('xcustom:::')) return false
+  const db = getDatabase()
+  if (parseBedrockCredentials(db.claudeAPIKey ?? '') === null) return false
+  if (typeof targ.modelInfo?.internalID !== 'string' || targ.modelInfo.internalID.length === 0) {
+    return false
+  }
+  return true
+}
+
 function isVanillaResponses(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
   if (aiModel === 'reverse_proxy') return false
@@ -306,6 +370,7 @@ export function getServerCompletionProvider(
   if (provider === 'gemini' && !isVanillaGemini(targ)) return null
   if (provider === 'openai-legacy-instruct' && !isVanillaLegacyInstruct(targ)) return null
   if (provider === 'openai-responses' && !isVanillaResponses(targ)) return null
+  if (provider === 'bedrock' && !isVanillaBedrock(targ)) return null
   if (provider === 'ollama') {
     // Translate the routing decision the local code makes for ollama-cloud.
     return resolveOllamaProvider(targ)
@@ -363,6 +428,12 @@ export function resolveProviderModel(
   // reverse_proxy uses db.customProxyRequestModel as the wire model regardless
   // of which dispatcher it ends up on (OAI-compat or Anthropic).
   if (aiModel === 'reverse_proxy') return db.customProxyRequestModel ?? ''
+  if (provider === 'bedrock') {
+    // Bedrock wire model is the modelInfo.internalID with a us./global.
+    // prefix (per the SPA's claude4.5+ heuristic at anthropic.ts:446-461).
+    const internalId = targ.modelInfo?.internalID ?? ''
+    return resolveBedrockWireModel(internalId)
+  }
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
   if (provider === 'gemini') {
@@ -543,6 +614,20 @@ function buildProviderOptions(
       aiModel === 'cohere-command-r-03-2024' || aiModel === 'cohere-command-r-plus-04-2024'
     if (!isNewerCommandR) cohere.safetyMode = 'NONE'
     return { cohere }
+  }
+  if (provider === 'bedrock') {
+    const bedrock: Record<string, unknown> = {}
+    const creds = parseBedrockCredentials(db.claudeAPIKey ?? '')
+    if (creds !== null) {
+      bedrock.credentials = {
+        accessKeyId: creds.accessKeyId,
+        secretAccessKey: creds.secretAccessKey,
+        region: creds.region,
+      }
+    }
+    if (typeof targ.maxTokens === 'number') bedrock.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') bedrock.temperature = targ.temperature
+    return { bedrock }
   }
   if (provider === 'gemini') {
     const gemini: Record<string, unknown> = {}
@@ -727,6 +812,17 @@ export async function requestServerCompletion(
       const anthropic = (options.anthropic ?? {}) as Record<string, unknown>
       anthropic.system = extracted.system
       options.anthropic = anthropic
+    }
+  }
+  if (provider === 'bedrock' && Array.isArray(targ.formated)) {
+    const extracted = extractAnthropicSystem(
+      targ.formated as Array<{ role: string; content: unknown }>,
+    )
+    messages = extracted.messages
+    if (extracted.system !== undefined) {
+      const bedrock = (options.bedrock ?? {}) as Record<string, unknown>
+      bedrock.system = extracted.system
+      options.bedrock = bedrock
     }
   }
   const payload = {

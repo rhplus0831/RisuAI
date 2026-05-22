@@ -1,0 +1,268 @@
+import { applyAdditionalParameters } from './additionalParams.js'
+import type { CompletionResult } from './frames.js'
+import { encodePathSegment, signSigV4 } from './sigv4.js'
+
+/**
+ * AWS Bedrock Claude (Anthropic Messages) dispatcher. Mirrors the local
+ * SPA path at `src/ts/process/request/anthropic.ts:418-582`:
+ *
+ *  - POST `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/invoke`
+ *  - Body is the Anthropic Messages payload with `anthropic_version:
+ *    'bedrock-2023-05-31'` instead of the regular date-string version,
+ *    and no top-level `model` / `stream` fields (the model id is in the
+ *    URL).
+ *  - Auth via AWS SigV4. The `service` name on the signing line is
+ *    `bedrock` (not `bedrock-runtime`).
+ *
+ * Streaming is intentionally deferred: the `:invoke-with-response-stream`
+ * variant uses AWS EventStream binary framing, not SSE, so it needs a
+ * separate parser. Buffered-only matches how Cohere shipped in 6-7.
+ */
+
+export interface BedrockCredentials {
+  accessKeyId: string
+  secretAccessKey: string
+  sessionToken?: string
+  region: string
+}
+
+export interface BedrockRequest {
+  model: string
+  messages: unknown[]
+  credentials: BedrockCredentials
+  system?: string
+  maxTokens: number
+  temperature?: number
+  topP?: number
+  topK?: number
+  additionalParams?: Array<[string, string]>
+  /** Override clock for deterministic SigV4 tests. */
+  date?: Date
+  signal: AbortSignal
+}
+
+interface BedrockResolveInput {
+  model?: unknown
+  messages?: unknown
+  credentials?: unknown
+  system?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+  topP?: unknown
+  topK?: unknown
+  additionalParams?: Array<[string, string]>
+  date?: Date
+  signal: AbortSignal
+}
+
+const DEFAULT_MAX_TOKENS = 1024
+
+export interface BedrockCredentialsCoerced {
+  ok: true
+  value: BedrockCredentials
+}
+
+export type BedrockCredentialsResult = BedrockCredentialsCoerced | { ok: false; error: string }
+
+/**
+ * Validate the `options.bedrock` credential block. Returned shape mirrors
+ * the route's `coerceVertexAuth` pattern: callers reply 400 on `ok:false`.
+ */
+export function coerceBedrockCredentials(raw: unknown): BedrockCredentialsResult | null {
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== 'object') {
+    return { ok: false, error: 'options.bedrock must be an object' }
+  }
+  const v = raw as Record<string, unknown>
+  if (typeof v.accessKeyId !== 'string' || v.accessKeyId.length === 0) {
+    return { ok: false, error: 'options.bedrock.accessKeyId is required' }
+  }
+  if (typeof v.secretAccessKey !== 'string' || v.secretAccessKey.length === 0) {
+    return { ok: false, error: 'options.bedrock.secretAccessKey is required' }
+  }
+  if (typeof v.region !== 'string' || v.region.length === 0) {
+    return { ok: false, error: 'options.bedrock.region is required' }
+  }
+  const out: BedrockCredentials = {
+    accessKeyId: v.accessKeyId,
+    secretAccessKey: v.secretAccessKey,
+    region: v.region,
+  }
+  if (typeof v.sessionToken === 'string' && v.sessionToken.length > 0) {
+    out.sessionToken = v.sessionToken
+  }
+  return { ok: true, value: out }
+}
+
+export function resolveBedrockRequest(input: BedrockResolveInput): BedrockRequest | null {
+  if (typeof input.model !== 'string' || input.model.length === 0) return null
+  if (!Array.isArray(input.messages)) return null
+  const creds = coerceBedrockCredentials(input.credentials)
+  if (creds === null || creds.ok === false) return null
+
+  const maxTokens =
+    typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
+      ? input.maxTokens
+      : DEFAULT_MAX_TOKENS
+  const temperature =
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
+      ? input.temperature
+      : undefined
+  const topP =
+    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topK =
+    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const system = typeof input.system === 'string' && input.system.length > 0 ? input.system : undefined
+
+  return {
+    model: input.model,
+    messages: input.messages,
+    credentials: creds.value,
+    system,
+    maxTokens,
+    temperature,
+    topP,
+    topK,
+    additionalParams: input.additionalParams,
+    date: input.date,
+    signal: input.signal,
+  }
+}
+
+function buildPayload(req: BedrockRequest): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    anthropic_version: 'bedrock-2023-05-31',
+    messages: req.messages,
+    max_tokens: req.maxTokens,
+  }
+  if (req.system !== undefined) body.system = req.system
+  if (req.temperature !== undefined) body.temperature = req.temperature
+  if (req.topP !== undefined) body.top_p = req.topP
+  if (req.topK !== undefined) body.top_k = req.topK
+  return body
+}
+
+interface BedrockBuildResult {
+  url: string
+  body: string
+  headers: Record<string, string>
+}
+
+/**
+ * Build the URL + final body + signed headers for a Bedrock request.
+ * Exported for tests that pin the SigV4 signature against a known input.
+ */
+export function buildBedrockRequest(req: BedrockRequest): BedrockBuildResult {
+  const host = `bedrock-runtime.${req.credentials.region}.amazonaws.com`
+  const encodedModel = encodePathSegment(req.model)
+  const path = `/model/${encodedModel}/invoke`
+  const url = `https://${host}${path}`
+
+  let body = buildPayload(req)
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    accept: 'application/json',
+  }
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, headers, req.additionalParams)
+  }
+  const bodyString = JSON.stringify(body)
+
+  const signed = signSigV4(
+    {
+      accessKeyId: req.credentials.accessKeyId,
+      secretAccessKey: req.credentials.secretAccessKey,
+      sessionToken: req.credentials.sessionToken,
+    },
+    {
+      method: 'POST',
+      host,
+      path,
+      headers,
+      body: bodyString,
+      region: req.credentials.region,
+      service: 'bedrock',
+      date: req.date,
+    },
+  )
+
+  return { url, body: bodyString, headers: signed.headers }
+}
+
+interface BedrockResponseContentBlock {
+  type?: unknown
+  text?: unknown
+}
+
+interface BedrockResponse {
+  content?: BedrockResponseContentBlock[]
+  model?: unknown
+  stop_reason?: unknown
+  error?: { message?: unknown }
+}
+
+export async function runBedrock(req: BedrockRequest): Promise<CompletionResult> {
+  if (req.signal.aborted) {
+    return { type: 'fail', result: 'aborted', aborted: true }
+  }
+
+  const built = buildBedrockRequest(req)
+
+  let response: Response
+  try {
+    response = await fetch(built.url, {
+      method: 'POST',
+      headers: built.headers,
+      body: built.body,
+      signal: req.signal,
+    })
+  } catch (err) {
+    if (req.signal.aborted) {
+      return { type: 'fail', result: 'aborted', aborted: true }
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    return { type: 'fail', result: `upstream fetch failed: ${msg}` }
+  }
+
+  let raw: string
+  try {
+    raw = await response.text()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { type: 'fail', result: `invalid upstream body: ${msg}` }
+  }
+
+  if (!response.ok) {
+    try {
+      const parsed = JSON.parse(raw) as BedrockResponse
+      if (typeof parsed.error?.message === 'string') {
+        return { type: 'fail', result: parsed.error.message }
+      }
+    } catch {
+      // fall through to raw
+    }
+    return { type: 'fail', result: raw }
+  }
+
+  let body: BedrockResponse
+  try {
+    body = JSON.parse(raw) as BedrockResponse
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
+  }
+
+  let text = ''
+  if (Array.isArray(body.content)) {
+    for (const block of body.content) {
+      if (block.type === 'text' && typeof block.text === 'string') text += block.text
+    }
+  }
+  if (text.length === 0) {
+    return { type: 'fail', result: 'upstream returned no text content' }
+  }
+
+  const result: CompletionResult = { type: 'success', result: text }
+  if (typeof body.model === 'string') result.model = body.model
+  return result
+}

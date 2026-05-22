@@ -11,6 +11,11 @@ import {
   runEchoStream,
 } from '../generation/echo.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
+import {
+  coerceBedrockCredentials,
+  resolveBedrockRequest,
+  runBedrock,
+} from '../generation/bedrock.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
 import {
   resolveGeminiRequest,
@@ -59,6 +64,7 @@ const SUPPORTED_PROVIDERS = new Set([
   'kobold',
   'ooba-legacy',
   'ollama',
+  'bedrock',
 ])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -229,6 +235,16 @@ interface OllamaOptions {
   topP?: unknown
   topK?: unknown
   extraHeaders?: Record<string, string>
+}
+
+interface BedrockOptions {
+  credentials?: unknown
+  system?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+  topP?: unknown
+  topK?: unknown
+  additionalParams?: unknown
 }
 
 interface OpenAICompatibleVariant {
@@ -675,6 +691,65 @@ async function handleOllamaBuffered(
   }
 }
 
+async function handleBedrockBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: BedrockOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const creds = coerceBedrockCredentials(options.credentials)
+    if (creds === null) {
+      badRequest(reply, 'options.bedrock.credentials is required')
+      return
+    }
+    if (!creds.ok) {
+      badRequest(reply, creds.error)
+      return
+    }
+    let additionalParams: Array<[string, string]> | undefined
+    if (options.additionalParams !== undefined) {
+      const coerced = coerceAdditionalParams(options.additionalParams)
+      if (coerced === null) {
+        badRequest(
+          reply,
+          'options.bedrock.additionalParams must be an array of [string, string] pairs',
+        )
+        return
+      }
+      additionalParams = coerced.length > 0 ? coerced : undefined
+    }
+    const resolved = resolveBedrockRequest({
+      model,
+      messages,
+      credentials: creds.value,
+      system: options.system,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      topP: options.topP,
+      topK: options.topK,
+      additionalParams,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'bedrock could not resolve request from the given options')
+      return
+    }
+    const result = await runBedrock(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
+      type: result.type,
+      result: result.result,
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
 async function handleResponsesBuffered(
   req: FastifyRequest,
   reply: FastifyReply,
@@ -1066,6 +1141,7 @@ export function registerGenerationRoutes(
       kobold?: KoboldOptions
       'ooba-legacy'?: OobaLegacyOptions
       ollama?: OllamaOptions
+      bedrock?: BedrockOptions
     }
 
     if (provider === 'echo') {
@@ -1180,6 +1256,17 @@ export function registerGenerationRoutes(
         return
       }
       await handleOllamaBuffered(req, reply, body.model, messages, ollamaOpts)
+      return
+    }
+
+    if (provider === 'bedrock') {
+      if (body.stream === true) {
+        reply.code(400).send({
+          error: 'bedrock streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      await handleBedrockBuffered(req, reply, body.model, messages, options.bedrock ?? {})
       return
     }
 

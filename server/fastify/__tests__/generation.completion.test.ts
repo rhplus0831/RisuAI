@@ -1095,6 +1095,122 @@ describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)',
   })
 })
 
+describe('Phase 6-21 POST /api/v1/generate/completion (bedrock)', () => {
+  it('400s when options.bedrock.credentials is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'bedrock',
+        model: 'us.test',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { bedrock: {} },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\.bedrock\.credentials/)
+  })
+
+  it('400s when credentials are partially populated', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'bedrock',
+        model: 'us.test',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          bedrock: { credentials: { accessKeyId: 'AKIA', secretAccessKey: 's' } },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\.bedrock\.region/)
+  })
+
+  it('400s when streaming is requested (not supported yet)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'bedrock',
+        model: 'us.test',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+        options: {
+          bedrock: {
+            credentials: { accessKeyId: 'AKIA', secretAccessKey: 's', region: 'us-east-1' },
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/bedrock streaming is not yet supported/)
+  })
+
+  it('signs the request with SigV4 and forwards the body to the Bedrock URL', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: 'bedrock route ok' }],
+          stop_reason: 'end_turn',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'bedrock',
+        model: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          bedrock: {
+            credentials: {
+              accessKeyId: 'AKIA',
+              secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+              region: 'us-east-1',
+            },
+            maxTokens: 256,
+            system: 'be brief',
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'bedrock route ok' })
+    expect(captured!.url).toBe(
+      'https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke',
+    )
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['Authorization']).toContain(
+      'AWS4-HMAC-SHA256 Credential=AKIA/',
+    )
+    expect(headers['Authorization']).toContain('us-east-1/bedrock/aws4_request')
+    expect(headers['x-amz-date']).toMatch(/^\d{8}T\d{6}Z$/)
+    const body = JSON.parse(captured!.init.body as string)
+    expect(body.anthropic_version).toBe('bedrock-2023-05-31')
+    expect(body.system).toBe('be brief')
+    expect(body.max_tokens).toBe(256)
+    expect(body.model).toBeUndefined()
+  })
+})
+
 describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
   it('400s when options.gemini.vertex is partially populated', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

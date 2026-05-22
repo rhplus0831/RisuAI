@@ -130,8 +130,8 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.NanoGPTResponses)).toBe('openai-responses')
   })
 
-  it('returns null for AWSBedrockClaude (not yet server-routable)', () => {
-    expect(formatToServerProvider(LLMFormat.AWSBedrockClaude)).toBeNull()
+  it('maps AWSBedrockClaude to "bedrock" (auth is SigV4 via options.bedrock.credentials)', () => {
+    expect(formatToServerProvider(LLMFormat.AWSBedrockClaude)).toBe('bedrock')
   })
 })
 
@@ -159,11 +159,15 @@ describe('getServerCompletionProvider', () => {
   })
 
   it('returns null for a format with no server implementation yet', () => {
+    // NovelAI / NovelList stay deferred per
+    // docs/fastify/design/novelai-novellist-stringlize.md; both should
+    // return null from formatToServerProvider (and therefore from
+    // getServerCompletionProvider) until Phase 7 lands.
     const r = getServerCompletionProvider(
       makeTarg({
         modelInfo: {
-          id: 'claude-3-5-sonnet',
-          format: LLMFormat.AWSBedrockClaude,
+          id: 'kayra-v1',
+          format: LLMFormat.NovelAI,
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
     )
@@ -334,6 +338,54 @@ describe('getServerCompletionProvider', () => {
       }),
     )
     expect(r).toBe('openrouter')
+  })
+
+  it('routes AWSBedrockClaude to provider "bedrock" when db.claudeAPIKey parses as accessKey:secret:region', () => {
+    seedDb({
+      claudeAPIKey: 'AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY:us-east-1',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'claude-3-5-sonnet-bedrock',
+        modelInfo: {
+          id: 'claude-3-5-sonnet-bedrock',
+          internalID: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+          format: LLMFormat.AWSBedrockClaude,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('bedrock')
+  })
+
+  it('refuses AWSBedrockClaude when db.claudeAPIKey is missing a colon-separated part', () => {
+    seedDb({ claudeAPIKey: 'AKIA:secret' } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'claude-3-5-sonnet-bedrock',
+        modelInfo: {
+          id: 'claude-3-5-sonnet-bedrock',
+          internalID: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+          format: LLMFormat.AWSBedrockClaude,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses AWSBedrockClaude when modelInfo.internalID is missing', () => {
+    seedDb({
+      claudeAPIKey: 'AKIA:secret:us-east-1',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'claude-3-5-sonnet-bedrock',
+        modelInfo: {
+          id: 'claude-3-5-sonnet-bedrock',
+          format: LLMFormat.AWSBedrockClaude,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
   })
 
   it('routes a vanilla Anthropic-format model to provider "anthropic"', () => {
@@ -1320,6 +1372,90 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     await requestServerCompletion(targ, 'cohere', null)
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.options.cohere).toEqual({ apiKey: 'co-fixture' })
+  })
+
+  it('emits options.bedrock with parsed credentials + extracts system message; wire model gets us./global. prefix', async () => {
+    seedDb({
+      claudeAPIKey: 'AKIA:secret:us-east-1',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'claude-3-5-sonnet-bedrock',
+      modelInfo: {
+        id: 'claude-3-5-sonnet-bedrock',
+        // Date stamp < 20250929 → `us.` prefix per the SPA's heuristic.
+        internalID: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+        format: LLMFormat.AWSBedrockClaude,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 512,
+      formated: [
+        { role: 'system', content: 'be brief' },
+        { role: 'user', content: 'hi' },
+      ],
+    })
+    await requestServerCompletion(targ, 'bedrock', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('bedrock')
+    expect(sent.model).toBe('us.anthropic.claude-3-5-sonnet-20241022-v2:0')
+    expect(sent.messages).toEqual([{ role: 'user', content: 'hi' }])
+    expect(sent.options.bedrock.credentials).toEqual({
+      accessKeyId: 'AKIA',
+      secretAccessKey: 'secret',
+      region: 'us-east-1',
+    })
+    expect(sent.options.bedrock.maxTokens).toBe(512)
+    expect(sent.options.bedrock.system).toBe('be brief')
+  })
+
+  it('uses the global. prefix for claude 4.5+ Bedrock models', async () => {
+    seedDb({
+      claudeAPIKey: 'AKIA:secret:us-east-1',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'claude-sonnet-4-5',
+      modelInfo: {
+        id: 'claude-sonnet-4-5',
+        internalID: 'anthropic.claude-sonnet-4-5-v1:0',
+        format: LLMFormat.AWSBedrockClaude,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'bedrock', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('global.anthropic.claude-sonnet-4-5-v1:0')
+  })
+
+  it('uses the global. prefix when the Bedrock internalID date stamp is >= 20250929', async () => {
+    seedDb({
+      claudeAPIKey: 'AKIA:secret:us-east-1',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'claude-future',
+      modelInfo: {
+        id: 'claude-future',
+        internalID: 'anthropic.claude-future-20251001-v1:0',
+        format: LLMFormat.AWSBedrockClaude,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'bedrock', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('global.anthropic.claude-future-20251001-v1:0')
   })
 
   it('emits options.gemini with apiKey from db.google.accessToken; wire model uses internalID (stripped of models/ prefix)', async () => {
