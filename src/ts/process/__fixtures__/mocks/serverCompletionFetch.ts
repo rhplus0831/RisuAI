@@ -30,12 +30,14 @@ interface CompletionPayload {
 const DEFAULT_OPENAI_RESULT = 'fixture openai reply'
 const DEFAULT_ANTHROPIC_RESULT = 'fixture claude reply'
 const DEFAULT_MISTRAL_RESULT = 'fixture mistral reply'
+const DEFAULT_COHERE_RESULT = 'fixture cohere reply'
 
 interface State {
   calls: ServerCompletionCall[]
   openaiResult: string
   anthropicResult: string
   mistralResult: string
+  cohereResult: string
 }
 
 const state: State = {
@@ -43,6 +45,7 @@ const state: State = {
   openaiResult: DEFAULT_OPENAI_RESULT,
   anthropicResult: DEFAULT_ANTHROPIC_RESULT,
   mistralResult: DEFAULT_MISTRAL_RESULT,
+  cohereResult: DEFAULT_COHERE_RESULT,
 }
 
 export function getServerCompletionCalls(): ServerCompletionCall[] {
@@ -54,6 +57,7 @@ export function resetServerCompletionCalls(): void {
   state.openaiResult = DEFAULT_OPENAI_RESULT
   state.anthropicResult = DEFAULT_ANTHROPIC_RESULT
   state.mistralResult = DEFAULT_MISTRAL_RESULT
+  state.cohereResult = DEFAULT_COHERE_RESULT
 }
 
 export function setOpenAIResult(text: string): void {
@@ -66,6 +70,10 @@ export function setAnthropicResult(text: string): void {
 
 export function setMistralResult(text: string): void {
   state.mistralResult = text
+}
+
+export function setCohereResult(text: string): void {
+  state.cohereResult = text
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -147,6 +155,11 @@ export async function serverCompletionFetch(
   if (provider === 'mistral') {
     if (stream) return sseResponse(state.mistralResult)
     return jsonResponse({ type: 'success', result: state.mistralResult, model })
+  }
+
+  if (provider === 'cohere') {
+    // Cohere is non-streaming-only; the route 400s on stream=true.
+    return jsonResponse({ type: 'success', result: state.cohereResult, model })
   }
 
   return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)

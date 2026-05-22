@@ -16,13 +16,13 @@ snapshot is summarized here.
 1. **Continue Phase 6 provider coverage.** The completion route,
    normalized SSE envelope, client adapter, and dual-mode fixture
    harness are in place for echo, vanilla OpenAI, NanoGPT,
-   OpenRouter, vanilla Anthropic, and vanilla Mistral. The next
-   Phase 6 slice should pick one uncovered provider family or
-   helper route, add server request/response tests, and add a
-   dual-mode fixture when the provider is eligible for the
-   server-backed adapter. Keep the 30 local sendChat snapshots,
-   the 4-fixture server-backed sweep, and the Fastify generation
-   tests green.
+   OpenRouter, vanilla Anthropic, vanilla Mistral, and vanilla
+   Cohere (non-streaming). The next Phase 6 slice should pick one
+   uncovered provider family or helper route, add server
+   request/response tests, and add a dual-mode fixture when the
+   provider is eligible for the server-backed adapter. Keep the 31
+   local sendChat snapshots, the 5-fixture server-backed sweep,
+   and the Fastify generation tests green.
 
 2. **Follow-up: hub-route session auth.** The Fastify hub route
    at `ANY /api/v1/hub/*` is gated by `requireAuth`, so on
@@ -41,6 +41,72 @@ snapshot is summarized here.
 <!-- prettier-ignore-start -->
 
 ## Completed Slices
+
+- **Phase 6-7 - cohere end-to-end (non-streaming).** Done
+  2026-05-22. First Phase 6 provider with a fully non-OpenAI wire
+  shape: Cohere splits a conversation into a single trailing
+  `message`, prior turns under `chat_history`, and an optional
+  `preamble` lifted from a leading system row. New
+  `server/fastify/src/generation/cohere.ts` ships
+  `reformatForCohere` (mirrors the local browser path in
+  `src/ts/process/request/request.ts:1281-1369`: pops the trailing
+  user message into `message`; walks backwards from non-user tails
+  concatenating into the message until it finds a user turn; lifts
+  a leading system row into `preamble`; maps remaining rows into
+  `chat_history` entries with USER/CHATBOT/SYSTEM role tags;
+  drops empty-content entries and function/tool roles; returns
+  `{ok: false, reason}` when no user message is present),
+  `resolveCohereRequest` (defaults baseUrl
+  `https://api.cohere.com/v1`; accepts optional `safetyMode`,
+  `temperature`, `topK`, `topP`, `presencePenalty`,
+  `frequencyPenalty`; drops unknown safetyMode values), and
+  `runCohere` (non-streaming POST to `{baseUrl}/chat` with
+  `Bearer <apiKey>`; folds preamble into the message with a
+  `system:` prefix when `chat_history.length === 0`; extracts
+  `body.text` on success with a v2-shape fallback to
+  `body.message.content[].text` concatenation; stringifies the
+  raw body on non-2xx since Cohere's error shapes are arbitrary).
+  Streaming is intentionally not implemented yet — the route
+  400s on `stream: true` with reason
+  `'cohere streaming is not yet supported; set stream: false'`,
+  matching the local browser path that ships non-streaming-only.
+  Route changes: `'cohere'` added to SUPPORTED_PROVIDERS,
+  dispatched ahead of openai-compat with its own `CohereOptions`
+  (`apiKey`, optional `baseUrl` / `safetyMode` / `temperature` /
+  `topK` / `topP` / `presencePenalty` / `frequencyPenalty`).
+  Client adapter: `formatToServerProvider(LLMFormat.Cohere) →
+  'cohere'` gated by `isVanillaCohere` (refuses reverse_proxy,
+  xcustom:::, and any model with a hardcoded `endpoint`).
+  `buildProviderOptions` emits `{apiKey: db.cohereAPIKey,
+  temperature?, safetyMode?}` under `options.cohere`. `safetyMode`
+  is set to `'NONE'` for every Cohere model except
+  `cohere-command-r-03-2024` and `cohere-command-r-plus-04-2024`,
+  mirroring the local conditional. New `cohere-basic` dual-mode
+  fixture (`aiModel: 'cohere-command-r-plus-04-2024'`,
+  `db.cohereAPIKey: 'cohere-fixture-key'`, single user turn,
+  `db.useStreaming: false`). Shared snapshot pins stages
+  `[1, 3, 4]`, `runInlayScreen` fires, assistant text
+  `'fixture cohere reply'`. `serverCompletionFetch` gains a
+  `'cohere'` branch (non-streaming only). Tests: cohere
+  dispatcher gains 16 cases (`reformatForCohere` 6 cases —
+  single user passthrough, leading-system → preamble, role-tag
+  mapping, empty-content drop, no-user-message failure, empty
+  input failure; `resolveCohereRequest` 4 cases — null on missing
+  apiKey, null on reformat failure, full-param applied, unknown
+  safetyMode dropped; `runCohere` 6 cases — Bearer + reformatted
+  body with preamble + history + safety_mode + numeric params,
+  preamble folded into message when no history, non-2xx raw body
+  passthrough, missing-text fail, v2-shape `message.content[]`
+  fallback, pre-aborted no-op). Route test file gains 3 cases
+  (cohere 400 on missing apiKey, 400 on stream=true, forward to
+  api.cohere.com with reformatted body). Adapter test file gains
+  4 cases (`formatToServerProvider(Cohere) → 'cohere'`, vanilla
+  routes, endpoint-override refused; older command-r emits
+  `safetyMode: 'NONE'`; newer command-r-03-2024 / r-plus-04-2024
+  omit safetyMode). Verification: `pnpm test` (512 across 46
+  files, +7 = 5 adapter + 1 local + 1 server-backed), `pnpm
+  api:test` (235 across 16 files, +19 = 16 dispatcher + 3 route),
+  `pnpm check`, `pnpm build` all green.
 
 - **Phase 6-6 - mistral end-to-end.** Done 2026-05-22. First
   Phase 6 provider that needs server-side message-shape adaptation:

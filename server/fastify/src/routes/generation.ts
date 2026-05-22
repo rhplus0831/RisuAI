@@ -11,6 +11,7 @@ import {
   runEchoStream,
 } from '../generation/echo.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
+import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
 import {
   resolveMistralRequest,
   runMistral,
@@ -30,6 +31,7 @@ const SUPPORTED_PROVIDERS = new Set([
   'openrouter',
   'anthropic',
   'mistral',
+  'cohere',
 ])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -93,6 +95,17 @@ interface MistralOptions {
   presencePenalty?: unknown
   frequencyPenalty?: unknown
   topP?: unknown
+}
+
+interface CohereOptions {
+  apiKey?: unknown
+  baseUrl?: unknown
+  safetyMode?: unknown
+  temperature?: unknown
+  topK?: unknown
+  topP?: unknown
+  presencePenalty?: unknown
+  frequencyPenalty?: unknown
 }
 
 interface OpenAICompatibleVariant {
@@ -303,6 +316,49 @@ async function handleAnthropicBuffered(
   }
 }
 
+async function handleCohereBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: CohereOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    if (typeof options.apiKey !== 'string' || options.apiKey.length === 0) {
+      badRequest(reply, 'options.cohere.apiKey is required')
+      return
+    }
+    const resolved = resolveCohereRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      safetyMode: options.safetyMode,
+      temperature: options.temperature,
+      topK: options.topK,
+      topP: options.topP,
+      presencePenalty: options.presencePenalty,
+      frequencyPenalty: options.frequencyPenalty,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'cohere requires a user message to generate a response')
+      return
+    }
+    const result = await runCohere(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
+      type: result.type,
+      result: result.result,
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
 async function handleMistralStreaming(
   req: FastifyRequest,
   reply: FastifyReply,
@@ -477,6 +533,7 @@ export function registerGenerationRoutes(
       openrouter?: OpenRouterOptions
       anthropic?: AnthropicOptions
       mistral?: MistralOptions
+      cohere?: CohereOptions
     }
 
     if (provider === 'echo') {
@@ -506,6 +563,20 @@ export function registerGenerationRoutes(
         return
       }
       await handleMistralBuffered(req, reply, body.model, messages, mistralOpts)
+      return
+    }
+
+    if (provider === 'cohere') {
+      if (body.stream === true) {
+        // Cohere's local browser path is non-streaming-only. The server
+        // mirrors that until streaming is justified by a fixture.
+        reply.code(400).send({
+          error: 'cohere streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      const cohereOpts = options.cohere ?? {}
+      await handleCohereBuffered(req, reply, body.model, messages, cohereOpts)
       return
     }
 

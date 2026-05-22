@@ -683,3 +683,75 @@ describe('Phase 6-6 POST /api/v1/generate/completion (mistral)', () => {
   })
 })
 
+describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
+  const coherePayload = {
+    provider: 'cohere',
+    model: 'command-r-plus-04-2024',
+    messages: [
+      { role: 'system', content: 'be brief' },
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+      { role: 'user', content: 'what now' },
+    ],
+    stream: false,
+    options: { cohere: { apiKey: 'co-test', safetyMode: 'NONE' } },
+  }
+
+  it('400s when options.cohere.apiKey is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...coherePayload, options: { cohere: {} } },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'options.cohere.apiKey is required' })
+  })
+
+  it('400s when stream=true (cohere streaming not supported yet)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...coherePayload, stream: true },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/cohere streaming/)
+  })
+
+  it('forwards to api.cohere.com/v1/chat with the reformatted message + chat_history + preamble', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(JSON.stringify({ text: 'cohere ok' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: coherePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'cohere ok' })
+
+    expect(captured!.url).toBe('https://api.cohere.com/v1/chat')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer co-test')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.message).toBe('what now')
+    expect(sent.preamble).toBe('be brief')
+    expect(sent.chat_history).toEqual([
+      { role: 'USER', message: 'hello' },
+      { role: 'CHATBOT', message: 'hi' },
+    ])
+    expect(sent.safety_mode).toBe('NONE')
+  })
+})
+

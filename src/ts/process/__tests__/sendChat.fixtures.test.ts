@@ -167,6 +167,7 @@ const FIXTURES = [
   'openai-basic',
   'anthropic-basic',
   'mistral-basic',
+  'cohere-basic',
 ] as const
 
 describe('sendChat fixtures', () => {

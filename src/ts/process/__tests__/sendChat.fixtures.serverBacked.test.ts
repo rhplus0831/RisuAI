@@ -106,6 +106,7 @@ const DUAL_MODE_FIXTURES = [
   'openai-basic',
   'anthropic-basic',
   'mistral-basic',
+  'cohere-basic',
 ] as const
 
 interface ExpectedCall {
@@ -139,6 +140,13 @@ const EXPECTED_CALL: Record<(typeof DUAL_MODE_FIXTURES)[number], ExpectedCall> =
     model: 'mistral-large-latest',
     stream: false,
     options: { mistral: { apiKey: 'mistral-fixture-key', maxTokens: 200 } },
+  },
+  'cohere-basic': {
+    provider: 'cohere',
+    model: 'cohere-command-r-plus-04-2024',
+    stream: false,
+    // newer command-r releases skip safety_mode='NONE' (server adds nothing).
+    options: { cohere: { apiKey: 'cohere-fixture-key' } },
   },
 }
 

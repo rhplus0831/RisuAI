@@ -103,6 +103,10 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.Mistral)).toBe('mistral')
   })
 
+  it('maps Cohere to "cohere"', () => {
+    expect(formatToServerProvider(LLMFormat.Cohere)).toBe('cohere')
+  })
+
   it('returns null for AWSBedrockClaude (not yet server-routable)', () => {
     expect(formatToServerProvider(LLMFormat.AWSBedrockClaude)).toBeNull()
   })
@@ -241,6 +245,33 @@ describe('getServerCompletionProvider', () => {
         modelInfo: {
           id: 'reverse_proxy',
           format: LLMFormat.Mistral,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes a vanilla Cohere-format model to provider "cohere"', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'cohere-command-r-plus-04-2024',
+        modelInfo: {
+          id: 'cohere-command-r-plus-04-2024',
+          format: LLMFormat.Cohere,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('cohere')
+  })
+
+  it('refuses Cohere-format models with an endpoint override', () => {
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'cohere-command-r-plus-04-2024',
+        modelInfo: {
+          id: 'cohere-command-r-plus-04-2024',
+          format: LLMFormat.Cohere,
+          endpoint: 'https://self-hosted-cohere.example.com/v1/chat',
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
     )
@@ -488,6 +519,49 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     await requestServerCompletion(targ, 'mistral', null)
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.options.mistral).toEqual({ apiKey: 'mk-x' })
+  })
+
+  it('emits options.cohere with apiKey + safetyMode=NONE for older command-r variants', async () => {
+    seedDb({ cohereAPIKey: 'co-fixture' } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'cohere-command-r',
+      modelInfo: {
+        id: 'cohere-command-r',
+        format: LLMFormat.Cohere,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'cohere', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.cohere).toEqual({
+      apiKey: 'co-fixture',
+      safetyMode: 'NONE',
+    })
+  })
+
+  it('omits safetyMode for the newer command-r-03-2024 / command-r-plus-04-2024 releases', async () => {
+    seedDb({ cohereAPIKey: 'co-fixture' } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'cohere-command-r-plus-04-2024',
+      modelInfo: {
+        id: 'cohere-command-r-plus-04-2024',
+        format: LLMFormat.Cohere,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'cohere', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.cohere).toEqual({ apiKey: 'co-fixture' })
   })
 
   it('emits options.openrouter and overrides the wire model with db.openrouterRequestModel', async () => {

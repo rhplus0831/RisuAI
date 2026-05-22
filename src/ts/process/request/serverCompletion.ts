@@ -18,6 +18,8 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       return 'anthropic'
     case LLMFormat.Mistral:
       return 'mistral'
+    case LLMFormat.Cohere:
+      return 'cohere'
     default:
       return null
   }
@@ -62,6 +64,14 @@ function isVanillaMistral(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+function isVanillaCohere(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (aiModel === 'reverse_proxy') return false
+  if (aiModel.startsWith('xcustom:::')) return false
+  if (targ.modelInfo?.endpoint) return false
+  return true
+}
+
 export function getServerCompletionProvider(
   targ: RequestDataArgumentExtended,
 ): string | null {
@@ -75,6 +85,7 @@ export function getServerCompletionProvider(
   if (provider === 'openai') return selectOpenAIVariant(targ)
   if (provider === 'anthropic' && !isVanillaAnthropic(targ)) return null
   if (provider === 'mistral' && !isVanillaMistral(targ)) return null
+  if (provider === 'cohere' && !isVanillaCohere(targ)) return null
   return provider
 }
 
@@ -166,6 +177,17 @@ function buildProviderOptions(
     // until the wider db→options parameter pipeline is sorted (the local code
     // pulls them from db.* via applyParameters, not from targ).
     return { mistral }
+  }
+  if (provider === 'cohere') {
+    const cohere: Record<string, unknown> = { apiKey: db.cohereAPIKey ?? '' }
+    if (typeof targ.temperature === 'number') cohere.temperature = targ.temperature
+    // Older Cohere command-r variants accept safety_mode='NONE'; the two newer
+    // command-r releases reject it. Mirror the local switch.
+    const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+    const isNewerCommandR =
+      aiModel === 'cohere-command-r-03-2024' || aiModel === 'cohere-command-r-plus-04-2024'
+    if (!isNewerCommandR) cohere.safetyMode = 'NONE'
+    return { cohere }
   }
   return {}
 }
