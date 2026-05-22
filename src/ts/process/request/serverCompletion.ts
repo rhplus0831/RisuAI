@@ -226,15 +226,28 @@ function isVanillaAnthropic(targ: RequestDataArgumentExtended): boolean {
 }
 
 /**
- * Mistral derivatives (reverse_proxy targeting Mistral, xcustom::: with a
- * Mistral-format model id, or any model carrying a hardcoded `endpoint` for a
- * self-hosted Mistral deployment) stay on the local dispatch path. Each gets
- * its own slice when the variant routing is wired.
+ * Mistral wire is OpenAI-compat-shaped (POST `/chat/completions`, Bearer
+ * auth), so reverse_proxy + xcustom Mistral ride the existing mistral
+ * dispatcher with the same URL autofill helper used by the OAI-compat slice.
+ * `request.ts` mutates `targ.modelInfo.format = db.customAPIFormat` before
+ * the adapter runs, so reverse_proxy with `customAPIFormat = Mistral` shows
+ * up to the gate with `format === LLMFormat.Mistral`. Hardcoded-endpoint
+ * models keep their local dispatch path.
  */
 function isVanillaMistral(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
+  if (aiModel === 'reverse_proxy') {
+    const db = getDatabase()
+    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
+    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
+    return true
+  }
+  if (aiModel.startsWith('xcustom:::')) {
+    const entry = findXcustomEntry(aiModel)
+    if (entry === null) return false
+    if (entry.format !== LLMFormat.Mistral) return false
+    return true
+  }
   if (targ.modelInfo?.endpoint) return false
   return true
 }
@@ -625,7 +638,30 @@ function buildProviderOptions(
     return { anthropic }
   }
   if (provider === 'mistral') {
-    const mistral: Record<string, unknown> = { apiKey: db.mistralKey ?? '' }
+    const mistral: Record<string, unknown> = {}
+    const aiModel = targ.aiModel ?? ''
+    if (aiModel === 'reverse_proxy') {
+      mistral.apiKey = db.proxyKey ?? ''
+      const autofill = db.autofillRequestUrl !== false
+      const { baseUrl, risuIdentify } = resolveReverseProxyUrl(db.forceReplaceUrl ?? '', autofill)
+      mistral.baseUrl = baseUrl
+      if (risuIdentify) {
+        mistral.extraHeaders = { 'X-Proxy-Risu': 'RisuAI' }
+      }
+      if (Array.isArray(db.additionalParams) && db.additionalParams.length > 0) {
+        mistral.additionalParams = db.additionalParams
+      }
+    } else if (aiModel.startsWith('xcustom:::')) {
+      const entry = findXcustomEntry(aiModel)
+      if (entry !== null) {
+        mistral.apiKey = entry.key
+        mistral.baseUrl = deriveOpenAIBaseUrl(entry.url)
+        const params = parseXcustomParams(entry.params)
+        if (params.length > 0) mistral.additionalParams = params
+      }
+    } else {
+      mistral.apiKey = db.mistralKey ?? ''
+    }
     if (typeof targ.maxTokens === 'number') mistral.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') mistral.temperature = targ.temperature
     // presence/frequency/top_p parity with the local Mistral path is deferred

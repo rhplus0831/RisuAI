@@ -562,12 +562,87 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBe('mistral')
   })
 
-  it('refuses reverse_proxy under Mistral (custom URL stays on local dispatch)', () => {
+  it('routes reverse_proxy under Mistral to provider "mistral" when db.forceReplaceUrl and db.proxyKey are set', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/chat/completions',
+      proxyKey: 'sk-proxy',
+    } as unknown as Partial<Database>)
     const r = getServerCompletionProvider(
       makeTarg({
         aiModel: 'reverse_proxy',
         modelInfo: {
           id: 'reverse_proxy',
+          format: LLMFormat.Mistral,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('mistral')
+  })
+
+  it('refuses reverse_proxy under Mistral when db.proxyKey is empty', () => {
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1/chat/completions',
+      proxyKey: '',
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.Mistral,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes xcustom::: under Mistral to provider "mistral" when entry.format is Mistral', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::mistral-clone',
+          internalId: 'mistral-fake',
+          url: 'https://example.com/v1/chat/completions',
+          key: 'sk-x',
+          format: LLMFormat.Mistral,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::mistral-clone',
+        modelInfo: {
+          // request.ts mutates modelInfo.format to the customModels entry's
+          // format before the adapter runs; mirror that here.
+          id: 'xcustom:::mistral-clone',
+          format: LLMFormat.Mistral,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('mistral')
+  })
+
+  it('refuses xcustom::: under Mistral when the customModels entry format mismatches', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::mistral-mismatch',
+          internalId: 'mistral-fake',
+          url: 'https://example.com/v1/chat/completions',
+          key: 'sk-x',
+          // Entry says OpenAICompatible but outer modelInfo says Mistral —
+          // pipeline mismatch; refuse.
+          format: LLMFormat.OpenAICompatible,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::mistral-mismatch',
+        modelInfo: {
+          id: 'xcustom:::mistral-mismatch',
           format: LLMFormat.Mistral,
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
@@ -1325,6 +1400,109 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     expect(sent.options.anthropic.baseUrl).toBe('https://acme.example.com/v1')
     expect(sent.options.anthropic.additionalParams).toEqual([
       ['header::anthropic-beta', 'cool-beta'],
+      ['extra.flag', 'true'],
+    ])
+  })
+
+  it('emits options.mistral with proxyKey + autofilled baseUrl + additionalParams for reverse_proxy under Mistral', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      customProxyRequestModel: 'mistral-on-proxy',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Custom', 'cool'],
+        ['extra.knob', '1'],
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.Mistral,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 512,
+    })
+    await requestServerCompletion(targ, 'mistral', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('mistral')
+    expect(sent.model).toBe('mistral-on-proxy')
+    expect(sent.options.mistral.apiKey).toBe('sk-proxy')
+    expect(sent.options.mistral.baseUrl).toBe('https://proxy.example.com/v1')
+    expect(sent.options.mistral.additionalParams).toEqual([
+      ['header::X-Custom', 'cool'],
+      ['extra.knob', '1'],
+    ])
+  })
+
+  it('lifts a risu:: prefix into options.mistral.extraHeaders for reverse_proxy under Mistral', async () => {
+    seedDb({
+      proxyKey: 'sk-proxy',
+      forceReplaceUrl: 'risu::https://proxy.example.com/v1',
+      customProxyRequestModel: 'mistral-on-proxy',
+      autofillRequestUrl: true,
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'reverse_proxy',
+      modelInfo: {
+        id: 'reverse_proxy',
+        format: LLMFormat.Mistral,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'mistral', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.options.mistral.baseUrl).toBe('https://proxy.example.com/v1')
+    expect(sent.options.mistral.extraHeaders).toEqual({ 'X-Proxy-Risu': 'RisuAI' })
+  })
+
+  it('routes xcustom::: under Mistral with entry url/key + parsed additionalParams', async () => {
+    seedDb({
+      mistralKey: 'mk-not-used',
+      customModels: [
+        {
+          id: 'xcustom:::mistral-clone',
+          internalId: 'mistral-acme',
+          url: 'https://acme.example.com/v1/chat/completions',
+          key: 'sk-acme',
+          format: LLMFormat.Mistral,
+          params: 'header::X-Custom=cool\nextra.flag=true',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'xcustom:::mistral-clone',
+      modelInfo: {
+        id: 'xcustom:::mistral-clone',
+        format: LLMFormat.Mistral,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 256,
+    })
+    await requestServerCompletion(targ, 'mistral', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('mistral')
+    expect(sent.model).toBe('mistral-acme')
+    expect(sent.options.mistral.apiKey).toBe('sk-acme')
+    expect(sent.options.mistral.baseUrl).toBe('https://acme.example.com/v1')
+    expect(sent.options.mistral.additionalParams).toEqual([
+      ['header::X-Custom', 'cool'],
       ['extra.flag', 'true'],
     ])
   })

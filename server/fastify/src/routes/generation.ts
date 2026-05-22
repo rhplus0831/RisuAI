@@ -148,6 +148,13 @@ interface MistralOptions {
   presencePenalty?: unknown
   frequencyPenalty?: unknown
   topP?: unknown
+  additionalParams?: unknown
+  /**
+   * Headers to merge into the upstream request. Used by reverse_proxy to
+   * inject `X-Proxy-Risu: RisuAI` when the user prefixed their URL with
+   * `risu::`.
+   */
+  extraHeaders?: Record<string, string>
 }
 
 interface CohereOptions {
@@ -486,6 +493,20 @@ function coerceAnthropicAdditionalParams(
     return {
       ok: false,
       error: 'options.anthropic.additionalParams must be an array of [string, string] pairs',
+    }
+  }
+  return { ok: true, value: coerced.length > 0 ? coerced : undefined }
+}
+
+function coerceMistralAdditionalParams(
+  options: MistralOptions,
+): { ok: true; value: Array<[string, string]> | undefined } | { ok: false; error: string } {
+  if (options.additionalParams === undefined) return { ok: true, value: undefined }
+  const coerced = coerceAdditionalParams(options.additionalParams)
+  if (coerced === null) {
+    return {
+      ok: false,
+      error: 'options.mistral.additionalParams must be an array of [string, string] pairs',
     }
   }
   return { ok: true, value: coerced.length > 0 ? coerced : undefined }
@@ -1012,6 +1033,11 @@ async function handleMistralStreaming(
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
+    const ap = coerceMistralAdditionalParams(options)
+    if (!ap.ok) {
+      badRequest(reply, ap.error)
+      return
+    }
     const resolved = resolveMistralRequest({
       model,
       messages,
@@ -1023,6 +1049,8 @@ async function handleMistralStreaming(
       presencePenalty: options.presencePenalty,
       frequencyPenalty: options.frequencyPenalty,
       topP: options.topP,
+      extraHeaders: options.extraHeaders,
+      additionalParams: ap.value,
       signal,
     })
     if (!resolved) {
@@ -1044,6 +1072,11 @@ async function handleMistralBuffered(
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
+    const ap = coerceMistralAdditionalParams(options)
+    if (!ap.ok) {
+      badRequest(reply, ap.error)
+      return
+    }
     const resolved = resolveMistralRequest({
       model,
       messages,
@@ -1055,6 +1088,8 @@ async function handleMistralBuffered(
       presencePenalty: options.presencePenalty,
       frequencyPenalty: options.frequencyPenalty,
       topP: options.topP,
+      extraHeaders: options.extraHeaders,
+      additionalParams: ap.value,
       signal,
     })
     if (!resolved) {

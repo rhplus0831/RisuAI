@@ -752,6 +752,79 @@ describe('Phase 6-6 POST /api/v1/generate/completion (mistral)', () => {
   })
 })
 
+describe('Phase 6-23 POST /api/v1/generate/completion (mistral additionalParams + reverse_proxy)', () => {
+  it('applies additionalParams overlay to the mistral body + headers', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'mistral-on-proxy',
+          choices: [{ message: { content: 'rp ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'mistral',
+        model: 'mistral-on-proxy',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          mistral: {
+            apiKey: 'sk-proxy',
+            baseUrl: 'https://proxy.example.com/v1',
+            maxTokens: 256,
+            extraHeaders: { 'X-Proxy-Risu': 'RisuAI' },
+            additionalParams: [
+              ['header::X-Custom', 'cool'],
+              ['extra.flag', 'true'],
+            ],
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'rp ok' })
+    expect(captured!.url).toBe('https://proxy.example.com/v1/chat/completions')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.extra).toEqual({ flag: true })
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Custom']).toBe('cool')
+    expect(headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(headers.authorization).toBe('Bearer sk-proxy')
+  })
+
+  it('400s with a specific error when options.mistral.additionalParams is malformed', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'mistral',
+        model: 'mistral-large-latest',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          mistral: {
+            apiKey: 'mk-test',
+            additionalParams: 'oops',
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/options\.mistral\.additionalParams/)
+  })
+})
+
 describe('Phase 6-8 POST /api/v1/generate/completion (openai with custom baseUrl)', () => {
   // DeepSeek / DeepInfra route through provider='openai' with a derived
   // baseUrl (from modelInfo.endpoint) and a key from db.OaiCompAPIKeys[...].
