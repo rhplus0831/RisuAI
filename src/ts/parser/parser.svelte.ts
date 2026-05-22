@@ -9,10 +9,11 @@ import {
   type customscript,
   type triggerscript,
 } from '../storage/database.svelte'
-import { DBState, selIdState } from '../stores.svelte'
+import { CurrentTriggerIdStore, DBState, selIdState } from '../stores.svelte'
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import { isTauri, isNodeServer } from 'src/ts/platform'
-import { getChatVar, setChatVar, getGlobalChatVar } from './chatVar.svelte'
+import './chatVar.svelte' // side effect: registers the browser chatVar backend
+import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
 import { processScriptFull } from '../process/scripts'
 import { get } from 'svelte/store'
 import css, { type CssAtRuleAST } from '@adobe/css-tools'
@@ -1117,6 +1118,7 @@ function initMatcher() {
     isNodeServer: isNodeServer,
     isMobile: false,
     appVer: appVer,
+    getCurrentTriggerId: () => get(CurrentTriggerIdStore) ?? 'null',
   })
   matcherInitialized = true
 }

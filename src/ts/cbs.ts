@@ -2,8 +2,6 @@ import type { Database, character, loreBook } from './storage/database.svelte'
 import type { CbsConditions } from './parser/parser.svelte'
 import type { RisuModule } from './process/modules'
 import type { LLMModel } from './model/modellist'
-import { get } from 'svelte/store'
-import { CurrentTriggerIdStore } from './stores.svelte'
 
 export const defaultCBSRegisterArg: CBSRegisterArg = {
   registerFunction: () => {
@@ -50,6 +48,7 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
   isNodeServer: false,
   isMobile: false,
   appVer: '0.0.0',
+  getCurrentTriggerId: () => 'null',
   getModelInfo: () =>
     ({
       id: 'placeholder',
@@ -133,6 +132,14 @@ export type CBSRegisterArg = {
   isNodeServer: boolean
   isMobile: boolean
   appVer: string
+  /**
+   * Returns the `risu-id` attribute of the element that triggered the
+   * current manual trigger, or `'null'` outside that context. Browser
+   * registration reads it from `CurrentTriggerIdStore`; the server
+   * always returns `'null'` because manual triggers are a browser UI
+   * concept.
+   */
+  getCurrentTriggerId: () => string
 }
 
 export function registerCBS(arg: CBSRegisterArg) {
@@ -161,6 +168,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     appVer,
     getModelInfo,
     callInternalFunction,
+    getCurrentTriggerId,
   } = arg
 
   // Basic character/user variables
@@ -206,8 +214,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'trigger_id',
     callback: (str, matcherArg, args, vars) => {
-      const currentTriggerId = get(CurrentTriggerIdStore)
-      return currentTriggerId ?? 'null'
+      return getCurrentTriggerId()
     },
     alias: ['triggerid'],
     description:

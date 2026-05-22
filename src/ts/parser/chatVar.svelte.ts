@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { parseKeyValue } from '../util'
+import { setChatVarBackend } from './chatVarBackend'
 
 export function getChatVar(key: string): string {
   const selectedChar = get(selectedCharID)
@@ -44,3 +45,5 @@ export function setChatVar(key: string, value: string): void {
 export function getGlobalChatVar(key: string): string {
   return DBState.db.globalChatVariables[key] ?? 'null'
 }
+
+setChatVarBackend({ getChatVar, setChatVar, getGlobalChatVar })

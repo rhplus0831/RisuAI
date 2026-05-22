@@ -1,4 +1,5 @@
-import { getChatVar, getGlobalChatVar } from '../parser/chatVar.svelte'
+import '../parser/chatVar.svelte' // side effect: registers the browser chatVar backend
+import { getChatVar, getGlobalChatVar } from '../parser/chatVarBackend'
 
 function toRPN(expression: string) {
   let outputQueue = ''
