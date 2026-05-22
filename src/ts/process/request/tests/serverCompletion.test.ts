@@ -125,6 +125,11 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.NanoGPTMessages)).toBe('anthropic')
   })
 
+  it('maps OpenAIResponseAPI + NanoGPTResponses to "openai-responses"', () => {
+    expect(formatToServerProvider(LLMFormat.OpenAIResponseAPI)).toBe('openai-responses')
+    expect(formatToServerProvider(LLMFormat.NanoGPTResponses)).toBe('openai-responses')
+  })
+
   it('returns null for AWSBedrockClaude (not yet server-routable)', () => {
     expect(formatToServerProvider(LLMFormat.AWSBedrockClaude)).toBeNull()
   })

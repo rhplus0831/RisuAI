@@ -31,6 +31,10 @@ import {
   resolveOpenAILegacyInstructRequest,
   runOpenAILegacyInstruct,
 } from '../generation/openaiLegacyInstruct.js'
+import {
+  resolveOpenAIResponsesRequest,
+  runOpenAIResponses,
+} from '../generation/openaiResponses.js'
 import { requireAuth } from '../http.js'
 
 const SUPPORTED_PROVIDERS = new Set([
@@ -43,6 +47,7 @@ const SUPPORTED_PROVIDERS = new Set([
   'cohere',
   'gemini',
   'openai-legacy-instruct',
+  'openai-responses',
 ])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -138,6 +143,16 @@ interface LegacyInstructOptions {
   frequencyPenalty?: unknown
   stop?: unknown
   // Optional X-Provider style headers used by NanoGPT Legacy.
+  extraHeaders?: Record<string, string>
+}
+
+interface ResponsesOptions {
+  apiKey?: unknown
+  baseUrl?: unknown
+  maxOutputTokens?: unknown
+  temperature?: unknown
+  topP?: unknown
+  store?: unknown
   extraHeaders?: Record<string, string>
 }
 
@@ -337,6 +352,44 @@ async function handleAnthropicBuffered(
       return
     }
     const result = await runAnthropic(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
+      type: result.type,
+      result: result.result,
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleResponsesBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: ResponsesOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveOpenAIResponsesRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      maxOutputTokens: options.maxOutputTokens,
+      temperature: options.temperature,
+      topP: options.topP,
+      store: options.store,
+      extraHeaders: options.extraHeaders,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options["openai-responses"].apiKey is required')
+      return
+    }
+    const result = await runOpenAIResponses(resolved)
     if (result.aborted === true) return
     const payload: { type: string; result: string; model?: string } = {
       type: result.type,
@@ -676,6 +729,7 @@ export function registerGenerationRoutes(
       cohere?: CohereOptions
       gemini?: GeminiOptions
       'openai-legacy-instruct'?: LegacyInstructOptions
+      'openai-responses'?: ResponsesOptions
     }
 
     if (provider === 'echo') {
@@ -744,6 +798,20 @@ export function registerGenerationRoutes(
       }
       const opts = options['openai-legacy-instruct'] ?? {}
       await handleLegacyInstructBuffered(req, reply, body.model, messages, opts)
+      return
+    }
+
+    if (provider === 'openai-responses') {
+      if (body.stream === true) {
+        // The Responses API streaming envelope is significantly different
+        // from the chat-completions style. Defer the streaming pipe.
+        reply.code(400).send({
+          error: 'openai-responses streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      const opts = options['openai-responses'] ?? {}
+      await handleResponsesBuffered(req, reply, body.model, messages, opts)
       return
     }
 

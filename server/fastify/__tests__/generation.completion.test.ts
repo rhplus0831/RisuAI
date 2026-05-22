@@ -800,6 +800,46 @@ describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
   })
 })
 
+describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () => {
+  it('forwards to /v1/responses with input items', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-5',
+          output: [
+            { type: 'message', content: [{ type: 'output_text', text: 'resp ok' }] },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openai-responses',
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { 'openai-responses': { apiKey: 'sk-resp', maxOutputTokens: 128 } },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'resp ok' })
+    expect(captured!.url).toBe('https://api.openai.com/v1/responses')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
+    ])
+    expect(sent.max_output_tokens).toBe(128)
+  })
+})
+
 describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)', () => {
   const legacyPayload = {
     provider: 'openai-legacy-instruct',

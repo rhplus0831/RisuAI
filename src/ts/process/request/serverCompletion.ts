@@ -27,6 +27,9 @@ export function formatToServerProvider(format: LLMFormat): string | null {
     case LLMFormat.OpenAILegacyInstruct:
     case LLMFormat.NanoGPTLegacy:
       return 'openai-legacy-instruct'
+    case LLMFormat.OpenAIResponseAPI:
+    case LLMFormat.NanoGPTResponses:
+      return 'openai-responses'
     default:
       return null
   }
@@ -118,6 +121,17 @@ function isVanillaGemini(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+function isVanillaResponses(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (aiModel === 'reverse_proxy') return false
+  if (aiModel.startsWith('xcustom:::')) return false
+  // OpenAI Responses keeps `modelInfo.endpoint` for Azure-style hosts. We
+  // accept the endpoint as a baseUrl override when present; the dispatcher
+  // re-derives `/responses` from it. Refuse only when the endpoint is
+  // explicitly the chat-completions URL (handled by the openai variant path).
+  return true
+}
+
 function isVanillaLegacyInstruct(targ: RequestDataArgumentExtended): boolean {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
   if (aiModel === 'reverse_proxy') return false
@@ -149,6 +163,7 @@ export function getServerCompletionProvider(
   if (provider === 'cohere' && !isVanillaCohere(targ)) return null
   if (provider === 'gemini' && !isVanillaGemini(targ)) return null
   if (provider === 'openai-legacy-instruct' && !isVanillaLegacyInstruct(targ)) return null
+  if (provider === 'openai-responses' && !isVanillaResponses(targ)) return null
   return provider
 }
 
@@ -184,6 +199,12 @@ export function resolveProviderModel(
   }
   if (provider === 'anthropic' && targ.modelInfo?.format === LLMFormat.NanoGPTMessages) {
     return db.nanogptRequestModel ?? ''
+  }
+  if (provider === 'openai-responses') {
+    if (targ.modelInfo?.format === LLMFormat.NanoGPTResponses) {
+      return db.nanogptRequestModel ?? ''
+    }
+    return targ.modelInfo?.internalID ?? targ.modelInfo?.id ?? targ.aiModel ?? ''
   }
   return targ.modelInfo?.id ?? targ.aiModel ?? ''
 }
@@ -309,6 +330,27 @@ function buildProviderOptions(
     if (typeof targ.maxTokens === 'number') legacy.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') legacy.temperature = targ.temperature
     return { 'openai-legacy-instruct': legacy }
+  }
+  if (provider === 'openai-responses') {
+    const resp: Record<string, unknown> = {}
+    const isNanoGPT = targ.modelInfo?.format === LLMFormat.NanoGPTResponses
+    if (isNanoGPT) {
+      resp.apiKey = db.nanogptKey ?? ''
+      resp.baseUrl = 'https://nano-gpt.com/api/v1'
+      if (typeof db.nanogptProvider === 'string' && db.nanogptProvider.length > 0) {
+        resp.extraHeaders = { 'X-Provider': db.nanogptProvider }
+      }
+    } else {
+      resp.apiKey = db.openAIKey ?? ''
+      if (typeof targ.modelInfo?.endpoint === 'string' && targ.modelInfo.endpoint.length > 0) {
+        // Some users carry a hardcoded /responses endpoint; the dispatcher's
+        // `{baseUrl}/responses` re-assembly strips the suffix.
+        resp.baseUrl = targ.modelInfo.endpoint.replace(/\/responses\/?$/, '')
+      }
+    }
+    if (typeof targ.maxTokens === 'number') resp.maxOutputTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') resp.temperature = targ.temperature
+    return { 'openai-responses': resp }
   }
   return {}
 }
