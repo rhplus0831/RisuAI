@@ -15,6 +15,8 @@ export function formatToServerProvider(format: LLMFormat): string | null {
     case LLMFormat.NanoGPT:
       return 'nanogpt'
     case LLMFormat.Anthropic:
+    case LLMFormat.AnthropicLegacy:
+    case LLMFormat.NanoGPTMessages:
       return 'anthropic'
     case LLMFormat.Mistral:
       return 'mistral'
@@ -180,6 +182,9 @@ export function resolveProviderModel(
     // regardless of the local model id; mirror that.
     return 'gpt-3.5-turbo-instruct'
   }
+  if (provider === 'anthropic' && targ.modelInfo?.format === LLMFormat.NanoGPTMessages) {
+    return db.nanogptRequestModel ?? ''
+  }
   return targ.modelInfo?.id ?? targ.aiModel ?? ''
 }
 
@@ -251,7 +256,14 @@ function buildProviderOptions(
     return { openrouter }
   }
   if (provider === 'anthropic') {
-    const anthropic: Record<string, unknown> = { apiKey: db.claudeAPIKey ?? '' }
+    const anthropic: Record<string, unknown> = {}
+    const isNanoGPT = targ.modelInfo?.format === LLMFormat.NanoGPTMessages
+    if (isNanoGPT) {
+      anthropic.apiKey = db.nanogptKey ?? ''
+      anthropic.baseUrl = 'https://nano-gpt.com/api/v1'
+    } else {
+      anthropic.apiKey = db.claudeAPIKey ?? ''
+    }
     if (typeof targ.maxTokens === 'number') anthropic.maxTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') anthropic.temperature = targ.temperature
     return { anthropic }

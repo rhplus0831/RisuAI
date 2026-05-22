@@ -120,6 +120,11 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.NanoGPTLegacy)).toBe('openai-legacy-instruct')
   })
 
+  it('maps AnthropicLegacy + NanoGPTMessages to "anthropic" (wire shape unchanged)', () => {
+    expect(formatToServerProvider(LLMFormat.AnthropicLegacy)).toBe('anthropic')
+    expect(formatToServerProvider(LLMFormat.NanoGPTMessages)).toBe('anthropic')
+  })
+
   it('returns null for AWSBedrockClaude (not yet server-routable)', () => {
     expect(formatToServerProvider(LLMFormat.AWSBedrockClaude)).toBeNull()
   })
@@ -775,6 +780,31 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
       apiKey: 'sk-legacy',
       maxTokens: 128,
     })
+  })
+
+  it('routes NanoGPTMessages through provider=anthropic with nano-gpt.com baseUrl + nanogpt key + db.nanogptRequestModel', async () => {
+    seedDb({
+      nanogptKey: 'nk',
+      nanogptRequestModel: 'anthropic/claude-3.5-sonnet',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'nanogpt-messages',
+      modelInfo: {
+        id: 'nanogpt-messages',
+        format: LLMFormat.NanoGPTMessages,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'anthropic', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('anthropic/claude-3.5-sonnet')
+    expect(sent.options.anthropic.apiKey).toBe('nk')
+    expect(sent.options.anthropic.baseUrl).toBe('https://nano-gpt.com/api/v1')
   })
 
   it('routes NanoGPTLegacy through openai-legacy-instruct with nano-gpt.com baseUrl + nanogpt key + X-Provider', async () => {
