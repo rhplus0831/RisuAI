@@ -5,15 +5,18 @@ import type {
 } from '../../../../src/ts/storage/database.svelte'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
 import { expandVariables, type ExpandContext } from './variables.js'
+import { getActiveModules, getModuleRegexScripts } from './modules.js'
 
 /**
  * Phase 7-6a/b/c regex script processor ported from
  * `src/ts/process/scripts.ts` `processScript` + `executeScript`.
  *
- * Walks `db.presetRegex ?? []` then `char.customscript ?? []`, parses
- * each entry through the `ableFlag` `<order N, action…>` DSL, stable
- * sorts by `order desc` when any script declared one, then runs each
- * script where `script.type === mode`.
+ * Walks `db.presetRegex ?? []`, then `char.customscript ?? []`, then
+ * the regex scripts from the active modules (`getActiveModules` +
+ * `getModuleRegexScripts` from `./modules.js`, ported in 7-6d).
+ * Parses each entry through the `ableFlag` `<order N, action…>` DSL,
+ * stable sorts by `order desc` when any script declared one, then
+ * runs each script where `script.type === mode`.
  *
  * Action equivalence: `@@inject` / `@@move_top` / `@@move_bottom` /
  * `@@repeat_back` prefixes and the `inject` / `move_top` /
@@ -44,12 +47,12 @@ import { expandVariables, type ExpandContext } from './variables.js'
  *   - `@@repeat_back` adds an r-null guard the SPA elides
  *     (`scripts.ts:306` accesses `r[0]` blindly).
  *
- * Deferred to 7-6d/e:
+ * Deferred to 7-6e:
  *   - script-cache (`generateScriptCacheKey` / `getScriptCache` /
  *     `cacheScript`)
- *   - module regex scripts (`getModuleRegexScripts()`)
  *   - `runLuaEditTrigger` (browser-only)
- *   - `runTrigger('display', …)` (orthogonal: `editdisplay` mode only)
+ *   - `runTrigger('display', …)` (orthogonal: `editdisplay` mode only,
+ *     blocked on Triggers 7-9)
  *   - `pluginV2[mode]` browser plugin V2 hooks
  *
  * Errors from a single bad regex are swallowed (mirrors the SPA's
@@ -319,7 +322,12 @@ export function processScript(
   currentChat: Chat | undefined = undefined,
 ): string {
   const db = ctx.database
-  const rawScripts = (db.presetRegex ?? []).concat(char.customscript ?? [])
+  const moduleRegex = getModuleRegexScripts(
+    getActiveModules(db, char, currentChat),
+  )
+  const rawScripts = (db.presetRegex ?? [])
+    .concat(char.customscript ?? [])
+    .concat(moduleRegex)
   const { parsed, orderChanged } = parseScripts(rawScripts)
   if (orderChanged) {
     parsed.sort((a, b) => b.order - a.order)

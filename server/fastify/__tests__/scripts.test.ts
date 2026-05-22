@@ -739,3 +739,83 @@ describe('Phase 7-6c action-only dispatch matches @@ prefixes', () => {
     expect(out).toBe('no token\nKEY')
   })
 })
+
+describe('Phase 7-6d module regex scripts join the chain', () => {
+  it('runs module regex scripts after preset + character', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('a', 'A', 'editprocess')],
+      characters: [
+        {
+          ...makeCharacter(),
+          customscript: [regex('b', 'B', 'editprocess')],
+        },
+      ],
+      enabledModules: ['m1'],
+      modules: [
+        {
+          name: 'm1',
+          description: '',
+          id: 'm1',
+          regex: [regex('c', 'C', 'editprocess')],
+        },
+      ],
+    } as Partial<Database>)
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'abc',
+      'editprocess',
+    )
+    expect(out).toBe('ABC')
+  })
+
+  it('honors the per-chat module list when the chat enables an extra module', () => {
+    const chat = {
+      ...makeChatForScripts([]),
+      modules: ['extra'],
+    } as Chat
+    const db = makeDatabase({
+      presetRegex: [],
+      enabledModules: [],
+      modules: [
+        {
+          name: 'extra',
+          description: '',
+          id: 'extra',
+          regex: [regex('foo', 'bar', 'editprocess')],
+        },
+      ],
+    } as Partial<Database>)
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'foo',
+      'editprocess',
+      {},
+      -1,
+      chat,
+    )
+    expect(out).toBe('bar')
+  })
+
+  it('skips modules with no regex array', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('a', 'A', 'editprocess')],
+      enabledModules: ['quiet'],
+      modules: [
+        {
+          name: 'quiet',
+          description: '',
+          id: 'quiet',
+        },
+      ],
+    } as Partial<Database>)
+    const out = processScript(
+      ctxFor(db),
+      db.characters[0],
+      'abc',
+      'editprocess',
+    )
+    expect(out).toBe('Abc')
+  })
+})
