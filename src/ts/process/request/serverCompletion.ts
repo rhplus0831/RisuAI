@@ -22,6 +22,9 @@ export function formatToServerProvider(format: LLMFormat): string | null {
       return 'cohere'
     case LLMFormat.GoogleCloud:
       return 'gemini'
+    case LLMFormat.OpenAILegacyInstruct:
+    case LLMFormat.NanoGPTLegacy:
+      return 'openai-legacy-instruct'
     default:
       return null
   }
@@ -113,6 +116,21 @@ function isVanillaGemini(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
+function isVanillaLegacyInstruct(targ: RequestDataArgumentExtended): boolean {
+  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
+  if (aiModel === 'reverse_proxy') return false
+  if (aiModel.startsWith('xcustom:::')) return false
+  // NanoGPTLegacy carries a fixed-format model id; it's still server-routable.
+  // OpenAILegacyInstruct with a modelInfo.endpoint override is deferred.
+  if (
+    targ.modelInfo?.endpoint &&
+    targ.modelInfo?.format !== LLMFormat.NanoGPTLegacy
+  ) {
+    return false
+  }
+  return true
+}
+
 export function getServerCompletionProvider(
   targ: RequestDataArgumentExtended,
 ): string | null {
@@ -128,6 +146,7 @@ export function getServerCompletionProvider(
   if (provider === 'mistral' && !isVanillaMistral(targ)) return null
   if (provider === 'cohere' && !isVanillaCohere(targ)) return null
   if (provider === 'gemini' && !isVanillaGemini(targ)) return null
+  if (provider === 'openai-legacy-instruct' && !isVanillaLegacyInstruct(targ)) return null
   return provider
 }
 
@@ -152,6 +171,14 @@ export function resolveProviderModel(
     // the `models/` prefix so the dispatcher's `/models/<model>` URL doesn't
     // end up with a double prefix.
     return raw.startsWith('models/') ? raw.slice('models/'.length) : raw
+  }
+  if (provider === 'openai-legacy-instruct') {
+    if (targ.modelInfo?.format === LLMFormat.NanoGPTLegacy) {
+      return db.nanogptRequestModel ?? ''
+    }
+    // The local OpenAI legacy instruct path hardcodes 'gpt-3.5-turbo-instruct'
+    // regardless of the local model id; mirror that.
+    return 'gpt-3.5-turbo-instruct'
   }
   return targ.modelInfo?.id ?? targ.aiModel ?? ''
 }
@@ -254,6 +281,22 @@ function buildProviderOptions(
     if (typeof targ.maxTokens === 'number') gemini.maxOutputTokens = targ.maxTokens
     if (typeof targ.temperature === 'number') gemini.temperature = targ.temperature
     return { gemini }
+  }
+  if (provider === 'openai-legacy-instruct') {
+    const legacy: Record<string, unknown> = {}
+    const isNanoGPT = targ.modelInfo?.format === LLMFormat.NanoGPTLegacy
+    if (isNanoGPT) {
+      legacy.apiKey = db.nanogptKey ?? ''
+      legacy.baseUrl = 'https://nano-gpt.com/api/v1'
+      if (typeof db.nanogptProvider === 'string' && db.nanogptProvider.length > 0) {
+        legacy.extraHeaders = { 'X-Provider': db.nanogptProvider }
+      }
+    } else {
+      legacy.apiKey = db.openAIKey ?? ''
+    }
+    if (typeof targ.maxTokens === 'number') legacy.maxTokens = targ.maxTokens
+    if (typeof targ.temperature === 'number') legacy.temperature = targ.temperature
+    return { 'openai-legacy-instruct': legacy }
   }
   return {}
 }

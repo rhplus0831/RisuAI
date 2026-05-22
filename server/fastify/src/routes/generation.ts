@@ -27,6 +27,10 @@ import {
   runOpenAI,
   runOpenAIStream,
 } from '../generation/openai.js'
+import {
+  resolveOpenAILegacyInstructRequest,
+  runOpenAILegacyInstruct,
+} from '../generation/openaiLegacyInstruct.js'
 import { requireAuth } from '../http.js'
 
 const SUPPORTED_PROVIDERS = new Set([
@@ -38,6 +42,7 @@ const SUPPORTED_PROVIDERS = new Set([
   'mistral',
   'cohere',
   'gemini',
+  'openai-legacy-instruct',
 ])
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -121,6 +126,19 @@ interface GeminiOptions {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+}
+
+interface LegacyInstructOptions {
+  apiKey?: unknown
+  baseUrl?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+  topP?: unknown
+  presencePenalty?: unknown
+  frequencyPenalty?: unknown
+  stop?: unknown
+  // Optional X-Provider style headers used by NanoGPT Legacy.
+  extraHeaders?: Record<string, string>
 }
 
 interface OpenAICompatibleVariant {
@@ -319,6 +337,46 @@ async function handleAnthropicBuffered(
       return
     }
     const result = await runAnthropic(resolved)
+    if (result.aborted === true) return
+    const payload: { type: string; result: string; model?: string } = {
+      type: result.type,
+      result: result.result,
+    }
+    if (result.model !== undefined) payload.model = result.model
+    reply.code(200).send(payload)
+  } finally {
+    cleanup()
+  }
+}
+
+async function handleLegacyInstructBuffered(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  messages: unknown[],
+  options: LegacyInstructOptions,
+): Promise<void> {
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const resolved = resolveOpenAILegacyInstructRequest({
+      model,
+      messages,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      topP: options.topP,
+      presencePenalty: options.presencePenalty,
+      frequencyPenalty: options.frequencyPenalty,
+      stop: options.stop,
+      extraHeaders: options.extraHeaders,
+      signal,
+    })
+    if (!resolved) {
+      badRequest(reply, 'options["openai-legacy-instruct"].apiKey is required')
+      return
+    }
+    const result = await runOpenAILegacyInstruct(resolved)
     if (result.aborted === true) return
     const payload: { type: string; result: string; model?: string } = {
       type: result.type,
@@ -617,6 +675,7 @@ export function registerGenerationRoutes(
       mistral?: MistralOptions
       cohere?: CohereOptions
       gemini?: GeminiOptions
+      'openai-legacy-instruct'?: LegacyInstructOptions
     }
 
     if (provider === 'echo') {
@@ -670,6 +729,21 @@ export function registerGenerationRoutes(
         return
       }
       await handleGeminiBuffered(req, reply, body.model, messages, geminiOpts)
+      return
+    }
+
+    if (provider === 'openai-legacy-instruct') {
+      if (body.stream === true) {
+        // The local browser path doesn't stream the legacy /v1/completions
+        // endpoint either. Defer until justified by a fixture.
+        reply.code(400).send({
+          error:
+            'openai-legacy-instruct streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      const opts = options['openai-legacy-instruct'] ?? {}
+      await handleLegacyInstructBuffered(req, reply, body.model, messages, opts)
       return
     }
 

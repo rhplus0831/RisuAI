@@ -800,6 +800,68 @@ describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
   })
 })
 
+describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)', () => {
+  const legacyPayload = {
+    provider: 'openai-legacy-instruct',
+    model: 'gpt-3.5-turbo-instruct',
+    messages: [
+      { role: 'system', content: 'be brief' },
+      { role: 'user', content: 'hi' },
+    ],
+    stream: false,
+    options: {
+      'openai-legacy-instruct': { apiKey: 'sk-test', maxTokens: 128 },
+    },
+  }
+
+  it('400s when apiKey is missing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...legacyPayload, options: { 'openai-legacy-instruct': {} } },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('400s when stream=true (not yet supported)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...legacyPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('forwards to /v1/completions with a flattened prompt', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({ choices: [{ text: 'pong' }], model: 'gpt-3.5-turbo-instruct' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: legacyPayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'pong' })
+    expect(captured!.url).toBe('https://api.openai.com/v1/completions')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.prompt).toContain('## User\nhi')
+    expect(sent.prompt).toContain('## Response')
+  })
+})
+
 describe('Phase 6-9 POST /api/v1/generate/completion (gemini)', () => {
   const geminiPayload = {
     provider: 'gemini',

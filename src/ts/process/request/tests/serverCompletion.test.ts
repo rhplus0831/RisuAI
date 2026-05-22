@@ -115,6 +115,11 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(LLMFormat.VertexAIGemini)).toBeNull()
   })
 
+  it('maps OpenAILegacyInstruct + NanoGPTLegacy to "openai-legacy-instruct"', () => {
+    expect(formatToServerProvider(LLMFormat.OpenAILegacyInstruct)).toBe('openai-legacy-instruct')
+    expect(formatToServerProvider(LLMFormat.NanoGPTLegacy)).toBe('openai-legacy-instruct')
+  })
+
   it('returns null for AWSBedrockClaude (not yet server-routable)', () => {
     expect(formatToServerProvider(LLMFormat.AWSBedrockClaude)).toBeNull()
   })
@@ -744,6 +749,61 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     await requestServerCompletion(targ, 'gemini', null)
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.model).toBe('gemini-2.5-pro')
+  })
+
+  it('emits options.openai-legacy-instruct.apiKey from db.openAIKey and a hardcoded model', async () => {
+    seedDb({ openAIKey: 'sk-legacy' } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'gpt-3.5-turbo-instruct',
+      modelInfo: {
+        id: 'gpt-3.5-turbo-instruct',
+        format: LLMFormat.OpenAILegacyInstruct,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 128,
+    })
+    await requestServerCompletion(targ, 'openai-legacy-instruct', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openai-legacy-instruct')
+    expect(sent.model).toBe('gpt-3.5-turbo-instruct')
+    expect(sent.options['openai-legacy-instruct']).toEqual({
+      apiKey: 'sk-legacy',
+      maxTokens: 128,
+    })
+  })
+
+  it('routes NanoGPTLegacy through openai-legacy-instruct with nano-gpt.com baseUrl + nanogpt key + X-Provider', async () => {
+    seedDb({
+      nanogptKey: 'nk',
+      nanogptRequestModel: 'meta-llama/foo',
+      nanogptProvider: 'meta',
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'nanogpt-legacy',
+      modelInfo: {
+        id: 'nanogpt-legacy',
+        format: LLMFormat.NanoGPTLegacy,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'openai-legacy-instruct', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('meta-llama/foo')
+    expect(sent.options['openai-legacy-instruct']).toEqual({
+      apiKey: 'nk',
+      baseUrl: 'https://nano-gpt.com/api/v1',
+      extraHeaders: { 'X-Provider': 'meta' },
+    })
   })
 
   it('emits options.openrouter and overrides the wire model with db.openrouterRequestModel', async () => {
