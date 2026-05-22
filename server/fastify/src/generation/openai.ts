@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 
 export interface OpenAIRequest {
@@ -8,6 +9,13 @@ export interface OpenAIRequest {
   maxTokens?: number
   temperature?: number
   extraHeaders?: Record<string, string>
+  /**
+   * Pre-validated `[key, value][]` pairs from the SPA's additionalParams /
+   * xcustom `params` DSL. Applied to the body + headers after they're
+   * constructed, so the user DSL has the last word. See
+   * `./additionalParams.ts` for semantics.
+   */
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -19,6 +27,7 @@ interface OpenAIResolveInput {
   maxTokens?: unknown
   temperature?: unknown
   extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -50,6 +59,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     maxTokens,
     temperature,
     extraHeaders: input.extraHeaders,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
@@ -70,12 +80,28 @@ function endpoint(req: OpenAIRequest): string {
   return `${base}/chat/completions`
 }
 
-function headers(req: OpenAIRequest): Record<string, string> {
+function buildHeaders(req: OpenAIRequest): Record<string, string> {
   return {
     'content-type': 'application/json',
     authorization: `Bearer ${req.apiKey}`,
     ...(req.extraHeaders ?? {}),
   }
+}
+
+/**
+ * Build the outgoing body + headers and apply the additionalParams DSL.
+ * Centralizes the order: defaults first, extraHeaders second, user DSL last.
+ */
+function buildRequestInit(req: OpenAIRequest, stream: boolean): {
+  body: string
+  headers: Record<string, string>
+} {
+  const body = buildPayload(req, stream)
+  const headers = buildHeaders(req)
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, headers, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers }
 }
 
 interface OpenAINonStreamChoice {
@@ -94,12 +120,13 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
     return { type: 'fail', result: 'aborted', aborted: true }
   }
 
+  const init = buildRequestInit(req, false)
   let response: Response
   try {
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req, false)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {
@@ -174,12 +201,13 @@ export async function* runOpenAIStream(
 ): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
+  const init = buildRequestInit(req, true)
   let response: Response
   try {
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req, true)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch {

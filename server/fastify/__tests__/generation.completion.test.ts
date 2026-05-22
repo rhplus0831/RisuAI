@@ -728,6 +728,79 @@ describe('Phase 6-8 POST /api/v1/generate/completion (openai with custom baseUrl
   })
 })
 
+describe('Phase 6-17 POST /api/v1/generate/completion (xcustom OAI-compat additionalParams)', () => {
+  it('applies the additionalParams overlay to the outgoing body + headers', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-on-acme',
+          choices: [{ message: { content: 'xcustom ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openai',
+        model: 'gpt-on-acme',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          openai: {
+            apiKey: 'sk-xcustom',
+            baseUrl: 'https://acme.example.com/v1',
+            temperature: 0.7,
+            additionalParams: [
+              ['header::X-Custom', 'hello'],
+              ['extra.flag', 'true'],
+              ['temperature', '{{none}}'],
+            ],
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'xcustom ok' })
+    expect(captured!.url).toBe('https://acme.example.com/v1/chat/completions')
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.extra).toEqual({ flag: true })
+    // temperature was set to 0.7 in defaults, then deleted by {{none}}.
+    expect(sent.temperature).toBeUndefined()
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Custom']).toBe('hello')
+  })
+
+  it('400s with a specific error when additionalParams shape is malformed', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openai',
+        model: 'gpt-on-acme',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: {
+          openai: {
+            apiKey: 'sk-xcustom',
+            additionalParams: 'oops',
+          },
+        },
+      },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/additionalParams/)
+  })
+})
+
 describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
   const coherePayload = {
     provider: 'cohere',

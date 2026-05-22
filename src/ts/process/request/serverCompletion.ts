@@ -52,14 +52,21 @@ export function formatToServerProvider(format: LLMFormat): string | null {
  * `aiModel === 'openrouter'` routes to `'openrouter'`; models that look up
  * their key under `db.OaiCompAPIKeys[modelInfo.keyIdentifier]` (DeepSeek,
  * DeepInfra) ride the openai dispatcher with the lookup key + a baseUrl
- * derived from `modelInfo.endpoint`. reverse_proxy and xcustom::: stay on
- * local dispatch until their slices land.
+ * derived from `modelInfo.endpoint`. `xcustom:::<id>` rides the openai
+ * dispatcher with per-entry URL + key from `db.customModels` plus an
+ * `additionalParams` overlay parsed from the entry's `params` field.
+ * reverse_proxy stays on local dispatch until its slice lands.
  */
 function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
   const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
   if (aiModel === 'openrouter') return 'openrouter'
   if (aiModel === 'reverse_proxy') return null
-  if (aiModel.startsWith('xcustom:::')) return null
+  if (aiModel.startsWith('xcustom:::')) {
+    const entry = findXcustomEntry(aiModel)
+    if (entry === null) return null
+    if (entry.format !== LLMFormat.OpenAICompatible) return null
+    return 'openai'
+  }
   if (targ.modelInfo?.keyIdentifier) {
     const db = getDatabase()
     const key = db.OaiCompAPIKeys?.[targ.modelInfo.keyIdentifier]
@@ -73,6 +80,42 @@ function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
   // reverse-proxy deployment whose auth path is not yet defined; stay local.
   if (targ.modelInfo?.endpoint) return null
   return 'openai'
+}
+
+interface XcustomEntry {
+  id: string
+  internalId: string
+  url: string
+  key: string
+  format: LLMFormat
+  params: string
+}
+
+function findXcustomEntry(aiModel: string): XcustomEntry | null {
+  const db = getDatabase()
+  const models = (db.customModels ?? []) as XcustomEntry[]
+  const entry = models.find((m) => m.id === aiModel)
+  if (!entry) return null
+  if (typeof entry.url !== 'string' || entry.url.length === 0) return null
+  if (typeof entry.key !== 'string' || entry.key.length === 0) return null
+  return entry
+}
+
+/**
+ * Parse the xcustom `params` block (and reverse_proxy's `additionalParams`
+ * table, once that slice lands) into `[key, value][]` pairs. Mirrors the
+ * local code in `src/ts/process/request/shared.ts:getAdditionalParameters`.
+ * Each non-empty line is split on the first `=`; the value can contain `=`.
+ */
+function parseXcustomParams(params: string): Array<[string, string]> {
+  if (typeof params !== 'string' || params.length === 0) return []
+  const out: Array<[string, string]> = []
+  for (const line of params.split('\n')) {
+    const split = line.split('=')
+    if (split.length < 2) continue
+    out.push([split[0], split.slice(1).join('=')])
+  }
+  return out
 }
 
 /**
@@ -222,6 +265,13 @@ export function resolveProviderModel(
     return db.ollamaCloudModel ?? ''
   }
   if (provider === 'ollama') return db.ollamaModel ?? ''
+  const aiModel = targ.aiModel ?? ''
+  if (aiModel.startsWith('xcustom:::')) {
+    const entry = findXcustomEntry(aiModel)
+    if (entry !== null) {
+      return entry.internalId.length > 0 ? entry.internalId : entry.id
+    }
+  }
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
   if (provider === 'gemini') {
@@ -291,9 +341,18 @@ function buildProviderOptions(
   }
   if (provider === 'openai') {
     const openai: Record<string, unknown> = {}
+    const aiModel = targ.aiModel ?? ''
     if (isOllamaCloud(targ)) {
       openai.apiKey = db.ollamaApiKey ?? ''
       openai.baseUrl = 'https://ollama.com/v1'
+    } else if (aiModel.startsWith('xcustom:::')) {
+      const entry = findXcustomEntry(aiModel)
+      if (entry !== null) {
+        openai.apiKey = entry.key
+        openai.baseUrl = deriveOpenAIBaseUrl(entry.url)
+        const params = parseXcustomParams(entry.params)
+        if (params.length > 0) openai.additionalParams = params
+      }
     } else {
       const keyId = targ.modelInfo?.keyIdentifier
       if (typeof keyId === 'string' && keyId.length > 0) {

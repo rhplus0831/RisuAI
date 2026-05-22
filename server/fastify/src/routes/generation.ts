@@ -22,6 +22,7 @@ import {
   runMistral,
   runMistralStream,
 } from '../generation/mistral.js'
+import { coerceAdditionalParams } from '../generation/additionalParams.js'
 import {
   resolveOpenAIRequest,
   runOpenAI,
@@ -87,6 +88,12 @@ interface OpenAIOptions {
   baseUrl?: unknown
   maxTokens?: unknown
   temperature?: unknown
+  /**
+   * Pre-parsed `[key, value][]` pairs from the SPA's xcustom `params` /
+   * reverse_proxy `additionalParams` DSL. Applied after the dispatcher
+   * builds the body + headers.
+   */
+  additionalParams?: unknown
 }
 
 interface NanoGPTOptions {
@@ -206,15 +213,36 @@ interface OpenAICompatibleVariant {
   maxTokens?: unknown
   temperature?: unknown
   extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
 }
 
-function resolveOpenAIVariant(o: OpenAIOptions): OpenAICompatibleVariant | null {
-  if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) return null
+function resolveOpenAIVariant(
+  o: OpenAIOptions,
+): { ok: true; variant: OpenAICompatibleVariant } | { ok: false; error: string } {
+  if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) {
+    return { ok: false, error: 'options.openai.apiKey is required' }
+  }
   const baseUrl =
     typeof o.baseUrl === 'string' && o.baseUrl.length > 0
       ? o.baseUrl
       : 'https://api.openai.com/v1'
-  return { apiKey: o.apiKey, baseUrl, maxTokens: o.maxTokens, temperature: o.temperature }
+  const variant: OpenAICompatibleVariant = {
+    apiKey: o.apiKey,
+    baseUrl,
+    maxTokens: o.maxTokens,
+    temperature: o.temperature,
+  }
+  if (o.additionalParams !== undefined) {
+    const coerced = coerceAdditionalParams(o.additionalParams)
+    if (coerced === null) {
+      return {
+        ok: false,
+        error: 'options.openai.additionalParams must be an array of [string, string] pairs',
+      }
+    }
+    if (coerced.length > 0) variant.additionalParams = coerced
+  }
+  return { ok: true, variant }
 }
 
 function resolveNanoGPTVariant(o: NanoGPTOptions): OpenAICompatibleVariant | null {
@@ -819,6 +847,7 @@ async function handleOpenAICompatibleStreaming(
       maxTokens: variant.maxTokens,
       temperature: variant.temperature,
       extraHeaders: variant.extraHeaders,
+      additionalParams: variant.additionalParams,
       signal,
     })
     if (!resolved) {
@@ -848,6 +877,7 @@ async function handleOpenAICompatibleBuffered(
       maxTokens: variant.maxTokens,
       temperature: variant.temperature,
       extraHeaders: variant.extraHeaders,
+      additionalParams: variant.additionalParams,
       signal,
     })
     if (!resolved) {
@@ -1030,20 +1060,21 @@ export function registerGenerationRoutes(
     }
 
     let variant: OpenAICompatibleVariant | null = null
-    let variantLabel = ''
+    let variantError = ''
     if (provider === 'openai') {
-      variant = resolveOpenAIVariant(options.openai ?? {})
-      variantLabel = 'options.openai.apiKey'
+      const r = resolveOpenAIVariant(options.openai ?? {})
+      if (r.ok) variant = r.variant
+      else variantError = r.error
     } else if (provider === 'nanogpt') {
       variant = resolveNanoGPTVariant(options.nanogpt ?? {})
-      variantLabel = 'options.nanogpt.apiKey'
+      variantError = 'options.nanogpt.apiKey is required'
     } else if (provider === 'openrouter') {
       variant = resolveOpenRouterVariant(options.openrouter ?? {})
-      variantLabel = 'options.openrouter.apiKey'
+      variantError = 'options.openrouter.apiKey is required'
     }
 
     if (variant === null) {
-      return badRequest(reply, `${variantLabel} is required`)
+      return badRequest(reply, variantError)
     }
 
     if (body.stream === true) {

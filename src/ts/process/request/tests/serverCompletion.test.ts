@@ -196,12 +196,88 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
-  it('refuses xcustom::: models under OpenAICompatible', () => {
+  it('refuses xcustom::: models when no db.customModels entry matches', () => {
+    seedDb({ customModels: [] } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::missing',
+        modelInfo: {
+          id: 'xcustom:::missing',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('refuses xcustom::: models whose db.customModels entry lacks url or key', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::no-key',
+          internalId: 'gpt-test',
+          url: 'https://example.com/v1/chat/completions',
+          key: '',
+          format: LLMFormat.OpenAICompatible,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::no-key',
+        modelInfo: {
+          id: 'xcustom:::no-key',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBeNull()
+  })
+
+  it('routes xcustom::: OpenAICompatible models to provider "openai" when the db.customModels entry is valid', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::my-model',
+          internalId: 'gpt-test',
+          url: 'https://example.com/v1/chat/completions',
+          key: 'sk-xcustom',
+          format: LLMFormat.OpenAICompatible,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
     const r = getServerCompletionProvider(
       makeTarg({
         aiModel: 'xcustom:::my-model',
         modelInfo: {
           id: 'xcustom:::my-model',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai')
+  })
+
+  it('refuses xcustom::: entries whose format is not OpenAICompatible (other formats need their own slices)', () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::anthropic-clone',
+          internalId: 'claude-fake',
+          url: 'https://example.com/anthropic',
+          key: 'sk-x',
+          format: LLMFormat.Anthropic,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'xcustom:::anthropic-clone',
+        modelInfo: {
+          id: 'xcustom:::anthropic-clone',
           format: LLMFormat.OpenAICompatible,
         } as unknown as RequestDataArgumentExtended['modelInfo'],
       }),
@@ -562,6 +638,89 @@ describe('buildProviderOptions (via requestServerCompletion request body)', () =
     })
     // The wire-level model field is the original modelInfo.id, unchanged.
     expect(sent.model).toBe('deepseek-chat')
+  })
+
+  it('routes xcustom::: through provider "openai" with the entry url/key + parsed additionalParams', async () => {
+    seedDb({
+      openAIKey: 'sk-not-used',
+      customModels: [
+        {
+          id: 'xcustom:::my-model',
+          internalId: 'gpt-on-acme',
+          url: 'https://acme.example.com/v1/chat/completions',
+          key: 'sk-acme',
+          format: LLMFormat.OpenAICompatible,
+          params:
+            'header::X-Custom=hello\n' +
+            'extra.flag=true\n' +
+            'extra.count=7\n' +
+            'extra.tag="value=with=equals"\n' +
+            'extra.payload=json::{"nested": [1, 2]}\n' +
+            'temperature={{none}}',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'xcustom:::my-model',
+      modelInfo: {
+        id: 'xcustom:::my-model',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+      maxTokens: 128,
+      temperature: 0.4,
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.provider).toBe('openai')
+    expect(sent.model).toBe('gpt-on-acme')
+    expect(sent.options.openai.apiKey).toBe('sk-acme')
+    expect(sent.options.openai.baseUrl).toBe('https://acme.example.com/v1')
+    expect(sent.options.openai.additionalParams).toEqual([
+      ['header::X-Custom', 'hello'],
+      ['extra.flag', 'true'],
+      ['extra.count', '7'],
+      ['extra.tag', '"value=with=equals"'],
+      ['extra.payload', 'json::{"nested": [1, 2]}'],
+      ['temperature', '{{none}}'],
+    ])
+  })
+
+  it('falls back to entry.id when xcustom internalId is empty', async () => {
+    seedDb({
+      customModels: [
+        {
+          id: 'xcustom:::no-internal',
+          internalId: '',
+          url: 'https://example.com/v1/chat/completions',
+          key: 'sk-x',
+          format: LLMFormat.OpenAICompatible,
+          params: '',
+        },
+      ],
+    } as unknown as Partial<Database>)
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return new Response(JSON.stringify({ type: 'success', result: 'x' }), { status: 200 })
+    })
+
+    const targ = makeTarg({
+      aiModel: 'xcustom:::no-internal',
+      modelInfo: {
+        id: 'xcustom:::no-internal',
+        format: LLMFormat.OpenAICompatible,
+      } as unknown as RequestDataArgumentExtended['modelInfo'],
+    })
+    await requestServerCompletion(targ, 'openai', null)
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('xcustom:::no-internal')
+    expect(sent.options.openai.additionalParams).toBeUndefined()
   })
 
   it('uses the db.openAIKey path when keyIdentifier is absent (vanilla openai unchanged)', async () => {

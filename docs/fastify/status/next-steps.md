@@ -6,8 +6,9 @@ Use this list to pick the next chunk of work. Phase 5 closed on
 2026-05-22 with all 28 extraction slices landed; the historical
 slice record now lives in
 [`sendchat-slicing.md`](sendchat-slicing.md). Phase 6 is active,
-and commit history through Phase 6-16 shows provider coverage
-landed through native Ollama `/api/chat`.
+and commit history through Phase 6-17 shows provider coverage
+landed through xcustom OAI-compat with the `additionalParams`
+DSL.
 
 ## Immediate
 
@@ -20,16 +21,19 @@ landed through native Ollama `/api/chat`.
    DeepInfra OpenAI-compatible keyIdentifier path, vanilla Google
    AI Gemini, OpenAI Legacy Instruct (+ NanoGPT Legacy), OpenAI
    Responses API (+ NanoGPT Responses), Ollama Cloud variants,
-   Kobold, ooba legacy, and native Ollama `/api/chat` (buffered +
-   NDJSON streaming). Still remaining: NovelAI, NovelList, ooba
-   OAI-compatible `/v1/completions` (open design question — local
-   path uses Jinja chat templates, not the `## User` flatten),
-   Vertex AI Gemini, AWS Bedrock Claude, Stable Horde, and
-   OpenAI-compatible custom / reverse proxy / xcustom paths
-   without the keyIdentifier contract. Keep the 33 local sendChat
-   snapshots, the 7-fixture server-backed sweep, and the Fastify
-   generation tests green (`pnpm api:test`: 319, `pnpm test`: 538
-   + 4 skipped).
+   Kobold, ooba legacy, native Ollama `/api/chat` (buffered +
+   NDJSON streaming), and `xcustom:::id` OAI-compat with the
+   `additionalParams` body/header overlay DSL. Still remaining:
+   NovelAI, NovelList, ooba OAI-compatible `/v1/completions`
+   (open design question — local path uses Jinja chat templates,
+   not the `## User` flatten), Vertex AI Gemini, AWS Bedrock
+   Claude, Stable Horde, and the `reverse_proxy` path under
+   OpenAI-compatible (sibling to xcustom; pulls in the same DSL
+   plus URL autofill, `risu::` header, and `db.reverseProxyOobaMode`
+   system hoisting). Keep the 33 local sendChat snapshots, the
+   7-fixture server-backed sweep, and the Fastify generation
+   tests green (`pnpm api:test`: 346, `pnpm test`: 543 + 4
+   skipped).
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments
@@ -59,6 +63,7 @@ landed through native Ollama `/api/chat`.
 | 6-13  | `76ec283c` | Routed Ollama Cloud through OpenAI / Responses / Anthropic dispatchers based on `db.ollamaRequestFormat`.                 |
 | 6-14  | `f6b88f01` | Added Kobold and ooba legacy buffered dispatchers and tests.                                                              |
 | 6-16  | `c919e683` | Added native Ollama `/api/chat` dispatcher with NDJSON streaming, adapter `db.ollamaURL` gate, and route + dispatcher tests. |
+| 6-17  | _pending_  | Routed `xcustom:::<id>` OAI-compat through the openai dispatcher with the `additionalParams` body/header overlay DSL ported server-side. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

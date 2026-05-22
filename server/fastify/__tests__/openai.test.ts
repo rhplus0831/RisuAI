@@ -127,6 +127,36 @@ describe('runOpenAI (non-streaming)', () => {
     expect(capturedHeaders.authorization).toBe('Bearer k')
   })
 
+  it('applies additionalParams to the body + headers after the default payload is built', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      maxTokens: 256,
+      temperature: 0.7,
+      additionalParams: [
+        ['header::X-Title', 'RisuAI'],
+        ['extra.flag', 'true'],
+        ['extra.nested.value', 'json::[1, 2]'],
+        ['temperature', '{{none}}'],
+      ],
+      signal: new AbortController().signal,
+    })
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.model).toBe('m')
+    expect(sent.max_tokens).toBe(256)
+    expect(sent.temperature).toBeUndefined()
+    expect(sent.extra).toEqual({ flag: true, nested: { value: [1, 2] } })
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['X-Title']).toBe('RisuAI')
+  })
+
   it('strips a trailing slash from baseUrl', async () => {
     let capturedUrl = ''
     vi.stubGlobal('fetch', async (url: string) => {
