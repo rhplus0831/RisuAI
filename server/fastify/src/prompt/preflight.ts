@@ -8,6 +8,7 @@ import {
 } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import type { UnformatedPromptSlots as PromptUnformatedSlots } from './templates.js'
 
 /**
  * Phase 7-8b template-wide token preflight ported from the SPA's
@@ -41,22 +42,11 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 /**
  * Aggregated slot arrays the SPA assembly root passes into the
- * preflight. Matches `preflightTemplateTokens.ts:11-22` exactly so
- * the future assemble root (7-11a) can build this shape without
- * re-inventing it.
+ * preflight. The canonical definition lives in `templates.ts`
+ * (`UnformatedPromptSlots`, 7-10a); re-exported here as
+ * `PromptUnformatedSlots` for the existing consumers.
  */
-export interface PromptUnformatedSlots {
-  main: OpenAIChat[]
-  jailbreak: OpenAIChat[]
-  chats: OpenAIChat[]
-  lorebook: OpenAIChat[]
-  globalNote: OpenAIChat[]
-  authorNote: OpenAIChat[]
-  lastChat: OpenAIChat[]
-  description: OpenAIChat[]
-  postEverything: OpenAIChat[]
-  personaPrompt: OpenAIChat[]
-}
+export type { PromptUnformatedSlots }
 
 export interface PreflightResult {
   addedTokens: number
