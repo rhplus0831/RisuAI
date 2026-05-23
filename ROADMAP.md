@@ -78,41 +78,42 @@ multi-subsystem work behind small labels.
 
 ## Landed slices
 
-| Slice   | Commit     | Summary                                                                                                                                               |
-| ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7-1     | `3d2426c4` | Scaffolded `POST /api/v1/generate/chat`, locked the 9-event SSE taxonomy, and added the stubs.                                                        |
-| 7-2a    | `9eed5093` | Added Svelte-free DI seams for chat variables and `trigger_id`.                                                                                       |
-| 7-2b    | `bb2c78b5` | Lifted `risuChatParser` + helpers into Svelte-free modules.                                                                                           |
-| 7-2c    | `7ed156e6` | Wired the server parser adapter and the real `expandVariables`.                                                                                       |
-| 7-3     | `d0a2a7f3` | Ported static prompt sections (description / author note / persona / chain-of-thought).                                                               |
-| 7-4     | `051a5dcd` | Ported plain prompt sections (main / jailbreak / global note).                                                                                        |
-| 7-5a    | `c44e53fc` | Minimal history walk (examples + start-new-chat marker + first message + makeMs + role map).                                                          |
-| 7-6a    | `9a60380d` | Minimal regex script processor (preset + character, mode filter, flag sanitization, CBS).                                                             |
-| 7-5b    | `7ad226b9` | History per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill.                                                        |
-| 7-6b    | `8414d5c7` | Scripts `@@`-action prefixes (`@@emo`, `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`).                                                   |
-| 7-6c    | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + SPA-parity flag defaults.                                                                        |
-| 7-6d    | `cb5675d8` | Module regex scripts wired into the script chain via `getActiveModules` + `getModuleRegexScripts`.                                                    |
-| 7-5c    | `50a1770b` | History multimodal inlays + `{{asset_prompt::}}` with `AssetLookup` and module assets.                                                                |
-| 7-7a    | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                                                                  |
-| 7-7b    | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`.                                                |
-| 7-7c    | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursive/unrecursive/no_recursive_search decorators.                      |
-| 7-7e    | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.                                         |
-| 7-8a    | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.                          |
-| 7-7d    | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                                    |
-| 7-5e    | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                                       |
-| 7-8b    | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`.              |
-| 7-8c    | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.                       |
-| 7-9a    | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.                       |
-| 7-9b    | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.                       |
-| 7-9c    | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.                   |
-| 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects.              |
-| 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.                       |
-| 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.                        |
-| 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.               |
-| 7-10a   | `765886be` | Template renderer foundation: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, `UnformatedPromptSlots`.                |
-| 7-10b   | `978ade30` | Content cards: shared `renderContentCard` + `renderByTemplate`; `preflight.ts` refactored to consume the same per-card builder.                       |
-| 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts` `chat` case removed.                |
-| 7-10d   | `3983d2d0` | Memory + cache cards: `memory` clone + `innerFormat` wrap, explicit `cache` walk-back, and automatic 3-deep `user` cache point in `renderByTemplate`. |
+| Slice   | Commit     | Summary                                                                                                                                                   |
+| ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7-1     | `3d2426c4` | Scaffolded `POST /api/v1/generate/chat`, locked the 9-event SSE taxonomy, and added the stubs.                                                            |
+| 7-2a    | `9eed5093` | Added Svelte-free DI seams for chat variables and `trigger_id`.                                                                                           |
+| 7-2b    | `bb2c78b5` | Lifted `risuChatParser` + helpers into Svelte-free modules.                                                                                               |
+| 7-2c    | `7ed156e6` | Wired the server parser adapter and the real `expandVariables`.                                                                                           |
+| 7-3     | `d0a2a7f3` | Ported static prompt sections (description / author note / persona / chain-of-thought).                                                                   |
+| 7-4     | `051a5dcd` | Ported plain prompt sections (main / jailbreak / global note).                                                                                            |
+| 7-5a    | `c44e53fc` | Minimal history walk (examples + start-new-chat marker + first message + makeMs + role map).                                                              |
+| 7-6a    | `9a60380d` | Minimal regex script processor (preset + character, mode filter, flag sanitization, CBS).                                                                 |
+| 7-5b    | `7ad226b9` | History per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill.                                                            |
+| 7-6b    | `8414d5c7` | Scripts `@@`-action prefixes (`@@emo`, `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`).                                                       |
+| 7-6c    | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + SPA-parity flag defaults.                                                                            |
+| 7-6d    | `cb5675d8` | Module regex scripts wired into the script chain via `getActiveModules` + `getModuleRegexScripts`.                                                        |
+| 7-5c    | `50a1770b` | History multimodal inlays + `{{asset_prompt::}}` with `AssetLookup` and module assets.                                                                    |
+| 7-7a    | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                                                                      |
+| 7-7b    | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`.                                                    |
+| 7-7c    | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursive/unrecursive/no_recursive_search decorators.                          |
+| 7-7e    | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.                                             |
+| 7-8a    | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.                              |
+| 7-7d    | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                                        |
+| 7-5e    | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                                           |
+| 7-8b    | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`.                  |
+| 7-8c    | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.                           |
+| 7-9a    | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.                           |
+| 7-9b    | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.                           |
+| 7-9c    | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.                       |
+| 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects.                  |
+| 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.                           |
+| 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.                            |
+| 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.                   |
+| 7-10a   | `765886be` | Template renderer foundation: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, `UnformatedPromptSlots`.                    |
+| 7-10b   | `978ade30` | Content cards: shared `renderContentCard` + `renderByTemplate`; `preflight.ts` refactored to consume the same per-card builder.                           |
+| 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts` `chat` case removed.                    |
+| 7-10d   | `3983d2d0` | Memory + cache cards: `memory` clone + `innerFormat` wrap, explicit `cache` walk-back, and automatic 3-deep `user` cache point in `renderByTemplate`.     |
+| 7-10e   | `2871960f` | Prompt-info capture + content trim: `renderByTemplate` returns `{ formated, promptInfo }`, collects info via a `deps.promptInfo` sink, trims both arrays. |
 
 ## Remaining Slices
 
@@ -251,20 +252,26 @@ Preset templates (`templates.ts`):
   matches any), and applies the automatic 3-deep `user` cache-point
   walk-back when `db.automaticCachePoint` is set and no cache card
   suppresses it — all in `renderByTemplate`. `preflight.ts` unchanged.
-- **7-10e** — position + prompt-info finalization. Thread
-  `resolvePosition` through render locations, trim rendered rows and
-  prompt-info rows, and keep the prompt-info array in lockstep with
-  card rendering.
+- **7-10e** — position + prompt-info finalization. **Landed
+  `2871960f`.** `renderByTemplate` now returns
+  `{ formated, promptInfo }`: with both `promptInfoInsideChat` and
+  `promptTextInfoInsideChat` on it collects a parallel info array in
+  lockstep with card rendering (raw `innerFormat` for persona /
+  description / authornote / memory; parsed content for non-globalNote
+  plain / jailbreak / cot) via a `deps.promptInfo` sink, and it trims
+  row contents on both the template and non-template
+  (`renderByFormatOrder`) paths. The `positionParser` seam was already
+  threaded in 7-10b/c. `preflight.ts` unchanged.
 - **7-10f** — render finalization + request-edit boundary. Apply
   character `depth_prompt`, return finalized rows + prompt-info rows,
   and expose the handoff point that 7-11b/dispatch uses for the
   Phase 7-safe request-state transform from 7-9e. Browser Lua
   `editRequest` hooks stay deferred with plugin/Lua execution.
 
-Current default pickup: **7-10e** (position + prompt-info
-finalization). History, lorebook, tokens/budget, triggers, and
-7-10a/b/c/d are already landed; Phase 7 is now on the remaining
-template renderer work (7-10e/f), then Tier 3 root/route wiring.
+Current default pickup: **7-10f** (render finalization + request-edit
+boundary). History, lorebook, tokens/budget, triggers, and
+7-10a/b/c/d/e are already landed; 7-10f is the last template renderer
+slice before Tier 3 root/route wiring.
 
 ### Tier 3 — Root + route wiring (all Tier 1 + 2 real)
 
@@ -313,8 +320,8 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Parallelism notes
 
-- 7-10e and 7-10f should land in order because each adds state to the
-  same renderer path (7-10d is landed).
+- 7-10f is the last renderer slice (7-10e is landed); it layers
+  finalization on top of the path renderers.
 - After the renderer closes, 7-11a and 7-11b are the critical-path
   assembly slices; 7-11c/d/e can split once their direct deps are in.
 - 7-6e is optional polish. Skip in the default order; revisit
@@ -323,18 +330,17 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Sequential order (default)
 
-1. **7-10e** — position + prompt-info finalization
-2. **7-10f** — render finalization + request-edit boundary
-3. **7-11a** — `assemble.ts` state loader + slot orchestration
-4. **7-11b** — memory-window bridge + final render
-5. **7-11c** — wire `/api/v1/generate/chat`
-6. **7-11d** — `/api/v1/generate/preview-prompt`
-7. **7-11e** — SSE telemetry (`info`, `message_patch`)
-8. **7-12a** — browser client adapter
-9. **7-12b** — dual-mode fixture sweep
-10. **7-12c** — side-effect dispatch
-11. **7-12d** — error / abort restoration
-12. **7-13** — phase 7 closeout
+1. **7-10f** — render finalization + request-edit boundary
+2. **7-11a** — `assemble.ts` state loader + slot orchestration
+3. **7-11b** — memory-window bridge + final render
+4. **7-11c** — wire `/api/v1/generate/chat`
+5. **7-11d** — `/api/v1/generate/preview-prompt`
+6. **7-11e** — SSE telemetry (`info`, `message_patch`)
+7. **7-12a** — browser client adapter
+8. **7-12b** — dual-mode fixture sweep
+9. **7-12c** — side-effect dispatch
+10. **7-12d** — error / abort restoration
+11. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 
