@@ -2,56 +2,30 @@
 
 Date: 2026-05-24
 
-Concise snapshot of where each workstream stands. Detail per
-workstream lives in the sibling shards.
+Concise snapshot of each migration workstream. Historical detail is in
+[`../phases-completed/`](../phases-completed/).
 
-## Phase progress
+## Phase Progress
 
-| Phase                                   | Status      | Notes                                                             |
-| --------------------------------------- | ----------- | ----------------------------------------------------------------- |
-| 0 - Removals                            | complete    | Closed 2026-05-20; see removals shard.                            |
-| 1 - Foundation                          | complete    | Closed 2026-05-20; health/auth smoke.                             |
-| 2 - Storage / import / assets / backups | complete    | Closed 2026-05-20; server routes + Docker.                        |
-| 3 - Proxy migration                     | complete    | Closed 2026-05-21; Express deleted.                               |
-| 4 - sendChat tests                      | complete    | Closed 2026-05-20; 17 initial fixtures.                           |
-| 5 - sendChat extraction                 | complete    | Closed 2026-05-22; all 28 slices landed.                          |
-| 6 - Server-side generation              | complete    | Completion route closed in Phase 6-28; helpers remain follow-ups. |
-| 7 - Server-side prompt assembly         | in progress | 47 slices landed through 7-12c; next is 7-12d-i mutation handoff. |
-| 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.                                     |
-| 9 - Client thinning                     | not started | Blocked on all of the above.                                      |
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 0 - Removals | Complete | Closed 2026-05-20. |
+| 1 - Foundation | Complete | Closed 2026-05-20. |
+| 2 - Storage / import / assets / backups | Complete | Closed 2026-05-20. |
+| 3 - Proxy migration | Complete | Closed 2026-05-21; Express deleted. |
+| 4 - sendChat tests | Complete | Closed 2026-05-20. |
+| 5 - sendChat extraction | Complete | Closed 2026-05-22. |
+| 6 - Server-side generation | Complete | Closed 2026-05-22 for `/completion`. |
+| 7 - Server-side prompt assembly | In progress | Next slice: 7-12d-i mutation handoff. |
+| 8 - Hypa V3 memory server-side | Not started | Waits for Phase 7 and the Phase 2 storage foundation. |
+| 9 - Client thinning | Not started | Waits for server-owned prompt, generation, and memory paths. |
 
 ## Workstreams
 
-- **Removals.** Captured in [`removals.md`](removals.md). Feature
-  removal is complete; a couple of stale, unreachable group-chat UI
-  checks remain documented as cleanup debt.
-- **Server.** Captured in [`server.md`](server.md). Phases 1-3 are
-  landed; Phase 6 completion routing is closed with
-  `/api/v1/generate/completion` routed through the current provider
-  matrix. Phase 7 has added the `/api/v1/generate/chat` SSE route,
-  `/api/v1/generate/preview-prompt` JSON route, prompt leaves,
-  history, regex scripts, module helpers, lorebook activation,
-  tokens / budget, the Phase 7-safe trigger runner, complete
-  template renderer, `assemblePrompt`, `/chat` `info` telemetry, and
-  the browser `/chat` preview adapter path.
-  The Docker runtime targets Fastify, Express has been deleted, and
-  the production image
-  installs the runtime dependencies needed by `pnpm api:start`.
-  The Fastify-served SPA wires its self-host gates via `__NODE__`
-  and `__FASTIFY__` injection in `index.html`.
-- **sendChat.** Captured in [`sendchat.md`](sendchat.md). Phase 5
-  is closed: `src/ts/process/index.svelte.ts` is 445 lines, with
-  prompt assembly, request budgeting, dispatch, response
-  orchestration, Stage 4 closeout, and entry-context setup
-  extracted into focused modules. The current guardrail is 38 local
-  snapshots plus 12 server-backed provider-parity fixtures; the
-  Phase 5 slice history lives in
-  [`sendchat-slicing.md`](sendchat-slicing.md).
-
-## Reference state
-
-The `move-to-fastify` branch (68 commits ahead of `main`) is a
-worked example of Phases 1-6 in one push. It is reference, not
-plan: this roadmap reshapes the API surface (no whole-state PUT,
-no group-chat commands, simpler memory tables) and sequences
-removals first.
+- Server: Fastify owns the live server path. See [`server.md`](server.md).
+- sendChat: preview can use server assembly behind the gate; send /
+  continue / regenerate are still local. See [`sendchat.md`](sendchat.md).
+- Provider coverage: the current routed matrix lives in
+  [`../coverage/providers.md`](../coverage/providers.md).
+- Historical logs: old removals, server, and sendChat slice records are
+  archived in [`../phases-completed/`](../phases-completed/).

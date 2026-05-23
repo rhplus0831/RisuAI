@@ -11,3 +11,12 @@ Write all responses in English, regardless of the language used in the user's in
 ## Collaboration Guideline
 
 When writing commit title, use prefixes like feat:, fix:, and refactor:
+
+## Fastify Migration Docs
+
+Use `docs/fastify/status.md` and `docs/fastify/status/next-steps.md`
+as the live handoff for current work. Use `docs/fastify/phases/` only
+for active or remaining phase scope, boundaries, and exit criteria.
+Completed slice logs and historical detail belong in
+`docs/fastify/phases-completed/`; do not turn the active phase/status
+docs back into long work logs.

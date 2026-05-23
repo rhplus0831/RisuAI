@@ -9,7 +9,8 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
  * budget heuristics actually need: text-only tiktoken counting plus
  * `OpenAIChat` per-message overhead.
  *
- * Out of scope (see ROADMAP.md 2026-05-23 scope re-verification):
+ * Out of scope (see the archived Phase 7 scope re-verification in
+ * docs/fastify/phases-completed/):
  * Svelte stores, plugin / custom tokenizer hooks,
  * `@mlc-ai/web-tokenizers` providers (Claude / Llama / Mistral /
  * NovelAI / NovelList / Gemma / Cohere / DeepSeek / GLM), Google
@@ -22,7 +23,7 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 
 export type TokenEncoding = 'cl100k_base' | 'o200k_base'
 
-// Prefix list per HANDOVER 7-8a — the families the SPA's
+// Prefix list from Phase 7-8a: the families the SPA's
 // `src/ts/model/providers/openai.ts` tags with
 // `LLMTokenizer.tiktokenO200Base`. Two SPA rows that fall outside this
 // list (`chatgpt-4o-latest`, `gpt-4.5-preview*`) are intentionally

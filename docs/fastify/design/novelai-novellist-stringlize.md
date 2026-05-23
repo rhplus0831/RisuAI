@@ -123,7 +123,7 @@ into something like `server/fastify/src/generation/novelai.ts` +
 - `characterName` (from `db.characters[db.currentChar].name`)
 - The per-message `name` and `memo` fields (extend the
   `ChatMessage` wire type to carry them through)
-- For NovelAI: `logit_bias_exp` parsing (deferred per HANDOVER —
+- For NovelAI: `logit_bias_exp` parsing (deferred by Phase 6 closeout -
   needs the NovelAI tokenizer port).
 
 The unstringlize step also moves server-side; it needs the same

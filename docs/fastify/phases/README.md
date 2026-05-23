@@ -1,68 +1,49 @@
 # Migration Phases
 
-Date: 2026-05-22
+Date: 2026-05-24
 
-Each phase doc owns its scope, exit criteria, and inline boundary
-rules. Status moves through the matching shards under
-[`../status/`](../status/).
+These files track current or remaining migration work. Completed
+details, landed slice tables, and old status logs live in
+[`../phases-completed/`](../phases-completed/).
 
-Read order during planning:
+Use this directory for:
 
-1. [`phase-0-removals.md`](phase-0-removals.md) - Group, peer
-   multiuser, Risu Account Sync, Drive sync, legacy memory.
-2. [`phase-1-foundation.md`](phase-1-foundation.md) - Fastify
-   scaffold, auth, health, env loader.
-3. [`phase-2-storage.md`](phase-2-storage.md) - SQLite metadata,
-   JSON repository, assets, import, backups.
-4. [`phase-3-proxy.md`](phase-3-proxy.md) - provider proxy + hub
-   passthrough + stream-job WebSocket.
-5. [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md) - pin
-   sendChat behavior with fixtures.
-6. [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md) -
-   carve sendChat into stage modules.
-7. [`phase-6-server-generation.md`](phase-6-server-generation.md) -
-   move provider dispatch and helper providers server-side.
-8. [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md) -
-   server walks the prompt template + lorebook.
-9. [`phase-8-memory.md`](phase-8-memory.md) - Hypa V3 chunking,
-   embeddings, summarization as async jobs.
-10. [`phase-9-client-thinning.md`](phase-9-client-thinning.md) -
-    client becomes a projection.
+- Goals and boundaries for active or future phases.
+- Remaining work and exit criteria.
+- Short closeout summaries for phases with no remaining work.
 
-## Phase ordering and dependencies
+Do not keep long landed-slice logs here. When a phase closes, move the
+historical detail into `phases-completed/` and leave a brief summary in
+the phase file.
 
+## Phase Index
+
+| Phase | Status | Open |
+| --- | --- | --- |
+| 0 - Removals | Closed 2026-05-20 | [`phase-0-removals.md`](phase-0-removals.md) |
+| 1 - Foundation | Closed 2026-05-20 | [`phase-1-foundation.md`](phase-1-foundation.md) |
+| 2 - Storage / import / assets / backups | Closed 2026-05-20 | [`phase-2-storage.md`](phase-2-storage.md) |
+| 3 - Proxy migration | Closed 2026-05-21 | [`phase-3-proxy.md`](phase-3-proxy.md) |
+| 4 - sendChat tests | Closed 2026-05-20 | [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md) |
+| 5 - sendChat extraction | Closed 2026-05-22 | [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md) |
+| 6 - Server-side generation | Closed 2026-05-22 | [`phase-6-server-generation.md`](phase-6-server-generation.md) |
+| 7 - Server-side prompt assembly | In progress | [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md) |
+| 8 - Hypa V3 memory server-side | Not started | [`phase-8-memory.md`](phase-8-memory.md) |
+| 9 - Client thinning | Not started | [`phase-9-client-thinning.md`](phase-9-client-thinning.md) |
+
+## Dependency Order
+
+```text
+0 -> 1 -> 2 -> 8
+0 -> 1 -> 3 -> 6 -> 7 -> 9
+0 -> 4 -> 5 -> 6
 ```
-0 ─┬─> 1 ─┬─> 2 ─┬─> 8
-   │      │      │
-   │      └─> 3 ─┴─> 6 ──> 7 ──> 9
-   │
-   └─> 4 ──> 5 ───────┘
-```
 
-- Phase 0 is a hard prerequisite for everything else.
-- Phases 1, 2, 3 form a server-side dependency chain.
-- Phase 4 (sendChat tests) ran in parallel with 1-3 and is now
-  complete.
-- Phase 5 (sendChat extraction) needed Phase 4's tests in place;
-  that dependency was satisfied and Phase 5 closed on 2026-05-22
-  with all 28 slices landed.
-- Phase 6 uses both server-side proxy (Phase 3) and extracted
-  client stages (Phase 5) so the server can take over Stage 3
-  without breaking Stages 1, 2, 4.
-- Phase 7 needs Phase 6's dispatch endpoint to call into.
-- Phase 8 needs Phase 2's data-dir/repository foundation and Phase
-  7's prompt walker.
-- Phase 9 closes the loop.
+Phase 7 is the active phase. Phase 8 depends on the storage foundation
+and the server prompt walker. Phase 9 waits for the server-owned
+generation, prompt assembly, and memory surfaces to settle.
 
-## Per-phase doc shape
+## Completed Detail
 
-Each phase doc has these sections:
-
-- **Goal** - one or two sentences.
-- **Preconditions** - which phases must close first.
-- **Scope** - what code lands or gets deleted.
-- **Boundaries** - what is explicitly out of scope for this
-  phase. Read this before adding "while we're here" work.
-- **Exit criteria** - what proves the phase is done.
-- **Reference** - which `move-to-fastify` commits or metatron
-  modules are useful when implementing.
+The archived versions of the closed phase docs are indexed in
+[`../phases-completed/README.md`](../phases-completed/README.md).

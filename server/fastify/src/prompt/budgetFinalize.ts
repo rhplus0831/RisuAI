@@ -28,8 +28,8 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
  * (7-8a deferred multimodal image-token math), so multimodal rows
  * contribute only their content + overhead here. The multimodal-only
  * survival filter still applies. Exact image-token accounting lands
- * only when a fixture forces it (ROADMAP 2026-05-23 scope
- * re-verification).
+ * only when a fixture forces it (Phase 7 scope re-verification,
+ * archived in docs/fastify/phases-completed/).
  */
 
 export type FinalizeRequestBudgetResult =

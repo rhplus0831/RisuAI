@@ -27,7 +27,8 @@ import {
  * `tokenizerOptionsFromDb(db)` (gpt → overhead 5 / `noName`;
  * everything else → overhead 3 / `name`).
  *
- * Out of scope per ROADMAP.md (2026-05-23 scope re-verification):
+ * Out of scope per the archived Phase 7 scope re-verification
+ * (docs/fastify/phases-completed/phase-7-prompt-assembly-through-7-12c.md):
  * multimodal image-token math (the SPA's `tokenizeMultiModal` is
  * fixture-gated; the server adds it only when a fixture forces the
  * issue), final budget pruning + fallback chains (7-8c), card

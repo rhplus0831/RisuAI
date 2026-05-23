@@ -9,14 +9,14 @@ flattening reaches provider-specific templates.
 
 Should the Ooba OAI-compatible path route `LLMFormat.Ooba` through
 the existing `openai-legacy-instruct` server dispatcher
-(HANDOVER.md's suggestion), or does that change behavior for
+(the old Phase 6 handoff suggestion), or does that change behavior for
 existing users? This was considered in the old Phase 6-15 slot; the
 later commit history skips that implementation and keeps Ooba
 OAI-compatible local for now.
 
 ## Why this isn't actually straightforward
 
-HANDOVER.md called this slice "no new dispatcher" because Ooba's
+The old handoff notes called this slice "no new dispatcher" because Ooba's
 modern endpoint at `db.textgenWebUIBlockingURL/v1/completions`
 accepts the same wire shape as OpenAI's legacy `/v1/completions`:
 
@@ -140,7 +140,7 @@ work.
   awkward `risuChar`/`risuUser` plumbing detour.
 - **Catch:** Phase 6's "all providers server-routed" status
   stays incomplete for one provider until Phase 7 ships. The
-  HANDOVER list shows the gap explicitly, which is fine.
+  current provider coverage docs show the gap explicitly, which is fine.
 
 ## What I'd pick
 

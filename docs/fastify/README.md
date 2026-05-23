@@ -59,8 +59,8 @@ In scope:
   route, browser `/chat` adapter, additive prompt payload, and gated
   preview wiring; the remaining Phase 7 work is the 7-12d send-path /
   dispatch cluster. The current provider matrix lives in
-  [`coverage/providers.md`](coverage/providers.md), and the active
-  slice history lives in [`status/next-steps.md`](status/next-steps.md).
+  [`coverage/providers.md`](coverage/providers.md), and the next pickup
+  lives in [`status/next-steps.md`](status/next-steps.md).
 - A display-only browser client in server-backed mode.
 
 Out of scope (see [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md)):
@@ -109,8 +109,10 @@ short form.
    surface, boundary rules.
 5. [`phases/`](phases/) - per-phase scope, exit criteria, and
    inline boundary rules.
-6. [`coverage.md`](coverage.md) - test inventory router.
-7. [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md) -
+6. [`phases-completed/`](phases-completed/) - archived landed details
+   and old status logs.
+7. [`coverage.md`](coverage.md) - test inventory router.
+8. [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md) -
    what is being deleted and what is intentionally left alone.
 
 ## Reference material
