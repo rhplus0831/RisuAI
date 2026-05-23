@@ -9,6 +9,7 @@ import {
   assemblePrompt,
   beginAssembly,
   createEmptyUnformatedSlots,
+  fillHistoryAndBias,
   fillLorebookSlots,
   fillStaticSlots,
   type AssembleDeps,
@@ -350,5 +351,91 @@ describe('Phase 7-11c fillLorebookSlots', () => {
       } as Partial<Database>),
     )
     expect(cacheState.hasCachePoint).toBe(true)
+  })
+})
+
+describe('Phase 7-11d fillHistoryAndBias', () => {
+  // A `start` trigger whose first effect aborts the send.
+  const stopTrigger = [
+    { comment: '', type: 'start', conditions: [], effect: [{ type: 'stop' }] },
+  ] as never
+
+  const run = async (db: Database) => {
+    const state = beginAssembly(baseInput(), depsFor(db))
+    fillStaticSlots(state)
+    fillLorebookSlots(state)
+    await fillHistoryAndBias(state)
+    return state
+  }
+
+  it('captures history rows and threads tokens / chat / trigger result', async () => {
+    const db = makeDatabase({
+      maxResponse: 100,
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          firstMessage: 'Hello there.',
+          chats: [makeChat({ id: 'chat-1' })],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const state = beginAssembly(baseInput(), depsFor(db))
+    fillStaticSlots(state)
+    fillLorebookSlots(state)
+    const beforeTokens = state.currentTokens ?? 0
+    await fillHistoryAndBias(state)
+
+    expect(state.stopSending).toBe(false)
+    // The marker + first message are always emitted, so rows + tokens grow.
+    expect(state.historyMessages?.length).toBeGreaterThan(0)
+    expect(state.currentTokens ?? 0).toBeGreaterThan(beforeTokens)
+    // No triggers declared → null result, unchanged chat, no var write.
+    expect(state.triggerResult).toBeNull()
+    expect(state.varChanged).toBe(false)
+    expect(state.currentChat.id).toBe('chat-1')
+  })
+
+  it('parses bias rows: unescape + variable-expand, weights preserved', async () => {
+    const db = makeDatabase({
+      bias: [['line1\\nline2', 10]],
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          name: 'Tess',
+          bias: [['{{char}}-bias', 2]],
+          chats: [makeChat({ id: 'chat-1' })],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const state = await run(db)
+    // db.bias first, then per-character bias; `\n` unescaped, `{{char}}` expanded.
+    expect(state.biases).toEqual([
+      ['line1\nline2', 10],
+      ['Tess-bias', 2],
+    ])
+  })
+
+  it('short-circuits on a stopSending start trigger', async () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          firstMessage: 'Hi.',
+          triggerscript: stopTrigger,
+          chats: [makeChat({ id: 'chat-1' })],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const state = await run(db)
+    expect(state.stopSending).toBe(true)
+    // Incomplete history + bias are not captured on abort.
+    expect(state.historyMessages).toBeUndefined()
+    expect(state.biases).toBeUndefined()
+    // The trigger still ran, so its result is threaded out.
+    expect(state.triggerResult).not.toBeNull()
+    expect(state.triggerResult?.stopSending).toBe(true)
   })
 })

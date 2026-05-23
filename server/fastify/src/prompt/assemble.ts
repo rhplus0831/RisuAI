@@ -4,6 +4,7 @@ import type {
   character,
 } from '../../../../src/ts/storage/database.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
+import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { EntityNotFoundError } from '../repository.js'
 import {
   buildFormatOrder,
@@ -25,7 +26,9 @@ import {
   type LorebookActivationReport,
 } from './lorebook.js'
 import { preflightTemplateTokens } from './preflight.js'
-import type { ExpandContext } from './variables.js'
+import { buildHistoryWindow, NO_ASSETS } from './history.js'
+import type { TriggerRunResult } from './triggers.js'
+import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
 
 /**
@@ -56,13 +59,22 @@ import type { PromptEvent } from './sseEvents.js'
  * `depthPrompts` / `currentTokens` / `memoryCardUsed` / `hasCachePoint`
  * on the state.
  *
- * Deferred to later 7-11 slices: history + bias (7-11d), the
- * memory-window bridge + depth/additional-system-prompt placement
- * (7-11e), the `renderFinalPrompt` call + final budget pruning + prompt
- * payload (7-11f), and the route wiring / preview shortcut / SSE
- * telemetry (7-11g/h/i). `buildInlayViewInstruction` (image-gen) stays
- * deferred. `assemblePrompt` therefore still throws past scope
- * resolution.
+ * 7-11d — history window + bias rows (`fillHistoryAndBias`): run the
+ * async `buildHistoryWindow` with the 7-11c `report`, thread the
+ * start-trigger mutations (`currentChat` / `triggerResult` /
+ * `varChanged`), honor `stopSending`, fold `addedTokens` into
+ * `currentTokens`, capture `historyMessages`, and collect the
+ * unescaped + variable-expanded `biases`. Mirrors
+ * `index.svelte.ts:227-273`. The history rows are only captured here —
+ * the 7-11e memory window is what fills `unformated.chats`.
+ *
+ * Deferred to later 7-11 slices: the memory-window bridge +
+ * depth/additional-system-prompt placement (7-11e), the
+ * `renderFinalPrompt` call + final budget pruning + prompt payload
+ * (7-11f), and the route wiring / preview shortcut / SSE telemetry
+ * (7-11g/h/i). `buildInlayViewInstruction` (image-gen) and inlay asset
+ * lookup (`NO_ASSETS`) stay deferred. `assemblePrompt` therefore still
+ * throws past scope resolution.
  */
 
 /**
@@ -126,6 +138,32 @@ export interface AssemblyState {
   memoryCardUsed?: boolean
   /** From `preflightTemplateTokens`: the template contains a `cache` card. */
   hasCachePoint?: boolean
+  // --- 7-11d: history window + bias rows (set by `fillHistoryAndBias`) ---
+  /**
+   * The flattened history rows from `buildHistoryWindow`. Captured here
+   * only; the 7-11e memory window is what pushes them into
+   * `unformated.chats` (SPA `index.svelte.ts:243-263`).
+   */
+  historyMessages?: OpenAIChat[]
+  /**
+   * The start-trigger result threaded out of the history walk. 7-11e
+   * merges `triggerResult.additonalSysPrompt` into the slots
+   * (`index.svelte.ts:285-304`); `null` when no triggers ran.
+   */
+  triggerResult?: TriggerRunResult | null
+  /**
+   * The start trigger asked to abort the send. The assemble root aborts
+   * later (7-11f); mirrors the SPA's `history.stopSending` early return
+   * (`index.svelte.ts:236-238`).
+   */
+  stopSending?: boolean
+  /**
+   * A start-trigger `setvar` mutated chat state; the route persists the
+   * database when true (7-11g).
+   */
+  varChanged?: boolean
+  /** Bias rows: `db.bias ∪ char.bias`, unescaped + variable-expanded. */
+  biases?: [string, number][]
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -288,6 +326,66 @@ export function fillLorebookSlots(state: AssemblyState): void {
   state.currentTokens = currentTokens
   state.memoryCardUsed = preflight.memoryCardUsed
   state.hasCachePoint = preflight.hasCachePoint
+}
+
+/**
+ * 7-11d — run the async history window and collect the bias rows,
+ * mutating `state` in place. Mirrors `index.svelte.ts:227-241` (history)
+ * and `:265-273` (bias). Runs after `fillLorebookSlots` so `state.report`
+ * feeds the depth-prompt token preflight inside `buildHistoryWindow`.
+ *
+ * The start trigger inside `buildHistoryWindow` may mutate the chat, so
+ * its results (`currentChat` / `triggerResult` / `varChanged`) are
+ * threaded back regardless of outcome — the route persists when
+ * `varChanged` is true. On `stopSending` the function short-circuits
+ * (matching the SPA's `return false` at `:236-238`): the history rows are
+ * incomplete, so they are not captured and the bias rows are skipped.
+ *
+ * Boundary: the history rows are only *captured* on `state.historyMessages`
+ * here. The 7-11e memory window is what pushes them into
+ * `unformated.chats` (`buildMemoryWindow`, `index.svelte.ts:243-263`).
+ * Inlay/multimodal asset lookup stays browser-side for now (`NO_ASSETS`).
+ */
+export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
+  const { ctx, currentChar, usingPromptTemplate } = state
+  const db = state.database
+
+  const history = await buildHistoryWindow(
+    ctx,
+    currentChar,
+    state.currentChat,
+    usingPromptTemplate,
+    NO_ASSETS,
+    state.report,
+  )
+
+  // The start trigger may have mutated the chat and chat-vars even when
+  // it asks to abort, so thread these out before the `stopSending` gate.
+  state.currentChat = history.currentChat
+  state.triggerResult = history.triggerResult
+  state.varChanged = history.varChanged
+
+  if (history.stopSending === true) {
+    state.stopSending = true
+    return
+  }
+  state.stopSending = false
+
+  state.currentTokens = (state.currentTokens ?? 0) + history.addedTokens
+  state.historyMessages = history.messages
+
+  // Bias rows (SPA `index.svelte.ts:265-273`): merge the global + per-
+  // character bias lists, unescape `\n` / `\r` / `\\`, then variable-
+  // expand each key against the current character while keeping its
+  // numeric weight.
+  const biasSource = (db.bias ?? []).concat(currentChar.bias ?? [])
+  state.biases = biasSource.map(([key, weight]): [string, number] => [
+    expandVariables(
+      key.replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'),
+      { ...ctx, chara: currentChar },
+    ).text,
+    weight,
+  ])
 }
 
 export async function assemblePrompt(

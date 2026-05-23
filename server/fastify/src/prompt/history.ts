@@ -115,7 +115,7 @@ export interface AssetLookup {
   getCharIcon?(): MultiModal | undefined
 }
 
-const NO_ASSETS: AssetLookup = {}
+export const NO_ASSETS: AssetLookup = {}
 const INLAY_RE = /\{\{(inlay|inlayed|inlayeddata)::(.+?)\}\}/g
 const ASSET_PROMPT_RE = /\{\{asset_?prompt::(.+?)\}\}/gimsu
 
