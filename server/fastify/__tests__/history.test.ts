@@ -1263,6 +1263,7 @@ function makeActive(overrides: Partial<LoreEntryActive> = {}): LoreEntryActive {
     role: 'system',
     order: 100,
     priority: 100,
+    tokens: 0,
     source: '',
     inject: null,
     ...overrides,
@@ -1430,5 +1431,204 @@ describe('Phase 7-7e applyDepthPrompts', () => {
       ]),
     )
     expect(messages[1].content).toBe('top: SLOTBODY')
+  })
+})
+
+describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
+  it('sums per-message tokens with gpt overhead 5 and noName', () => {
+    // gpt-4o-mini → o200k_base, overhead 5, useName 'noName'.
+    // First message is suppressed by setting both firstMessage and
+    // fmIndex's slot to empty strings, so the only contributors are
+    // the start-new-chat marker ([Start a new chat] = 6 tokens) and
+    // the two user messages.
+    const db = makeDatabase({ aiModel: 'gpt-4o-mini' })
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      makeCharacter({ firstMessage: '', alternateGreetings: [''] }),
+      makeChat({
+        fmIndex: 0,
+        message: [
+          makeMessage({ role: 'user', data: 'hi', chatId: 'a' }),
+          makeMessage({ role: 'char', data: 'hello', chatId: 'b' }),
+        ],
+      }),
+    )
+    // marker: 6 + 5 = 11; empty first message: 0 + 5 = 5;
+    // user 'hi': 1 + 5 = 6; assistant 'hello': 1 + 5 = 6.
+    expect(result.addedTokens).toBe(11 + 5 + 6 + 6)
+  })
+
+  it('uses non-gpt overhead 3 and counts `name` when present', () => {
+    // claude → cl100k_base, overhead 3, useName 'name'. Example
+    // messages emit `name: 'example_user' | 'example_assistant'`,
+    // which adds (name tokens + 1 separator) per row.
+    const db = makeDatabase({
+      aiModel: 'claude-3-5-sonnet',
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: true,
+      } as Database['promptSettings'],
+    })
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      makeCharacter({
+        firstMessage: '',
+        alternateGreetings: [''],
+        exampleMessage: '{{user}}: hi\n{{char}}: hello',
+      }),
+      makeChat({ fmIndex: 0 }),
+    )
+    // example_user 'hi': 1 + 3 + (2 + 1) = 7
+    // example_assistant 'hello': 1 + 3 + (3 + 1) = 8
+    // empty first message: 0 + 3 = 3 (no name)
+    // start-new-chat marker is trimmed via trimStartNewChat.
+    expect(result.addedTokens).toBe(7 + 8 + 3)
+  })
+
+  it('routes through o200k_base for the gpt-4o family', () => {
+    // `café résumé 漢字` diverges: cl100k_base → 9, o200k_base → 6.
+    const db = makeDatabase({
+      aiModel: 'gpt-4o',
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: true,
+      } as Database['promptSettings'],
+    })
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      makeCharacter({ firstMessage: 'café résumé 漢字' }),
+      makeChat(),
+    )
+    // o200k tokenization of the first message: 6 + 5 (gpt overhead) = 11.
+    expect(result.addedTokens).toBe(11)
+  })
+
+  it('folds depth-prompt tokens into addedTokens when a report is provided', () => {
+    const db = makeDatabase({
+      aiModel: 'gpt-4o',
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: true,
+      } as Database['promptSettings'],
+    })
+    const report = makeReport([
+      makeActive({ pos: 'depth', depth: 1, prompt: 'depth body' }),
+    ])
+    const withReport = buildHistoryWindow(
+      ctxFor(db),
+      makeCharacter({ firstMessage: '' }),
+      makeChat({ fmIndex: 0, alternateGreetings: [] } as Partial<Chat>),
+      false,
+      undefined,
+      report,
+    )
+    const without = buildHistoryWindow(
+      ctxFor(db),
+      makeCharacter({ firstMessage: '' }),
+      makeChat({ fmIndex: 0, alternateGreetings: [] } as Partial<Chat>),
+    )
+    // Depth prompt 'depth body' on o200k_base = 2 tokens + 5 overhead.
+    expect(withReport.addedTokens - without.addedTokens).toBe(2 + 5)
+  })
+
+  it('returns zero depth-prompt contribution when no report is provided', () => {
+    const db = makeDatabase({
+      aiModel: 'gpt-4o',
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: true,
+      } as Database['promptSettings'],
+    })
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      makeCharacter({ firstMessage: 'default greeting' }),
+      makeChat(),
+    )
+    // First message 'default greeting' on o200k = 2 + 5 = 7.
+    expect(result.addedTokens).toBe(7)
+  })
+
+  it('tokenizes depth prompts after {{position::pt_}} resolution, not the raw marker', () => {
+    const db = makeDatabase({
+      aiModel: 'gpt-4o',
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: true,
+      } as Database['promptSettings'],
+    })
+    const report = makeReport([
+      makeActive({
+        pos: 'depth',
+        depth: 1,
+        prompt: 'before {{position::slot}} after',
+      }),
+      makeActive({ pos: 'pt_slot', prompt: 'SLOT VALUE' }),
+    ])
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      makeCharacter({ firstMessage: '' }),
+      makeChat(),
+      false,
+      undefined,
+      report,
+    )
+    // Resolved body 'before SLOT VALUE after' = 4 tokens + 5 overhead.
+    // First message is empty: 0 + 5 = 5. Total = 5 + 9 = 14. The raw
+    // 'before {{position::slot}} after' (7 tokens) would give 5 + 12 = 17.
+    expect(result.addedTokens).toBe(5 + 4 + 5)
+  })
+
+  it('counts examples and the start-new-chat marker in addedTokens', () => {
+    // gpt → overhead 5, noName. The example block emits a `<start>`
+    // row plus per-line bot/user rows. Combined with the default
+    // start-new-chat marker emitted afterward, addedTokens covers
+    // every emitted row.
+    const db = makeDatabase({ aiModel: 'gpt4' })
+    const result = buildHistoryWindow(
+      ctxFor(db),
+      makeCharacter({
+        firstMessage: '',
+        alternateGreetings: [''],
+        exampleMessage: '<start>\n{{user}}: hi\n{{char}}: hello',
+      }),
+      makeChat({ fmIndex: 0 }),
+    )
+    // Example rows on cl100k_base (gpt4 is NOT in the o200k prefix list):
+    //   '[Start a new chat]' marker from <start>: 6 + 5 = 11
+    //   'hi' (user, noName so name ignored): 1 + 5 = 6
+    //   'hello' (assistant, noName): 1 + 5 = 6
+    // Marker after examples: 6 + 5 = 11
+    // First message empty: 0 + 5 = 5
+    expect(result.addedTokens).toBe(11 + 6 + 6 + 11 + 5)
   })
 })

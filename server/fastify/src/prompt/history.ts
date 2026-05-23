@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
   Chat,
+  Database,
   Message,
   character,
 } from '../../../../src/ts/storage/database.svelte'
@@ -19,6 +20,12 @@ import {
   resolvePosition,
   type LorebookActivationReport,
 } from './lorebook.js'
+import {
+  encodingForModel,
+  tokenizeChat,
+  type TokenEncoding,
+  type TokenizeChatOptions,
+} from './tokens.js'
 
 /**
  * Phase 7-5a/b/c history walk ported from the SPA's
@@ -79,8 +86,22 @@ import {
  *   - regex accepts both `asset_prompt::` and `assetprompt::` (the SPA
  *     uses `asset_?prompt::` with `i` flag).
  *
- * Deferred to later sub-slices: start trigger / `runTrigger` (7-5d),
- * tokenizer accumulation + depth-prompt preflight (7-5e).
+ * 7-5e (this slice): `addedTokens` accumulator over every emitted
+ * chat row (examples, start-new-chat marker, first message, per-message
+ * bodies) plus a depth-prompt token preflight when the caller supplies
+ * a `LorebookActivationReport`. Splicing depth prompts into history is
+ * still `applyDepthPrompts`' job; this preflight only tallies counts so
+ * the assemble root can read a single number for the history block
+ * (mirrors `buildHistoryWindow.ts:155-161` in the SPA). Tokenizer
+ * config (encoding, per-message overhead, name accounting) is derived
+ * from `db.aiModel` the same way `sendChatContext.ts:92-103` does:
+ * `gpt*` → overhead 5, `useName: 'noName'`; everything else → overhead
+ * 3, `useName: 'name'`. `encodingForModel` then picks `o200k_base` vs
+ * `cl100k_base`.
+ *
+ * Deferred to later sub-slices: start trigger / `runTrigger` (7-5d,
+ * blocked on 7-9c) — its `triggerResult.tokens` contribution is the
+ * only piece of the SPA's `addedTokens` not folded in here.
  */
 
 export interface AssetLookup {
@@ -327,6 +348,37 @@ function formatHistoryMessage(
 
 export interface HistoryWindowResult {
   messages: OpenAIChat[]
+  /**
+   * Sum of `tokenizeChat` over every emitted row plus the depth-prompt
+   * preflight when `report` is provided. Mirrors the SPA's
+   * `buildHistoryWindow.addedTokens` (`buildHistoryWindow.ts:69`); the
+   * start-trigger contribution (`triggerResult.tokens`) lands with
+   * 7-5d.
+   */
+  addedTokens: number
+}
+
+/**
+ * Tokenizer config derived from `db.aiModel`, matching the SPA call
+ * site at `src/ts/process/sendChatContext.ts:92-103`:
+ *   - `gpt*` models: per-message overhead 5, `useName: 'noName'`.
+ *   - everything else: per-message overhead 3, `useName: 'name'`.
+ * The encoding falls out of `encodingForModel(db.aiModel)`; non-gpt
+ * model strings still resolve to `cl100k_base` as a conservative
+ * fallback (see `tokens.ts`).
+ */
+function tokenizerOptionsFromDb(db: Database): {
+  encoding: TokenEncoding
+  options: TokenizeChatOptions
+} {
+  const isGpt = (db.aiModel ?? '').startsWith('gpt')
+  return {
+    encoding: encodingForModel(db.aiModel),
+    options: {
+      chatAdditionalTokens: isGpt ? 5 : 3,
+      useName: isGpt ? 'noName' : 'name',
+    },
+  }
 }
 
 export function buildHistoryWindow(
@@ -335,23 +387,31 @@ export function buildHistoryWindow(
   currentChat: Chat,
   usingPromptTemplate: boolean = false,
   assetLookup: AssetLookup = NO_ASSETS,
+  report?: LorebookActivationReport,
 ): HistoryWindowResult {
   const db = ctx.database
   const messages: OpenAIChat[] = []
   const moduleAssets = getModuleAssets(
     getActiveModules(db, currentChar, currentChat),
   )
+  const { encoding, options } = tokenizerOptionsFromDb(db)
+  let addedTokens = 0
 
-  messages.push(...exampleMessage(ctx, currentChar))
+  for (const example of exampleMessage(ctx, currentChar)) {
+    messages.push(example)
+    addedTokens += tokenizeChat(example, encoding, options)
+  }
 
   const aiModel = db.aiModel ?? ''
   const trimStart = db.promptSettings?.trimStartNewChat ?? false
   if (!aiModel.startsWith('novelai') && !trimStart) {
-    messages.push({
+    const marker: OpenAIChat = {
       role: 'system',
       content: '[Start a new chat]',
       memo: 'NewChat',
-    })
+    }
+    messages.push(marker)
+    addedTokens += tokenizeChat(marker, encoding, options)
   }
 
   let msReseted = false
@@ -388,25 +448,41 @@ export function buildHistoryWindow(
       firstMessage.attr = ['nameAdded']
     }
     messages.push(firstMessage)
+    addedTokens += tokenizeChat(firstMessage, encoding, options)
   }
 
   for (let i = 0; i < ms.length; i++) {
-    messages.push(
-      formatHistoryMessage(
-        ctx,
-        currentChar,
-        currentChat,
-        ms[i],
-        i,
-        ms.length,
-        usingPromptTemplate,
-        assetLookup,
-        moduleAssets,
-      ),
+    const formatted = formatHistoryMessage(
+      ctx,
+      currentChar,
+      currentChat,
+      ms[i],
+      i,
+      ms.length,
+      usingPromptTemplate,
+      assetLookup,
+      moduleAssets,
     )
+    messages.push(formatted)
+    addedTokens += tokenizeChat(formatted, encoding, options)
   }
 
-  return { messages }
+  // Depth-prompt preflight (SPA `buildHistoryWindow.ts:155-161`).
+  // The actual splice still happens in `applyDepthPrompts` to match
+  // the SPA's `index.svelte.ts:275-283` call order; here we only
+  // tokenize so the assemble root sees a single `addedTokens` total.
+  if (report) {
+    for (const dp of getDepthPrompts(report)) {
+      const body = resolvePosition(dp.prompt, report)
+      const content = expandVariables(body, {
+        ...ctx,
+        chara: currentChar,
+      }).text
+      addedTokens += tokenizeChat({ role: dp.role, content }, encoding, options)
+    }
+  }
+
+  return { messages, addedTokens }
 }
 
 /**
