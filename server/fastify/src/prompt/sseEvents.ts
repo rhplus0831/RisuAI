@@ -42,6 +42,8 @@ export interface InfoEvent {
   type: 'info'
   timings?: Record<string, number>
   tokens?: { prompt?: number; completion?: number; total?: number }
+  generationId?: string
+  generationInfo?: Record<string, unknown>
   /**
    * The clamped response token budget (`finalizeRequestBudget`). This is a
    * budget, not a completion count, so it is surfaced separately rather than
@@ -83,6 +85,7 @@ export interface ErrorEvent {
 export interface DoneEvent {
   type: 'done'
   result?: string
+  generationId?: string
   generationInfo?: Record<string, unknown>
 }
 

@@ -57,6 +57,7 @@ import {
   getServerChatCalls,
   resetServerChatState,
   serverChatFetch,
+  setServerChatDispatchResult,
   setServerChatMessagePatch,
   setServerChatPrompt,
 } from '../__fixtures__/mocks/serverChatFetch'
@@ -167,6 +168,14 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       chatVarMutations: [{ key: '$mood', before: null, after: 'bright' }],
       additionalSystemPrompt: [],
     })
+    setServerChatDispatchResult('fixture echo reply', {
+      model: 'echo_model',
+      generationId: 'uuid-0',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
       const url =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
@@ -181,13 +190,11 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       mode: 'send',
       userMessage: 'ping',
     })
-    expect(getServerCompletionCalls()[0]).toMatchObject({
-      url: '/api/v1/generate/completion',
-      messagesLength: 1,
-    })
+    expect(getServerCompletionCalls()).toEqual([])
     const chat = DBState.db.characters[0].chats[0]
     expect(chat.scriptstate?.$mood).toBe('bright')
     expect(chat.message[0].data).toBe('patched ping')
+    expect(chat.message.at(-1)?.data).toBe('fixture echo reply')
     expect(chat.message.at(-1)?.generationInfo).toMatchObject({
       inputTokens: 7,
       outputTokens: 50,

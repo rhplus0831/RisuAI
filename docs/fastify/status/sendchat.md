@@ -17,21 +17,21 @@ and fixture inventories are archived or covered by the coverage docs.
 - Server assembly now emits a typed `message_patch` payload for
   user-message appends, start-trigger / run-var message replacements,
   chat-var deltas, and `additonalSysPrompt` rows.
-- Behind `db.useServerPromptAssembly`, send-like calls can consume the
-  server prompt payload, apply message/scriptstate patches, and then
-  continue into local browser provider dispatch.
+- Behind `db.useServerPromptAssembly`, send-like calls consume the server
+  prompt payload, apply message/scriptstate patches, and then consume the
+  `/chat` provider token stream instead of calling local browser provider
+  dispatch.
 - The gate defaults off and is independent of `db.useServerGeneration`.
-- `/chat` can now transport server provider chunks through the chat SSE
-  `token`, `error`, and `done` events via an internal server-only
-  dispatcher hook. Browser send orchestration still does not consume those
-  events.
+- `/chat` now emits `info.generationId`, `info.generationInfo`, provider
+  `token` events, terminal `error` events, and enriched terminal `done`
+  events for server-dispatched sends.
 
 ## Active Boundary
 
-The next risky boundary is server send orchestration. Browser provider
-dispatch remains local; 7-12d-iii-b needs to connect the real server
-dispatch path, `generationId`, reroll accumulation, enriched `done`, and
-fixture coverage.
+The next risky boundary is rollback and side effects. 7-12d-iv should add
+the typed `tts` `side_effect` event and an `error.restoration` path for
+server-dispatch failures that happen after browser-visible mutations have
+started.
 
 Track that work in [`next-steps.md`](next-steps.md) and
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md).
@@ -39,7 +39,8 @@ Track that work in [`next-steps.md`](next-steps.md) and
 ## Guardrails
 
 - Local `sendChat` fixture sweep.
-- Server-backed provider parity sweep.
+- Server-backed provider parity sweep, including the `/chat` dispatch path
+  proving send-like fixtures do not escape to `/api/v1/generate/completion`.
 - Fastify generation route tests.
 - `pnpm check`, `pnpm test`, `pnpm api:test`, and `pnpm build` before
   closing a slice.

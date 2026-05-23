@@ -482,7 +482,58 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ])
     expect(events.at(-3)?.type).toBe('token')
     expect(events.at(-2)?.type).toBe('token')
-    expect(events.at(-1)).toEqual({ type: 'done', data: { result: 'Hello' } })
+    expect(events.at(-1)?.type).toBe('done')
+    expect(events.at(-1)?.data).toMatchObject({ result: 'Hello' })
+    expect(typeof events.at(-1)?.data.generationId).toBe('string')
+  })
+
+  it('uses the production server dispatcher when the prompt-assembly gate is enabled', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      useServerPromptAssembly: true,
+      aiModel: 'echo_model',
+      echoMessage: 'server echo reply',
+      echoDelay: 0,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    expect(events.map((e) => e.type)).toEqual([
+      'stage',
+      'stage',
+      'stage',
+      'prompt',
+      'message_patch',
+      'stage',
+      'info',
+      'token',
+      'done',
+    ])
+    const info = events.find((e) => e.type === 'info')!
+    expect(typeof info.data.generationId).toBe('string')
+    expect(info.data.generationInfo).toMatchObject({
+      model: 'echo_model',
+      generationId: info.data.generationId,
+      outputTokens: 50,
+      maxContext: 100_000,
+    })
+    expect(events.at(-2)).toEqual({ type: 'token', data: { content: 'server echo reply' } })
+    expect(events.at(-1)?.data).toMatchObject({
+      result: 'server echo reply',
+      generationId: info.data.generationId,
+      generationInfo: {
+        model: 'echo_model',
+        generationId: info.data.generationId,
+      },
+    })
   })
 
   it('maps provider transport failures to error then done after prompt metadata', async () => {
@@ -523,7 +574,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       type: 'error',
       data: { error: 'provider exploded' },
     })
-    expect(events.at(-1)).toEqual({ type: 'done', data: {} })
+    expect(events.at(-1)?.type).toBe('done')
+    expect(typeof events.at(-1)?.data.generationId).toBe('string')
   })
 })
 

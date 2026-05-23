@@ -4,9 +4,9 @@ Date: 2026-05-24
 
 Status: in progress.
 
-Last completed slice: 7-12d-iii-a added the provider-agnostic `/chat`
-chunk transport and server-only tests while keeping real browser
-orchestration deferred.
+Last completed slice: 7-12d-iii-b wired production `/chat` provider
+dispatch and browser send-path orchestration behind
+`db.useServerPromptAssembly`.
 
 Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md).
@@ -16,6 +16,8 @@ Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-7-12d-ii.md`](../phases-completed/phase-7-prompt-assembly-7-12d-ii.md).
 7-12d-iii-a closeout:
 [`../phases-completed/phase-7-prompt-assembly-7-12d-iii-a.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iii-a.md).
+7-12d-iii-b closeout:
+[`../phases-completed/phase-7-prompt-assembly-7-12d-iii-b.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iii-b.md).
 
 ## Goal
 
@@ -31,19 +33,22 @@ without requiring the browser to own mutable send-time state.
 
 ## Remaining Work
 
-### 7-12d-iii - server dispatch and streaming
-
-Split by responsibility:
-
-- 7-12d-iii-b: send-path orchestration and browser wiring, including
-  `generationId`, the `addRerolls` accumulator, enriched `done`, gate
-  handling, and the end-to-end fixture sweep.
-
 ### 7-12d-iv - side effects and rollback
 
 Add the `tts` `side_effect` event and `error.restoration` rollback path.
 Keep image generation, Hypa V3, NovelAI string flattening, and plugin hooks
 deferred.
+
+Expected work:
+
+- Emit a typed `side_effect` event for TTS closeout work when generation
+  is server-dispatched through `/chat`.
+- Add a typed `error.restoration` payload for failures after browser
+  visible prompt/message mutations begin.
+- Teach the browser `/chat` generation adapter to apply restoration on
+  terminal errors while preserving the existing error report path.
+- Cover the rollback boundary in route tests and the server-backed
+  `sendChat` fixture sweep.
 
 ## Optional Or Parallel Work
 

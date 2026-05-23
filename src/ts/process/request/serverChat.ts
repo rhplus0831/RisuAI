@@ -15,8 +15,10 @@
  */
 
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
+import type { MessageGenerationInfo } from '../../storage/database.svelte'
 import { iterateSseEvents } from './sseParse'
-import type { InfoEvent, PromptEvent, ServerChatMessagePatch } from './serverChatEvents'
+import type { DoneEvent, InfoEvent, PromptEvent, ServerChatMessagePatch } from './serverChatEvents'
+import type { requestDataResponse, StreamResponseChunk } from './request'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 
@@ -50,6 +52,26 @@ export type ServerChatResult =
   | { status: 'error'; error: string }
   | { status: 'aborted' }
 
+export interface ServerChatTerminal {
+  status: 'done' | 'error'
+  error?: string
+  done?: Omit<DoneEvent, 'type'>
+}
+
+export type ServerChatGenerationResult =
+  | {
+      status: 'ok'
+      prompt: ServerChatPrompt
+      info?: ServerChatInfo
+      messagePatches: ServerChatMessagePatch[]
+      req: Exclude<requestDataResponse, { type: 'fail' }>
+      generationId: string
+      generationInfo: MessageGenerationInfo
+      terminal: Promise<ServerChatTerminal>
+    }
+  | { status: 'error'; error: string }
+  | { status: 'aborted' }
+
 function parseData(data: string): Record<string, unknown> | null {
   try {
     return JSON.parse(data) as Record<string, unknown>
@@ -58,15 +80,12 @@ function parseData(data: string): Record<string, unknown> | null {
   }
 }
 
-/**
- * Call the `/chat` route and resolve the assembled prompt. The terminal
- * `done` event (or stream end) closes a successful run; an `error` event is
- * terminal and surfaces its message; an abort resolves as `aborted`.
- */
-export async function requestServerChat(
+async function openChatResponse(
   input: ServerChatInput,
   signal: AbortSignal | null,
-): Promise<ServerChatResult> {
+): Promise<
+  { status: 'ok'; response: Response } | { status: 'error'; error: string } | { status: 'aborted' }
+> {
   const auth = await getNodeServerProxyAuth()
 
   let response: Response
@@ -86,9 +105,6 @@ export async function requestServerChat(
     return { status: 'error', error: `Network error: ${msg}` }
   }
 
-  // Body validation failures (bad mode, missing chatId) are a pre-stream 400
-  // with a JSON `{ error }` body — the route only opens the SSE stream after
-  // validation passes.
   if (!response.ok) {
     let reason = `HTTP ${response.status}`
     try {
@@ -104,6 +120,22 @@ export async function requestServerChat(
   if (!response.body) {
     return { status: 'error', error: 'No streaming body returned' }
   }
+
+  return { status: 'ok', response }
+}
+
+/**
+ * Call the `/chat` route and resolve the assembled prompt. The terminal
+ * `done` event (or stream end) closes a successful run; an `error` event is
+ * terminal and surfaces its message; an abort resolves as `aborted`.
+ */
+export async function requestServerChat(
+  input: ServerChatInput,
+  signal: AbortSignal | null,
+): Promise<ServerChatResult> {
+  const opened = await openChatResponse(input, signal)
+  if (opened.status !== 'ok') return opened
+  const response = opened.response
 
   let prompt: ServerChatPrompt | null = null
   let info: ServerChatInfo | undefined
@@ -150,4 +182,188 @@ export async function requestServerChat(
     return { status: 'error', error: 'stream ended without a prompt event' }
   }
   return { status: 'ok', prompt, info, messagePatches }
+}
+
+function coerceGenerationInfo(
+  info: ServerChatInfo | undefined,
+  done: Omit<DoneEvent, 'type'> | undefined,
+): { generationId: string; generationInfo: MessageGenerationInfo } | null {
+  const doneGenerationInfo =
+    done?.generationInfo && typeof done.generationInfo === 'object'
+      ? (done.generationInfo as MessageGenerationInfo)
+      : undefined
+  const infoGenerationInfo =
+    info?.generationInfo && typeof info.generationInfo === 'object'
+      ? (info.generationInfo as MessageGenerationInfo)
+      : undefined
+  const generationInfo: MessageGenerationInfo = {
+    ...(infoGenerationInfo ?? {}),
+    ...(doneGenerationInfo ?? {}),
+  }
+  const generationId =
+    typeof done?.generationId === 'string'
+      ? done.generationId
+      : typeof info?.generationId === 'string'
+        ? info.generationId
+        : typeof generationInfo.generationId === 'string'
+          ? generationInfo.generationId
+          : ''
+  if (generationId.length === 0) return null
+  generationInfo.generationId = generationId
+  if (generationInfo.inputTokens === undefined && typeof info?.tokens?.prompt === 'number') {
+    generationInfo.inputTokens = info.tokens.prompt
+  }
+  if (generationInfo.outputTokens === undefined && typeof info?.responseBudget === 'number') {
+    generationInfo.outputTokens = info.responseBudget
+  }
+  if (generationInfo.stageTiming === undefined) {
+    generationInfo.stageTiming = {
+      stage1: typeof info?.timings?.prompt === 'number' ? info.timings.prompt : 0,
+      stage2: 0,
+      stage3: 0,
+      stage4: 0,
+    }
+  }
+  return { generationId, generationInfo }
+}
+
+export async function requestServerChatGeneration(
+  input: ServerChatInput,
+  signal: AbortSignal | null,
+): Promise<ServerChatGenerationResult> {
+  const opened = await openChatResponse(input, signal)
+  if (opened.status !== 'ok') return opened
+
+  let prompt: ServerChatPrompt | null = null
+  let info: ServerChatInfo | undefined
+  let donePayload: Omit<DoneEvent, 'type'> | undefined
+  const messagePatches: ServerChatMessagePatch[] = []
+  let readyResolved = false
+  let terminalResolved = false
+  let tokenResult = ''
+  let streamKey = 'server-chat'
+
+  let resolveReady: (value: ServerChatGenerationResult) => void = () => {}
+  const ready = new Promise<ServerChatGenerationResult>((resolve) => {
+    resolveReady = resolve
+  })
+
+  let resolveTerminal: (value: ServerChatTerminal) => void = () => {}
+  const terminal = new Promise<ServerChatTerminal>((resolve) => {
+    resolveTerminal = resolve
+  })
+
+  const resolveReadyOnce = (value: ServerChatGenerationResult): void => {
+    if (readyResolved) return
+    readyResolved = true
+    resolveReady(value)
+  }
+
+  const resolveTerminalOnce = (value: ServerChatTerminal): void => {
+    if (terminalResolved) return
+    terminalResolved = true
+    resolveTerminal(value)
+  }
+
+  const tokenStream = new ReadableStream<StreamResponseChunk>({
+    start(controller) {
+      const maybeResolveReady = (): void => {
+        if (readyResolved || !prompt || !info) return
+        const generation = coerceGenerationInfo(info, donePayload)
+        if (!generation) return
+        streamKey = generation.generationId
+        resolveReadyOnce({
+          status: 'ok',
+          prompt,
+          info,
+          messagePatches,
+          req: { type: 'streaming', result: tokenStream },
+          generationId: generation.generationId,
+          generationInfo: generation.generationInfo,
+          terminal,
+        })
+      }
+
+      void (async () => {
+        try {
+          for await (const frame of iterateSseEvents(opened.response.body!, signal)) {
+            const data = parseData(frame.data)
+            if (!data) continue
+            switch (frame.event) {
+              case 'prompt':
+                prompt = data as unknown as ServerChatPrompt
+                maybeResolveReady()
+                break
+              case 'info':
+                info = data as unknown as ServerChatInfo
+                maybeResolveReady()
+                break
+              case 'message_patch':
+                if (data.patch && typeof data.patch === 'object') {
+                  messagePatches.push(data.patch as unknown as ServerChatMessagePatch)
+                }
+                break
+              case 'token': {
+                const content = typeof data.content === 'string' ? data.content : ''
+                tokenResult += content
+                controller.enqueue({ [streamKey]: tokenResult })
+                break
+              }
+              case 'error': {
+                const error =
+                  typeof data.error === 'string' ? data.error : 'provider dispatch failed'
+                resolveReadyOnce({ status: 'error', error })
+                resolveTerminalOnce({ status: 'error', error })
+                controller.close()
+                return
+              }
+              case 'done':
+                donePayload = data as unknown as Omit<DoneEvent, 'type'>
+                if (typeof donePayload.result === 'string' && tokenResult.length === 0) {
+                  tokenResult = donePayload.result
+                  controller.enqueue({ [streamKey]: tokenResult })
+                }
+                maybeResolveReady()
+                if (!readyResolved) {
+                  resolveReadyOnce({
+                    status: 'error',
+                    error: prompt
+                      ? 'server chat dispatch did not return generation metadata'
+                      : 'stream ended without a prompt event',
+                  })
+                }
+                resolveTerminalOnce({ status: 'done', done: donePayload })
+                controller.close()
+                return
+              default:
+                break
+            }
+          }
+          if (signal?.aborted) {
+            resolveReadyOnce({ status: 'aborted' })
+            resolveTerminalOnce({ status: 'error', error: 'Aborted' })
+          } else {
+            resolveReadyOnce({ status: 'error', error: 'stream ended without a done event' })
+            resolveTerminalOnce({ status: 'error', error: 'stream ended without a done event' })
+          }
+          controller.close()
+        } catch (err) {
+          if (signal?.aborted) {
+            resolveReadyOnce({ status: 'aborted' })
+            resolveTerminalOnce({ status: 'error', error: 'Aborted' })
+          } else {
+            const error = err instanceof Error ? err.message : String(err)
+            resolveReadyOnce({ status: 'error', error })
+            resolveTerminalOnce({ status: 'error', error })
+          }
+          controller.close()
+        }
+      })()
+    },
+    cancel() {
+      resolveTerminalOnce({ status: 'error', error: 'Aborted' })
+    },
+  })
+
+  return ready
 }

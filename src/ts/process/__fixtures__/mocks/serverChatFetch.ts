@@ -41,6 +41,10 @@ interface State {
   responseBudget: number
   /** Optional mutation payload returned on the `message_patch` event. */
   messagePatch: ServerChatMessagePatch | null
+  /** Optional provider result returned as `/chat` token + enriched done events. */
+  dispatchResult: string | null
+  generationId: string
+  generationInfo: Record<string, unknown> | null
   /** When set, the stream emits a terminal `error` instead of `prompt`. */
   errorMessage: string | null
 }
@@ -59,6 +63,9 @@ function defaultState(): Omit<State, 'calls'> {
     inputTokens: 7,
     responseBudget: 50,
     messagePatch: null,
+    dispatchResult: null,
+    generationId: 'uuid-0',
+    generationInfo: null,
     errorMessage: null,
   }
 }
@@ -91,6 +98,21 @@ export function setServerChatError(message: string): void {
 
 export function setServerChatMessagePatch(patch: ServerChatMessagePatch): void {
   state.messagePatch = patch
+}
+
+export function setServerChatInfo(inputTokens: number, responseBudget: number): void {
+  state.inputTokens = inputTokens
+  state.responseBudget = responseBudget
+}
+
+export function setServerChatDispatchResult(
+  result: string,
+  generationInfo: Record<string, unknown>,
+  generationId = 'uuid-0',
+): void {
+  state.dispatchResult = result
+  state.generationId = generationId
+  state.generationInfo = { ...generationInfo, generationId }
 }
 
 function frame(event: string, data: unknown): string {
@@ -128,8 +150,19 @@ function sseChatResponse(): Response {
         timings: { prompt: 1 },
         tokens: { prompt: state.inputTokens, total: state.inputTokens },
         responseBudget: state.responseBudget,
+        generationId: state.dispatchResult !== null ? state.generationId : undefined,
+        generationInfo: state.dispatchResult !== null ? state.generationInfo : undefined,
       })
-      push('done', {})
+      if (state.dispatchResult !== null) {
+        push('token', { content: state.dispatchResult })
+        push('done', {
+          result: state.dispatchResult,
+          generationId: state.generationId,
+          generationInfo: state.generationInfo,
+        })
+      } else {
+        push('done', {})
+      }
       controller.close()
     },
   })

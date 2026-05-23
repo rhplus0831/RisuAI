@@ -1,5 +1,5 @@
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import type { PromptChatEvent } from './sseEvents.js'
+import type { DoneEvent, PromptChatEvent } from './sseEvents.js'
 
 export type PromptChatEmit = (event: PromptChatEvent) => void
 
@@ -8,6 +8,10 @@ export interface ProviderChunkTransportResult {
   result: string
   finishReason?: CompletionStreamFrame['finishReason']
 }
+
+export type ProviderDoneMetadata = (
+  result: string,
+) => Omit<DoneEvent, 'type' | 'result'> | undefined
 
 function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message.length > 0) return err.message
@@ -24,6 +28,7 @@ export async function emitProviderChunks(
   frames: AsyncIterable<CompletionStreamFrame>,
   emit: PromptChatEmit,
   signal?: AbortSignal,
+  doneMetadata?: ProviderDoneMetadata,
 ): Promise<ProviderChunkTransportResult> {
   let result = ''
 
@@ -43,7 +48,7 @@ export async function emitProviderChunks(
         continue
       }
 
-      emit({ type: 'done', result })
+      emit({ type: 'done', result, ...(doneMetadata?.(result) ?? {}) })
       return {
         status: 'done',
         result,
@@ -55,10 +60,10 @@ export async function emitProviderChunks(
       return { status: 'aborted', result }
     }
     emit({ type: 'error', error: errorMessage(err) })
-    emit({ type: 'done' })
+    emit({ type: 'done', ...(doneMetadata?.(result) ?? {}) })
     return { status: 'error', result }
   }
 
-  emit({ type: 'done', result })
+  emit({ type: 'done', result, ...(doneMetadata?.(result) ?? {}) })
   return { status: 'done', result }
 }

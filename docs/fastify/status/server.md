@@ -17,19 +17,16 @@ docs.
 - `POST /api/v1/generate/chat` owns Phase 7 prompt assembly SSE events.
   It streams assembled prompt payloads and metadata, builds an internal
   typed mutation payload on `AssembleResult`, emits that payload as
-  `message_patch`, persists `varChanged` for send-like requests, and has
-  a provider-agnostic chunk transport that maps internal
-  `CompletionStreamFrame` sources to chat `token`, `error`, and `done`
-  events. Real provider dispatch is not wired to the browser send path
-  yet.
+  `message_patch`, persists `varChanged` for send-like requests, and can
+  dispatch production providers through the chat `token`, `error`, and
+  enriched `done` events when `db.useServerPromptAssembly` is enabled.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
   prompt assembly.
 
 ## Current Server Work
 
-Phase 7 needs the browser send path to use `/chat` server dispatch and
-terminal metadata after prompt assembly. The next concrete slice is
-7-12d-iii-b in
+Phase 7 needs typed `/chat` side effects and rollback around the
+server-dispatched send path. The next concrete slice is 7-12d-iv in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points
@@ -40,6 +37,8 @@ terminal metadata after prompt assembly. The next concrete slice is
   server-side prompt string flattening is available.
 - Hypa V3 memory jobs belong to Phase 8, not the current server dispatch
   work.
+- Browser plugin / Lua execution and image generation side effects remain
+  outside 7-12d-iv.
 
 ## References
 

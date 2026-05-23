@@ -26,8 +26,14 @@ import { buildMemoryWindow } from './promptAssembly/buildMemoryWindow'
 import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 import { dispatchRequest } from './dispatch/dispatchRequest'
+import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import { isFastifyServer } from '../platform'
-import { requestServerChat, type ServerChatInput } from './request/serverChat'
+import {
+  requestServerChat,
+  requestServerChatGeneration,
+  type ServerChatInput,
+  type ServerChatTerminal,
+} from './request/serverChat'
 import { applyServerMessagePatch } from './request/serverMessagePatch'
 
 export interface OpenAIChat {
@@ -63,6 +69,16 @@ export let previewBody: string = ''
 
 function numberFrom(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+type ServerChatAnyResult =
+  | Awaited<ReturnType<typeof requestServerChat>>
+  | Awaited<ReturnType<typeof requestServerChatGeneration>>
+
+function isServerChatGenerationOk(
+  served: ServerChatAnyResult,
+): served is Extract<Awaited<ReturnType<typeof requestServerChatGeneration>>, { status: 'ok' }> {
+  return served.status === 'ok' && 'req' in served
 }
 
 export async function sendChat(
@@ -179,10 +195,18 @@ export async function sendChat(
     let inputTokens = 0
     let outputTokens = DBState.db.maxResponse
     let assembledByServer = false
+    let serverDispatch:
+      | {
+          req: DispatchSuccessReq
+          generationId: string
+          generationInfo: MessageGenerationInfo
+          terminal: Promise<ServerChatTerminal>
+        }
+      | undefined
 
-    // 7-12d-ii: server-side prompt assembly with browser-side patch replay.
-    // Provider dispatch still runs locally through `dispatchRequest`; `/chat`
-    // only owns prompt assembly and the pre-dispatch chat/scriptstate deltas.
+    // Server-side prompt assembly with browser-side patch replay. Send-like
+    // calls now consume the `/chat` provider stream; preview modes still only
+    // read the assembled prompt payload.
     if (isFastifyServer && DBState.db.useServerPromptAssembly) {
       const mode: ServerChatInput['mode'] = arg.previewPrompt
         ? 'preview_prompt'
@@ -206,7 +230,10 @@ export async function sendChat(
         if (typeof userMessage === 'string') {
           input.userMessage = userMessage
         }
-        const served = await requestServerChat(input, abortSignal)
+        const wantsServerDispatch = !arg.preview && !arg.previewPrompt
+        const served = wantsServerDispatch
+          ? await requestServerChatGeneration(input, abortSignal)
+          : await requestServerChat(input, abortSignal)
         if (served.status === 'aborted') {
           return false
         }
@@ -250,6 +277,15 @@ export async function sendChat(
           numberFrom(served.prompt.promptInfo?.outputTokens) ??
           DBState.db.maxResponse
         assembledByServer = true
+        if (wantsServerDispatch && isServerChatGenerationOk(served)) {
+          serverDispatch = {
+            req: served.req,
+            generationId: served.generationId,
+            generationInfo: served.generationInfo,
+            terminal: served.terminal,
+          }
+          generationInfo = served.generationInfo
+        }
       }
     }
 
@@ -432,40 +468,52 @@ export async function sendChat(
       outputTokens = budget.outputTokens
     }
 
-    const dispatch = await dispatchRequest({
-      formated,
-      biases,
-      currentChar,
-      nowChatroom,
-      inputTokens,
-      outputTokens,
-      maxContextTokens,
-      stageTimings,
-      abortSignal,
-      isContinue: !!arg.continue,
-      isPreview: !!arg.preview,
-      isPreviewPrompt: !!arg.previewPrompt,
-      setProcessStage,
-    })
-    if (dispatch.status === 'preview') {
-      previewFormated = dispatch.formated
-      return true
-    }
-    if (dispatch.status === 'previewPrompt') {
-      previewBody = dispatch.body
-      return true
-    }
-    if (dispatch.status === 'aborted') {
-      return false
-    }
-    if (dispatch.status === 'failed') {
+    let req: DispatchSuccessReq
+    let generationId: string
+    let serverTerminal: Promise<ServerChatTerminal> | undefined
+    if (serverDispatch) {
+      setProcessStage(3)
+      stageTimings.stage3Start = Date.now()
+      req = serverDispatch.req
+      generationId = serverDispatch.generationId
+      generationInfo = serverDispatch.generationInfo
+      serverTerminal = serverDispatch.terminal
+    } else {
+      const dispatch = await dispatchRequest({
+        formated,
+        biases,
+        currentChar,
+        nowChatroom,
+        inputTokens,
+        outputTokens,
+        maxContextTokens,
+        stageTimings,
+        abortSignal,
+        isContinue: !!arg.continue,
+        isPreview: !!arg.preview,
+        isPreviewPrompt: !!arg.previewPrompt,
+        setProcessStage,
+      })
+      if (dispatch.status === 'preview') {
+        previewFormated = dispatch.formated
+        return true
+      }
+      if (dispatch.status === 'previewPrompt') {
+        previewBody = dispatch.body
+        return true
+      }
+      if (dispatch.status === 'aborted') {
+        return false
+      }
+      if (dispatch.status === 'failed') {
+        generationInfo = dispatch.generationInfo
+        throwError(dispatch.reason)
+        return false
+      }
+      req = dispatch.req
+      generationId = dispatch.generationId
       generationInfo = dispatch.generationInfo
-      throwError(dispatch.reason)
-      return false
     }
-    const req = dispatch.req
-    const generationId = dispatch.generationId
-    generationInfo = dispatch.generationInfo
 
     const orchestrate = await orchestrateResponse({
       req,
@@ -500,6 +548,18 @@ export async function sendChat(
     const result = orchestrate.result
     const emoChanged = orchestrate.emoChanged
     const resendChat = orchestrate.resendChat
+
+    if (serverTerminal) {
+      const terminal = await serverTerminal
+      const terminalInfo = terminal.done?.generationInfo
+      if (terminalInfo && typeof terminalInfo === 'object') {
+        Object.assign(generationInfo, terminalInfo)
+      }
+      if (terminal.status === 'error') {
+        throwError(terminal.error ?? 'provider dispatch failed')
+        return false
+      }
+    }
 
     const stage4 = await runStage4({
       req,

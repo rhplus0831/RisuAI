@@ -83,10 +83,11 @@ Per-provider request / response coverage lives in
 | `POST /api/v1/generate/chat` (validation)   | Auth, body validation for modes/ids/options (pre-stream 400), `text/event-stream` response. | covered by `server/fastify/__tests__/generation.chat.test.ts` |
 | `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> `message_patch` -> `stage(prompt,end)` -> `info` -> `done`; `stopSending`/bad-ID/missing-DB -> terminal SSE `error` + `done` with no `info`; builds and emits the 7-12d mutation payload. | covered (7-11g/i, 7-12d-i/ii) by `generation.chat.test.ts` and `assemble.test.ts` |
 | `POST /api/v1/generate/chat` (`varChanged`) | Persists chat variable writes for `send` / `continue` / `regenerate` requests while keeping preview modes read-only. | covered (7-12d-i) by `generation.chat.test.ts` |
-| `POST /api/v1/generate/chat` (transport)    | Internal provider chunk transport maps fake `CompletionStreamFrame` sources to chat `token`, `error`, and `done` after `prompt` / `message_patch` / `info`. | covered (7-12d-iii-a) by `providerTransport.test.ts` and `generation.chat.test.ts` |
-| `POST /api/v1/generate/chat` (dispatch)     | Real provider dispatch, browser send orchestration, `generationId`, `addRerolls`, enriched `done`, `side_effect`, and restoration. | Phase 7-12d; orchestration is next |
-| `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled via `mode: continue`; dispatch not started |
-| `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | dispatch not started |
+| `POST /api/v1/generate/chat` (transport)    | Internal provider chunk transport maps `CompletionStreamFrame` sources to chat `token`, `error`, and enriched `done` after `prompt` / `message_patch` / `info`. | covered (7-12d-iii-a/b) by `providerTransport.test.ts` and `generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (dispatch)     | Real provider dispatch behind `db.useServerPromptAssembly`, browser send orchestration, `generationId`, `generationInfo`, enriched `done`, and `addRerolls` accumulation. | covered (7-12d-iii-b) by `generation.chat.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `sendChat.serverPreview.test.ts`, and `sendChat.fixtures.serverBacked.test.ts` |
+| `POST /api/v1/generate/chat` (side effects / restoration) | Typed `tts` `side_effect` and `error.restoration` rollback after browser-visible mutations begin. | 7-12d-iv next |
+| `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled and server-dispatched through the common send-like path |
+| `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | assembled and server-dispatched through the common send-like path |
 | `POST /api/v1/generate/preview-prompt`      | One-shot JSON assembled prompt; `result.prompt` on success, `{ stopSending }` on abort, HTTP 404 for bad IDs / missing DB. | covered (7-11h) by `generation.chat.test.ts` |
 
 Plus: prompt snapshot tests - given a canned DB + preset + chat

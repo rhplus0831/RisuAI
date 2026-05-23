@@ -44,6 +44,8 @@ export interface InfoEvent {
   timings?: Record<string, number>
   tokens?: { prompt?: number; completion?: number; total?: number }
   responseBudget?: number
+  generationId?: string
+  generationInfo?: Record<string, unknown>
 }
 
 export interface TokenEvent {
@@ -126,6 +128,7 @@ export interface ErrorEvent {
 export interface DoneEvent {
   type: 'done'
   result?: string
+  generationId?: string
   generationInfo?: Record<string, unknown>
 }
 

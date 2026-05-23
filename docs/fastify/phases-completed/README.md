@@ -9,19 +9,20 @@ track the next piece of work.
 
 ## Phase Closeouts
 
-| Phase                                   | Archive                                                                                | Notes                                                                  |
-| --------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| 0 - Removals                            | [`phase-0-removals.md`](phase-0-removals.md)                                           | Full removal plan and exit criteria.                                   |
-| 1 - Foundation                          | [`phase-1-foundation.md`](phase-1-foundation.md)                                       | Fastify scaffold, auth, health, and smoke harness.                     |
-| 2 - Storage / import / assets / backups | [`phase-2-storage.md`](phase-2-storage.md)                                             | Storage, import, assets, backups, bootstrap, Docker.                   |
-| 3 - Proxy migration                     | [`phase-3-proxy.md`](phase-3-proxy.md)                                                 | Proxy, hub passthrough, stream jobs, Express deletion.                 |
-| 4 - sendChat tests                      | [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md)                               | Characterization harness and initial fixtures.                         |
-| 5 - sendChat extraction                 | [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md)                           | Extraction plan and closeout.                                          |
-| 6 - Server-side generation              | [`phase-6-server-generation.md`](phase-6-server-generation.md)                         | Provider dispatch closeout and deferred work.                          |
-| 7 - Prompt assembly through 7-12c       | [`phase-7-prompt-assembly-through-7-12c.md`](phase-7-prompt-assembly-through-7-12c.md) | Historical Phase 7 plan, landed slices, and prior roadmap.             |
-| 7-12d-i - Mutation payload              | [`phase-7-prompt-assembly-7-12d-i.md`](phase-7-prompt-assembly-7-12d-i.md)             | Typed mutation contract and `varChanged` persistence.                  |
-| 7-12d-ii - Message patch applier        | [`phase-7-prompt-assembly-7-12d-ii.md`](phase-7-prompt-assembly-7-12d-ii.md)           | `message_patch` SSE event, browser applier, and local-dispatch wiring. |
-| 7-12d-iii-a - Chunk transport           | [`phase-7-prompt-assembly-7-12d-iii-a.md`](phase-7-prompt-assembly-7-12d-iii-a.md)     | Provider-agnostic `/chat` token/error/done transport and tests.        |
+| Phase                                   | Archive                                                                                | Notes                                                                   |
+| --------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 0 - Removals                            | [`phase-0-removals.md`](phase-0-removals.md)                                           | Full removal plan and exit criteria.                                    |
+| 1 - Foundation                          | [`phase-1-foundation.md`](phase-1-foundation.md)                                       | Fastify scaffold, auth, health, and smoke harness.                      |
+| 2 - Storage / import / assets / backups | [`phase-2-storage.md`](phase-2-storage.md)                                             | Storage, import, assets, backups, bootstrap, Docker.                    |
+| 3 - Proxy migration                     | [`phase-3-proxy.md`](phase-3-proxy.md)                                                 | Proxy, hub passthrough, stream jobs, Express deletion.                  |
+| 4 - sendChat tests                      | [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md)                               | Characterization harness and initial fixtures.                          |
+| 5 - sendChat extraction                 | [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md)                           | Extraction plan and closeout.                                           |
+| 6 - Server-side generation              | [`phase-6-server-generation.md`](phase-6-server-generation.md)                         | Provider dispatch closeout and deferred work.                           |
+| 7 - Prompt assembly through 7-12c       | [`phase-7-prompt-assembly-through-7-12c.md`](phase-7-prompt-assembly-through-7-12c.md) | Historical Phase 7 plan, landed slices, and prior roadmap.              |
+| 7-12d-i - Mutation payload              | [`phase-7-prompt-assembly-7-12d-i.md`](phase-7-prompt-assembly-7-12d-i.md)             | Typed mutation contract and `varChanged` persistence.                   |
+| 7-12d-ii - Message patch applier        | [`phase-7-prompt-assembly-7-12d-ii.md`](phase-7-prompt-assembly-7-12d-ii.md)           | `message_patch` SSE event, browser applier, and local-dispatch wiring.  |
+| 7-12d-iii-a - Chunk transport           | [`phase-7-prompt-assembly-7-12d-iii-a.md`](phase-7-prompt-assembly-7-12d-iii-a.md)     | Provider-agnostic `/chat` token/error/done transport and tests.         |
+| 7-12d-iii-b - Server dispatch           | [`phase-7-prompt-assembly-7-12d-iii-b.md`](phase-7-prompt-assembly-7-12d-iii-b.md)     | Production `/chat` dispatch, browser stream adapter, and fixture sweep. |
 
 ## Historical Status Logs
 

@@ -4,12 +4,13 @@ vi.mock('../../../storage/nodeStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 
-import { requestServerChat, type ServerChatInput } from '../serverChat'
+import { requestServerChat, requestServerChatGeneration, type ServerChatInput } from '../serverChat'
 import type { ServerChatMessagePatch } from '../serverChatEvents'
 import {
   getServerChatCalls,
   resetServerChatState,
   serverChatFetch,
+  setServerChatDispatchResult,
   setServerChatError,
   setServerChatMessagePatch,
   setServerChatPrompt,
@@ -189,5 +190,40 @@ describe('requestServerChat', () => {
     expect(res.status).toBe('ok')
     if (res.status !== 'ok') return
     expect(res.prompt.messages).toEqual([{ role: 'user', content: 'hi' }])
+  })
+
+  it('returns a streaming dispatch response from token + enriched done events', async () => {
+    setServerChatPrompt([{ role: 'user', content: 'hello there' }], { promptText: 'hello there' })
+    setServerChatDispatchResult('server reply', {
+      model: 'echo_model',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 2, stage4: 0 },
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.generationId).toBe('uuid-0')
+    expect(res.generationInfo).toMatchObject({
+      model: 'echo_model',
+      generationId: 'uuid-0',
+      inputTokens: 7,
+      outputTokens: 50,
+    })
+    expect(res.req.type).toBe('streaming')
+    if (res.req.type !== 'streaming') return
+    const reader = res.req.result.getReader()
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'uuid-0': 'server reply' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(res.terminal).resolves.toMatchObject({
+      status: 'done',
+      done: { result: 'server reply', generationId: 'uuid-0' },
+    })
   })
 })

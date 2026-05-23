@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { CompletionStreamFrame } from '../generation/frames.js'
@@ -11,6 +12,7 @@ import {
   type AssembleInput,
   type AssembleResult,
 } from '../prompt/assemble.js'
+import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import {
   type PromptChatEvent,
@@ -42,6 +44,9 @@ type SuccessfulAssembleResult = AssembleResult & {
 export interface ChatProviderDispatchContext {
   input: AssembleInput
   result: SuccessfulAssembleResult
+  database: Database
+  generationId: string
+  generationInfo: Record<string, unknown>
   signal: AbortSignal
 }
 
@@ -184,6 +189,40 @@ function shouldPersistVarChanges(input: AssembleInput): boolean {
   return input.mode === 'send' || input.mode === 'continue' || input.mode === 'regenerate'
 }
 
+function shouldDispatchProvider(
+  input: AssembleInput,
+  database: Database | null,
+  options: GenerationChatRouteOptions,
+): database is Database {
+  if (!(input.mode === 'send' || input.mode === 'continue' || input.mode === 'regenerate')) {
+    return false
+  }
+  return (
+    database !== null && (database.useServerPromptAssembly === true || !!options.dispatchProvider)
+  )
+}
+
+function createGenerationInfo(
+  db: Database,
+  generationId: string,
+  result: SuccessfulAssembleResult,
+  promptMs: number,
+): Record<string, unknown> {
+  return {
+    model: getServerGenerationModelString(db),
+    generationId,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    maxContext: db.maxContext,
+    stageTiming: {
+      stage1: promptMs,
+      stage2: 0,
+      stage3: 0,
+      stage4: 0,
+    },
+  }
+}
+
 function persistVarChanges(
   db: DatabaseSync,
   dataDir: string,
@@ -232,8 +271,20 @@ async function streamAssembly(
       const deps = loadDatabaseDeps(dataDir)
       const result = await assemblePrompt(input, deps)
       persistVarChanges(db, dataDir, deps, input, result)
+      const database = deps.getDatabase()
       const promptMs = Date.now() - startedAt
       if (!result.stopSending && result.prompt) {
+        const successfulResult: SuccessfulAssembleResult = {
+          ...result,
+          stopSending: false,
+          prompt: result.prompt,
+        }
+        const generationId = randomUUID()
+        const shouldDispatch = shouldDispatchProvider(input, database, options)
+        const generationInfo =
+          shouldDispatch && database
+            ? createGenerationInfo(database, generationId, successfulResult, promptMs)
+            : undefined
         emit({ type: 'prompt', ...result.prompt })
         if (result.mutations) {
           emit({ type: 'message_patch', patch: result.mutations })
@@ -247,19 +298,36 @@ async function streamAssembly(
           timings: { prompt: promptMs },
           tokens: { prompt: result.inputTokens, total: result.inputTokens },
           responseBudget: result.outputTokens,
+          generationId: shouldDispatch ? generationId : undefined,
+          generationInfo,
         })
-        if (options.dispatchProvider) {
-          const frames = await options.dispatchProvider({
+        if (shouldDispatch && database && generationInfo) {
+          const dispatchProvider =
+            options.dispatchProvider ??
+            ((context: ChatProviderDispatchContext) =>
+              dispatchChatProvider({
+                database: context.database,
+                formated: context.result.formated ?? context.result.prompt.formated ?? [],
+                outputTokens: context.result.outputTokens,
+                signal: context.signal,
+              }))
+          const providerStartedAt = Date.now()
+          const frames = await dispatchProvider({
             input,
-            result: {
-              ...result,
-              stopSending: false,
-              prompt: result.prompt,
-            },
+            result: successfulResult,
+            database,
+            generationId,
+            generationInfo,
             signal,
           })
           if (frames) {
-            const transportResult = await emitProviderChunks(frames, emit, signal)
+            const transportResult = await emitProviderChunks(frames, emit, signal, () => {
+              const stageTiming = generationInfo.stageTiming as Record<string, unknown> | undefined
+              if (stageTiming) {
+                stageTiming.stage3 = Date.now() - providerStartedAt
+              }
+              return { generationId, generationInfo }
+            })
             terminalDoneEmitted = transportResult.status !== 'aborted'
           }
         }

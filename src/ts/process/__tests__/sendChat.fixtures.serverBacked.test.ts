@@ -1,16 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Server-backed dual-mode sweep (Phase 6-3). Unlike sendChat.fixtures.test.ts,
 // this file does NOT vi.mock('../request/request') — the real request module
@@ -98,13 +89,18 @@ import {
   setMistralResult,
   setOpenAIResult,
 } from '../__fixtures__/mocks/serverCompletionFetch'
+import {
+  getServerChatCalls,
+  resetServerChatState,
+  serverChatFetch,
+  setServerChatDispatchResult,
+  setServerChatInfo,
+  setServerChatPrompt,
+} from '../__fixtures__/mocks/serverChatFetch'
 import { resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { loadProviderScript, resetProviderState } from '../__fixtures__/providerFake'
-import {
-  type FixtureSnapshot,
-  captureSnapshot,
-  recordStages,
-} from '../__fixtures__/snapshot'
+import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
+import { DBState } from '../../stores.svelte'
 import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelte'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -314,6 +310,9 @@ describe('sendChat fixtures (server-backed)', () => {
   })
 
   beforeEach(() => {
+    vi.stubGlobal('safeStructuredClone', (v: unknown) =>
+      v === undefined ? undefined : JSON.parse(JSON.stringify(v)),
+    )
     platformState.isFastifyServer = true
     resetProviderState()
     resetSideEffectCalls()
@@ -377,5 +376,94 @@ describe('sendChat fixtures (server-backed)', () => {
       authHeader: 'fixture-auth-token',
       ...EXPECTED_CALL[name],
     })
+  })
+})
+
+describe('sendChat fixtures (/chat server dispatch)', () => {
+  beforeAll(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    vi.stubGlobal('fetch', serverChatFetch)
+  })
+
+  afterAll(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  beforeEach(() => {
+    vi.stubGlobal('safeStructuredClone', (v: unknown) =>
+      v === undefined ? undefined : JSON.parse(JSON.stringify(v)),
+    )
+    platformState.isFastifyServer = true
+    resetProviderState()
+    resetSideEffectCalls()
+    resetServerChatState()
+    resetServerCompletionCalls()
+    doingChat.set(false)
+    abortChat.set(false)
+    chatProcessStage.set(0)
+    uuidState.counter = 0
+  })
+
+  let cleanups: (() => void)[] = []
+  afterEach(() => {
+    while (cleanups.length > 0) cleanups.pop()!()
+  })
+
+  it.each(DUAL_MODE_FIXTURES)('%s', async (name) => {
+    const loaded = await loadFixture(name)
+    cleanups.push(loaded.cleanup)
+    DBState.db.useServerPromptAssembly = true
+
+    const expected = await loadExpected(name)
+    const providerCall = expected.providerCalls[0]
+    expect(providerCall).toBeDefined()
+    const formated = providerCall.formated as Array<{ role: string; content: unknown }>
+    setServerChatPrompt(
+      formated.map((row) => ({ role: row.role, content: row.content })),
+      {},
+      { formated: formated as Array<Record<string, unknown>> },
+    )
+
+    const expectedGenerationInfo = expected.generationInfo as {
+      generationId?: string
+      inputTokens?: number
+      outputTokens?: number
+    }
+    setServerChatInfo(
+      expectedGenerationInfo.inputTokens ?? 0,
+      expectedGenerationInfo.outputTokens ?? DBState.db.maxResponse,
+    )
+    const assistant = [...expected.messages].reverse().find((m) => m.role === 'char')
+    expect(assistant).toBeDefined()
+    setServerChatDispatchResult(
+      assistant?.data ?? '',
+      expected.generationInfo as Record<string, unknown>,
+      expectedGenerationInfo.generationId ?? 'uuid-0',
+    )
+
+    const stageRecorder = recordStages()
+    const args: Parameters<typeof sendChat>[1] = { ...(loaded.fixture.sendChatArgs ?? {}) }
+    await sendChat(-1, args)
+    const stages = stageRecorder.stop()
+    const captured = captureSnapshot(stages)
+
+    expect(captured.messages).toEqual(expected.messages)
+    expect(captured.generationInfo).toEqual(expected.generationInfo)
+    expect(captured.stages).toEqual(expected.stages)
+    expect(captured.doingChat).toBe(false)
+    expect(captured.sideEffects).toContainEqual({
+      fn: 'addRerolls',
+      args: [expectedGenerationInfo.generationId ?? 'uuid-0', [assistant?.data ?? '']],
+    })
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({
+      url: '/api/v1/generate/chat',
+      method: 'POST',
+      authHeader: 'fixture-auth-token',
+      mode: loaded.fixture.sendChatArgs?.continue ? 'continue' : 'send',
+    })
+    expect(getServerCompletionCalls()).toEqual([])
   })
 })
