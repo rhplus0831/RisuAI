@@ -21,6 +21,7 @@ import {
 } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import { runStartTrigger, type TriggerRunResult } from './triggers.js'
 
 /**
  * Phase 7-5a/b/c history walk ported from the SPA's
@@ -94,9 +95,15 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
  * 3, `useName: 'name'`. `encodingForModel` then picks `o200k_base` vs
  * `cl100k_base`.
  *
- * Deferred to later sub-slices: start trigger / `runTrigger` (7-5d,
- * blocked on 7-9c) — its `triggerResult.tokens` contribution is the
- * only piece of the SPA's `addedTokens` not folded in here.
+ * 7-9f (this slice): start-trigger handoff. After the first-message
+ * push, `buildHistoryWindow` runs `runStartTrigger` (the `triggers.ts`
+ * adapter), re-runs `makeMs` against the possibly-mutated chat, folds
+ * `triggerResult.tokens` into `addedTokens`, early-returns on
+ * `stopSending`, and surfaces `triggerResult` / `currentChat` /
+ * `varChanged` for the assemble root (which applies
+ * `additonalSysPrompt` and persists the db). This makes the history
+ * walk feature-complete (closes 7-5d). `buildHistoryWindow` is now
+ * `async` because `runStartTrigger` is.
  */
 
 export interface AssetLookup {
@@ -345,22 +352,46 @@ export interface HistoryWindowResult {
   messages: OpenAIChat[]
   /**
    * Sum of `tokenizeChat` over every emitted row plus the depth-prompt
-   * preflight when `report` is provided. Mirrors the SPA's
-   * `buildHistoryWindow.addedTokens` (`buildHistoryWindow.ts:69`); the
-   * start-trigger contribution (`triggerResult.tokens`) lands with
-   * 7-5d.
+   * preflight when `report` is provided and the start trigger's
+   * `triggerResult.tokens` (7-9f). Mirrors the SPA's
+   * `buildHistoryWindow.addedTokens` (`buildHistoryWindow.ts:69`).
    */
   addedTokens: number
+  /**
+   * The start trigger asked to abort the send (`stop` /
+   * `v2StopPromptSending`). The assemble root aborts when true, matching
+   * the SPA's `{ stopSending: true }` early return
+   * (`buildHistoryWindow.ts:135-137`). `messages` is then incomplete and
+   * should be ignored.
+   */
+  stopSending: boolean
+  /**
+   * The working chat, possibly mutated by the start trigger
+   * (impersonate / cutchat / modifychat). The assemble root threads this
+   * forward (`index.svelte.ts:240`).
+   */
+  currentChat: Chat
+  /**
+   * The raw start-trigger result, or `null` when no triggers ran. The
+   * assemble root applies `triggerResult.additonalSysPrompt` to the
+   * prompt slots (`index.svelte.ts:285-304`).
+   */
+  triggerResult: TriggerRunResult | null
+  /**
+   * A start-trigger `setvar` wrote chat state; the route persists the
+   * database when true (the `expandVariables` → `dirty` pattern).
+   */
+  varChanged: boolean
 }
 
-export function buildHistoryWindow(
+export async function buildHistoryWindow(
   ctx: ExpandContext,
   currentChar: character,
   currentChat: Chat,
   usingPromptTemplate: boolean = false,
   assetLookup: AssetLookup = NO_ASSETS,
   report?: LorebookActivationReport,
-): HistoryWindowResult {
+): Promise<HistoryWindowResult> {
   const db = ctx.database
   const messages: OpenAIChat[] = []
   const moduleAssets = getModuleAssets(
@@ -386,17 +417,27 @@ export function buildHistoryWindow(
     addedTokens += tokenizeChat(marker, encoding, options)
   }
 
+  // `makeMs` mirrors the SPA closure (`buildHistoryWindow.ts:87-102`):
+  // walk newest-to-oldest, drop `disabled === true`, stop at the first
+  // `'allBefore'` reset, and set the outer `msReseted`. It runs again
+  // after the start trigger so the per-message loop sees the mutated
+  // chat.
   let msReseted = false
-  const ms: Message[] = []
-  for (let i = currentChat.message.length - 1; i >= 0; i--) {
-    const d = currentChat.message[i]
-    if (d.disabled === true) continue
-    if (d.disabled === 'allBefore') {
-      msReseted = true
-      break
+  const makeMs = (chat: Chat): Message[] => {
+    const mss: Message[] = []
+    msReseted = false
+    for (let i = chat.message.length - 1; i >= 0; i--) {
+      const d = chat.message[i]
+      if (d.disabled === true) continue
+      if (d.disabled === 'allBefore') {
+        msReseted = true
+        break
+      }
+      mss.unshift(d)
     }
-    ms.unshift(d)
+    return mss
   }
+  let ms = makeMs(currentChat)
 
   if (!msReseted) {
     const fmIndex = currentChat.fmIndex ?? -1
@@ -421,6 +462,28 @@ export function buildHistoryWindow(
     }
     messages.push(firstMessage)
     addedTokens += tokenizeChat(firstMessage, encoding, options)
+  }
+
+  // Start-trigger handoff (SPA `buildHistoryWindow.ts:129-138`). The
+  // trigger may mutate the chat, so re-run `makeMs` and add its token
+  // contribution; on `stopSending` the assemble root aborts the send.
+  const triggerResult = await runStartTrigger(ctx, currentChar, currentChat)
+  let varChanged = false
+  if (triggerResult) {
+    currentChat = triggerResult.chat
+    ms = makeMs(currentChat)
+    addedTokens += triggerResult.tokens
+    varChanged = triggerResult.varChanged
+    if (triggerResult.stopSending) {
+      return {
+        messages,
+        addedTokens,
+        stopSending: true,
+        currentChat,
+        triggerResult,
+        varChanged,
+      }
+    }
   }
 
   for (let i = 0; i < ms.length; i++) {
@@ -454,7 +517,14 @@ export function buildHistoryWindow(
     }
   }
 
-  return { messages, addedTokens }
+  return {
+    messages,
+    addedTokens,
+    stopSending: false,
+    currentChat,
+    triggerResult,
+    varChanged,
+  }
 }
 
 /**

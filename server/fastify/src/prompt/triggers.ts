@@ -10,11 +10,11 @@ import type {
   triggerscript,
 } from '../../../../src/ts/process/triggers'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
-import { getModuleTriggers } from './modules.js'
+import { getActiveModules, getModuleTriggers } from './modules.js'
 import { encodingForModel, tokenize } from './tokens.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
 import { applyV2DataEffect } from './triggerDataEffects.js'
-import { expandVariables } from './variables.js'
+import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
  * Phase 7-9a trigger model + runner shell, ported from the Svelte-bound
@@ -77,8 +77,15 @@ import { expandVariables } from './variables.js'
  * `triggerDataEffects.ts`, fed the mutable `displayState` holder this
  * runner threads from `arg.displayData` to `result.displayData`.
  *
- * Still deferred (later slices, see `ROADMAP.md`):
- *   - 7-9f: prompt/history effects + `start` trigger handoff.
+ * 7-9f adds the `runStartTrigger` handoff adapter (below), which
+ * bridges the prompt-pipeline `ExpandContext` scope to a
+ * `TriggerRunContext` and runs the `start` trigger. `history.ts`'s
+ * `buildHistoryWindow` consumes it for chat mutation, the
+ * `addedTokens` token contribution, `stopSending`, and surfacing
+ * `triggerResult.additonalSysPrompt` for the future assemble root.
+ *
+ * The trigger front is now complete for Phase 7; only browser-side and
+ * persistent-resource arms remain deferred beyond the phase.
  *
  * Out of scope beyond Phase 7 (unhandled effect types fall through the
  * `switch` as no-ops): `command` (Phase 9 command APIs) and the
@@ -851,4 +858,33 @@ export async function runTrigger(
     tempVars: arg.tempVars,
     varChanged: engine.varChanged || recursionVarChanged,
   }
+}
+
+/**
+ * Phase 7-9f start-trigger handoff. Bridges the prompt-pipeline scope
+ * (an `ExpandContext` plus the in-scope char/chat that `history.ts`
+ * already holds) to the richer `TriggerRunContext` and runs the `start`
+ * trigger, mirroring the SPA's `runTrigger(char, 'start', { chat })`
+ * call inside `buildHistoryWindow` (`buildHistoryWindow.ts:129`).
+ *
+ * A `start` run is not `displayMode`, so `runTrigger` deep-clones the
+ * char/chat and `setVar` writes persist into the db snapshot; the
+ * returned `result.chat` is the mutated clone the history walk re-reads.
+ * Returns `null` when the character + active modules declare no
+ * triggers at all (the no-op case).
+ */
+export async function runStartTrigger(
+  ctx: ExpandContext,
+  char: character,
+  chat: Chat,
+): Promise<TriggerRunResult | null> {
+  const db = ctx.database
+  const runCtx: TriggerRunContext = {
+    modules: getActiveModules(db, char, chat),
+    model: db.aiModel,
+    database: db,
+    selectedCharID: ctx.selectedCharID ?? db.currentChar ?? 0,
+    chatPage: ctx.chatPage ?? char.chatPage ?? 0,
+  }
+  return runTrigger(runCtx, char, 'start', { chat })
 }
