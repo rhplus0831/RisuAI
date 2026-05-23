@@ -23,11 +23,11 @@ template-wide token preflight + `PromptUnformatedSlots` shape),
 by `history.ts`, `preflight.ts`, and `budgetFinalize.ts`) are
 real. `triggers.ts` now hosts the Phase 7-safe trigger runner —
 the 7-9a model + shell, the 7-9b variable/condition engine, the 7-9c
-deterministic V1 effects, and the V2 control/data batch (7-9d-i
-control flow + 7-9d-ii safe data helpers in `triggerDataEffects.ts`);
-only
-the request/display adapters (7-9e) and the start-trigger handoff
-(7-9f) remain on the trigger front. The remaining assembly modules
+deterministic V1 effects, the V2 control/data batch (7-9d-i
+control flow + 7-9d-ii safe data helpers in `triggerDataEffects.ts`),
+and the 7-9e request/display state adapters (mode allowlists +
+`v2Get/SetDisplayState` + the five request-state arms); only the
+start-trigger handoff (7-9f) remains on the trigger front. The remaining assembly modules
 under `server/fastify/src/prompt/` (`assemble`, `templates`) are still
 throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
@@ -202,6 +202,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-9c    | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.      |
 | 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects. |
 | 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.          |
+| 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.           |
 
 ## Remaining roadmap
 
@@ -283,8 +284,8 @@ progress as sub-slices.
   `getScriptCache` + `cacheScript`) and `runTrigger('display', …)`
   for `editdisplay` mode. Both are optional polish: the cache is
   a pure optimization (the server runs each chain fresh per
-  assembly), and `editdisplay` is blocked on the trigger
-  request/display adapter (7-9e).
+  assembly), and `editdisplay` is unblocked by the trigger
+  request/display adapter (7-9e, `51155665`).
 
 Browser-only paths (`runLuaEditTrigger`, `pluginV2[mode]`) are
 out-of-scope for the server port; the SPA continues to use them
@@ -482,10 +483,13 @@ character/persona/lorebook mutations wait for Phase 9 command APIs.
     dispatched from `runTrigger`'s `default`: message readers,
     string/array/dict/math helpers, random, tokenize, `v2RegexTest`,
     quick chat search. (No `v2ExtractRegex` exists in the V2 dialect.)
-- **7-9e** — Request/display state adapters: mode allowlists and
-  `v2Get*State` / `v2Set*State` operations over display text and
-  `OpenAIChat[]` JSON. This unblocks optional `editdisplay` work in
-  7-6e and the final request-state transform used by assemble/dispatch
+- **7-9e** — Request/display state adapters. **Landed `51155665`** (5
+  added tests). The `display`/`request` effect allowlists (`safeSubset`
+  / `displayAllowList` / `requestAllowList`) guarded at the top of the
+  effect loop, plus `v2Get/SetDisplayState` and the five request-state
+  arms over display text and `OpenAIChat[]` JSON in
+  `triggerDataEffects.ts`. Unblocks optional `editdisplay` work in 7-6e
+  and the final request-state transform used by assemble/dispatch
   wiring.
 - **7-9f** — Prompt/history effects + `start` handoff: wire the
   runner into history's start-trigger path, apply chat mutations,

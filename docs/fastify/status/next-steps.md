@@ -6,7 +6,7 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with twenty-seven slices landed through 7-9d-ii:
+Phase 7 is active with twenty-eight slices landed through 7-9e:
 chat route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight, regex scripts, active-module helpers, lorebook
@@ -14,10 +14,11 @@ activation / depth / budget-truncation helpers, the minimal server
 tokenizer, the template-wide token preflight, the request
 budget finalization, the trigger model + runner shell, the trigger
 variable/condition engine, the deterministic V1 trigger effects, V2
-control flow, and V2 safe data helpers. `assemble` and `templates`
-remain throwing stubs; `triggers` is now a runner with conditions,
-V1 effects, V2 control flow, and V2 safe data helpers wired
-(7-9a/b/c/d). The tokens / budget chain (7-8a/b/c) is fully landed,
+control flow, V2 safe data helpers, and the request/display state
+adapters. `assemble` and `templates` remain throwing stubs;
+`triggers` is now a runner with conditions, V1 effects, V2 control
+flow, V2 safe data helpers, and request/display state adapters wired
+(7-9a/b/c/d/e). The tokens / budget chain (7-8a/b/c) is fully landed,
 `preflight` covers every card type the SPA emits, and `history` +
 `lorebook` are feature-complete (modulo the 7-5d start-trigger
 integration, blocked on 7-9f after the trigger re-scope). Use
@@ -26,33 +27,29 @@ integration, blocked on 7-9f after the trigger re-scope). Use
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-9e — request/display state
-   adapters.** 7-9d-ii (`faec5145`) closed the V2 data-helper batch.
-   7-9e adds the mode allowlists plus the
-   request/display state arms, which read/write the per-run display
-   text (`arg.displayData`) or a JSON-stringified `OpenAIChat[]`
-   request state. It is the last trigger sub-slice before 7-9f (the
-   `start` handoff, which unblocks the Tier 1 7-5d). **7-10a**
-   (template normalization and slot contract) is an equally valid
-   parallel pickup.
+1. **Continue Phase 7 with slice 7-9f — prompt/history effects +
+   `start` trigger handoff.** 7-9e (`51155665`) closed the trigger
+   data front (V1, V2 control flow, V2 safe data helpers, and the
+   request/display state adapters). 7-9f is the last trigger
+   sub-slice: wire `runTrigger(ctx, char, 'start', …)` into history's
+   start path so the runner's chat mutations, additional-system-prompt
+   slots, token contribution, and `stopSending` reach prompt assembly.
+   It unblocks the Tier 1 7-5d. **7-10a** (template normalization and
+   slot contract) is an equally valid parallel pickup.
 
    Verified slice scope:
-   - The deferred effect-loop allowlist guards: `displayAllowList` /
-     `requestAllowList` (+ the shared `safeSubset`) and the
-     `mode === 'display'` / `mode === 'request'` skips.
-   - Display state: `v2GetDisplayState` / `v2SetDisplayState` over
-     `arg.displayData`.
-   - Request state over `JSON.parse(arg.displayData) as OpenAIChat[]`:
-     `v2GetRequestState` / `v2SetRequestState`,
-     `v2GetRequestStateRole` / `v2SetRequestStateRole`,
-     `v2GetRequestStateLength`.
-   - Thread a mutable display-data holder so the returned `displayData`
-     reflects the writes.
-   - Do not port the start-trigger handoff (7-9f).
+   - Run the `start`-mode trigger from the `7-5d` seam in `history.ts`,
+     threading the in-scope chat so `chat.message` mutations,
+     `additonalSysPrompt` slots, and `tokens` flow into the history
+     output and the 7-5e `addedTokens` accumulator.
+   - Honor `stopSending` and persist the database when `varChanged`.
+   - A `start` run is not `displayMode`: char/chat are cloned and
+     `setVar` writes persist (unlike the 7-9e display/request runs).
+   - Do not port the input hook adapter (7-9g).
    - Keep plugin/Lua execution, low-level LLM/image/alert/GUI effects,
-     Hypa similarity, persistent character/persona/lorebook mutation,
-     and command execution out of the Phase 7 trigger port unless a
-     later slice explicitly claims that dependency.
+     `v2Wait`, Hypa similarity, persistent character/persona/lorebook
+     mutation, and command execution out of the Phase 7 trigger port
+     unless a later slice explicitly claims that dependency.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -61,7 +58,7 @@ integration, blocked on 7-9f after the trigger re-scope). Use
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 761
+   tests green. Last recorded baselines are `pnpm api:test`: 766
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -107,35 +104,36 @@ integration, blocked on 7-9f after the trigger re-scope). Use
 
 ## Landed Phase 7 Slices
 
-| Slice   | Commit     | Summary                                                                                                   |
-| ------- | ---------- | --------------------------------------------------------------------------------------------------------- |
-| 7-1     | `3d2426c4` | Chat route scaffold, prompt SSE taxonomy, and prompt module stubs.                                        |
-| 7-2a    | `9eed5093` | Parser DI seams for chat variables and `trigger_id`.                                                      |
-| 7-2b    | `bb2c78b5` | Svelte-free `risuChatParser` extraction with SPA re-exports.                                              |
-| 7-2c    | `7ed156e6` | Server parser adapter and real `expandVariables`.                                                         |
-| 7-3     | `d0a2a7f3` | Static prompt sections.                                                                                   |
-| 7-4     | `051a5dcd` | Plain prompt sections.                                                                                    |
-| 7-5a    | `c44e53fc` | Deterministic history walk.                                                                               |
-| 7-6a    | `9a60380d` | Minimal preset/character regex script chain.                                                              |
-| 7-5b    | `7ad226b9` | Per-message scripts, sendName, `<Thoughts>`, and memo/UUID backfill.                                      |
-| 7-6b    | `8414d5c7` | Scripts `@@`-action prefixes.                                                                             |
-| 7-6c    | `5aae492b` | `ableFlag` action DSL, outScript prep, and flag defaults.                                                 |
-| 7-6d    | `cb5675d8` | Module regex scripts through active-module helpers.                                                       |
-| 7-5c    | `50a1770b` | History multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module assets.                        |
-| 7-7a    | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                      |
-| 7-7b    | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`.    |
-| 7-7c    | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.          |
-| 7-7e    | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` splicer.         |
-| 7-8a    | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`.                |
-| 7-7d    | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget`.   |
-| 7-5e    | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight.                                         |
-| 7-8b    | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` across every card type.                          |
-| 7-8c    | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims removable rows + clamps `outputTokens`.        |
-| 7-9a    | `cddc035e` | Trigger model + runner shell: `getModuleTriggers` / `collectTriggers` / `matchesTrigger` / `runTrigger`.  |
-| 7-9b    | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine` / `evaluateConditions` + `parseKeyValue` lift.   |
-| 7-9c    | `cae61155` | Deterministic V1 effects: setvar / systemprompt / impersonate / stop / cutchat / modifychat / runtrigger. |
-| 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, if/else/loops/break, v2SetVar, v2RunTrigger, V2 state effects.    |
-| 7-9d-ii | `faec5145` | V2 safe data helpers: message readers, string/array/dict/math, random, tokenize, regex, quick search.     |
+| Slice   | Commit     | Summary                                                                                                       |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| 7-1     | `3d2426c4` | Chat route scaffold, prompt SSE taxonomy, and prompt module stubs.                                            |
+| 7-2a    | `9eed5093` | Parser DI seams for chat variables and `trigger_id`.                                                          |
+| 7-2b    | `bb2c78b5` | Svelte-free `risuChatParser` extraction with SPA re-exports.                                                  |
+| 7-2c    | `7ed156e6` | Server parser adapter and real `expandVariables`.                                                             |
+| 7-3     | `d0a2a7f3` | Static prompt sections.                                                                                       |
+| 7-4     | `051a5dcd` | Plain prompt sections.                                                                                        |
+| 7-5a    | `c44e53fc` | Deterministic history walk.                                                                                   |
+| 7-6a    | `9a60380d` | Minimal preset/character regex script chain.                                                                  |
+| 7-5b    | `7ad226b9` | Per-message scripts, sendName, `<Thoughts>`, and memo/UUID backfill.                                          |
+| 7-6b    | `8414d5c7` | Scripts `@@`-action prefixes.                                                                                 |
+| 7-6c    | `5aae492b` | `ableFlag` action DSL, outScript prep, and flag defaults.                                                     |
+| 7-6d    | `cb5675d8` | Module regex scripts through active-module helpers.                                                           |
+| 7-5c    | `50a1770b` | History multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module assets.                            |
+| 7-7a    | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                          |
+| 7-7b    | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`.        |
+| 7-7c    | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.              |
+| 7-7e    | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` splicer.             |
+| 7-8a    | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`.                    |
+| 7-7d    | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget`.       |
+| 7-5e    | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight.                                             |
+| 7-8b    | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` across every card type.                              |
+| 7-8c    | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims removable rows + clamps `outputTokens`.            |
+| 7-9a    | `cddc035e` | Trigger model + runner shell: `getModuleTriggers` / `collectTriggers` / `matchesTrigger` / `runTrigger`.      |
+| 7-9b    | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine` / `evaluateConditions` + `parseKeyValue` lift.       |
+| 7-9c    | `cae61155` | Deterministic V1 effects: setvar / systemprompt / impersonate / stop / cutchat / modifychat / runtrigger.     |
+| 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, if/else/loops/break, v2SetVar, v2RunTrigger, V2 state effects.        |
+| 7-9d-ii | `faec5145` | V2 safe data helpers: message readers, string/array/dict/math, random, tokenize, regex, quick search.         |
+| 7-9e    | `51155665` | Request/display state adapters: display/request allowlists + v2Get/SetDisplayState + five request-state arms. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

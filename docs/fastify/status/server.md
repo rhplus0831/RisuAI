@@ -9,11 +9,12 @@ full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
 Express deletion), and Phase 6 completion-route slices through
 the 6-28 closeout all exist on the `fastify` branch. Phase 7 has
-landed 27 slices through 7-9d-ii: the chat-route scaffold,
+landed 28 slices through 7-9e: the chat-route scaffold,
 parser/static/plain leaves, history shaping through added-token
 preflight, regex scripts, module helpers, lorebook activation through
 budget-aware truncation, the tokens / budget chain, and the
-Phase 7-safe trigger runner through V2 safe data helpers:
+Phase 7-safe trigger runner through the request/display state
+adapters:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -201,14 +202,14 @@ been removed; `server/node/` no longer exists.
   because they need server-owned character / user state for prompt
   flattening.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
-  In progress. Twenty-seven slices have landed through 7-9d-ii:
+  In progress. Twenty-eight slices have landed through 7-9e:
   `/api/v1/generate/chat` scaffold, nine-event prompt SSE taxonomy,
   server-side variable expansion, static/plain prompt sections,
   history shaping through multimodal inlays + token preflight, regex
   scripts, module helpers, lorebook constant / keyword / recursive /
   depth / budget truncation helpers, the tokens / budget chain, and
-  the trigger runner through V2 safe data helpers. Next slice is
-  7-9e; 7-10a is the parallel template front.
+  the trigger runner through the request/display state adapters. Next
+  slice is 7-9f; 7-10a is the parallel template front.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 
 ## Reference: what move-to-fastify shipped

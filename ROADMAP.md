@@ -107,6 +107,7 @@ multi-subsystem work behind small labels.
 | 7-9c    | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.      |
 | 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects. |
 | 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.          |
+| 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.           |
 
 ## Remaining Slices
 
@@ -127,8 +128,8 @@ Scripts (`scripts.ts`):
 
 - **7-6e** — script-cache (pure optimization; the server runs
   each chain fresh per assembly so this is **optional polish**)
-  and `runTrigger('display', …)` for `editdisplay` mode (blocked
-  on 7-9e).
+  and `runTrigger('display', …)` for `editdisplay` mode (unblocked
+  by 7-9e).
 
 Lorebook (`lorebook.ts`):
 
@@ -189,12 +190,16 @@ Triggers (`triggers.ts`):
     tokenize, `v2RegexTest`, and quick chat search. (There is no
     `v2ExtractRegex` in the V2 dialect; the only `extractRegex` arm is
     V1 + `lowLevelAccess`-gated and stays deferred.)
-- **7-9e** — request/display state adapters. **(next)** Port the
-  request/display allowlists plus `v2Get*State` / `v2Set*State`
-  effects over `OpenAIChat[]` JSON and display text. This unblocks
-  optional `runTrigger('display', …)` work in 7-6e and the final
-  request-state transform used by assemble/dispatch wiring.
-- **7-9f** — prompt/history effects + `start` trigger handoff. Wire
+- **7-9e** — request/display state adapters. **Landed `51155665`.**
+  The `display`/`request` effect allowlists (`safeSubset` /
+  `displayAllowList` / `requestAllowList`) guarded at the top of the
+  effect loop, plus `v2Get/SetDisplayState` and the five request-state
+  arms over `OpenAIChat[]` JSON and display text in
+  `triggerDataEffects.ts`. Unblocks optional `runTrigger('display', …)`
+  work in 7-6e and the final request-state transform used by
+  assemble/dispatch wiring.
+- **7-9f** — prompt/history effects + `start` trigger handoff. **(next)**
+  Wire
   the runner into history's start-trigger path, apply chat mutations,
   additional-system-prompt slots, token contribution, and
   `stopSending`. Consumed by 7-5d.
@@ -237,10 +242,10 @@ Preset templates (`templates.ts`):
   Phase 7-safe request-state transform from 7-9e. Browser Lua
   `editRequest` hooks stay deferred with plugin/Lua execution.
 
-Current default pickup: **7-9e** (request/display state adapters) →
-7-9f → 7-5d. The template front starts at **7-10a** and can run in
+Current default pickup: **7-9f** (prompt/history effects + `start`
+handoff) → 7-5d. The template front starts at **7-10a** and can run in
 parallel. The already-landed support chain is 7-7d/7-5e, 7-8a/b/c,
-and 7-9a/b/c/d-i/d-ii.
+and 7-9a/b/c/d-i/d-ii/e.
 
 ### Tier 1 sub-slices unblocked by Tier 2
 
@@ -300,34 +305,33 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are **7-9e** (trigger
-  request/display adapters) and **7-10a** (template normalization).
-  7-5d unblocks the moment 7-9f lands.
+- The biggest parallel-able fronts are **7-9f** (trigger
+  prompt/history + `start` handoff) and **7-10a** (template
+  normalization). 7-5d unblocks the moment 7-9f lands.
 - 7-6e is optional polish. Skip in the default order; revisit
-  only if profiling demands the script cache or if Triggers
-  (7-9e) opens the door to porting `runTrigger('display', …)`.
+  only if profiling demands the script cache or to port
+  `runTrigger('display', …)` (unblocked by 7-9e).
 
 ## Sequential order (default)
 
-1. **7-9e** — request/display state adapters
-2. **7-9f** — prompt/history effects + `start` handoff
-3. **7-5d** — history start trigger (unblocked by 7-9f)
-4. **7-10a** — template normalization + slot contract
-5. **7-10b** — content cards
-6. **7-10c** — chat cards + systemized chat
-7. **7-10d** — memory cards + cache markers
-8. **7-10e** — position + prompt-info finalization
-9. **7-10f** — render finalization + request-edit boundary
-10. **7-11a** — `assemble.ts` state loader + slot orchestration
-11. **7-11b** — memory-window bridge + final render
-12. **7-11c** — wire `/api/v1/generate/chat`
-13. **7-11d** — `/api/v1/generate/preview-prompt`
-14. **7-11e** — SSE telemetry (`info`, `message_patch`)
-15. **7-12a** — browser client adapter
-16. **7-12b** — dual-mode fixture sweep
-17. **7-12c** — side-effect dispatch
-18. **7-12d** — error / abort restoration
-19. **7-13** — phase 7 closeout
+1. **7-9f** — prompt/history effects + `start` handoff
+2. **7-5d** — history start trigger (unblocked by 7-9f)
+3. **7-10a** — template normalization + slot contract
+4. **7-10b** — content cards
+5. **7-10c** — chat cards + systemized chat
+6. **7-10d** — memory cards + cache markers
+7. **7-10e** — position + prompt-info finalization
+8. **7-10f** — render finalization + request-edit boundary
+9. **7-11a** — `assemble.ts` state loader + slot orchestration
+10. **7-11b** — memory-window bridge + final render
+11. **7-11c** — wire `/api/v1/generate/chat`
+12. **7-11d** — `/api/v1/generate/preview-prompt`
+13. **7-11e** — SSE telemetry (`info`, `message_patch`)
+14. **7-12a** — browser client adapter
+15. **7-12b** — dual-mode fixture sweep
+16. **7-12c** — side-effect dispatch
+17. **7-12d** — error / abort restoration
+18. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 
