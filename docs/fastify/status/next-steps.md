@@ -6,41 +6,38 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with seventeen slices landed through 7-7e:
+Phase 7 is active with eighteen slices landed through 7-8a:
 chat route scaffold, parser/static/plain leaves, history through
-multimodal inlays, regex scripts, active-module helpers, and
-lorebook activation/depth helpers. `assemble`, `templates`,
-`tokens`, and `triggers` remain throwing stubs. Use
+multimodal inlays, regex scripts, active-module helpers, lorebook
+activation/depth helpers, and the minimal server tokenizer.
+`assemble`, `templates`, and `triggers` remain throwing stubs;
+`tokens` is now real at the minimal text-only surface. Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-8a — server tokenizer.**
-   The activation/depth lorebook work is at a clean handoff
-   (`c0f3fb3a` landed 7-7e). 7-8a unblocks both 7-7d
-   (lorebook budget filter) and 7-5e (history tokenizer
-   accumulation + depth-prompt token preflight).
+1. **Continue Phase 7 with slice 7-7d — lorebook budget-aware
+   truncation.** 7-8a landed the minimal server tokenizer
+   (`17fca64f`), so each active lorebook entry can now carry a
+   real `tokens` field and the priority-desc filter has something
+   to drop.
 
    Verified slice scope:
-   - Stand up `server/fastify/src/prompt/tokens.ts` (currently a
-     throwing stub) with the capped server surface:
-     `encodingForModel(model)`, `tokenize(text, model)`,
-     `tokenizeChat(chat, model, opts)`, and `tokenizeChats(...)`.
-     Use `@dqbd/tiktoken` with `cl100k_base` / `o200k_base`,
-     explicit model strings, and a small module-scope encoder cache.
-   - Keep chat counting text-only: content tokens, per-message
-     overhead, optional `name`, and optional `thoughts`.
-   - Do not port the full browser tokenizer dispatcher, Svelte
-     stores, plugin/custom tokenizers, remote/local provider
-     tokenizers, or multimodal image-token math in 7-8a.
-   - Isolated unit tests only: encoding selection, empty string,
-     ASCII baseline, text chat overhead, `name`, `thoughts`, and
-     `tokenizeChats` summing.
+   - Walk the entries returned by `lorebook.ts`, tokenize each
+     under the assembly's model using
+     `encodingForModel` + `tokenize`/`tokenizeChat`, and attach a
+     `tokens` field.
+   - Drop entries above the configured budget in priority-desc
+     order, honoring `ignore_on_max_context` (already decoded by
+     7-7a).
+   - Keep the activation report shape stable so 7-11a / 7-11d can
+     still emit it.
 
-   If even the capped tiktoken import path gets blocked, defer to
-   **7-9a — trigger sandbox** or **7-10a — template card parsing**
-   instead; both are independently shippable parallel fronts.
+   After 7-7d closes, the natural next pickup is **7-5e — history
+   tokenizer accumulation + depth-prompt token preflight** (also
+   unblocked by 7-8a). Both 7-7d and 7-5e are sequential successors
+   of 7-8a and can run in parallel by different agents if staffed.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -49,7 +46,7 @@ lorebook activation/depth helpers. `assemble`, `templates`,
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 640
+   tests green. Last recorded baselines are `pnpm api:test`: 654
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -114,6 +111,7 @@ lorebook activation/depth helpers. `assemble`, `templates`,
 | 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`. |
 | 7-7c  | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.       |
 | 7-7e  | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` splicer.      |
+| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`.             |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

@@ -59,6 +59,7 @@ scope materially exceeded its planning label is **7-8a**.
 | 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`.                           |
 | 7-7c  | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursive/unrecursive/no_recursive_search decorators. |
 | 7-7e  | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.                    |
+| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.     |
 
 ## Remaining Slices
 
@@ -83,25 +84,20 @@ Scripts (`scripts.ts`):
 
 Lorebook (`lorebook.ts`):
 
-- **7-7d** — budget-aware truncation. **Parked until 7-8a
-  lands** — needs the tokenizer to attach `tokens` to each
-  active entry before the priority-desc filter can do anything
-  meaningful. This is the only remaining lorebook slice;
-  re-enter immediately after 7-8a closes.
+- **7-7d** — budget-aware truncation. **Unblocked by 7-8a
+  (`17fca64f`).** Tokenize each active entry under the assembly's
+  model, attach a `tokens` field, and drop entries above the
+  configured budget in priority-desc order (honoring
+  `ignore_on_max_context`, which 7-7a already decodes). This is
+  the only remaining lorebook slice and the next default pickup.
 
 ### Tier 2 — Supporting infrastructure
 
 Tokens (`tokens.ts`):
 
-- **7-8a** — minimal server tokenizer. Implement explicit-model
-  tiktoken helpers (`encodingForModel`, `tokenize`,
-  `tokenizeChat`, `tokenizeChats`) for `cl100k_base` /
-  `o200k_base`, with text-only chat counting. Full SPA tokenizer
-  dispatcher parity is out of scope; provider-exact tokenizers land
-  later per fixture.
-- **7-8b** — token preflight accounting across the template walker
-  (after 7-8a). Add multimodal image-token accounting here only if
-  a fixture needs it.
+- **7-8b** — token preflight accounting across the template walker.
+  Builds on 7-8a (`17fca64f`). Add multimodal image-token accounting
+  here only if a fixture needs it.
 - **7-8c** — budget finalization (pruning order, fallback
   chains) (after 7-8b).
 
@@ -120,17 +116,19 @@ Preset templates (`templates.ts`):
 - **7-10d** — position slots (after 7-10a).
 - **7-10e** — systemized chat hoisting (after 7-10a).
 
-Tier 2 ordering starts with 7-8a because it unblocks 7-7d and
-7-5e. Then continue 7-8b → 7-8c for template-wide preflight and
-final budget pruning, 7-9a → 7-9b/9c for triggers, and
-7-10a → 7-10b/c/d/e for templates.
+7-8a landed (`17fca64f`) and unblocks both 7-7d and 7-5e —
+those are now the first two Tier 1 sub-slices on the path back.
+Continue 7-8b → 7-8c for template-wide preflight and final budget
+pruning, 7-9a → 7-9b/9c for triggers, and 7-10a → 7-10b/c/d/e for
+templates.
 
 ### Tier 1 sub-slices unblocked by Tier 2
 
 - **7-5d** — start trigger integration (needs 7-9c).
-- **7-5e** — tokenizer accumulation + depth prompts (needs
-  7-8a; 7-7e already landed).
-- **7-7d** — lorebook budget-aware truncation (needs 7-8a).
+- **7-5e** — tokenizer accumulation + depth prompts. **Unblocked
+  by 7-8a (`17fca64f`).**
+- **7-7d** — lorebook budget-aware truncation. **Unblocked by
+  7-8a (`17fca64f`).**
 
 These slot in as soon as their Tier 2 dependencies land. Do
 **not** wait for all of Tier 2 — pick them up the moment their
@@ -177,40 +175,39 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are **7-8a** (kicks off
-  tokens and unblocks both 7-7d and 7-5e in one move) /
-  **7-9a** (kicks off triggers) / **7-10a** (kicks off
-  templates).
+- The biggest parallel-able fronts are now **7-9a** (kicks off
+  triggers) and **7-10a** (kicks off templates); 7-8a is in, so
+  **7-7d** and **7-5e** are both unblocked and can run in
+  parallel by different agents.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or if Triggers
   (7-9) opens the door to porting `runTrigger('display', …)`.
 
 ## Sequential order (default)
 
-1. **7-8a** — server tokenizer
-2. **7-7d** — lorebook budget-aware truncation (unblocked by 7-8a)
-3. **7-5e** — history tokenizer + depth prompts (unblocked by
+1. **7-7d** — lorebook budget-aware truncation (unblocked by 7-8a)
+2. **7-5e** — history tokenizer + depth prompts (unblocked by
    7-8a; 7-7e already landed)
-4. **7-8b** — token preflight
-5. **7-8c** — budget finalization
-6. **7-9a** — trigger sandbox
-7. **7-9b** — `editInput` / `editRequest` hooks
-8. **7-9c** — `start` trigger
-9. **7-5d** — history start trigger (unblocked by 7-9c)
-10. **7-10a** — template card parsing
-11. **7-10b** — chat range cards
-12. **7-10c** — cache markers
-13. **7-10d** — position slots
-14. **7-10e** — systemized chat hoisting
-15. **7-11a** — `assemble.ts` root entry
-16. **7-11b** — wire `/api/v1/generate/chat`
-17. **7-11c** — `/api/v1/generate/preview-prompt`
-18. **7-11d** — SSE telemetry (`info`, `message_patch`)
-19. **7-12a** — browser client adapter
-20. **7-12b** — dual-mode fixture sweep
-21. **7-12c** — side-effect dispatch
-22. **7-12d** — error / abort restoration
-23. **7-13** — phase 7 closeout
+3. **7-8b** — token preflight
+4. **7-8c** — budget finalization
+5. **7-9a** — trigger sandbox
+6. **7-9b** — `editInput` / `editRequest` hooks
+7. **7-9c** — `start` trigger
+8. **7-5d** — history start trigger (unblocked by 7-9c)
+9. **7-10a** — template card parsing
+10. **7-10b** — chat range cards
+11. **7-10c** — cache markers
+12. **7-10d** — position slots
+13. **7-10e** — systemized chat hoisting
+14. **7-11a** — `assemble.ts` root entry
+15. **7-11b** — wire `/api/v1/generate/chat`
+16. **7-11c** — `/api/v1/generate/preview-prompt`
+17. **7-11d** — SSE telemetry (`info`, `message_patch`)
+18. **7-12a** — browser client adapter
+19. **7-12b** — dual-mode fixture sweep
+20. **7-12c** — side-effect dispatch
+21. **7-12d** — error / abort restoration
+22. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

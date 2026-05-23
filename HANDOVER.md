@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `652a0edf docs: check phase 7`
+Head: `17fca64f feat: minimal server tokenizer (Phase 7-8a)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -37,6 +37,7 @@ Landed Phase 7 slices:
 | 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch` port, child mirror, conditional-activation decorators, and `matchLog`.        |
 | 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt` accumulation, three recursion decorators.    |
 | 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.          |
+| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`. |
 
 What is real in code:
 
@@ -59,8 +60,12 @@ What is real in code:
   `matchLog`, `inject_lore` rewrites, `disabledUIPrompts`, plus the
   `getDepthPrompts` / `resolvePosition` depth-prompt helpers) are
   implemented and tested.
-- `assemble.ts`, `templates.ts`, `tokens.ts`, and `triggers.ts`
-  still throw Phase 7 not-implemented errors.
+- `tokens.ts` now exports the minimal server tokenizer
+  (`encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`)
+  over `cl100k_base` / `o200k_base` with a module-scope encoder
+  cache (Phase 7-8a).
+- `assemble.ts`, `templates.ts`, and `triggers.ts` still throw
+  Phase 7 not-implemented errors.
 - `history.ts` does not yet handle start triggers or tokenizer
   accumulation (7-5d/e).
 - `scripts.ts` does not yet handle script-cache,
@@ -68,66 +73,60 @@ What is real in code:
   hooks — all 7-6e or out-of-scope.
 - `lorebook.ts` covers the full activation surface (constant
   / keyword / recursive / depth-prompt). The only deferred
-  lorebook slice is 7-7d (budget-aware truncation), blocked on
-  Tokens (7-8a) for the real per-entry `tokens` field.
+  lorebook slice is 7-7d (budget-aware truncation); 7-8a is now
+  in, so the priority-desc filter has a tokenizer to attach a
+  real `tokens` field per active entry.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-7e, unchanged by the latest docs-only
-check:
+Last recorded baselines after 7-8a:
 
-- `pnpm api:test`: 640 across 35 files
+- `pnpm api:test`: 654 across 36 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-8a server tokenizer
+## Next Slice — 7-7d lorebook budget filter
 
-Pick up **7-8a — server tokenizer**.
+Pick up **7-7d — lorebook budget-aware truncation**.
 
-The lorebook activation/depth chain is at a clean handoff: only
-7-7d remains, and it needs a real per-entry `tokens` field on
-`LoreEntryActive`. The same minimal tokenizer also unblocks 7-5e
-history token accumulation and depth-prompt token preflight. The
-broader 7-8b/c work is still template-wide preflight and final
-budget pruning; do not let it expand 7-8a.
+7-8a landed the minimal server tokenizer (`encodingForModel`,
+`tokenize`, `tokenizeChat`, `tokenizeChats`), so each active
+lorebook entry can now carry a real `tokens` field and the
+priority-desc filter has something to drop. The SPA reference is
+the trailing token-budgeted truncation in `buildLorebookContext.ts`
+(activation-stage decorators like `ignore_on_max_context` are
+already handled by 7-7a; do not move them).
 
-### Scope
+After 7-7d closes, the natural next pickup is **7-5e — history
+tokenizer accumulation + depth-prompt token preflight** (also
+unblocked by 7-8a). Both 7-7d and 7-5e are sequential successors of
+7-8a; pick the one that is easiest to land cleanly given the
+current state. Then return to 7-8b/c for template-wide preflight
+and final budget pruning.
 
-- Rewrite `server/fastify/src/prompt/tokens.ts`; the current file is
-  still a throwing stub.
-- Add `server/fastify/__tests__/tokens.test.ts`.
-- Export `TokenEncoding`, `encodingForModel`, `tokenize`,
-  `tokenizeChat`, and `tokenizeChats`.
-- Use `@dqbd/tiktoken` with `cl100k_base` / `o200k_base` and a
-  module-scope encoder cache. Keep the API synchronous.
-- Route `gpt-4o`, `gpt-4.1`, `gpt-5`, `o1`, `o3`, `o4`, and
-  `gpt-oss` families to `o200k_base`; default everything else to
-  `cl100k_base`. Cross-check the exact prefix list against
-  `LLMTokenizer.tiktokenO200Base` rows in `src/ts/model/modellist.ts`.
-- Count text-only chat messages: content + default per-message
-  overhead 4, optional `name`, and optional `thoughts`.
+### Scope sketch
 
-Out of scope for 7-8a: the full 654-line browser tokenizer
-dispatcher, Svelte stores, plugin/custom tokenizers,
-`@mlc-ai/web-tokenizers`, Google remote count-token calls, local
-GGUF tokenization, exact provider tokenizers, and multimodal
-image-token math. Document the conservative `cl100k_base` fallback
-in `tokens.ts`; exact provider tokenizers should land only when a
-fixture needs them.
+- Attach a `tokens` field to each entry in the lorebook activation
+  result by tokenizing its body under the assembly's model. Honor
+  `ignore_on_max_context` (already decoded in 7-7a) and the
+  `priority` ordering set up by 7-7a/b/c.
+- Drop entries above the configured budget in priority-desc order
+  until the total fits. Keep the activation report shape stable so
+  7-11a / 7-11d can still emit it.
+- Keep the API synchronous and Svelte-free; the model string flows
+  in from the route layer.
 
 ### Tests
 
-Add isolated server tests for:
+Add lorebook tests covering:
 
-- `encodingForModel` on `gpt-4o`, `gpt-4`, a Claude fallback, and
-  `undefined`.
-- `tokenize('')` and one hardcoded `hello world` oracle captured
-  from a one-off tiktoken run.
-- `tokenizeChat` content overhead, `name`, `thoughts`, and
-  `tokenizeChats` summing.
+- Token-budget truncation drops the lowest-priority entry first.
+- `ignore_on_max_context` entries survive the filter even when
+  over budget.
+- Tokens are counted under the resolved encoding (`cl100k_base`
+  vs `o200k_base`).
 
-Expected `pnpm api:test` count after the slice: **640 -> ~649**.
-Still run all four bars before closeout:
+### Verification
 
 ```bash
 pnpm check
@@ -136,15 +135,9 @@ pnpm test
 pnpm build
 ```
 
-### After 7-8a Lands
-
-- Backfill HANDOVER, ROADMAP, the Phase 7 doc, and
-  `status/next-steps.md` with the real SHA.
-- Flip the next default slice to **7-7d lorebook budget filter**.
-  After 7-7d, pick up **7-5e history tokenizer + depth prompts**
-  before returning to 7-8b/c.
-- If the tiktoken import path itself blocks the slice, defer to
-  **7-9a trigger sandbox** or **7-10a template card parsing**.
+If 7-7d is blocked, the parallel next-ups are **7-5e** (history
+tokenizer + depth-prompt token preflight), **7-9a** (trigger
+sandbox), or **7-10a** (template card parsing).
 
 ## Patterns To Keep
 
