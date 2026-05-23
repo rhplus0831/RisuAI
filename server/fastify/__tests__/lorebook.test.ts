@@ -2,11 +2,22 @@ import { describe, expect, it } from 'vitest'
 import type {
   Chat,
   Database,
+  Message,
   character,
   loreBook,
 } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
 import { activateLorebook } from '../src/prompt/lorebook.js'
+
+function makeMessage(overrides: Partial<Message> = {}): Message {
+  return {
+    role: 'user',
+    data: '',
+    chatId: 'msg-0',
+    time: 0,
+    ...overrides,
+  } as Message
+}
 
 function makeLore(overrides: Partial<loreBook> = {}): loreBook {
   return {
@@ -318,5 +329,448 @@ describe('Phase 7-7a activateLorebook — inject_lore', () => {
     })
     expect(report.actives).toHaveLength(1)
     expect(report.actives[0].prompt).toBe('hello FRIEND world')
+  })
+})
+
+describe('Phase 7-7b activateLorebook — keyword matching', () => {
+  it('activates a keyword entry when a recent message contains the key', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            comment: 'About cats',
+            content: 'Cats nap in sunbeams.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0].source).toBe('About cats')
+    expect(report.matchLog).toHaveLength(1)
+    expect(report.matchLog[0].activated).toBe('cat')
+  })
+
+  it('skips when no recent message contains the key', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'dog',
+            content: 'Dogs bark.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    expect(report.actives).toEqual([])
+    expect(report.matchLog).toEqual([])
+  })
+
+  it('treats `key` as a comma-separated OR list', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'dog, cat',
+            content: 'Pets vary.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'I love cats.' })],
+      }),
+    })
+    expect(report.actives).toHaveLength(1)
+  })
+
+  it('respects useRegex with /pattern/flags', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            useRegex: true,
+            key: '/cat.+sun/i',
+            content: 'Sunlit cats.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'CATS love SUN.' })],
+      }),
+    })
+    expect(report.actives).toHaveLength(1)
+  })
+
+  it('requires both `key` and `secondkey` when selective is true', () => {
+    const baseLore = makeLore({
+      alwaysActive: false,
+      selective: true,
+      key: 'cat',
+      secondkey: 'sun',
+      content: 'Sunlit cats.',
+    })
+    const onlyCat = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [baseLore] }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    expect(onlyCat.actives).toEqual([])
+
+    const both = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [baseLore] }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Cats love sun.' })],
+      }),
+    })
+    expect(both.actives).toHaveLength(1)
+  })
+
+  it('limits the search to db.loreBookDepth most recent messages', () => {
+    const db = makeDb({ loreBookDepth: 1 } as Partial<Database>)
+    const messages = [
+      makeMessage({ data: 'Old cat message.', chatId: 'm-0' }),
+      makeMessage({ data: 'Newer dog message.', chatId: 'm-1' }),
+    ]
+    const report = activateLorebook({
+      database: db,
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({ alwaysActive: false, key: 'cat', content: 'Cat body.' }),
+        ],
+      }),
+      currentChat: makeChat({ message: messages }),
+    })
+    expect(report.actives).toEqual([])
+  })
+
+  it('@@additional_keys adds a required AND-combined query (SPA semantics)', () => {
+    const lore = makeLore({
+      alwaysActive: false,
+      key: 'dog',
+      content: '@@additional_keys cat\nPet lore.',
+    })
+
+    const justDog = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'A dog ran by.' })],
+      }),
+    })
+    // `cat` query has no hit; AND-required, so activation fails.
+    expect(justDog.actives).toEqual([])
+
+    const both = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'My dog and my cat play.' })],
+      }),
+    })
+    expect(both.actives).toHaveLength(1)
+    expect(both.actives[0].prompt).not.toContain('@@additional_keys')
+  })
+
+  it('@@exclude_keys blocks activation when the excluded key matches', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            content: '@@exclude_keys angry\nCats nap.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Angry cat hisses.' })],
+      }),
+    })
+    expect(report.actives).toEqual([])
+  })
+
+  it('@@match_full_word distinguishes whole-word vs substring', () => {
+    const partial = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            content: '@@match_full_word\nWhole word only.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'I concatenate strings.' })],
+      }),
+    })
+    expect(partial.actives).toEqual([])
+
+    const whole = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            content: '@@match_full_word\nWhole word only.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'My cat napped.' })],
+      }),
+    })
+    expect(whole.actives).toHaveLength(1)
+  })
+
+  it('@@scan_depth overrides the default search window', () => {
+    const messages = [
+      makeMessage({ data: 'Old cat note.', chatId: 'm-0' }),
+      makeMessage({ data: 'New unrelated note.', chatId: 'm-1' }),
+    ]
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            content: '@@scan_depth 1\nCat body.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({ message: messages }),
+    })
+    expect(report.actives).toEqual([])
+  })
+
+  it('child mode mirrors the previous parent when the parent did not fire', () => {
+    const parent = makeLore({
+      id: 'shared-id',
+      alwaysActive: false,
+      key: 'dog',
+      comment: 'Parent',
+      content: 'Parent body.',
+    })
+    const child = makeLore({
+      id: 'shared-id',
+      mode: 'child',
+      // alwaysActive=true is what the SPA's UI sets on child entries
+      // so they pass the `!alwaysActive && !key` early gate
+      // (lorebook.svelte.ts:269) and reach the mirror branch.
+      alwaysActive: true,
+      key: '',
+      comment: 'placeholder',
+      content: 'placeholder',
+    })
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [parent, child] }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'No matching keyword here.' })],
+      }),
+    })
+    // Parent's `dog` keyword doesn't match, so the child takes over
+    // and mirrors parent's content + force-activates.
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0].source).toBe('Parent')
+    expect(report.actives[0].prompt).toBe('Parent body.')
+  })
+
+  it('@@activate_only_after blocks activation when chatLength is below the threshold', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            content: '@@activate_only_after 5\nLater-only.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Cats are great.' })],
+      }),
+    })
+    // chatLength = 1 + 1 = 2 < 5 -> blocked
+    expect(report.actives).toEqual([])
+  })
+
+  it('@@is_greeting only fires when fmIndex + 1 matches the arg', () => {
+    const lore = makeLore({
+      alwaysActive: true,
+      content: '@@is_greeting 2\nGreeting-only.',
+    })
+    const matchingChat = makeChat({ fmIndex: 1 })
+    const skipChat = makeChat({ fmIndex: 0 })
+
+    const matched = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      currentChat: matchingChat,
+    })
+    expect(matched.actives).toHaveLength(1)
+
+    const skipped = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      currentChat: skipChat,
+    })
+    expect(skipped.actives).toEqual([])
+  })
+
+  it('@@probability 100 always activates, @@probability 0 never does', () => {
+    const always = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({ content: '@@probability 100\nAlways.' }),
+        ],
+      }),
+      currentChat: makeChat(),
+    })
+    expect(always.actives).toHaveLength(1)
+
+    const never = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({ content: '@@probability 0\nNever.' }),
+        ],
+      }),
+      currentChat: makeChat(),
+    })
+    expect(never.actives).toEqual([])
+  })
+
+  it('@@activate forces a non-matching keyword entry on, @@dont_activate forces always-on off', () => {
+    const forcedOn = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'dog',
+            content: '@@activate\nForced.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'No matching keyword.' })],
+      }),
+    })
+    expect(forcedOn.actives).toHaveLength(1)
+
+    const forcedOff = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: true,
+            content: '@@dont_activate\nSuppressed.',
+          }),
+        ],
+      }),
+      currentChat: makeChat(),
+    })
+    expect(forcedOff.actives).toEqual([])
+  })
+
+  it('@@keep_activate_after_match writes the chat-var and re-activates on the next pass', () => {
+    const lore = makeLore({
+      id: 'lore-keep',
+      alwaysActive: false,
+      key: 'cat',
+      content: '@@keep_activate_after_match\nSticky.',
+    })
+    const chat = makeChat({
+      message: [makeMessage({ data: 'Tell me about cats.' })],
+    })
+
+    const first = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      currentChat: chat,
+    })
+    expect(first.actives).toHaveLength(1)
+    expect(chat.scriptstate?.['$__internal_ka_lore-keep']).toBe('true')
+    // The decorator is stripped from the body by ccardlib; only the
+    // `$__internal_ka_*` chat-var carries forward to the next pass.
+    expect(first.actives[0].prompt).toBe('Sticky.')
+
+    const second = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      // chat has the persisted scriptstate; no keyword in messages.
+      currentChat: { ...chat, message: [makeMessage({ data: 'unrelated' })] } as Chat,
+    })
+    expect(second.actives).toHaveLength(1)
+  })
+
+  it('falls back to pickHashRand for the chat-var key when entry.id is absent', () => {
+    const lore = makeLore({
+      alwaysActive: false,
+      key: 'cat',
+      content: '@@keep_activate_after_match\nNoIdSticky.',
+    })
+    const chat = makeChat({
+      message: [makeMessage({ data: 'Tell me about cats.' })],
+    })
+
+    activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      currentChat: chat,
+    })
+
+    const keys = Object.keys(chat.scriptstate ?? {})
+    expect(keys).toHaveLength(1)
+    expect(keys[0]).toMatch(/^\$__internal_ka_-?\d/)
+  })
+
+  it('matchLog records the matched key with SPA-shaped source labels', () => {
+    const report = activateLorebook({
+      database: makeDb({ username: 'Alex' } as Partial<Database>),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            content: 'Cats.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    expect(report.matchLog).toEqual([
+      {
+        activated: 'cat',
+        source: 'message 0 by user',
+        prompt: '\x01{{alex}}:tell me about cats.\x01',
+      },
+    ])
   })
 })

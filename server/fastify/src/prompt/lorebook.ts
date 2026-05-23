@@ -2,37 +2,51 @@ import { CCardLib } from '@risuai/ccardlib'
 import type {
   Chat,
   Database,
+  Message,
   character,
   loreBook,
 } from '../../../../src/ts/storage/database.svelte'
+import { pickHashRand } from '../../../../src/ts/util/loreHash'
 import { getActiveModules } from './modules.js'
 
 /**
- * Phase 7-7a lorebook activation: constant (always-on) entries only.
+ * Phase 7-7a / 7-7b lorebook activation: constant + keyword matching.
  *
- * Ports the always-on slice of
+ * Ports the always-on and keyword-driven slices of
  * `src/ts/process/lorebook.svelte.ts:loadLoreBookV3Prompt` into a
  * Svelte-free, request-scoped function. The decorator parser scaffold
- * established here is reused by the next slices in the chain:
+ * here is reused by the remaining slices:
  *
- *   - 7-7b: keyword matching activation (`additional_keys`,
- *     `exclude_keys*`, `match_*_word`, `useRegex`, `secondkey`).
  *   - 7-7c: recursion (`recursive`, `unrecursive`,
- *     `no_recursive_search`).
+ *     `no_recursive_search`) + `recursivePrompt` accumulation.
  *   - 7-7d: token-budget truncation (requires `tokens` from 7-8).
  *   - 7-7e: depth-prompt emission into history.
  *
- * In-scope decorators (parsed, applied, and stripped from prompt text):
- *   - `role`, `position`, `depth`/`reverse_depth`, `end`
- *   - `priority`, `ignore_on_max_context`
- *   - `inject_lore`, `inject_at`, `inject_replace`, `inject_prepend`
- *   - `disable_ui_prompt`
+ * In-scope decorators (parsed, applied, and stripped from prompt text
+ * unless noted):
+ *   - 7-7a: `role`, `position`, `depth`/`reverse_depth`, `end`,
+ *     `priority`, `ignore_on_max_context`, the four `inject_*` forms,
+ *     `disable_ui_prompt`.
+ *   - 7-7b: `additional_keys`, `exclude_keys`, `exclude_keys_all`,
+ *     `match_full_word`, `match_partial_word`, `scan_depth`,
+ *     `activate_only_after`, `activate_only_every`, `is_greeting`,
+ *     `probability`, `activate`, `dont_activate`,
+ *     `keep_activate_after_match`, `dont_activate_after_match`.
  *
- * Every other decorator hits `default: return false` (same as the SPA
- * for unknown decorators), so its `@@` line stays in the prompt text
- * verbatim until its sub-slice lands. This keeps round-trip behavior
- * stable for early consumers and lets the keyword/recursion slices
- * flip individual cases without churn here.
+ * `instruct_*`, `is_user_icon`, and recursion decorators stay on the
+ * `default: return false` path until their slice lands.
+ *
+ * Note on `CCardLib.decorator.parse`: every leading `@@`-line is
+ * stripped from the body regardless of the hook's return value. The
+ * hook's `return false` only sets a flag that enables a following
+ * `@@@`-conditional decorator (out of scope for 7-7a/7-7b). For the
+ * two `*_after_match` decorators we still `return false` to preserve
+ * SPA parity in case a preset chains a `@@@` line after them.
+ *
+ * Note on `additional_keys`: SPA semantics are **AND** between the
+ * entry's `key` and each `additional_keys` decorator (each pushed as
+ * a separate positive query that must all match). Keys *within* a
+ * single decorator are OR-combined inside `searchMatch`.
  */
 
 export interface LoreInject {
@@ -63,15 +77,21 @@ export interface LoreEntryActive {
   inject: LoreInject | null
 }
 
+export interface LoreMatchLogEntry {
+  prompt: string
+  source: string
+  activated: string
+}
+
 export interface LorebookActivationReport {
   actives: LoreEntryActive[]
   disabledUIPrompts: string[]
   /**
-   * Keyword-search audit log. Empty in 7-7a; populated by 7-7b/c so
-   * `prompt`-stage SSE consumers can render the activation reason
-   * tree later.
+   * Keyword-search audit log. Empty until 7-7b runs `searchMatch`;
+   * downstream `prompt`-stage SSE consumers can render the activation
+   * reason tree from this.
    */
-  matchLog: Array<{ prompt: string; source: string; activated: string }>
+  matchLog: LoreMatchLogEntry[]
 }
 
 export interface ActivateLorebookInput {
@@ -97,29 +117,201 @@ function collectEntries(input: ActivateLorebookInput): loreBook[] {
   return [...characterLore, ...chatLore, ...moduleLore]
 }
 
+function findCharByChaId(
+  database: Database,
+  chaId: string | undefined,
+): character | undefined {
+  if (!chaId) return undefined
+  return database.characters?.find((c) => c?.chaId === chaId)
+}
+
+function readChatVar(chat: Chat, key: string): string {
+  const stored = chat.scriptstate?.['$' + key]
+  if (stored === undefined || stored === null) return 'null'
+  return String(stored)
+}
+
+function writeChatVar(chat: Chat, key: string, value: string): void {
+  chat.scriptstate ??= {}
+  chat.scriptstate['$' + key] = value
+}
+
+function loreId(entry: loreBook): string {
+  return entry.id ?? String(pickHashRand(5555, entry.content))
+}
+
+interface SearchArg {
+  keys: string[]
+  searchDepth: number
+  regex: boolean
+  fullWordMatching: boolean
+  all?: boolean
+}
+
+/**
+ * Ports `searchMatch` from
+ * `src/ts/process/lorebook.svelte.ts:97-239` minus the recursive
+ * prompt accumulation. Walks the last `searchDepth` messages, builds
+ * SPA-shaped `\x01{{name}}:body\x01` log prompts, and matches keys
+ * against the lowercased message data with the SPA's exact
+ * full-word / partial-word and `all`-mode semantics.
+ *
+ * The regex path requires `/pattern/flags`; on malformed input it
+ * returns false (SPA `:155`). Matched entries push into `matchLog`
+ * so the caller can surface them on the `prompt` SSE event later.
+ */
+function searchMatch(
+  messages: Message[],
+  arg: SearchArg,
+  database: Database,
+  currentChar: character,
+  matchLog: LoreMatchLogEntry[],
+): boolean {
+  const sliced = messages.slice(messages.length - arg.searchDepth, messages.length)
+  const trimmedKeys: string[] = []
+  for (const k of arg.keys) {
+    const t = k.trim()
+    if (t.length > 0) trimmedKeys.push(t)
+  }
+  if (trimmedKeys.length === 0) return false
+
+  const username = database.username ?? 'user'
+
+  const mList = sliced.map((msg, i) => {
+    if (msg.role === 'user') {
+      return {
+        source: `message ${i} by user`,
+        prompt: `\x01{{${username}}}:` + msg.data + '\x01',
+        data: msg.data,
+      }
+    }
+    const speakerName =
+      msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
+    return {
+      source: `message ${i} by char`,
+      prompt: `\x01{{${speakerName}}}:` + msg.data + '\x01',
+      data: msg.data,
+    }
+  })
+
+  if (arg.regex) {
+    for (const m of mList) {
+      for (const regexString of trimmedKeys) {
+        if (!regexString.startsWith('/')) return false
+        const flagsIdx = regexString.lastIndexOf('/')
+        if (flagsIdx <= 0) return false
+        const pattern = regexString.slice(1, flagsIdx)
+        const flags = regexString.slice(flagsIdx + 1)
+        try {
+          const r = new RegExp(pattern, flags)
+          if (r.test(m.data)) {
+            matchLog.push({ prompt: m.prompt, source: m.source, activated: regexString })
+            return true
+          }
+        } catch {
+          return false
+        }
+      }
+    }
+    return false
+  }
+
+  const stripped = mList.map((m) => ({
+    source: m.source,
+    prompt: m.prompt
+      .toLocaleLowerCase()
+      .replace(/\{\{\/\/(.+?)\}\}/g, '')
+      .replace(/\{\{comment:(.+?)\}\}/g, ''),
+    data: m.data
+      .toLocaleLowerCase()
+      .replace(/\{\{\/\/(.+?)\}\}/g, '')
+      .replace(/\{\{comment:(.+?)\}\}/g, ''),
+  }))
+
+  const allMode = arg.all ?? false
+  let allModeMatched = true
+
+  for (const m of stripped) {
+    if (arg.fullWordMatching) {
+      const splited = m.data.split(' ')
+      for (const key of trimmedKeys) {
+        if (splited.includes(key.toLocaleLowerCase())) {
+          matchLog.push({ prompt: m.prompt, source: m.source, activated: key })
+          if (!allMode) return true
+        } else if (allMode) {
+          allModeMatched = false
+        }
+      }
+    } else {
+      const text = m.data.replace(/ /g, '')
+      for (const key of trimmedKeys) {
+        const realKey = key.toLocaleLowerCase().replace(/ /g, '')
+        if (text.includes(realKey)) {
+          matchLog.push({ prompt: m.prompt, source: m.source, activated: key })
+          if (!allMode) return true
+        } else if (allMode) {
+          allModeMatched = false
+        }
+      }
+    }
+  }
+
+  return allMode && allModeMatched
+}
+
 export function activateLorebook(
   input: ActivateLorebookInput,
 ): LorebookActivationReport {
+  const { database, currentChar, currentChat } = input
   const entries = collectEntries(input)
   const actives: LoreEntryActive[] = []
   const disabledUIPrompts: string[] = []
+  const matchLog: LoreMatchLogEntry[] = []
+  const activatedIndexes = new Set<number>()
+
+  // Includes the (implicit) first message, matching SPA `:84`.
+  const chatLength = (currentChat.message?.length ?? 0) + 1
+  const defaultScanDepth =
+    currentChar.loreSettings?.scanDepth ?? database.loreBookDepth ?? 5
+  const defaultFullWord = currentChar.loreSettings?.fullWordMatching ?? false
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]
     if (!entry) continue
     if (entry.mode === 'folder') continue
-    // `child` mode mirrors a previous entry; the mirror-resolve path is
-    // tied to the keyword/recursion loop. Defer to 7-7b along with the
-    // rest of the conditional-activation surface.
-    if (entry.mode === 'child') continue
-    if (!entry.alwaysActive) continue
+    // SPA `:269`: skip entries that have neither always-on nor a key.
+    if (!entry.alwaysActive && !entry.key) continue
 
+    let activated = true
+    let forceState: 'none' | 'activate' | 'deactivate' = 'none'
+    let keepAfterMatch = false
+    let dontAfterMatch = false
     let pos: LorePosition = ''
     let depth = 0
     let role: 'system' | 'user' | 'assistant' = 'system'
     let order = entry.insertorder
     let priority = entry.insertorder
     let inject: LoreInject | null = null
+    let scanDepth = defaultScanDepth
+    let fullWordMatching = defaultFullWord
+    const searchQueries: { keys: string[]; negative: boolean; all?: boolean }[] = []
+
+    // SPA `:294-307` child mirror: take over parent's content+comment
+    // and force-activate iff the parent at index j hasn't fired yet.
+    if (entry.mode === 'child') {
+      activated = false
+      for (let j = 0; j < i; j++) {
+        if (entries[j] && entries[j].id === entry.id) {
+          if (!activatedIndexes.has(j)) {
+            entry.comment = entries[j].comment
+            entry.content = entries[j].content
+            entry.alwaysActive = true
+            activated = true
+          }
+          break
+        }
+      }
+    }
 
     const stripped = CCardLib.decorator.parse(entry.content, (name, arg) => {
       switch (name) {
@@ -196,11 +388,127 @@ export function activateLorebook(
           }
           return false
         }
+        case 'additional_keys': {
+          searchQueries.push({ keys: arg, negative: false })
+          return
+        }
+        case 'exclude_keys': {
+          searchQueries.push({ keys: arg, negative: true })
+          return
+        }
+        case 'exclude_keys_all': {
+          searchQueries.push({ keys: arg, negative: true, all: true })
+          return
+        }
+        case 'match_full_word': {
+          fullWordMatching = true
+          return
+        }
+        case 'match_partial_word': {
+          fullWordMatching = false
+          return
+        }
+        case 'scan_depth': {
+          const int = parseInt(arg[0])
+          if (Number.isNaN(int)) return false
+          scanDepth = int
+          return
+        }
+        case 'activate_only_after': {
+          const int = parseInt(arg[0])
+          if (Number.isNaN(int)) return false
+          if (chatLength < int) activated = false
+          return
+        }
+        case 'activate_only_every': {
+          const int = parseInt(arg[0])
+          if (Number.isNaN(int)) return false
+          if (chatLength % int !== 0) activated = false
+          return
+        }
+        case 'is_greeting': {
+          const int = parseInt(arg[0])
+          if (Number.isNaN(int)) return false
+          if ((currentChat.fmIndex ?? -1) + 1 !== int) activated = false
+          return
+        }
+        case 'probability': {
+          const int = parseInt(arg[0])
+          if (Number.isNaN(int)) return false
+          if (Math.random() * 100 > int) activated = false
+          return
+        }
+        case 'activate': {
+          forceState = 'activate'
+          return
+        }
+        case 'dont_activate': {
+          forceState = 'deactivate'
+          return
+        }
+        case 'keep_activate_after_match': {
+          if (readChatVar(currentChat, '__internal_ka_' + loreId(entry)) === 'true') {
+            forceState = 'activate'
+          } else {
+            keepAfterMatch = true
+          }
+          // `return false` matches SPA `:346`. The decorator line is
+          // stripped from the body by ccardlib regardless; the return
+          // value only enables a following `@@@` conditional, which is
+          // out of scope for 7-7a/7-7b.
+          return false
+        }
+        case 'dont_activate_after_match': {
+          if (readChatVar(currentChat, '__internal_da_' + loreId(entry)) === 'true') {
+            forceState = 'deactivate'
+          } else {
+            dontAfterMatch = true
+          }
+          return false
+        }
         default: {
           return false
         }
       }
     })
+
+    if (activated && forceState === 'none' && !entry.alwaysActive) {
+      searchQueries.push({ keys: entry.key.split(','), negative: false })
+      if (entry.secondkey && entry.selective) {
+        searchQueries.push({ keys: entry.secondkey.split(','), negative: false })
+      }
+      for (const q of searchQueries) {
+        const hit = searchMatch(
+          currentChat.message ?? [],
+          {
+            keys: q.keys,
+            searchDepth: scanDepth,
+            regex: entry.useRegex ?? false,
+            fullWordMatching,
+            all: q.all,
+          },
+          database,
+          currentChar,
+          matchLog,
+        )
+        if (q.negative) {
+          if (hit) {
+            activated = false
+            break
+          }
+        } else {
+          if (!hit) {
+            activated = false
+            break
+          }
+        }
+      }
+    }
+
+    if (forceState === 'activate') activated = true
+    else if (forceState === 'deactivate') activated = false
+
+    if (!activated) continue
 
     actives.push({
       depth,
@@ -212,6 +520,14 @@ export function activateLorebook(
       source: entry.comment || `lorebook ${i}`,
       inject,
     })
+    activatedIndexes.add(i)
+
+    if (keepAfterMatch) {
+      writeChatVar(currentChat, '__internal_ka_' + loreId(entry), 'true')
+    }
+    if (dontAfterMatch) {
+      writeChatVar(currentChat, '__internal_da_' + loreId(entry), 'true')
+    }
   }
 
   // Priority desc (SPA :623). 7-7d will splice in budget-aware
@@ -248,6 +564,6 @@ export function activateLorebook(
   return {
     actives: survivors,
     disabledUIPrompts,
-    matchLog: [],
+    matchLog,
   }
 }
