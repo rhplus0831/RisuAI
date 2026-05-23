@@ -2,8 +2,8 @@
 
 Date: 2026-05-24
 Branch: `fastify`
-Head: `d08ca586 feat: assemble.ts static/plain slot fill (Phase 7-11b)`
-Latest feature slice: `d08ca586 feat: assemble.ts static/plain slot fill (Phase 7-11b)`
+Head: `34e820d9 feat: assemble.ts lorebook placement + token preflight (Phase 7-11c)`
+Latest feature slice: `34e820d9 feat: assemble.ts lorebook placement + token preflight (Phase 7-11c)`
 
 This is the day-to-day runbook for **Phase 7 in progress**:
 current branch head, verification baselines, and the next pickup.
@@ -56,6 +56,7 @@ Landed Phase 7 slices:
 | 7-10f   | `49df7eff` | Top-level `renderFinalPrompt`: `isContinue` pre-push, template/non-template dispatch, `depth_prompt` splice, and the injectable `editRequest` seam → `{ formated, promptText }`. Closes the renderer.                      |
 | 7-11a   | `e0902944` | `assemble.ts` state/context loader: `AssembleDeps` load seam, `beginAssembly` scope resolution (id→index, `EntityNotFoundError`), `createEmptyUnformatedSlots`, `ExpandContext`, `normalizeTemplate` + `buildFormatOrder`. |
 | 7-11b   | `d08ca586` | `assemble.ts` static/plain slot fill: `fillStaticSlots` wires plain sections (non-utility/non-template) + author note / cot / description / persona into `state.unformated`.                                               |
+| 7-11c   | `34e820d9` | `assemble.ts` lorebook placement + preflight: `buildLorebookContext` (slot distribution + `positionParser` + `depthPrompts`) + `fillLorebookSlots` (activate → distribute → `preflightTemplateTokens` → `currentTokens`).  |
 
 What is real in code:
 
@@ -92,71 +93,78 @@ What is real in code:
   returning `{ formated, promptText }`. `preflight.ts` is unchanged — it
   never supplies the prompt-info sink and still keeps only the
   `memoryCardUsed` / `hasCachePoint` flags.
-- `assemble.ts` holds the 7-11a/b assembler steps. `beginAssembly`
+- `assemble.ts` holds the 7-11a/b/c assembler steps. `beginAssembly`
   (7-11a) resolves scope through the `AssembleDeps.loadDatabase` seam
   (id→index, `EntityNotFoundError` on miss), builds the shared
   `ExpandContext` + `createEmptyUnformatedSlots`, and runs
   `normalizeTemplate` / `buildFormatOrder`, returning the `AssemblyState`
-  later slices extend. `fillStaticSlots(state)` (7-11b) then fills the
-  static/plain slots: plain sections (`main` / `jailbreak` /
-  `globalNote`, non-utility + non-template path) + author note / cot /
-  description / persona. `assemblePrompt(input, deps)` builds the state
-  (surfacing bad-ID errors early) and still throws past scope
-  resolution. Tier 3 was re-sliced on 2026-05-24 (the old 7-11a was too
-  large); the remaining path is lorebook + preflight (7-11c), history +
-  bias (7-11d), memory/post-history slot mutations (7-11e), final render
-  - budget (7-11f), then route/preview/telemetry wiring (7-11g/h/i).
+  later slices extend. `fillStaticSlots(state)` (7-11b) fills the
+  static/plain slots (plain sections on the non-utility + non-template
+  path, plus author note / cot / description / persona).
+  `fillLorebookSlots(state)` (7-11c) activates the lorebook, distributes
+  the entries via `buildLorebookContext` (in `lorebook.ts`), and runs
+  `preflightTemplateTokens`, recording `report` / `positionParser` /
+  `depthPrompts` / `currentTokens` / `memoryCardUsed` / `hasCachePoint`.
+  `assemblePrompt(input, deps)` builds the state (surfacing bad-ID errors
+  early) and still throws past scope resolution. Tier 3 was re-sliced on
+  2026-05-24 (the old 7-11a was too large); the remaining path is history
+  - bias (7-11d), memory/post-history slot mutations (7-11e), final
+    render + budget (7-11f), then route/preview/telemetry wiring
+    (7-11g/h/i).
 
-Last recorded baselines after 7-11b:
+Last recorded baselines after 7-11c:
 
-- `pnpm api:test`: 846 across 41 files
+- `pnpm api:test`: 853 across 41 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-11c lorebook placement + token preflight
+## Next Slice — 7-11d history window + bias rows
 
-Pick up **7-11c — lorebook placement + token preflight**.
+Pick up **7-11d — history window + bias rows**.
 
-7-11b (`d08ca586`) filled the static/plain slots. 7-11c runs lorebook
-activation, distributes the activated entries into the slots, builds the
-`positionParser` + `depthPrompts`, and runs the template-wide token
-preflight. SPA reference is `index.svelte.ts:206-225` and
-`buildLorebookContext.ts`.
+7-11c (`34e820d9`) added lorebook placement + preflight (so
+`state.report` / `positionParser` / `depthPrompts` / `currentTokens`
+exist). 7-11d runs the async history window and collects the bias rows.
+SPA reference is `index.svelte.ts:227-241` (history) and `:265-273`
+(bias).
 
 ### Scope sketch (SPA reference, `index.svelte.ts`)
 
-- **Port `buildLorebookContext`** (the server has `activateLorebook` →
-  report, `resolvePosition(text, report)`, and `getDepthPrompts(report)`
-  but **not** the slot-distribution wrapper). Add a
-  `buildLorebookContext(ctx, currentChar, currentChat, unformated,
-report)` (in `lorebook.ts`) that:
-  - pushes `pos === '' && inject === null` actives → `unformated.lorebook`;
-  - `after_desc` / `personality` / `scenario` → `unformated.description`
-    (push); `before_desc` → `unshift`;
-  - `pos === 'depth' && depth === 0 && role !== 'assistant'` →
-    `unformated.postEverything`; then the `role === 'assistant'` ones
-    after (prefill stays last);
-  - returns `positionParser = (text, _loc) => resolvePosition(text,
-report)` (injection-lore is dead server-side — 7-7d filters those out of
-    `report.actives`) and `depthPrompts = getDepthPrompts(report)`.
-  - each pushed row's content is
-    `expandVariables(resolvePosition(lore.prompt, report), { ...ctx,
-chara: currentChar }).text`.
-- token preflight (`:210-225`): `currentTokens = db.maxResponse + 50`,
-  then `preflightTemplateTokens({ ctx, currentChar, unformated,
-promptTemplate, usingPromptTemplate, report })`; add
-  `preflight.addedTokens` and capture `memoryCardUsed` / `hasCachePoint`.
-- extend `AssemblyState` with `report`, `positionParser`, `depthPrompts`,
-  `currentTokens`, `memoryCardUsed`, `hasCachePoint` for later slices.
+- add an **async** `fillHistoryAndBias(state)` that calls
+  `buildHistoryWindow(ctx, currentChar, currentChat, usingPromptTemplate,
+NO_ASSETS, state.report)` (`history.ts`) and:
+  - on `result.stopSending === true`, set `state.stopSending = true` (the
+    root aborts later; do not push the incomplete `messages`);
+  - `state.currentTokens += result.addedTokens`;
+  - `state.currentChat = result.currentChat` (the start trigger may have
+    mutated it);
+  - `state.triggerResult = result.triggerResult`;
+  - stash `result.messages` on the state (e.g. `historyMessages`) for the
+    7-11e memory window to consume — **do not** push them into
+    `unformated.chats` here.
+- bias rows (`:265-273`): `state.biases =
+db.bias.concat(currentChar.bias)` mapped through
+  `expandVariables(unescape(k), { ...ctx, chara })` (unescape `\\n` /
+  `\\r` / `\\\\`), preserving the `[string, number]` weight.
+- extend `AssemblyState` with `historyMessages`, `triggerResult`,
+  `stopSending`, and `biases`.
+
+### Important boundary note
+
+The SPA pushes history into `unformated.chats` **via the memory
+window** (`buildMemoryWindow({ chats: history.chats, … })`,
+`index.svelte.ts:243-263`), not at the history step. So 7-11d only
+**captures** the history messages; the `unformated.chats` fill +
+`lastChat` promotion + depth-prompt splice + `additonalSysPrompt`
+placement are all **7-11e**. Inlay/multimodal asset lookup stays
+browser-side (`NO_ASSETS` for now).
 
 ### Out of scope (defer)
 
-- History/start-trigger + bias rows — **7-11d** (the depth-prompt
-  _splice_ into `unformated.chats` is 7-11e, not here).
-- Memory window + additional-system-prompt placement — **7-11e**;
-  `renderFinalPrompt` + budget + payload — **7-11f**;
-  route/preview/telemetry — **7-11g/h/i**.
+- Memory window + `unformated.chats` fill + depth-prompt splice +
+  `additonalSysPrompt` placement — **7-11e**; `renderFinalPrompt` +
+  budget + payload — **7-11f**; route/preview/telemetry — **7-11g/h/i**.
 - Hypa V3 stays Phase 8; browser plugin/Lua stays deferred.
 
 ### Verification
@@ -168,7 +176,7 @@ pnpm test
 pnpm build
 ```
 
-7-11c is the default next pickup. Tier 3 runs 7-11a → 7-11f as the
+7-11d is the default next pickup. Tier 3 runs 7-11a → 7-11f as the
 critical-path assembly slices before route wiring (7-11g/h/i).
 
 ## Patterns To Keep
