@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: in-progress (35 slices landed as of 2026-05-24).
+Status: in-progress (36 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -39,9 +39,11 @@ the 7-9e request/display state adapters (mode allowlists +
 `{ formated, promptInfo }`), and the 7-10f top-level `renderFinalPrompt`
 (the `isContinue` pre-push, path dispatch, `depth_prompt` splice, and
 the injectable `editRequest` seam → `{ formated, promptText }`). The
-template renderer is **complete**; `assemble.ts` is still a throwing
-stub, so Tier 3 (the root + route wiring) is the remaining Phase 7 work.
-See
+template renderer is **complete**, and `assemble.ts` now holds the
+7-11a state/context loader (`beginAssembly`: scope resolution + empty
+slots + `ExpandContext` + normalized template / format order) though it
+still throws past scope resolution. The rest of Tier 3 (slot fill,
+render, route wiring) is the remaining Phase 7 work. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -185,43 +187,44 @@ thin adapters in server-backed mode. The coordinator posts to
 
 ## Landed slices
 
-| Slice   | Commit     | Summary                                                                                                                                                   |
-| ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7-1     | `3d2426c4` | Scaffolded auth-gated `POST /api/v1/generate/chat`, locked the nine-event SSE taxonomy, and added prompt module stubs.                                    |
-| 7-2a    | `9eed5093` | Added Svelte-free parser DI seams for chat variables and `trigger_id`.                                                                                    |
-| 7-2b    | `bb2c78b5` | Lifted `risuChatParser` and helpers into Svelte-free modules while preserving SPA re-exports.                                                             |
-| 7-2c    | `7ed156e6` | Wired the server parser adapter and real `expandVariables`.                                                                                               |
-| 7-3     | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                                                   |
-| 7-4     | `051a5dcd` | Ported plain prompt sections: main, jailbreak, global note, and role splitting.                                                                           |
-| 7-5a    | `c44e53fc` | Ported the deterministic history walk: examples, start-new-chat marker, first message, filters, and role mapping.                                         |
-| 7-6a    | `9a60380d` | Added the minimal regex script processor for preset and character scripts.                                                                                |
-| 7-5b    | `7ad226b9` | Added per-message scripts, sendName wrapping, `<Thoughts>` extraction, and memo/UUID backfill.                                                            |
-| 7-6b    | `8414d5c7` | Added scripts `@@`-action prefixes: no-op emotion, inject, move-top/bottom, and repeat-back.                                                              |
-| 7-6c    | `5aae492b` | Added the `ableFlag` action DSL, outScript prep, `cbs`/`no_end_nl`, and SPA-parity flag defaults.                                                         |
-| 7-6d    | `cb5675d8` | Wired module regex scripts into the script chain through active-module helpers.                                                                           |
-| 7-5c    | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                                                           |
-| 7-7a    | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                                             |
-| 7-7b    | `25388d7d` | Added lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, and `matchLog`.                                          |
-| 7-7c    | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.                                                    |
-| 7-7e    | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` history splicer.                                           |
-| 7-8a    | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.                              |
-| 7-7d    | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                                        |
-| 7-5e    | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                                           |
-| 7-8b    | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`.                  |
-| 7-8c    | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.                           |
-| 7-9a    | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.                           |
-| 7-9b    | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.                           |
-| 7-9c    | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.                       |
-| 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects.                  |
-| 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.                           |
-| 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.                            |
-| 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.                   |
-| 7-10a   | `765886be` | Template renderer foundation: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, `UnformatedPromptSlots`.                    |
-| 7-10b   | `978ade30` | Content cards: shared `renderContentCard` + `renderByTemplate`; `preflight.ts` refactored to consume the same per-card builder.                           |
-| 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts` `chat` case removed.                    |
-| 7-10d   | `3983d2d0` | Memory + cache cards: `memory` clone + `innerFormat` wrap, explicit `cache` walk-back, and automatic 3-deep `user` cache point in `renderByTemplate`.     |
-| 7-10e   | `2871960f` | Prompt-info capture + content trim: `renderByTemplate` returns `{ formated, promptInfo }`, collects info via a `deps.promptInfo` sink, trims both arrays. |
-| 7-10f   | `49df7eff` | Top-level `renderFinalPrompt`: `isContinue` pre-push, path dispatch, `depth_prompt` splice, injectable `editRequest` seam → `{ formated, promptText }`.   |
+| Slice   | Commit     | Summary                                                                                                                                                                                                     |
+| ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7-1     | `3d2426c4` | Scaffolded auth-gated `POST /api/v1/generate/chat`, locked the nine-event SSE taxonomy, and added prompt module stubs.                                                                                      |
+| 7-2a    | `9eed5093` | Added Svelte-free parser DI seams for chat variables and `trigger_id`.                                                                                                                                      |
+| 7-2b    | `bb2c78b5` | Lifted `risuChatParser` and helpers into Svelte-free modules while preserving SPA re-exports.                                                                                                               |
+| 7-2c    | `7ed156e6` | Wired the server parser adapter and real `expandVariables`.                                                                                                                                                 |
+| 7-3     | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                                                                                                     |
+| 7-4     | `051a5dcd` | Ported plain prompt sections: main, jailbreak, global note, and role splitting.                                                                                                                             |
+| 7-5a    | `c44e53fc` | Ported the deterministic history walk: examples, start-new-chat marker, first message, filters, and role mapping.                                                                                           |
+| 7-6a    | `9a60380d` | Added the minimal regex script processor for preset and character scripts.                                                                                                                                  |
+| 7-5b    | `7ad226b9` | Added per-message scripts, sendName wrapping, `<Thoughts>` extraction, and memo/UUID backfill.                                                                                                              |
+| 7-6b    | `8414d5c7` | Added scripts `@@`-action prefixes: no-op emotion, inject, move-top/bottom, and repeat-back.                                                                                                                |
+| 7-6c    | `5aae492b` | Added the `ableFlag` action DSL, outScript prep, `cbs`/`no_end_nl`, and SPA-parity flag defaults.                                                                                                           |
+| 7-6d    | `cb5675d8` | Wired module regex scripts into the script chain through active-module helpers.                                                                                                                             |
+| 7-5c    | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                                                                                                             |
+| 7-7a    | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                                                                                               |
+| 7-7b    | `25388d7d` | Added lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, and `matchLog`.                                                                                            |
+| 7-7c    | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.                                                                                                      |
+| 7-7e    | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` history splicer.                                                                                             |
+| 7-8a    | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.                                                                                |
+| 7-7d    | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                                                                                          |
+| 7-5e    | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                                                                                             |
+| 7-8b    | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`.                                                                    |
+| 7-8c    | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.                                                                             |
+| 7-9a    | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.                                                                             |
+| 7-9b    | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.                                                                             |
+| 7-9c    | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.                                                                         |
+| 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects.                                                                    |
+| 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.                                                                             |
+| 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.                                                                              |
+| 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.                                                                     |
+| 7-10a   | `765886be` | Template renderer foundation: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, `UnformatedPromptSlots`.                                                                      |
+| 7-10b   | `978ade30` | Content cards: shared `renderContentCard` + `renderByTemplate`; `preflight.ts` refactored to consume the same per-card builder.                                                                             |
+| 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts` `chat` case removed.                                                                      |
+| 7-10d   | `3983d2d0` | Memory + cache cards: `memory` clone + `innerFormat` wrap, explicit `cache` walk-back, and automatic 3-deep `user` cache point in `renderByTemplate`.                                                       |
+| 7-10e   | `2871960f` | Prompt-info capture + content trim: `renderByTemplate` returns `{ formated, promptInfo }`, collects info via a `deps.promptInfo` sink, trims both arrays.                                                   |
+| 7-10f   | `49df7eff` | Top-level `renderFinalPrompt`: `isContinue` pre-push, path dispatch, `depth_prompt` splice, injectable `editRequest` seam → `{ formated, promptText }`.                                                     |
+| 7-11a   | `e0902944` | `assemble.ts` state/context loader: `AssembleDeps` seam, `beginAssembly` scope resolution + `EntityNotFoundError`, `createEmptyUnformatedSlots`, `ExpandContext`, `normalizeTemplate` + `buildFormatOrder`. |
 
 ## Remaining roadmap
 
@@ -233,8 +236,9 @@ is the planning resolution, not a contract.
 
 ### Tier 1 — Finish partially landed prompt helpers
 
-Order chosen to minimize helper coupling. `assemble.ts` is still a
-throwing stub; `templates.ts` is the **complete** template renderer
+Order chosen to minimize helper coupling. `assemble.ts` now holds the
+7-11a state/context loader (`beginAssembly`) but still throws past scope
+resolution; `templates.ts` is the **complete** template renderer
 (7-10a–f): every card type renders, `renderByTemplate` returns
 `{ formated, promptInfo }`, and the top-level `renderFinalPrompt` adds
 the `isContinue` pre-push, `depth_prompt` splice, and `editRequest`
@@ -606,11 +610,14 @@ lore placement, history/start-trigger integration, preflight, and bias
 collection. Keep the root work split by integration seam:
 
 - **7-11a** — `assemble.ts` state/context loader + assembler contract.
-  Resolve persisted database, character, chat, preset/loadout identity,
-  selected character/chat indices, the `ExpandContext`, an empty
-  `UnformatedPromptSlots` factory, `normalizeTemplate`, and
-  `buildFormatOrder`. No slot building, lorebook, history, preflight,
-  render, budget, or route dispatch.
+  **Landed `e0902944`** (13 added tests). `beginAssembly` resolves the
+  database / character / chat through the `AssembleDeps.loadDatabase`
+  seam (id→index, `EntityNotFoundError` on a missing database or
+  unmatched id), builds the `ExpandContext` + the
+  `createEmptyUnformatedSlots` factory, and runs `normalizeTemplate` +
+  `buildFormatOrder`, returning the `AssemblyState` later slices extend.
+  Preset/loadout identity is recorded only. `assemblePrompt(input,
+deps)` builds that state and still throws past scope resolution.
 - **7-11b** — Static/plain slot fill. Using 7-11a state, fill `main`,
   `jailbreak`, `globalNote`, `authorNote`, `description`,
   `personaPrompt`, and `postEverything` from `staticSections.ts` and
