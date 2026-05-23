@@ -2,13 +2,14 @@
 
 Date: 2026-05-23
 
-Status: in-progress (22 slices landed as of 2026-05-23).
+Status: in-progress (23 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
 accumulator + optional depth-prompt token preflight),
 `scripts.ts` (regex chain through module regex), `modules.ts`
-(`getActiveModules`, `getModuleRegexScripts`, `getModuleAssets`),
+(`getActiveModules`, `getModuleRegexScripts`, `getModuleAssets`,
+`getModuleTriggers`),
 `lorebook.ts` (constant + keyword + recursive activation with
 `searchMatch`, child mirror, conditional-activation decorators,
 recursion loop + `recursivePrompt`, `matchLog`, `inject_lore`
@@ -20,9 +21,11 @@ template-wide token preflight + `PromptUnformatedSlots` shape),
 `budgetFinalize.ts` (the 7-8c request budget finalization), and
 `tokenizerConfig.ts` (shared `tokenizerOptionsFromDb` helper used
 by `history.ts`, `preflight.ts`, and `budgetFinalize.ts`) are
-real. The remaining assembly modules under
-`server/fastify/src/prompt/` (`assemble`, `templates`, `triggers`)
-are still throwing stubs. See
+real. `triggers.ts` now hosts the 7-9a trigger model + runner shell
+(`collectTriggers` / `matchesTrigger` / the effect-free `runTrigger`),
+though it executes no conditions or effects yet. The remaining
+assembly modules under `server/fastify/src/prompt/` (`assemble`,
+`templates`) are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -190,6 +193,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                          |
 | 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`. |
 | 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.          |
+| 7-9a  | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.          |
 
 ## Remaining roadmap
 
@@ -431,10 +435,14 @@ surface needed by prompt assembly; plugin/Lua execution remains
 browser-side, Hypa similarity waits for Phase 8 memory, and persistent
 character/persona/lorebook mutations wait for Phase 9 command APIs.
 
-- **7-9a** — Trigger model + runner shell: shared types/result shape,
-  module-trigger aggregation, low-level-access inheritance, mode and
-  manual-name filtering, recursion bookkeeping, trigger-id threading,
-  no-match/no-op behavior. No effect execution yet.
+- **7-9a** — Trigger model + runner shell. **Landed `cddc035e`** (17
+  tests). Shared types/result shape (`TriggerMode` /
+  `TriggerRunContext` / `TriggerRunArg` / `TriggerRunResult`),
+  module-trigger aggregation (`getModuleTriggers`), low-level-access
+  inheritance, `collectTriggers` + `matchesTrigger` (mode and
+  manual-name filtering, `triggercode`/`triggerlua` bypass), recursion
+  bookkeeping, trigger-id threading via explicit context, and the
+  no-match/no-op `runTrigger` shell. No effect execution yet.
 - **7-9b** — Variable and condition engine: default variables,
   chat `scriptstate`, temp/local scopes, `var` / `value` /
   `chatindex` / `exists` conditions.
