@@ -5,9 +5,9 @@ Date: 2026-05-23
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
 Phase 3, the Phase 6 completion-route files through closeout slice
-6-28, and Phase 7 slices 7-1 through 7-4 already exist; modules
-marked by later phases are target layout, not current
-implementation.
+6-28, and Phase 7 slices 7-1 through 7-6d plus 7-5c already
+exist; modules marked by later phases are target layout, not
+current implementation.
 
 ## Server module layout
 
@@ -63,13 +63,15 @@ server/fastify/
     prompt/
       sseEvents.ts        9-event chat SSE taxonomy
       variables.ts        server-side risuChatParser adapter
-      promptScope.ts      request-scoped parser state singleton
+      promptScope.ts      active prompt scope singleton
       cbsAdapter.ts       CBS callback adapter over promptScope
       promptVariablesBoot.ts one-time parser backend wiring
       staticSections.ts   description, author note, persona, cot
       plainSections.ts    main/jailbreak/globalNote sections
+      history.ts          history shaping through multimodal inlays
+      scripts.ts          regex script chain used by prompt leaves
+      modules.ts          active module regex/assets helpers
       assemble.ts         prompt template walker (stub)
-      history.ts          history shaping (stub)
       lorebook.ts         activation, recursion, budget (stub)
       templates.ts        prompt-template cards (stub)
       tokens.ts           budget accounting (stub)

@@ -31,7 +31,7 @@ Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, the Phase 5
 closeout on 2026-05-22, the Phase 6 completion-route closeout in
 Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`), and
-Phase 7 slices 7-1 through 7-4:
+Phase 7 slices 7-1 through 7-6d plus 7-5c:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -96,11 +96,12 @@ Phase 7 slices 7-1 through 7-4:
   [`coverage/providers.md`](coverage/providers.md). Unsupported
   provider strings still return a documented `501`.
 - Phase 7 is in progress. `server/fastify/src/prompt/variables.ts`,
-  `staticSections.ts`, and `plainSections.ts` are implemented and
-  tested. `assemble.ts`, `history.ts`, `lorebook.ts`,
-  `templates.ts`, `tokens.ts`, and `triggers.ts` are still
-  throwing stubs; `/api/v1/generate/chat` currently validates the
-  request and emits the Phase 7 not-implemented SSE sequence.
+  `staticSections.ts`, `plainSections.ts`, `history.ts`,
+  `scripts.ts`, and `modules.ts` are implemented and tested.
+  `assemble.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
+  `triggers.ts` are still throwing stubs; `/api/v1/generate/chat`
+  currently validates the request and emits the Phase 7
+  not-implemented SSE sequence.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -159,8 +160,9 @@ rules. The headline order:
    Phase 7.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
-   triggers. In progress: slices 7-1 through 7-4 landed the route
-   scaffold and the first prompt leaves.
+   triggers. In progress: slices 7-1 through 7-6d plus 7-5c landed
+   the route scaffold, parser/static/plain leaves, history shaping,
+   regex scripts, and module helpers.
 8. **Memory** - Hypa V3 chunking, embeddings, summarization as an
    async job queue on the server.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation

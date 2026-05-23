@@ -20,8 +20,10 @@ WebSocket transport, Risu hub passthrough, the legacy NodeStorage
 key-value surface, and the closed `/api/v1/generate/completion`
 provider matrix. Phase 7 has landed the `/api/v1/generate/chat`
 scaffold plus server-side variable expansion, static prompt
-sections, and plain prompt sections; the root assembler, history,
-lorebook, template, token, and trigger modules are still stubs.
+sections, plain prompt sections, history shaping through multimodal
+inlays, regex scripts, and active-module helpers; the root
+assembler, lorebook, template, token, and trigger modules are still
+stubs.
 Express has been deleted. The Dockerfile and compose file target
 Fastify on port 6002 with `/app/data` persisted; `tsx` and
 `@fastify/websocket` are runtime dependencies after `1eddbfba`.
@@ -49,8 +51,8 @@ In scope:
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 closed
   the completion route in Phase 6-28 (`398a3ae6`, hash backfilled by
-  `a8cb123b`). Phase 7 slices 7-1 through 7-4 are now landed; the
-  current provider matrix lives in
+  `a8cb123b`). Phase 7 slices 7-1 through 7-6d plus 7-5c are now
+  landed; the current provider matrix lives in
   [`coverage/providers.md`](coverage/providers.md), and the active
   slice history lives in [`status/next-steps.md`](status/next-steps.md).
 - A display-only browser client in server-backed mode.

@@ -10,63 +10,41 @@ part of Phase 6 closed on 2026-05-22 with 27 slices landed; see
 the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
-deferred until a fixture demands it. Phase 7 (prompt assembly)
-is in progress as of 2026-05-23 — twelve slices landed (7-1
-scaffold; 7-2a/b/c canonical `risuChatParser` extracted
-Svelte-free + wired into the server via `expandVariables`; 7-3
-static prompt sections; 7-4 plain prompt sections; 7-5a minimal
-history walk; 7-6a minimal regex script processor; 7-5b
-per-message scripts + sendName + `<Thoughts>`; 7-6b scripts
-`@@`-action prefixes; 7-6c `ableFlag` DSL + outScript prep + flag
-defaults; 7-6d module regex scripts). The remaining assembly
-modules under `server/fastify/src/prompt/` (`assemble`,
-`lorebook`, `templates`, `tokens`, `triggers`) are still stubs;
-`history.ts` now covers the deterministic walk, per-message
-scripts, the sendName wrapper, and `<Thoughts>` extraction
-(remaining skip list in 7-5b), and `scripts.ts` covers the full
-SPA-parity regex chain (preset + character + module regex,
-`@@`-actions, `ableFlag` DSL, `cbs` / `no_end_nl` actions).
-[`ROADMAP.md`](../../../ROADMAP.md) at the repo root has the
-strategic view of the remaining ~25 slices. The tiered roadmap for the rest of
-Phase 7 lives in the
+deferred until a fixture demands it. Phase 7 (prompt assembly) is
+in progress as of 2026-05-23 — thirteen slices landed: the chat
+route scaffold, Svelte-free parser adapter, static/plain prompt
+sections, history shaping through multimodal inlays, regex scripts,
+and active-module helpers. The remaining assembly modules under
+`server/fastify/src/prompt/` (`assemble`, `lorebook`, `templates`,
+`tokens`, `triggers`) are still stubs. [`ROADMAP.md`](../../../ROADMAP.md)
+at the repo root has the strategic view of the remaining slices.
+The tiered roadmap for the rest of Phase 7 lives in the
 [Remaining roadmap](../phases/phase-7-prompt-assembly.md#remaining-roadmap)
 section of the phase doc; [`HANDOVER.md`](../../../HANDOVER.md) is
 the short pickup runbook.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-5c — history multimodal
-   inlays + `{{asset_prompt::}}`.** `history.ts` currently does
-   not parse inlay tags or asset prompts; the SPA's
-   `formatHistoryMessage` strips `{{inlay::…}}` /
-   `{{inlayed::…}}` / `{{inlayeddata::…}}` from `char`-role
-   message content, resolves each inlay id, and folds the
-   result into a `multimodals: MultiModal[]` array on the
-   `OpenAIChat`. It also walks `{{asset_prompt::…}}` against
-   `currentChar.additionalAssets` + module assets and pushes
-   matching images into the same array.
+1. **Continue Phase 7 with slice 7-7a — lorebook constant
+   entries.** `lorebook.ts` still throws. Start with the always-on
+   activation path from `src/ts/process/lorebook.svelte.ts` and
+   the placement scaffolding from
+   `src/ts/process/promptAssembly/buildLorebookContext.ts`.
 
    Slice scope:
-   - Add an inlay-lookup seam to `history.ts` that the route
-     layer can populate with a `Map<string, InlayAsset>` from
-     request-body `inlayAssets`. For prompt-leaf testing the
-     seam defaults to an empty map.
-   - Parse `{{inlay::…}}` / `{{inlayed::…}}` /
-     `{{inlayeddata::…}}` out of `char`-role message content
-     (always stripped; `user` role keeps the tag literal per
-     `formatHistoryMessage.ts:84-91`). Push matched inlays to
-     `chat.multimodals` (image / video / audio / signature).
-   - Walk `{{asset_prompt::…}}` against
-     `currentChar.additionalAssets` and module assets (port a
-     `getModuleAssets()` helper via the existing
-     `getActiveModules` plumbing from 7-6d).
+   - Add a Svelte-free `activateLorebook` input over the active
+     `Database`, `character`, and `Chat`.
+   - Collect character global lore, current-chat local lore, and
+     module lorebooks through `getActiveModules`.
+   - Parse decorators needed by constant entries for role, position,
+     depth-zero/end, inject metadata, order, priority, and UI prompt
+     disable flags; strip decorators from emitted prompt text.
+   - Return normalized active entries plus placement metadata that a
+     later template/root slice can consume.
 
-   Skip-list: the SPA's `readImage` byte resolution (we never
-   read bytes off disk in the prompt leaf — the route layer
-   hands them in); `runImageEmbedding` (transformers,
-   browser-only); `getInlayAsset` IndexedDB read; start trigger
-   (7-5d, blocked on 7-9c); tokenizer accumulation + depth
-   prompts (7-5e, blocked on 7-7e + 7-8c).
+   Skip-list: keyword matching (7-7b), recursive activation
+   (7-7c), token-budget truncation (7-7d), depth-prompt emission
+   for history (7-7e), and browser-only plugin execution.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -75,7 +53,7 @@ the short pickup runbook.
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 569
+   tests green. Last recorded baselines are `pnpm api:test`: 582
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -121,20 +99,21 @@ the short pickup runbook.
 
 ## Landed Phase 7 Slices
 
-| Slice | Commit     | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
-| 7-1   | `3d2426c4` | Scaffolded `POST /api/v1/generate/chat`: locked the 9-event SSE taxonomy in `server/fastify/src/prompt/sseEvents.ts`, stubbed seven assembly modules under `server/fastify/src/prompt/` (`assemble`, `lorebook`, `history`, `templates`, `tokens`, `variables`, `triggers`), wired auth + body validation + a `validate`→`error`→`done` SSE stream returning `phase-7 prompt assembly not yet implemented`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 7-2a  | `9eed5093` | Introduced two DI seams so the parser internals stop importing Svelte directly: `src/ts/parser/chatVarBackend.ts` for `getChatVar`/`setChatVar`/`getGlobalChatVar`, and `getCurrentTriggerId` on `CBSRegisterArg` for the `{{trigger_id}}` callback. `cbs.ts` is now Svelte-free; the browser registers backends at `chatVar.svelte`'s module init. No behavior change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` + helpers out of `parser.svelte.ts` into Svelte-free `src/ts/parser/risuChatParser.ts` + `risuChatParserHelpers.ts`. `parser.svelte.ts` re-exports for the 426 SPA call sites. `parserStateBackend.ts` carries the `DBState.db` / `selectedCharID` fallback for `tokenizeAccurate`. The 65-test parser oracle suite stays green.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 7-2c  | `7ed156e6` | Replaced the throwing `expandVariables` stub with the real server adapter. `server/fastify/src/prompt/promptScope.ts` (single-user module-level scope), `cbsAdapter.ts` (24-field `CBSRegisterArg`), `promptVariablesBoot.ts` (one-time wiring). 17-test smoke suite covers the minimum parser surface: `{{user}}`/`{{char}}`/`{{bot}}`, `{{#when}}`, `{{#each}}`, `{{? expr}}`, `{{getvar}}`/`{{setvar}}` with `runVar` gating + dirty flag write-back surface.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 7-3   | `d0a2a7f3` | Ported the four small static-section assemblers from `src/ts/process/promptAssembly/`: `buildDescription` (with personality/scenario blocks + `descriptionPrefix` gated by `promptPreprocess`), `buildAuthorNote` (`chat.note` → `promptTemplate` authornote `defaultText` fallback), `buildPersona` (gated by `db.personaPrompt`), `buildCotInstruction` (gated by `chainOfThought` and `usingPromptTemplate && customChainOfThought`). All four normalize to `OpenAIChat[]` (Option B). Deferred: `buildInlayViewInstruction` (image-gen), `additionalInformations` (Phase 8 memory). 15-test suite.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 7-4   | `051a5dcd` | Ported `buildPlainPromptSections` into `server/fastify/src/prompt/plainSections.ts`. Returns `{main, jailbreak, globalNote}` consumed when the user is not on a structured promptTemplate. Honors `{{original}}` substitution in `currentChar.systemPrompt`/`replaceGlobalNote`, `db.jailbreakToggle` gating, and `db.additionalPrompt` gated by `promptPreprocess`. Includes the private `@@@?(user                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | assistant | system)\n`role-splitter that defaults untagged text to a single`system` message. 12-test suite. |
-| 7-5a  | `c44e53fc` | Replaced the `history.ts` stub with the deterministic part of `buildHistoryWindow` + `exampleMessage` from `src/ts/process/`. Returns `{ messages: OpenAIChat[] }` (sync, no triggers/tokenizer). Covers examples block, `[Start a new chat]` marker gating (novelai prefix, `promptSettings.trimStartNewChat`), first-message selection (`fmIndex === -1 ? firstMessage : alternateGreetings[fmIndex]`), `makeMs` filter (`disabled === true` / `'allBefore'`), and `msg.role === 'user' ? 'user' : 'assistant'` mapping. All text flows through `expandVariables`. Defers scripts, `sendName`, `<Thoughts>`, multimodal, `{{asset_prompt::}}`, start trigger, tokenizer accumulation, and depthPrompts to 7-5b/c/d/e. 16-test suite (api:test 486 → 502).                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 7-6a  | `9a60380d` | Added `server/fastify/src/prompt/scripts.ts` with a sync `processScript(ctx, char, data, mode, cbsConditions?)`. Walks `db.presetRegex ?? []` then `char.customscript ?? []`, runs entries where `script.type === mode` as a plain `RegExp.replace`, then routes the result through `expandVariables` (matches the SPA's `risuChatParser(data.replace(reg, outScript), {chatID, cbsConditions})` pass at `scripts.ts:285,328`). Flag handling sanitizes to `[dgimsuvy]`, dedupes, defaults to `'u'` when empty; scripts with empty `in` are skipped; per-script errors are swallowed (mirrors `scripts.ts:372-376`). Defers special action prefixes (`@@emo`, `@@move_top`, `@@move_bottom`, `@@inject`, `@@repeat_back`), the `ableFlag` `<order, actions>` DSL, script-cache, `runLuaEditTrigger`, `runTrigger('display', …)`, `pluginV2` hooks, and module regex scripts to 7-6b/c/d/e. 14-test suite (api:test 502 → 516). Unblocks 7-5b.                                                                                                                                                                                                                                                           |
-| 7-5b  | `7ad226b9` | Per-message scripts + sendName wrapper + `<Thoughts>` extraction on the history walk. Each history message body now flows through `expandVariables` (chara + role) then `processScript('editprocess', {chatRole})`; first message body also runs through `processScript`. Optional `usingPromptTemplate` arg (defaults `false`) gates the sendName wrappers — first message gets `${currentChar.name}: ` + `attr: ['nameAdded']`, per-message gets `<{{char}}'s Message>\n{slot}\n</{{char}}'s Message>` resolved against the active currentChar (the SPA's `chara: msg.saying` override at `formatHistoryMessage.ts:140` is shadowed by `cbs.ts:184` reading currentChar from scope first; documented inline). `<Thoughts>` always stripped from content, captured to `chat.thoughts` when `maxThoughtTagDepth === -1 \|\| maxThoughtTagDepth - totalCount <= index`. `memo` defaults to `msg.chatId`; missing chatIds get backfilled with `randomUUID()`. 13 new tests (api:test 516 → 529). Defers multimodal inlays + `{{asset_prompt::}}` (7-5c), start trigger (7-5d), tokenizer accumulation + depth prompts (7-5e).                                                                             |
-| 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes added to `processScript`. Five paths: `@@emo` no-op (documented server skip), `@@inject` (mutates `currentChat.message[chatID].data` with the pre-strip data and strips the match — Tier 3 routes will persist the chat blob after assembly), `@@move_top` / `@@move_bottom` (matchAll-aware extraction with `$1` / `$&` / `$<…>` substitution, prepend/append with `\n`), `@@repeat_back` (no-match branch only, walks previous same-role with `firstMessage` / `alternateGreetings[fmIndex]` fallback, four positional modifiers). Public signature grew `chatID = -1` and `currentChat?: Chat` positional args; `history.ts` threads `index` + `currentChat` so per-message `@@inject` and `@@repeat_back` fire correctly. Two documented SPA divergences: resets `reg.lastIndex = 0` after the dispatching `reg.test()` so `@@move_top g` finds all matches (SPA loses the first one via lastIndex leak at `scripts.ts:216/254`); adds an r-null guard in `@@repeat_back` (SPA accesses `r[0]` without one at `scripts.ts:306`). 16 new tests (api:test 529 → 545). Defers `ableFlag` `<order, actions>` DSL (7-6c), script-cache (7-6d), module regex scripts (7-6e). |
-| 7-6c  | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + flag defaults. Added `parseScripts()` for the `<order N, action…>` meta DSL with stable-sort by `order desc`; plumbed `actions[]` into the dispatcher so `<inject>` / `<move_top>` / `<move_bottom>` / `<repeat_back>` match the `@@`-prefix paths (7-6b); added `cbs` (pre-expand `script.in`) and `no_end_nl` (suppress trailing-`>` newline) actions; ported the outScript prep pipeline (`{{data}}` self-substitute is a SPA no-op kept for parity; `>`-ending auto-newline gated by `no_end_nl`). Fixed two SPA-parity bugs the earlier 7-6a tests silently asserted wrong: default flag is `'g'` (not `'u'`); `script.flag` is honored only when `ableFlag === true` (without it the SPA silently overrides to `'g'`). `@@move_top` / `@@move_bottom` now strip `g` (SPA "temperary fix"). 12 new tests + 4 existing assertions corrected (api:test 545 → 557). Defers script-cache and module regex scripts to 7-6d/e.                                                                                                                                                                                                                      |
-| 7-6d  | `cb5675d8` | Module regex scripts wired into `processScript`. New `server/fastify/src/prompt/modules.ts` ports `getModules()` + `getModuleRegexScripts()` from `src/ts/process/modules.ts`. `getActiveModules(database, currentChar?, currentChat?)` resolves the id list from `db.enabledModules`, `currentChat.modules`, `currentChar.modules`, and the comma-split `db.moduleIntergration`; filters `db.modules` by `id` / `namespace`; dedupes by `id`. `processScript` chain is now `presetRegex` → `char.customscript` → `moduleRegex`. Skips the SPA's `lastModules` / `lastModuleData` memoization (server runs each chain fresh per assembly). Module triggers/lorebooks/assets/cjs stay browser-side; their consumers ship in 7-5c, 7-7, and 7-9. 9 helper unit tests in `modules.test.ts` + 3 integration tests in `scripts.test.ts` (api:test 557 → 569).                                                                                                                                                                                                                                                                                                                                                |
+| Slice | Commit     | Summary                                                                            |
+| ----- | ---------- | ---------------------------------------------------------------------------------- |
+| 7-1   | `3d2426c4` | Chat route scaffold, prompt SSE taxonomy, and prompt module stubs.                 |
+| 7-2a  | `9eed5093` | Parser DI seams for chat variables and `trigger_id`.                               |
+| 7-2b  | `bb2c78b5` | Svelte-free `risuChatParser` extraction with SPA re-exports.                       |
+| 7-2c  | `7ed156e6` | Server parser adapter and real `expandVariables`.                                  |
+| 7-3   | `d0a2a7f3` | Static prompt sections.                                                            |
+| 7-4   | `051a5dcd` | Plain prompt sections.                                                             |
+| 7-5a  | `c44e53fc` | Deterministic history walk.                                                        |
+| 7-6a  | `9a60380d` | Minimal preset/character regex script chain.                                       |
+| 7-5b  | `7ad226b9` | Per-message scripts, sendName, `<Thoughts>`, and memo/UUID backfill.               |
+| 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes.                                                      |
+| 7-6c  | `5aae492b` | `ableFlag` action DSL, outScript prep, and flag defaults.                          |
+| 7-6d  | `cb5675d8` | Module regex scripts through active-module helpers.                                |
+| 7-5c  | `50a1770b` | History multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module assets. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

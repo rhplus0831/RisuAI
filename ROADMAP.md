@@ -29,8 +29,9 @@ narrative phase doc see
 | 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes (`@@emo`, `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`). |
 | 7-6c  | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + SPA-parity flag defaults.                      |
 | 7-6d  | `cb5675d8` | Module regex scripts wired into the script chain via `getActiveModules` + `getModuleRegexScripts`.  |
+| 7-5c  | `50a1770b` | History multimodal inlays + `{{asset_prompt::}}` with `AssetLookup` and module assets.              |
 
-## Remaining slices (~25)
+## Remaining Slices
 
 Slices are numbered in the order they should be picked up.
 Slices marked with `(parallel)` can run alongside the previous
@@ -40,8 +41,6 @@ slice when staffed by another agent.
 
 History (`history.ts`):
 
-- **7-5c** — multimodal inlays + `{{asset_prompt::}}`. Depends
-  only on the Phase 2 assets API.
 - **7-5d** — start trigger integration. Blocked on 7-9c.
 - **7-5e** — tokenizer accumulation + depth prompts. Blocked
   on 7-8 and 7-7e.
@@ -62,9 +61,8 @@ Lorebook (`lorebook.ts`):
 - **7-7d** — budget-aware truncation (after 7-7c).
 - **7-7e** — depth-prompt emission for history (after 7-7d).
 
-Tier 1 ordering favors 7-5c first (it stays in the `history.ts`
-module we just touched), then walking 7-7a → 7-7e end-to-end so
-the decorator scaffold investment compounds.
+Tier 1 ordering now starts with 7-7a → 7-7e so the lorebook
+decorator scaffold investment compounds before token/depth work.
 
 ### Tier 2 — Supporting infrastructure
 
@@ -147,9 +145,9 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are **7-5c** (history) /
-  **7-7a** (kicks off lorebook chain) / **7-8a** (kicks off
-  tokens) / **7-9a** (kicks off triggers) / **7-10a** (kicks off
+- The biggest parallel-able fronts are **7-7a** (kicks off the
+  lorebook chain) / **7-8a** (kicks off tokens) / **7-9a**
+  (kicks off triggers) / **7-10a** (kicks off
   templates).
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or if Triggers
@@ -157,35 +155,34 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Sequential order (default)
 
-1. **7-5c** — history multimodal + asset_prompt
-2. **7-7a** — lorebook constant entries
-3. **7-7b** — lorebook keyword activation
-4. **7-7c** — lorebook recursive activation
-5. **7-7d** — lorebook budget-aware truncation
-6. **7-7e** — lorebook depth-prompt emission
-7. **7-8a** — server tokenizer
-8. **7-8b** — token preflight
-9. **7-8c** — budget finalization
-10. **7-9a** — trigger sandbox
-11. **7-9b** — `editInput` / `editRequest` hooks
-12. **7-9c** — `start` trigger
-13. **7-10a** — template card parsing
-14. **7-10b** — chat range cards
-15. **7-10c** — cache markers
-16. **7-10d** — position slots
-17. **7-10e** — systemized chat hoisting
-18. **7-5d** — history start trigger (unblocked by 7-9c)
-19. **7-5e** — history tokenizer + depth prompts (unblocked by
+1. **7-7a** — lorebook constant entries
+2. **7-7b** — lorebook keyword activation
+3. **7-7c** — lorebook recursive activation
+4. **7-7d** — lorebook budget-aware truncation
+5. **7-7e** — lorebook depth-prompt emission
+6. **7-8a** — server tokenizer
+7. **7-8b** — token preflight
+8. **7-8c** — budget finalization
+9. **7-9a** — trigger sandbox
+10. **7-9b** — `editInput` / `editRequest` hooks
+11. **7-9c** — `start` trigger
+12. **7-10a** — template card parsing
+13. **7-10b** — chat range cards
+14. **7-10c** — cache markers
+15. **7-10d** — position slots
+16. **7-10e** — systemized chat hoisting
+17. **7-5d** — history start trigger (unblocked by 7-9c)
+18. **7-5e** — history tokenizer + depth prompts (unblocked by
     7-7e + 7-8c)
-20. **7-11a** — `assemble.ts` root entry
-21. **7-11b** — wire `/api/v1/generate/chat`
-22. **7-11c** — `/api/v1/generate/preview-prompt`
-23. **7-11d** — SSE telemetry (`info`, `message_patch`)
-24. **7-12a** — browser client adapter
-25. **7-12b** — dual-mode fixture sweep
-26. **7-12c** — side-effect dispatch
-27. **7-12d** — error / abort restoration
-28. **7-13** — phase 7 closeout
+19. **7-11a** — `assemble.ts` root entry
+20. **7-11b** — wire `/api/v1/generate/chat`
+21. **7-11c** — `/api/v1/generate/preview-prompt`
+22. **7-11d** — SSE telemetry (`info`, `message_patch`)
+23. **7-12a** — browser client adapter
+24. **7-12b** — dual-mode fixture sweep
+25. **7-12c** — side-effect dispatch
+26. **7-12d** — error / abort restoration
+27. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 
@@ -198,8 +195,7 @@ When a slice lands:
 
 1. Move the row from the remaining list to **Landed slices**
    with its commit SHA.
-2. Decrement the remaining-slices count in the section header.
-3. Trim the now-redundant detail from the sequential order list.
+2. Trim the now-redundant detail from the sequential order list.
 
 When the roadmap shifts (e.g., a sub-slice gets re-scoped or
 combined), keep the **Sequential order** section as the single

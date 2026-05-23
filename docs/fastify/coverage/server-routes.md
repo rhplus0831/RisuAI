@@ -90,8 +90,9 @@ Per-provider request / response coverage lives in
 Plus: prompt snapshot tests - given a canned DB + preset + chat
 state, the assembled `messages[]` matches a recorded snapshot.
 Prompt leaf tests already exist for `variables.ts`,
-`staticSections.ts`, and `plainSections.ts`; the root prompt
-snapshot suite waits until `assemble.ts` is real.
+`staticSections.ts`, `plainSections.ts`, `history.ts`,
+`scripts.ts`, and `modules.ts`; the root prompt snapshot suite
+waits until `assemble.ts` is real.
 
 ## Phase 8: Memory
 

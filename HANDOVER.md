@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `cb5675d8 feat: module regex scripts join the script chain (Phase 7-6d)`
+Head: `50a1770b feat: history multimodal inlays + asset_prompt (Phase 7-5c)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -32,6 +32,7 @@ Landed Phase 7 slices:
 | 7-6b  | `8414d5c7` | Added scripts `@@`-action prefixes: `@@emo` (no-op), `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`.             |
 | 7-6c  | `5aae492b` | Added `ableFlag <order, actions>` DSL, `cbs`/`no_end_nl` actions, outScript prep, and SPA-parity flag defaults.              |
 | 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain via new `getActiveModules` + `getModuleRegexScripts` helpers.               |
+| 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                              |
 
 What is real in code:
 
@@ -41,71 +42,59 @@ What is real in code:
 - `server/fastify/src/prompt/sseEvents.ts`,
   `variables.ts`, `staticSections.ts`, `plainSections.ts`,
   `history.ts` (deterministic walk + per-message scripts +
-  sendName wrapper + `<Thoughts>` extraction + memo/UUID
-  backfill), `scripts.ts` (full SPA-parity regex chain: preset +
-  character + module regex, `@@`-actions, `ableFlag` DSL, `cbs`
-  / `no_end_nl` actions, outScript prep), and `modules.ts`
-  (`getActiveModules` + `getModuleRegexScripts`) are implemented
-  and tested.
+  sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill,
+  multimodal inlays, and `{{asset_prompt::}}`), `scripts.ts` (full
+  SPA-parity regex chain: preset + character + module regex,
+  `@@`-actions, `ableFlag` DSL, `cbs` / `no_end_nl` actions,
+  outScript prep), and `modules.ts` (`getActiveModules` +
+  `getModuleRegexScripts` + `getModuleAssets`) are implemented and
+  tested.
 - `assemble.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
   `triggers.ts` still throw Phase 7 not-implemented errors.
-- `history.ts` does not yet handle multimodal inlays,
-  `{{asset_prompt::}}`, start triggers, tokenizer accumulation, or
-  depth prompts (7-5c/d/e).
+- `history.ts` does not yet handle start triggers, tokenizer
+  accumulation, or depth prompts (7-5d/e).
 - `scripts.ts` does not yet handle script-cache,
   `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
   hooks — all 7-6e or out-of-scope.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-6d:
+Last recorded baselines after 7-5c:
 
-- `pnpm api:test`: 569 across 34 files
+- `pnpm api:test`: 582 across 34 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
-- `pnpm build`: clean
+- `pnpm build`: passes with existing CSS / bundle-size warnings
 
 ## Next Slice
 
-Pick up **7-5c - history multimodal inlays + `{{asset_prompt::}}`**.
+Pick up **7-7a - lorebook constant entries**.
 
-`history.ts` currently strips inlay-style tags only implicitly
-(via `expandVariables`). The SPA's `formatHistoryMessage` parses
-`{{inlay::…}}` / `{{inlayed::…}}` / `{{inlayeddata::…}}` tags
-out of `char`-role messages, resolves each inlay id, and folds
-the result into a `multimodals: MultiModal[]` array on the
-`OpenAIChat`. It also walks `{{asset_prompt::…}}` against
-`currentChar.additionalAssets` + module assets and pushes
-matching images into the same array.
+`lorebook.ts` is still a throwing stub. This slice should port the
+always-on activation path from `src/ts/process/lorebook.svelte.ts`
+and the placement scaffolding from `buildLorebookContext.ts`,
+without keyword matching, recursion, token-budget pruning, or
+depth-prompt emission.
 
 Slice scope:
 
-- Add an inlay-lookup seam to `history.ts` that the route layer
-  can populate with a `Map<string, InlayAsset>` from
-  request-body `inlayAssets`. For prompt-leaf testing the seam
-  defaults to an empty map.
-- Parse `{{inlay::…}}` / `{{inlayed::…}}` / `{{inlayeddata::…}}`
-  out of `char`-role message content (always stripped; `user`
-  role keeps the tag literal per `formatHistoryMessage.ts:84-91`).
-- Push matched inlays to `chat.multimodals` (image / video /
-  audio / signature). Skip the SPA's
-  `runImageEmbedding` fallback (transformers, browser-only).
-- Walk `{{asset_prompt::…}}` against
-  `currentChar.additionalAssets` and module assets
-  (`getModuleAssets()` — port via the existing
-  `getActiveModules` helper from 7-6d).
-- Skip-list: the SPA's `readImage` byte resolution (we never
-  read bytes off disk in the prompt leaf; the route layer hands
-  them in). `runImageEmbedding`. `getInlayAsset` IndexedDB read.
+- Add a Svelte-free `activateLorebook` input shape over the active
+  `Database`, `character`, and `Chat`.
+- Collect character global lore, current-chat local lore, and
+  module lorebooks through `getActiveModules`.
+- Parse decorators needed by constant entries for role, position,
+  depth-zero/end, inject metadata, order, priority, and UI prompt
+  disable flags; strip decorators from emitted prompt text.
+- Return normalized active entries plus placement metadata that a
+  later template/root slice can consume.
+- Cover no-lore, character lore, local lore, module lore, role
+  decorator, order/priority sorting, and decorator stripping.
 
 Skip-list (deferred):
 
-- Start trigger (7-5d, blocked on 7-9c).
-- Tokenizer accumulation + depth prompts (7-5e, blocked on
-  7-7e + 7-8c).
-
-After 7-5c, the strategic view in [`ROADMAP.md`](ROADMAP.md)
-lists the next default pickup as **7-7a** (lorebook constants),
-which kicks off the multi-slice lorebook chain.
+- Keyword matching activation (7-7b).
+- Recursive activation (7-7c).
+- Token-budget truncation (7-7d).
+- Depth-prompt emission for history (7-7e).
 
 Same rhythm: boot prompt-variable infra in tests with
 `beforeAll(() => bootPromptVariables())`, small database

@@ -9,8 +9,9 @@ full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
 Express deletion), and Phase 6 completion-route slices through
 the 6-28 closeout all exist on the `fastify` branch. Phase 7
-slices 7-1 through 7-4 have also landed the chat-route scaffold
-and first prompt-assembly leaves:
+slices 7-1 through 7-6d plus 7-5c have also landed the chat-route
+scaffold, parser/static/plain leaves, history shaping, regex
+scripts, and module helpers:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -51,7 +52,7 @@ and first prompt-assembly leaves:
   `GET /api/v1/storage/read`, `POST /api/v1/storage/write`,
   `POST /api/v1/storage/remove`, `POST /api/v1/generate/completion`,
   and `POST /api/v1/generate/chat`.
-- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,generation.chat,promptVariables,staticSections,plainSections,echo,openai,additionalParams,anthropic,mistral,cohere,gemini,vertexAuth,openaiLegacyInstruct,openaiResponses,kobold,oobaLegacy,ollama,bedrock,sigv4,horde}.test.ts`
+- `server/fastify/__tests__/{smoke,bootstrap,assets,backups,static,proxy,streamJobs,streamJobsRoutes,hub,legacyStorage,generation.completion,generation.chat,promptVariables,staticSections,plainSections,history,scripts,modules,echo,openai,additionalParams,anthropic,mistral,cohere,gemini,vertexAuth,openaiLegacyInstruct,openaiResponses,kobold,oobaLegacy,ollama,bedrock,sigv4,horde}.test.ts`
   cover the implemented Fastify routes, provider dispatchers, and
   static serving through `pnpm api:test`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
@@ -127,9 +128,10 @@ and first prompt-assembly leaves:
   an `error` event with `phase-7 prompt assembly not yet implemented`,
   and `done`. The route does not call `assemble.ts` yet.
 - `server/fastify/src/prompt/variables.ts`, `staticSections.ts`,
-  and `plainSections.ts` are real Phase 7 leaves. `assemble.ts`,
-  `history.ts`, `lorebook.ts`, `templates.ts`, `tokens.ts`, and
-  `triggers.ts` still throw Phase 7 not-implemented errors.
+  `plainSections.ts`, `history.ts`, `scripts.ts`, and `modules.ts`
+  are real Phase 7 leaves/helpers. `assemble.ts`, `lorebook.ts`,
+  `templates.ts`, `tokens.ts`, and `triggers.ts` still throw Phase
+  7 not-implemented errors.
 - Known limitation: `ANY /api/v1/hub/*` keeps `requireAuth`, so
   on password-protected deployments browser-loaded resources
   (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401
@@ -193,10 +195,11 @@ been removed; `server/node/` no longer exists.
   because they need server-owned character / user state for prompt
   flattening.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
-  In progress. Slices 7-1 through 7-4 landed the
+  In progress. Slices 7-1 through 7-6d plus 7-5c landed the
   `/api/v1/generate/chat` scaffold, nine-event prompt SSE taxonomy,
-  server-side variable expansion, static prompt sections, and plain
-  prompt sections. Next slice is 7-5a, the minimal history walk.
+  server-side variable expansion, static/plain prompt sections,
+  history shaping through multimodal inlays, regex scripts, and
+  module helpers. Next slice is 7-7a, lorebook constant entries.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 
 ## Reference: what move-to-fastify shipped

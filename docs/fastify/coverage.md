@@ -58,7 +58,8 @@ shards under [`coverage/`](coverage/).
   `pnpm api:test`.
 - Phase 7 has route-scaffold coverage in `generation.chat.test.ts`
   plus prompt leaf coverage in `promptVariables.test.ts`,
-  `staticSections.test.ts`, and `plainSections.test.ts`.
+  `staticSections.test.ts`, `plainSections.test.ts`,
+  `history.test.ts`, `scripts.test.ts`, and `modules.test.ts`.
 
 ## Where to look
 
