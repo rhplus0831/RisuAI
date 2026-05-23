@@ -2,16 +2,15 @@
 
 Date: 2026-05-24
 Branch: `fastify`
-Head: `0d2e0e17 feat: template chat cards + systemized chat (Phase 7-10c)`
+Head: `d663364c docs: backfill 7-10c SHA across HANDOVER / ROADMAP / phase doc / status`
+Latest feature slice: `0d2e0e17 feat: template chat cards + systemized chat (Phase 7-10c)`
 
-The strategic view of remaining Phase 7 slices lives in
-[`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
-handoff with the current head, baselines, and the next pickup.
-
-This is the short runbook for picking up **Phase 7 in progress**.
-Phases 0-6 are closed. The detailed Phase 7 roadmap lives in
+This is the day-to-day runbook for **Phase 7 in progress**:
+current branch head, verification baselines, and the next pickup.
+Phases 0-6 are closed. The strategic roadmap lives in
+[`ROADMAP.md`](ROADMAP.md), and the detailed phase doc lives in
 [`docs/fastify/phases/phase-7-prompt-assembly.md`](docs/fastify/phases/phase-7-prompt-assembly.md);
-this file only records the current handoff state and the next slice.
+keep long planning there and keep this file focused on handoff state.
 
 ## Current State
 
@@ -57,111 +56,32 @@ What is real in code:
 
 - `server/fastify/src/routes/generationChat.ts` validates request
   bodies and emits `stage(validate)` -> `error` -> `done`; it does
-  **not** call `assemble.ts` yet.
-- `server/fastify/src/prompt/sseEvents.ts`,
-  `variables.ts`, `staticSections.ts`, `plainSections.ts`,
-  `history.ts` (deterministic walk + per-message scripts +
-  sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill,
-  multimodal inlays, `{{asset_prompt::}}`, the `applyDepthPrompts`
-  splicer from 7-7e, and the 7-5e `addedTokens` accumulator +
-  optional depth-prompt token preflight), `scripts.ts` (full SPA-parity regex chain:
-  preset + character + module regex, `@@`-actions, `ableFlag` DSL,
-  `cbs` / `no_end_nl` actions, outScript prep), `modules.ts`
-  (`getActiveModules` + `getModuleRegexScripts` + `getModuleAssets`),
-  and `lorebook.ts` (full activation surface — constant / keyword /
-  recursive activation with `searchMatch`, child mirror,
-  conditional-activation decorators, recursion loop with
-  `recursivePrompt` + `recursive`/`unrecursive`/`no_recursive_search`,
-  `matchLog`, `inject_lore` rewrites, `disabledUIPrompts`, plus the
-  `getDepthPrompts` / `resolvePosition` depth-prompt helpers) are
-  implemented and tested.
-- `modules.ts` exports active-module helpers for regex, assets, and
-  triggers. `getModuleTriggers` clones entries and applies inherited
-  `lowLevelAccess` without mutating module-owned objects.
-- `triggers.ts` is the Svelte-free Phase 7-safe runner through
-  7-9f: trigger collection/filtering, explicit context threading,
+  **not** call `assemble.ts` yet. There is still no
+  `/api/v1/generate/preview-prompt` route.
+- Prompt leaves are implemented and tested: variables/SSE taxonomy,
+  static/plain sections, async feature-complete `history.ts`
+  (multimodal inlays, `{{asset_prompt::}}`, `addedTokens`,
+  depth-prompt preflight, and `runStartTrigger`), regex scripts
+  through preset + character + module chains, module helpers for
+  regex/assets/triggers, lorebook constant/keyword/recursive/depth/
+  budget activation, minimal tiktoken-based token counting, template
+  preflight, final request-budget pruning, and shared tokenizer config.
+- `triggers.ts`, `triggerVars.ts`, and `triggerDataEffects.ts` cover
+  the Phase 7-safe runner through 7-9f: trigger collection/filtering,
   variable/condition evaluation, deterministic V1 effects, V2 control
-  flow, V2 state effects, bounded recursive `runtrigger` /
-  `v2RunTrigger`, the `display`/`request` effect allowlists
-  (`safeSubset` / `displayAllowList` / `requestAllowList` guarded at the
-  top of the effect loop), the mutable `displayState` holder threaded
-  from `arg.displayData` to `result.displayData`, terminal token
-  accounting, and `varChanged`. It also exports `runStartTrigger`
-  (7-9f), the handoff adapter that bridges the prompt-pipeline
-  `ExpandContext` scope to a `TriggerRunContext` and runs the `start`
-  trigger; `history.ts` consumes it. The trigger front is complete for
-  Phase 7.
-- `triggerVars.ts` owns the trigger variable engine: `getVar` /
-  `setVar`, local scopes, `displayMode` temp vars, `setChat`, and
-  persistence into the single database snapshot. `parseKeyValue` was
-  lifted to `src/ts/util/parseKeyValue.ts` and re-exported from
-  `src/ts/util.ts`.
-- `triggerDataEffects.ts` handles the 7-9d-ii side-effect-free V2
-  data-helper leaf arms (message readers, string / array / dict /
-  math, random, tokenize, regex test, quick chat search) plus the
-  7-9e request/display state arms (`v2GetDisplayState` /
-  `v2SetDisplayState` and the five request-state arms over a
-  JSON `OpenAIChat[]` in `displayState.data`; each gates on
-  `displayMode` and maps the SPA `!displayMode` early-return to a
-  handled no-op). Browser/plugin/low-level and persistent
-  resource-mutation arms remain deferred.
-- `tokens.ts` now exports the minimal server tokenizer
-  (`encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`)
-  over `cl100k_base` / `o200k_base` with a module-scope encoder
-  cache (Phase 7-8a).
-- `preflight.ts` runs the template-wide token preflight
-  (`preflightTemplateTokens`), returning `{ addedTokens,
-memoryCardUsed, hasCachePoint }` and the
-  `PromptUnformatedSlots` shape the future assemble root will
-  feed in (Phase 7-8b). Its per-card token counting now consumes the
-  shared `renderContentCard` from `templates.ts` (7-10b/c) — including
-  the `chat` card (7-10c) — so it cannot drift from the renderer; only
-  `memory` / `cache` (which set `memoryCardUsed` / `hasCachePoint`)
-  stay inline.
-- `budgetFinalize.ts` runs the final request budget step
-  (`finalizeRequestBudget`): re-tokenizes a flattened
-  `OpenAIChat[]`, trims `removable` rows under `maxContextTokens`,
-  drops emptied non-multimodal rows, and clamps `outputTokens`,
-  returning `{ ok, formated, inputTokens, outputTokens }` or
-  `{ ok: false, reason: 'overflow' }` (Phase 7-8c).
-- `tokenizerConfig.ts` houses the shared `tokenizerOptionsFromDb`
-  helper used by `history.ts` (7-5e), `preflight.ts` (7-8b), and
-  `budgetFinalize.ts` (7-8c).
-- `templates.ts` holds the 7-10a renderer foundation (the canonical
-  `UnformatedPromptSlots` slot contract re-exported by `preflight.ts`
-  as `PromptUnformatedSlots`, `normalizeTemplate`, `buildFormatOrder`,
-  `coalesceRows`, `renderByFormatOrder`), the 7-10b content cards, and
-  the 7-10c `chat` card + `systemizeChat`. `renderContentCard` is the
-  shared per-card row builder for persona / description / authornote /
-  lorebook / postEverything / plain / jailbreak / cot / chatML / chat,
-  returning `null` only for `memory` / `cache`; `renderByTemplate` is
-  the template-walk path. `memory` / `cache` rendering and render
-  finalization are still deferred (7-10d–f).
-- `assemble.ts` still throws a Phase 7 not-implemented error.
-  `triggers.ts` is a complete runner: variable/condition engine,
-  deterministic V1 effects, V2 control flow, V2 safe data helpers, the
-  request/display state adapters, and the `runStartTrigger` handoff
-  (7-9a/b/c/d-i/d-ii/e/f). The remaining trigger work (applying
-  `triggerResult.additonalSysPrompt` to prompt slots) belongs to the
-  assemble root (Tier 3).
-- `history.ts` is feature-complete. `buildHistoryWindow` is now `async`
-  and runs the start trigger via `runStartTrigger` after the
-  first-message push: it re-runs `makeMs` against the mutated chat,
-  folds `triggerResult.tokens` into `addedTokens`, early-returns on
-  `stopSending`, and surfaces `triggerResult` / `currentChat` /
-  `varChanged` in `HistoryWindowResult` (7-9f closes 7-5d). 7-5e
-  (`febe67ce`) landed the `addedTokens` accumulator + depth-prompt
-  preflight.
-- `scripts.ts` does not yet handle script-cache,
-  `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
-  hooks — all 7-6e or out-of-scope.
-- `lorebook.ts` covers the full activation surface: constant /
-  keyword / recursive / depth-prompt activation, plus the 7-7d
-  budget-aware truncation chain (per-entry `tokens` via
-  `encodingForModel(input.model)`, priority-desc filter,
-  `loreSettings.tokenBudget ?? database.loreBookToken ?? 800`
-  resolution). No remaining lorebook slices.
-- There is no `/api/v1/generate/preview-prompt` route yet.
+  flow and safe data helpers, request/display state adapters, bounded
+  recursive trigger calls, token accounting, `varChanged`, and the
+  `runStartTrigger` handoff. Browser plugin/Lua hooks, low-level
+  effects, and persistent resource mutations stay deferred.
+- `templates.ts` is no longer a stub. It holds the 7-10a renderer
+  foundation, 7-10b content cards, and 7-10c chat/systemized-chat
+  path. `renderContentCard` is shared by rendering and
+  `preflight.ts`; it returns `null` only for `memory` / `cache`,
+  which are the 7-10d pickup.
+- `assemble.ts` still throws a Phase 7 not-implemented error. Tier 3
+  owns state loading, `triggerResult.additonalSysPrompt` placement,
+  final memory/render wiring, and connecting the chat route to the
+  assembled prompt.
 
 Last recorded baselines after 7-10c:
 

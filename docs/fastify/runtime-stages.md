@@ -1,6 +1,6 @@
 # Runtime Stages
 
-Date: 2026-05-23
+Date: 2026-05-24
 
 This doc describes the stages a `sendChat` invocation moves through
 and who owns each stage **after the migration**. Before migration
@@ -19,12 +19,13 @@ and Phase 6 has closed Stage 3 completion dispatch through
 `/api/v1/generate/completion` for the provider matrix listed in
 [`status/server.md`](status/server.md). Phase 7 has landed the
 chat route scaffold plus the variable/static/plain/history leaves,
-regex script processing, active-module helpers, and lorebook
-activation through budget truncation, plus minimal token/budget
-helpers and the Phase 7-safe trigger runner through V2 safe data
-helpers. The root Stage 2 handoff is not wired yet. The ownership
-described below is still the migration target, not a claim that
-every stage has moved.
+regex script processing, active-module helpers, lorebook activation
+through budget truncation, minimal token/budget helpers, the Phase
+7-safe trigger runner through request/display state adapters and
+start-trigger handoff, and template rendering through content + chat
+cards. The root Stage 2 handoff is not wired yet. The ownership
+described below is still the migration target, not a claim that every
+stage has moved.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -140,12 +141,12 @@ the delegated post-generation helpers under
   (provider dispatch) server-side.
 - Phase 7 (`phases/phase-7-prompt-assembly.md`) moves Stage 2
   (prompt assembly) server-side. It is in progress: slices 7-1
-  through 7-9d-ii landed the scaffold, prompt leaves, history shaping,
+  through 7-10c landed the scaffold, prompt leaves, history shaping,
   scripts, module helpers, lorebook activation through budget
-  truncation, the tokens / budget chain, and the trigger runner
-  through V2 safe data helpers. Templates, the root assembler, route
-  wiring, and the remaining trigger request/display + start handoff
-  slices remain.
+  truncation, the tokens / budget chain, the trigger runner through
+  request/display state adapters + start-trigger handoff, and template
+  rendering through content + chat cards. Memory/cache cards, render
+  finalization, the root assembler, and route wiring remain.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
   server-side resource that Stage 2 reads from.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1

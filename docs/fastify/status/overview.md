@@ -30,9 +30,10 @@ workstream lives in the sibling shards.
   `/api/v1/generate/completion` routed through the current provider
   matrix. Phase 7 has added the `/api/v1/generate/chat` scaffold,
   prompt leaves through history shaping, regex scripts, module
-  helpers, lorebook activation through budget truncation, and the
-  tokens / budget chain, plus the Phase 7-safe trigger runner
-  through V2 safe data helpers.
+  helpers, lorebook activation through budget truncation, the tokens /
+  budget chain, the Phase 7-safe trigger runner through
+  request/display state adapters + start-trigger handoff, and the
+  template renderer through content + chat cards.
   The Docker runtime targets Fastify, Express has been deleted, and
   the production image
   installs the runtime dependencies needed by `pnpm api:start`.

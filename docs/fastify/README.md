@@ -1,6 +1,6 @@
 # Fastify Migration Roadmap
 
-Date: 2026-05-23
+Date: 2026-05-24
 
 This directory is the working roadmap for moving Risuai from a thick
 browser app to a Fastify backend with a display-only client. The
@@ -18,13 +18,13 @@ backups, static SPA serving, provider proxy fetch, stream-job
 WebSocket transport, Risu hub passthrough, the legacy NodeStorage
 key-value surface, and the closed `/api/v1/generate/completion`
 provider matrix. Phase 7 has landed the `/api/v1/generate/chat`
-scaffold plus server-side variable expansion, static prompt
-sections, plain prompt sections, history shaping through multimodal
-inlays, regex scripts, active-module helpers, and lorebook
-activation through depth-prompt helpers, the minimal tokenizer,
-budget helpers, and the Phase 7-safe trigger runner through V2
-safe data helpers; the root assembler and template modules are
-still stubs.
+scaffold plus server-side variable expansion, static/plain prompt
+sections, history shaping through multimodal inlays and the
+start-trigger handoff, regex scripts, active-module helpers,
+lorebook activation through budget truncation, the minimal tokenizer
+and budget helpers, the Phase 7-safe trigger runner through
+request/display state adapters, and the template renderer through
+content + chat cards. The root assembler is still a stub.
 Express has been deleted. The Dockerfile and compose file target
 Fastify on port 6002 with `/app/data` persisted; `tsx` and
 `@fastify/websocket` are runtime dependencies after `1eddbfba`.
@@ -52,9 +52,10 @@ In scope:
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 closed
   the completion route in Phase 6-28 (`398a3ae6`, hash backfilled by
-  `a8cb123b`). Phase 7 slices through 7-9d-ii are now landed,
-  including lorebook budget truncation, the tokens / budget chain, and
-  the Phase 7-safe trigger runner; the current provider matrix lives in
+  `a8cb123b`). Phase 7 slices through 7-10c are now landed,
+  including lorebook budget truncation, the tokens / budget chain, the
+  Phase 7-safe trigger runner, and the template renderer through
+  content + chat cards; the current provider matrix lives in
   [`coverage/providers.md`](coverage/providers.md), and the active
   slice history lives in [`status/next-steps.md`](status/next-steps.md).
 - A display-only browser client in server-backed mode.

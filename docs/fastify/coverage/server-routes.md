@@ -1,6 +1,6 @@
 # Server Route Tests
 
-Date: 2026-05-23
+Date: 2026-05-24
 
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
 completion-route tests, and the Phase 7 chat scaffold / prompt leaf
@@ -92,8 +92,9 @@ state, the assembled `messages[]` matches a recorded snapshot.
 Prompt leaf tests already exist for `variables.ts`,
 `staticSections.ts`, `plainSections.ts`, `history.ts`,
 `scripts.ts`, `modules.ts`, `lorebook.ts`, `tokens.ts`,
-`preflight.ts`, `budgetFinalize.ts`, and `triggers.ts`; the root
-prompt snapshot suite waits until `assemble.ts` is real.
+`preflight.ts`, `budgetFinalize.ts`, `triggers.ts`, and
+`templates.ts`; the root prompt snapshot suite waits until
+`assemble.ts` is real.
 
 ## Phase 8: Memory
 

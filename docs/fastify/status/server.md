@@ -61,7 +61,7 @@ chat cards:
   `pnpm api:test`. Current Phase 7 helper tests include
   `promptVariables`, `staticSections`, `plainSections`, `history`,
   `scripts`, `modules`, `lorebook`, `tokens`, `preflight`,
-  `budgetFinalize`, and `triggers`.
+  `budgetFinalize`, `triggers`, and `templates`.
 - `server/fastify/src/proxy.ts` and `server/fastify/src/routes/proxy.ts`
   hold the Phase 3A generic-proxy surface. The route is scoped to
   its own plugin instance with a catch-all content-type parser so
@@ -138,8 +138,8 @@ chat cards:
   `plainSections.ts`, `history.ts`, `scripts.ts`, `modules.ts`,
   `lorebook.ts`, `tokens.ts`, `preflight.ts`, `budgetFinalize.ts`,
   `tokenizerConfig.ts`, `triggerVars.ts`, `triggerDataEffects.ts`,
-  and `triggers.ts` are real Phase 7 helpers. `assemble.ts` and
-  `templates.ts` still throw Phase 7 not-implemented errors.
+  `triggers.ts`, and `templates.ts` are real Phase 7 helpers.
+  `assemble.ts` still throws a Phase 7 not-implemented error.
 - Known limitation: `ANY /api/v1/hub/*` keeps `requireAuth`, so
   on password-protected deployments browser-loaded resources
   (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401

@@ -1,6 +1,6 @@
 # Test Coverage
 
-Date: 2026-05-23
+Date: 2026-05-24
 
 This is the coverage router. Detail per area lives in the
 shards under [`coverage/`](coverage/).
@@ -61,7 +61,8 @@ shards under [`coverage/`](coverage/).
   `staticSections.test.ts`, `plainSections.test.ts`,
   `history.test.ts`, `scripts.test.ts`, `modules.test.ts`,
   `lorebook.test.ts`, `tokens.test.ts`, `preflight.test.ts`,
-  `budgetFinalize.test.ts`, and `triggers.test.ts`.
+  `budgetFinalize.test.ts`, `triggers.test.ts`, and
+  `templates.test.ts`.
 
 ## Where to look
 

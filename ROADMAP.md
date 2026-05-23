@@ -115,9 +115,9 @@ multi-subsystem work behind small labels.
 
 ## Remaining Slices
 
-Slices are numbered in the order they should be picked up.
-Slices marked with `(parallel)` can run alongside the previous
-slice when staffed by another agent.
+Slices are numbered in the default pickup order. Optional polish is
+called out separately and should not block Phase 7 closeout unless a
+fixture or adapter forces it.
 
 ### Tier 1 — Finish partially landed prompt helpers
 
@@ -257,21 +257,10 @@ Preset templates (`templates.ts`):
   Phase 7-safe request-state transform from 7-9e. Browser Lua
   `editRequest` hooks stay deferred with plugin/Lua execution.
 
-Current default pickup: **7-10d** (memory cards + cache markers). The
-trigger and history fronts are complete and 7-10a/b/c landed the
-renderer foundation + content + chat cards; the remaining work is the
-rest of the template card renderer (7-10d–f) then the Tier 3 root/route
-wiring. The already-landed support chain is 7-7d/7-5e, 7-8a/b/c,
-7-9a/b/c/d-i/d-ii/e/f, and 7-10a/b/c.
-
-### Tier 1 sub-slices unblocked by Tier 2
-
-- **7-5d** — start trigger integration. **Landed `5291a0b0`** (folded
-  into 7-9f). No remaining Tier 1 sub-slices.
-
-These slot in as soon as their Tier 2 dependencies land. Do
-**not** wait for all of Tier 2 — pick them up the moment their
-specific dep is in.
+Current default pickup: **7-10d** (memory cards + cache markers).
+History, lorebook, tokens/budget, triggers, and 7-10a/b/c are already
+landed; Phase 7 is now on the remaining template renderer work
+(7-10d–f), then Tier 3 root/route wiring.
 
 ### Tier 3 — Root + route wiring (all Tier 1 + 2 real)
 
@@ -320,12 +309,10 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Parallelism notes
 
-- Slices within a tier with no `Blocking` cell can run in
-  parallel by different agents.
-- With the trigger and history fronts complete and 7-10a/b/c landed,
-  the remaining work is the rest of the template card renderer
-  (**7-10d** then 7-10e–f) and, once those land, the Tier 3 root/route
-  wiring.
+- 7-10d, 7-10e, and 7-10f should land in order because each adds state
+  to the same renderer path.
+- After the renderer closes, 7-11a and 7-11b are the critical-path
+  assembly slices; 7-11c/d/e can split once their direct deps are in.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).

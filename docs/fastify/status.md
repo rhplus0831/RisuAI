@@ -77,8 +77,9 @@ under [`status/`](status/).
   helpers, the request/display state adapters, the `runStartTrigger`
   handoff, and the template renderer through content + chat cards.
   `assemble` remains a stub; the trigger and history fronts are
-  complete and `templates` holds the 7-10a foundation + 7-10b/c content
-  - chat cards, so next work is 7-10d, memory cards + cache markers.
+  complete and `templates` holds the 7-10a foundation plus 7-10b/c
+  content + chat cards, so next work is 7-10d, memory cards + cache
+  markers.
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
   dependencies only, and `tsx` plus `@fastify/websocket` are now
