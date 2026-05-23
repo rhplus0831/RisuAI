@@ -70,9 +70,14 @@ import { expandVariables } from './variables.js'
  * `triggerDataEffects.ts`, dispatched from this switch's `default`
  * case via `applyV2DataEffect`.
  *
+ * 7-9e adds the `display` / `request` effect allowlists (`safeSubset` /
+ * `displayAllowList` / `requestAllowList`, guarded at the top of the
+ * effect loop) and the request/display state arms (`v2GetDisplayState`
+ * / `v2SetDisplayState` / the five request-state arms) in
+ * `triggerDataEffects.ts`, fed the mutable `displayState` holder this
+ * runner threads from `arg.displayData` to `result.displayData`.
+ *
  * Still deferred (later slices, see `ROADMAP.md`):
- *   - 7-9e: request/display state adapters + the display/request
- *     effect allowlists (`triggers.ts:1444-1449`).
  *   - 7-9f: prompt/history effects + `start` trigger handoff.
  *
  * Out of scope beyond Phase 7 (unhandled effect types fall through the
@@ -150,6 +155,65 @@ export interface TriggerRunResult {
   tempVars: Record<string, string> | undefined
   varChanged: boolean
 }
+
+/**
+ * Effect-type allowlists for the `display` / `request` run modes, ported
+ * verbatim from `src/ts/process/triggers.ts:1099-1146`. In those modes
+ * only allowlisted effects run; everything else is skipped (7-9e).
+ *
+ * `safeSubset` deliberately omits `v2Loop` (only `v2LoopNTimes` is
+ * allowed), the dict ops, message readers, `v2Tokenize`, and
+ * `v2QuickSearchChat`. The control-flow ops it *does* include keep
+ * loop/if structure intact when non-allowlisted effects are skipped.
+ */
+const safeSubset = [
+  'v2SetVar',
+  'v2If',
+  'v2IfAdvanced',
+  'v2Else',
+  'v2EndIndent',
+  'v2LoopNTimes',
+  'v2BreakLoop',
+  'v2ConsoleLog',
+  'v2StopTrigger',
+  'v2Random',
+  'v2ExtractRegex',
+  'v2RegexTest',
+  'v2GetCharAt',
+  'v2GetCharCount',
+  'v2ToLowerCase',
+  'v2ToUpperCase',
+  'v2SetCharAt',
+  'v2SplitString',
+  'v2JoinArrayVar',
+  'v2ConcatString',
+  'v2MakeArrayVar',
+  'v2GetArrayVarLength',
+  'v2GetArrayVar',
+  'v2SetArrayVar',
+  'v2PushArrayVar',
+  'v2PopArrayVar',
+  'v2ShiftArrayVar',
+  'v2UnshiftArrayVar',
+  'v2SpliceArrayVar',
+  'v2SliceArrayVar',
+  'v2GetIndexOfValueInArrayVar',
+  'v2RemoveIndexFromArrayVar',
+  'v2Calculate',
+  'v2Comment',
+  'v2DeclareLocalVar',
+]
+
+const displayAllowList = ['v2GetDisplayState', 'v2SetDisplayState', ...safeSubset]
+
+const requestAllowList = [
+  'v2GetRequestState',
+  'v2SetRequestState',
+  'v2GetRequestStateRole',
+  'v2SetRequestStateRole',
+  'v2GetRequestStateLength',
+  ...safeSubset,
+]
 
 function emptySysPrompt(): additonalSysPrompt {
   return { start: '', historyend: '', promptend: '' }
@@ -354,6 +418,11 @@ export async function runTrigger(
 
   let recursionVarChanged = false
 
+  // Mutable holder for the per-run display/request state slot (7-9e).
+  // The state arms read/write `displayState.data`; the SPA mutates
+  // `arg.displayData` in place. The result surfaces `displayState.data`.
+  const displayState = { data: arg.displayData }
+
   const selected = triggers.filter((trigger) =>
     matchesTrigger(trigger, mode, arg.manualName),
   )
@@ -375,8 +444,15 @@ export async function runTrigger(
     const effects = trigger.effect ?? []
     for (let index = 0; index < effects.length; index++) {
       const effect = effects[index]
-      // 7-9e adds the display/request effect allowlist guards
-      // (`triggers.ts:1444-1449`).
+      // Display/request effect allowlist guards (`triggers.ts:1444-1449`).
+      // Skipped effects never touch indent; control flow stays intact
+      // because every control-flow op lives in `safeSubset`.
+      if (mode === 'display' && !displayAllowList.includes(effect.type)) {
+        continue
+      }
+      if (mode === 'request' && !requestAllowList.includes(effect.type)) {
+        continue
+      }
       if (
         effect &&
         'indent' in effect &&
@@ -734,10 +810,11 @@ export async function runTrigger(
         default: {
           // 7-9d-ii safe data helpers (message readers, string /
           // array / dict / math, random, tokenize, regex, quick chat
-          // search). Returns false for arms still deferred (`command`;
-          // the `lowLevelAccess`-gated alert/LLM/image/similarity/regex;
-          // request/display state (7-9e); the persistent lorebook /
-          // character / persona / note arms; `triggercode` /
+          // search) plus the 7-9e request/display state arms. Returns
+          // false for arms still deferred (`command`; the
+          // `lowLevelAccess`-gated alert/LLM/image/similarity/regex; the
+          // persistent lorebook / character / persona / note arms;
+          // `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`; `triggercode` /
           // `triggerlua`), which fall through as no-ops.
           applyV2DataEffect(effect, {
             engine,
@@ -745,6 +822,8 @@ export async function runTrigger(
             chat,
             char: workingChar,
             model: ctx.model,
+            displayMode: arg.displayMode,
+            displayState,
           })
           break
         }
@@ -768,7 +847,7 @@ export async function runTrigger(
     tokens,
     stopSending,
     sendAIprompt,
-    displayData: arg.displayData,
+    displayData: displayState.data,
     tempVars: arg.tempVars,
     varChanged: engine.varChanged || recursionVarChanged,
   }

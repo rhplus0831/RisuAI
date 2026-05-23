@@ -875,3 +875,132 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
     expect(result?.chat.scriptstate?.['$after']).toBe('ok')
   })
 })
+
+describe('Phase 7-9e request/display state adapters', () => {
+  it('round-trips display text through set then get', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects(
+          [
+            eff({ type: 'v2SetDisplayState', valueType: 'value', value: 'new text', indent: 0 }),
+            eff({ type: 'v2GetDisplayState', outputVar: 'd', indent: 0 }),
+          ],
+          { type: 'display' },
+        ),
+      ],
+    })
+    const tempVars: Record<string, string> = {}
+    const result = await runTrigger(ctx, char, 'display', {
+      chat: makeChat(),
+      displayMode: true,
+      displayData: 'initial',
+      tempVars,
+    })
+    expect(result?.displayData).toBe('new text')
+    expect(tempVars.d).toBe('new text')
+  })
+
+  it('reads and writes content, role, and length over an OpenAIChat[] payload', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects(
+          [
+            eff({ type: 'v2GetRequestStateLength', outputVar: 'len', indent: 0 }),
+            eff({ type: 'v2GetRequestState', indexType: 'value', index: '0', outputVar: 'c0', indent: 0 }),
+            eff({ type: 'v2GetRequestStateRole', indexType: 'value', index: '0', outputVar: 'r0', indent: 0 }),
+            eff({ type: 'v2SetRequestState', indexType: 'value', index: '1', valueType: 'value', value: 'changed', indent: 0 }),
+            eff({ type: 'v2SetRequestStateRole', indexType: 'value', index: '0', valueType: 'value', value: 'system', indent: 0 }),
+          ],
+          { type: 'request' },
+        ),
+      ],
+    })
+    const tempVars: Record<string, string> = {}
+    const payload = JSON.stringify([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+    ])
+    const result = await runTrigger(ctx, char, 'request', {
+      chat: makeChat(),
+      displayMode: true,
+      displayData: payload,
+      tempVars,
+    })
+    expect(tempVars.len).toBe('2')
+    expect(tempVars.c0).toBe('hello')
+    expect(tempVars.r0).toBe('user')
+    const out = JSON.parse(result?.displayData ?? 'null')
+    expect(out[1].content).toBe('changed')
+    expect(out[0].role).toBe('system')
+  })
+
+  it('leaves the role unchanged when v2SetRequestStateRole gets an invalid value', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects(
+          [
+            eff({ type: 'v2SetRequestStateRole', indexType: 'value', index: '0', valueType: 'value', value: 'bogus', indent: 0 }),
+          ],
+          { type: 'request' },
+        ),
+      ],
+    })
+    const payload = JSON.stringify([{ role: 'user', content: 'hello' }])
+    const result = await runTrigger(ctx, char, 'request', {
+      chat: makeChat(),
+      displayMode: true,
+      displayData: payload,
+      tempVars: {},
+    })
+    const out = JSON.parse(result?.displayData ?? 'null')
+    expect(out[0].role).toBe('user')
+  })
+
+  it('skips a non-allowlisted effect in display mode but runs allowlisted ones', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects(
+          [
+            eff({ type: 'v2GetLastMessage', outputVar: 'skipped', indent: 0 }),
+            eff({ type: 'v2SetVar', operator: '=', var: 'ran', valueType: 'value', value: 'yes', indent: 0 }),
+          ],
+          { type: 'display' },
+        ),
+      ],
+    })
+    const tempVars: Record<string, string> = {}
+    const chat = makeChat({ message: [{ role: 'char', data: 'last line' }] as never })
+    await runTrigger(ctx, char, 'display', {
+      chat,
+      displayMode: true,
+      displayData: '',
+      tempVars,
+    })
+    expect(tempVars.skipped).toBeUndefined()
+    expect(tempVars.ran).toBe('yes')
+  })
+
+  it('skips a non-allowlisted effect in request mode', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects(
+          [
+            eff({ type: 'v2GetMessageCount', outputVar: 'skipped', indent: 0 }),
+            eff({ type: 'v2GetRequestStateLength', outputVar: 'len', indent: 0 }),
+          ],
+          { type: 'request' },
+        ),
+      ],
+    })
+    const tempVars: Record<string, string> = {}
+    const payload = JSON.stringify([{ role: 'user', content: 'hello' }])
+    await runTrigger(ctx, char, 'request', {
+      chat: makeChat({ message: [{ role: 'user', data: 'x' }] as never }),
+      displayMode: true,
+      displayData: payload,
+      tempVars,
+    })
+    expect(tempVars.skipped).toBeUndefined()
+    expect(tempVars.len).toBe('1')
+  })
+})

@@ -3,6 +3,7 @@ import type {
   character,
 } from '../../../../src/ts/storage/database.svelte'
 import type { triggerEffect } from '../../../../src/ts/process/triggers'
+import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { encodingForModel, tokenize } from './tokens.js'
 import type { TriggerVarEngine } from './triggerVars.js'
@@ -31,12 +32,26 @@ import type { TriggerVarEngine } from './triggerVars.js'
  * returns from this helper as a handled no-op so the trigger run
  * continues.
  *
+ * 7-9e adds the request/display state arms (`v2GetDisplayState` /
+ * `v2SetDisplayState` and the five request-state arms). Unlike the data
+ * helpers above they also write the per-run display/request state slot,
+ * carried through `deps.displayState` (a mutable `{ data }` holder) so
+ * `runTrigger` can surface the writes on `result.displayData`. They
+ * gate on `deps.displayMode`; see the divergence note below.
+ *
+ * Divergence (7-9e): each SPA state arm does `if (!arg.displayMode)
+ * return`, which aborts the *entire* `runTrigger` (returns `undefined`,
+ * almost certainly an unintended bug). As with the make-var guard above
+ * we instead `return true` here — a handled no-op so the run continues.
+ * The request-state arms otherwise match the SPA exactly, including the
+ * un-guarded `JSON.parse(displayState.data)`: in `request` mode the
+ * caller contractually supplies a valid `OpenAIChat[]` JSON payload.
+ *
  * Deferred (handled elsewhere or beyond Phase 7, so they fall through
- * to `return false`): the request/display state arms (7-9e), the
- * persistent character/persona/author-note get+set pairs, the
- * `lowLevelAccess`-gated alert/LLM/image/similarity/extractRegex arms,
- * `command`, `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`, and the
- * lorebook arms.
+ * to `return false`): the persistent character/persona/author-note
+ * get+set pairs, the `lowLevelAccess`-gated
+ * alert/LLM/image/similarity/extractRegex arms, `command`,
+ * `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`, and the lorebook arms.
  */
 
 export interface V2DataEffectDeps {
@@ -49,6 +64,10 @@ export interface V2DataEffectDeps {
   char: character
   /** Model id for `v2Tokenize`'s encoder; defaults to `cl100k_base`. */
   model?: string | null
+  /** `display` / `request` runs that gate the state arms (7-9e). */
+  displayMode?: boolean
+  /** Mutable per-run display/request state slot (7-9e). */
+  displayState?: { data: string | undefined }
 }
 
 export function applyV2DataEffect(
@@ -525,6 +544,79 @@ export function applyV2DataEffect(
         pass = new RegExp(value).test(da)
       }
       engine.setVar(outVar, pass ? '1' : '0')
+      return true
+    }
+
+    // ---- Display state (7-9e) ----
+    case 'v2GetDisplayState': {
+      if (!deps.displayMode) {
+        return true
+      }
+      engine.setVar(expand(effect.outputVar), deps.displayState?.data ?? 'null')
+      return true
+    }
+    case 'v2SetDisplayState': {
+      if (!deps.displayMode) {
+        return true
+      }
+      if (deps.displayState) {
+        deps.displayState.data = resolve(effect.value, effect.valueType === 'value')
+      }
+      return true
+    }
+
+    // ---- Request state over JSON.parse(displayState.data) (7-9e) ----
+    case 'v2GetRequestState': {
+      if (!deps.displayMode) {
+        return true
+      }
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const index = Number(resolve(effect.index, effect.indexType === 'value'))
+      engine.setVar(expand(effect.outputVar), json?.[index]?.content ?? 'null')
+      return true
+    }
+    case 'v2SetRequestState': {
+      if (!deps.displayMode) {
+        return true
+      }
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const index = Number(resolve(effect.index, effect.indexType === 'value'))
+      json[index].content = resolve(effect.value, effect.valueType === 'value')
+      if (deps.displayState) {
+        deps.displayState.data = JSON.stringify(json)
+      }
+      return true
+    }
+    case 'v2GetRequestStateRole': {
+      if (!deps.displayMode) {
+        return true
+      }
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const index = Number(resolve(effect.index, effect.indexType === 'value'))
+      engine.setVar(expand(effect.outputVar), json?.[index]?.role ?? 'null')
+      return true
+    }
+    case 'v2SetRequestStateRole': {
+      if (!deps.displayMode) {
+        return true
+      }
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const index = Number(resolve(effect.index, effect.indexType === 'value'))
+      const value = resolve(effect.value, effect.valueType === 'value')
+      if (value === 'user' || value === 'assistant' || value === 'system') {
+        json[index].role = value
+      }
+      if (deps.displayState) {
+        deps.displayState.data = JSON.stringify(json)
+      }
+      return true
+    }
+    case 'v2GetRequestStateLength': {
+      if (!deps.displayMode) {
+        return true
+      }
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      engine.setVar(expand(effect.outputVar), json.length.toString())
       return true
     }
 
