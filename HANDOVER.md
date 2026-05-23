@@ -86,8 +86,8 @@ memoryCardUsed, hasCachePoint }` and the
 - `assemble.ts`, `templates.ts`, and `triggers.ts` still throw
   Phase 7 not-implemented errors.
 - `history.ts` does not yet handle start triggers (7-5d, blocked
-  on 7-9c). 7-5e (`febe67ce`) landed the `addedTokens`
-  accumulator + depth-prompt preflight; the only remaining
+  on 7-9f after the trigger re-scope). 7-5e (`febe67ce`) landed the
+  `addedTokens` accumulator + depth-prompt preflight; the only remaining
   history gap is the start-trigger token contribution.
 - `scripts.ts` does not yet handle script-cache,
   `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
@@ -107,46 +107,71 @@ Last recorded baselines after 7-8c:
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-9a trigger sandbox
+## Next Slice — 7-9a trigger model + runner shell
 
-Pick up **7-9a — trigger sandbox infrastructure**.
+Pick up **7-9a — trigger model + runner shell**.
 
 7-8c (`c83015b3`) closed the tokens / budget chain (7-8a → 7-8b →
 7-8c all landed). The remaining Tier 2 work splits into two
 independent fronts: Triggers (`triggers.ts`, currently a throwing
-stub) and Preset templates (`templates.ts`, also a stub). 7-9a is
-the trigger entry point and the critical-path predecessor for
-7-9b/9c — and 7-9c in turn unblocks the last Tier 1 history
-sub-slice (7-5d start trigger). **7-10a** (template card parsing)
-is an equally valid parallel pickup if you'd rather start the
-template front.
+stub) and Preset templates (`templates.ts`, also a stub). Trigger
+scope was re-verified on 2026-05-23: the SPA source is a 3350-line
+module with 151 effect `case` arms, V1 + V2 dialects, module
+triggers, request/display allowlists, recursive manual triggers, and
+low-level side effects that span Phase 8 memory and Phase 9 command
+ownership. So 7-9 is now split into smaller slices in
+[`ROADMAP.md`](ROADMAP.md).
+
+7-9a should only establish the Svelte-free trigger model and runner
+shell. It is the predecessor for 7-9b/c/d/e/f, and 7-9f in turn
+unblocks the last Tier 1 history sub-slice (7-5d start trigger).
+**7-10a** (template normalization + slot contract) is an equally
+valid parallel pickup if you'd rather start the template front.
 
 ### Scope sketch (SPA reference)
 
-- `src/ts/process/triggers.ts` is the port target. 7-9a stands up
-  the sandbox/runner that executes a trigger's body — the SPA's
-  `processTrigger` / `runTrigger` core minus the specific hook
-  call sites (those are 7-9b/9c).
-- May reuse the 7-6 `processScript` chain for trigger bodies (the
-  ROADMAP notes this explicitly). Keep plugin/Lua code execution
-  out — that stays browser-side per the migration boundary.
-- Decide the concrete LOC + test scope at slice start; the SPA
-  `triggers.ts` is large, so split aggressively (sandbox infra
-  only in 7-9a; `editInput`/`editRequest` in 7-9b; `start` in
-  7-9c).
+- Port or define the shared trigger type surface and result shape for
+  server prompt code: `additonalSysPrompt`, mutated `chat`, token
+  contribution, `stopSending`, `sendAIprompt`, `displayData`, and
+  `tempVars`.
+- Add module-trigger aggregation in `server/fastify/src/prompt/modules.ts`
+  mirroring `getModuleTriggers()`, including module
+  `lowLevelAccess` inheritance, without mutating the module trigger
+  objects in place.
+- Add the `runTrigger` runner shell in
+  `server/fastify/src/prompt/triggers.ts`: mode/manual-name filtering,
+  recursion bookkeeping, trigger-id threading through explicit context
+  (not Svelte stores), no-match/no-op return, and stable input/output
+  cloning rules. Do **not** execute effects in 7-9a.
+- Keep plugin/Lua trigger execution, low-level alert/GUI/LLM/image
+  effects, Hypa similarity, persistent character/persona/lorebook
+  mutation, and command execution out of 7-9a.
+- Follow the new ROADMAP split: 7-9b variables + conditions, 7-9c
+  deterministic V1 effects, 7-9d V2 safe effects, 7-9e
+  request/display state adapters, 7-9f start-trigger handoff, 7-9g
+  input adapter only if Phase 7 truly needs server-owned Stage 1
+  before Phase 9.
 
 ### Tests
 
 Add isolated server tests in `__tests__/triggers.test.ts` covering
-the sandbox runner surface 7-9a lands (effect application, var
-mutation, no-op when no triggers match). Lock exact scope when the
-slice starts.
+the runner-shell surface 7-9a lands: no triggers returns `null`,
+mode mismatch is ignored, manual-name filtering works, module
+triggers are included with inherited `lowLevelAccess`, recursion
+metadata is passed through, and the input chat/character objects are
+not mutated by the shell. Effect application and var mutation belong
+to 7-9b/c/d.
 
 ### Out of scope (defer)
 
-- `editInput` / `editRequest` hooks — 7-9b.
-- `start` trigger — 7-9c (consumed by 7-5d).
-- Browser-only plugin / Lua execution — stays client-side.
+- Variables + trigger conditions — 7-9b.
+- Deterministic V1 effects — 7-9c.
+- V2 safe control-flow/data effects — 7-9d.
+- Request/display state adapters — 7-9e.
+- `start` trigger history handoff — 7-9f (consumed by 7-5d).
+- Input hook adapter — 7-9g only if Phase 7 needs it before Phase 9.
+- Browser-only plugin / Lua execution and low-level side effects —
+  stay deferred per the roadmap boundary.
 
 ### Verification
 
@@ -158,7 +183,7 @@ pnpm build
 ```
 
 If 7-9a is blocked, the parallel next-up is **7-10a** (template
-card parsing).
+normalization + slot contract).
 
 ## Patterns To Keep
 

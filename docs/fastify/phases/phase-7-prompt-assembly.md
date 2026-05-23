@@ -89,8 +89,10 @@ Under `server/fastify/src/prompt/`:
   metadata (which entries fired, why) for `prompt` SSE events.
 - `history.ts` - chat history shaping (role mapping, multimodal
   fold-in, ChatML-style assembly).
-- `templates.ts` - prompt template cards (chat ranges, cache
-  markers, systemized chat, position slots).
+- `templates.ts` - prompt template rendering. This is split into
+  normalization, content cards, chat/systemized cards, memory/cache
+  cards, position/prompt-info finalization, and the request-edit
+  boundary; `renderFinalPrompt.ts` is larger than a single card parser.
 - `tokens.ts` - budget pruning. Reuses or ports the existing
   tokenizer surface when the 7-8 token slice lands. The first token
   slice is intentionally tiktoken-only; exact provider tokenizers
@@ -101,9 +103,10 @@ Under `server/fastify/src/prompt/`:
   trigger/template paths.
 - `modules.ts` - active module helpers for regex scripts, assets,
   and later lorebook/trigger consumers.
-- `triggers.ts` - hooks `editInput` / `editRequest` into the
-  server-side trigger/script processor port that lands in this
-  phase.
+- `triggers.ts` - hooks the server-safe trigger runner into prompt
+  assembly. Phase 7 ports only deterministic trigger behavior needed
+  for prompt/history/request-state handling; browser plugin/Lua and
+  low-level resource mutations stay deferred.
 
 ### SSE events
 
@@ -218,7 +221,7 @@ along the dependency seams:
   **Landed `7ad226b9`** (13 tests, api:test 516 → 529).
 - **7-5c** — Multimodal inlays + `{{asset_prompt::}}` replacement.
   **Landed `50a1770b`** (13 tests, api:test 569 → 582).
-- **7-5d** — Start trigger integration. Depends on Triggers (7-9c).
+- **7-5d** — Start trigger integration. Depends on Triggers (7-9f).
 - **7-5e** — Tokenizer accumulation + depthPrompts preflight.
   **Landed `febe67ce`** (7 tests, api:test 661 → 668).
   `HistoryWindowResult` gains `addedTokens: number`;
@@ -267,7 +270,8 @@ progress as sub-slices.
   `getScriptCache` + `cacheScript`) and `runTrigger('display', …)`
   for `editdisplay` mode. Both are optional polish: the cache is
   a pure optimization (the server runs each chain fresh per
-  assembly), and `editdisplay` is blocked on Triggers (7-9).
+  assembly), and `editdisplay` is blocked on the trigger
+  request/display adapter (7-9e).
 
 Browser-only paths (`runLuaEditTrigger`, `pluginV2[mode]`) are
 out-of-scope for the server port; the SPA continues to use them
@@ -338,7 +342,7 @@ Tentative breakdown:
   insertion so the SPA's growing-array semantics hold. The
   helper lives outside `buildHistoryWindow` because the SPA
   itself runs the splice at the assemble root — that keeps
-  the 7-5a/b/c walk untouched and lets 7-11a wire this in
+  the 7-5a/b/c walk untouched and lets 7-11b wire this in
   cleanly.
 
 ### Tier 2 — Supporting infrastructure
@@ -413,39 +417,109 @@ hasCachePoint }` and the `PromptUnformatedSlots` shape the future
   tokenization keeps multimodal image-token math deferred while
   preserving the multimodal-only survival filter.
 
-**7-9a … 7-9c — Triggers.** Port `src/ts/process/triggers.ts`.
+**7-9a … 7-9g — Triggers.** Port the Phase 7-safe subset of
+`src/ts/process/triggers.ts`.
 
-- **7-9a** — Trigger sandbox infrastructure (the
-  `processScriptFull` layer for trigger bodies; may reuse 7-6's
-  port).
-- **7-9b** — `editInput` / `editRequest` hooks.
-- **7-9c** — `start` trigger (consumed by 7-5d).
+Scope re-verification on 2026-05-23 found that the SPA trigger module
+is a 3350-line interpreter with 151 effect `case` arms, V1 + V2
+dialects, module-trigger aggregation, request/display allowlists,
+manual recursion, chat/scriptstate mutation, prompt-side system prompt
+injection, and low-level browser/resource effects. Treating 7-9a as
+"the trigger sandbox" would make one slice absorb several independent
+subsystems. Phase 7 therefore ports only the deterministic server-side
+surface needed by prompt assembly; plugin/Lua execution remains
+browser-side, Hypa similarity waits for Phase 8 memory, and persistent
+character/persona/lorebook mutations wait for Phase 9 command APIs.
 
-**7-10a … 7-10e — Preset templates.** Port the template-card
-logic from `src/ts/process/promptAssembly/{normalizeTemplate,
-buildStaticPromptSections, buildPlainPromptSections,
-systemizeChat}.ts` (the static sections themselves already
-landed in 7-3 / 7-4; this tier is about the card-walking +
-preset-structure parser).
+- **7-9a** — Trigger model + runner shell: shared types/result shape,
+  module-trigger aggregation, low-level-access inheritance, mode and
+  manual-name filtering, recursion bookkeeping, trigger-id threading,
+  no-match/no-op behavior. No effect execution yet.
+- **7-9b** — Variable and condition engine: default variables,
+  chat `scriptstate`, temp/local scopes, `var` / `value` /
+  `chatindex` / `exists` conditions.
+- **7-9c** — Deterministic V1 effects: `setvar`, `systemprompt`,
+  `impersonate`, `cutchat`, `modifychat`, `stop`, bounded
+  `runtrigger`, and additional-system-prompt token accounting.
+- **7-9d** — V2 control flow + safe data effects: local vars,
+  if/else, loops/breaks, random, regex, tokenize, string/array/dict
+  helpers, math, quick chat search, comments.
+- **7-9e** — Request/display state adapters: mode allowlists and
+  `v2Get*State` / `v2Set*State` operations over display text and
+  `OpenAIChat[]` JSON. This unblocks optional `editdisplay` work in
+  7-6e and the final request-state transform used by assemble/dispatch
+  wiring.
+- **7-9f** — Prompt/history effects + `start` handoff: wire the
+  runner into history's start-trigger path, apply chat mutations,
+  additional system prompt slots, token contribution, and
+  `stopSending`. Consumed by 7-5d.
+- **7-9g** — Input hook adapter, only if Phase 7 needs the server to
+  own Stage 1/user-row trigger behavior before Phase 9. If not, defer
+  it to Phase 9.
 
-- **7-10a** — Card parsing + normalization.
-- **7-10b** — Chat range cards.
-- **7-10c** — Cache markers.
-- **7-10d** — Position slots.
-- **7-10e** — Systemized chat hoisting.
+Deferred beyond Phase 7: browser plugin/Lua trigger execution,
+low-level alert/GUI/LLM/image effects, Hypa similarity, command
+execution, and persistent character/persona/lorebook mutations.
+
+**7-10a … 7-10f — Preset templates.** Port the render-side logic
+from `src/ts/process/promptAssembly/{normalizeTemplate,
+renderFinalPrompt,systemizeChat}.ts`. Scope re-verification on
+2026-05-23 found that `renderFinalPrompt.ts` is a 397-line renderer
+with system-row coalescing, inner-format wrapping, ChatML, memory
+cards, cache markers, prompt-info text capture, depth-prompt
+insertion, and the final request-edit hook. The old five labels were
+too small for the actual coupling, so split by renderer
+responsibility:
+
+- **7-10a** — Template normalization + slot contract. Port
+  `normalizeTemplate`, utility-bot forced template, implicit
+  `postEverything`, null-template `formatingOrder`, and the shared
+  row-filter/system-coalescing helper. No individual template-card
+  branches yet.
+- **7-10b** — Content cards. Render persona, description,
+  authornote, lorebook, plain/jailbreak/cot, `chatML`, and
+  `postEverything` cards, including inner-format/default-text
+  wrapping, `postEndInnerFormat`, global-note replacement, the
+  prebuilt asset command, and prompt-info capture for these cards.
+- **7-10c** — Chat cards + systemized chat. Port range math
+  (`-1000`, negative offsets, `end`, empty ranges),
+  `sendChatAsSystem`, `chatAsOriginalOnSystem`, example-name
+  handling, and clone-before-mutation behavior.
+- **7-10d** — Memory cards + cache markers. Render `memory` cards
+  from the `memories[]` bridge, apply explicit `cache` cards, apply
+  automatic cache-point walkback when no cache card exists, and keep
+  empty-row filtering stable.
+- **7-10e** — Position + prompt-info finalization. Thread
+  `resolvePosition` through render locations, trim rendered rows and
+  prompt-info rows, and keep the prompt-info array in lockstep with
+  card rendering.
+- **7-10f** — Render finalization + request-edit boundary. Apply
+  character `depth_prompt`, return finalized rows + prompt-info rows,
+  and expose the handoff point that 7-11b/dispatch uses for the
+  Phase 7-safe request-state transform from 7-9e. Browser Lua
+  `editRequest` hooks stay deferred with plugin/Lua execution.
 
 ### Tier 3 — Root + route wiring
 
-**7-11a … 7-11d — `assemble.ts` + route.** All Tier 1 + 2 modules
+**7-11a … 7-11e — `assemble.ts` + route.** All Tier 1 + 2 modules
 must be real before these land.
 
-- **7-11a** — `assemble.ts` root entry stitching static + plain +
-  lorebook + history + tokens through templates.
-- **7-11b** — Wire `POST /api/v1/generate/chat` (currently emits
+- **7-11a** — `assemble.ts` state loader + slot orchestration.
+  Resolve database/chat/character/preset scope, build the
+  unformatted slots from static/plain/lorebook/history, compute
+  token preflight, and collect bias rows. No route dispatch yet.
+- **7-11b** — Memory-window bridge + final render. Port the
+  non-Hypa budget fallback from
+  `src/ts/process/promptAssembly/buildMemoryWindow.ts`, promote
+  `lastChat`, split `memories[]` for memory template cards, mark
+  removable rows, apply lorebook depth prompts, merge start-trigger
+  additional-system-prompt slots, call `templates.ts`, and run final
+  budget pruning. Hypa V3 summary creation remains Phase 8.
+- **7-11c** — Wire `POST /api/v1/generate/chat` (currently emits
   "not yet implemented") to call `assemble.ts` and emit `prompt`
   - `done` SSE events.
-- **7-11c** — Add `POST /api/v1/generate/preview-prompt` shortcut.
-- **7-11d** — SSE telemetry: `info` event (timings, token counts),
+- **7-11d** — Add `POST /api/v1/generate/preview-prompt` shortcut.
+- **7-11e** — SSE telemetry: `info` event (timings, token counts),
   `message_patch` for chat-row deltas.
 
 ### Tier 4 — Browser adapter

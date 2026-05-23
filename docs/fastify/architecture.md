@@ -5,7 +5,7 @@ Date: 2026-05-23
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
 Phase 3, the Phase 6 completion-route files through closeout slice
-6-28, and Phase 7 slices through 7-7e already exist; modules marked
+6-28, and Phase 7 slices through 7-8c already exist; modules marked
 by later phases are target layout, not current implementation.
 
 ## Server module layout
@@ -74,7 +74,7 @@ server/fastify/
       lorebook.ts         activation, recursion, depth helpers; budget pending
       templates.ts        prompt-template cards (stub)
       tokens.ts           budget accounting (stub)
-      triggers.ts         editInput/editRequest hooks (stub)
+      triggers.ts         server-safe trigger runner (stub)
     memory/
       hypav3.ts         server-side Hypa V3 adapter
       jobs.ts           async embedding + summary queue

@@ -31,7 +31,7 @@ Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, the Phase 5
 closeout on 2026-05-22, the Phase 6 completion-route closeout in
 Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`), and
-Phase 7 slices through 7-7e (with 7-7d parked behind tokens):
+Phase 7 slices through 7-8c:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -160,10 +160,11 @@ rules. The headline order:
    Phase 7.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
-   triggers. In progress: slices through 7-7e landed the route
-   scaffold, parser/static/plain leaves, history shaping, regex
-   scripts, module helpers, and lorebook activation through
-   depth-prompt helpers.
+   triggers. In progress: slices through 7-8c landed the route
+   scaffold, parser/static/plain leaves, history shaping through
+   token/depth preflight, regex scripts, module helpers, lorebook
+   activation through budget truncation, and the tokens / budget
+   chain. `assemble`, `templates`, and `triggers` remain stubs.
 8. **Memory** - Hypa V3 chunking, embeddings, summarization as an
    async job queue on the server.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation

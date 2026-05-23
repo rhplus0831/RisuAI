@@ -9,9 +9,10 @@ full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
 Express deletion), and Phase 6 completion-route slices through
 the 6-28 closeout all exist on the `fastify` branch. Phase 7 has
-landed 17 slices through 7-7e: the chat-route scaffold,
-parser/static/plain leaves, history shaping, regex scripts, module
-helpers, and lorebook activation through depth-prompt helpers:
+landed 22 slices through 7-8c: the chat-route scaffold,
+parser/static/plain leaves, history shaping through added-token
+preflight, regex scripts, module helpers, lorebook activation through
+budget-aware truncation, and the tokens / budget chain:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -195,13 +196,13 @@ been removed; `server/node/` no longer exists.
   because they need server-owned character / user state for prompt
   flattening.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
-  In progress. Seventeen slices have landed through 7-7e:
+  In progress. Twenty-two slices have landed through 7-8c:
   `/api/v1/generate/chat` scaffold, nine-event prompt SSE taxonomy,
   server-side variable expansion, static/plain prompt sections,
-  history shaping through multimodal inlays, regex scripts, module
-  helpers, lorebook constant / keyword / recursive activation, and
-  depth-prompt helpers. Next slice is 7-8a, the re-scoped minimal
-  server tokenizer; 7-7d remains parked until token counts exist.
+  history shaping through multimodal inlays + token preflight, regex
+  scripts, module helpers, lorebook constant / keyword / recursive /
+  depth / budget truncation helpers, and the tokens / budget chain.
+  Next slice is 7-9a; 7-10a is the parallel template front.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 
 ## Reference: what move-to-fastify shipped

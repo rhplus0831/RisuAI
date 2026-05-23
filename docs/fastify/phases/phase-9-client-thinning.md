@@ -1,6 +1,6 @@
 # Phase 9 - Client Thinning
 
-Date: 2026-05-20
+Date: 2026-05-23
 
 ## Goal
 
@@ -110,6 +110,61 @@ Tauri keeps its current localForage path untouched. The build flag
 that selects "server-backed web" vs "Tauri local" stays. The
 `forageStorage` gating mentioned above only triggers in the web
 build.
+
+## Difficulty re-check
+
+Phase 9 should not be picked up as "add typed commands" in one pass.
+A quick mutation audit on 2026-05-23 found more than 500 direct
+`DBState.db` mutation candidates across `src/lib/` and `src/ts/`
+before separating tests and Tauri/local-only paths. The phase also
+contains the projection store, localForage gating, provider-key
+masking, and the server-side `.risu` codec. Those are separate
+subsystems with different rollback risks.
+
+Use this slice order when Phase 9 starts:
+
+- **9-0 — Mutation inventory + command map.** Classify every direct
+  `DBState.db` write as command-owned, Tauri/local-only, test-only,
+  transient UI state, or obsolete. Lock the resource list and the
+  command naming scheme before writing handlers.
+- **9-1 — Command foundation.** Add command route plumbing,
+  `baseRevision`/409 handling, transactions, revision increments,
+  SSE event emission, and the typed client command helper. Ship one
+  tiny settings command as the harness test.
+- **9-2 — Settings, presets, personas, loadouts.** Move the global
+  configuration families first: settings groups, bot presets,
+  prompt templates/items, personas, loadouts, and translator-style
+  preset state that belongs in the main database.
+- **9-3 — Characters, chats, messages.** Move the high-churn chat
+  resources: character create/update/delete/reorder, chat metadata,
+  message edits, regeneration/continue patches, and `scriptstate`
+  updates that survived Phase 7 triggers.
+- **9-4 — Lorebooks, modules, plugins, assets.** Move child
+  collections and resource-heavy commands: lorebook entries,
+  character/module scripts, triggers, module/plugin state,
+  plugin-storage kv, and asset reference updates. Keep plugin-defined
+  resources out of scope.
+- **9-5 — Browser projection.** Add `/api/v1/events`, the debounced
+  bootstrap re-fetch client, read-only `DBState.db` guard in
+  server-backed mode, and command-helper replacements for the
+  mutation paths already covered by 9-2 through 9-4.
+- **9-6 — Storage and provider-key gating.** Gate `forageStorage`,
+  `autoStorage`, `globalApi.svelte.ts`, and character-card import
+  paths behind the server/Tauri mode split. Flip
+  `RISU_MASK_SERVER_KEYS=1` only after the provider matrix still
+  works server-side.
+- **9-7 — Server `.risu` codec core.** Port legacy/raw/compressed/
+  stream decode and encode from `risuSave.ts`, adapting block
+  traversal to server repositories and dropping localforage cache and
+  Tauri remote-file branches.
+- **9-8 — Import/export routes + bundle assets.** Add
+  `/api/v1/export/risusave`, `/api/v1/export/bundle`, and multipart
+  `/api/v1/import/risusave`; walk real asset references instead of
+  over-including.
+- **9-9 — Full server-backed fixture sweep + closeout.** Run the
+  browser against bootstrap/events/commands/generation/memory, verify
+  no web-mode localForage writes, manually verify Tauri local mode,
+  and close the migration docs.
 
 ## Boundaries
 

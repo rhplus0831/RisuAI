@@ -16,31 +16,38 @@ budget finalization. `assemble`, `templates`, and `triggers`
 remain throwing stubs; the tokens / budget chain (7-8a/b/c) is
 fully landed, `preflight` covers every card type the SPA emits, and
 `history` + `lorebook` are feature-complete (modulo the 7-5d
-start-trigger integration, blocked on 7-9c). Use
+start-trigger integration, blocked on 7-9f after the trigger
+re-scope). Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-9a — trigger sandbox
-   infrastructure.** 7-8c (`c83015b3`) closed the tokens / budget
+1. **Continue Phase 7 with slice 7-9a — trigger model + runner
+   shell.** 7-8c (`c83015b3`) closed the tokens / budget
    chain (7-8a/b/c all landed). The remaining Tier 2 work splits
    into two independent fronts: Triggers (`triggers.ts`) and Preset
-   templates (`templates.ts`), both still throwing stubs. 7-9a is
-   the trigger entry point and the critical-path predecessor for
-   7-9b/9c; 7-9c then unblocks the last Tier 1 history sub-slice
-   (7-5d). **7-10a** (template card parsing) is an equally valid
-   parallel pickup.
+   templates (`templates.ts`), both still throwing stubs. Trigger
+   scope was re-verified on 2026-05-23: the SPA source is a
+   3350-line module with 151 effect `case` arms, so the old 7-9a/b/c
+   labels were too coarse. 7-9a now starts the trigger chain with a
+   runner shell; 7-9f then unblocks the last Tier 1 history sub-slice
+   (7-5d). **7-10a** (template normalization + slot contract) is an
+   equally valid parallel pickup.
 
    Verified slice scope:
-   - Port the sandbox / runner core of `src/ts/process/triggers.ts`
-     — the layer that executes a trigger's body, minus the specific
-     `editInput` / `editRequest` (7-9b) and `start` (7-9c) hook
-     call sites.
-   - May reuse the 7-6 `processScript` chain for trigger bodies.
-   - Keep plugin / Lua code execution out — that stays browser-side
-     per the migration boundary. Decide concrete LOC + test scope
-     at slice start; `triggers.ts` is large, so split aggressively.
+   - Add the Svelte-free trigger type/result surface, module-trigger
+     aggregation, low-level-access inheritance, mode/manual filtering,
+     recursion bookkeeping, trigger-id threading, and no-match/no-op
+     behavior.
+   - Do not execute effects in 7-9a. Variables + conditions are 7-9b;
+     deterministic V1 effects are 7-9c; V2 safe effects are 7-9d;
+     request/display state adapters are 7-9e; start-trigger history
+     handoff is 7-9f.
+   - Keep plugin/Lua execution, low-level LLM/image/alert/GUI effects,
+     Hypa similarity, persistent character/persona/lorebook mutation,
+     and command execution out of the Phase 7 trigger port unless a
+     later slice explicitly claims that dependency.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait

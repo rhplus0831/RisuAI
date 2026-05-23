@@ -50,8 +50,8 @@ In scope:
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 closed
   the completion route in Phase 6-28 (`398a3ae6`, hash backfilled by
-  `a8cb123b`). Phase 7 slices through 7-7e are now landed, with
-  7-7d parked until the 7-8a server tokenizer exists; the current
+  `a8cb123b`). Phase 7 slices through 7-8c are now landed, including
+  lorebook budget truncation and the tokens / budget chain; the current
   provider matrix lives in
   [`coverage/providers.md`](coverage/providers.md), and the active
   slice history lives in [`status/next-steps.md`](status/next-steps.md).

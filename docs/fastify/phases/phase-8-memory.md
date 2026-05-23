@@ -1,6 +1,6 @@
 # Phase 8 - Hypa V3 Memory Server-Side
 
-Date: 2026-05-21
+Date: 2026-05-23
 
 ## Goal
 
@@ -74,6 +74,51 @@ once the server adapter is in place. Hypa V3's progress side
 effects (the user-visible "summarizing..." banner) are emitted by
 the server as `side_effect: { kind: "hypav3_progress" }` events;
 the browser dispatches them as it does today.
+
+## Difficulty re-check
+
+The old phase label is too broad to treat as one implementation
+slice. The browser source is `src/ts/process/memory/hypav3.ts`
+(1907 LOC), plus `hypamemoryv2.ts` (490 LOC),
+`taskRateLimiter.ts` (179 LOC), and `contextualEmbedding.ts`
+(132 LOC). That surface includes two Hypa V3 implementations,
+summary planning, rate-limited provider calls, embedding and
+contextual-embedding adapters, similarity ranking, progress UI
+events, legacy serialized memory data, and budget-sensitive prompt
+selection. Phase 8 should therefore land as small server-owned
+slices:
+
+- **8-1 — Memory schema + repositories.** Add the migrations,
+  repository methods, and JSON mappers for chunks, summaries,
+  embeddings, and jobs. Include import/backfill mappers for existing
+  `hypaV3Data`, but do not start workers yet.
+- **8-2 — Job queue + progress events.** Implement the SQLite-backed
+  queue, single in-process worker, transition/retry/cancel rules,
+  and `memory.job` SSE / `hypav3_progress` side-effect emission.
+  Keep job handlers as stubs.
+- **8-3 — Summarization planner.** Port settings normalization,
+  orphan cleanup, summary-window selection, "cannot summarize
+  further" guards, and chunk batching. Return planned jobs and token
+  deltas without calling providers.
+- **8-4 — Summary generation worker.** Add the provider-backed
+  summarization calls, prompt construction, rate limiting, failure
+  persistence, and consecutive-success write behavior. Local
+  MLC/ONNX summary runtimes stay out of scope.
+- **8-5 — Embedding + similarity worker.** Add embedding fetch,
+  vector storage, contextual Voyage `voyage-context-3` support if
+  still configured, ranked chunk-to-summary selection, and the
+  recent/similar/random/important budget allocation.
+- **8-6 — Prompt memory adapter.** Replace the Phase 7/browser memory
+  bridge with server reads from `memory_summaries`, assemble the
+  `<Past Events Summary>` prompt row, and queue follow-up work when
+  summaries or embeddings are missing. Do not run summarization in
+  the prompt request hot path.
+- **8-7 — Routes + browser adapter.** Wire the memory routes, browser
+  progress listener, list/cancel UI paths, and fixture coverage for
+  `hypav3-memory`.
+- **8-8 — Phase 8 closeout.** Run the full verification matrix,
+  document what exact model/provider memory paths are supported, and
+  flip handoff docs to Phase 9.
 
 ## Boundaries
 

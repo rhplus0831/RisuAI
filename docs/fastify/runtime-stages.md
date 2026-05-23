@@ -66,7 +66,8 @@ Owner (after migration): server.
 - Activates lorebook entries (constant + keyword + recursion budget).
 - Pulls Hypa V3 memory summaries for the budget window.
 - Computes the final OpenAI-shaped `messages[]` payload.
-- Runs `editRequest` triggers in the server-side trigger sandbox.
+- Runs prompt/request-state triggers through the server-safe trigger
+  runner.
 
 The current browser path does this work through
 `src/ts/process/promptAssembly/*` and
@@ -105,7 +106,7 @@ Server owns:
 - Bounded auto-continue.
 - Emotion marker rewriting / submodel emotion selection.
 - Bounded reroll metadata (number of accumulated alternates).
-- `editOutput` triggers in the server-side trigger sandbox.
+- `editOutput` triggers through the server-safe trigger runner.
 
 Browser still owns:
 
@@ -137,11 +138,10 @@ the delegated post-generation helpers under
   (provider dispatch) server-side.
 - Phase 7 (`phases/phase-7-prompt-assembly.md`) moves Stage 2
   (prompt assembly) server-side. It is in progress: slices 7-1
-  through 7-7e landed the scaffold, prompt leaves, history shaping,
-  scripts, module helpers, and lorebook activation through
-  depth-prompt helpers; templates, tokens, triggers, and root route
-  wiring remain. Lorebook budget truncation (7-7d) is parked behind
-  the 7-8a server tokenizer.
+  through 7-8c landed the scaffold, prompt leaves, history shaping,
+  scripts, module helpers, lorebook activation through budget
+  truncation, and the tokens / budget chain; templates, triggers, and
+  root route wiring remain.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
   server-side resource that Stage 2 reads from.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1
