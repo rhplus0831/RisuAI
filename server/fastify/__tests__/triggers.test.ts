@@ -473,4 +473,135 @@ describe('Phase 7-9b evaluateConditions', () => {
       ),
     ).toBe(false)
   })
+
+  it('setChat repoints subsequent var writes', () => {
+    const engine = makeEngine()
+    const other = makeChat({ scriptstate: {} })
+    engine.setChat(other)
+    engine.setVar('x', '1')
+    expect(other.scriptstate?.['$x']).toBe('1')
+  })
+})
+
+function eff(e: Record<string, unknown>): triggerscript['effect'][number] {
+  return e as unknown as triggerscript['effect'][number]
+}
+
+function triggerWithEffects(
+  effect: triggerscript['effect'],
+  overrides: Partial<triggerscript> = {},
+): triggerscript {
+  return makeTrigger({ type: 'output', effect, ...overrides })
+}
+
+describe('Phase 7-9c deterministic V1 effects', () => {
+  it('setvar assigns and flips varChanged', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'setvar', operator: '=', var: 'hp', value: '5' })]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$hp']).toBe('5')
+    expect(result?.varChanged).toBe(true)
+  })
+
+  it('setvar applies numeric operators against the current value', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'setvar', operator: '+=', var: 'n', value: '2' })]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', {
+      chat: makeChat({ scriptstate: { $n: '3' } }),
+    })
+    expect(result?.chat.scriptstate?.['$n']).toBe('5')
+  })
+
+  it('systemprompt accumulates into a slot and counts tokens', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'systemprompt', location: 'start', value: 'You are a cat.' }),
+        ]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.additonalSysPrompt.start).toBe('You are a cat.\n\n')
+    expect(result?.tokens).toBeGreaterThan(0)
+  })
+
+  it('impersonate appends a message', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'impersonate', role: 'user', value: 'hello' })]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.message.at(-1)).toEqual({ role: 'user', data: 'hello' })
+  })
+
+  it('cutchat slices the message list', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'cutchat', start: '1', end: '3' })]),
+      ],
+    })
+    const chat = makeChat({
+      message: [
+        { role: 'user', data: 'a' },
+        { role: 'char', data: 'b' },
+        { role: 'user', data: 'c' },
+        { role: 'char', data: 'd' },
+      ] as never,
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat })
+    expect(result?.chat.message.map((m) => m.data)).toEqual(['b', 'c'])
+  })
+
+  it('modifychat edits an existing row', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'modifychat', index: '0', value: 'edited' })]),
+      ],
+    })
+    const chat = makeChat({ message: [{ role: 'char', data: 'orig' }] as never })
+    const result = await runTrigger(ctx, char, 'output', { chat })
+    expect(result?.chat.message[0].data).toBe('edited')
+  })
+
+  it('stop sets stopSending', async () => {
+    const char = makeChar({
+      triggerscript: [triggerWithEffects([eff({ type: 'stop' })])],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.stopSending).toBe(true)
+  })
+
+  it('runtrigger recurses into a named manual trigger and threads its result', async () => {
+    const sub = makeTrigger({
+      comment: 'sub',
+      type: 'manual',
+      effect: [eff({ type: 'setvar', operator: '=', var: 'hp', value: '99' })],
+    })
+    const outer = triggerWithEffects([eff({ type: 'runtrigger', value: 'sub' })])
+    const char = makeChar({ triggerscript: [outer, sub] })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$hp']).toBe('99')
+    expect(result?.varChanged).toBe(true)
+  })
+
+  it('runtrigger recursion terminates at the bound', async () => {
+    const loop = makeTrigger({
+      comment: 'loop',
+      type: 'manual',
+      effect: [eff({ type: 'runtrigger', value: 'loop' })],
+    })
+    const char = makeChar({ triggerscript: [loop] })
+    const result = await runTrigger(ctx, char, 'manual', {
+      chat: makeChat(),
+      manualName: 'loop',
+    })
+    expect(result).not.toBeNull()
+  })
 })

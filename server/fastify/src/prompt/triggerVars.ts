@@ -65,6 +65,13 @@ export interface TriggerVarEngine {
   clearLocalVarsAtIndent(indent: number): void
   /** Sets the effect loop's current indent (drives local-scope writes). */
   setIndent(indent: number): void
+  /**
+   * Repoints the engine at a new working chat. The `runtrigger` effect
+   * (7-9c) reassigns `runTrigger`'s local `chat` to the recursive
+   * result; without this, later `setVar`s in the same effect list would
+   * keep writing to the stale clone.
+   */
+  setChat(next: Chat): void
   /** True once a non-local, non-display `setVar` wrote chat state. */
   readonly varChanged: boolean
 }
@@ -72,7 +79,8 @@ export interface TriggerVarEngine {
 export function createTriggerVarEngine(
   opts: TriggerVarEngineOptions,
 ): TriggerVarEngine {
-  const { chat, database, selectedCharID, chatPage, defaultVariables } = opts
+  const { database, selectedCharID, chatPage, defaultVariables } = opts
+  let chat = opts.chat
   const displayMode = opts.displayMode ?? false
   const tempVars = opts.tempVars ?? {}
 
@@ -196,6 +204,9 @@ export function createTriggerVarEngine(
     clearLocalVarsAtIndent,
     setIndent(indent: number): void {
       currentIndent = indent
+    },
+    setChat(next: Chat): void {
+      chat = next
     },
     get varChanged(): boolean {
       return varChanged

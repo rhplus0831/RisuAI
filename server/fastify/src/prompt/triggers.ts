@@ -41,21 +41,29 @@ import { expandVariables } from './variables.js'
  * the trigger. The result now carries `varChanged` so the caller can
  * decide whether to persist the database.
  *
- * The shell still executes NO effect. Those are the following slices
- * (see `ROADMAP.md`):
- *   - 7-9c: deterministic V1 effects (`setvar`, `systemprompt`,
- *     `impersonate`, `cutchat`, `modifychat`, `stop`, bounded
- *     `runtrigger`).
+ * 7-9c adds the deterministic V1 effect arms: a passing trigger now
+ * runs `setvar`, `systemprompt`, `impersonate`, `cutchat`,
+ * `modifychat`, `stop`, and bounded `runtrigger` recursion
+ * (`triggers.ts:1442-1546`). `setvar` writes persist through the var
+ * engine; `chat.message` mutations live on the returned `result.chat`
+ * (the SPA does not write message edits back to the db mid-run, only
+ * `scriptstate`). The `runtrigger` arm recurses through this same
+ * `runTrigger` with `recursiveCount + 1`, bounded at 10 unless the
+ * trigger has `lowLevelAccess`.
+ *
+ * Still deferred (later slices, see `ROADMAP.md`):
  *   - 7-9d: V2 control flow + safe data effects.
- *   - 7-9e: request/display state adapters.
+ *   - 7-9e: request/display state adapters + the display/request
+ *     effect allowlists (`triggers.ts:1444-1449`).
  *   - 7-9f: prompt/history effects + `start` trigger handoff.
  *
- * Browser plugin/Lua trigger code (`triggercode` / `triggerlua`),
- * low-level alert/GUI/LLM/image effects, Hypa similarity, and
- * persistent character/persona/lorebook mutation stay deferred per the
- * roadmap boundary. `triggercode` / `triggerlua` triggers bypass the
- * mode filter in the SPA (`triggers.ts:1343`) so they are still
- * *selected* here for parity, but the shell runs no code for them.
+ * Out of scope beyond Phase 7 (unhandled effect types fall through the
+ * `switch` as no-ops): `command` (Phase 9 command APIs) and the
+ * `lowLevelAccess`-gated `showAlert` / `sendAIprompt` / `runLLM` /
+ * `checkSimilarity` / `extractRegex` / `runImgGen` arms, plus browser
+ * plugin/Lua trigger code (`triggercode` / `triggerlua`). The latter
+ * bypass the mode filter in the SPA (`triggers.ts:1343`) so they are
+ * still *selected* here for parity, but no code runs for them.
  */
 
 /** SPA `triggerMode` (`src/ts/process/triggers.ts:222`, unexported). */
@@ -275,11 +283,10 @@ export function evaluateConditions(
  * `displayMode` the caller's `char`/`chat` are used directly;
  * otherwise both are deep-cloned so the inputs are never mutated.
  *
- * Parity note: in 7-9b the working chat clone and the database chat
- * hold identical `scriptstate` at condition-eval time (no effect has
- * mutated state yet), so `engine.getVar` and the parser-side
- * `{{getvar}}` agree. 7-9c must keep the two in sync once effects
- * mutate the clone mid-run.
+ * Parity note: `scriptstate` writes persist through the var engine
+ * onto the db chat; `chat.message` edits (impersonate / cutchat /
+ * modifychat) live only on the returned `result.chat`, matching the
+ * SPA, which does not write message edits back mid-run.
  */
 export async function runTrigger(
   ctx: TriggerRunContext,
@@ -287,13 +294,12 @@ export async function runTrigger(
   mode: TriggerMode,
   arg: TriggerRunArg,
 ): Promise<TriggerRunResult | null> {
-  const recursiveCount = arg.recursiveCount ?? 0
-  void recursiveCount // threaded for 7-9c bounded `runtrigger` recursion
+  let recursiveCount = arg.recursiveCount ?? 0
   const workingChar = arg.displayMode ? char : structuredClone(char)
-  const stopSending = arg.stopSending ?? false
+  let stopSending = arg.stopSending ?? false
   const sendAIprompt = false
-  const additonalSysPrompt = arg.additonalSysPrompt ?? emptySysPrompt()
-  const chat = arg.displayMode
+  let additonalSysPrompt = arg.additonalSysPrompt ?? emptySysPrompt()
+  let chat = arg.displayMode
     ? arg.chat
     : structuredClone(arg.chat ?? workingChar.chats[workingChar.chatPage])
 
@@ -323,6 +329,8 @@ export async function runTrigger(
       runVar: false,
     }).text
 
+  let recursionVarChanged = false
+
   const selected = triggers.filter((trigger) =>
     matchesTrigger(trigger, mode, arg.manualName),
   )
@@ -330,14 +338,110 @@ export async function runTrigger(
     if (!evaluateConditions(trigger.conditions ?? [], engine, chat, expand)) {
       continue
     }
-    // 7-9c/d: dispatch `trigger.effect` via `engine` + `ctx`, mutating
-    // `chat` / `additonalSysPrompt` / `stopSending` / `sendAIprompt` /
-    // `tempVars`.
+
+    for (const effect of trigger.effect ?? []) {
+      // 7-9e adds the display/request effect allowlist guards
+      // (`triggers.ts:1444-1449`).
+      if (
+        effect &&
+        'indent' in effect &&
+        typeof effect.indent === 'number' &&
+        effect.indent >= 0
+      ) {
+        engine.setIndent(effect.indent)
+      } else if (!effect || !('indent' in effect)) {
+        engine.setIndent(0)
+      }
+
+      switch (effect.type) {
+        case 'setvar': {
+          const varKey = expand(effect.var)
+          const effectValue = expand(effect.value)
+          let originalVar = Number(engine.getVar(varKey))
+          if (Number.isNaN(originalVar)) {
+            originalVar = 0
+          }
+          let resultValue = ''
+          switch (effect.operator) {
+            case '=':
+              resultValue = effectValue
+              break
+            case '+=':
+              resultValue = (originalVar + Number(effectValue)).toString()
+              break
+            case '-=':
+              resultValue = (originalVar - Number(effectValue)).toString()
+              break
+            case '*=':
+              resultValue = (originalVar * Number(effectValue)).toString()
+              break
+            case '/=':
+              resultValue = (originalVar / Number(effectValue)).toString()
+              break
+          }
+          engine.setVar(varKey, resultValue)
+          break
+        }
+        case 'systemprompt': {
+          additonalSysPrompt[effect.location] += expand(effect.value) + '\n\n'
+          break
+        }
+        case 'impersonate': {
+          const effectValue = expand(effect.value)
+          if (effect.role === 'user') {
+            chat.message.push({ role: 'user', data: effectValue })
+          } else if (effect.role === 'char') {
+            chat.message.push({ role: 'char', data: effectValue })
+          }
+          break
+        }
+        case 'stop': {
+          stopSending = true
+          break
+        }
+        case 'cutchat': {
+          const start = Number(expand(effect.start))
+          const end = Number(expand(effect.end))
+          chat.message = chat.message.slice(start, end)
+          break
+        }
+        case 'modifychat': {
+          const index = Number(expand(effect.index))
+          const value = expand(effect.value)
+          if (chat.message[index]) {
+            chat.message[index].data = value
+          }
+          break
+        }
+        case 'runtrigger': {
+          if (recursiveCount < 10 || trigger.lowLevelAccess) {
+            recursiveCount++
+            const r = await runTrigger(ctx, workingChar, 'manual', {
+              chat,
+              recursiveCount,
+              additonalSysPrompt,
+              stopSending,
+              manualName: effect.value,
+            })
+            if (r) {
+              additonalSysPrompt = r.additonalSysPrompt
+              chat = r.chat
+              engine.setChat(chat)
+              stopSending = r.stopSending
+              recursionVarChanged ||= r.varChanged
+            }
+          }
+          break
+        }
+        // Deferred (no-op): `command`, the `lowLevelAccess`-gated
+        // alert/LLM/image/similarity/regex arms, V2 effects (7-9d),
+        // and `triggercode` / `triggerlua`.
+      }
+    }
   }
 
   // Terminal additional-system-prompt token accounting
-  // (`triggers.ts:3321-3330`). Empty for the default `additonalSysPrompt`;
-  // 7-9c populates the slots via `systemprompt` effects.
+  // (`triggers.ts:3321-3330`). Populated by `systemprompt` effects.
   let tokens = 0
   const encoding = encodingForModel(ctx.model)
   if (additonalSysPrompt.start) tokens += tokenize(additonalSysPrompt.start, encoding)
@@ -354,6 +458,6 @@ export async function runTrigger(
     sendAIprompt,
     displayData: arg.displayData,
     tempVars: arg.tempVars,
-    varChanged: engine.varChanged,
+    varChanged: engine.varChanged || recursionVarChanged,
   }
 }
