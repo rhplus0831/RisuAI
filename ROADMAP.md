@@ -15,22 +15,23 @@ narrative phase doc see
 
 ## Landed slices
 
-| Slice | Commit     | Summary                                                                                             |
-| ----- | ---------- | --------------------------------------------------------------------------------------------------- |
-| 7-1   | `3d2426c4` | Scaffolded `POST /api/v1/generate/chat`, locked the 9-event SSE taxonomy, and added the stubs.      |
-| 7-2a  | `9eed5093` | Added Svelte-free DI seams for chat variables and `trigger_id`.                                     |
-| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` + helpers into Svelte-free modules.                                         |
-| 7-2c  | `7ed156e6` | Wired the server parser adapter and the real `expandVariables`.                                     |
-| 7-3   | `d0a2a7f3` | Ported static prompt sections (description / author note / persona / chain-of-thought).             |
-| 7-4   | `051a5dcd` | Ported plain prompt sections (main / jailbreak / global note).                                      |
-| 7-5a  | `c44e53fc` | Minimal history walk (examples + start-new-chat marker + first message + makeMs + role map).        |
-| 7-6a  | `9a60380d` | Minimal regex script processor (preset + character, mode filter, flag sanitization, CBS).           |
-| 7-5b  | `7ad226b9` | History per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill.      |
-| 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes (`@@emo`, `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`). |
-| 7-6c  | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + SPA-parity flag defaults.                      |
-| 7-6d  | `cb5675d8` | Module regex scripts wired into the script chain via `getActiveModules` + `getModuleRegexScripts`.  |
-| 7-5c  | `50a1770b` | History multimodal inlays + `{{asset_prompt::}}` with `AssetLookup` and module assets.              |
-| 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                |
+| Slice | Commit     | Summary                                                                                                |
+| ----- | ---------- | ------------------------------------------------------------------------------------------------------ |
+| 7-1   | `3d2426c4` | Scaffolded `POST /api/v1/generate/chat`, locked the 9-event SSE taxonomy, and added the stubs.         |
+| 7-2a  | `9eed5093` | Added Svelte-free DI seams for chat variables and `trigger_id`.                                        |
+| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` + helpers into Svelte-free modules.                                            |
+| 7-2c  | `7ed156e6` | Wired the server parser adapter and the real `expandVariables`.                                        |
+| 7-3   | `d0a2a7f3` | Ported static prompt sections (description / author note / persona / chain-of-thought).                |
+| 7-4   | `051a5dcd` | Ported plain prompt sections (main / jailbreak / global note).                                         |
+| 7-5a  | `c44e53fc` | Minimal history walk (examples + start-new-chat marker + first message + makeMs + role map).           |
+| 7-6a  | `9a60380d` | Minimal regex script processor (preset + character, mode filter, flag sanitization, CBS).              |
+| 7-5b  | `7ad226b9` | History per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill.         |
+| 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes (`@@emo`, `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`).    |
+| 7-6c  | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + SPA-parity flag defaults.                         |
+| 7-6d  | `cb5675d8` | Module regex scripts wired into the script chain via `getActiveModules` + `getModuleRegexScripts`.     |
+| 7-5c  | `50a1770b` | History multimodal inlays + `{{asset_prompt::}}` with `AssetLookup` and module assets.                 |
+| 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                   |
+| 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`. |
 
 ## Remaining Slices
 
@@ -55,18 +56,14 @@ Scripts (`scripts.ts`):
 
 Lorebook (`lorebook.ts`):
 
-- **7-7b** — keyword matching activation. Layers the
-  `searchMatch` loop and the conditional-activation decorators
-  (`additional_keys`, `exclude_keys*`, `match_*_word`,
-  `scan_depth`, `activate_only_after`, `activate_only_every`,
-  `is_greeting`, `probability`, `activate`, `dont_activate`,
-  `keep_/dont_activate_after_match`) on top of the 7-7a
-  scaffold; resolves `mode === 'child'` mirroring.
-- **7-7c** — recursive activation within depth limit (after 7-7b).
+- **7-7c** — recursive activation: outer `while (matching)`
+  loop, `recursivePrompt` accumulation, `recursive` /
+  `unrecursive` / `no_recursive_search` decorators, and the
+  global `char.loreSettings.recursiveScanning` default.
 - **7-7d** — budget-aware truncation (after 7-7c).
 - **7-7e** — depth-prompt emission for history (after 7-7d).
 
-Tier 1 ordering continues with 7-7b → 7-7e so the lorebook
+Tier 1 ordering continues with 7-7c → 7-7e so the lorebook
 decorator scaffold investment compounds before token/depth work.
 
 ### Tier 2 — Supporting infrastructure
@@ -150,7 +147,7 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are **7-7b** (continues the
+- The biggest parallel-able fronts are **7-7c** (continues the
   lorebook chain) / **7-8a** (kicks off tokens) / **7-9a**
   (kicks off triggers) / **7-10a** (kicks off
   templates).
@@ -160,33 +157,32 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Sequential order (default)
 
-1. **7-7b** — lorebook keyword activation
-2. **7-7c** — lorebook recursive activation
-3. **7-7d** — lorebook budget-aware truncation
-4. **7-7e** — lorebook depth-prompt emission
-5. **7-8a** — server tokenizer
-6. **7-8b** — token preflight
-7. **7-8c** — budget finalization
-8. **7-9a** — trigger sandbox
-9. **7-9b** — `editInput` / `editRequest` hooks
-10. **7-9c** — `start` trigger
-11. **7-10a** — template card parsing
-12. **7-10b** — chat range cards
-13. **7-10c** — cache markers
-14. **7-10d** — position slots
-15. **7-10e** — systemized chat hoisting
-16. **7-5d** — history start trigger (unblocked by 7-9c)
-17. **7-5e** — history tokenizer + depth prompts (unblocked by
+1. **7-7c** — lorebook recursive activation
+2. **7-7d** — lorebook budget-aware truncation
+3. **7-7e** — lorebook depth-prompt emission
+4. **7-8a** — server tokenizer
+5. **7-8b** — token preflight
+6. **7-8c** — budget finalization
+7. **7-9a** — trigger sandbox
+8. **7-9b** — `editInput` / `editRequest` hooks
+9. **7-9c** — `start` trigger
+10. **7-10a** — template card parsing
+11. **7-10b** — chat range cards
+12. **7-10c** — cache markers
+13. **7-10d** — position slots
+14. **7-10e** — systemized chat hoisting
+15. **7-5d** — history start trigger (unblocked by 7-9c)
+16. **7-5e** — history tokenizer + depth prompts (unblocked by
     7-7e + 7-8c)
-18. **7-11a** — `assemble.ts` root entry
-19. **7-11b** — wire `/api/v1/generate/chat`
-20. **7-11c** — `/api/v1/generate/preview-prompt`
-21. **7-11d** — SSE telemetry (`info`, `message_patch`)
-22. **7-12a** — browser client adapter
-23. **7-12b** — dual-mode fixture sweep
-24. **7-12c** — side-effect dispatch
-25. **7-12d** — error / abort restoration
-26. **7-13** — phase 7 closeout
+17. **7-11a** — `assemble.ts` root entry
+18. **7-11b** — wire `/api/v1/generate/chat`
+19. **7-11c** — `/api/v1/generate/preview-prompt`
+20. **7-11d** — SSE telemetry (`info`, `message_patch`)
+21. **7-12a** — browser client adapter
+22. **7-12b** — dual-mode fixture sweep
+23. **7-12c** — side-effect dispatch
+24. **7-12d** — error / abort restoration
+25. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

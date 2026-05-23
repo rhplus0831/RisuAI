@@ -11,11 +11,11 @@ the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
 deferred until a fixture demands it. Phase 7 (prompt assembly) is
-in progress as of 2026-05-23 — fourteen slices landed: the chat
+in progress as of 2026-05-23 — fifteen slices landed: the chat
 route scaffold, Svelte-free parser adapter, static/plain prompt
 sections, history shaping through multimodal inlays, regex scripts,
-active-module helpers, and lorebook constant-entry activation. The
-remaining assembly modules under `server/fastify/src/prompt/`
+active-module helpers, and lorebook constant + keyword activation.
+The remaining assembly modules under `server/fastify/src/prompt/`
 (`assemble`, `templates`, `tokens`, `triggers`) are still stubs. [`ROADMAP.md`](../../../ROADMAP.md)
 at the repo root has the strategic view of the remaining slices.
 The tiered roadmap for the rest of Phase 7 lives in the
@@ -25,34 +25,34 @@ the short pickup runbook.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-7b — lorebook keyword
-   matching activation.** `lorebook.ts` now handles always-on
-   entries plus the in-scope decorator scaffold (7-7a landed
-   in `c815e067`). 7-7b layers the `searchMatch` loop and the
-   conditional-activation decorators on top.
+1. **Continue Phase 7 with slice 7-7c — lorebook recursive
+   activation.** `lorebook.ts` now handles always-on + keyword
+   activation (7-7b landed in `25388d7d`). 7-7c layers the
+   recursion loop on top: after each pass, newly-activated
+   entries' content is added to `recursivePrompt`, the search
+   re-runs against `messages ++ recursivePrompt`, and entries
+   can fire because their keywords appear in another entry's
+   already-active body.
 
    Slice scope:
-   - Port `searchMatch` from
-     `src/ts/process/lorebook.svelte.ts:97-239` for the
-     non-recursive, single-pass case (no `recursivePrompt` yet).
-     Honor `key` (comma-separated), `secondkey`/`selective`
-     AND-matching, and `useRegex` entries.
-   - Activate the decorators 7-7a punted to `default: return
-false`: `additional_keys`, `exclude_keys`,
-     `exclude_keys_all`, `match_full_word`, `match_partial_word`,
-     `scan_depth`, `activate_only_after`, `activate_only_every`,
-     `is_greeting`, `probability`, `activate`, `dont_activate`,
-     `keep_activate_after_match`, `dont_activate_after_match`
-     (last two read/write via the existing `chatVar` backend —
-     boot via `bootPromptVariables` in test setup).
-   - Resolve `mode === 'child'` mirroring against the previous
-     parent entry in the iteration.
-   - Extend the report with `matchLog` (`{ prompt, source,
-activated }`).
+   - Port the outer `while (matching)` loop from
+     `src/ts/process/lorebook.svelte.ts:241-621`. Each iteration
+     walks entries that have not fired yet; if any new entry
+     activates, flip `matching = true` for another pass.
+   - Wire `recursivePrompt: { prompt, data, source }[]` and pass
+     it into `searchMatch`. Concat the list into `mList` unless
+     the current query has `dontSearchWhenRecursive`
+     (`@@no_recursive_search`).
+   - Activate the recursion decorators: `recursive` (per-entry
+     on), `unrecursive` (per-entry off), `no_recursive_search`
+     (this entry ignores the recursive layer).
+   - Honor `char.loreSettings.recursiveScanning` (defaults to
+     true per SPA `:85`). Per-entry decorators override the
+     global.
 
-   Skip-list: recursive activation (7-7c), token-budget
-   truncation (7-7d), depth-prompt emission for history (7-7e),
-   and browser-only plugin execution.
+   Skip-list: token-budget truncation (7-7d), depth-prompt
+   emission for history (7-7e), and browser-only plugin
+   execution.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -61,7 +61,7 @@ activated }`).
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 598
+   tests green. Last recorded baselines are `pnpm api:test`: 616
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -107,22 +107,23 @@ activated }`).
 
 ## Landed Phase 7 Slices
 
-| Slice | Commit     | Summary                                                                              |
-| ----- | ---------- | ------------------------------------------------------------------------------------ |
-| 7-1   | `3d2426c4` | Chat route scaffold, prompt SSE taxonomy, and prompt module stubs.                   |
-| 7-2a  | `9eed5093` | Parser DI seams for chat variables and `trigger_id`.                                 |
-| 7-2b  | `bb2c78b5` | Svelte-free `risuChatParser` extraction with SPA re-exports.                         |
-| 7-2c  | `7ed156e6` | Server parser adapter and real `expandVariables`.                                    |
-| 7-3   | `d0a2a7f3` | Static prompt sections.                                                              |
-| 7-4   | `051a5dcd` | Plain prompt sections.                                                               |
-| 7-5a  | `c44e53fc` | Deterministic history walk.                                                          |
-| 7-6a  | `9a60380d` | Minimal preset/character regex script chain.                                         |
-| 7-5b  | `7ad226b9` | Per-message scripts, sendName, `<Thoughts>`, and memo/UUID backfill.                 |
-| 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes.                                                        |
-| 7-6c  | `5aae492b` | `ableFlag` action DSL, outScript prep, and flag defaults.                            |
-| 7-6d  | `cb5675d8` | Module regex scripts through active-module helpers.                                  |
-| 7-5c  | `50a1770b` | History multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module assets.   |
-| 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites. |
+| Slice | Commit     | Summary                                                                                                |
+| ----- | ---------- | ------------------------------------------------------------------------------------------------------ |
+| 7-1   | `3d2426c4` | Chat route scaffold, prompt SSE taxonomy, and prompt module stubs.                                     |
+| 7-2a  | `9eed5093` | Parser DI seams for chat variables and `trigger_id`.                                                   |
+| 7-2b  | `bb2c78b5` | Svelte-free `risuChatParser` extraction with SPA re-exports.                                           |
+| 7-2c  | `7ed156e6` | Server parser adapter and real `expandVariables`.                                                      |
+| 7-3   | `d0a2a7f3` | Static prompt sections.                                                                                |
+| 7-4   | `051a5dcd` | Plain prompt sections.                                                                                 |
+| 7-5a  | `c44e53fc` | Deterministic history walk.                                                                            |
+| 7-6a  | `9a60380d` | Minimal preset/character regex script chain.                                                           |
+| 7-5b  | `7ad226b9` | Per-message scripts, sendName, `<Thoughts>`, and memo/UUID backfill.                                   |
+| 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes.                                                                          |
+| 7-6c  | `5aae492b` | `ableFlag` action DSL, outScript prep, and flag defaults.                                              |
+| 7-6d  | `cb5675d8` | Module regex scripts through active-module helpers.                                                    |
+| 7-5c  | `50a1770b` | History multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module assets.                     |
+| 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                   |
+| 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

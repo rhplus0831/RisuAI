@@ -2,13 +2,14 @@
 
 Date: 2026-05-23
 
-Status: in-progress (14 slices landed as of 2026-05-23).
+Status: in-progress (15 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`),
 `scripts.ts` (regex chain through module regex), `modules.ts`
 (`getActiveModules`, `getModuleRegexScripts`, `getModuleAssets`),
-and `lorebook.ts` (constant entries + decorator scaffold +
-`inject_lore` rewrites) are real. The remaining assembly modules
+and `lorebook.ts` (constant + keyword activation with
+`searchMatch`, child mirror, conditional-activation decorators,
+`matchLog`, `inject_lore` rewrites) are real. The remaining assembly modules
 under `server/fastify/src/prompt/` (`assemble`, `templates`,
 `tokens`, `triggers`) are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
@@ -160,6 +161,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain through active-module helpers.                                        |
 | 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                        |
 | 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.          |
+| 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, and `matchLog`.       |
 
 ## Remaining roadmap
 
@@ -242,8 +244,19 @@ Tentative breakdown:
   stays literal in the prompt text until its sub-slice lands.
   `inject_lore` rewrites are applied in-pass so 7-7d/7-10 do not
   need a re-walk.
-- **7-7b** — Keyword matching activation (`searchMatch` +
-  conditional-activation decorators + `mode === 'child'` mirror).
+- **7-7b** — Keyword matching activation. **Landed `25388d7d`**
+  (18 new tests, api:test 598 → 616). `searchMatch` port for the
+  non-recursive single-pass case; in-scope decorators now include
+  `additional_keys` (AND-required across queries),
+  `exclude_keys`, `exclude_keys_all`, `match_full_word`,
+  `match_partial_word`, `scan_depth`, `activate_only_after`,
+  `activate_only_every`, `is_greeting`, `probability`,
+  `activate`, `dont_activate`, `keep_/dont_activate_after_match`.
+  `mode === 'child'` mirrors when the previous same-id parent
+  didn't fire. Chat-var keys derive from `entry.id` or
+  `pickHashRand(5555, entry.content)` via the new Svelte-free
+  `src/ts/util/loreHash.ts`. `matchLog` widens from `never[]` to
+  `LoreMatchLogEntry[]`.
 - **7-7c** — Recursive activation within depth limit.
 - **7-7d** — Budget-aware truncation.
 - **7-7e** — Depth-prompt emission for history (consumed by 7-5e).

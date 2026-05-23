@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `c815e067 feat: lorebook constant entries (Phase 7-7a)`
+Head: `25388d7d feat: lorebook keyword matching activation (Phase 7-7b)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -34,6 +34,7 @@ Landed Phase 7 slices:
 | 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain via new `getActiveModules` + `getModuleRegexScripts` helpers.               |
 | 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                              |
 | 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                |
+| 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch` port, child mirror, conditional-activation decorators, and `matchLog`.        |
 
 What is real in code:
 
@@ -49,8 +50,9 @@ What is real in code:
   `@@`-actions, `ableFlag` DSL, `cbs` / `no_end_nl` actions,
   outScript prep), `modules.ts` (`getActiveModules` +
   `getModuleRegexScripts` + `getModuleAssets`), and `lorebook.ts`
-  (constant entries + in-scope decorator parser + `inject_lore`
-  rewrites + `disabledUIPrompts`) are implemented and tested.
+  (constant + keyword activation: `searchMatch`, child mirror,
+  conditional-activation decorators, `matchLog`, `inject_lore`
+  rewrites, `disabledUIPrompts`) are implemented and tested.
 - `assemble.ts`, `templates.ts`, `tokens.ts`, and `triggers.ts`
   still throw Phase 7 not-implemented errors.
 - `history.ts` does not yet handle start triggers, tokenizer
@@ -58,64 +60,65 @@ What is real in code:
 - `scripts.ts` does not yet handle script-cache,
   `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
   hooks — all 7-6e or out-of-scope.
-- `lorebook.ts` covers always-on activation only; keyword
-  matching (7-7b), recursion (7-7c), budget truncation (7-7d),
-  and depth-prompt emission into history (7-7e) are deferred.
-  The decorator callback's `default: return false` leaves
-  unimplemented decorators (`additional_keys`, `recursive`,
-  `activate_only_after`, `probability`, etc.) literal in the
-  prompt text until their slice lands.
+- `lorebook.ts` covers always-on + keyword activation only;
+  recursion (7-7c), budget truncation (7-7d), and depth-prompt
+  emission into history (7-7e) are deferred. Recursion-touching
+  decorators (`recursive`, `unrecursive`, `no_recursive_search`)
+  stay on the `default: return false` path until 7-7c.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-7a:
+Last recorded baselines after 7-7b:
 
-- `pnpm api:test`: 598 across 35 files
+- `pnpm api:test`: 616 across 35 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
 ## Next Slice
 
-Pick up **7-7b - lorebook keyword matching activation**.
+Pick up **7-7c - lorebook recursive activation**.
 
-`lorebook.ts` now handles always-on entries plus the decorator
-scaffold. 7-7b layers keyword matching on top: scan the last
-`scanDepth` messages of `currentChat.message` (default
-`loreBookDepth` 5) for the entry's `key` (comma-separated, also
-`secondkey`/`selective` for AND-matching), honor `useRegex`, and
-add the conditional-activation decorators that 7-7a punted to
-`default: return false`.
+`lorebook.ts` now handles always-on + keyword activation. 7-7c
+layers the recursion loop on top: after each pass through the
+entries, any newly-activated entry's content is appended to a
+`recursivePrompt` list, the search re-runs against
+`messages ++ recursivePrompt`, and entries can fire because their
+keywords are found in another entry's already-active body.
 
 Slice scope:
 
-- Port `searchMatch` from
-  `src/ts/process/lorebook.svelte.ts:97-239` for the
-  non-recursive, single-pass case (no `recursivePrompt` yet).
-- Activate decorators: `additional_keys`, `exclude_keys`,
-  `exclude_keys_all`, `match_full_word`, `match_partial_word`,
-  `scan_depth`, `activate_only_after`, `activate_only_every`,
-  `is_greeting`, `probability`, `activate`, `dont_activate`,
-  `keep_activate_after_match`, `dont_activate_after_match`
-  (the last two read/write via the existing `chatVar`
-  backend — `bootPromptVariables` in test setup covers that).
-- Resolve `mode === 'child'` mirroring against the previous
-  parent entry in the iteration.
-- Extend the report with `matchLog` (`{ prompt, source,
-activated }`).
-- Cover: single-key hit, comma-list, regex key, secondkey AND,
-  scan_depth limit, additional_keys / exclude_keys, full-word
-  vs partial-word, child mirror, and `activate_only_after`.
+- Port the outer `while (matching)` loop from
+  `src/ts/process/lorebook.svelte.ts:241-621`. Each iteration:
+  walk the entries that have not fired yet, run searchMatch
+  (now also including the accumulated `recursivePrompt`), and
+  if any new entry activates flip `matching = true`.
+- Wire `recursivePrompt: { prompt, data, source }[]` and pass
+  it into `searchMatch`. Concat `recursivePrompt` into `mList`
+  unless `dontSearchWhenRecursive` is set on the current query
+  (`@@no_recursive_search` decorator).
+- Activate the recursion decorators:
+  - `recursive` — force per-entry recursion on.
+  - `unrecursive` — force per-entry recursion off.
+  - `no_recursive_search` — exclude prior recursive matches
+    from this entry's search window.
+- Honor the global `char.loreSettings.recursiveScanning`
+  default (defaults to true per SPA `:85`). Per-entry
+  `recursive`/`unrecursive` decorators override the global.
+- Cover: chained activation (A's body contains B's keyword →
+  B fires on the second pass), three-deep chain, recursion
+  disabled at the global level, `@@unrecursive` blocks
+  downstream chains, `@@no_recursive_search` ignores the
+  recursive layer for one entry.
 
 Skip-list (still deferred):
 
-- Recursive activation loop (7-7c).
 - Token-budget truncation (7-7d).
 - Depth-prompt emission for history (7-7e).
 
-Same rhythm: small database fixtures, `beforeAll(() =>
-bootPromptVariables())` for the chat-var decorators, and run
-all four bars (`pnpm check`, `pnpm api:test`, `pnpm test`,
-`pnpm build`) before reporting back.
+Same rhythm: extend `lorebook.test.ts` with a `Phase 7-7c
+activateLorebook — recursion` block, and run all four bars
+(`pnpm check`, `pnpm api:test`, `pnpm test`, `pnpm build`)
+before reporting back.
 
 ## Patterns To Keep
 
