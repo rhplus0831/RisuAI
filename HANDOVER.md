@@ -182,27 +182,37 @@ Last recorded baselines after 7-12c:
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-12d live send-path wiring + dispatch cluster
+## Next Slice — 7-12d-i server→browser mutation handoff
 
-Pick up **7-12d — wire the `sendChat` send path through `/chat` + provider
-dispatch** (Tier 4). This is the dispatch-coupled remainder.
+Pick up **7-12d-i — define the server-mutation contract + wire
+`varChanged` persistence** (Tier 4, first of the four 7-12d sub-slices).
 
 7-12c (`8cf7fd63`) landed the preview-path wiring. The send / continue /
 regenerate path is what's left, and it is **blocked on chat-row deltas**:
 the local send path mutates `currentChat` in place (start-trigger chat
 mutations in `buildHistoryWindow`, the assistant row `orchestrateResponse`
 writes back), but the read-only `/chat` route returns the assembled prompt
-without those deltas. So 7-12d is a cluster that lands together (likely
-sub-sliced):
+without those deltas.
 
-- emit `message_patch` (authoritative chat-row deltas) from the route so
-  the browser can apply the server's chat mutations;
-- gate the send-path local-assembly block (`index.svelte.ts` ~177–345) on
-  `useServerPromptAssembly`, feed `requestServerChat` → `dispatchRequest`
-  (the 7-12b `formated` + `biases` are already on the payload);
-- re-run the 12 server-backed sendChat fixtures through `/chat` for the
-  full assembly sweep;
-- `side_effect` events (TTS / image / hypav3) + error/abort restoration.
+**Scope re-check 2026-05-24** found the old monolithic 7-12d hid four
+distinct producers/risks. The cluster now lands as a strictly sequential
+four-slice chain (full text in
+[docs/fastify/phases/phase-7-prompt-assembly.md](docs/fastify/phases/phase-7-prompt-assembly.md)
+and [ROADMAP.md](ROADMAP.md)):
+
+- **7-12d-i** _(this pickup)_ — capture the server-side mutations in a
+  typed `AssembleResult` extension (start-trigger chat edits, `setvar`
+  `chatVars` deltas, `additonalSysPrompt` rows, the user-message row
+  push). Persist `varChanged` through the route. **Read-only on the
+  browser side.** Small–medium.
+- **7-12d-ii** — `message_patch` SSE event + SPA applier; send path
+  still runs **local** dispatch (prompt comes from server, provider
+  call stays browser-side). Re-runs the 12 sendChat fixtures. Medium.
+- **7-12d-iii** — server-side provider dispatch + streaming + chunk
+  `message_patch`. Largest sub-slice (≥600 LOC); don't combine.
+- **7-12d-iv** — `tts` `side_effect` + `error.restoration` rollback.
+  Image-gen / Hypa V3 / NovelAI string-flattening / plugin hooks stay
+  deferred. Small.
 
 ### Deferred follow-up — cross-assembler dual-mode parity test
 
@@ -221,7 +231,9 @@ not blocking 7-12d.
 ### Out of scope (still deferred)
 
 - Hypa V3 → **Phase 8**; browser plugin/Lua + inlay asset lookup stay
-  deferred; `varChanged` persistence rides with dispatch (7-12d / 6).
+  deferred; `varChanged` persistence lands in **7-12d-i** (this slice).
+- Server-side provider dispatch / streaming → **7-12d-iii**; `tts`
+  `side_effect` + `error.restoration` → **7-12d-iv**.
 
 ### Verification
 
@@ -232,9 +244,11 @@ pnpm test
 pnpm build
 ```
 
-7-12d is the default next pickup. 7-12a (adapter) + 7-12b (payload
-extension) + 7-12c (preview wiring) are landed; Tier 3 is closed
-(assembler 7-11a–f, routes 7-11g/h, telemetry 7-11i).
+**7-12d-i is the default next pickup** (the four 7-12d sub-slices are
+strictly sequential — see ROADMAP.md "Sequential order"). 7-12a (adapter)
+
+- 7-12b (payload extension) + 7-12c (preview wiring) are landed; Tier 3
+  is closed (assembler 7-11a–f, routes 7-11g/h, telemetry 7-11i).
 
 ## Patterns To Keep
 

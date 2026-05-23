@@ -147,7 +147,14 @@ Use this slice order when Phase 9 starts:
     replacement rules, reorder semantics, `baseRevision` conflict
     behavior, and SSE event names before writing handlers. Prefer a
     small number of typed resource commands over one field-level patch
-    endpoint per database property.
+    endpoint per database property. **Also lock the plugin-write
+    strategy** (gates 9-4f): given that `setDatabase` / `setDatabaseLite`
+    today write at field level through a 26-entry whitelist
+    (`src/ts/plugins/plugins.svelte.ts:37-61, 763-793`), pick one of
+    (a) plugins call typed commands directly, (b) a translation bridge
+    converts plugin writes into command calls and rejects unmappable
+    fields, or (c) only `pluginCustomStorage` survives and the 25 other
+    whitelisted keys become hard rejections. Record the choice in 9-0d.
   - **9-0d — Readiness checklist.** Publish the final command map and
     a coverage checklist that shows each mutation family is assigned to
     9-2a through 9-2f, 9-3a through 9-3f, 9-4a through 9-4g,
@@ -234,13 +241,39 @@ Use this slice order when Phase 9 starts:
     the message UI. Keep streaming, regenerate/continue, trigger
     effects, memory summaries, and cold-storage materialization out of
     this slice.
-  - **9-3d — Generation persistence handoff.** Move the send,
-    continue, regenerate/reroll/unreroll, streamed assistant
-    placeholder, streaming chunk update, final response replacement,
-    `isStreaming`, `reloadKeys`, and post-generation patch flows that
-    persist chat output. Preserve Phase 7 chat-generation fixture
-    parity and treat this as the rollback boundary for generation UI
+  - **9-3d — Generation persistence handoff.** Scope re-check on
+    2026-05-24 against `src/ts/process/postGeneration/streamResponse.ts`
+    (rows 59, 69-70, 108-110, 119-120),
+    `postGeneration/nonStreamResponse.ts` (105, 113, 123),
+    `postGeneration/orchestrateResponse.ts` (114, 153, 163), and
+    `postGeneration/stage4Finalize.ts` (34) found four distinct
+    mutation kinds with independent rollback boundaries (message
+    append/edit vs. streaming-state toggles vs. reroll bookkeeping vs.
+    `generationInfo` patch). The send / continue / regenerate functions
+    share `sendChat` re-entry — they differ in _which_ messages mutate
+    and _when_ rerolls are collected, not in separate code paths. Land
+    in order:
+    - **9-3d-i — Message-row writes.** `message.push` (both branches)
+      - the streaming chunk `data` rewrites + the non-streaming final
+        replacement. Send / continue / regenerate all flow through this
+        one row-write surface; the streaming-vs-non-streaming branch
+        decides the patch shape, not the resource.
+    - **9-3d-ii — Streaming state.** `isStreaming` toggles +
+      `reloadKeys` bumps. Distinct because they drive UI rendering and
+      need a separate "stream open / close" command pair the projection
+      can debounce.
+    - **9-3d-iii — Reroll/unreroll + post-generation patch.**
+      `addRerolls` storage from `orchestrateResponse`, trigger
+      chat-effect replacement, and the `stage4Finalize` `generationInfo`
+      patch. Rerolls are append-only history mutations; the post-gen
+      patch is metadata-only. Both are post-stream, so they can land
+      after dispatch finalizes.
+
+    Preserve Phase 7 chat-generation fixture parity across all three —
+    each sub-slice re-runs the full sendChat fixture suite. Treat the
+    union of (i + ii + iii) as the rollback boundary for generation UI
     behavior.
+
   - **9-3e — Chat `scriptstate` and scripting side effects.** Move
     `scriptstate` commands for parser chat variables, command
     `setvar`/`addvar`, and Phase 7-surviving trigger effects that
@@ -254,6 +287,7 @@ Use this slice order when Phase 9 starts:
     command calls or explicit server-backed no-op/unsupported behavior.
     Keep plugin-defined resources out of scope and require 9-0 to
     classify any Tauri/local-only compatibility path before changing it.
+
 - **9-4 — Lorebooks, modules, plugins, assets.** Umbrella milestone
   for child collections, extension surfaces, and resource-heavy
   commands. Do not pick this up as one implementation slice: lorebook
@@ -297,8 +331,21 @@ Use this slice order when Phase 9 starts:
     `pluginCustomStorage`, plugin `pluginStorage`, safe DB proxy
     custom-property writes, and plugin-exposed `setDatabase`/
     `setDatabaseLite` writes to commands or explicit server-backed
-    unsupported/no-op behavior. Require 9-0 classification before
-    changing any low-level plugin access path.
+    unsupported/no-op behavior. **Architecture decision lives in 9-0c,
+    not here.** Scope re-check on 2026-05-24 against
+    `src/ts/plugins/plugins.svelte.ts:37-61, 763-793` and
+    `src/ts/plugins/apiV3/risuai.d.ts:1406, 1412` found that
+    `setDatabase`/`setDatabaseLite` filter writes through a 26-entry
+    `allowedDbKeys` whitelist (`characters`, `modules`, `personas`,
+    `plugins`, `pluginCustomStorage`, etc.) and silently route unknown
+    keys to `pluginCustomStorage`. This is **field-level** mutation
+    that escapes any resource-level command map. 9-0c must lock one of:
+    (a) plugins call typed commands directly; (b) a translation bridge
+    converts plugin writes into command calls and rejects unmappable
+    fields; (c) only `pluginCustomStorage` survives and the 25 other
+    whitelisted keys become hard rejections. 9-4f then implements the
+    locked choice. **Do not start 9-4f until the 9-0c readiness
+    checklist (9-0d) lists this decision as resolved.**
   - **9-4g — Compatibility sweep and focused tests.** Verify the 9-4
     families have no remaining direct `DBState.db` writes in
     server-backed web paths, excluding test-only, Tauri/local-only,
@@ -312,12 +359,22 @@ Use this slice order when Phase 9 starts:
   event-driven re-fetching, residual command replacements, and
   read-only guard are separate rollback boundaries. Close the
   sub-slices below in order.
-  - **9-5a — Events endpoint.** Add `/api/v1/events` as the
-    server-backed browser event stream, including auth/session
-    handling, connection lifecycle cleanup, heartbeat or keepalive
-    behavior if needed by the existing runtime, and tests proving an
-    existing successful command emits an observable event. Do not wire
-    the browser projection client in this slice.
+  - **9-5a — Events endpoint.** Add `/api/v1/events` as a
+    **persistent** server-backed browser event stream — not the
+    per-request SSE pattern Phase 7's `/chat` route uses. Scope
+    re-check on 2026-05-24 against
+    `server/fastify/src/routes/generationChat.ts:169-174` and the
+    `prompt/sseEvents.ts` writer found no existing connection
+    registry, broadcaster, or event bus — `/chat` writes SSE headers
+    once per request and emits inline. 9-5a has to build the
+    persistent-connection infrastructure from scratch: connection
+    registry tracking active subscribers, an event broadcaster that
+    fans command-emission events out to every connected client,
+    heartbeat/keepalive (proxies and browsers drop idle SSE
+    connections), connection lifecycle cleanup on drop, and
+    auth/session handling. Tests prove an existing successful command
+    emits an observable event to a connected client. **Do not wire the
+    browser projection client in this slice.**
   - **9-5b — Bootstrap projection loader.** Add
     `src/ts/server/bootstrap.ts` to load `/api/v1/bootstrap` on app
     start and switch the web startup hydration path through that
@@ -436,7 +493,13 @@ Use this slice order when Phase 9 starts:
     legacy-compatible root, character, preset, module, loadout, plugin,
     and plugin-storage blocks from the Phase 9 per-resource
     repositories. Keep asset byte collection, bundle manifests, and
-    route response headers out of scope.
+    route response headers out of scope. **Hard dependency
+    (2026-05-24):** the per-resource repositories this slice reads from
+    do not exist until 9-2 (presets, personas, loadouts), 9-3
+    (characters), and 9-4a/c/e/f (modules, plugins, plugin-storage)
+    close. **9-7e is blocked on 9-2 + 9-3 + 9-4a/c/e/f.** 9-7a–d can
+    land earlier in parallel because they don't read from the
+    repositories.
   - **9-7f — Round-trip parity and closeout.** Add focused server tests
     that decode the fixture corpus, encode representative repository
     snapshots, and verify client/server parity where the client codec can

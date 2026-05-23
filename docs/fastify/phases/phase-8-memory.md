@@ -91,12 +91,26 @@ slices:
 - **8-1 — Memory storage foundation.** Establish the SQL tables,
   repository surface, and legacy import/backfill path before worker or
   provider behavior lands. Close the sub-slices below in order.
-  - **8-1a — Memory schema migration.** Add the first domain SQL
-    migration path for `risu.db`, bump the schema version, and create
-    `memory_chunks`, `memory_summaries`, `memory_embeddings`, and
-    `memory_jobs` with indexes, check constraints, and foreign-key /
-    cascade behavior where SQLite can enforce it. Do not add import
-    backfill or worker behavior in this slice.
+  - **8-1a — Memory schema migration.** Scope re-check on 2026-05-24
+    against `server/fastify/src/db.ts:5-22` found that
+    `CURRENT_SCHEMA_VERSION = 0`, the only DDL today is the
+    `schema_version` bootstrap table itself, and there is **no migration
+    runner / `migrations/` directory / `applyMigrations` function** in
+    the repo. Split this slice into two so the table DDL doesn't get
+    bundled with framework work:
+    - **8-1a-i — Migration runner + version bump.** Add the first
+      domain SQL migration path for `risu.db`: a typed registry of
+      ordered migration steps, a `applyMigrations(db, fromVersion)`
+      executor that runs each step in a single transaction, version
+      bumping via the existing `schema_version` row, an idempotent
+      reapply guard, and a test harness that asserts migrations are
+      runnable and reapply-safe. No memory tables in this slice.
+    - **8-1a-ii — Memory tables on top of the runner.** Add the first
+      real migration step that creates `memory_chunks`,
+      `memory_summaries`, `memory_embeddings`, and `memory_jobs` with
+      indexes, check constraints, and foreign-key / cascade behavior
+      where SQLite can enforce it. Do not add import backfill or
+      worker behavior in this slice.
   - **8-1b — Memory repositories + row mappers.** Add typed repository
     methods and JSON / blob mappers for chunks, summaries, embeddings,
     and jobs. Cover create / read / update primitives, vector
@@ -141,11 +155,18 @@ slices:
   planner, and chunk/job bridge as pure or deterministic services
   before any provider calls. Close the sub-slices below in order.
   - **8-3a — Hypa V3 settings + planner contract.** Port the Hypa V3
-    preset defaults, settings normalization, ratio validation, and the
-    canonical choice between the legacy standard and experimental
-    planner semantics. Define the pure planner input/output contract,
-    including token deltas, planned windows, errors, and skipped-message
-    reasons. Do not mutate memory rows or enqueue jobs yet.
+    preset defaults, settings normalization, and ratio validation.
+    **Lock the planner choice up front: port the standard planner
+    (`hypaMemoryV3Main` at `src/ts/process/memory/hypav3.ts:873-1494`,
+    selected by default when `HypaV3Settings.useExperimentalImpl === false`
+    per the dispatcher at `hypav3.ts:113-162`).** The experimental
+    planner (`hypaMemoryV3MainExp` at `hypav3.ts:164-871`, ~700 LOC)
+    has divergent empty-memory token reservation and is deferred to
+    Phase 9 or dropped; settings carrying `useExperimentalImpl: true`
+    fall back to the standard path with a one-time migration warning.
+    Define the pure planner input/output contract, including token
+    deltas, planned windows, errors, and skipped-message reasons. Do
+    not mutate memory rows or enqueue jobs yet.
   - **8-3b — Orphan cleanup.** Implement the server-side cleanup pass
     for summaries/chunks whose source chat memos no longer exist.
     Respect `preserveOrphanedMemory`, keep cleanup idempotent, and cover
@@ -174,11 +195,21 @@ slices:
     in this slice.
   - **8-4b — Provider-backed summary adapter.** Add the server-side
     non-streaming summary provider adapter for the supported API-backed
-    summarization model path. Reuse the existing server provider
-    dispatch seams where possible, normalize empty / failed responses
-    into typed errors, and cover mocked provider success and failure
-    cases. Local MLC / ONNX / WebLLM summary runtimes stay out of scope.
-    Do not wire the memory worker or write summaries yet.
+    summarization model path. **Re-verified 2026-05-24:** the Phase 6
+    `server/fastify/src/routes/generation.ts` already provides a
+    `handleOpenAICompatibleBuffered` non-streaming path (~lines
+    1215-1251) for OpenAI-compatible providers, but the SPA's
+    `requestChatData` (`src/ts/process/request/request.ts`) — the SPA
+    summarize call site (`hypav3.ts:1590-1598`) — is **not** ported to
+    the server. So this slice has to build a summary-specific
+    server-side adapter that wraps the existing buffered generation
+    path (and any per-provider buffered seams Phase 6 already has) into
+    a single non-streaming summary call returning `{ text, tokens } |
+{ error }`. Normalize empty / failed responses into typed errors,
+    and cover mocked provider success and failure cases. **Local MLC /
+    ONNX / WebLLM summary runtimes stay out of scope** (matches the
+    "no local runtimes server-side" boundary). Do not wire the memory
+    worker or write summaries yet.
   - **8-4c — Summarize job handler.** Wire the `summarize` memory job
     handler against the planned chunks from 8-3d: load the chunk
     payload, build the prompt, call the summary adapter, persist

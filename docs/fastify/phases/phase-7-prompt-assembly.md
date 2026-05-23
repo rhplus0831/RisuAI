@@ -786,11 +786,54 @@ from Phase 5 shrink to thin SSE iterators.
   cross-assembler parity test was deferred** — see the follow-up below.
 - **7-12d** — Live **send-path** wiring + provider dispatch + the full
   server-backed send sweep + `message_patch` / `side_effect` events +
-  error/abort restoration. The send path mutates `currentChat` in place
-  (start-trigger mutations, the assistant row `orchestrateResponse` writes
-  back); the read-only `/chat` route does not return those chat-row
-  deltas, so this cluster is dispatch-coupled and lands together (likely
-  sub-sliced: `message_patch` → dispatch → `side_effect` → restoration).
+  error/abort restoration. **Re-sliced 2026-05-24** after a scope re-check
+  found the old single "dispatch cluster" hid four distinct surfaces with
+  independent producers, LOC envelopes, and rollback risks. Land in order:
+  - **7-12d-i** — server→browser mutation handoff contract +
+    `varChanged` persistence. Capture in `AssembleResult` what the
+    server mutates that the browser used to mutate locally before
+    `dispatchRequest`: start-trigger chat edits (`cutchat` /
+    `modifychat` / `impersonate` on `currentChat.message`), `setvar`
+    `chatVars` deltas, the `additonalSysPrompt` rows, the user-message
+    row that `sendChat` used to push pre-dispatch. Wire `varChanged`
+    persistence through the route (`generationChat.ts:144` already
+    flags this as 7-12 work). No new SSE event — the contract is a
+    typed `AssembleResult` extension so 7-12d-ii can serialize it.
+    Browser stays read-only on this slice. Small–medium (~300–500 LOC).
+  - **7-12d-ii** — `message_patch` SSE event + SPA applier. Define
+    `MessagePatchEvent.patch` (insertion / update / replacement; index;
+    role; data fields). Emit it from `/chat` for the 7-12d-i contract.
+    `serverChat.ts` stops ignoring the event; a `sendChat` applier
+    writes the patches into `currentChat.message` before
+    `dispatchRequest`. The send path **still runs local dispatch** in
+    this slice — the prompt comes from the server, the provider call
+    stays browser-side. Re-runs the 12 server-backed sendChat fixtures
+    via `/chat`. Medium (~400–600 LOC).
+  - **7-12d-iii** — server-side provider dispatch + streaming. Add the
+    streaming provider adapter inline in the `/chat` route (Phase 6
+    `/api/v1/generate/completion` is not chainable — `dispatchRequest`
+    is SPA-tied, so the route must own its own dispatch loop). Emit
+    `token` events on chunks, emit `message_patch` for the assistant
+    placeholder row + each chunk-driven update, gate the send-path
+    local `dispatchRequest` call on `useServerPromptAssembly`. **Do not
+    combine with anything else** — this is the largest sub-slice
+    (≥600 LOC) and has its own per-provider regression surface.
+  - **7-12d-iv** — `side_effect` event + `error.restoration` rollback.
+    Wire the one Phase-7-real `side_effect` producer: `tts` after
+    dispatch completes if `db.ttsAutoSpeech`. The SPA dispatches via
+    the existing `sayTTS` path. `image` / `stable_diff` have **no
+    Phase 7 producer** (image-gen is later); `hypav3_progress` is
+    **Phase 8**; the SPA consumer should accept these as no-ops.
+    Populate `ErrorEvent.restoration` with the pre-dispatch chat
+    snapshot needed to roll back the 7-12d-ii patches on dispatch
+    failure; SPA applies it on `error`. Small (~200–300 LOC).
+
+  **Sequencing is strict.** Parallelizing i and ii duplicates the
+  payload-shape decision; running iii before ii means dispatch has no
+  patch channel; running iv before iii means `restoration` has nothing
+  to roll back. **Image generation, NovelAI/NovelList string-flattening,
+  and plugin/Lua hooks stay deferred** past Phase 7 regardless.
+
 - **Follow-up (parallel, not blocking) — cross-assembler dual-mode
   parity.** Cross-check that the server `assemblePrompt` and the local
   browser assembler agree on the same fixture DB. Deferred from 7-12c after
