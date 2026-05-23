@@ -9,6 +9,7 @@ import { EntityNotFoundError } from '../repository.js'
 import {
   buildFormatOrder,
   normalizeTemplate,
+  renderFinalPrompt,
   type FormatOrderKey,
   type UnformatedPromptSlots,
 } from './templates.js'
@@ -28,6 +29,7 @@ import {
 import { preflightTemplateTokens } from './preflight.js'
 import { applyDepthPrompts, buildHistoryWindow, NO_ASSETS } from './history.js'
 import { buildMemoryWindow } from './memory.js'
+import { finalizeRequestBudget } from './budgetFinalize.js'
 import type { TriggerRunResult } from './triggers.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
@@ -77,12 +79,19 @@ import type { PromptEvent } from './sseEvents.js'
  * start trigger's `additonalSysPrompt` rows. Mirrors
  * `index.svelte.ts:243-304`. Hypa V3 summary creation stays Phase 8.
  *
- * Deferred to later 7-11 slices: the `renderFinalPrompt` call + final
- * budget pruning + prompt payload (7-11f), and the route wiring /
- * preview shortcut / SSE telemetry (7-11g/h/i).
- * `buildInlayViewInstruction` (image-gen) and inlay asset lookup
- * (`NO_ASSETS`) stay deferred. `assemblePrompt` therefore still throws
- * past scope resolution.
+ * 7-11f — final render + budgeted prompt payload (`renderAndBudget` +
+ * `assemblePrompt`): `renderFinalPrompt` flattens the slots, then
+ * `finalizeRequestBudget` trims `removable` rows under `db.maxContext`
+ * and clamps the response budget. `assemblePrompt` chains 7-11a–f and
+ * returns the `AssembleResult` (the `prompt` SSE payload + the dispatch
+ * metadata), or `{ stopSending: true }` on a trigger/overflow abort.
+ * Mirrors `index.svelte.ts:306-345`.
+ *
+ * Deferred to later 7-11 slices: the route wiring + SSE emission
+ * (7-11g), the preview shortcut (7-11h), and the `info` / `message_patch`
+ * telemetry (7-11i). Provider dispatch (`dispatchRequest`) is Phase
+ * 7-12 / 6 territory; `buildInlayViewInstruction` (image-gen) and inlay
+ * asset lookup (`NO_ASSETS`) stay deferred.
  */
 
 /**
@@ -108,7 +117,28 @@ export interface AssembleInput {
   inlayAssets?: unknown[]
 }
 
-export type AssembleResult = Omit<PromptEvent, 'type'>
+/**
+ * The full assembler output (7-11f). `prompt` is the `prompt` SSE event
+ * payload the route emits (7-11g); the remaining fields carry the data
+ * dispatch (Phase 7-12 / 6) needs but the `prompt` event does not. On an
+ * abort (`stopSending`) only `stopSending` / `abortReason` are set.
+ */
+export interface AssembleResult {
+  /** A start trigger or the budget overflow aborted the send. */
+  stopSending: boolean
+  /** Why the send aborted, when `stopSending` is true. */
+  abortReason?: 'stopSending' | 'overflow'
+  /** The `prompt` SSE event payload (messages + promptInfo + lore report). */
+  prompt?: Omit<PromptEvent, 'type'>
+  /** The budgeted flat prompt (full `OpenAIChat` rows) for dispatch. */
+  formated?: OpenAIChat[]
+  /** Logit-bias rows for dispatch (7-12). */
+  biases?: [string, number][]
+  /** Final input token count from `finalizeRequestBudget`. */
+  inputTokens?: number
+  /** Clamped response budget from `finalizeRequestBudget`. */
+  outputTokens?: number
+}
 
 /**
  * The internal assembler state threaded through the 7-11 slices. 7-11a
@@ -130,6 +160,8 @@ export interface AssemblyState {
   promptTemplate: PromptItem[] | null
   usingPromptTemplate: boolean
   formatOrder: FormatOrderKey[]
+  /** `input.mode === 'continue'`; drives the `[Continue the last response]` marker. */
+  isContinue: boolean
   /** Recorded identity only; applying a non-active preset/loadout is deferred. */
   presetId?: string
   loadoutId?: string
@@ -179,6 +211,17 @@ export interface AssemblyState {
    * since no current server history row carries a memory memo.
    */
   memories?: OpenAIChat[]
+  // --- 7-11f: final render + budget (set by `renderAndBudget`) ---
+  /** The budgeted flat prompt for dispatch. */
+  formated?: OpenAIChat[]
+  /** Template-path prompt-info rows (`renderFinalPrompt.promptText`). */
+  promptText?: OpenAIChat[]
+  /** Final input token count from `finalizeRequestBudget`. */
+  inputTokens?: number
+  /** Clamped response budget from `finalizeRequestBudget`. */
+  outputTokens?: number
+  /** Set to `'overflow'` when the budget recheck cannot fit the pinned rows. */
+  abortReason?: 'stopSending' | 'overflow'
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -263,6 +306,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     promptTemplate,
     usingPromptTemplate,
     formatOrder,
+    isContinue: input.mode === 'continue',
     presetId: input.presetId,
     loadoutId: input.loadoutId,
   }
@@ -473,13 +517,98 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   }
 }
 
+/**
+ * 7-11f — render the now-complete slots into the flat prompt and run the
+ * budget recheck, mutating `state` in place. Mirrors
+ * `index.svelte.ts:306-345`:
+ *   - `renderFinalPrompt` over `state.formatOrder` (which already has
+ *     `postEverything` appended by `buildFormatOrder`, so it is **not**
+ *     re-pushed here), `state.memories`, and `state.positionParser`,
+ *     with the `isContinue` marker; `editRequest` keeps its identity
+ *     default (the 7-9e request-state transform / browser Lua stay a
+ *     dispatch-time concern);
+ *   - `finalizeRequestBudget` re-tokenizes the rendered rows, trims
+ *     `removable` rows under `db.maxContext`, and clamps the response
+ *     budget. On overflow the send aborts (`stopSending` +
+ *     `abortReason = 'overflow'`).
+ *
+ * Runs after `fillMemoryAndPostHistory`, so a prior `stopSending`
+ * short-circuits before any rendering.
+ */
+export async function renderAndBudget(state: AssemblyState): Promise<void> {
+  if (state.stopSending) return
+
+  const { ctx, currentChar, unformated } = state
+  const db = state.database
+
+  const render = await renderFinalPrompt({
+    ctx,
+    currentChar,
+    unformated,
+    promptTemplate: state.promptTemplate,
+    usingPromptTemplate: state.usingPromptTemplate,
+    formatOrder: state.formatOrder,
+    memories: state.memories,
+    positionParser: state.positionParser,
+    isContinue: state.isContinue,
+  })
+  state.promptText = render.promptText
+
+  const budget = finalizeRequestBudget({
+    db,
+    formated: render.formated,
+    maxContextTokens: db.maxContext ?? 0,
+    maxResponse: db.maxResponse ?? 0,
+  })
+  if (!budget.ok) {
+    state.stopSending = true
+    state.abortReason = 'overflow'
+    state.inputTokens = budget.inputTokens
+    return
+  }
+
+  state.formated = budget.formated
+  state.inputTokens = budget.inputTokens
+  state.outputTokens = budget.outputTokens
+}
+
+/**
+ * Phase 7 Tier 3 root: assemble the full prompt payload. Chains the
+ * 7-11a–f steps and returns the `AssembleResult`. Bad request IDs throw
+ * `EntityNotFoundError` (from `beginAssembly`); a start trigger or a
+ * budget overflow returns `{ stopSending: true }` rather than throwing.
+ * The route wiring + SSE emission is 7-11g.
+ */
 export async function assemblePrompt(
   input: AssembleInput,
   deps: AssembleDeps,
 ): Promise<AssembleResult> {
-  // 7-11a resolves scope + builds the empty slots/state (surfacing
-  // bad-ID errors early). 7-11b–f fill the slots and render; 7-11g wires
-  // the route. The tail is not implemented yet.
-  beginAssembly(input, deps)
-  throw new Error('phase 7-11 prompt assembly not yet implemented beyond 7-11a scope resolution')
+  const state = beginAssembly(input, deps)
+  fillStaticSlots(state)
+  fillLorebookSlots(state)
+  await fillHistoryAndBias(state)
+  fillMemoryAndPostHistory(state)
+  await renderAndBudget(state)
+
+  if (state.stopSending) {
+    return { stopSending: true, abortReason: state.abortReason ?? 'stopSending' }
+  }
+
+  const formated = state.formated ?? []
+  return {
+    stopSending: false,
+    prompt: {
+      messages: formated.map((row) => ({ role: row.role, content: row.content })),
+      promptInfo: {
+        promptText: state.promptText,
+        inputTokens: state.inputTokens,
+        outputTokens: state.outputTokens,
+      },
+      lorebookActivation: state.report,
+    },
+    formated,
+    biases: state.biases,
+    inputTokens: state.inputTokens,
+    outputTokens: state.outputTokens,
+  }
 }

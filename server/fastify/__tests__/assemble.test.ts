@@ -13,6 +13,7 @@ import {
   fillLorebookSlots,
   fillMemoryAndPostHistory,
   fillStaticSlots,
+  renderAndBudget,
   type AssembleDeps,
   type AssembleInput,
 } from '../src/prompt/assemble.js'
@@ -198,11 +199,6 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
 })
 
 describe('Phase 7-11a assemblePrompt', () => {
-  it('still throws past scope resolution (route not wired)', async () => {
-    const db = makeDatabase()
-    await expect(assemblePrompt(baseInput(), depsFor(db))).rejects.toThrow(/not yet implemented/)
-  })
-
   it('surfaces bad-ID errors early', async () => {
     const db = makeDatabase()
     await expect(assemblePrompt(baseInput({ characterId: 'nope' }), depsFor(db))).rejects.toThrow(
@@ -549,5 +545,108 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     // The memory window never ran, so chats stay empty.
     expect(state.unformated.chats).toEqual([])
     expect(state.memories).toBeUndefined()
+  })
+})
+
+describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
+  const msg = (role: string, data: string, chatId: string) =>
+    ({ role, data, chatId }) as never
+
+  const fullDb = (overrides: Partial<Database> = {}): Database =>
+    makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          desc: 'DESC',
+          firstMessage: 'Greetings.',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [msg('user', 'hello'), msg('char', 'hi there')] as never,
+            }),
+          ],
+        } as Partial<character>),
+      ],
+      ...overrides,
+    } as Partial<Database>)
+
+  it('assembles a prompt payload end-to-end (non-template)', async () => {
+    const result = await assemblePrompt(baseInput(), depsFor(fullDb()))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.prompt?.messages.length).toBeGreaterThan(0)
+    expect(typeof result.inputTokens).toBe('number')
+    expect(typeof result.outputTokens).toBe('number')
+    expect(result.formated?.length).toBeGreaterThan(0)
+    expect(Array.isArray(result.biases)).toBe(true)
+    // The lorebook activation report rides along on the prompt event.
+    expect(result.prompt?.lorebookActivation).toBeDefined()
+  })
+
+  it('captures template-path prompt-info (promptText) when the capture flags are on', async () => {
+    // `promptText` is only populated when both prompt-info-inside-chat
+    // flags are set; a `description` card then contributes a row.
+    const db = fullDb({
+      promptInfoInsideChat: true,
+      promptTextInfoInsideChat: true,
+      promptTemplate: [
+        { type: 'description' },
+        { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+      ],
+    } as Partial<Database>)
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.prompt?.promptInfo?.promptText).toBeDefined()
+  })
+
+  it('pushes the continue marker when mode is continue under a continue-marker model', async () => {
+    const db = fullDb({ aiModel: 'gpt-4' } as Partial<Database>)
+    const result = await assemblePrompt(baseInput({ mode: 'continue' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated?.some((r) => r.content === '[Continue the last response]')).toBe(true)
+  })
+
+  it('returns stopSending without a prompt when a start trigger aborts', async () => {
+    const db = fullDb({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          firstMessage: 'Hi.',
+          triggerscript: [
+            { comment: '', type: 'start', conditions: [], effect: [{ type: 'stop' }] },
+          ] as never,
+          chats: [makeChat({ id: 'chat-1' })],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+
+    expect(result).toEqual({ stopSending: true, abortReason: 'stopSending' })
+  })
+
+  it('renderAndBudget aborts with overflow when pinned rows exceed maxContext', async () => {
+    // Tiny budget + a non-removable (pinned) description row → finalize
+    // cannot trim it, so the budget recheck overflows.
+    const state = beginAssembly(baseInput(), depsFor(makeDatabase({ maxContext: 1 } as Partial<Database>)))
+    state.unformated.description.push({ role: 'system', content: 'a pinned description row' })
+    await renderAndBudget(state)
+
+    expect(state.stopSending).toBe(true)
+    expect(state.abortReason).toBe('overflow')
+    expect(state.formated).toBeUndefined()
+  })
+
+  it('renderAndBudget short-circuits when a prior step set stopSending', async () => {
+    const state = beginAssembly(baseInput(), depsFor(fullDb()))
+    state.stopSending = true
+    await renderAndBudget(state)
+
+    expect(state.formated).toBeUndefined()
+    expect(state.inputTokens).toBeUndefined()
   })
 })
