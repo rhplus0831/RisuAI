@@ -1,6 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
+import { loadPersisted } from '../repository.js'
+import {
+  assemblePrompt,
+  type AssembleDeps,
+  type AssembleInput,
+} from '../prompt/assemble.js'
 import {
   type PromptChatEvent,
   writePromptChatEvent,
@@ -87,9 +94,37 @@ function attachAbort(req: FastifyRequest): {
   }
 }
 
-async function streamScaffold(
+/** Map a validated request body to the assembler input contract. */
+function toAssembleInput(body: ChatRequestBody): AssembleInput {
+  return {
+    chatId: body.chatId as string,
+    characterId: body.characterId as string,
+    mode: body.mode as AssembleInput['mode'],
+    presetId: typeof body.presetId === 'string' ? body.presetId : undefined,
+    loadoutId: typeof body.loadoutId === 'string' ? body.loadoutId : undefined,
+    regenerateMessageId:
+      typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : undefined,
+    userMessage: typeof body.userMessage === 'string' ? body.userMessage : undefined,
+    resetMessages: typeof body.resetMessages === 'boolean' ? body.resetMessages : undefined,
+    expectedRevision:
+      typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined,
+    inlayAssets: Array.isArray(body.inlayAssets) ? body.inlayAssets : undefined,
+  }
+}
+
+/**
+ * Phase 7-11g: stream the assembled prompt. The SSE head is written
+ * up front, so every assembly failure (bad IDs, missing database, a
+ * trigger/overflow `stopSending`) is a terminal `error` event rather
+ * than an HTTP status — body validation already returned 400 before we
+ * committed to streaming. Provider dispatch + `varChanged` persistence
+ * land with Phase 7-12.
+ */
+async function streamAssembly(
   req: FastifyRequest,
   reply: FastifyReply,
+  input: AssembleInput,
+  dataDir: string,
 ): Promise<void> {
   const { cleanup } = attachAbort(req)
   try {
@@ -98,15 +133,38 @@ async function streamScaffold(
       'cache-control': 'no-store',
       connection: 'keep-alive',
     })
-    const events: PromptChatEvent[] = [
-      { type: 'stage', stage: 'validate', status: 'start' },
-      { type: 'stage', stage: 'validate', status: 'end' },
-      { type: 'error', error: 'phase-7 prompt assembly not yet implemented' },
-      { type: 'done' },
-    ]
-    for (const event of events) {
-      writePromptChatEvent(reply, event)
+    const emit = (event: PromptChatEvent): void => writePromptChatEvent(reply, event)
+
+    emit({ type: 'stage', stage: 'validate', status: 'start' })
+    emit({ type: 'stage', stage: 'validate', status: 'end' })
+    emit({ type: 'stage', stage: 'prompt', status: 'start' })
+
+    const deps: AssembleDeps = {
+      loadDatabase: () => loadPersisted(dataDir).database as Database | null,
     }
+
+    try {
+      const result = await assemblePrompt(input, deps)
+      if (!result.stopSending && result.prompt) {
+        emit({ type: 'prompt', ...result.prompt })
+        emit({ type: 'stage', stage: 'prompt', status: 'end' })
+      } else {
+        emit({
+          type: 'error',
+          error:
+            result.abortReason === 'overflow'
+              ? 'prompt exceeds the context budget'
+              : 'prompt assembly was stopped by a trigger',
+        })
+      }
+    } catch (err) {
+      emit({
+        type: 'error',
+        error: err instanceof Error ? err.message : 'prompt assembly failed',
+      })
+    }
+
+    emit({ type: 'done' })
     reply.raw.end()
   } finally {
     cleanup()
@@ -116,6 +174,7 @@ async function streamScaffold(
 export function registerGenerationChatRoutes(
   app: FastifyInstance,
   authState: AuthState,
+  dataDir: string,
 ): void {
   app.post('/api/v1/generate/chat', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -126,6 +185,6 @@ export function registerGenerationChatRoutes(
       return badRequest(reply, validation.error)
     }
 
-    await streamScaffold(req, reply)
+    await streamAssembly(req, reply, toAssembleInput(body), dataDir)
   })
 }

@@ -83,7 +83,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerHubRoutes(app, authState, config.hubUrl)
   registerLegacyStorageRoutes(app, authState, config.dataDir)
   registerGenerationRoutes(app, authState)
-  registerGenerationChatRoutes(app, authState)
+  registerGenerationChatRoutes(app, authState, config.dataDir)
   bootPromptVariables()
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {

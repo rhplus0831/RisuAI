@@ -96,6 +96,67 @@ const basePayload = {
   userMessage: 'hi',
 }
 
+/** A minimal but complete database the assembler can flatten. */
+const fixtureDatabase = {
+  currentChar: 0,
+  characters: [
+    {
+      type: 'character',
+      name: 'Tess',
+      chaId: 'char-1',
+      utilityBot: false,
+      chatPage: 0,
+      desc: 'DESC',
+      firstMessage: 'Greetings.',
+      chats: [{ id: 'chat-1', message: [], note: '', name: 'Chat', localLore: [] }],
+    },
+  ],
+  formatingOrder: ['main', 'description', 'chats'],
+  promptSettings: {
+    assistantPrefill: '',
+    postEndInnerFormat: '',
+    sendChatAsSystem: false,
+    sendName: false,
+    utilOverride: false,
+  },
+  mainPrompt: 'MAIN',
+  maxContext: 100_000,
+  maxResponse: 50,
+}
+
+async function seedDatabase(
+  app: FastifyInstance,
+  assertion: string,
+  database: unknown,
+): Promise<void> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/v1/import/risusave',
+    headers: { 'risu-auth': assertion },
+    payload: { database },
+  })
+  expect(res.statusCode).toBe(200)
+}
+
+interface ParsedEvent {
+  type: string
+  data: Record<string, unknown>
+}
+
+/** Parse an `event:`/`data:` SSE body into ordered events. */
+function parseEvents(body: string): ParsedEvent[] {
+  return body
+    .split('\n\n')
+    .filter((block) => block.length > 0)
+    .map((block) => {
+      const [evLine, dataLine] = block.split('\n')
+      return {
+        type: evLine.replace('event: ', ''),
+        data: JSON.parse(dataLine.replace('data: ', '')) as Record<string, unknown>,
+      }
+    })
+}
+
 describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   it('returns 401 without auth once a password is set', async () => {
     await harness.app.inject({
@@ -175,8 +236,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
-  it('emits validate stage + not-implemented error + done on a valid body', async () => {
+  it('streams the assembled prompt for a seeded database', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
     const res = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/generate/chat',
@@ -185,16 +248,62 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toBe('text/event-stream')
-    expect(res.body).toBe(
-      `event: stage\ndata: ${JSON.stringify({ stage: 'validate', status: 'start' })}\n\n` +
-        `event: stage\ndata: ${JSON.stringify({ stage: 'validate', status: 'end' })}\n\n` +
-        `event: error\ndata: ${JSON.stringify({ error: 'phase-7 prompt assembly not yet implemented' })}\n\n` +
-        `event: done\ndata: ${JSON.stringify({})}\n\n`,
-    )
+
+    const events = parseEvents(res.body)
+    expect(events.map((e) => e.type)).toEqual([
+      'stage',
+      'stage',
+      'stage',
+      'prompt',
+      'stage',
+      'done',
+    ])
+    const prompt = events.find((e) => e.type === 'prompt')!
+    expect(Array.isArray(prompt.data.messages)).toBe(true)
+    expect((prompt.data.messages as unknown[]).length).toBeGreaterThan(0)
+    // The final prompt stage closes only on success.
+    expect(events.at(-2)).toEqual({ type: 'stage', data: { stage: 'prompt', status: 'end' } })
+    expect(events.at(-1)).toEqual({ type: 'done', data: {} })
   })
 
-  it('accepts preview_prompt mode without userMessage', async () => {
+  it('emits an SSE error (not a 400) when the character is unknown', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, characterId: 'nope' },
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const error = events.find((e) => e.type === 'error')
+    expect(error).toBeDefined()
+    expect(String(error!.data.error)).toMatch(/character not found/)
+    expect(events.find((e) => e.type === 'prompt')).toBeUndefined()
+    expect(events.at(-1)?.type).toBe('done')
+  })
+
+  it('emits an SSE error when no database is persisted', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const error = events.find((e) => e.type === 'error')
+    expect(String(error!.data.error)).toMatch(/database not found/)
+    expect(events.at(-1)?.type).toBe('done')
+  })
+
+  it('assembles a prompt for preview_prompt mode without userMessage', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
     const res = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/generate/chat',
@@ -203,5 +312,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toBe('text/event-stream')
+    const events = parseEvents(res.body)
+    expect(events.find((e) => e.type === 'prompt')).toBeDefined()
   })
 })
