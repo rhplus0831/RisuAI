@@ -9,6 +9,7 @@ import {
   assemblePrompt,
   beginAssembly,
   createEmptyUnformatedSlots,
+  fillLorebookSlots,
   fillStaticSlots,
   type AssembleDeps,
   type AssembleInput,
@@ -288,5 +289,66 @@ describe('Phase 7-11b fillStaticSlots', () => {
   it('omits author note when the chat note and default are empty', () => {
     const u = fill(staticDb({}, { chats: [makeChat({ id: 'chat-1', note: '' })] }))
     expect(u.authorNote).toEqual([])
+  })
+})
+
+describe('Phase 7-11c fillLorebookSlots', () => {
+  // An always-on (constant) lorebook entry — lands in the `lorebook` slot.
+  const constLore = (content: string) =>
+    ({
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: '',
+      content,
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+    }) as unknown
+
+  const run = (db: Database) => {
+    const state = beginAssembly(baseInput(), depsFor(db))
+    fillStaticSlots(state)
+    fillLorebookSlots(state)
+    return state
+  }
+
+  it('activates the lorebook, distributes it, and sets the 7-11c state', () => {
+    const db = makeDatabase({
+      maxResponse: 100,
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          desc: 'DESC',
+          globalLore: [constLore('LOREBODY')],
+          chats: [makeChat({ id: 'chat-1' })],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const state = run(db)
+    expect(state.report).toBeDefined()
+    expect(state.unformated.lorebook.map((r) => r.content)).toContain('LOREBODY')
+    expect(typeof state.positionParser).toBe('function')
+    expect(Array.isArray(state.depthPrompts)).toBe(true)
+    // maxResponse (100) + 50 headroom + preflight tokens for the filled slots.
+    expect(state.currentTokens).toBeGreaterThan(150)
+    expect(state.memoryCardUsed).toBe(false)
+    expect(state.hasCachePoint).toBe(false)
+  })
+
+  it('surfaces memoryCardUsed / hasCachePoint from the preflight', () => {
+    const memState = run(
+      makeDatabase({ promptTemplate: [{ type: 'memory' }] } as Partial<Database>),
+    )
+    expect(memState.memoryCardUsed).toBe(true)
+    expect(memState.hasCachePoint).toBe(false)
+
+    const cacheState = run(
+      makeDatabase({
+        promptTemplate: [{ type: 'cache', name: 'c', depth: 1, role: 'all' }],
+      } as Partial<Database>),
+    )
+    expect(cacheState.hasCachePoint).toBe(true)
   })
 })

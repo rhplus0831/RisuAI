@@ -18,6 +18,13 @@ import {
   buildPersona,
 } from './staticSections.js'
 import { buildPlainPromptSections } from './plainSections.js'
+import {
+  activateLorebook,
+  buildLorebookContext,
+  type LoreEntryActive,
+  type LorebookActivationReport,
+} from './lorebook.js'
+import { preflightTemplateTokens } from './preflight.js'
 import type { ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
 
@@ -41,10 +48,18 @@ import type { PromptEvent } from './sseEvents.js'
  * chain-of-thought into `postEverything`, `description`, and
  * `personaPrompt`.
  *
- * Deferred to later 7-11 slices: lorebook + preflight (7-11c), history +
- * bias (7-11d), the memory-window bridge + depth/additional-system-prompt
- * placement (7-11e), the `renderFinalPrompt` call + final budget pruning
- * + prompt payload (7-11f), and the route wiring / preview shortcut / SSE
+ * 7-11c — lorebook placement + token preflight (`fillLorebookSlots`):
+ * `activateLorebook`, distribute the activated entries via
+ * `buildLorebookContext` (`lorebook` / `description` / `postEverything`),
+ * build the `positionParser` + `depthPrompts`, and run
+ * `preflightTemplateTokens`, recording `report` / `positionParser` /
+ * `depthPrompts` / `currentTokens` / `memoryCardUsed` / `hasCachePoint`
+ * on the state.
+ *
+ * Deferred to later 7-11 slices: history + bias (7-11d), the
+ * memory-window bridge + depth/additional-system-prompt placement
+ * (7-11e), the `renderFinalPrompt` call + final budget pruning + prompt
+ * payload (7-11f), and the route wiring / preview shortcut / SSE
  * telemetry (7-11g/h/i). `buildInlayViewInstruction` (image-gen) stays
  * deferred. `assemblePrompt` therefore still throws past scope
  * resolution.
@@ -98,6 +113,19 @@ export interface AssemblyState {
   /** Recorded identity only; applying a non-active preset/loadout is deferred. */
   presetId?: string
   loadoutId?: string
+  // --- 7-11c: lorebook placement + token preflight (set by `fillLorebookSlots`) ---
+  /** The lorebook activation report (entries that fired + why). */
+  report?: LorebookActivationReport
+  /** `{{position::}}` resolver shared by the template / render walkers. */
+  positionParser?: (text: string, loc: string) => string
+  /** Depth-positioned lore the history splicer consumes (7-11e). */
+  depthPrompts?: LoreEntryActive[]
+  /** Running token estimate: `maxResponse + 50 + preflight.addedTokens`. */
+  currentTokens?: number
+  /** From `preflightTemplateTokens`: the template contains a `memory` card. */
+  memoryCardUsed?: boolean
+  /** From `preflightTemplateTokens`: the template contains a `cache` card. */
+  hasCachePoint?: boolean
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -212,6 +240,54 @@ export function fillStaticSlots(state: AssemblyState): void {
   unformated.postEverything.push(...buildCotInstruction(ctx, usingPromptTemplate))
   unformated.description.push(...buildDescription(ctx, currentChar))
   unformated.personaPrompt.push(...buildPersona(ctx))
+}
+
+/**
+ * 7-11c — activate the lorebook, distribute the activated entries into
+ * the slots, build the `positionParser` + `depthPrompts`, and run the
+ * template-wide token preflight. Mirrors `index.svelte.ts:206-225`.
+ *
+ * Runs after `fillStaticSlots` so the `before_desc` / `after_desc`
+ * placement sees the static description row and the preflight tokenizes
+ * the now-full slots. Sets the 7-11c fields on `state`.
+ */
+export function fillLorebookSlots(state: AssemblyState): void {
+  const { ctx, currentChar, currentChat, unformated, promptTemplate, usingPromptTemplate } = state
+  const db = state.database
+
+  const report = activateLorebook({
+    database: db,
+    currentChar,
+    currentChat,
+    model: db.aiModel,
+  })
+
+  const { positionParser, depthPrompts } = buildLorebookContext(
+    ctx,
+    currentChar,
+    report,
+    unformated,
+  )
+
+  // SPA `:210-213`: seed with the max response budget plus a small
+  // headroom for unexpected error overhead.
+  let currentTokens = (db.maxResponse ?? 0) + 50
+  const preflight = preflightTemplateTokens({
+    ctx,
+    currentChar,
+    unformated,
+    promptTemplate,
+    usingPromptTemplate,
+    report,
+  })
+  currentTokens += preflight.addedTokens
+
+  state.report = report
+  state.positionParser = positionParser
+  state.depthPrompts = depthPrompts
+  state.currentTokens = currentTokens
+  state.memoryCardUsed = preflight.memoryCardUsed
+  state.hasCachePoint = preflight.hasCachePoint
 }
 
 export async function assemblePrompt(

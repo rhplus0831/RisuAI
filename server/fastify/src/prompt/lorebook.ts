@@ -6,9 +6,11 @@ import type {
   character,
   loreBook,
 } from '../../../../src/ts/storage/database.svelte'
+import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { pickHashRand } from '../../../../src/ts/util/loreHash'
 import { getActiveModules } from './modules.js'
 import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
+import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
  * Phase 7-7a / 7-7b / 7-7c lorebook activation: constant + keyword +
@@ -715,4 +717,85 @@ export function resolvePosition(
     if (!replaced) break
   }
   return result.replace(POSITION_REGEX, '')
+}
+
+/** The slots `buildLorebookContext` distributes activated entries into. */
+export interface UnformatedLorebookSlots {
+  lorebook: OpenAIChat[]
+  description: OpenAIChat[]
+  postEverything: OpenAIChat[]
+}
+
+export interface LorebookContext {
+  /**
+   * `{{position::}}` resolver for the template / render walkers. The
+   * SPA's injection-lore branch is dead server-side (7-7d filters
+   * location-targeted injection entries out of `report.actives`), so
+   * this just delegates to `resolvePosition` and ignores `loc` —
+   * matching `preflight.ts`'s `positionParserFor` so preflight and the
+   * final render agree.
+   */
+  positionParser: (text: string, loc: string) => string
+  /** `pos === 'depth' && depth > 0` or `reverse_depth` (via `getDepthPrompts`). */
+  depthPrompts: LoreEntryActive[]
+}
+
+/**
+ * Distribute an activation report into the prompt slots, ported from
+ * `src/ts/process/promptAssembly/buildLorebookContext.ts:65-145`:
+ *
+ *   - `pos === '' && inject === null` → `lorebook`,
+ *   - `after_desc` / `personality` / `scenario` → `description` (push);
+ *     `before_desc` → `description` (unshift),
+ *   - `pos === 'depth' && depth === 0 && role !== 'assistant'` →
+ *     `postEverything`, then the `role === 'assistant'` (prefill) ones
+ *     after so the assistant prefill stays at the very end,
+ *   - `pt_<name>` positions are left for `{{position::}}` resolution.
+ *
+ * Each row's content is `resolvePosition` then `expandVariables` (with
+ * `chara`), mirroring the SPA's `risuChatParser(resolvePosition(...))`.
+ * Mutates `unformated`; returns the `positionParser` + `depthPrompts`.
+ */
+export function buildLorebookContext(
+  ctx: ExpandContext,
+  currentChar: character,
+  report: LorebookActivationReport,
+  unformated: UnformatedLorebookSlots,
+): LorebookContext {
+  const toRow = (lore: LoreEntryActive): OpenAIChat => ({
+    role: lore.role,
+    content: expandVariables(resolvePosition(lore.prompt, report), {
+      ...ctx,
+      chara: currentChar,
+    }).text,
+  })
+
+  for (const lore of report.actives) {
+    if (lore.pos === '' && lore.inject === null) {
+      unformated.lorebook.push(toRow(lore))
+    } else if (
+      lore.pos === 'after_desc' ||
+      lore.pos === 'personality' ||
+      lore.pos === 'scenario'
+    ) {
+      unformated.description.push(toRow(lore))
+    } else if (lore.pos === 'before_desc') {
+      unformated.description.unshift(toRow(lore))
+    } else if (lore.pos === 'depth' && lore.depth === 0 && lore.role !== 'assistant') {
+      unformated.postEverything.push(toRow(lore))
+    }
+  }
+
+  // Assistant-prefill depth-0 lore lands after the user/system depth-0
+  // lore so the prefill stays at the very end (`buildLorebookContext.ts:113-122`).
+  for (const lore of report.actives) {
+    if (lore.pos === 'depth' && lore.depth === 0 && lore.role === 'assistant') {
+      unformated.postEverything.push(toRow(lore))
+    }
+  }
+
+  return {
+    positionParser: (text) => resolvePosition(text, report),
+    depthPrompts: getDepthPrompts(report),
+  }
 }

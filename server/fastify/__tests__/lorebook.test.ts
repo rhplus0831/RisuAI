@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import type {
   Chat,
   Database,
@@ -7,7 +7,17 @@ import type {
   loreBook,
 } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
-import { activateLorebook } from '../src/prompt/lorebook.js'
+import {
+  activateLorebook,
+  buildLorebookContext,
+  type UnformatedLorebookSlots,
+} from '../src/prompt/lorebook.js'
+import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+import type { ExpandContext } from '../src/prompt/variables.js'
+
+beforeAll(() => {
+  bootPromptVariables()
+})
 
 function makeMessage(overrides: Partial<Message> = {}): Message {
   return {
@@ -1272,5 +1282,109 @@ describe('Phase 7-7d activateLorebook — budget truncation', () => {
     })
     // 'oversized' (9 tokens) > 4 → rejected; 'fits' (1 token) ≤ 4 → kept.
     expect(report.actives.map((a) => a.source)).toEqual(['fits'])
+  })
+})
+
+describe('Phase 7-11c buildLorebookContext', () => {
+  const ctxFor = (): ExpandContext => ({
+    database: makeDb({ characters: [makeChar()], currentChar: 0 } as Partial<Database>),
+  })
+
+  const makeActive = (overrides: Partial<LoreEntryActive>): LoreEntryActive => ({
+    depth: 0,
+    pos: '',
+    prompt: '',
+    role: 'system',
+    order: 0,
+    priority: 0,
+    tokens: 0,
+    source: '',
+    inject: null,
+    ...overrides,
+  })
+
+  const makeReport = (actives: LoreEntryActive[]): LorebookActivationReport => ({
+    actives,
+    disabledUIPrompts: [],
+    matchLog: [],
+  })
+
+  const emptySlots = (
+    description: { role: 'system' | 'user' | 'assistant'; content: string }[] = [],
+  ): UnformatedLorebookSlots => ({
+    lorebook: [],
+    description: [...description],
+    postEverything: [],
+  })
+
+  it('routes entries to slots by position', () => {
+    const slots = emptySlots([{ role: 'system', content: 'EXISTING' }])
+    buildLorebookContext(
+      ctxFor(),
+      makeChar(),
+      makeReport([
+        makeActive({ pos: '', prompt: 'CONST' }),
+        makeActive({ pos: 'after_desc', prompt: 'AFTER' }),
+        makeActive({ pos: 'before_desc', prompt: 'BEFORE' }),
+        makeActive({ pos: 'depth', depth: 0, prompt: 'POST' }),
+      ]),
+      slots,
+    )
+    expect(slots.lorebook.map((r) => r.content)).toEqual(['CONST'])
+    // before_desc unshifts ahead of the existing row; after_desc pushes after.
+    expect(slots.description.map((r) => r.content)).toEqual(['BEFORE', 'EXISTING', 'AFTER'])
+    expect(slots.postEverything.map((r) => r.content)).toEqual(['POST'])
+  })
+
+  it('keeps the assistant prefill last in postEverything', () => {
+    const slots = emptySlots()
+    buildLorebookContext(
+      ctxFor(),
+      makeChar(),
+      makeReport([
+        makeActive({ pos: 'depth', depth: 0, role: 'assistant', prompt: 'PREFILL' }),
+        makeActive({ pos: 'depth', depth: 0, role: 'system', prompt: 'SYS' }),
+      ]),
+      slots,
+    )
+    expect(slots.postEverything.map((r) => r.content)).toEqual(['SYS', 'PREFILL'])
+  })
+
+  it('returns only depth>0 / reverse_depth entries as depthPrompts', () => {
+    const { depthPrompts } = buildLorebookContext(
+      ctxFor(),
+      makeChar(),
+      makeReport([
+        makeActive({ pos: 'depth', depth: 2, prompt: 'D2' }),
+        makeActive({ pos: 'reverse_depth', depth: 1, prompt: 'RD' }),
+        makeActive({ pos: 'depth', depth: 0, prompt: 'D0' }),
+      ]),
+      emptySlots(),
+    )
+    expect(depthPrompts.map((d) => d.prompt)).toEqual(['D2', 'RD'])
+  })
+
+  it('builds a positionParser that resolves {{position::}} markers', () => {
+    const { positionParser } = buildLorebookContext(
+      ctxFor(),
+      makeChar(),
+      makeReport([makeActive({ pos: 'pt_x', prompt: 'XVAL' })]),
+      emptySlots(),
+    )
+    expect(positionParser('a {{position::x}} b', 'anyloc')).toBe('a XVAL b')
+  })
+
+  it('resolves {{position::}} inside a distributed row before expanding', () => {
+    const slots = emptySlots()
+    buildLorebookContext(
+      ctxFor(),
+      makeChar(),
+      makeReport([
+        makeActive({ pos: '', prompt: 'hi {{position::y}}' }),
+        makeActive({ pos: 'pt_y', prompt: 'YY' }),
+      ]),
+      slots,
+    )
+    expect(slots.lorebook.map((r) => r.content)).toEqual(['hi YY'])
   })
 })
