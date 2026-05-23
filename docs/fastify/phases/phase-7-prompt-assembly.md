@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (21 slices landed as of 2026-05-23).
+Status: in-progress (22 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -17,10 +17,12 @@ rewrites, the 7-7e depth-prompt helpers `getDepthPrompts` /
 `tokens.ts` (the 7-8a minimal server tokenizer over
 `cl100k_base` / `o200k_base`), `preflight.ts` (the 7-8b
 template-wide token preflight + `PromptUnformatedSlots` shape),
-and `tokenizerConfig.ts` (shared `tokenizerOptionsFromDb` helper
-used by `history.ts` and `preflight.ts`) are real. The remaining
-assembly modules under `server/fastify/src/prompt/` (`assemble`,
-`templates`, `triggers`) are still throwing stubs. See
+`budgetFinalize.ts` (the 7-8c request budget finalization), and
+`tokenizerConfig.ts` (shared `tokenizerOptionsFromDb` helper used
+by `history.ts`, `preflight.ts`, and `budgetFinalize.ts`) are
+real. The remaining assembly modules under
+`server/fastify/src/prompt/` (`assemble`, `templates`, `triggers`)
+are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -184,6 +186,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                       |
 | 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                          |
 | 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`. |
+| 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.          |
 
 ## Remaining roadmap
 
@@ -395,7 +398,20 @@ hasCachePoint }` and the `PromptUnformatedSlots` shape the future
     and 7-8b read the same gpt-vs-non-gpt overhead + `useName`
     rules. Add multimodal image-token accounting here only if a
     fixture makes it observable.
-- **7-8c** — Budget finalization (pruning order, fallback chains).
+- **7-8c** — Budget finalization. **Landed `c83015b3`** (8 tests,
+  api:test 695 → 703). `server/fastify/src/prompt/budgetFinalize.ts`
+  exports `finalizeRequestBudget(input)` returning
+  `{ ok: true, formated, inputTokens, outputTokens }` or
+  `{ ok: false, reason: 'overflow', inputTokens }`. Re-tokenizes a
+  flattened `OpenAIChat[]`, trims `removable` rows front-to-back
+  until under `maxContextTokens` (blank content, then drop
+  emptied non-multimodal rows), and clamps `outputTokens` to the
+  remaining headroom. Honors the `removable` flag set upstream
+  (`buildMemoryWindow.ts:147`); does not consume the preflight
+  output (preflight feeds the memory window, finalize is the
+  independent final re-check at `index.svelte.ts:329`). Text-only
+  tokenization keeps multimodal image-token math deferred while
+  preserving the multimodal-only survival filter.
 
 **7-9a … 7-9c — Triggers.** Port `src/ts/process/triggers.ts`.
 

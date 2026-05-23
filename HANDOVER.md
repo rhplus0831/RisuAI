@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `d488ab7f feat: template-wide token preflight (Phase 7-8b)`
+Head: `c83015b3 feat: request budget finalization (Phase 7-8c)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -41,6 +41,7 @@ Landed Phase 7 slices:
 | 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                        |
 | 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                           |
 | 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list, returning `{ addedTokens, memoryCardUsed, hasCachePoint }`. |
+| 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.           |
 
 What is real in code:
 
@@ -73,8 +74,15 @@ What is real in code:
 memoryCardUsed, hasCachePoint }` and the
   `PromptUnformatedSlots` shape the future assemble root will
   feed in (Phase 7-8b).
+- `budgetFinalize.ts` runs the final request budget step
+  (`finalizeRequestBudget`): re-tokenizes a flattened
+  `OpenAIChat[]`, trims `removable` rows under `maxContextTokens`,
+  drops emptied non-multimodal rows, and clamps `outputTokens`,
+  returning `{ ok, formated, inputTokens, outputTokens }` or
+  `{ ok: false, reason: 'overflow' }` (Phase 7-8c).
 - `tokenizerConfig.ts` houses the shared `tokenizerOptionsFromDb`
-  helper used by `history.ts` (7-5e) and `preflight.ts` (7-8b).
+  helper used by `history.ts` (7-5e), `preflight.ts` (7-8b), and
+  `budgetFinalize.ts` (7-8c).
 - `assemble.ts`, `templates.ts`, and `triggers.ts` still throw
   Phase 7 not-implemented errors.
 - `history.ts` does not yet handle start triggers (7-5d, blocked
@@ -92,56 +100,53 @@ memoryCardUsed, hasCachePoint }` and the
   resolution). No remaining lorebook slices.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-8b:
+Last recorded baselines after 7-8c:
 
-- `pnpm api:test`: 695 across 37 files
+- `pnpm api:test`: 703 across 38 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-8c budget finalization
+## Next Slice — 7-9a trigger sandbox
 
-Pick up **7-8c — final budget pruning + fallback chains**.
+Pick up **7-9a — trigger sandbox infrastructure**.
 
-7-8b (`d488ab7f`) shipped the template-wide preflight, so the
-assemble root will have a single `addedTokens` figure plus the
-`memoryCardUsed` / `hasCachePoint` flags. The remaining Tier 2
-tokens / budget work is final pruning: deciding which slots get
-trimmed when the running `currentTokens` exceeds the model's
-context limit. After 7-8c lands, the budget chain is closed and the
-next sequential pickup is **7-9a** (trigger sandbox).
+7-8c (`c83015b3`) closed the tokens / budget chain (7-8a → 7-8b →
+7-8c all landed). The remaining Tier 2 work splits into two
+independent fronts: Triggers (`triggers.ts`, currently a throwing
+stub) and Preset templates (`templates.ts`, also a stub). 7-9a is
+the trigger entry point and the critical-path predecessor for
+7-9b/9c — and 7-9c in turn unblocks the last Tier 1 history
+sub-slice (7-5d start trigger). **7-10a** (template card parsing)
+is an equally valid parallel pickup if you'd rather start the
+template front.
 
 ### Scope sketch (SPA reference)
 
-- `src/ts/process/promptBudget/finalizeRequestBudget.ts` is the
-  port target. The SPA walks the prebuilt slots in priority order,
-  dropping / trimming entries until the request fits, and returns
-  the final `OpenAIChat[]` plus telemetry the SPA surfaces in the
-  `info` SSE event.
-- Reuse `tokenizeChat` + `tokenizerOptionsFromDb` from `tokens.ts`
-  / `tokenizerConfig.ts`. Consume the output of
-  `preflightTemplateTokens` (or call it internally — the SPA
-  threads it through `index.svelte.ts`).
-- Keep the API synchronous and Svelte-free; the model string flows
-  in via `db.aiModel` like 7-8a / 7-8b / 7-5e.
+- `src/ts/process/triggers.ts` is the port target. 7-9a stands up
+  the sandbox/runner that executes a trigger's body — the SPA's
+  `processTrigger` / `runTrigger` core minus the specific hook
+  call sites (those are 7-9b/9c).
+- May reuse the 7-6 `processScript` chain for trigger bodies (the
+  ROADMAP notes this explicitly). Keep plugin/Lua code execution
+  out — that stays browser-side per the migration boundary.
+- Decide the concrete LOC + test scope at slice start; the SPA
+  `triggers.ts` is large, so split aggressively (sandbox infra
+  only in 7-9a; `editInput`/`editRequest` in 7-9b; `start` in
+  7-9c).
 
 ### Tests
 
-Add isolated server tests in `__tests__/budgetFinalize.test.ts` (or
-extend `preflight.test.ts` if the surface stays small):
-
-- Pure pass-through when total tokens fit under `db.maxContext`.
-- Drops the lowest-priority slot first when over budget.
-- Respects `db.maxResponse` headroom (response budget reserved on
-  top of `maxContext`).
-- Multimodal accounting stays deferred per the 2026-05-23 scope
-  re-verification.
+Add isolated server tests in `__tests__/triggers.test.ts` covering
+the sandbox runner surface 7-9a lands (effect application, var
+mutation, no-op when no triggers match). Lock exact scope when the
+slice starts.
 
 ### Out of scope (defer)
 
-- Memory-window adapter (Phase 8 owns Hypa V3).
-- Card-render side effects — that lands with 7-10.
-- Route wiring — that lands with 7-11a / 7-11b.
+- `editInput` / `editRequest` hooks — 7-9b.
+- `start` trigger — 7-9c (consumed by 7-5d).
+- Browser-only plugin / Lua execution — stays client-side.
 
 ### Verification
 
@@ -152,8 +157,8 @@ pnpm test
 pnpm build
 ```
 
-If 7-8c is blocked, the parallel next-ups are **7-9a** (trigger
-sandbox) or **7-10a** (template card parsing).
+If 7-9a is blocked, the parallel next-up is **7-10a** (template
+card parsing).
 
 ## Patterns To Keep
 

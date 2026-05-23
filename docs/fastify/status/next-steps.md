@@ -6,43 +6,41 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with twenty-one slices landed through 7-8b: chat
+Phase 7 is active with twenty-two slices landed through 7-8c: chat
 route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight, regex scripts, active-module helpers, lorebook
 activation / depth / budget-truncation helpers, the minimal server
-tokenizer, and the template-wide token preflight. `assemble`,
-`templates`, and `triggers` remain throwing stubs; `tokens` is real
-at the minimal text-only surface, `preflight` covers every card
-type the SPA emits, and `history` + `lorebook` are feature-complete
-(modulo the 7-5d start-trigger integration, blocked on 7-9c). Use
+tokenizer, the template-wide token preflight, and the request
+budget finalization. `assemble`, `templates`, and `triggers`
+remain throwing stubs; the tokens / budget chain (7-8a/b/c) is
+fully landed, `preflight` covers every card type the SPA emits, and
+`history` + `lorebook` are feature-complete (modulo the 7-5d
+start-trigger integration, blocked on 7-9c). Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-8c — final budget pruning +
-   fallback chains.** 7-8b (`d488ab7f`) shipped the template-wide
-   preflight, so the assemble root will have a single
-   `addedTokens` figure plus the `memoryCardUsed` / `hasCachePoint`
-   flags. 7-8c closes the tokens / budget chain.
+1. **Continue Phase 7 with slice 7-9a — trigger sandbox
+   infrastructure.** 7-8c (`c83015b3`) closed the tokens / budget
+   chain (7-8a/b/c all landed). The remaining Tier 2 work splits
+   into two independent fronts: Triggers (`triggers.ts`) and Preset
+   templates (`templates.ts`), both still throwing stubs. 7-9a is
+   the trigger entry point and the critical-path predecessor for
+   7-9b/9c; 7-9c then unblocks the last Tier 1 history sub-slice
+   (7-5d). **7-10a** (template card parsing) is an equally valid
+   parallel pickup.
 
    Verified slice scope:
-   - Port `src/ts/process/promptBudget/finalizeRequestBudget.ts`
-     into a Svelte-free function that walks the prebuilt slots in
-     priority order, drops / trims entries until the request fits,
-     and returns the final `OpenAIChat[]` plus telemetry for the
-     `info` SSE event.
-   - Reuse `tokenizeChat` + `tokenizerOptionsFromDb`. Consume the
-     output of `preflightTemplateTokens` (or call it internally —
-     the SPA threads it through `index.svelte.ts`).
-   - Multimodal image-token math stays deferred per the 2026-05-23
-     scope re-verification.
-
-   After 7-8c closes, the budget chain is done and the next
-   sequential pickups are **7-9a** (trigger sandbox) and **7-10a**
-   (template card parsing) — both independently shippable parallel
-   fronts.
+   - Port the sandbox / runner core of `src/ts/process/triggers.ts`
+     — the layer that executes a trigger's body, minus the specific
+     `editInput` / `editRequest` (7-9b) and `start` (7-9c) hook
+     call sites.
+   - May reuse the 7-6 `processScript` chain for trigger bodies.
+   - Keep plugin / Lua code execution out — that stays browser-side
+     per the migration boundary. Decide concrete LOC + test scope
+     at slice start; `triggers.ts` is large, so split aggressively.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -51,7 +49,7 @@ type the SPA emits, and `history` + `lorebook` are feature-complete
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 695
+   tests green. Last recorded baselines are `pnpm api:test`: 703
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -120,6 +118,7 @@ type the SPA emits, and `history` + `lorebook` are feature-complete
 | 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget`. |
 | 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight.                                       |
 | 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` across every card type.                        |
+| 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims removable rows + clamps `outputTokens`.      |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
