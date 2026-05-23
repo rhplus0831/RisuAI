@@ -1,6 +1,6 @@
 # Status Overview
 
-Date: 2026-05-23
+Date: 2026-05-24
 
 Concise snapshot of where each workstream stands. Detail per
 workstream lives in the sibling shards.
@@ -16,7 +16,7 @@ workstream lives in the sibling shards.
 | 4 - sendChat tests                      | complete    | Closed 2026-05-20; 17 initial fixtures.                           |
 | 5 - sendChat extraction                 | complete    | Closed 2026-05-22; all 28 slices landed.                          |
 | 6 - Server-side generation              | complete    | Completion route closed in Phase 6-28; helpers remain follow-ups. |
-| 7 - Server-side prompt assembly         | in progress | 31 slices landed through 7-10b; next is 7-10c (chat cards).       |
+| 7 - Server-side prompt assembly         | in progress | 32 slices landed through 7-10c; next is 7-10d (memory + cache).   |
 | 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.                                     |
 | 9 - Client thinning                     | not started | Blocked on all of the above.                                      |
 

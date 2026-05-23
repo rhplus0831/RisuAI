@@ -1,6 +1,6 @@
 # Migration Status
 
-Date: 2026-05-23
+Date: 2026-05-24
 
 This is the status router. Concrete inventories live in the shards
 under [`status/`](status/).
@@ -64,8 +64,8 @@ under [`status/`](status/).
   The client adapter is flag-gated by `db.useServerGeneration`; the
   current matrix and remaining local-only paths are tracked in
   [`coverage/providers.md`](coverage/providers.md).
-- Phase 7 prompt assembly is in progress. Thirty-one slices have
-  landed through 7-10b: the auth-gated
+- Phase 7 prompt assembly is in progress. Thirty-two slices have
+  landed through 7-10c: the auth-gated
   `POST /api/v1/generate/chat` scaffold, the locked nine-event
   prompt SSE taxonomy, server-side `expandVariables`, static/plain
   prompt sections, history shaping through added-token/depth-prompt
@@ -75,10 +75,10 @@ under [`status/`](status/).
   budget finalization, plus the trigger model, variable/condition
   engine, deterministic V1 effects, V2 control flow, V2 safe data
   helpers, the request/display state adapters, the `runStartTrigger`
-  handoff, and the template renderer foundation + content cards.
+  handoff, and the template renderer through content + chat cards.
   `assemble` remains a stub; the trigger and history fronts are
-  complete and `templates` holds the 7-10a foundation + 7-10b content
-  cards, so next work is 7-10c, chat cards + systemized chat.
+  complete and `templates` holds the 7-10a foundation + 7-10b/c content
+  - chat cards, so next work is 7-10d, memory cards + cache markers.
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
   dependencies only, and `tsx` plus `@fastify/websocket` are now

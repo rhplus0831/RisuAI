@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (31 slices landed as of 2026-05-23).
+Status: in-progress (32 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -31,10 +31,11 @@ the 7-9e request/display state adapters (mode allowlists +
 (closing the Tier 1 7-5d). The trigger and history fronts are complete.
 `templates.ts` holds the 7-10a renderer foundation (`normalizeTemplate`,
 `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, the
-`UnformatedPromptSlots` contract) and the 7-10b content cards (the
-shared `renderContentCard` + `renderByTemplate`, which `preflight.ts`
-also consumes); `chat` / `memory` / `cache` rendering is 7-10c/d.
-`assemble.ts` is still a throwing stub. See
+`UnformatedPromptSlots` contract), the 7-10b content cards, and the
+7-10c `chat` card + `systemizeChat` (the shared `renderContentCard` +
+`renderByTemplate`, which `preflight.ts` also consumes); only `memory`
+/ `cache` rendering remains (7-10d). `assemble.ts` is still a throwing
+stub. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -211,6 +212,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.  |
 | 7-10a   | `765886be` | Template renderer foundation: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, `UnformatedPromptSlots`.   |
 | 7-10b   | `978ade30` | Content cards: shared `renderContentCard` + `renderByTemplate`; `preflight.ts` refactored to consume the same per-card builder.          |
+| 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts` `chat` case removed.   |
 
 ## Remaining roadmap
 
@@ -223,8 +225,8 @@ is the planning resolution, not a contract.
 ### Tier 1 — Finish partially landed prompt helpers
 
 Order chosen to minimize helper coupling. `assemble.ts` is still a
-throwing stub; `templates.ts` holds the 7-10a foundation + 7-10b
-content cards (the `chat` / `memory` / `cache` cards are 7-10c/d).
+throwing stub; `templates.ts` holds the 7-10a foundation + 7-10b/c
+content + chat cards (only the `memory` / `cache` cards remain, 7-10d).
 `tokens.ts` is real at the minimal
 text-only surface, and `triggers.ts` is real through the
 request/display adapters and the `runStartTrigger` handoff — the
@@ -543,10 +545,12 @@ responsibility:
   `renderByTemplate`. `preflight.ts` now consumes the same builder so
   token counting and rendering can't drift. Prompt-info capture for
   these cards is 7-10e.
-- **7-10c** — Chat cards + systemized chat. Port range math
-  (`-1000`, negative offsets, `end`, empty ranges),
-  `sendChatAsSystem`, `chatAsOriginalOnSystem`, example-name
-  handling, and clone-before-mutation behavior.
+- **7-10c** — Chat cards + systemized chat. **Landed `0d2e0e17`**
+  (9 added tests). The `chat` range math (`-1000`, negative offsets,
+  `end`, empty ranges) + `sendChatAsSystem` / `chatAsOriginalOnSystem`
+  / example-name handling via `systemizeChat`, lifted into the shared
+  `renderContentCard` (clone-before-systemize). `preflight.ts`'s `chat`
+  case removed.
 - **7-10d** — Memory cards + cache markers. Render `memory` cards
   from the `memories[]` bridge, apply explicit `cache` cards, apply
   automatic cache-point walkback when no cache card exists, and keep

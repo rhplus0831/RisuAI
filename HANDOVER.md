@@ -1,8 +1,8 @@
 # HANDOVER
 
-Date: 2026-05-23
+Date: 2026-05-24
 Branch: `fastify`
-Head: `978ade30 feat: template content cards (Phase 7-10b)`
+Head: `0d2e0e17 feat: template chat cards + systemized chat (Phase 7-10c)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -51,6 +51,7 @@ Landed Phase 7 slices:
 | 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`: chat mutation, token contribution, `stopSending`, `varChanged`. Closes 7-5d.                                     |
 | 7-10a   | `765886be` | Template renderer foundation in `templates.ts`: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, and the canonical `UnformatedPromptSlots` contract.               |
 | 7-10b   | `978ade30` | Content cards: shared `renderContentCard` (persona/description/authornote/lorebook/postEverything/plain/jailbreak/cot/chatML) + `renderByTemplate`; `preflight.ts` now consumes the same builder. |
+| 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts`'s `chat` case removed (only `memory`/`cache` inline).                           |
 
 What is real in code:
 
@@ -112,10 +113,11 @@ What is real in code:
   (`preflightTemplateTokens`), returning `{ addedTokens,
 memoryCardUsed, hasCachePoint }` and the
   `PromptUnformatedSlots` shape the future assemble root will
-  feed in (Phase 7-8b). Its content-card token counting now consumes
-  the shared `renderContentCard` from `templates.ts` (7-10b), so it
-  cannot drift from the renderer; it keeps its own `chat` /
-  `memory` / `cache` handling.
+  feed in (Phase 7-8b). Its per-card token counting now consumes the
+  shared `renderContentCard` from `templates.ts` (7-10b/c) — including
+  the `chat` card (7-10c) — so it cannot drift from the renderer; only
+  `memory` / `cache` (which set `memoryCardUsed` / `hasCachePoint`)
+  stay inline.
 - `budgetFinalize.ts` runs the final request budget step
   (`finalizeRequestBudget`): re-tokenizes a flattened
   `OpenAIChat[]`, trims `removable` rows under `maxContextTokens`,
@@ -128,13 +130,13 @@ memoryCardUsed, hasCachePoint }` and the
 - `templates.ts` holds the 7-10a renderer foundation (the canonical
   `UnformatedPromptSlots` slot contract re-exported by `preflight.ts`
   as `PromptUnformatedSlots`, `normalizeTemplate`, `buildFormatOrder`,
-  `coalesceRows`, `renderByFormatOrder`) plus the 7-10b content cards:
-  `renderContentCard` (the per-card row builder for persona /
-  description / authornote / lorebook / postEverything / plain /
-  jailbreak / cot / chatML, returning `null` for chat / memory / cache)
-  and `renderByTemplate` (the template-walk path). `chat` / `memory` /
-  `cache` rendering and render finalization are still deferred
-  (7-10c–f).
+  `coalesceRows`, `renderByFormatOrder`), the 7-10b content cards, and
+  the 7-10c `chat` card + `systemizeChat`. `renderContentCard` is the
+  shared per-card row builder for persona / description / authornote /
+  lorebook / postEverything / plain / jailbreak / cot / chatML / chat,
+  returning `null` only for `memory` / `cache`; `renderByTemplate` is
+  the template-walk path. `memory` / `cache` rendering and render
+  finalization are still deferred (7-10d–f).
 - `assemble.ts` still throws a Phase 7 not-implemented error.
   `triggers.ts` is a complete runner: variable/condition engine,
   deterministic V1 effects, V2 control flow, V2 safe data helpers, the
@@ -161,51 +163,55 @@ memoryCardUsed, hasCachePoint }` and the
   resolution). No remaining lorebook slices.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-10b:
+Last recorded baselines after 7-10c:
 
-- `pnpm api:test`: 792 across 40 files
+- `pnpm api:test`: 801 across 40 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-10c chat cards + systemized chat
+## Next Slice — 7-10d memory cards + cache markers
 
-Pick up **7-10c — chat cards + systemized chat**.
+Pick up **7-10d — memory cards + cache markers**.
 
-7-10b (`978ade30`) landed the content cards via the shared
-`renderContentCard`. 7-10c adds the `chat` card to that builder. SPA
-reference is the `chat` branch at `renderFinalPrompt.ts:267-300` and
-`systemizeChat.ts`. Both pieces already exist on the server inside
-`preflight.ts` (its `chat` case range math + the private `systemizeChat`),
-so the slice is mostly a **lift-into-the-shared-builder** like 7-10b
-was.
+7-10c (`0d2e0e17`) closed the row-producing cards: `renderContentCard`
+now returns `null` only for `memory` / `cache`. 7-10d renders those.
+SPA reference is `renderFinalPrompt.ts:301-348`.
 
-### Scope sketch
+### Scope sketch (SPA reference, `renderFinalPrompt.ts`)
 
-- Extend `renderContentCard` (or add a sibling) to handle the `chat`
-  card: range math (`rangeStart`/`rangeEnd`, the `-1000` "all" sentinel,
-  negative offsets clamped to `[0, len]`, empty when `start >= end`),
-  slice `unformated.chats`, and when `usingPromptTemplate &&
-db.promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem`
-  run `systemizeChat` on a clone of the slice.
-- Lift `systemizeChat` from `preflight.ts` into `templates.ts` (shared),
-  mirroring how 7-10b moved `parseChatML` / `renderContentCard`. It
-  rewrites user/assistant rows to `system` with the role (or
-  `example_*` name) folded into the content; drops `memo` / `name`.
-- Refactor `preflight.ts`'s `chat` case to consume the shared builder
-  (its range-math + systemize logic is the same), leaving only
-  `memory` / `cache` handled inline (those set
-  `memoryCardUsed` / `hasCachePoint`). After this, `renderContentCard`
-  returns `null` only for `memory` / `cache`.
-- Wire the `chat` branch into `renderByTemplate` (it already routes
-  non-null `renderContentCard` results through `coalesceRows`).
+- `memory` (`:317-334`): `structuredClone(memories)`, and when
+  `card.innerFormat` is set wrap each row via
+  `risuChatParser(card.innerFormat).replace('{{slot}}', content)` —
+  note memory does **not** run `positionParser` (unlike
+  persona/description). Then push. `memories` is an injected
+  `OpenAIChat[]` (from `buildMemoryWindow`, Tier 3 / 7-11b); thread it
+  in as a new input defaulting to `[]`.
+- `cache` (`:335-348`): walks `formated` from the end, setting
+  `cachePoint = true` on up to `card.depth` rows whose `role` matches
+  `card.role` (or any role when `card.role === 'all'`).
+- automatic cache-point (`:301-314`): when `db.automaticCachePoint &&
+!hasCachePoint`, set `cachePoint` on the last 3 `user` rows. In the SPA
+  this lives at the tail of the `chat` card; decide whether to fold it
+  in here (alongside explicit `cache`) or in 7-10f.
+
+### Important structural note
+
+Unlike every card so far, `cache` (and the automatic walk-back)
+**mutate the already-accumulated `formated` array** rather than
+producing new rows — so they can't be pure `renderContentCard`
+row-builders. Handle them in `renderByTemplate` (which owns `formated`),
+e.g. branch on `card.type === 'cache'` before the `renderContentCard`
+call. `memory` is still a row-builder but needs the `memories` input,
+so either extend `ContentCardDeps` with `memories` or handle `memory`
+in `renderByTemplate` too. `preflight.ts` keeps `memoryCardUsed` /
+`hasCachePoint` (it can't tokenize injected memory rows it isn't given).
 
 ### Out of scope (defer)
 
-- `memory` / `cache` cards (7-10d), prompt-info text capture (7-10e),
-  render finalization — trim, `depth_prompt` splice, cache walk-back,
-  Lua `editRequest` (7-10f).
-- The assemble root + route wiring — Tier 3 (7-11a onward).
+- Prompt-info text capture (7-10e); render finalization — trim,
+  `depth_prompt` splice, Lua `editRequest` (7-10f); the assemble root +
+  route wiring — Tier 3 (7-11a onward).
 
 ### Verification
 
@@ -216,8 +222,8 @@ pnpm test
 pnpm build
 ```
 
-7-10c is the default next pickup; the template renderer continues
-through 7-10f, then the Tier 3 root/route wiring.
+7-10d is the default next pickup; the template renderer finishes at
+7-10e/f, then the Tier 3 root/route wiring.
 
 ## Patterns To Keep
 
