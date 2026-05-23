@@ -1,8 +1,5 @@
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../../src/ts/storage/database.svelte'
+import { randomUUID } from 'node:crypto'
+import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { EntityNotFoundError } from '../repository.js'
@@ -117,11 +114,61 @@ export interface AssembleInput {
   inlayAssets?: unknown[]
 }
 
+export type AssembleMutationSource =
+  | 'user_message'
+  | 'run_var'
+  | 'history_normalize'
+  | 'start_trigger'
+
+export type ChatVarMutationValue = string | number | boolean | null
+
+export interface AssembleChatVarMutation {
+  key: string
+  before: ChatVarMutationValue
+  after: ChatVarMutationValue
+}
+
+export type AssembleMessageMutation =
+  | {
+      type: 'append'
+      source: 'user_message'
+      index: number
+      message: Message
+    }
+  | {
+      type: 'replace_all'
+      source: Exclude<AssembleMutationSource, 'user_message'>
+      beforeLength: number
+      afterLength: number
+      messages: Message[]
+    }
+
+export interface AssembleAdditionalSystemPromptMutation {
+  type: 'insert_prompt_row'
+  source: 'additional_sys_prompt'
+  origin: 'start' | 'historyend' | 'promptend'
+  slot: 'lastChat' | 'postEverything'
+  placement: 'push' | 'unshift'
+  row: OpenAIChat
+}
+
+export interface AssembleMutationPayload {
+  chatId: string
+  characterId: string
+  selectedCharID: number
+  chatPage: number
+  varChanged: boolean
+  messageMutations: AssembleMessageMutation[]
+  chatVarMutations: AssembleChatVarMutation[]
+  additionalSystemPrompt: AssembleAdditionalSystemPromptMutation[]
+}
+
 /**
  * The full assembler output (7-11f). `prompt` is the `prompt` SSE event
  * payload the route emits (7-11g); the remaining fields carry the data
  * dispatch (Phase 7-12 / 6) needs but the `prompt` event does not. On an
- * abort (`stopSending`) only `stopSending` / `abortReason` are set.
+ * abort (`stopSending`) the mutation contract still rides along so the
+ * route can persist chat-var writes made before the abort.
  */
 export interface AssembleResult {
   /** A start trigger or the budget overflow aborted the send. */
@@ -138,6 +185,8 @@ export interface AssembleResult {
   inputTokens?: number
   /** Clamped response budget from `finalizeRequestBudget`. */
   outputTokens?: number
+  /** Server-owned chat and variable mutations produced during assembly. */
+  mutations?: AssembleMutationPayload
 }
 
 /**
@@ -147,6 +196,7 @@ export interface AssembleResult {
  * format order; later slices fill `unformated` and add render output.
  */
 export interface AssemblyState {
+  input: AssembleInput
   database: Database
   currentChar: character
   currentChat: Chat
@@ -198,8 +248,8 @@ export interface AssemblyState {
    */
   stopSending?: boolean
   /**
-   * A start-trigger `setvar` mutated chat state; the route persists the
-   * database when true (7-11g).
+   * A run-var expansion or start-trigger `setvar` mutated chat state; the
+   * route persists the database when true (7-12d-i).
    */
   varChanged?: boolean
   /** Bias rows: `db.bias ∪ char.bias`, unescaped + variable-expanded. */
@@ -222,6 +272,11 @@ export interface AssemblyState {
   outputTokens?: number
   /** Set to `'overflow'` when the budget recheck cannot fit the pinned rows. */
   abortReason?: 'stopSending' | 'overflow'
+  // --- 7-12d-i: typed mutation handoff (set while assembling) ---
+  messageMutationCheckpoint?: Message[]
+  initialScriptstate?: Record<string, string | number | boolean>
+  messageMutations?: AssembleMessageMutation[]
+  additionalSystemPromptMutations?: AssembleAdditionalSystemPromptMutation[]
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -261,9 +316,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
     throw new EntityNotFoundError('database not found')
   }
 
-  const selectedCharID = database.characters.findIndex(
-    (c) => c.chaId === input.characterId,
-  )
+  const selectedCharID = database.characters.findIndex((c) => c.chaId === input.characterId)
   if (selectedCharID === -1) {
     throw new EntityNotFoundError(`character not found: ${input.characterId}`)
   }
@@ -273,7 +326,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
   if (chatPage === -1) {
     throw new EntityNotFoundError(`chat not found: ${input.chatId}`)
   }
-  const currentChat = currentChar.chats[chatPage]
+  const currentChat = structuredClone(currentChar.chats[chatPage])
 
   return { database, currentChar, currentChat, selectedCharID, chatPage }
 }
@@ -284,10 +337,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
  * — none of the 7-11a steps await.
  */
 export function beginAssembly(input: AssembleInput, deps: AssembleDeps): AssemblyState {
-  const { database, currentChar, currentChat, selectedCharID, chatPage } = resolveScope(
-    input,
-    deps,
-  )
+  const { database, currentChar, currentChat, selectedCharID, chatPage } = resolveScope(input, deps)
 
   const ctx: ExpandContext = { database, selectedCharID, chatPage }
   const unformated = createEmptyUnformatedSlots()
@@ -296,6 +346,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   const formatOrder = buildFormatOrder(database)
 
   return {
+    input,
     database,
     currentChar,
     currentChat,
@@ -309,6 +360,125 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     isContinue: input.mode === 'continue',
     presetId: input.presetId,
     loadoutId: input.loadoutId,
+    messageMutationCheckpoint: cloneMessages(currentChat.message ?? []),
+    initialScriptstate: cloneScriptstate(currentChat.scriptstate),
+    messageMutations: [],
+    additionalSystemPromptMutations: [],
+  }
+}
+
+function cloneMessages(messages: Message[] | undefined): Message[] {
+  return structuredClone(messages ?? [])
+}
+
+function cloneScriptstate(
+  scriptstate: Chat['scriptstate'] | undefined,
+): Record<string, string | number | boolean> {
+  return structuredClone(scriptstate ?? {}) as Record<string, string | number | boolean>
+}
+
+function equalJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function valueOrNull(value: string | number | boolean | undefined): ChatVarMutationValue {
+  return value === undefined ? null : value
+}
+
+function currentPersistedChat(state: AssemblyState): Chat | undefined {
+  return state.database.characters?.[state.selectedCharID]?.chats?.[state.chatPage]
+}
+
+function syncWorkingScriptstate(state: AssemblyState): void {
+  const persisted = currentPersistedChat(state)
+  if (persisted) {
+    state.currentChat.scriptstate = persisted.scriptstate
+  }
+}
+
+function captureMessageReplacement(
+  state: AssemblyState,
+  source: Exclude<AssembleMutationSource, 'user_message'>,
+): void {
+  const before = state.messageMutationCheckpoint ?? []
+  const after = cloneMessages(state.currentChat.message ?? [])
+  if (equalJson(before, after)) return
+
+  state.messageMutations?.push({
+    type: 'replace_all',
+    source,
+    beforeLength: before.length,
+    afterLength: after.length,
+    messages: after,
+  })
+  state.messageMutationCheckpoint = cloneMessages(after)
+}
+
+function appendUserMessageRow(state: AssemblyState): void {
+  const userMessage = state.input.userMessage
+  if (state.input.mode !== 'send' || typeof userMessage !== 'string') return
+
+  const message = {
+    role: 'user',
+    data: userMessage,
+    time: Date.now(),
+    chatId: randomUUID(),
+    name: null,
+  } as Message
+  const messages = (state.currentChat.message ??= [])
+  const index = messages.length
+  messages.push(message)
+  state.messageMutations?.push({
+    type: 'append',
+    source: 'user_message',
+    index,
+    message: structuredClone(message),
+  })
+  state.messageMutationCheckpoint = cloneMessages(messages)
+}
+
+function applyCurrentChatRunVars(state: AssemblyState): void {
+  let dirty = false
+  const messages = (state.currentChat.message ??= [])
+  for (const message of messages) {
+    const result = expandVariables(message.data ?? '', {
+      ...state.ctx,
+      chara: state.currentChar,
+      runVar: true,
+    })
+    message.data = result.text
+    dirty ||= result.dirty
+  }
+  if (dirty) {
+    state.varChanged = true
+    syncWorkingScriptstate(state)
+  }
+  captureMessageReplacement(state, 'run_var')
+}
+
+function buildChatVarMutations(state: AssemblyState): AssembleChatVarMutation[] {
+  const before = state.initialScriptstate ?? {}
+  const after = cloneScriptstate(currentPersistedChat(state)?.scriptstate)
+  const keys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)])).sort()
+  return keys
+    .filter((key) => before[key] !== after[key])
+    .map((key) => ({
+      key,
+      before: valueOrNull(before[key]),
+      after: valueOrNull(after[key]),
+    }))
+}
+
+function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
+  return {
+    chatId: state.input.chatId,
+    characterId: state.input.characterId,
+    selectedCharID: state.selectedCharID,
+    chatPage: state.chatPage,
+    varChanged: !!state.varChanged,
+    messageMutations: state.messageMutations ?? [],
+    chatVarMutations: buildChatVarMutations(state),
+    additionalSystemPrompt: state.additionalSystemPromptMutations ?? [],
   }
 }
 
@@ -422,16 +592,19 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   // it asks to abort, so thread these out before the `stopSending` gate.
   state.currentChat = history.currentChat
   state.triggerResult = history.triggerResult
-  state.varChanged = history.varChanged
+  state.varChanged = !!state.varChanged || history.varChanged
+  syncWorkingScriptstate(state)
 
   if (history.stopSending === true) {
     state.stopSending = true
+    captureMessageReplacement(state, 'start_trigger')
     return
   }
   state.stopSending = false
 
   state.currentTokens = (state.currentTokens ?? 0) + history.addedTokens
   state.historyMessages = history.messages
+  captureMessageReplacement(state, history.triggerResult ? 'start_trigger' : 'history_normalize')
 
   // Bias rows (SPA `index.svelte.ts:265-273`): merge the global + per-
   // character bias lists, unescape `\n` / `\r` / `\\`, then variable-
@@ -439,10 +612,10 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   // numeric weight.
   const biasSource = (db.bias ?? []).concat(currentChar.bias ?? [])
   state.biases = biasSource.map(([key, weight]): [string, number] => [
-    expandVariables(
-      key.replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'),
-      { ...ctx, chara: currentChar },
-    ).text,
+    expandVariables(key.replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'), {
+      ...ctx,
+      chara: currentChar,
+    }).text,
     weight,
   ])
 }
@@ -506,13 +679,40 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   if (triggerResult) {
     const sys = triggerResult.additonalSysPrompt
     if (sys.promptend) {
-      unformated.postEverything.push({ role: 'system', content: sys.promptend })
+      const row: OpenAIChat = { role: 'system', content: sys.promptend }
+      unformated.postEverything.push(row)
+      state.additionalSystemPromptMutations?.push({
+        type: 'insert_prompt_row',
+        source: 'additional_sys_prompt',
+        origin: 'promptend',
+        slot: 'postEverything',
+        placement: 'push',
+        row: structuredClone(row),
+      })
     }
     if (sys.historyend) {
-      unformated.lastChat.push({ role: 'system', content: sys.historyend })
+      const row: OpenAIChat = { role: 'system', content: sys.historyend }
+      unformated.lastChat.push(row)
+      state.additionalSystemPromptMutations?.push({
+        type: 'insert_prompt_row',
+        source: 'additional_sys_prompt',
+        origin: 'historyend',
+        slot: 'lastChat',
+        placement: 'push',
+        row: structuredClone(row),
+      })
     }
     if (sys.start) {
-      unformated.lastChat.unshift({ role: 'system', content: sys.start })
+      const row: OpenAIChat = { role: 'system', content: sys.start }
+      unformated.lastChat.unshift(row)
+      state.additionalSystemPromptMutations?.push({
+        type: 'insert_prompt_row',
+        source: 'additional_sys_prompt',
+        origin: 'start',
+        slot: 'lastChat',
+        placement: 'unshift',
+        row: structuredClone(row),
+      })
     }
   }
 }
@@ -584,6 +784,8 @@ export async function assemblePrompt(
   deps: AssembleDeps,
 ): Promise<AssembleResult> {
   const state = beginAssembly(input, deps)
+  appendUserMessageRow(state)
+  applyCurrentChatRunVars(state)
   fillStaticSlots(state)
   fillLorebookSlots(state)
   await fillHistoryAndBias(state)
@@ -591,7 +793,11 @@ export async function assemblePrompt(
   await renderAndBudget(state)
 
   if (state.stopSending) {
-    return { stopSending: true, abortReason: state.abortReason ?? 'stopSending' }
+    return {
+      stopSending: true,
+      abortReason: state.abortReason ?? 'stopSending',
+      mutations: buildMutationPayload(state),
+    }
   }
 
   const formated = state.formated ?? []
@@ -615,5 +821,6 @@ export async function assemblePrompt(
     biases: state.biases,
     inputTokens: state.inputTokens,
     outputTokens: state.outputTokens,
+    mutations: buildMutationPayload(state),
   }
 }

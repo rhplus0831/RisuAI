@@ -15,16 +15,18 @@ docs.
 - `POST /api/v1/generate/completion` owns the Phase 6 provider dispatch
   surface and normalized SSE envelope.
 - `POST /api/v1/generate/chat` owns Phase 7 prompt assembly SSE events.
-  It currently streams assembled prompt payloads and metadata, but not
+  It streams assembled prompt payloads and metadata, builds an internal
+  typed mutation payload on `AssembleResult`, and persists `varChanged`
+  for send-like requests. It does not yet emit `message_patch` or
   provider output for the browser send path.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
   prompt assembly.
 
 ## Current Server Work
 
-Phase 7 needs the `/chat` route to expose send-time mutations, then carry
-provider chunks and dispatch metadata. The next concrete slice is 7-12d-i
-in [`next-steps.md`](next-steps.md).
+Phase 7 needs the `/chat` route to expose the 7-12d-i mutation payload as
+`message_patch`, then carry provider chunks and dispatch metadata. The
+next concrete slice is 7-12d-ii in [`next-steps.md`](next-steps.md).
 
 ## Watch Points
 

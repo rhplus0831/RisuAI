@@ -81,8 +81,9 @@ Per-provider request / response coverage lives in
 | Route                                       | Pinned behavior                           | Status      |
 | ------------------------------------------- | ----------------------------------------- | ----------- |
 | `POST /api/v1/generate/chat` (validation)   | Auth, body validation for modes/ids/options (pre-stream 400), `text/event-stream` response. | covered by `server/fastify/__tests__/generation.chat.test.ts` |
-| `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> `stage(prompt,end)` -> `info` -> `done`; `stopSending`/bad-ID/missing-DB -> terminal SSE `error` + `done` with no `info`. | covered (7-11g/i) by `generation.chat.test.ts` |
-| `POST /api/v1/generate/chat` (dispatch)     | `varChanged` persistence, `message_patch`, provider dispatch, `side_effect`, and restoration. | Phase 7-12d; not started |
+| `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> `stage(prompt,end)` -> `info` -> `done`; `stopSending`/bad-ID/missing-DB -> terminal SSE `error` + `done` with no `info`; builds the 7-12d-i internal mutation payload. | covered (7-11g/i, 7-12d-i) by `generation.chat.test.ts` and `assemble.test.ts` |
+| `POST /api/v1/generate/chat` (`varChanged`) | Persists chat variable writes for `send` / `continue` / `regenerate` requests while keeping preview modes read-only. | covered (7-12d-i) by `generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (dispatch)     | `message_patch`, provider dispatch, `side_effect`, and restoration. | Phase 7-12d; `message_patch` is next |
 | `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled via `mode: continue`; dispatch not started |
 | `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | dispatch not started |
 | `POST /api/v1/generate/preview-prompt`      | One-shot JSON assembled prompt; `result.prompt` on success, `{ stopSending }` on abort, HTTP 404 for bad IDs / missing DB. | covered (7-11h) by `generation.chat.test.ts` |

@@ -1,9 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
 import { EntityNotFoundError } from '../src/repository.js'
 import {
   assemblePrompt,
@@ -74,6 +70,9 @@ const baseInput = (overrides: Partial<AssembleInput> = {}): AssembleInput => ({
   ...overrides,
 })
 
+const startTrigger = (effect: unknown[]): never =>
+  ({ comment: '', type: 'start', conditions: [], effect }) as never
+
 describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
   it('throws EntityNotFoundError when the database is missing', () => {
     expect(() => beginAssembly(baseInput(), depsFor(null))).toThrow(EntityNotFoundError)
@@ -106,10 +105,7 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
       ],
     } as Partial<Database>)
 
-    const state = beginAssembly(
-      baseInput({ characterId: 'char-b', chatId: 'b1' }),
-      depsFor(db),
-    )
+    const state = beginAssembly(baseInput({ characterId: 'char-b', chatId: 'b1' }), depsFor(db))
     expect(state.selectedCharID).toBe(1)
     expect(state.chatPage).toBe(1)
     expect(state.currentChar.chaId).toBe('char-b')
@@ -121,14 +117,15 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
       currentChar: 1,
       characters: [
         makeCharacter({ chaId: 'char-a', chats: [makeChat({ id: 'a0' })] }),
-        makeCharacter({ chaId: 'char-b', chatPage: 1, chats: [makeChat({ id: 'b0' }), makeChat({ id: 'b1' })] }),
+        makeCharacter({
+          chaId: 'char-b',
+          chatPage: 1,
+          chats: [makeChat({ id: 'b0' }), makeChat({ id: 'b1' })],
+        }),
       ],
     } as Partial<Database>)
 
-    const state = beginAssembly(
-      baseInput({ characterId: 'char-b', chatId: 'b1' }),
-      depsFor(db),
-    )
+    const state = beginAssembly(baseInput({ characterId: 'char-b', chatId: 'b1' }), depsFor(db))
     // The resolved indices match the active pointers.
     expect(state.selectedCharID).toBe(db.currentChar)
     expect(state.chatPage).toBe(state.currentChar.chatPage)
@@ -438,8 +435,7 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
 })
 
 describe('Phase 7-11e fillMemoryAndPostHistory', () => {
-  const msg = (role: string, data: string, chatId: string) =>
-    ({ role, data, chatId }) as never
+  const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const historyChar = (overrides: Partial<character> = {}): character =>
     makeCharacter({
@@ -549,8 +545,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
 })
 
 describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
-  const msg = (role: string, data: string, chatId: string) =>
-    ({ role, data, chatId }) as never
+  const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const fullDb = (overrides: Partial<Database> = {}): Database =>
     makeDatabase({
@@ -592,10 +587,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     const db = fullDb({
       promptInfoInsideChat: true,
       promptTextInfoInsideChat: true,
-      promptTemplate: [
-        { type: 'description' },
-        { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
-      ],
+      promptTemplate: [{ type: 'description' }, { type: 'chat', rangeStart: 0, rangeEnd: 'end' }],
     } as Partial<Database>)
     const result = await assemblePrompt(baseInput(), depsFor(db))
 
@@ -626,13 +618,21 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     } as Partial<Database>)
     const result = await assemblePrompt(baseInput(), depsFor(db))
 
-    expect(result).toEqual({ stopSending: true, abortReason: 'stopSending' })
+    expect(result).toMatchObject({ stopSending: true, abortReason: 'stopSending' })
+    expect(result.mutations?.messageMutations[0]).toMatchObject({
+      type: 'append',
+      source: 'user_message',
+      message: { role: 'user', data: 'hi' },
+    })
   })
 
   it('renderAndBudget aborts with overflow when pinned rows exceed maxContext', async () => {
     // Tiny budget + a non-removable (pinned) description row → finalize
     // cannot trim it, so the budget recheck overflows.
-    const state = beginAssembly(baseInput(), depsFor(makeDatabase({ maxContext: 1 } as Partial<Database>)))
+    const state = beginAssembly(
+      baseInput(),
+      depsFor(makeDatabase({ maxContext: 1 } as Partial<Database>)),
+    )
     state.unformated.description.push({ role: 'system', content: 'a pinned description row' })
     await renderAndBudget(state)
 
@@ -648,5 +648,131 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
 
     expect(state.formated).toBeUndefined()
     expect(state.inputTokens).toBeUndefined()
+  })
+})
+
+describe('Phase 7-12d-i assemble mutation contract', () => {
+  const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
+
+  const mutationDb = (overrides: Partial<Database> = {}): Database =>
+    makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          desc: 'DESC',
+          firstMessage: 'Greetings.',
+          triggerscript: [
+            startTrigger([
+              { type: 'modifychat', index: '0', value: 'edited by trigger' },
+              { type: 'impersonate', role: 'char', value: 'added by trigger' },
+              { type: 'setvar', operator: '=', var: 'score', value: '9' },
+              { type: 'systemprompt', location: 'start', value: 'SYS' },
+            ]),
+          ],
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              scriptstate: { $old: '1' },
+              message: [msg('user', 'before {{setvar::mood::bright}}after', 'msg-1')],
+            }),
+          ],
+        } as Partial<character>),
+      ],
+      ...overrides,
+    } as Partial<Database>)
+
+  it('captures user append, run-var deltas, start-trigger edits, and system prompt rows', async () => {
+    const db = mutationDb()
+    const result = await assemblePrompt(baseInput({ userMessage: 'new user' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations).toBeDefined()
+    expect(result.mutations).toMatchObject({
+      chatId: 'chat-1',
+      characterId: 'char-tess',
+      selectedCharID: 0,
+      chatPage: 0,
+      varChanged: true,
+    })
+
+    const mutations = result.mutations!
+    expect(mutations.messageMutations[0]).toMatchObject({
+      type: 'append',
+      source: 'user_message',
+      index: 1,
+      message: { role: 'user', data: 'new user' },
+    })
+    expect(
+      typeof (mutations.messageMutations[0] as { message: { chatId: unknown } }).message.chatId,
+    ).toBe('string')
+    expect(
+      typeof (mutations.messageMutations[0] as { message: { time: unknown } }).message.time,
+    ).toBe('number')
+
+    const runVarPatch = mutations.messageMutations.find((m) => m.source === 'run_var')
+    expect(runVarPatch).toMatchObject({
+      type: 'replace_all',
+      source: 'run_var',
+      beforeLength: 2,
+      afterLength: 2,
+    })
+    expect((runVarPatch as { messages: Array<{ data: string }> }).messages[0].data).toBe(
+      'before after',
+    )
+
+    const startPatch = mutations.messageMutations.find((m) => m.source === 'start_trigger')
+    expect(startPatch).toMatchObject({
+      type: 'replace_all',
+      source: 'start_trigger',
+      afterLength: 3,
+    })
+    expect(
+      (startPatch as { messages: Array<{ data: string }> }).messages.map((m) => m.data),
+    ).toEqual(['edited by trigger', 'new user', 'added by trigger'])
+
+    expect(mutations.chatVarMutations).toEqual([
+      { key: '$mood', before: null, after: 'bright' },
+      { key: '$score', before: null, after: '9' },
+    ])
+    expect(mutations.additionalSystemPrompt).toEqual([
+      {
+        type: 'insert_prompt_row',
+        source: 'additional_sys_prompt',
+        origin: 'start',
+        slot: 'lastChat',
+        placement: 'unshift',
+        row: { role: 'system', content: 'SYS\n\n' },
+      },
+    ])
+  })
+
+  it('returns mutations even when a start trigger stops prompt assembly', async () => {
+    const db = mutationDb({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          firstMessage: 'Hi.',
+          triggerscript: [
+            startTrigger([
+              { type: 'setvar', operator: '=', var: 'halted', value: 'yes' },
+              { type: 'stop' },
+            ]),
+          ],
+          chats: [makeChat({ id: 'chat-1' })],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+
+    expect(result.stopSending).toBe(true)
+    expect(result.prompt).toBeUndefined()
+    expect(result.mutations?.varChanged).toBe(true)
+    expect(result.mutations?.chatVarMutations).toEqual([
+      { key: '$halted', before: null, after: 'yes' },
+    ])
   })
 })

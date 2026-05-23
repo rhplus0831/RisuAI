@@ -7,50 +7,50 @@ were moved to [`../phases-completed/`](../phases-completed/).
 
 ## Last Done
 
-7-12c (`8cf7fd63`) routed the `sendChat` preview and preview-prompt paths
-through `/api/v1/generate/chat` behind `db.useServerPromptAssembly`.
-Preview now consumes the server-assembled prompt payload, including the
-full `OpenAIChat[]` `formated` rows and `biases`. Send / continue /
-regenerate still use the local assembler.
+7-12d-i landed the server-side mutation contract on `AssembleResult` and
+persisted `varChanged` for send-like `/api/v1/generate/chat` requests.
+The payload now captures user-message appends, run-var / start-trigger
+message replacements, chat variable deltas, and `additonalSysPrompt`
+prompt-row inserts. Preview and preview-prompt remain read-only from the
+browser side.
 
 ## Immediate Pickup
 
-Start with 7-12d-i: server-to-browser mutation handoff and `varChanged`
-persistence.
+Start with 7-12d-ii: serialize the mutation contract as `message_patch`
+and add the browser applier.
 
-Why this is next: the local send path mutates `currentChat` before and
-after provider dispatch. The server `/chat` route currently returns an
-assembled prompt, but it does not yet expose those chat-row and variable
-deltas. The send path cannot safely switch to server assembly until those
-mutations are explicit.
+Why this is next: 7-12d-i made the server mutations explicit, but the
+`/chat` SSE stream still emits only `prompt` / `info` / `done`. The
+browser cannot switch the send path to server assembly until those
+mutations are delivered and applied to `currentChat.message`.
 
 Expected scope:
 
-- Extend `AssembleResult` with a typed mutation payload.
-- Capture start-trigger chat edits.
-- Capture `setvar` / `chatVars` deltas and persist `varChanged` through
-  the route.
-- Capture `additonalSysPrompt` rows and the user-message row push.
-- Keep browser application read-only in this slice; the SPA applier is
-  7-12d-ii.
+- Emit a `message_patch` event from `/api/v1/generate/chat` after the
+  `prompt` event for the 7-12d-i `result.mutations` payload.
+- Replace `MessagePatchEvent.patch: unknown` with the typed payload shape
+  on both server and browser mirrors.
+- Teach `requestServerChat` to collect `message_patch` events instead of
+  ignoring them.
+- Add a narrow SPA applier that handles append and replace-all message
+  mutations, plus the chat-variable deltas needed for `scriptstate`.
+- Wire only enough of `sendChat` to consume server prompt assembly and
+  apply patches before continuing to local `dispatchRequest`.
 
-Out of scope for 7-12d-i:
+Out of scope for 7-12d-ii:
 
-- `message_patch` SSE serialization and browser application.
 - Provider dispatch from `/chat`.
 - `tts` side effects and restoration rollback.
 - Hypa V3, plugin / Lua hooks, image generation, NovelAI string
   flattening, and low-level trigger effects.
 
-## Queue After 7-12d-i
+## Queue After 7-12d-ii
 
-1. 7-12d-ii: emit `message_patch` and add the browser applier while
-   provider dispatch still runs locally.
-2. 7-12d-iii-a: add provider-agnostic server chunk transport with
+1. 7-12d-iii-a: add provider-agnostic server chunk transport with
    server-only tests.
-3. 7-12d-iii-b: wire send-path orchestration, `generationId`,
+2. 7-12d-iii-b: wire send-path orchestration, `generationId`,
    `addRerolls`, enriched `done`, and end-to-end fixture coverage.
-4. 7-12d-iv: add `tts` `side_effect` and `error.restoration` rollback.
+3. 7-12d-iv: add `tts` `side_effect` and `error.restoration` rollback.
 
 ## Parallel Or Deferred
 
@@ -73,14 +73,17 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 7-12c: `pnpm api:test` 882 tests,
-`pnpm test` 618 tests plus 4 skipped, `pnpm check` clean, and
-`pnpm build` passing with existing CSS / bundle-size warnings.
+Last recorded full baselines after 7-12d-i: `pnpm check` clean,
+`pnpm api:test` 886 tests, `pnpm test` 618 tests plus 4 skipped, and
+`pnpm build` passing with existing CSS `::highlight`, browser
+externalization, plugin-timing, and bundle-size warnings.
 
 ## References
 
 - Active phase: [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md)
 - Phase 7 archive through 7-12c:
   [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md)
+- 7-12d-i closeout:
+  [`../phases-completed/phase-7-prompt-assembly-7-12d-i.md`](../phases-completed/phase-7-prompt-assembly-7-12d-i.md)
 - Server status: [`server.md`](server.md)
 - sendChat status: [`sendchat.md`](sendchat.md)

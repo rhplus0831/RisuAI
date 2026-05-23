@@ -4,13 +4,15 @@ Date: 2026-05-24
 
 Status: in progress.
 
-Last completed slice: 7-12c (`8cf7fd63`) routed the `sendChat` preview
-and preview-prompt paths through `/api/v1/generate/chat` behind
-`db.useServerPromptAssembly`. The send / continue / regenerate paths
-still run local assembly until the 7-12d chain lands.
+Last completed slice: 7-12d-i added the typed server-side mutation
+payload to `AssembleResult` and persisted `varChanged` for send-like
+`/chat` requests. The send / continue / regenerate paths still run local
+assembly until the 7-12d-ii browser applier lands.
 
 Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md).
+7-12d-i closeout:
+[`../phases-completed/phase-7-prompt-assembly-7-12d-i.md`](../phases-completed/phase-7-prompt-assembly-7-12d-i.md).
 
 ## Goal
 
@@ -26,20 +28,12 @@ without requiring the browser to own mutable send-time state.
 
 ## Remaining Work
 
-### 7-12d-i - mutation contract and `varChanged` persistence
-
-Define the typed server-to-browser mutation contract on the assembly
-result. Capture start-trigger chat edits, `setvar` `chatVars` deltas,
-`additonalSysPrompt` rows, and the user-message row push. Persist
-`varChanged` through the route. This slice is read-only on the browser
-side.
-
 ### 7-12d-ii - `message_patch` event and browser applier
 
-Serialize the mutation contract as a `message_patch` SSE event and add the
-SPA applier. The send path should still run local provider dispatch in
-this slice: prompt from server, provider call from browser. Re-run the
-local and server-backed `sendChat` fixtures.
+Serialize the 7-12d-i mutation contract as a `message_patch` SSE event and
+add the SPA applier. The send path should still run local provider
+dispatch in this slice: prompt from server, provider call from browser.
+Re-run the local and server-backed `sendChat` fixtures.
 
 ### 7-12d-iii - server dispatch and streaming
 

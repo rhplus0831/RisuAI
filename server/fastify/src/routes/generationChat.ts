@@ -1,25 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { DatabaseSync } from 'node:sqlite'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
-import { EntityNotFoundError, loadPersisted } from '../repository.js'
-import {
-  assemblePrompt,
-  type AssembleDeps,
-  type AssembleInput,
-} from '../prompt/assemble.js'
-import {
-  type PromptChatEvent,
-  writePromptChatEvent,
-} from '../prompt/sseEvents.js'
+import { EntityNotFoundError, applyImport, loadPersisted } from '../repository.js'
+import { assemblePrompt, type AssembleDeps, type AssembleInput } from '../prompt/assemble.js'
+import { type PromptChatEvent, writePromptChatEvent } from '../prompt/sseEvents.js'
 
-const ALLOWED_MODES = new Set([
-  'send',
-  'continue',
-  'preview',
-  'preview_prompt',
-  'regenerate',
-])
+const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 
 interface ChatRequestBody {
   chatId?: unknown
@@ -132,8 +120,7 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
       typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : undefined,
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : undefined,
     resetMessages: typeof body.resetMessages === 'boolean' ? body.resetMessages : undefined,
-    expectedRevision:
-      typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined,
+    expectedRevision: typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined,
     inlayAssets: Array.isArray(body.inlayAssets) ? body.inlayAssets : undefined,
   }
 }
@@ -141,13 +128,39 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
 /**
  * The assembler dependency surface bound to the persisted store. The
  * route owns the storage import so `assemble.ts` stays
- * storage-global-free. Read-only — `varChanged` persistence lands with
- * Phase 7-12.
+ * storage-global-free. The loaded database reference is kept so
+ * 7-12d-i can persist chat-var writes after assembly.
  */
-function loadDatabaseDeps(dataDir: string): AssembleDeps {
+interface RouteAssembleDeps extends AssembleDeps {
+  getDatabase(): Database | null
+}
+
+function loadDatabaseDeps(dataDir: string): RouteAssembleDeps {
+  let database: Database | null = null
   return {
-    loadDatabase: () => loadPersisted(dataDir).database as Database | null,
+    loadDatabase: () => {
+      database = loadPersisted(dataDir).database as Database | null
+      return database
+    },
+    getDatabase: () => database,
   }
+}
+
+function shouldPersistVarChanges(input: AssembleInput): boolean {
+  return input.mode === 'send' || input.mode === 'continue' || input.mode === 'regenerate'
+}
+
+function persistVarChanges(
+  db: DatabaseSync,
+  dataDir: string,
+  deps: RouteAssembleDeps,
+  input: AssembleInput,
+  result: Awaited<ReturnType<typeof assemblePrompt>>,
+): void {
+  if (!shouldPersistVarChanges(input) || !result.mutations?.varChanged) return
+  const database = deps.getDatabase()
+  if (!database) return
+  applyImport(db, dataDir, database)
 }
 
 /**
@@ -155,12 +168,13 @@ function loadDatabaseDeps(dataDir: string): AssembleDeps {
  * up front, so every assembly failure (bad IDs, missing database, a
  * trigger/overflow `stopSending`) is a terminal `error` event rather
  * than an HTTP status — body validation already returned 400 before we
- * committed to streaming. Provider dispatch + `varChanged` persistence
- * land with Phase 7-12.
+ * committed to streaming. Provider dispatch lands with later 7-12d
+ * slices; 7-12d-i persists chat-var writes for send-like modes.
  */
 async function streamAssembly(
   req: FastifyRequest,
   reply: FastifyReply,
+  db: DatabaseSync,
   input: AssembleInput,
   dataDir: string,
 ): Promise<void> {
@@ -179,7 +193,9 @@ async function streamAssembly(
 
     try {
       const startedAt = Date.now()
-      const result = await assemblePrompt(input, loadDatabaseDeps(dataDir))
+      const deps = loadDatabaseDeps(dataDir)
+      const result = await assemblePrompt(input, deps)
+      persistVarChanges(db, dataDir, deps, input, result)
       const promptMs = Date.now() - startedAt
       if (!result.stopSending && result.prompt) {
         emit({ type: 'prompt', ...result.prompt })
@@ -218,6 +234,7 @@ async function streamAssembly(
 
 export function registerGenerationChatRoutes(
   app: FastifyInstance,
+  db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
 ): void {
@@ -230,7 +247,7 @@ export function registerGenerationChatRoutes(
       return badRequest(reply, validation.error)
     }
 
-    await streamAssembly(req, reply, toAssembleInput(body), dataDir)
+    await streamAssembly(req, reply, db, toAssembleInput(body), dataDir)
   })
 
   // 7-11h: one-shot JSON preview. Unlike `/chat` this never opens an SSE

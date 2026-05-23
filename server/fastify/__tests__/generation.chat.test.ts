@@ -300,6 +300,74 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(typeof (info.data.timings as Record<string, number>).prompt).toBe('number')
   })
 
+  it('persists varChanged chat variables for send-mode assembly', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
+    }
+    db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [{ type: 'setvar', operator: '=', var: 'score', value: '9' }],
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(parseEvents(res.body).at(-1)?.type).toBe('done')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(2)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate.$score).toBe('9')
+  })
+
+  it('keeps preview-mode assembly read-only even when triggers set variables', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
+    }
+    db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [{ type: 'setvar', operator: '=', var: 'score', value: '9' }],
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'preview' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(parseEvents(res.body).find((e) => e.type === 'prompt')).toBeDefined()
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+  })
+
   it('emits an SSE error (not a 400) when the character is unknown', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
