@@ -9,12 +9,12 @@ full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
 Express deletion), and Phase 6 completion-route slices through
 the 6-28 closeout all exist on the `fastify` branch. Phase 7 has
-landed 29 slices through 7-9f: the chat-route scaffold,
+landed 30 slices through 7-10a: the chat-route scaffold,
 parser/static/plain leaves, history shaping through added-token
 preflight + start-trigger handoff, regex scripts, module helpers,
 lorebook activation through budget-aware truncation, the tokens /
-budget chain, and the Phase 7-safe trigger runner through the
-`runStartTrigger` handoff:
+budget chain, the Phase 7-safe trigger runner through the
+`runStartTrigger` handoff, and the template renderer foundation:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -202,15 +202,16 @@ been removed; `server/node/` no longer exists.
   because they need server-owned character / user state for prompt
   flattening.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
-  In progress. Twenty-nine slices have landed through 7-9f:
+  In progress. Thirty slices have landed through 7-10a:
   `/api/v1/generate/chat` scaffold, nine-event prompt SSE taxonomy,
   server-side variable expansion, static/plain prompt sections,
   history shaping through multimodal inlays + token preflight +
   start-trigger handoff, regex scripts, module helpers, lorebook
   constant / keyword / recursive / depth / budget truncation helpers,
-  the tokens / budget chain, and the trigger runner through the
-  `runStartTrigger` handoff. The trigger and history fronts are
-  complete; next slice is 7-10a, the template front.
+  the tokens / budget chain, the trigger runner through the
+  `runStartTrigger` handoff, and the template renderer foundation
+  (`normalizeTemplate` + slot contract). The trigger and history fronts
+  are complete; next slice is 7-10b, the template content cards.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 
 ## Reference: what move-to-fastify shipped

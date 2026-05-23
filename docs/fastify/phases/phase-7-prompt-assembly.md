@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (29 slices landed as of 2026-05-23).
+Status: in-progress (30 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -28,9 +28,11 @@ control flow + 7-9d-ii safe data helpers in `triggerDataEffects.ts`),
 the 7-9e request/display state adapters (mode allowlists +
 `v2Get/SetDisplayState` + the five request-state arms), and the 7-9f
 `runStartTrigger` handoff wired into the now-async `buildHistoryWindow`
-(closing the Tier 1 7-5d). The trigger and history fronts are complete;
-the remaining assembly modules under `server/fastify/src/prompt/`
-(`assemble`, `templates`) are still throwing stubs. See
+(closing the Tier 1 7-5d). The trigger and history fronts are complete.
+`templates.ts` holds the 7-10a renderer foundation (`normalizeTemplate`,
+`buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, the
+`UnformatedPromptSlots` contract); the per-card `switch` is 7-10b–f.
+`assemble.ts` is still a throwing stub. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -205,6 +207,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.          |
 | 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.           |
 | 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.  |
+| 7-10a   | `765886be` | Template renderer foundation: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, `UnformatedPromptSlots`.   |
 
 ## Remaining roadmap
 
@@ -216,10 +219,11 @@ is the planning resolution, not a contract.
 
 ### Tier 1 — Finish partially landed prompt helpers
 
-Order chosen to minimize helper coupling. `assemble.ts` and
-`templates.ts` are still the throwing stubs. `tokens.ts` is real
-at the minimal text-only surface, and `triggers.ts` is real through
-the request/display adapters and the `runStartTrigger` handoff — the
+Order chosen to minimize helper coupling. `assemble.ts` is still a
+throwing stub; `templates.ts` holds the 7-10a renderer foundation (the
+per-card `switch` is 7-10b–f). `tokens.ts` is real at the minimal
+text-only surface, and `triggers.ts` is real through the
+request/display adapters and the `runStartTrigger` handoff — the
 trigger front is complete. The files below are real; `history.ts` is
 now feature-complete.
 
@@ -519,11 +523,14 @@ insertion, and the final request-edit hook. The old five labels were
 too small for the actual coupling, so split by renderer
 responsibility:
 
-- **7-10a** — Template normalization + slot contract. Port
-  `normalizeTemplate`, utility-bot forced template, implicit
-  `postEverything`, null-template `formatingOrder`, and the shared
-  row-filter/system-coalescing helper. No individual template-card
-  branches yet.
+- **7-10a** — Template normalization + slot contract. **Landed
+  `765886be`** (11 added tests). `normalizeTemplate` (utility-bot
+  forced template + implicit `postEverything`), `buildFormatOrder`
+  (null-template `formatingOrder` fallback), `coalesceRows` (shared
+  row-filter / system-coalescing helper), `renderByFormatOrder`
+  (branch-free non-template walk), and the canonical
+  `UnformatedPromptSlots` contract (re-exported by `preflight.ts`). No
+  per-card branches yet.
 - **7-10b** — Content cards. Render persona, description,
   authornote, lorebook, plain/jailbreak/cot, `chatML`, and
   `postEverything` cards, including inner-format/default-text
