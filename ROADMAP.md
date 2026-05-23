@@ -123,6 +123,7 @@ multi-subsystem work behind small labels.
 | 7-11f   | `3492bede` | `assemble.ts` final render + budget: `renderAndBudget` (`renderFinalPrompt` → `finalizeRequestBudget`, overflow → `abortReason`) + `assemblePrompt` chains 7-11a–f, returning the `AssembleResult` (`prompt` payload + dispatch metadata) or `{ stopSending }`. |
 | 7-11g   | `89a80c19` | Wired `POST /api/v1/generate/chat` to `assemblePrompt`: `dataDir` + `loadPersisted` seam, body → `AssembleInput`, SSE stream `stage(validate)` → `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `done` (SSE `error` on `stopSending`/throw).          |
 | 7-11h   | `24a8b0fe` | Added `POST /api/v1/generate/preview-prompt`: one-shot JSON shortcut (`validatePreview` + forced `preview_prompt`) returning `result.prompt`, `{ stopSending, abortReason }`, or HTTP 404 (`EntityNotFoundError`) for bad IDs / missing DB.                     |
+| 7-11i   | `807f5d1a` | Added the `info` SSE event to `/chat`: `timings.prompt` + `tokens.{prompt,total}` + clamped `responseBudget` emitted on the success path (after `prompt`/`stage(prompt,end)`, before `done`); error/`stopSending` path emits none. Closes Tier 3.               |
 
 ## Remaining Slices
 
@@ -284,12 +285,12 @@ Preset templates (`templates.ts`):
   the 7-9e request-state transform plugs in. **Closes the template
   renderer.**
 
-Current default pickup: **7-11i** (SSE `info` telemetry on `/chat`). The
+Current default pickup: **7-12a** (browser client adapter, Tier 4). The
 template renderer (7-10a–f), the closed critical-path assembler
-(7-11a–f), and both generation routes — `/api/v1/generate/chat` (7-11g,
-SSE) and `/api/v1/generate/preview-prompt` (7-11h, JSON) — are landed.
-7-11i adds the `info` event (timings + token counts); `message_patch` is
-dispatch-coupled and folds into Phase 7-12.
+(7-11a–f), both generation routes — `/api/v1/generate/chat` (7-11g, SSE)
+and `/api/v1/generate/preview-prompt` (7-11h, JSON) — and the `/chat`
+`info` telemetry (7-11i) are landed, **closing Tier 3**. `message_patch`
+is dispatch-coupled and folds into Phase 7-12.
 
 ### Tier 3 — Root + route wiring (all Tier 1 + 2 real)
 
@@ -359,13 +360,20 @@ surfaces and add focused `assemble` tests as each seam lands.
   `{ stopSending, abortReason }` on a trigger/overflow abort, or a real
   HTTP 404 (`EntityNotFoundError`) for bad IDs / missing database — no
   SSE head, so HTTP status codes apply. Read-only.
-- **7-11i** — SSE telemetry: `info` event (timings, token counts) on the
-  `/chat` stream. `message_patch` (chat-row deltas) is dispatch-coupled
-  and folds into Phase 7-12, not this slice.
+- **7-11i** — SSE telemetry: `info` event on the `/chat` stream.
+  **Landed `807f5d1a`.** `streamAssembly` times `assemblePrompt` and
+  emits `info` on the success path (after `prompt`/`stage(prompt,end)`,
+  before `done`) with `timings.prompt`, `tokens.{prompt,total}` from
+  `result.inputTokens`, and the clamped `result.outputTokens` on a new
+  `InfoEvent.responseBudget` field (a budget, not a completion count).
+  The error / `stopSending` path emits no `info`. `/preview-prompt` is
+  unchanged (its JSON body already carries the counts via `promptInfo`).
+  `message_patch` (chat-row deltas) is dispatch-coupled and folds into
+  Phase 7-12, not this slice.
 
 7-11a through 7-11f (the critical-path assembler), 7-11g (the `/chat`
-route), and 7-11h (the preview shortcut) are landed. 7-11i (telemetry)
-is the last Tier 3 slice.
+route), 7-11h (the preview shortcut), and 7-11i (the `info` telemetry)
+are all landed — **Tier 3 is closed**.
 
 ### Tier 4 — Browser adapter
 
@@ -394,21 +402,21 @@ from Phase 5 shrink to thin SSE iterators.
 
 - The template renderer is closed (7-10a–f landed), the **critical-path
   assembler (7-11a–f) is closed** (`assemblePrompt` returns the full
-  payload), and **both generation routes are real** — `/chat` (7-11g,
-  SSE) and `/preview-prompt` (7-11h, JSON). 7-11i (the `info` telemetry
-  event) is the last Tier 3 slice; then the Tier 4 browser adapter.
+  payload), **both generation routes are real** — `/chat` (7-11g, SSE)
+  and `/preview-prompt` (7-11h, JSON) — and the `/chat` `info` telemetry
+  (7-11i) is landed. **Tier 3 is closed; next is the Tier 4 browser
+  adapter (7-12a).**
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).
 
 ## Sequential order (default)
 
-1. **7-11i** — SSE telemetry (`info`)
-2. **7-12a** — browser client adapter
-3. **7-12b** — dual-mode fixture sweep
-4. **7-12c** — side-effect dispatch
-5. **7-12d** — error / abort restoration
-6. **7-13** — phase 7 closeout
+1. **7-12a** — browser client adapter
+2. **7-12b** — dual-mode fixture sweep
+3. **7-12c** — side-effect dispatch
+4. **7-12d** — error / abort restoration
+5. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

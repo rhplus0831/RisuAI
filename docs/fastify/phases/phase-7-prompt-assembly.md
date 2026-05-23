@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: in-progress (43 slices landed as of 2026-05-24).
+Status: in-progress (44 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -51,10 +51,11 @@ mutations (`fillMemoryAndPostHistory`, with the non-Hypa
 `AssembleResult` (the `prompt` SSE payload + dispatch metadata) or
 `{ stopSending }` — the critical-path assembler is **closed**, and both
 generation routes are real: `POST /api/v1/generate/chat` (7-11g) streams
-the `stage` / `prompt` / `done` SSE events, and `POST
-/api/v1/generate/preview-prompt` (7-11h) returns the assembled prompt as
-one-shot JSON. The rest of Tier 3 (the `info` SSE telemetry event) is
-the remaining Phase 7 work. See
+the `stage` / `prompt` / `info` / `done` SSE events — the `info` event
+(7-11i) carrying assembly `timings`, `tokens`, and the clamped
+`responseBudget` — and `POST /api/v1/generate/preview-prompt` (7-11h)
+returns the assembled prompt as one-shot JSON. **Tier 3 is closed**; the
+remaining Phase 7 work is the Tier 4 browser adapter (7-12). See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -243,6 +244,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-11f   | `3492bede` | `assemble.ts` final render + budget: `renderAndBudget` (`renderFinalPrompt` → `finalizeRequestBudget`, overflow → `abortReason`) + `assemblePrompt` chains 7-11a–f, returning the `AssembleResult` (`prompt` payload + dispatch metadata) or `{ stopSending }`. |
 | 7-11g   | `89a80c19` | Wired `POST /api/v1/generate/chat` to `assemblePrompt`: `dataDir` + `loadPersisted` seam, body → `AssembleInput`, SSE stream `stage(validate)` → `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `done` (SSE `error` on `stopSending`/throw).          |
 | 7-11h   | `24a8b0fe` | Added `POST /api/v1/generate/preview-prompt`: one-shot JSON shortcut (`validatePreview` + forced `preview_prompt`) returning `result.prompt`, `{ stopSending, abortReason }`, or HTTP 404 (`EntityNotFoundError`) for bad IDs / missing DB.                     |
+| 7-11i   | `807f5d1a` | Added the `info` SSE event to `/chat`: `timings.prompt` + `tokens.{prompt,total}` + clamped `responseBudget` emitted on the success path (after `prompt`/`stage(prompt,end)`, before `done`); error/`stopSending` path emits none. Closes Tier 3.               |
 
 ## Remaining roadmap
 
@@ -718,9 +720,18 @@ usingPromptTemplate, NO_ASSETS, state.report)`, threads the
   bad IDs / missing database — no SSE head, so the `backups.ts` status-code
   pattern applies. `loadDatabaseDeps` factors out the `loadPersisted`
   seam shared with `streamAssembly`. Read-only.
-- **7-11i** — SSE telemetry: `info` event (timings, token counts) on the
-  `/chat` stream. `message_patch` (chat-row deltas) is dispatch-coupled,
-  so it folds into Phase 7-12 rather than this slice.
+- **7-11i** — SSE telemetry: `info` event on the `/chat` stream.
+  **Landed `807f5d1a`** (1 added route test, api:test 881 → 882).
+  `streamAssembly` times `assemblePrompt` and emits `info` on the success
+  path (after `prompt` / `stage(prompt,end)`, before `done`) with
+  `timings.prompt`, `tokens.{prompt,total}` from `result.inputTokens`,
+  and the clamped `result.outputTokens` on a new `InfoEvent.responseBudget`
+  field — a response _budget_, not a completion count, so it is kept off
+  `tokens.completion`. The error / `stopSending` path emits no `info`.
+  `/preview-prompt` is unchanged: its JSON body already carries the
+  counts via `promptInfo`. `message_patch` (chat-row deltas) is
+  dispatch-coupled, so it folds into Phase 7-12 rather than this slice.
+  **Closes Tier 3.**
 
 ### Tier 4 — Browser adapter
 

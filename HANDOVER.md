@@ -2,8 +2,8 @@
 
 Date: 2026-05-24
 Branch: `fastify`
-Head: `24a8b0fe feat: add POST /api/v1/generate/preview-prompt (Phase 7-11h)`
-Latest feature slice: `24a8b0fe feat: add POST /api/v1/generate/preview-prompt (Phase 7-11h)`
+Head: `807f5d1a feat: emit /chat SSE info telemetry (Phase 7-11i)`
+Latest feature slice: `807f5d1a feat: emit /chat SSE info telemetry (Phase 7-11i)`
 
 This is the day-to-day runbook for **Phase 7 in progress**:
 current branch head, verification baselines, and the next pickup.
@@ -62,15 +62,19 @@ Landed Phase 7 slices:
 | 7-11f   | `3492bede` | `assemble.ts` final render + budget: `renderAndBudget` (`renderFinalPrompt` → `finalizeRequestBudget`, overflow → `abortReason`) + `assemblePrompt` chains 7-11a–f and returns the `AssembleResult` (`prompt` payload + dispatch metadata) or `{ stopSending }`. Throw removed. |
 | 7-11g   | `89a80c19` | Wired `POST /api/v1/generate/chat`: route takes `dataDir`, binds `loadDatabase` to `loadPersisted`, maps body → `AssembleInput`, and streams `stage(validate)` → `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `done` (SSE `error` on `stopSending`/throw).          |
 | 7-11h   | `24a8b0fe` | Added `POST /api/v1/generate/preview-prompt`: one-shot **JSON** shortcut (`validatePreview` + forced `preview_prompt` mode) returning `result.prompt`, `{ stopSending, abortReason }`, or an HTTP 404 (`EntityNotFoundError`) for bad IDs / missing DB.                         |
+| 7-11i   | `807f5d1a` | Added the `info` SSE event to `/chat`: timings + token counts emitted on the success path (after `prompt`/`stage(prompt,end)`, before `done`); `outputTokens` rides on a new `InfoEvent.responseBudget` field. `/preview-prompt` unchanged; `message_patch` deferred to 7-12.   |
 
 What is real in code:
 
 - `server/fastify/src/routes/generationChat.ts` registers two routes.
   `POST /api/v1/generate/chat` validates the body (pre-stream 400),
   then calls `assemblePrompt` and streams `stage(validate)` →
-  `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `done`; a
-  `stopSending` result or any thrown error (bad IDs, missing database)
-  becomes a terminal SSE `error` + `done`. `POST
+  `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `info` →
+  `done`; the `info` event (7-11i) carries the assembly `timings.prompt`
+  duration, `tokens.{prompt,total}`, and the clamped `responseBudget`,
+  and rides only on the success path. A `stopSending` result or any
+  thrown error (bad IDs, missing database) becomes a terminal SSE
+  `error` + `done` (no `info`). `POST
 /api/v1/generate/preview-prompt` (7-11h) is the one-shot **JSON**
   variant: it returns the `result.prompt` payload, `{ stopSending,
 abortReason }`, or a real HTTP **404** for `EntityNotFoundError` (no
@@ -141,56 +145,51 @@ abortReason }`, or a real HTTP **404** for `EntityNotFoundError` (no
   `outputTokens`) — or `{ stopSending: true, abortReason }` on a
   trigger/overflow abort. The throw is gone. `generationChat.ts`
   exposes both `/chat` (7-11g, SSE) and `/preview-prompt` (7-11h, JSON).
-  Tier 3 was re-sliced on 2026-05-24 (the old 7-11a was too large); the
-  remaining path is the SSE telemetry (7-11i).
+  Tier 3 was re-sliced on 2026-05-24 (the old 7-11a was too large) and
+  is now **closed** by 7-11i (the `info` SSE telemetry on `/chat`); the
+  next pickup is the Tier 4 browser adapter (7-12a).
 
-Last recorded baselines after 7-11h:
+Last recorded baselines after 7-11i:
 
-- `pnpm api:test`: 881 across 42 files
+- `pnpm api:test`: 882 across 42 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-11i SSE telemetry (`info` event)
+## Next Slice — 7-12a client adapter for `/api/v1/generate/chat`
 
-Pick up **7-11i — `/chat` SSE telemetry**.
+Pick up **7-12a — browser client adapter** (Tier 4).
 
-7-11h (`24a8b0fe`) added the `/preview-prompt` JSON shortcut, so both
-generation routes are real. 7-11i adds the `info` SSE event to the
-`/chat` stream — assembly timings + token counts — closing the Phase 7
-SSE taxonomy on the routes that exist today. SPA intent: phase doc
-`### SSE events` (`info` / `message_patch`).
+7-11i (`807f5d1a`) added the `info` SSE event, **closing Tier 3**: both
+generation routes exist and the `/chat` SSE taxonomy emitted today
+(`stage` / `prompt` / `info` / `error` / `done`) is complete. Tier 4
+shrinks the Phase 5 browser-side prompt-extraction modules to thin SSE
+iterators that drive the new route. SPA intent: phase doc
+`### Tier 4 — Browser adapter`.
 
 ### Scope sketch
 
-- emit an `InfoEvent` (`sseEvents.ts`: `{ timings?, tokens? }`) on the
-  `/chat` stream, after the `prompt` event and before `done` (on the
-  success path):
-  - `tokens`: `{ prompt: result.inputTokens, completion: 0/undefined,
-total: result.inputTokens }` — `outputTokens` is the response
-    _budget_, not a completion count, so map carefully (or surface it
-    under a clearly named field);
-  - `timings`: measure the assembler stages in `streamAssembly` (e.g.
-    `Date.now()` around `assemblePrompt`); a single `prompt` duration is
-    enough to start. Surfacing per-step timings would need `assemble.ts`
-    to return them — keep that out unless cheap.
-- decide whether `info` also rides on `/preview-prompt` (it returns JSON,
-  not SSE — likely fold the token counts into the JSON body there, or
-  skip).
+- add a browser client that POSTs the `AssembleInput`-shaped body to
+  `/api/v1/generate/chat`, parses the named SSE events, and surfaces the
+  `prompt` payload + `info` telemetry to the existing send-chat flow.
+  Gate it behind the same flag the Phase 6 echo adapter used so the
+  legacy in-browser path stays the default until the fixture sweep
+  (7-12b) is green.
+- keep the read-only boundary: dispatch + `varChanged` persistence +
+  `message_patch` / `side_effect` are still **Phase 7-12c/d / 6**, so the
+  first adapter slice consumes `prompt` + `info` + `error` + `done` only.
 
 ### Important boundary note
 
-`message_patch` ("authoritative chat-row deltas") is **dispatch-coupled**:
-in the read-only assembly path no chat rows are committed yet (the user
-message append + assistant row + trigger mutations persist only when
-dispatch + `varChanged` writeback land). So 7-11i should scope to the
-`info` event; **`message_patch` folds into Phase 7-12** (dispatch). Note
-this in the slice plan rather than emitting an empty patch.
+`message_patch` ("authoritative chat-row deltas") and `side_effect`
+remain **dispatch-coupled**: no chat rows are committed in the read-only
+assembly path. The adapter should tolerate their absence rather than
+require them — they land with provider dispatch (7-12c/d).
 
 ### Out of scope (defer)
 
-- `message_patch` / `side_effect` events + provider dispatch +
-  `varChanged` persistence — **Phase 7-12 / 6**. Hypa V3 stays
+- provider dispatch + `varChanged` persistence + `message_patch` /
+  `side_effect` events — **Phase 7-12c/d / 6**. Hypa V3 stays
   **Phase 8**; browser plugin/Lua + inlay asset lookup stay deferred.
 
 ### Verification
@@ -202,9 +201,9 @@ pnpm test
 pnpm build
 ```
 
-7-11i is the default next pickup and the last Tier 3 slice before the
-Tier 4 browser adapter (7-12). The critical-path assembler (7-11a–f) is
-closed and both routes (7-11g/h) are real.
+7-12a is the default next pickup and the first Tier 4 slice. Tier 3 is
+closed: the critical-path assembler (7-11a–f) is closed, both routes
+(7-11g/h) are real, and `/chat` telemetry (7-11i) is landed.
 
 ## Patterns To Keep
 

@@ -6,7 +6,7 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with forty-three slices landed through 7-11h:
+Phase 7 is active with forty-four slices landed through 7-11i:
 chat route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight + start-trigger handoff, regex scripts, active-module
@@ -34,8 +34,10 @@ the lorebook placement + preflight (`fillLorebookSlots`, with
 `assemblePrompt` returns the `AssembleResult` (the `prompt` SSE payload +
 dispatch metadata) or `{ stopSending }`, and both generation routes are
 real: `/api/v1/generate/chat` (7-11g) streams the `stage` / `prompt` /
-`done` SSE events, and `/api/v1/generate/preview-prompt` (7-11h) returns
-the assembled prompt as one-shot JSON. The tokens / budget chain
+`info` / `done` SSE events — the `info` event (7-11i) carrying assembly
+`timings`, `tokens`, and the clamped `responseBudget` — and
+`/api/v1/generate/preview-prompt` (7-11h) returns the assembled prompt
+as one-shot JSON. **Tier 3 is closed.** The tokens / budget chain
 (7-8a/b/c) is fully landed, `preflight` covers every card type the SPA
 emits, and `history` (now async, closing 7-5d) and `lorebook` are
 feature-complete. Use
@@ -44,27 +46,26 @@ feature-complete. Use
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-11i — `/chat` SSE `info`
-   telemetry.** 7-11h (`24a8b0fe`) added the `/preview-prompt` JSON
-   shortcut, so both generation routes are real. 7-11i adds the `info`
-   SSE event (assembly timings + token counts) to the `/chat` stream,
-   closing the Phase 7 SSE taxonomy on the routes that exist today.
+1. **Continue Phase 7 with slice 7-12a — browser client adapter
+   (Tier 4).** 7-11i (`807f5d1a`) added the `info` SSE event, **closing
+   Tier 3**: both generation routes exist and the `/chat` SSE taxonomy
+   emitted today (`stage` / `prompt` / `info` / `error` / `done`) is
+   complete. Tier 4 shrinks the Phase 5 browser-side prompt-extraction
+   modules to thin SSE iterators that drive the new route.
 
-   Verified slice scope:
-   - emit an `InfoEvent` (`sseEvents.ts`: `{ timings?, tokens? }`) on the
-     `/chat` stream after the `prompt` event, before `done` (success
-     path). `tokens` maps from `result.inputTokens` (`outputTokens` is a
-     response _budget_, not a completion count — name it clearly or
-     omit). `timings` can start as a single `prompt` duration measured
-     around `assemblePrompt` in `streamAssembly`.
-   - decide whether the token counts also ride on `/preview-prompt` (it
-     is JSON, not SSE — fold into the body or skip).
-   - **Boundary:** `message_patch` (authoritative chat-row deltas) is
-     dispatch-coupled — no chat rows are committed in the read-only
-     assembly path — so it folds into Phase 7-12, not this slice. Do not
-     emit an empty patch.
+   Slice scope sketch:
+   - add a browser client that POSTs the `AssembleInput`-shaped body to
+     `/api/v1/generate/chat`, parses the named SSE events, and surfaces
+     the `prompt` payload + `info` telemetry to the existing send-chat
+     flow. Gate it behind the same flag the Phase 6 echo adapter used so
+     the legacy in-browser path stays the default until the dual-mode
+     fixture sweep (7-12b) is green.
+   - keep the read-only boundary: the first adapter slice consumes
+     `prompt` + `info` + `error` + `done` only. `message_patch` /
+     `side_effect` remain dispatch-coupled — tolerate their absence
+     rather than require them.
    - Follow-ups: provider dispatch + `varChanged` persistence +
-     `message_patch` / `side_effect` are Phase 7-12 / 6 territory; Hypa
+     `message_patch` / `side_effect` are Phase 7-12c/d / 6 territory; Hypa
      V3 stays Phase 8; browser plugin/Lua + inlay asset lookup stay
      deferred (`NO_ASSETS`).
 
@@ -75,7 +76,7 @@ feature-complete. Use
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 881
+   tests green. Last recorded baselines are `pnpm api:test`: 882
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -166,6 +167,7 @@ feature-complete. Use
 | 7-11f   | `3492bede` | assemble.ts final render + budget: renderAndBudget (renderFinalPrompt → finalizeRequestBudget, overflow → abortReason) + assemblePrompt chains 7-11a–f, returning the AssembleResult (prompt payload + dispatch metadata) or { stopSending }. |
 | 7-11g   | `89a80c19` | Wired POST /api/v1/generate/chat to assemblePrompt: dataDir + loadPersisted seam, body → AssembleInput, SSE stream stage(validate) → stage(prompt,start) → prompt → stage(prompt,end) → done (SSE error on stopSending/throw).                |
 | 7-11h   | `24a8b0fe` | Added POST /api/v1/generate/preview-prompt: one-shot JSON shortcut (validatePreview + forced preview_prompt) returning result.prompt, { stopSending, abortReason }, or HTTP 404 (EntityNotFoundError) for bad IDs / missing DB.               |
+| 7-11i   | `807f5d1a` | Added the `info` SSE event to /chat: timings.prompt + tokens.{prompt,total} + clamped responseBudget on the success path (after prompt/stage(prompt,end), before done); error/stopSending path emits none. Closes Tier 3.                     |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
