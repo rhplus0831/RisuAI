@@ -26,7 +26,8 @@ import {
   type LorebookActivationReport,
 } from './lorebook.js'
 import { preflightTemplateTokens } from './preflight.js'
-import { buildHistoryWindow, NO_ASSETS } from './history.js'
+import { applyDepthPrompts, buildHistoryWindow, NO_ASSETS } from './history.js'
+import { buildMemoryWindow } from './memory.js'
 import type { TriggerRunResult } from './triggers.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
@@ -68,13 +69,20 @@ import type { PromptEvent } from './sseEvents.js'
  * `index.svelte.ts:227-273`. The history rows are only captured here —
  * the 7-11e memory window is what fills `unformated.chats`.
  *
- * Deferred to later 7-11 slices: the memory-window bridge +
- * depth/additional-system-prompt placement (7-11e), the
- * `renderFinalPrompt` call + final budget pruning + prompt payload
- * (7-11f), and the route wiring / preview shortcut / SSE telemetry
- * (7-11g/h/i). `buildInlayViewInstruction` (image-gen) and inlay asset
- * lookup (`NO_ASSETS`) stay deferred. `assemblePrompt` therefore still
- * throws past scope resolution.
+ * 7-11e — memory bridge + post-history slot mutations
+ * (`fillMemoryAndPostHistory`): run the non-Hypa `buildMemoryWindow`
+ * (`memory.ts`) over `historyMessages` to fill `unformated.chats` (+
+ * `lastChat` promotion) and `state.memories`, honor `stopSending`, then
+ * splice the lorebook depth prompts (`applyDepthPrompts`) and place the
+ * start trigger's `additonalSysPrompt` rows. Mirrors
+ * `index.svelte.ts:243-304`. Hypa V3 summary creation stays Phase 8.
+ *
+ * Deferred to later 7-11 slices: the `renderFinalPrompt` call + final
+ * budget pruning + prompt payload (7-11f), and the route wiring /
+ * preview shortcut / SSE telemetry (7-11g/h/i).
+ * `buildInlayViewInstruction` (image-gen) and inlay asset lookup
+ * (`NO_ASSETS`) stay deferred. `assemblePrompt` therefore still throws
+ * past scope resolution.
  */
 
 /**
@@ -164,6 +172,13 @@ export interface AssemblyState {
   varChanged?: boolean
   /** Bias rows: `db.bias ∪ char.bias`, unescaped + variable-expanded. */
   biases?: [string, number][]
+  // --- 7-11e: memory bridge (set by `fillMemoryAndPostHistory`) ---
+  /**
+   * Memory-card rows split out of the history by the memory window. Fed
+   * to `renderFinalPrompt` (7-11f). Empty until Phase 8 wires Hypa V3,
+   * since no current server history row carries a memory memo.
+   */
+  memories?: OpenAIChat[]
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -386,6 +401,76 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
     ).text,
     weight,
   ])
+}
+
+/**
+ * 7-11e — bridge the captured history into `unformated.chats` through the
+ * non-Hypa memory window, then apply the post-history slot mutations.
+ * Mirrors `index.svelte.ts:243-304`:
+ *   - `buildMemoryWindow` (memory.ts) trims the oldest rows under
+ *     `db.maxContext`, promotes the trailing chat to `lastChat` (no
+ *     template), splits memory cards into `state.memories`, and marks the
+ *     rest `removable`; `stopSending` short-circuits the rest;
+ *   - `applyDepthPrompts` (history.ts, 7-7e) splices the lorebook depth
+ *     prompts into `unformated.chats` (`:275-283`);
+ *   - the start trigger's `additonalSysPrompt` is placed into
+ *     `postEverything` / `lastChat` (`:285-304`).
+ *
+ * Sync — the non-Hypa window and every post-history mutation are sync.
+ * Phase 8 makes this async when Hypa V3 summary creation lands. Runs
+ * after `fillHistoryAndBias`, so a prior `stopSending` short-circuits.
+ */
+export function fillMemoryAndPostHistory(state: AssemblyState): void {
+  if (state.stopSending) return
+
+  const { ctx, currentChar, unformated } = state
+  const db = state.database
+
+  const mem = buildMemoryWindow({
+    chats: state.historyMessages ?? [],
+    currentTokens: state.currentTokens ?? 0,
+    maxContextTokens: db.maxContext ?? 0,
+    currentChat: state.currentChat,
+    memoryCardUsed: !!state.memoryCardUsed,
+    promptTemplate: state.promptTemplate,
+    unformated,
+    db,
+  })
+
+  if (mem.stopSending === true) {
+    state.stopSending = true
+    return
+  }
+
+  state.currentChat = mem.currentChat
+  state.memories = mem.memories
+  // The SPA root does not read `currentTokens` back (7-11f re-tokenizes
+  // the rendered prompt), but the post-trim estimate is the honest value
+  // for the 7-11i `info` telemetry, so keep it on the state.
+  state.currentTokens = mem.currentTokens
+
+  // Lorebook depth-prompt splice (SPA `:275-283`). `applyDepthPrompts`
+  // already resolves `{{position::}}` + expands + applies the
+  // depth/reverse_depth index math (excluding `depth === 0`, which the
+  // template/postEverything path owns).
+  if (state.report) {
+    applyDepthPrompts(unformated.chats, ctx, currentChar, state.report)
+  }
+
+  // Start-trigger `additonalSysPrompt` placement (SPA `:285-304`).
+  const triggerResult = state.triggerResult
+  if (triggerResult) {
+    const sys = triggerResult.additonalSysPrompt
+    if (sys.promptend) {
+      unformated.postEverything.push({ role: 'system', content: sys.promptend })
+    }
+    if (sys.historyend) {
+      unformated.lastChat.push({ role: 'system', content: sys.historyend })
+    }
+    if (sys.start) {
+      unformated.lastChat.unshift({ role: 'system', content: sys.start })
+    }
+  }
 }
 
 export async function assemblePrompt(

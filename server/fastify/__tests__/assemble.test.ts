@@ -11,6 +11,7 @@ import {
   createEmptyUnformatedSlots,
   fillHistoryAndBias,
   fillLorebookSlots,
+  fillMemoryAndPostHistory,
   fillStaticSlots,
   type AssembleDeps,
   type AssembleInput,
@@ -437,5 +438,116 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
     // The trigger still ran, so its result is threaded out.
     expect(state.triggerResult).not.toBeNull()
     expect(state.triggerResult?.stopSending).toBe(true)
+  })
+})
+
+describe('Phase 7-11e fillMemoryAndPostHistory', () => {
+  const msg = (role: string, data: string, chatId: string) =>
+    ({ role, data, chatId }) as never
+
+  const historyChar = (overrides: Partial<character> = {}): character =>
+    makeCharacter({
+      chaId: 'char-tess',
+      firstMessage: 'Greetings.',
+      chats: [
+        makeChat({
+          id: 'chat-1',
+          message: [msg('user', 'hello'), msg('char', 'hi there')] as never,
+        }),
+      ],
+      ...overrides,
+    } as Partial<character>)
+
+  const runAll = async (db: Database) => {
+    const state = beginAssembly(baseInput(), depsFor(db))
+    fillStaticSlots(state)
+    fillLorebookSlots(state)
+    await fillHistoryAndBias(state)
+    fillMemoryAndPostHistory(state)
+    return state
+  }
+
+  it('fills chats + promotes the trailing row to lastChat (non-template)', async () => {
+    const db = makeDatabase({
+      maxResponse: 10,
+      maxContext: 100_000,
+      characters: [historyChar()],
+    } as Partial<Database>)
+
+    const state = await runAll(db)
+    expect(state.stopSending).toBe(false)
+    expect(state.unformated.chats.length).toBeGreaterThan(0)
+    expect(state.unformated.lastChat.length).toBe(1)
+    // Non-memory rows are flagged removable for the 7-11f budget pass.
+    expect(state.unformated.chats.every((r) => r.removable === true)).toBe(true)
+    // No Hypa on the server yet, so no memory cards are split out.
+    expect(state.memories).toEqual([])
+  })
+
+  it('does not promote lastChat when a prompt template is in use', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      promptTemplate: [{ type: 'chat', rangeStart: 0, rangeEnd: 'end' }],
+      characters: [historyChar()],
+    } as Partial<Database>)
+
+    const state = await runAll(db)
+    expect(state.stopSending).toBe(false)
+    expect(state.unformated.lastChat).toEqual([])
+    expect(state.unformated.chats.length).toBeGreaterThan(0)
+  })
+
+  it('stops sending when the history cannot fit the context budget', async () => {
+    const db = makeDatabase({
+      maxResponse: 100,
+      maxContext: 1,
+      characters: [historyChar()],
+    } as Partial<Database>)
+
+    const state = await runAll(db)
+    expect(state.stopSending).toBe(true)
+    // The slots are left for the root to discard on abort.
+    expect(state.unformated.chats).toEqual([])
+  })
+
+  it('places the start trigger additonalSysPrompt into postEverything / lastChat', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      characters: [historyChar()],
+    } as Partial<Database>)
+
+    const state = beginAssembly(baseInput(), depsFor(db))
+    fillStaticSlots(state)
+    fillLorebookSlots(state)
+    await fillHistoryAndBias(state)
+    // Inject a trigger result; the placement logic only reads
+    // `additonalSysPrompt`.
+    state.triggerResult = {
+      additonalSysPrompt: { start: 'S', historyend: 'H', promptend: 'P' },
+    } as never
+    fillMemoryAndPostHistory(state)
+
+    expect(state.unformated.postEverything.map((r) => r.content)).toContain('P')
+    // `start` unshifts to the front, `historyend` pushes to the back.
+    expect(state.unformated.lastChat[0].content).toBe('S')
+    expect(state.unformated.lastChat.at(-1)?.content).toBe('H')
+  })
+
+  it('short-circuits when a prior step already set stopSending', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      characters: [historyChar()],
+    } as Partial<Database>)
+
+    const state = beginAssembly(baseInput(), depsFor(db))
+    fillStaticSlots(state)
+    fillLorebookSlots(state)
+    await fillHistoryAndBias(state)
+    state.stopSending = true
+    fillMemoryAndPostHistory(state)
+
+    // The memory window never ran, so chats stay empty.
+    expect(state.unformated.chats).toEqual([])
+    expect(state.memories).toBeUndefined()
   })
 })
