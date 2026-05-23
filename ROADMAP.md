@@ -30,6 +30,7 @@ narrative phase doc see
 | 7-6c  | `5aae492b` | `ableFlag` `<order, actions>` DSL + outScript prep + SPA-parity flag defaults.                      |
 | 7-6d  | `cb5675d8` | Module regex scripts wired into the script chain via `getActiveModules` + `getModuleRegexScripts`.  |
 | 7-5c  | `50a1770b` | History multimodal inlays + `{{asset_prompt::}}` with `AssetLookup` and module assets.              |
+| 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                |
 
 ## Remaining Slices
 
@@ -54,14 +55,18 @@ Scripts (`scripts.ts`):
 
 Lorebook (`lorebook.ts`):
 
-- **7-7a** — constant (always-on) entries; ports the decorator
-  parser scaffolding that the rest of the chain depends on.
-- **7-7b** — keyword matching activation (after 7-7a).
+- **7-7b** — keyword matching activation. Layers the
+  `searchMatch` loop and the conditional-activation decorators
+  (`additional_keys`, `exclude_keys*`, `match_*_word`,
+  `scan_depth`, `activate_only_after`, `activate_only_every`,
+  `is_greeting`, `probability`, `activate`, `dont_activate`,
+  `keep_/dont_activate_after_match`) on top of the 7-7a
+  scaffold; resolves `mode === 'child'` mirroring.
 - **7-7c** — recursive activation within depth limit (after 7-7b).
 - **7-7d** — budget-aware truncation (after 7-7c).
 - **7-7e** — depth-prompt emission for history (after 7-7d).
 
-Tier 1 ordering now starts with 7-7a → 7-7e so the lorebook
+Tier 1 ordering continues with 7-7b → 7-7e so the lorebook
 decorator scaffold investment compounds before token/depth work.
 
 ### Tier 2 — Supporting infrastructure
@@ -145,7 +150,7 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are **7-7a** (kicks off the
+- The biggest parallel-able fronts are **7-7b** (continues the
   lorebook chain) / **7-8a** (kicks off tokens) / **7-9a**
   (kicks off triggers) / **7-10a** (kicks off
   templates).
@@ -155,34 +160,33 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Sequential order (default)
 
-1. **7-7a** — lorebook constant entries
-2. **7-7b** — lorebook keyword activation
-3. **7-7c** — lorebook recursive activation
-4. **7-7d** — lorebook budget-aware truncation
-5. **7-7e** — lorebook depth-prompt emission
-6. **7-8a** — server tokenizer
-7. **7-8b** — token preflight
-8. **7-8c** — budget finalization
-9. **7-9a** — trigger sandbox
-10. **7-9b** — `editInput` / `editRequest` hooks
-11. **7-9c** — `start` trigger
-12. **7-10a** — template card parsing
-13. **7-10b** — chat range cards
-14. **7-10c** — cache markers
-15. **7-10d** — position slots
-16. **7-10e** — systemized chat hoisting
-17. **7-5d** — history start trigger (unblocked by 7-9c)
-18. **7-5e** — history tokenizer + depth prompts (unblocked by
+1. **7-7b** — lorebook keyword activation
+2. **7-7c** — lorebook recursive activation
+3. **7-7d** — lorebook budget-aware truncation
+4. **7-7e** — lorebook depth-prompt emission
+5. **7-8a** — server tokenizer
+6. **7-8b** — token preflight
+7. **7-8c** — budget finalization
+8. **7-9a** — trigger sandbox
+9. **7-9b** — `editInput` / `editRequest` hooks
+10. **7-9c** — `start` trigger
+11. **7-10a** — template card parsing
+12. **7-10b** — chat range cards
+13. **7-10c** — cache markers
+14. **7-10d** — position slots
+15. **7-10e** — systemized chat hoisting
+16. **7-5d** — history start trigger (unblocked by 7-9c)
+17. **7-5e** — history tokenizer + depth prompts (unblocked by
     7-7e + 7-8c)
-19. **7-11a** — `assemble.ts` root entry
-20. **7-11b** — wire `/api/v1/generate/chat`
-21. **7-11c** — `/api/v1/generate/preview-prompt`
-22. **7-11d** — SSE telemetry (`info`, `message_patch`)
-23. **7-12a** — browser client adapter
-24. **7-12b** — dual-mode fixture sweep
-25. **7-12c** — side-effect dispatch
-26. **7-12d** — error / abort restoration
-27. **7-13** — phase 7 closeout
+18. **7-11a** — `assemble.ts` root entry
+19. **7-11b** — wire `/api/v1/generate/chat`
+20. **7-11c** — `/api/v1/generate/preview-prompt`
+21. **7-11d** — SSE telemetry (`info`, `message_patch`)
+22. **7-12a** — browser client adapter
+23. **7-12b** — dual-mode fixture sweep
+24. **7-12c** — side-effect dispatch
+25. **7-12d** — error / abort restoration
+26. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

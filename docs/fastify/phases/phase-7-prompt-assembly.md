@@ -2,13 +2,14 @@
 
 Date: 2026-05-23
 
-Status: in-progress (13 slices landed as of 2026-05-23).
+Status: in-progress (14 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`),
-`scripts.ts` (regex chain through module regex), and `modules.ts`
-(`getActiveModules`, `getModuleRegexScripts`, `getModuleAssets`)
-are real. The remaining assembly modules under
-`server/fastify/src/prompt/` (`assemble`, `lorebook`, `templates`,
+`scripts.ts` (regex chain through module regex), `modules.ts`
+(`getActiveModules`, `getModuleRegexScripts`, `getModuleAssets`),
+and `lorebook.ts` (constant entries + decorator scaffold +
+`inject_lore` rewrites) are real. The remaining assembly modules
+under `server/fastify/src/prompt/` (`assemble`, `templates`,
 `tokens`, `triggers`) are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
@@ -158,6 +159,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-6c  | `5aae492b` | Added the `ableFlag` action DSL, outScript prep, `cbs`/`no_end_nl`, and SPA-parity flag defaults.                      |
 | 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain through active-module helpers.                                        |
 | 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                        |
+| 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.          |
 
 ## Remaining roadmap
 
@@ -231,8 +233,17 @@ client-side.
 `src/ts/process/lorebook.svelte.ts` + `buildLorebookContext.ts`.
 Tentative breakdown:
 
-- **7-7a** — Constant entries (always-on).
-- **7-7b** — Keyword matching activation.
+- **7-7a** — Constant entries (always-on). **Landed `c815e067`**
+  (16 tests in `lorebook.test.ts`, api:test 582 → 598). Decorator
+  scaffold covers `role`, `position`, `depth`/`reverse_depth`,
+  `end`, `priority`, `ignore_on_max_context`, the four
+  `inject_*` forms, and `disable_ui_prompt`; everything else hits
+  `default: return false` (SPA parity for unknown decorators) and
+  stays literal in the prompt text until its sub-slice lands.
+  `inject_lore` rewrites are applied in-pass so 7-7d/7-10 do not
+  need a re-walk.
+- **7-7b** — Keyword matching activation (`searchMatch` +
+  conditional-activation decorators + `mode === 'child'` mirror).
 - **7-7c** — Recursive activation within depth limit.
 - **7-7d** — Budget-aware truncation.
 - **7-7e** — Depth-prompt emission for history (consumed by 7-5e).
