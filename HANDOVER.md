@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `cddc035e feat: trigger model + runner shell (Phase 7-9a)`
+Head: `cb23202b feat: trigger variables + conditions (Phase 7-9b)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -43,6 +43,7 @@ Landed Phase 7 slices:
 | 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list, returning `{ addedTokens, memoryCardUsed, hasCachePoint }`. |
 | 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.           |
 | 7-9a  | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the `runTrigger` shell (no effect execution). |
+| 7-9b  | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.           |
 
 What is real in code:
 
@@ -71,15 +72,29 @@ What is real in code:
   `lowLevelAccess`, cloning each entry instead of mutating the
   module's trigger objects in place.
 - `triggers.ts` now hosts the Svelte-free trigger model + runner
-  shell (7-9a): `TriggerMode` / `TriggerRunContext` / `TriggerRunArg`
-  / `TriggerRunResult` types, `collectTriggers` (character + module
-  triggers, cloned with inherited `lowLevelAccess`), `matchesTrigger`
-  (mode/manual-name filter + `triggercode`/`triggerlua` bypass), and
-  `runTrigger` (input cloning, no-trigger `null` return, recursion /
-  trigger-id threading via explicit context, a no-op selected-trigger
-  seam for 7-9b/c/d, and terminal additional-system-prompt token
-  accounting + return shape). It executes **no** conditions or
-  effects yet.
+  shell (7-9a) plus the variable/condition engine (7-9b):
+  `TriggerMode` / `TriggerRunContext` (now carries `database` /
+  `selectedCharID` / `chatPage`) / `TriggerRunArg` /
+  `TriggerRunResult` (now carries `varChanged`) types,
+  `collectTriggers` (character + module triggers, cloned with
+  inherited `lowLevelAccess`), `matchesTrigger` (mode/manual-name
+  filter + `triggercode`/`triggerlua` bypass), `evaluateConditions`
+  (`var` / `value` / `chatindex` / `exists`, all operators, expanded
+  via `expandVariables`), and `runTrigger` (input cloning, no-trigger
+  `null` return, recursion / trigger-id threading, default-variable +
+  var-engine construction, per-trigger condition evaluation, and
+  terminal token accounting). The post-condition body is still a
+  no-op effect seam for 7-9c/d.
+- `triggerVars.ts` (7-9b) exports `createTriggerVarEngine`: the
+  ported `getVar` / `setVar`, local-variable scope stack
+  (`declareLocalVar` / `setLocalVar` / `clearLocalVarsAtIndent`),
+  `displayMode` `tempVars` fallback, and `varChanged` tracking.
+  `setVar` persists into the single `database` snapshot (the SPA's
+  three-store sync + `ReloadGUIPointer` bump are dropped).
+- `parseKeyValue` was lifted into `src/ts/util/parseKeyValue.ts`
+  (Svelte-free) and re-exported from `src/ts/util.ts` (7-9b), so the
+  trigger path resolves default variables without pulling in Svelte
+  (mirrors the `loreHash` lift).
 - `tokens.ts` now exports the minimal server tokenizer
   (`encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`)
   over `cl100k_base` / `o200k_base` with a module-scope encoder
@@ -100,7 +115,7 @@ memoryCardUsed, hasCachePoint }` and the
   `budgetFinalize.ts` (7-8c).
 - `assemble.ts` and `templates.ts` still throw Phase 7
   not-implemented errors. `triggers.ts` is now a real (effect-free)
-  runner shell (7-9a).
+  runner with the variable/condition engine wired (7-9a/b).
 - `history.ts` does not yet handle start triggers (7-5d, blocked
   on 7-9f after the trigger re-scope). 7-5e (`febe67ce`) landed the
   `addedTokens` accumulator + depth-prompt preflight; the only remaining
@@ -116,72 +131,73 @@ memoryCardUsed, hasCachePoint }` and the
   resolution). No remaining lorebook slices.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-9a:
+Last recorded baselines after 7-9b:
 
-- `pnpm api:test`: 720 across 39 files
+- `pnpm api:test`: 733 across 39 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-9b trigger variables + conditions
+## Next Slice — 7-9c deterministic V1 effects
 
-Pick up **7-9b — variable and condition engine**.
+Pick up **7-9c — deterministic V1 effect core**.
 
-7-9a (`cddc035e`) landed the trigger model + runner shell:
-`getModuleTriggers` / `collectTriggers` / `matchesTrigger` and the
-effect-free `runTrigger` shell. The selected-trigger loop in
-`runTrigger` is an explicit `// 7-9b/c/d` seam — it currently does
-nothing per matched trigger. 7-9b fills in the variable/condition
-half of that seam so 7-9c can then dispatch effects against real
-variable state.
+7-9b (`cb23202b`) landed the variable + condition engine and wired
+condition evaluation into `runTrigger`. The post-condition body of
+the selected-trigger loop is still an explicit `// 7-9c/d` no-op
+seam. 7-9c fills in the deterministic V1 effect arms so a passing
+trigger actually mutates chat / system-prompt / control state.
 
-7-9b should stay Svelte-free and read/write state through the
-explicit `TriggerRunContext` (extended this slice), never through
-`getDatabase()` / `getCurrentChat()` / `CurrentTriggerIdStore`.
-**7-10a** (template normalization + slot contract) remains an
+7-9c stays Svelte-free, driving the existing `createTriggerVarEngine`
+(`setVar` / local scopes / `currentIndent`) and the `TriggerRunContext`
+scope. **7-10a** (template normalization + slot contract) remains an
 equally valid parallel pickup if you'd rather start the template
 front.
 
 ### Scope sketch (SPA reference)
 
-- Port default-variable lookup (`parseKeyValue(char.defaultVariables)`
-  concat `parseKeyValue(db.templateDefaultVariables)`,
-  `triggers.ts:1204-1206`).
-- Port the `getVar` / `setVar` pair (`triggers.ts:1295-1338`): chat
-  `scriptstate['$'+key]` read/write, the local-variable scope stack
-  (`getLocalVar` / `setLocalVar` / `declareLocalVar` /
-  `clearLocalVarsAtIndent`, `triggers.ts:1224-1293`), `displayMode`
-  `tempVars` fallback, and the `varChanged` flag.
-- Extend `TriggerRunContext` with the `database` / `currentChar` /
-  `currentChat` scope `setVar` persists into (replacing the SPA's
-  `getCurrentChat()` / `getCurrentCharacter()` / `getDatabase()` /
-  `selectedCharID` writes). No `ReloadGUIPointer` store write — that
-  stays browser-side.
-- Port condition evaluation (`triggers.ts:1353-1460`): `var` /
-  `value` / `chatindex` comparisons through `risuChatParser`, the
-  `=` / `!=` / `>` / `<` / `>=` / `<=` / `null` / `true` operators,
-  and the `exists` condition with `strict` / `loose` / `regex`
-  matching at a given depth.
-- Thread `trigger_id` through the explicit context for the condition
-  parser, not `CurrentTriggerIdStore`.
+- Port the effect loop scaffold (`triggers.ts:1442-1456`): the
+  `for (index…)` walk over `trigger.effect`, the `currentIndent`
+  update from `effect.indent` (feed `engine.setIndent`), and the
+  V1 `switch (effect.type)`. The `display` / `request` allowlist
+  guards (`triggers.ts:1444-1449`) are 7-9e — leave them as a seam
+  or a permissive default for now.
+- Port the deterministic V1 arms:
+  - `setvar` (`triggers.ts:1457-1488`): `=` / `+=` / `-=` / `*=`
+    / `/=` numeric ops via `engine.getVar` / `engine.setVar`,
+    expanding `effect.var` / `effect.value` through `expandVariables`.
+  - `systemprompt` (`triggers.ts:~1490-1494`): `additonalSysPrompt[location] += value + '\n\n'`
+    for `start` / `historyend` / `promptend`.
+  - `impersonate`, `cutchat`, `modifychat`, `stop`
+    (set `stopSending`), and bounded `runtrigger`
+    (`triggers.ts:~1500-1530`): recurse through `runTrigger` with
+    `recursiveCount + 1` and a sane bound, threading
+    `additonalSysPrompt` / `chat` back out.
+- Keep the working chat clone and the db chat in sync as effects
+  mutate the clone (the 7-9b parity note): mirror chat mutations onto
+  the persisted `database.characters[selectedCharID].chats[chatPage]`
+  the same way `engine.setVar` already does.
+- The terminal token accounting already in `runTrigger` will now see
+  populated `additonalSysPrompt` slots — confirm it matches
+  `triggers.ts:3321-3330`.
 
 ### Tests
 
-Extend `__tests__/triggers.test.ts`: default-variable fallback,
-`scriptstate` read/write + `varChanged`, local-scope shadowing and
-`clearLocalVarsAtIndent`, `displayMode` `tempVars` isolation, each
-condition operator, and `exists` strict/loose/regex. Effect
-execution still belongs to 7-9c/d.
+Extend `__tests__/triggers.test.ts`: `setvar` each operator + var
+persistence + `varChanged`, `systemprompt` slot accumulation +
+`tokens` > 0, `impersonate` / `cutchat` / `modifychat` chat
+mutation, `stop` sets `stopSending`, and bounded `runtrigger`
+recursion (including the recursion cap). Drive these through
+`runTrigger` now that effects are observable in the result.
 
 ### Out of scope (defer)
 
-- Deterministic V1 effects — 7-9c.
 - V2 safe control-flow/data effects — 7-9d.
-- Request/display state adapters — 7-9e.
+- Request/display state adapters + allowlists — 7-9e.
 - `start` trigger history handoff — 7-9f (consumed by 7-5d).
 - Input hook adapter — 7-9g only if Phase 7 needs it before Phase 9.
-- Browser-only plugin / Lua execution and low-level side effects —
-  stay deferred per the roadmap boundary.
+- Command, alert, LLM, image, similarity, and Lua/`triggercode`
+  effects — deferred beyond Phase 7 per the roadmap boundary.
 
 ### Verification
 
@@ -192,7 +208,7 @@ pnpm test
 pnpm build
 ```
 
-If 7-9b is blocked, the parallel next-up is **7-10a** (template
+If 7-9c is blocked, the parallel next-up is **7-10a** (template
 normalization + slot contract).
 
 ## Patterns To Keep

@@ -6,47 +6,49 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with twenty-three slices landed through 7-9a: chat
+Phase 7 is active with twenty-four slices landed through 7-9b: chat
 route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight, regex scripts, active-module helpers, lorebook
 activation / depth / budget-truncation helpers, the minimal server
 tokenizer, the template-wide token preflight, the request
-budget finalization, and the trigger model + runner shell.
-`assemble` and `templates` remain throwing stubs; `triggers` is now
-an effect-free runner shell (7-9a). The tokens / budget chain
-(7-8a/b/c) is fully landed, `preflight` covers every card type the
-SPA emits, and `history` + `lorebook` are feature-complete (modulo
-the 7-5d start-trigger integration, blocked on 7-9f after the
-trigger re-scope). Use
+budget finalization, the trigger model + runner shell, and the
+trigger variable/condition engine. `assemble` and `templates` remain
+throwing stubs; `triggers` is now an effect-free runner with
+conditions wired (7-9a/b). The tokens / budget chain (7-8a/b/c) is
+fully landed, `preflight` covers every card type the SPA emits, and
+`history` + `lorebook` are feature-complete (modulo the 7-5d
+start-trigger integration, blocked on 7-9f after the trigger
+re-scope). Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-9b — trigger variables +
-   conditions.** 7-9a (`cddc035e`) landed the trigger model +
-   runner shell (`getModuleTriggers` / `collectTriggers` /
-   `matchesTrigger` and the effect-free `runTrigger`). The
-   selected-trigger loop in `runTrigger` is an explicit `// 7-9b/c/d`
-   seam. 7-9b fills in the variable/condition half so 7-9c can then
-   dispatch effects against real state; 7-9f later unblocks the last
-   Tier 1 history sub-slice (7-5d). **7-10a** (template normalization
-   and slot contract) is an equally valid parallel pickup.
+1. **Continue Phase 7 with slice 7-9c — deterministic V1 effects.**
+   7-9b (`cb23202b`) landed the variable/condition engine
+   (`createTriggerVarEngine` / `evaluateConditions`) and wired
+   condition evaluation into `runTrigger`. The post-condition body of
+   the selected-trigger loop is still a `// 7-9c/d` no-op seam. 7-9c
+   fills in the deterministic V1 effect arms so a passing trigger
+   mutates chat / system-prompt / control state; 7-9f later unblocks
+   the last Tier 1 history sub-slice (7-5d). **7-10a** (template
+   normalization and slot contract) is an equally valid parallel
+   pickup.
 
    Verified slice scope:
-   - Port default-variable lookup, the `getVar` / `setVar` pair with
-     the local-variable scope stack, chat `scriptstate` read/write +
-     `varChanged`, and `displayMode` `tempVars` fallback.
-   - Extend `TriggerRunContext` with the `database` / `currentChar` /
-     `currentChat` scope `setVar` persists into (replacing the SPA's
-     store/`selectedCharID` writes). No `ReloadGUIPointer` write.
-   - Port condition evaluation: `var` / `value` / `chatindex`
-     comparisons through `risuChatParser`, all operators, and the
-     `exists` strict/loose/regex check.
-   - Do not execute effects in 7-9b. Deterministic V1 effects are
-     7-9c; V2 safe effects are 7-9d; request/display state adapters
-     are 7-9e; start-trigger history handoff is 7-9f.
+   - Port the effect-loop scaffold (`for` over `trigger.effect`,
+     `currentIndent` from `effect.indent` into `engine.setIndent`,
+     the V1 `switch`).
+   - Port `setvar` (numeric ops via the var engine), `systemprompt`
+     (`additonalSysPrompt` slot accumulation), `impersonate`,
+     `cutchat`, `modifychat`, `stop` (`stopSending`), and bounded
+     `runtrigger` recursion with additional-system-prompt token
+     accounting.
+   - Keep the working chat clone and the db chat in sync as effects
+     mutate the clone (the 7-9b parity note).
+   - Do not port V2 effects (7-9d), request/display allowlists or
+     state adapters (7-9e), or the start-trigger handoff (7-9f).
    - Keep plugin/Lua execution, low-level LLM/image/alert/GUI effects,
      Hypa similarity, persistent character/persona/lorebook mutation,
      and command execution out of the Phase 7 trigger port unless a
@@ -59,7 +61,7 @@ trigger re-scope). Use
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 720
+   tests green. Last recorded baselines are `pnpm api:test`: 733
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -130,6 +132,7 @@ trigger re-scope). Use
 | 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` across every card type.                         |
 | 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims removable rows + clamps `outputTokens`.       |
 | 7-9a  | `cddc035e` | Trigger model + runner shell: `getModuleTriggers` / `collectTriggers` / `matchesTrigger` / `runTrigger`. |
+| 7-9b  | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine` / `evaluateConditions` + `parseKeyValue` lift.  |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

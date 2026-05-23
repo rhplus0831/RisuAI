@@ -103,6 +103,7 @@ multi-subsystem work behind small labels.
 | 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`. |
 | 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.          |
 | 7-9a  | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.          |
+| 7-9b  | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.          |
 
 ## Remaining Slices
 
@@ -150,11 +151,15 @@ Triggers (`triggers.ts`):
   `triggercode`/`triggerlua` bypass), and the `runTrigger` shell
   (input cloning, no-trigger `null`, recursion/trigger-id threading,
   no-op effect seam, terminal token accounting). No effect execution.
-- **7-9b** — variable and condition engine. **(next)** Port default-variable
-  lookup, chat `scriptstate` read/write, temporary/local variable
-  scopes, `trigger_id` threading, and `var` / `value` / `chatindex` /
-  `exists` condition checks.
-- **7-9c** — deterministic V1 effect core. Port `setvar`,
+- **7-9b** — variable and condition engine. **Landed `cb23202b`.**
+  `createTriggerVarEngine` (`getVar` / `setVar`, local-variable scope
+  stack, `displayMode` `tempVars`, `varChanged`), `evaluateConditions`
+  (`var` / `value` / `chatindex` / `exists`, all operators, expanded
+  via `expandVariables`), `TriggerRunContext` extended with
+  `database` / `selectedCharID` / `chatPage`, `TriggerRunResult`
+  extended with `varChanged`, and `parseKeyValue` lifted into a
+  Svelte-free module. Conditions are wired into `runTrigger`.
+- **7-9c** — deterministic V1 effect core. **(next)** Port `setvar`,
   `systemprompt`, `impersonate`, `cutchat`, `modifychat`, `stop`, and
   bounded `runtrigger` recursion, including additional-system-prompt
   token accounting. Defer command, alert, LLM, image, similarity, and
@@ -213,10 +218,11 @@ Preset templates (`templates.ts`):
 
 The tokens / budget chain is fully landed (7-8a `17fca64f`, 7-8b
 `d488ab7f`, 7-8c `c83015b3`), along with 7-7d (`f0382df8`) and
-7-5e (`febe67ce`). 7-9a (`cddc035e`) kicked off the trigger chain
-with the runner shell. The next default pickup is **7-9b** (trigger
-variables + conditions) → 7-9c/d/e/f, with **7-10a** → 7-10b/c/d/e/f
-for templates as an equally valid parallel front.
+7-5e (`febe67ce`). 7-9a (`cddc035e`) + 7-9b (`cb23202b`) landed the
+trigger runner shell and the variable/condition engine. The next
+default pickup is **7-9c** (deterministic V1 effects) → 7-9d/e/f,
+with **7-10a** → 7-10b/c/d/e/f for templates as an equally valid
+parallel front.
 
 ### Tier 1 sub-slices unblocked by Tier 2
 
@@ -276,38 +282,37 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are now **7-9b** (continues
-  triggers; the next default, after 7-9a `cddc035e`) and **7-10a**
-  (kicks off templates). 7-5d is the remaining Tier 1 sub-slice and
-  unblocks the moment 7-9f lands.
+- The biggest parallel-able fronts are now **7-9c** (continues
+  triggers; the next default, after 7-9a `cddc035e` + 7-9b
+  `cb23202b`) and **7-10a** (kicks off templates). 7-5d is the
+  remaining Tier 1 sub-slice and unblocks the moment 7-9f lands.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or if Triggers
   (7-9e) opens the door to porting `runTrigger('display', …)`.
 
 ## Sequential order (default)
 
-1. **7-9b** — trigger variables + conditions
-2. **7-9c** — deterministic V1 effects
-3. **7-9d** — V2 control flow + safe data effects
-4. **7-9e** — request/display state adapters
-5. **7-9f** — prompt/history effects + `start` handoff
-6. **7-5d** — history start trigger (unblocked by 7-9f)
-7. **7-10a** — template normalization + slot contract
-8. **7-10b** — content cards
-9. **7-10c** — chat cards + systemized chat
-10. **7-10d** — memory cards + cache markers
-11. **7-10e** — position + prompt-info finalization
-12. **7-10f** — render finalization + request-edit boundary
-13. **7-11a** — `assemble.ts` state loader + slot orchestration
-14. **7-11b** — memory-window bridge + final render
-15. **7-11c** — wire `/api/v1/generate/chat`
-16. **7-11d** — `/api/v1/generate/preview-prompt`
-17. **7-11e** — SSE telemetry (`info`, `message_patch`)
-18. **7-12a** — browser client adapter
-19. **7-12b** — dual-mode fixture sweep
-20. **7-12c** — side-effect dispatch
-21. **7-12d** — error / abort restoration
-22. **7-13** — phase 7 closeout
+1. **7-9c** — deterministic V1 effects
+2. **7-9d** — V2 control flow + safe data effects
+3. **7-9e** — request/display state adapters
+4. **7-9f** — prompt/history effects + `start` handoff
+5. **7-5d** — history start trigger (unblocked by 7-9f)
+6. **7-10a** — template normalization + slot contract
+7. **7-10b** — content cards
+8. **7-10c** — chat cards + systemized chat
+9. **7-10d** — memory cards + cache markers
+10. **7-10e** — position + prompt-info finalization
+11. **7-10f** — render finalization + request-edit boundary
+12. **7-11a** — `assemble.ts` state loader + slot orchestration
+13. **7-11b** — memory-window bridge + final render
+14. **7-11c** — wire `/api/v1/generate/chat`
+15. **7-11d** — `/api/v1/generate/preview-prompt`
+16. **7-11e** — SSE telemetry (`info`, `message_patch`)
+17. **7-12a** — browser client adapter
+18. **7-12b** — dual-mode fixture sweep
+19. **7-12c** — side-effect dispatch
+20. **7-12d** — error / abort restoration
+21. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

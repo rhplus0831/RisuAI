@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (23 slices landed as of 2026-05-23).
+Status: in-progress (24 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -22,10 +22,12 @@ template-wide token preflight + `PromptUnformatedSlots` shape),
 `tokenizerConfig.ts` (shared `tokenizerOptionsFromDb` helper used
 by `history.ts`, `preflight.ts`, and `budgetFinalize.ts`) are
 real. `triggers.ts` now hosts the 7-9a trigger model + runner shell
-(`collectTriggers` / `matchesTrigger` / the effect-free `runTrigger`),
-though it executes no conditions or effects yet. The remaining
-assembly modules under `server/fastify/src/prompt/` (`assemble`,
-`templates`) are still throwing stubs. See
+plus the 7-9b variable/condition engine (`collectTriggers` /
+`matchesTrigger` / `evaluateConditions` / `runTrigger` with the
+`createTriggerVarEngine` from `triggerVars.ts`), though it executes no
+effects yet. The remaining assembly modules under
+`server/fastify/src/prompt/` (`assemble`, `templates`) are still
+throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -194,6 +196,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`. |
 | 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.          |
 | 7-9a  | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.          |
+| 7-9b  | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.          |
 
 ## Remaining roadmap
 
@@ -443,9 +446,15 @@ character/persona/lorebook mutations wait for Phase 9 command APIs.
   manual-name filtering, `triggercode`/`triggerlua` bypass), recursion
   bookkeeping, trigger-id threading via explicit context, and the
   no-match/no-op `runTrigger` shell. No effect execution yet.
-- **7-9b** — Variable and condition engine: default variables,
-  chat `scriptstate`, temp/local scopes, `var` / `value` /
-  `chatindex` / `exists` conditions.
+- **7-9b** — Variable and condition engine. **Landed `cb23202b`** (13
+  added tests). `createTriggerVarEngine` (`getVar` / `setVar`,
+  local-variable scope stack, `displayMode` `tempVars`, `varChanged`),
+  `evaluateConditions` (`var` / `value` / `chatindex` / `exists`, all
+  operators, expanded via `expandVariables`), `TriggerRunContext`
+  extended with `database` / `selectedCharID` / `chatPage`,
+  `TriggerRunResult` extended with `varChanged`, and `parseKeyValue`
+  lifted into `src/ts/util/parseKeyValue.ts`. Conditions are wired
+  into `runTrigger`.
 - **7-9c** — Deterministic V1 effects: `setvar`, `systemprompt`,
   `impersonate`, `cutchat`, `modifychat`, `stop`, bounded
   `runtrigger`, and additional-system-prompt token accounting.
