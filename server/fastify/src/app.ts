@@ -12,7 +12,10 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerGenerationRoutes } from './routes/generation.js'
-import { registerGenerationChatRoutes } from './routes/generationChat.js'
+import {
+  registerGenerationChatRoutes,
+  type GenerationChatRouteOptions,
+} from './routes/generationChat.js'
 import { bootPromptVariables } from './prompt/promptVariablesBoot.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
@@ -25,6 +28,7 @@ import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 
 export interface BuildAppOptions {
   config?: AppConfig
+  generationChat?: GenerationChatRouteOptions
 }
 
 export interface BuiltApp {
@@ -83,7 +87,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerHubRoutes(app, authState, config.hubUrl)
   registerLegacyStorageRoutes(app, authState, config.dataDir)
   registerGenerationRoutes(app, authState)
-  registerGenerationChatRoutes(app, db, authState, config.dataDir)
+  registerGenerationChatRoutes(app, db, authState, config.dataDir, opts.generationChat)
   bootPromptVariables()
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {

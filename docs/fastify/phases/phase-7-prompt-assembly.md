@@ -4,9 +4,9 @@ Date: 2026-05-24
 
 Status: in progress.
 
-Last completed slice: 7-12d-ii emitted the typed mutation payload as
-`message_patch`, added the browser applier, and let send-like paths use
-server prompt assembly while provider dispatch still runs locally.
+Last completed slice: 7-12d-iii-a added the provider-agnostic `/chat`
+chunk transport and server-only tests while keeping real browser
+orchestration deferred.
 
 Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md).
@@ -14,6 +14,8 @@ Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-7-12d-i.md`](../phases-completed/phase-7-prompt-assembly-7-12d-i.md).
 7-12d-ii closeout:
 [`../phases-completed/phase-7-prompt-assembly-7-12d-ii.md`](../phases-completed/phase-7-prompt-assembly-7-12d-ii.md).
+7-12d-iii-a closeout:
+[`../phases-completed/phase-7-prompt-assembly-7-12d-iii-a.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iii-a.md).
 
 ## Goal
 
@@ -33,8 +35,6 @@ without requiring the browser to own mutable send-time state.
 
 Split by responsibility:
 
-- 7-12d-iii-a: provider-agnostic server chunk transport with server-only
-  tests.
 - 7-12d-iii-b: send-path orchestration and browser wiring, including
   `generationId`, the `addRerolls` accumulator, enriched `done`, gate
   handling, and the end-to-end fixture sweep.

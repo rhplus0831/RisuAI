@@ -1,11 +1,22 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { CompletionStreamFrame } from '../generation/frames.js'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, applyImport, loadPersisted } from '../repository.js'
-import { assemblePrompt, type AssembleDeps, type AssembleInput } from '../prompt/assemble.js'
-import { type PromptChatEvent, writePromptChatEvent } from '../prompt/sseEvents.js'
+import {
+  assemblePrompt,
+  type AssembleDeps,
+  type AssembleInput,
+  type AssembleResult,
+} from '../prompt/assemble.js'
+import { emitProviderChunks } from '../prompt/providerTransport.js'
+import {
+  type PromptChatEvent,
+  type PromptEvent,
+  writePromptChatEvent,
+} from '../prompt/sseEvents.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 
@@ -21,6 +32,29 @@ interface ChatRequestBody {
   expectedRevision?: unknown
   inlayAssets?: unknown
   clientCapabilities?: unknown
+}
+
+type SuccessfulAssembleResult = AssembleResult & {
+  stopSending: false
+  prompt: Omit<PromptEvent, 'type'>
+}
+
+export interface ChatProviderDispatchContext {
+  input: AssembleInput
+  result: SuccessfulAssembleResult
+  signal: AbortSignal
+}
+
+export type ChatProviderDispatcher = (
+  context: ChatProviderDispatchContext,
+) =>
+  | AsyncIterable<CompletionStreamFrame>
+  | Promise<AsyncIterable<CompletionStreamFrame> | null | undefined>
+  | null
+  | undefined
+
+export interface GenerationChatRouteOptions {
+  dispatchProvider?: ChatProviderDispatcher
 }
 
 function badRequest(reply: FastifyReply, error: string): void {
@@ -177,8 +211,10 @@ async function streamAssembly(
   db: DatabaseSync,
   input: AssembleInput,
   dataDir: string,
+  options: GenerationChatRouteOptions = {},
 ): Promise<void> {
-  const { cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req)
+  let terminalDoneEmitted = false
   try {
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream',
@@ -212,6 +248,21 @@ async function streamAssembly(
           tokens: { prompt: result.inputTokens, total: result.inputTokens },
           responseBudget: result.outputTokens,
         })
+        if (options.dispatchProvider) {
+          const frames = await options.dispatchProvider({
+            input,
+            result: {
+              ...result,
+              stopSending: false,
+              prompt: result.prompt,
+            },
+            signal,
+          })
+          if (frames) {
+            const transportResult = await emitProviderChunks(frames, emit, signal)
+            terminalDoneEmitted = transportResult.status !== 'aborted'
+          }
+        }
       } else {
         emit({
           type: 'error',
@@ -228,7 +279,9 @@ async function streamAssembly(
       })
     }
 
-    emit({ type: 'done' })
+    if (!terminalDoneEmitted && !signal.aborted) {
+      emit({ type: 'done' })
+    }
     reply.raw.end()
   } finally {
     cleanup()
@@ -240,6 +293,7 @@ export function registerGenerationChatRoutes(
   db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
+  options: GenerationChatRouteOptions = {},
 ): void {
   app.post('/api/v1/generate/chat', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -250,7 +304,7 @@ export function registerGenerationChatRoutes(
       return badRequest(reply, validation.error)
     }
 
-    await streamAssembly(req, reply, db, toAssembleInput(body), dataDir)
+    await streamAssembly(req, reply, db, toAssembleInput(body), dataDir, options)
   })
 
   // 7-11h: one-shot JSON preview. Unlike `/chat` this never opens an SSE

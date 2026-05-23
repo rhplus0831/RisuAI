@@ -17,15 +17,19 @@ docs.
 - `POST /api/v1/generate/chat` owns Phase 7 prompt assembly SSE events.
   It streams assembled prompt payloads and metadata, builds an internal
   typed mutation payload on `AssembleResult`, emits that payload as
-  `message_patch`, and persists `varChanged` for send-like requests. It
-  does not yet emit provider output for the browser send path.
+  `message_patch`, persists `varChanged` for send-like requests, and has
+  a provider-agnostic chunk transport that maps internal
+  `CompletionStreamFrame` sources to chat `token`, `error`, and `done`
+  events. Real provider dispatch is not wired to the browser send path
+  yet.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
   prompt assembly.
 
 ## Current Server Work
 
-Phase 7 needs the `/chat` route to carry provider chunks and dispatch
-metadata after prompt assembly. The next concrete slice is 7-12d-iii-a in
+Phase 7 needs the browser send path to use `/chat` server dispatch and
+terminal metadata after prompt assembly. The next concrete slice is
+7-12d-iii-b in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

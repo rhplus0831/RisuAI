@@ -21,13 +21,17 @@ and fixture inventories are archived or covered by the coverage docs.
   server prompt payload, apply message/scriptstate patches, and then
   continue into local browser provider dispatch.
 - The gate defaults off and is independent of `db.useServerGeneration`.
+- `/chat` can now transport server provider chunks through the chat SSE
+  `token`, `error`, and `done` events via an internal server-only
+  dispatcher hook. Browser send orchestration still does not consume those
+  events.
 
 ## Active Boundary
 
-The next risky boundary is server provider chunk transport. Browser
-provider dispatch remains local; `/chat` still needs a provider-agnostic
-token / done / error transport before send orchestration can move fully
-server-side.
+The next risky boundary is server send orchestration. Browser provider
+dispatch remains local; 7-12d-iii-b needs to connect the real server
+dispatch path, `generationId`, reroll accumulation, enriched `done`, and
+fixture coverage.
 
 Track that work in [`next-steps.md`](next-steps.md) and
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md).

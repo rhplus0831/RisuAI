@@ -5,6 +5,8 @@ import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import type { CompletionStreamFrame } from '../src/generation/frames.js'
+import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
 
 const subtle = webcrypto.subtle
 
@@ -13,7 +15,7 @@ interface Harness {
   dataDir: string
 }
 
-async function startHarness(): Promise<Harness> {
+async function startHarness(generationChat?: GenerationChatRouteOptions): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
   const { app } = await buildApp({
@@ -25,6 +27,7 @@ async function startHarness(): Promise<Harness> {
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
+    generationChat,
   })
   return { app, dataDir }
 }
@@ -32,6 +35,11 @@ async function startHarness(): Promise<Harness> {
 async function stopHarness(h: Harness): Promise<void> {
   await h.app.close()
   rmSync(h.dataDir, { recursive: true, force: true })
+}
+
+async function restartHarness(generationChat: GenerationChatRouteOptions): Promise<void> {
+  await stopHarness(harness)
+  harness = await startHarness(generationChat)
 }
 
 async function signAssertion(
@@ -432,6 +440,90 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.headers['content-type']).toBe('text/event-stream')
     const events = parseEvents(res.body)
     expect(events.find((e) => e.type === 'prompt')).toBeDefined()
+  })
+
+  it('streams provider tokens after prompt metadata through the chat SSE taxonomy', async () => {
+    await restartHarness({
+      dispatchProvider: ({ input, result, signal }) => {
+        expect(input.mode).toBe('send')
+        expect(result.prompt.messages.length).toBeGreaterThan(0)
+        expect(signal.aborted).toBe(false)
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'Hel' }
+          yield { kind: 'token', content: 'lo' }
+          yield { kind: 'done', finishReason: 'stop' }
+        }
+        return source()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    expect(events.map((e) => e.type)).toEqual([
+      'stage',
+      'stage',
+      'stage',
+      'prompt',
+      'message_patch',
+      'stage',
+      'info',
+      'token',
+      'token',
+      'done',
+    ])
+    expect(events.at(-3)?.type).toBe('token')
+    expect(events.at(-2)?.type).toBe('token')
+    expect(events.at(-1)).toEqual({ type: 'done', data: { result: 'Hello' } })
+  })
+
+  it('maps provider transport failures to error then done after prompt metadata', async () => {
+    await restartHarness({
+      dispatchProvider: () => {
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'partial' }
+          throw new Error('provider exploded')
+        }
+        return source()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    expect(events.map((e) => e.type)).toEqual([
+      'stage',
+      'stage',
+      'stage',
+      'prompt',
+      'message_patch',
+      'stage',
+      'info',
+      'token',
+      'error',
+      'done',
+    ])
+    expect(events.at(-2)).toEqual({
+      type: 'error',
+      data: { error: 'provider exploded' },
+    })
+    expect(events.at(-1)).toEqual({ type: 'done', data: {} })
   })
 })
 

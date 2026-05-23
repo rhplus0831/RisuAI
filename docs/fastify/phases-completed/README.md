@@ -21,6 +21,7 @@ track the next piece of work.
 | 7 - Prompt assembly through 7-12c       | [`phase-7-prompt-assembly-through-7-12c.md`](phase-7-prompt-assembly-through-7-12c.md) | Historical Phase 7 plan, landed slices, and prior roadmap.             |
 | 7-12d-i - Mutation payload              | [`phase-7-prompt-assembly-7-12d-i.md`](phase-7-prompt-assembly-7-12d-i.md)             | Typed mutation contract and `varChanged` persistence.                  |
 | 7-12d-ii - Message patch applier        | [`phase-7-prompt-assembly-7-12d-ii.md`](phase-7-prompt-assembly-7-12d-ii.md)           | `message_patch` SSE event, browser applier, and local-dispatch wiring. |
+| 7-12d-iii-a - Chunk transport           | [`phase-7-prompt-assembly-7-12d-iii-a.md`](phase-7-prompt-assembly-7-12d-iii-a.md)     | Provider-agnostic `/chat` token/error/done transport and tests.        |
 
 ## Historical Status Logs
 
