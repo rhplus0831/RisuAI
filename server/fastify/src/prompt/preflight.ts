@@ -1,14 +1,17 @@
 import type { character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
-import { expandVariables, type ExpandContext } from './variables.js'
+import type { ExpandContext } from './variables.js'
 import {
   resolvePosition,
   type LorebookActivationReport,
 } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
-import type { UnformatedPromptSlots as PromptUnformatedSlots } from './templates.js'
+import {
+  renderContentCard,
+  type UnformatedPromptSlots as PromptUnformatedSlots,
+} from './templates.js'
 
 /**
  * Phase 7-8b template-wide token preflight ported from the SPA's
@@ -61,87 +64,6 @@ export interface PreflightInput {
   promptTemplate: PromptItem[] | null
   usingPromptTemplate: boolean
   report?: LorebookActivationReport
-}
-
-/**
- * Copied verbatim from `src/ts/util.ts:1217`. Inlined because
- * `util.ts` pulls in Svelte/Tauri imports that the server can't
- * load; 7-10a will lift this into a shared helper if a render-side
- * caller needs it.
- */
-const PREBUILT_ASSET_COMMAND = `
-<Image Tag Instruction>Insert HTML image tags between paragraphs based on context.
-Set src as keywords from the list below that matches current character, outfit, situation sentiment and etc.
-print as many different images as possible. Use only available keywords.
-if there are no matching keywords, try to put clostest matching image src.
-try to put at least 1 image per output.
-<keywords>{{join::{{chardisplayasset}}::,}}</keywords>
-Example: <img src="{{ele::{{chardisplayasset}}::0}}">
-<Image Tag Instruction>
-`
-
-const CONVERT_ROLE = {
-  system: 'system',
-  user: 'user',
-  bot: 'assistant',
-} as const
-
-/**
- * Inlined `parseChatML` from `src/ts/parser/chatML.ts`. The original
- * runs `risuChatParser` on each row; here we use the server's
- * `expandVariables` so CBS expansion goes through the same scope as
- * the rest of `prompt/`.
- */
-function parseChatML(text: string, ctx: ExpandContext): OpenAIChat[] | null {
-  const starter = '<|im_start|>'
-  const seperator = '<|im_sep|>'
-  const ender = '<|im_end|>'
-
-  const trimmed = text.trim()
-  if (!trimmed.startsWith(starter)) return null
-
-  return trimmed
-    .split(starter)
-    .filter((f) => f !== '')
-    .map((v) => {
-      let role: 'system' | 'user' | 'assistant' = 'user'
-      if (v.startsWith('user' + seperator)) {
-        role = 'user'
-        v = v.substring(4 + seperator.length)
-      } else if (v.startsWith('system' + seperator)) {
-        role = 'system'
-        v = v.substring(6 + seperator.length)
-      } else if (v.startsWith('assistant' + seperator)) {
-        role = 'assistant'
-        v = v.substring(9 + seperator.length)
-      } else if (v.startsWith('user ') || v.startsWith('user\n')) {
-        role = 'user'
-        v = v.substring(5)
-      } else if (v.startsWith('system ') || v.startsWith('system\n')) {
-        role = 'system'
-        v = v.substring(7)
-      } else if (v.startsWith('assistant ') || v.startsWith('assistant\n')) {
-        role = 'assistant'
-        v = v.substring(10)
-      }
-
-      v = v.trim()
-      if (v.endsWith(ender)) {
-        v = v.substring(0, v.length - ender.length)
-      }
-
-      const thoughts: string[] = []
-      v = v.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (_match, body: string) => {
-        thoughts.push(body)
-        return ''
-      })
-
-      return {
-        role,
-        content: expandVariables(v, ctx).text,
-        thoughts,
-      } satisfies OpenAIChat
-    })
 }
 
 /**
@@ -201,103 +123,22 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
   }
 
   for (const card of promptTemplate) {
+    // Content cards (persona / description / authornote / lorebook /
+    // postEverything / plain / jailbreak / cot / chatML) share the
+    // 7-10b `renderContentCard` builder; here we tokenize its rows.
+    const contentRows = renderContentCard(card, {
+      ctx,
+      currentChar,
+      unformated,
+      usingPromptTemplate,
+      positionParser,
+    })
+    if (contentRows) {
+      tokenizeAll(contentRows)
+      continue
+    }
+
     switch (card.type) {
-      case 'persona': {
-        const rows = structuredClone(unformated.personaPrompt)
-        if (card.innerFormat && rows.length > 0) {
-          const wrap = expandVariables(positionParser(card.innerFormat, card.type), {
-            ...ctx,
-            chara: currentChar,
-          }).text
-          for (let i = 0; i < rows.length; i++) {
-            rows[i].content = wrap.replace('{{slot}}', rows[i].content)
-          }
-        }
-        tokenizeAll(rows)
-        break
-      }
-      case 'description': {
-        const rows = structuredClone(unformated.description)
-        if (card.innerFormat && rows.length > 0) {
-          const wrap = expandVariables(positionParser(card.innerFormat, card.type), {
-            ...ctx,
-            chara: currentChar,
-          }).text
-          for (let i = 0; i < rows.length; i++) {
-            rows[i].content = wrap.replace('{{slot}}', rows[i].content)
-          }
-        }
-        tokenizeAll(rows)
-        break
-      }
-      case 'authornote': {
-        const rows = structuredClone(unformated.authorNote)
-        if (card.innerFormat && rows.length > 0) {
-          const wrap = expandVariables(positionParser(card.innerFormat, card.type), {
-            ...ctx,
-            chara: currentChar,
-          }).text
-          for (let i = 0; i < rows.length; i++) {
-            rows[i].content = wrap.replace(
-              '{{slot}}',
-              rows[i].content || card.defaultText || '',
-            )
-          }
-        }
-        tokenizeAll(rows)
-        break
-      }
-      case 'lorebook': {
-        tokenizeAll(unformated.lorebook)
-        break
-      }
-      case 'postEverything': {
-        tokenizeAll(unformated.postEverything)
-        if (usingPromptTemplate && db.promptSettings?.postEndInnerFormat) {
-          tokenizeAll([
-            { role: 'system', content: db.promptSettings.postEndInnerFormat },
-          ])
-        }
-        break
-      }
-      case 'plain':
-      case 'jailbreak':
-      case 'cot': {
-        if (card.type === 'jailbreak' && !db.jailbreakToggle) continue
-        if (card.type === 'cot' && !db.chainOfThought) continue
-
-        const posType = card.type === 'plain' ? card.type2 : card.type
-        let content = positionParser(card.text, posType)
-
-        if (card.type2 === 'globalNote') {
-          if (currentChar.replaceGlobalNote) {
-            content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll(
-              '{{original}}',
-              content,
-            )
-          }
-          if (
-            currentChar.prebuiltAssetCommand &&
-            !card.text.includes('{{//@customimageinstruction}}')
-          ) {
-            content += PREBUILT_ASSET_COMMAND
-          }
-        }
-
-        content = expandVariables(content, {
-          ...ctx,
-          chara: currentChar,
-          role: card.role,
-        }).text
-
-        tokenizeAll([{ role: CONVERT_ROLE[card.role], content }])
-        break
-      }
-      case 'chatML': {
-        const rows = parseChatML(card.text, { ...ctx, chara: currentChar })
-        tokenizeAll(rows ?? [])
-        break
-      }
       case 'chat': {
         const chats = unformated.chats
         let start = card.rangeStart

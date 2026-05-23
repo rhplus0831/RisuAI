@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import type {
   Database,
   character,
@@ -10,14 +10,26 @@ import {
   coalesceRows,
   normalizeTemplate,
   renderByFormatOrder,
+  renderByTemplate,
   type FormatOrderKey,
   type UnformatedPromptSlots,
 } from '../src/prompt/templates.js'
+import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+import type { ExpandContext } from '../src/prompt/variables.js'
+
+beforeAll(() => {
+  bootPromptVariables()
+})
+
+function ctxFor(db: Database): ExpandContext {
+  return { database: db }
+}
 
 function makeDatabase(overrides: Partial<Database> = {}): Database {
   return {
     aiModel: 'gpt4',
     currentChar: 0,
+    characters: [makeCharacter()],
     formatingOrder: [
       'main',
       'description',
@@ -209,5 +221,181 @@ describe('Phase 7-10a renderByFormatOrder', () => {
     const order: FormatOrderKey[] = ['main', 'description', 'chats', 'postEverything']
     const out = renderByFormatOrder(unformated, order, 'gpt4')
     expect(out.map((r) => r.content)).toEqual(['main', 'desc', 'hello', 'post'])
+  })
+})
+
+describe('Phase 7-10b content cards (renderByTemplate)', () => {
+  const tpl = (cards: PromptItem[]): PromptItem[] => cards
+
+  it('wraps description / persona rows via innerFormat {{slot}}', () => {
+    const db = makeDatabase()
+    const unformated = makeSlots({
+      description: [row({ role: 'system', content: 'hello' })],
+    })
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      unformated,
+      tpl([{ type: 'description', innerFormat: 'Desc: {{slot}}' }]),
+      true,
+    )
+    expect(out.map((r) => r.content)).toEqual(['Desc: hello'])
+  })
+
+  it('falls back to authornote defaultText when the slot is empty', () => {
+    const db = makeDatabase()
+    const unformated = makeSlots({
+      authorNote: [row({ role: 'system', content: '' })],
+    })
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      unformated,
+      tpl([{ type: 'authornote', innerFormat: 'AN: {{slot}}', defaultText: 'fallback' }]),
+      true,
+    )
+    expect(out.map((r) => r.content)).toEqual(['AN: fallback'])
+  })
+
+  it('renders a plain/main card and maps bot role to assistant', () => {
+    const db = makeDatabase()
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      makeSlots(),
+      tpl([{ type: 'plain', type2: 'main', text: 'system line', role: 'system' }]),
+      true,
+    )
+    expect(out).toEqual([{ role: 'system', content: 'system line' }])
+
+    const botOut = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      makeSlots(),
+      tpl([{ type: 'plain', type2: 'normal', text: 'bot line', role: 'bot' }]),
+      true,
+    )
+    expect(botOut[0].role).toBe('assistant')
+  })
+
+  it('applies replaceGlobalNote ({{original}}) on a globalNote card', () => {
+    const db = makeDatabase()
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter({ replaceGlobalNote: '[[{{original}}]]' }),
+      makeSlots(),
+      tpl([{ type: 'plain', type2: 'globalNote', text: 'note', role: 'system' }]),
+      true,
+    )
+    expect(out[0].content).toBe('[[note]]')
+  })
+
+  it('appends prebuiltAssetCommand on a globalNote card when the char opts in', () => {
+    const db = makeDatabase()
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter({ prebuiltAssetCommand: true } as Partial<character>),
+      makeSlots(),
+      tpl([{ type: 'plain', type2: 'globalNote', text: 'note', role: 'system' }]),
+      true,
+    )
+    expect(out[0].content).toContain('note')
+    expect(out[0].content).toContain('Image Tag Instruction')
+  })
+
+  it('drops jailbreak / cot cards unless their db toggles are on', () => {
+    const off = makeDatabase({ jailbreakToggle: false, chainOfThought: false } as Partial<Database>)
+    const cards = tpl([
+      { type: 'jailbreak', type2: 'normal', text: 'jb', role: 'system' },
+      { type: 'cot', type2: 'normal', text: 'cot', role: 'system' },
+    ])
+    expect(renderByTemplate(ctxFor(off), makeCharacter(), makeSlots(), cards, true)).toEqual([])
+
+    const on = makeDatabase({ jailbreakToggle: true, chainOfThought: true } as Partial<Database>)
+    const out = renderByTemplate(ctxFor(on), makeCharacter(), makeSlots(), cards, true)
+    // Two consecutive memo-less system rows coalesce on gpt4.
+    expect(out).toHaveLength(1)
+    expect(out[0].content).toBe('jb\n\ncot')
+  })
+
+  it('pushes the lorebook slot and appends postEndInnerFormat on postEverything', () => {
+    const db = makeDatabase({
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: 'END',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: false,
+      },
+    } as Partial<Database>)
+    const unformated = makeSlots({
+      lorebook: [row({ role: 'system', content: 'lore', memo: 'l' })],
+      postEverything: [row({ role: 'system', content: 'post', memo: 'p' })],
+    })
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      unformated,
+      tpl([{ type: 'lorebook' }, { type: 'postEverything' }]),
+      true,
+    )
+    expect(out.map((r) => r.content)).toEqual(['lore', 'post', 'END'])
+  })
+
+  it('splits a chatML card into role-tagged rows', () => {
+    const db = makeDatabase()
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      makeSlots(),
+      tpl([
+        {
+          type: 'chatML',
+          text: '<|im_start|>system<|im_sep|>sys<|im_end|><|im_start|>user<|im_sep|>hi<|im_end|>',
+        },
+      ]),
+      true,
+    )
+    expect(out.map((r) => ({ role: r.role, content: r.content }))).toEqual([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'hi' },
+    ])
+  })
+
+  it('skips chat / memory / cache cards (deferred to 7-10c/d)', () => {
+    const db = makeDatabase()
+    const unformated = makeSlots({
+      chats: [row({ role: 'user', content: 'should-not-appear' })],
+      description: [row({ role: 'system', content: 'desc' })],
+    })
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      unformated,
+      tpl([
+        { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+        { type: 'memory' },
+        { type: 'cache', name: 'c', depth: 1, role: 'all' },
+        { type: 'description' },
+      ]),
+      true,
+    )
+    expect(out.map((r) => r.content)).toEqual(['desc'])
+  })
+
+  it('applies the injected positionParser to card text', () => {
+    const db = makeDatabase()
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      makeSlots(),
+      tpl([{ type: 'plain', type2: 'main', text: 'abc', role: 'system' }]),
+      true,
+      (text) => text.toUpperCase(),
+    )
+    expect(out[0].content).toBe('ABC')
   })
 })
