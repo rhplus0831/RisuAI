@@ -5,8 +5,8 @@ Date: 2026-05-23
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
 Phase 3, the Phase 6 completion-route files through closeout slice
-6-28, and Phase 7 slices through 7-8c already exist; modules marked
-by later phases are target layout, not current implementation.
+6-28, and Phase 7 slices through 7-9d-ii already exist; modules
+marked by later phases are target layout, not current implementation.
 
 ## Server module layout
 
@@ -70,11 +70,16 @@ server/fastify/
       history.ts          history shaping through multimodal inlays
       scripts.ts          regex script chain used by prompt leaves
       modules.ts          active module regex/assets helpers
-      assemble.ts         prompt template walker (stub)
-      lorebook.ts         activation, recursion, depth helpers; budget pending
+      assemble.ts         prompt assembly root (stub)
+      lorebook.ts         activation, recursion, depth helpers, budget filter
       templates.ts        prompt-template cards (stub)
-      tokens.ts           budget accounting (stub)
-      triggers.ts         server-safe trigger runner (stub)
+      tokens.ts           minimal tiktoken helpers for budget accounting
+      tokenizerConfig.ts  shared tokenizer option helper
+      preflight.ts        template-wide token preflight
+      budgetFinalize.ts   final request budget pruning
+      triggerVars.ts      trigger variable engine
+      triggerDataEffects.ts  V2 safe data helpers
+      triggers.ts         Phase 7-safe trigger runner
     memory/
       hypav3.ts         server-side Hypa V3 adapter
       jobs.ts           async embedding + summary queue
@@ -237,9 +242,10 @@ At the target state, the server owns:
   local browser dispatch path until a routed server slice lands.
 - Prompt assembly, tokenization, lorebook activation, and Hypa V3
   memory after Phases 7-8 close. Today the Phase 7 variable,
-  static-section, plain-section, history, script, module, and
-  lorebook leaves are server-side, but the root assembler and token /
-  trigger/template infrastructure are still pending.
+  static-section, plain-section, history, script, module, lorebook,
+  token/budget, and trigger helpers are server-side. The root
+  assembler, template renderer, chat-route wiring, and the remaining
+  trigger request/display + start handoff slices are still pending.
 
 Browser owns:
 

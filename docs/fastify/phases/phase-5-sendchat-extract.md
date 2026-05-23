@@ -118,11 +118,14 @@ explicit.
   it.
 - Tokenizers still use the browser's `src/ts/tokenizer.ts` stack
   (`@dqbd/tiktoken`, `@mlc-ai/web-tokenizers`, and
-  provider-specific tokenizer assets). Phase 6 ports tokenizer
-  counting; Phase 7 reuses the port for prompt budget.
-- Triggers still run in the browser sandbox. Phase 6 introduces a
-  server-side `node:worker_threads` sandbox; the browser path
-  stays as a fallback until Phase 9.
+  provider-specific tokenizer assets). Phase 7 has since landed a
+  minimal server tokenizer for prompt-budget heuristics; exact
+  provider tokenizers and public count-token routes remain
+  fixture-driven follow-ups.
+- Triggers still run in the browser sandbox for browser-only plugin /
+  Lua hooks. Phase 7 has since landed the deterministic server-safe
+  runner needed by prompt assembly; the worker-style trigger helper
+  route from the original Phase 6 target remains deferred.
 
 ## Boundaries
 

@@ -7,18 +7,18 @@ workstream lives in the sibling shards.
 
 ## Phase progress
 
-| Phase                                   | Status      | Notes                                                                       |
-| --------------------------------------- | ----------- | --------------------------------------------------------------------------- |
-| 0 - Removals                            | complete    | Closed 2026-05-20; see removals shard.                                      |
-| 1 - Foundation                          | complete    | Closed 2026-05-20; health/auth smoke.                                       |
-| 2 - Storage / import / assets / backups | complete    | Closed 2026-05-20; server routes + Docker.                                  |
-| 3 - Proxy migration                     | complete    | Closed 2026-05-21; Express deleted.                                         |
-| 4 - sendChat tests                      | complete    | Closed 2026-05-20; 17 initial fixtures.                                     |
-| 5 - sendChat extraction                 | complete    | Closed 2026-05-22; all 28 slices landed.                                    |
-| 6 - Server-side generation              | complete    | Completion route closed in Phase 6-28; helpers remain follow-ups.           |
-| 7 - Server-side prompt assembly         | in progress | 22 slices landed through 7-8c; next is 7-9a, with 7-10a parallel.           |
-| 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.                                               |
-| 9 - Client thinning                     | not started | Blocked on all of the above.                                                |
+| Phase                                   | Status      | Notes                                                                |
+| --------------------------------------- | ----------- | -------------------------------------------------------------------- |
+| 0 - Removals                            | complete    | Closed 2026-05-20; see removals shard.                               |
+| 1 - Foundation                          | complete    | Closed 2026-05-20; health/auth smoke.                                |
+| 2 - Storage / import / assets / backups | complete    | Closed 2026-05-20; server routes + Docker.                           |
+| 3 - Proxy migration                     | complete    | Closed 2026-05-21; Express deleted.                                  |
+| 4 - sendChat tests                      | complete    | Closed 2026-05-20; 17 initial fixtures.                              |
+| 5 - sendChat extraction                 | complete    | Closed 2026-05-22; all 28 slices landed.                             |
+| 6 - Server-side generation              | complete    | Completion route closed in Phase 6-28; helpers remain follow-ups.    |
+| 7 - Server-side prompt assembly         | in progress | 27 slices landed through 7-9d-ii; next is 7-9e, with 7-10a parallel. |
+| 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.                                        |
+| 9 - Client thinning                     | not started | Blocked on all of the above.                                         |
 
 ## Workstreams
 
@@ -31,7 +31,8 @@ workstream lives in the sibling shards.
   matrix. Phase 7 has added the `/api/v1/generate/chat` scaffold,
   prompt leaves through history shaping, regex scripts, module
   helpers, lorebook activation through budget truncation, and the
-  tokens / budget chain.
+  tokens / budget chain, plus the Phase 7-safe trigger runner
+  through V2 safe data helpers.
   The Docker runtime targets Fastify, Express has been deleted, and
   the production image
   installs the runtime dependencies needed by `pnpm api:start`.

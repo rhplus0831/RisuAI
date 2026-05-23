@@ -21,10 +21,11 @@ template-wide token preflight + `PromptUnformatedSlots` shape),
 `budgetFinalize.ts` (the 7-8c request budget finalization), and
 `tokenizerConfig.ts` (shared `tokenizerOptionsFromDb` helper used
 by `history.ts`, `preflight.ts`, and `budgetFinalize.ts`) are
-real. `triggers.ts` now hosts the full Phase 7-safe trigger runner —
+real. `triggers.ts` now hosts the Phase 7-safe trigger runner —
 the 7-9a model + shell, the 7-9b variable/condition engine, the 7-9c
-deterministic V1 effects, and the complete V2 dialect (7-9d-i control
-flow + 7-9d-ii safe data helpers in `triggerDataEffects.ts`); only
+deterministic V1 effects, and the V2 control/data batch (7-9d-i
+control flow + 7-9d-ii safe data helpers in `triggerDataEffects.ts`);
+only
 the request/display adapters (7-9e) and the start-trigger handoff
 (7-9f) remain on the trigger front. The remaining assembly modules
 under `server/fastify/src/prompt/` (`assemble`, `templates`) are still
@@ -212,11 +213,12 @@ is the planning resolution, not a contract.
 
 ### Tier 1 — Finish partially landed prompt helpers
 
-Order chosen to minimize helper coupling. `assemble.ts`,
-`templates.ts`, and `triggers.ts` are still the throwing stubs;
-`tokens.ts` is now real after 7-8a but only at the minimal
-text-only surface. The files below are real but have deferred
-sub-slices.
+Order chosen to minimize helper coupling. `assemble.ts` and
+`templates.ts` are still the throwing stubs. `tokens.ts` is real
+at the minimal text-only surface, and `triggers.ts` is real through
+V2 safe data helpers with request/display adapters and the
+start-trigger handoff still deferred. The files below are real but
+have deferred sub-slices.
 
 **7-5a … 7-5e — History shaping.** Port `buildHistoryWindow` +
 `formatHistoryMessage` from `src/ts/process/promptAssembly/`. The

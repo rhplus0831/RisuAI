@@ -237,15 +237,10 @@ Preset templates (`templates.ts`):
   Phase 7-safe request-state transform from 7-9e. Browser Lua
   `editRequest` hooks stay deferred with plugin/Lua execution.
 
-The tokens / budget chain is fully landed (7-8a `17fca64f`, 7-8b
-`d488ab7f`, 7-8c `c83015b3`), along with 7-7d (`f0382df8`) and
-7-5e (`febe67ce`). 7-9a (`cddc035e`) + 7-9b (`cb23202b`) + 7-9c
-(`cae61155`) + 7-9d-i (`1bd8313b`) landed the trigger runner shell,
-the variable/condition engine, the deterministic V1 effects, and the
-V2 control-flow core; 7-9d-ii (`faec5145`) closed the V2 data-helper
-batch. The next default pickup is **7-9e** (request/display state
-adapters) → 7-9f, with **7-10a** → 7-10b/c/d/e/f for templates as an
-equally valid parallel front.
+Current default pickup: **7-9e** (request/display state adapters) →
+7-9f → 7-5d. The template front starts at **7-10a** and can run in
+parallel. The already-landed support chain is 7-7d/7-5e, 7-8a/b/c,
+and 7-9a/b/c/d-i/d-ii.
 
 ### Tier 1 sub-slices unblocked by Tier 2
 
@@ -305,10 +300,9 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are now **7-9e** (continues
-  triggers; the next default, after 7-9a/b/c/d) and **7-10a** (kicks
-  off templates). 7-5d is the remaining Tier 1 sub-slice and unblocks
-  the moment 7-9f lands.
+- The biggest parallel-able fronts are **7-9e** (trigger
+  request/display adapters) and **7-10a** (template normalization).
+  7-5d unblocks the moment 7-9f lands.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or if Triggers
   (7-9e) opens the door to porting `runTrigger('display', …)`.

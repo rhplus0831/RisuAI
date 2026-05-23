@@ -21,8 +21,10 @@ provider matrix. Phase 7 has landed the `/api/v1/generate/chat`
 scaffold plus server-side variable expansion, static prompt
 sections, plain prompt sections, history shaping through multimodal
 inlays, regex scripts, active-module helpers, and lorebook
-activation through depth-prompt helpers; the root assembler,
-template, token, and trigger modules are still stubs.
+activation through depth-prompt helpers, the minimal tokenizer,
+budget helpers, and the Phase 7-safe trigger runner through V2
+safe data helpers; the root assembler and template modules are
+still stubs.
 Express has been deleted. The Dockerfile and compose file target
 Fastify on port 6002 with `/app/data` persisted; `tsx` and
 `@fastify/websocket` are runtime dependencies after `1eddbfba`.
@@ -50,9 +52,9 @@ In scope:
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 closed
   the completion route in Phase 6-28 (`398a3ae6`, hash backfilled by
-  `a8cb123b`). Phase 7 slices through 7-8c are now landed, including
-  lorebook budget truncation and the tokens / budget chain; the current
-  provider matrix lives in
+  `a8cb123b`). Phase 7 slices through 7-9d-ii are now landed,
+  including lorebook budget truncation, the tokens / budget chain, and
+  the Phase 7-safe trigger runner; the current provider matrix lives in
   [`coverage/providers.md`](coverage/providers.md), and the active
   slice history lives in [`status/next-steps.md`](status/next-steps.md).
 - A display-only browser client in server-backed mode.

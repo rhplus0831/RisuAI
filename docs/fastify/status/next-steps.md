@@ -13,10 +13,10 @@ preflight, regex scripts, active-module helpers, lorebook
 activation / depth / budget-truncation helpers, the minimal server
 tokenizer, the template-wide token preflight, the request
 budget finalization, the trigger model + runner shell, the trigger
-variable/condition engine, the deterministic V1 trigger effects, and
-the full V2 dialect (control flow + safe data helpers). `assemble`
-and `templates` remain throwing stubs; `triggers` is now a runner
-with conditions, V1 effects, and the complete V2 dialect wired
+variable/condition engine, the deterministic V1 trigger effects, V2
+control flow, and V2 safe data helpers. `assemble` and `templates`
+remain throwing stubs; `triggers` is now a runner with conditions,
+V1 effects, V2 control flow, and V2 safe data helpers wired
 (7-9a/b/c/d). The tokens / budget chain (7-8a/b/c) is fully landed,
 `preflight` covers every card type the SPA emits, and `history` +
 `lorebook` are feature-complete (modulo the 7-5d start-trigger
@@ -27,8 +27,8 @@ integration, blocked on 7-9f after the trigger re-scope). Use
 ## Immediate
 
 1. **Continue Phase 7 with slice 7-9e — request/display state
-   adapters.** 7-9d-ii (`faec5145`) closed the V2 data-helper batch,
-   completing the V2 dialect. 7-9e adds the mode allowlists plus the
+   adapters.** 7-9d-ii (`faec5145`) closed the V2 data-helper batch.
+   7-9e adds the mode allowlists plus the
    request/display state arms, which read/write the per-run display
    text (`arg.displayData`) or a JSON-stringified `OpenAIChat[]`
    request state. It is the last trigger sub-slice before 7-9f (the

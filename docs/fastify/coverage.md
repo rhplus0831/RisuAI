@@ -59,8 +59,9 @@ shards under [`coverage/`](coverage/).
 - Phase 7 has route-scaffold coverage in `generation.chat.test.ts`
   plus prompt leaf coverage in `promptVariables.test.ts`,
   `staticSections.test.ts`, `plainSections.test.ts`,
-  `history.test.ts`, `scripts.test.ts`, `modules.test.ts`, and
-  `lorebook.test.ts`.
+  `history.test.ts`, `scripts.test.ts`, `modules.test.ts`,
+  `lorebook.test.ts`, `tokens.test.ts`, `preflight.test.ts`,
+  `budgetFinalize.test.ts`, and `triggers.test.ts`.
 
 ## Where to look
 

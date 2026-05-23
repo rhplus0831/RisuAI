@@ -31,7 +31,7 @@ Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, the Phase 5
 closeout on 2026-05-22, the Phase 6 completion-route closeout in
 Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`), and
-Phase 7 slices through 7-8c:
+Phase 7 slices through 7-9d-ii:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -95,13 +95,13 @@ Phase 7 slices through 7-8c:
   client-side variant gates documented in
   [`coverage/providers.md`](coverage/providers.md). Unsupported
   provider strings still return a documented `501`.
-- Phase 7 is in progress. `server/fastify/src/prompt/variables.ts`,
-  `staticSections.ts`, `plainSections.ts`, `history.ts`,
-  `scripts.ts`, `modules.ts`, and `lorebook.ts` are implemented and
-  tested through the 7-7e depth-prompt helpers. `assemble.ts`,
-  `templates.ts`, `tokens.ts`, and `triggers.ts` are still throwing
-  stubs; `/api/v1/generate/chat` currently validates the request and
-  emits the Phase 7 not-implemented SSE sequence.
+- Phase 7 is in progress. The prompt leaves, history, regex scripts,
+  module helpers, lorebook activation/truncation, minimal tokenizer,
+  template preflight, final budget pruning, and the Phase 7-safe
+  trigger runner through V2 safe data helpers are implemented and
+  tested. `assemble.ts` and `templates.ts` are still throwing stubs;
+  `/api/v1/generate/chat` currently validates the request and emits
+  the Phase 7 not-implemented SSE sequence.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -160,11 +160,12 @@ rules. The headline order:
    Phase 7.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
-   triggers. In progress: slices through 7-8c landed the route
+   triggers. In progress: slices through 7-9d-ii landed the route
    scaffold, parser/static/plain leaves, history shaping through
    token/depth preflight, regex scripts, module helpers, lorebook
-   activation through budget truncation, and the tokens / budget
-   chain. `assemble`, `templates`, and `triggers` remain stubs.
+   activation through budget truncation, the tokens / budget chain,
+   and the trigger runner through V2 safe data helpers. `assemble`
+   and `templates` remain stubs.
 8. **Memory** - Hypa V3 chunking, embeddings, summarization as an
    async job queue on the server.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation

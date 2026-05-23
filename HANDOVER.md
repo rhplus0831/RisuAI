@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `faec5145 feat: V2 trigger safe data helpers (Phase 7-9d-ii)`
+Head: `01f909e7 docs: backfill 7-9d-ii SHA across HANDOVER / ROADMAP / phase doc / next-steps`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -70,64 +70,24 @@ What is real in code:
   `matchLog`, `inject_lore` rewrites, `disabledUIPrompts`, plus the
   `getDepthPrompts` / `resolvePosition` depth-prompt helpers) are
   implemented and tested.
-- `modules.ts` also exports `getModuleTriggers` (7-9a), which
-  aggregates active-module trigger scripts with inherited
-  `lowLevelAccess`, cloning each entry instead of mutating the
-  module's trigger objects in place.
-- `triggers.ts` now hosts the Svelte-free trigger model + runner
-  shell (7-9a) plus the variable/condition engine (7-9b):
-  `TriggerMode` / `TriggerRunContext` (now carries `database` /
-  `selectedCharID` / `chatPage`) / `TriggerRunArg` /
-  `TriggerRunResult` (now carries `varChanged`) types,
-  `collectTriggers` (character + module triggers, cloned with
-  inherited `lowLevelAccess`), `matchesTrigger` (mode/manual-name
-  filter + `triggercode`/`triggerlua` bypass), `evaluateConditions`
-  (`var` / `value` / `chatindex` / `exists`, all operators, expanded
-  via `expandVariables`), and `runTrigger` (input cloning, no-trigger
-  `null` return, recursion / trigger-id threading, default-variable +
-  var-engine construction, per-trigger condition evaluation, the
-  deterministic V1 effect arms from 7-9c, and terminal token
-  accounting).
-- The 7-9c V1 effect arms in `runTrigger`: `setvar` (numeric ops via
-  the var engine), `systemprompt` (slot accumulation feeding the
-  token count), `impersonate` / `cutchat` / `modifychat` (chat-message
-  edits on the returned `result.chat`), `stop` (`stopSending`), and
-  bounded `runtrigger` recursion (`recursiveCount < 10` unless
-  `lowLevelAccess`, threading `ctx` through the recursive call and
-  OR-ing recursive `varChanged`). The effect-loop scaffold tracks
-  `currentIndent` via `engine.setIndent`.
-- The 7-9d-i V2 control-flow core: the effect loop is index-based so
-  V2 flow can advance/rewind `index`. Arms: `v2Header` / `v2Comment`
-  / `v2ConsoleLog` (no-ops), `v2SetVar` (`%=`), `v2DeclareLocalVar`,
-  `v2If` / `v2IfAdvanced` (`∈` / `∋` / `∌` / `≒` / `≡` operators +
-  fail-skip), `v2Else`, `v2EndIndent` (loop-back + lag guard +
-  `clearLocalVarsAtIndent`), `v2Loop` / `v2LoopNTimes`, `v2BreakLoop`,
-  `v2StopTrigger`, `v2StopPromptSending`, bounded `v2RunTrigger`
-  (`effect.target`), and the V2 state effects `v2CutChat` /
-  `v2ModifyChat` / `v2SystemPrompt` / `v2Impersonate`.
-- `triggerDataEffects.ts` (7-9d-ii) exports `applyV2DataEffect`,
-  dispatched from `runTrigger`'s switch `default`: the side-effect-free
-  V2 leaf arms — message readers, string ops, array helpers
-  (JSON-in-var), dict helpers (JSON-in-var), `v2Random`, `v2Calculate`
-  (via the Svelte-free `calcString`), `v2Tokenize` (via `tokens.ts`),
-  `v2RegexTest`, and `v2QuickSearchChat`. Each is `resolve → compute →
-engine.setVar(outputVar)`; the `v2MakeArrayVar`/`v2MakeDictVar`/
-  `v2ClearDict` malformed-name guard is a handled no-op (the SPA's
-  `return` aborts the whole run). Deferred arms (`command`, the
-  `lowLevelAccess`-gated alert/LLM/image/similarity, request/display
-  state (7-9e), the persistent lorebook/character/persona/note arms,
-  GUI/wait, `triggercode`/`triggerlua`) fall through to `false`.
-- `triggerVars.ts` (7-9b) exports `createTriggerVarEngine`: the
-  ported `getVar` / `setVar`, local-variable scope stack
-  (`declareLocalVar` / `setLocalVar` / `clearLocalVarsAtIndent`),
-  `displayMode` `tempVars` fallback, `varChanged` tracking, and
-  `setChat` (7-9c repoints the engine after a `runtrigger` chat
-  reassignment). `setVar` persists into the single `database` snapshot
-  (the SPA's three-store sync + `ReloadGUIPointer` bump are dropped).
-- `parseKeyValue` was lifted into `src/ts/util/parseKeyValue.ts`
-  (Svelte-free) and re-exported from `src/ts/util.ts` (7-9b), so the
-  trigger path resolves default variables without pulling in Svelte
-  (mirrors the `loreHash` lift).
+- `modules.ts` exports active-module helpers for regex, assets, and
+  triggers. `getModuleTriggers` clones entries and applies inherited
+  `lowLevelAccess` without mutating module-owned objects.
+- `triggers.ts` is the Svelte-free Phase 7-safe runner through
+  7-9d-ii: trigger collection/filtering, explicit context threading,
+  variable/condition evaluation, deterministic V1 effects, V2 control
+  flow, V2 state effects, bounded recursive `runtrigger` /
+  `v2RunTrigger`, terminal token accounting, and `varChanged`.
+- `triggerVars.ts` owns the trigger variable engine: `getVar` /
+  `setVar`, local scopes, `displayMode` temp vars, `setChat`, and
+  persistence into the single database snapshot. `parseKeyValue` was
+  lifted to `src/ts/util/parseKeyValue.ts` and re-exported from
+  `src/ts/util.ts`.
+- `triggerDataEffects.ts` handles the 7-9d-ii side-effect-free V2
+  data-helper leaf arms: message readers, string / array / dict /
+  math, random, tokenize, regex test, and quick chat search. The
+  request/display state arms are 7-9e; browser/plugin/low-level and
+  persistent resource-mutation arms remain deferred.
 - `tokens.ts` now exports the minimal server tokenizer
   (`encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`)
   over `cl100k_base` / `o200k_base` with a module-scope encoder
@@ -148,9 +108,9 @@ memoryCardUsed, hasCachePoint }` and the
   `budgetFinalize.ts` (7-8c).
 - `assemble.ts` and `templates.ts` still throw Phase 7
   not-implemented errors. `triggers.ts` is now a real runner with the
-  variable/condition engine, deterministic V1 effects, and the full V2
-  dialect (control flow + safe data helpers) wired (7-9a/b/c/d); only
-  the request/display adapters (7-9e) and the start-trigger handoff
+  variable/condition engine, deterministic V1 effects, V2 control
+  flow, and V2 safe data helpers wired (7-9a/b/c/d-i/d-ii); only the
+  request/display adapters (7-9e) and the start-trigger handoff
   (7-9f) remain on the trigger front.
 - `history.ts` does not yet handle start triggers (7-5d, blocked
   on 7-9f after the trigger re-scope). 7-5e (`febe67ce`) landed the
