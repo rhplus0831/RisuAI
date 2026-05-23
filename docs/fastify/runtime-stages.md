@@ -141,12 +141,12 @@ the delegated post-generation helpers under
   (provider dispatch) server-side.
 - Phase 7 (`phases/phase-7-prompt-assembly.md`) moves Stage 2
   (prompt assembly) server-side. It is in progress: slices 7-1
-  through 7-10c landed the scaffold, prompt leaves, history shaping,
+  through 7-10f landed the scaffold, prompt leaves, history shaping,
   scripts, module helpers, lorebook activation through budget
   truncation, the tokens / budget chain, the trigger runner through
-  request/display state adapters + start-trigger handoff, and template
-  rendering through content + chat cards. Memory/cache cards, render
-  finalization, the root assembler, and route wiring remain.
+  request/display state adapters + start-trigger handoff, and the
+  complete template renderer. The root assembler and route wiring
+  remain.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
   server-side resource that Stage 2 reads from.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1

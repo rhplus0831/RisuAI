@@ -31,31 +31,33 @@ and `lorebook` are feature-complete. Use
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-11a — `assemble.ts` state loader +
-   slot orchestration.** This is the **first Tier 3 slice**: 7-10f
-   (`49df7eff`) closed the template renderer, so every Tier 1 + 2
-   module is real and the root can stitch them together. It is a bigger
-   jump than the 7-10 sub-slices — draw a concrete LOC/test scope at
-   pickup. SPA reference is the assembly sequence in
-   `src/ts/process/index.svelte.ts:~190-313`.
+1. **Continue Phase 7 with slice 7-11a — `assemble.ts` state/context
+   loader + assembler contract.** This is the **first Tier 3 slice**:
+   7-10f (`49df7eff`) closed the template renderer, so every Tier 1 + 2
+   module is real and the root can stitch them together. A 2026-05-24
+   size recheck split the old oversized 7-11a; keep this first slice
+   strictly to loading and context shape. SPA reference is the assembly
+   sequence in `src/ts/process/index.svelte.ts:~190-313`.
 
    Verified slice scope:
-   - resolve scope: database / chat / character / preset, seeding the
-     `promptScope.ts` singleton.
-   - `normalizeTemplate(currentChar)` (already in `templates.ts`).
-   - build the `UnformatedPromptSlots` from the landed leaves:
-     `staticSections.ts` (`buildDescription` / `buildAuthorNote` /
-     `buildPersona` / `buildCotInstruction`), `plainSections.ts`
-     (`buildPlainPromptSections`), `lorebook.ts` (`activateLorebook` →
-     the `lorebook` slot + `positionParser` / `resolvePosition`), and
-     `history.ts` (`buildHistoryWindow` → `chats` / `lastChat`).
-   - token preflight via `preflightTemplateTokens` (`preflight.ts`).
-   - collect bias rows (logit-bias / bias-prompt rows).
-   - No route dispatch and no final render yet.
-   - Do not port the memory-window bridge + `renderFinalPrompt` call +
-     budget pruning + `triggerResult.additonalSysPrompt` placement
-     (7-11b), the route wiring (7-11c/d/e), Hypa V3 (Phase 8), or
-     browser plugin/Lua.
+   - resolve persisted database / chat / character / preset/loadout
+     identity from an explicit assembly dependency surface.
+   - resolve selected character/chat indices and construct the
+     `ExpandContext` reused by later slot builders.
+   - introduce an empty `UnformatedPromptSlots` factory and internal
+     assembler state/result shape.
+   - call `normalizeTemplate(db, currentChar)` and
+     `buildFormatOrder(db)`.
+   - add direct tests for missing IDs, default active chat/character,
+     explicit IDs, and template/format-order normalization.
+   - No slot building, lorebook, history, token preflight, memory
+     bridge, final render, budget pruning, route dispatch, or
+     persistence yet.
+   - Follow-ups are 7-11b static/plain slots, 7-11c lorebook +
+     preflight, 7-11d history + bias, 7-11e memory/post-history slot
+     mutations, 7-11f final render + budgeted prompt payload, 7-11g
+     chat route wiring, 7-11h preview shortcut, and 7-11i telemetry.
+     Hypa V3 stays Phase 8; browser plugin/Lua stays deferred.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -64,7 +66,7 @@ and `lorebook` are feature-complete. Use
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 801
+   tests green. Last recorded baselines are `pnpm api:test`: 826
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is

@@ -64,22 +64,14 @@ under [`status/`](status/).
   The client adapter is flag-gated by `db.useServerGeneration`; the
   current matrix and remaining local-only paths are tracked in
   [`coverage/providers.md`](coverage/providers.md).
-- Phase 7 prompt assembly is in progress. Thirty-two slices have
-  landed through 7-10c: the auth-gated
-  `POST /api/v1/generate/chat` scaffold, the locked nine-event
-  prompt SSE taxonomy, server-side `expandVariables`, static/plain
-  prompt sections, history shaping through added-token/depth-prompt
-  preflight + start-trigger handoff, regex scripts, active-module
-  helpers, lorebook activation through budget-aware truncation, the
-  minimal server tokenizer, template-wide token preflight, and request
-  budget finalization, plus the trigger model, variable/condition
-  engine, deterministic V1 effects, V2 control flow, V2 safe data
-  helpers, the request/display state adapters, the `runStartTrigger`
-  handoff, and the template renderer through content + chat cards.
-  `assemble` remains a stub; the trigger and history fronts are
-  complete and `templates` holds the 7-10a foundation plus 7-10b/c
-  content + chat cards, so next work is 7-10d, memory cards + cache
-  markers.
+- Phase 7 prompt assembly is in progress. Thirty-five slices have
+  landed through 7-10f: the auth-gated
+  `POST /api/v1/generate/chat` scaffold, the locked nine-event prompt
+  SSE taxonomy, server-side `expandVariables`, static/plain prompt
+  sections, feature-complete history/lorebook/token-budget/trigger
+  fronts, and the complete template renderer (`renderFinalPrompt`
+  included). `assemble` remains a stub; next work is the re-sliced
+  7-11a state/context loader before the smaller 7-11 root/route pieces.
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
   dependencies only, and `tsx` plus `@fastify/websocket` are now

@@ -688,9 +688,8 @@ what each fixture pins.
   through token/depth preflight and start-trigger handoff, regex
   scripts, active-module helpers, lorebook activation through budget
   truncation, the minimal token/budget helpers, the Phase 7-safe
-  trigger runner, and template rendering through content + chat cards.
-  Memory/cache cards, render finalization, root assembly, and route
-  wiring remain.
+  trigger runner, and the complete template renderer. Root assembly and
+  route wiring remain.
 - **Phase 9.** Stages 1 + 4 move server-side; Stage 0 becomes a
   ~50-line bridge that owns the UI lease, abort forwarding, and
   side-effect dispatch.

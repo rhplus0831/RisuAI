@@ -380,7 +380,7 @@ Tentative breakdown:
   insertion so the SPA's growing-array semantics hold. The
   helper lives outside `buildHistoryWindow` because the SPA
   itself runs the splice at the assemble root — that keeps
-  the 7-5a/b/c walk untouched and lets 7-11b wire this in
+  the 7-5a/b/c walk untouched and lets 7-11e wire this in
   cleanly.
 
 ### Tier 2 — Supporting infrastructure
@@ -420,9 +420,10 @@ consumers.
 - **7-8b** — Token preflight accounting across the template walker.
   **Landed `d488ab7f`** (27 tests, api:test 668 → 695).
   `server/fastify/src/prompt/preflight.ts` exports
-  `preflightTemplateTokens(input) → { addedTokens, memoryCardUsed,
-hasCachePoint }` and the `PromptUnformatedSlots` shape the future
-  assemble root (7-11a) will feed in. Card coverage matches SPA:
+  `preflightTemplateTokens(input)`, returning
+  `{ addedTokens, memoryCardUsed, hasCachePoint }`, and the
+  `PromptUnformatedSlots` shape the future assemble root will feed in.
+  Card coverage matches SPA:
   `persona` / `description` / `authornote` `innerFormat` +
   `defaultText` fallback, `lorebook` pass-through, `postEverything`
   - optional `postEndInnerFormat`, `plain` / `jailbreak` (gated on
@@ -598,25 +599,53 @@ response]` pre-push (gpt / claude / openrouter / reverse_proxy),
 
 ### Tier 3 — Root + route wiring
 
-**7-11a … 7-11e — `assemble.ts` + route.** All Tier 1 + 2 modules
-must be real before these land.
+**7-11a … 7-11i — `assemble.ts` + route.** All Tier 1 + 2 modules
+must be real before these land. Size recheck (2026-05-24): the earlier
+7-11a was too large because it combined state resolution, slot filling,
+lore placement, history/start-trigger integration, preflight, and bias
+collection. Keep the root work split by integration seam:
 
-- **7-11a** — `assemble.ts` state loader + slot orchestration.
-  Resolve database/chat/character/preset scope, build the
-  unformatted slots from static/plain/lorebook/history, compute
-  token preflight, and collect bias rows. No route dispatch yet.
-- **7-11b** — Memory-window bridge + final render. Port the
+- **7-11a** — `assemble.ts` state/context loader + assembler contract.
+  Resolve persisted database, character, chat, preset/loadout identity,
+  selected character/chat indices, the `ExpandContext`, an empty
+  `UnformatedPromptSlots` factory, `normalizeTemplate`, and
+  `buildFormatOrder`. No slot building, lorebook, history, preflight,
+  render, budget, or route dispatch.
+- **7-11b** — Static/plain slot fill. Using 7-11a state, fill `main`,
+  `jailbreak`, `globalNote`, `authorNote`, `description`,
+  `personaPrompt`, and `postEverything` from `staticSections.ts` and
+  `plainSections.ts`. Keep `buildInlayViewInstruction` deferred until
+  the image-generation/newGenData path exists. No lorebook, history, or
+  preflight.
+- **7-11c** — Lorebook placement + token preflight. Run
+  `activateLorebook`, port the root-local `buildLorebookContext`
+  placement (`lorebook` / `description` / `postEverything`,
+  `positionParser`, `resolvePosition`, `depthPrompts`), run
+  `preflightTemplateTokens`, and seed current token state with
+  `maxResponse + 50 + preflight.addedTokens` plus `memoryCardUsed` /
+  `hasCachePoint`. No history, memory, or render.
+- **7-11d** — History window + bias rows. Run `buildHistoryWindow`
+  with the 7-11c depth/position data and request/inlay asset lookup,
+  honor `stopSending`, surface `triggerResult` / updated `currentChat`,
+  add `history.addedTokens`, and collect parsed bias rows. No
+  memory-window bridge or final render.
+- **7-11e** — Memory bridge + post-history slot mutations. Port the
   non-Hypa budget fallback from
   `src/ts/process/promptAssembly/buildMemoryWindow.ts`, promote
   `lastChat`, split `memories[]` for memory template cards, mark
-  removable rows, apply lorebook depth prompts, merge start-trigger
-  additional-system-prompt slots, call `templates.ts`, and run final
-  budget pruning. Hypa V3 summary creation remains Phase 8.
-- **7-11c** — Wire `POST /api/v1/generate/chat` (currently emits
-  "not yet implemented") to call `assemble.ts` and emit `prompt`
-  - `done` SSE events.
-- **7-11d** — Add `POST /api/v1/generate/preview-prompt` shortcut.
-- **7-11e** — SSE telemetry: `info` event (timings, token counts),
+  removable rows, apply lorebook depth prompts, and merge
+  `triggerResult.additonalSysPrompt` into the right slots. Hypa V3
+  summary creation remains Phase 8. No final render or budget pruning.
+- **7-11f** — Final render + budgeted prompt payload. Call
+  `renderFinalPrompt` with `formatOrder`, `memories`, `positionParser`,
+  `isContinue`, and the deterministic request-edit seam; run
+  `finalizeRequestBudget`; return the `prompt` event payload. No route
+  dispatch yet.
+- **7-11g** — Wire `POST /api/v1/generate/chat` (currently emits "not
+  yet implemented") to call `assemble.ts` and emit `prompt` + `done`
+  SSE events.
+- **7-11h** — Add `POST /api/v1/generate/preview-prompt` shortcut.
+- **7-11i** — SSE telemetry: `info` event (timings, token counts),
   `message_patch` for chat-row deltas.
 
 ### Tier 4 — Browser adapter

@@ -91,11 +91,11 @@ What is real in code:
   never supplies the prompt-info sink and still keeps only the
   `memoryCardUsed` / `hasCachePoint` flags.
 - `assemble.ts` still throws a Phase 7 not-implemented error. Tier 3
-  owns state loading, building the real `positionParser` /
-  `resolvePosition`, supplying `memories` from `buildMemoryWindow`,
-  `triggerResult.additonalSysPrompt` placement, wiring the real
-  `editRequest`, calling `renderFinalPrompt`, and connecting the chat
-  route to the assembled prompt.
+  was re-sliced on 2026-05-24 after a size check found the old 7-11a
+  too large. The remaining assembly path now moves through state/context
+  loading, static/plain slots, lorebook + preflight, history + bias,
+  memory/post-history slot mutations, final render + budget, and then
+  route/preview/telemetry wiring.
 
 Last recorded baselines after 7-10f:
 
@@ -104,46 +104,46 @@ Last recorded baselines after 7-10f:
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-11a assemble.ts state loader + slot orchestration
+## Next Slice — 7-11a assemble.ts state/context loader
 
-Pick up **7-11a — `assemble.ts` state loader + slot orchestration**.
+Pick up **7-11a — `assemble.ts` state/context loader + assembler
+contract**.
 This is the **first Tier 3 slice**: Tier 1 + 2 are now all real
 (history, lorebook, tokens/budget, triggers, and the complete template
 renderer through 7-10f), so the root can start stitching them together.
-It is a bigger jump than the 7-10 sub-slices — draw a concrete
-LOC/test scope at pickup.
+The old 7-11a bundled too many seams; keep this slice strictly to
+loading and context shape.
 
 SPA reference is the assembly sequence in
 `src/ts/process/index.svelte.ts:~190-313`.
 
-### Scope sketch (SPA reference, `index.svelte.ts`)
+### Scope sketch
 
-- resolve scope: database / chat / character / preset, seeding the
-  `promptScope.ts` singleton (the existing single-user seam).
-- `normalizeTemplate(currentChar)` → `{ promptTemplate,
-usingPromptTemplate }` (already in `templates.ts`).
-- build the unformatted slots into `UnformatedPromptSlots` using the
-  landed leaves: `staticSections.ts`
-  (`buildDescription` / `buildAuthorNote` / `buildPersona` /
-  `buildCotInstruction`), `plainSections.ts`
-  (`buildPlainPromptSections`), `lorebook.ts` (`activateLorebook` →
-  the `lorebook` slot + the `positionParser`/`resolvePosition`), and
-  `history.ts` (`buildHistoryWindow` → `chats` / `lastChat`).
-- token preflight: `preflightTemplateTokens` (`preflight.ts`) over the
-  assembled slots + template.
-- collect bias rows (logit-bias / bias-prompt rows the SPA gathers
-  pre-render).
-- **No route dispatch and no final render yet.**
+- resolve persisted database / chat / character / preset/loadout
+  identity from an explicit assembly dependency surface; do not make the
+  route import storage globals.
+- resolve selected character/chat indices and construct the
+  `ExpandContext` that downstream slot builders will reuse.
+- introduce an empty `UnformatedPromptSlots` factory and the internal
+  assembler state/result shape that later 7-11 slices will extend.
+- call `normalizeTemplate(db, currentChar)` and `buildFormatOrder(db)`.
+- add narrow direct tests for missing IDs, default active chat/character,
+  explicit IDs, and template/format-order normalization.
+- **No slot building, lorebook, history, token preflight, memory bridge,
+  final render, budget pruning, route dispatch, or persistence yet.**
 
 ### Out of scope (defer)
 
-- The memory-window bridge + the `renderFinalPrompt` call + final
-  budget pruning + `triggerResult.additonalSysPrompt` placement — that
-  is **7-11b** (`buildMemoryWindow` port, `memories[]` split, removable
-  marking, depth-prompt splice, start-trigger system-prompt merge).
-- Wiring `POST /api/v1/generate/chat` — 7-11c; the
-  `/api/v1/generate/preview-prompt` shortcut — 7-11d; SSE telemetry —
-  7-11e.
+- Static/plain slot fill is **7-11b**.
+- Lorebook placement + token preflight is **7-11c**.
+- History/start-trigger integration + bias rows is **7-11d**.
+- The memory-window bridge + depth/additional-system-prompt placement is
+  **7-11e**.
+- The `renderFinalPrompt` call + final budget pruning + prompt payload is
+  **7-11f**.
+- Wiring `POST /api/v1/generate/chat` — 7-11g; the
+  `/api/v1/generate/preview-prompt` shortcut — 7-11h; SSE telemetry —
+  7-11i.
 - Hypa V3 summary creation stays Phase 8; browser plugin/Lua stays
   deferred.
 
@@ -157,8 +157,8 @@ pnpm build
 ```
 
 7-11a is the default next pickup. The template renderer (7-10) is fully
-landed; Tier 2 hands off to Tier 3, where 7-11a → 7-11b are the
-critical-path assembly slices before route wiring (7-11c/d/e).
+landed; Tier 2 hands off to Tier 3, where 7-11a → 7-11f are the
+critical-path assembly slices before route wiring (7-11g/h/i).
 
 ## Patterns To Keep
 

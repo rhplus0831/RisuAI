@@ -16,7 +16,7 @@ workstream lives in the sibling shards.
 | 4 - sendChat tests                      | complete    | Closed 2026-05-20; 17 initial fixtures.                           |
 | 5 - sendChat extraction                 | complete    | Closed 2026-05-22; all 28 slices landed.                          |
 | 6 - Server-side generation              | complete    | Completion route closed in Phase 6-28; helpers remain follow-ups. |
-| 7 - Server-side prompt assembly         | in progress | 32 slices landed through 7-10c; next is 7-10d (memory + cache).   |
+| 7 - Server-side prompt assembly         | in progress | 35 slices landed through 7-10f; next is 7-11a state/context.      |
 | 8 - Hypa V3 memory server-side          | not started | Blocked on Phase 2 + Phase 7.                                     |
 | 9 - Client thinning                     | not started | Blocked on all of the above.                                      |
 
@@ -33,7 +33,7 @@ workstream lives in the sibling shards.
   helpers, lorebook activation through budget truncation, the tokens /
   budget chain, the Phase 7-safe trigger runner through
   request/display state adapters + start-trigger handoff, and the
-  template renderer through content + chat cards.
+  complete template renderer.
   The Docker runtime targets Fastify, Express has been deleted, and
   the production image
   installs the runtime dependencies needed by `pnpm api:start`.

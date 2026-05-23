@@ -5,7 +5,7 @@ Date: 2026-05-24
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
 Phase 3, the Phase 6 completion-route files through closeout slice
-6-28, and Phase 7 slices through 7-10c already exist; modules
+6-28, and Phase 7 slices through 7-10f already exist; modules
 marked by later phases are target layout, not current implementation.
 
 ## Server module layout
@@ -72,7 +72,7 @@ server/fastify/
       modules.ts          active module regex/assets helpers
       assemble.ts         prompt assembly root (stub)
       lorebook.ts         activation, recursion, depth helpers, budget filter
-      templates.ts        prompt-template renderer through content + chat cards
+      templates.ts        complete prompt-template renderer
       tokens.ts           minimal tiktoken helpers for budget accounting
       tokenizerConfig.ts  shared tokenizer option helper
       preflight.ts        template-wide token preflight
