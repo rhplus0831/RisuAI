@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `b11902ad feat: lorebook recursive activation (Phase 7-7c)`
+Head: `c0f3fb3a feat: lorebook depth-prompt emission (Phase 7-7e)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -36,6 +36,7 @@ Landed Phase 7 slices:
 | 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                |
 | 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch` port, child mirror, conditional-activation decorators, and `matchLog`.        |
 | 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt` accumulation, three recursion decorators.    |
+| 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.          |
 
 What is real in code:
 
@@ -55,7 +56,10 @@ What is real in code:
   child mirror, conditional-activation decorators, recursion
   loop with `recursivePrompt` + `recursive`/`unrecursive`/
   `no_recursive_search`, `matchLog`, `inject_lore` rewrites,
-  `disabledUIPrompts`) are implemented and tested.
+  `disabledUIPrompts`, plus the 7-7e depth-prompt helpers
+  `getDepthPrompts` / `resolvePosition` and the
+  `applyDepthPrompts` splicer in `history.ts`) are implemented
+  and tested.
 - `assemble.ts`, `templates.ts`, `tokens.ts`, and `triggers.ts`
   still throw Phase 7 not-implemented errors.
 - `history.ts` does not yet handle start triggers, tokenizer
@@ -63,73 +67,67 @@ What is real in code:
 - `scripts.ts` does not yet handle script-cache,
   `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
   hooks — all 7-6e or out-of-scope.
-- `lorebook.ts` covers always-on + keyword + recursive
-  activation. Token-budget truncation (7-7d) and depth-prompt
-  emission into history (7-7e) are still deferred; 7-7d is
-  blocked on Tokens (7-8a) for the real `tokens` field.
+- `lorebook.ts` covers the full activation surface (constant
+  / keyword / recursive / depth-prompt). The only deferred
+  lorebook slice is 7-7d (budget-aware truncation), blocked on
+  Tokens (7-8a) for the real per-entry `tokens` field.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-7c:
+Last recorded baselines after 7-7e:
 
-- `pnpm api:test`: 624 across 35 files
+- `pnpm api:test`: 640 across 35 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
 ## Next Slice
 
-Pick up **7-7e - lorebook depth-prompt emission into history**.
+Pick up **7-8a - server tokenizer**.
 
-The default ROADMAP sequence is 7-7c → 7-7d → 7-7e, but 7-7d
-(budget-aware truncation) needs the real per-entry `tokens`
-field that only lands with **Tokens 7-8a**. Rather than stub
-tokens or block here, jump past 7-7d to 7-7e and come back to
-7-7d immediately after 7-8a.
-
-7-7e wires the depth-positioned lorebook entries
-(`pos === 'depth'` with `depth > 0`, plus `pos === 'reverse_depth'`)
-into the `history.ts` walk. The browser source is
-`src/ts/process/promptAssembly/buildLorebookContext.ts:140-144`
-(extraction of `depthPrompts`) and the history-walk consumer
-hooked into `src/ts/process/promptAssembly/formatHistoryMessage.ts`.
+The lorebook chain is closed at a clean cut: 7-7d is the only
+remaining lorebook slice, and it can't progress until the
+tokenizer attaches a real `tokens` field to each
+`LoreEntryActive`. 7-8a unblocks **both** 7-7d (lorebook
+budget filter) and 7-5e (history tokenizer accumulation +
+depth-prompt token preflight), so it's the biggest single
+unblocker in Tier 2.
 
 Slice scope:
 
-- Plumb `LoreEntryActive[]` (or the existing
-  `LorebookActivationReport`) into the history-walk input.
-  Decide whether to mutate the existing `buildHistory` API or
-  add a sibling helper that takes the report; lean toward the
-  sibling helper if the change set ends up large.
-- Filter the report to entries with `pos === 'depth' && depth > 0`
-  or `pos === 'reverse_depth'`. Skip `depth === 0` (those land
-  in `postEverything` via the template walker — out of scope
-  here).
-- Insert the entry text into the right index of the role-mapped
-  history stream: `depth` counts back from the end, `reverse_depth`
-  counts forward. Mirror the SPA's exact insertion order so the
-  existing snapshot fixtures (`lorebook-position-depth.jsonl`
-  in `src/ts/process/__fixtures__/`) round-trip identically.
-- Respect the entry's `role` decorator when normalizing the
-  inserted chat into `OpenAIChat`.
+- Inspect `src/ts/tokenizer.ts` to decide whether to reuse it
+  directly on the server (`tiktoken` and `@huggingface/transformers`
+  are already in `package.json`) or port a Svelte-free subset.
+  The SPA dispatcher is environment-agnostic for OpenAI models
+  (cl100k_base / o200k_base) but pulls in `DBState` for
+  per-model defaults — at minimum we need a pair of
+  `tokenize(text, model)` + `tokenizeChat(chat, model)` helpers
+  that take an explicit model string instead of a global store.
+- Stand up `server/fastify/src/prompt/tokens.ts` (currently a
+  throwing stub) with the chosen surface. Cover the
+  prompt-assembly models that already appear in the fixtures
+  (`gpt-4o` etc. via `o200k_base`); other dispatchers can
+  land as needed when their fixtures appear.
+- Add isolated unit tests for the tokenizer (no full assembly
+  required): empty string, ASCII baseline, multimodal-aware
+  chat tokenization if the SPA does anything special.
 
-Skip-list (still deferred):
+Skip-list (still deferred to later 7-8 sub-slices):
 
-- Token-budget truncation (7-7d) — parked behind Tokens 7-8a.
-- The `postEverything` slot for `depth === 0` entries — that
-  lives in the assemble.ts root (7-11a) or the template walker
-  (7-10), not in history.
+- 7-8b: token preflight accounting across the template walker.
+- 7-8c: budget finalization (pruning order, fallback chains).
+- 7-7d: re-enter once 7-8a lands and slot the `tokens` field
+  into `LoreEntryActive`.
+- 7-5e: same — unblocked by 7-8a + 7-7e (7-7e already landed).
 
-Same rhythm: extend `history.test.ts` (or add a dedicated
-`historyDepthPrompts.test.ts` if the surface stays clean) with
-the new fixtures, and run all four bars
+Same rhythm: small fixtures, `beforeAll(() =>
+bootPromptVariables())` where useful, run all four bars
 (`pnpm check`, `pnpm api:test`, `pnpm test`, `pnpm build`)
 before reporting back.
 
-If 7-7e turns out to be tightly coupled to the assembler root
-(too much new plumbing to make sense in isolation), the next
-agent should pivot to **7-8a — server tokenizer** instead;
-that unblocks 7-7d and 7-5e and is a clean parallel front per
-the ROADMAP.
+If 7-8a turns out to be too sprawling to ship in one slice
+(model dispatcher matrix is wide), defer to **7-9a —
+trigger sandbox** or **7-10a — template card parsing**;
+both are independently shippable parallel fronts.
 
 ## Patterns To Keep
 

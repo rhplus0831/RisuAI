@@ -33,6 +33,7 @@ narrative phase doc see
 | 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                                             |
 | 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`.                           |
 | 7-7c  | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursive/unrecursive/no_recursive_search decorators. |
+| 7-7e  | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.                    |
 
 ## Remaining Slices
 
@@ -57,17 +58,11 @@ Scripts (`scripts.ts`):
 
 Lorebook (`lorebook.ts`):
 
-- **7-7e** — depth-prompt emission for history (`pos === 'depth'`
-  with `depth > 0`, plus `pos === 'reverse_depth'`). Picks up
-  ahead of 7-7d under the post-7-7c plan because 7-7d needs
-  Tokens 7-8a for the real per-entry `tokens` field.
 - **7-7d** — budget-aware truncation. **Parked until 7-8a
   lands** — needs the tokenizer to attach `tokens` to each
   active entry before the priority-desc filter can do anything
-  meaningful.
-
-Updated ordering: 7-7e jumps ahead of 7-7d so the lorebook chain
-stops at a clean cut until Tokens unblocks the budget slice.
+  meaningful. This is the only remaining lorebook slice;
+  re-enter immediately after 7-8a closes.
 
 ### Tier 2 — Supporting infrastructure
 
@@ -103,7 +98,8 @@ parallel after card parsing lands.
 
 - **7-5d** — start trigger integration (needs 7-9c).
 - **7-5e** — tokenizer accumulation + depth prompts (needs
-  7-7e + 7-8c).
+  7-8c; 7-7e already landed).
+- **7-7d** — lorebook budget-aware truncation (needs 7-8a).
 
 These slot in as soon as their Tier 2 dependencies land. Do
 **not** wait for all of Tier 2 — pick them up the moment their
@@ -150,41 +146,40 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are **7-7e** (closes out
-  the lorebook chain that doesn't need tokens) / **7-8a**
-  (kicks off tokens and unblocks 7-7d + 7-5e) / **7-9a**
-  (kicks off triggers) / **7-10a** (kicks off templates).
+- The biggest parallel-able fronts are **7-8a** (kicks off
+  tokens and unblocks both 7-7d and 7-5e in one move) /
+  **7-9a** (kicks off triggers) / **7-10a** (kicks off
+  templates).
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or if Triggers
   (7-9) opens the door to porting `runTrigger('display', …)`.
 
 ## Sequential order (default)
 
-1. **7-7e** — lorebook depth-prompt emission for history
-2. **7-8a** — server tokenizer
-3. **7-7d** — lorebook budget-aware truncation (unblocked by 7-8a)
-4. **7-8b** — token preflight
-5. **7-8c** — budget finalization
-6. **7-9a** — trigger sandbox
-7. **7-9b** — `editInput` / `editRequest` hooks
-8. **7-9c** — `start` trigger
-9. **7-10a** — template card parsing
-10. **7-10b** — chat range cards
-11. **7-10c** — cache markers
-12. **7-10d** — position slots
-13. **7-10e** — systemized chat hoisting
-14. **7-5d** — history start trigger (unblocked by 7-9c)
-15. **7-5e** — history tokenizer + depth prompts (unblocked by
-    7-7e + 7-8c)
-16. **7-11a** — `assemble.ts` root entry
-17. **7-11b** — wire `/api/v1/generate/chat`
-18. **7-11c** — `/api/v1/generate/preview-prompt`
-19. **7-11d** — SSE telemetry (`info`, `message_patch`)
-20. **7-12a** — browser client adapter
-21. **7-12b** — dual-mode fixture sweep
-22. **7-12c** — side-effect dispatch
-23. **7-12d** — error / abort restoration
-24. **7-13** — phase 7 closeout
+1. **7-8a** — server tokenizer
+2. **7-7d** — lorebook budget-aware truncation (unblocked by 7-8a)
+3. **7-8b** — token preflight
+4. **7-8c** — budget finalization
+5. **7-9a** — trigger sandbox
+6. **7-9b** — `editInput` / `editRequest` hooks
+7. **7-9c** — `start` trigger
+8. **7-10a** — template card parsing
+9. **7-10b** — chat range cards
+10. **7-10c** — cache markers
+11. **7-10d** — position slots
+12. **7-10e** — systemized chat hoisting
+13. **7-5d** — history start trigger (unblocked by 7-9c)
+14. **7-5e** — history tokenizer + depth prompts (unblocked by
+    7-8c; 7-7e already landed)
+15. **7-11a** — `assemble.ts` root entry
+16. **7-11b** — wire `/api/v1/generate/chat`
+17. **7-11c** — `/api/v1/generate/preview-prompt`
+18. **7-11d** — SSE telemetry (`info`, `message_patch`)
+19. **7-12a** — browser client adapter
+20. **7-12b** — dual-mode fixture sweep
+21. **7-12c** — side-effect dispatch
+22. **7-12d** — error / abort restoration
+23. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

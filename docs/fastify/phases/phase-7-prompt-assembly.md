@@ -2,15 +2,17 @@
 
 Date: 2026-05-23
 
-Status: in-progress (16 slices landed as of 2026-05-23).
+Status: in-progress (17 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
-`history.ts` (through multimodal inlays + `{{asset_prompt::}}`),
-`scripts.ts` (regex chain through module regex), `modules.ts`
-(`getActiveModules`, `getModuleRegexScripts`, `getModuleAssets`),
-and `lorebook.ts` (constant + keyword + recursive activation with
-`searchMatch`, child mirror, conditional-activation decorators,
-recursion loop + `recursivePrompt`, `matchLog`, `inject_lore`
-rewrites) are real. The remaining assembly modules
+`history.ts` (through multimodal inlays + `{{asset_prompt::}}` +
+the new `applyDepthPrompts` splicer), `scripts.ts` (regex chain
+through module regex), `modules.ts` (`getActiveModules`,
+`getModuleRegexScripts`, `getModuleAssets`), and `lorebook.ts`
+(constant + keyword + recursive activation with `searchMatch`,
+child mirror, conditional-activation decorators, recursion loop +
+`recursivePrompt`, `matchLog`, `inject_lore` rewrites, plus the
+7-7e depth-prompt helpers `getDepthPrompts` /
+`resolvePosition`) are real. The remaining assembly modules
 under `server/fastify/src/prompt/` (`assemble`, `templates`,
 `tokens`, `triggers`) are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
@@ -164,6 +166,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.          |
 | 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, and `matchLog`.       |
 | 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.                 |
+| 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` history splicer.        |
 
 ## Remaining roadmap
 
@@ -272,9 +275,23 @@ Tentative breakdown:
 - **7-7d** — Budget-aware truncation. **Parked until 7-8a
   lands** so the tokenizer can attach a real `tokens` field to
   each active entry; the existing priority-desc filter then
-  has something to drop.
-- **7-7e** — Depth-prompt emission for history (consumed by 7-5e).
-  Picks up next per the post-7-7c ordering.
+  has something to drop. Only remaining lorebook slice.
+- **7-7e** — Depth-prompt emission for history. **Landed
+  `c0f3fb3a`** (16 new tests, api:test 624 → 640).
+  `getDepthPrompts(report)` filters for
+  `(pos==='depth' && depth>0) || pos==='reverse_depth'`.
+  `resolvePosition(text, report, maxDepth=5)` ports
+  `buildLorebookContext.ts:36-63` (transitive
+  `{{position::pt_<name>}}` substitution, cap-stripped).
+  `applyDepthPrompts(messages, ctx, char, report)` lives in
+  `history.ts` and mirrors `index.svelte.ts:275-283`:
+  splices each entry at `depth` (from start) or
+  `length - depth` (from end), re-reading length per
+  insertion so the SPA's growing-array semantics hold. The
+  helper lives outside `buildHistoryWindow` because the SPA
+  itself runs the splice at the assemble root — that keeps
+  the 7-5a/b/c walk untouched and lets 7-11a wire this in
+  cleanly.
 
 ### Tier 2 — Supporting infrastructure
 

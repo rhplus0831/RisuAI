@@ -11,13 +11,14 @@ the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
 deferred until a fixture demands it. Phase 7 (prompt assembly) is
-in progress as of 2026-05-23 — sixteen slices landed: the chat
+in progress as of 2026-05-23 — seventeen slices landed: the chat
 route scaffold, Svelte-free parser adapter, static/plain prompt
 sections, history shaping through multimodal inlays, regex scripts,
-active-module helpers, and lorebook constant + keyword + recursive
-activation. The remaining assembly modules under
-`server/fastify/src/prompt/` (`assemble`, `templates`, `tokens`,
-`triggers`) are still stubs. [`ROADMAP.md`](../../../ROADMAP.md)
+active-module helpers, and the full lorebook stack (constant +
+keyword + recursive activation, plus depth-prompt helpers and the
+`applyDepthPrompts` history splicer). The remaining assembly
+modules under `server/fastify/src/prompt/` (`assemble`,
+`templates`, `tokens`, `triggers`) are still stubs. [`ROADMAP.md`](../../../ROADMAP.md)
 at the repo root has the strategic view of the remaining slices.
 The tiered roadmap for the rest of Phase 7 lives in the
 [Remaining roadmap](../phases/phase-7-prompt-assembly.md#remaining-roadmap)
@@ -26,41 +27,39 @@ the short pickup runbook.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-7e — lorebook depth-prompt
-   emission for history.** `lorebook.ts` now handles the full
-   constant / keyword / recursive activation surface (7-7c
-   landed in `b11902ad`). The default ROADMAP order says 7-7d
-   next, but 7-7d (budget-aware truncation) needs the real
-   per-entry `tokens` field from Tokens **7-8a** — so we jump
-   past it to 7-7e and come back to 7-7d after 7-8a.
+1. **Continue Phase 7 with slice 7-8a — server tokenizer.**
+   The lorebook chain is closed at a clean cut (7-7e landed in
+   `c0f3fb3a`; only 7-7d remains, parked behind this slice).
+   7-8a is the single biggest unblocker in Tier 2: it frees
+   both 7-7d (lorebook budget filter) and 7-5e (history
+   tokenizer accumulation + depth-prompt token preflight) in
+   one move.
 
    Slice scope:
-   - Plumb the `LorebookActivationReport` (or just its
-     `actives` array) into the history walk. Filter to
-     `pos === 'depth' && depth > 0` plus
-     `pos === 'reverse_depth'`. `depth === 0` belongs to the
-     `postEverything` slot owned by the template walker (7-10)
-     or the assemble root (7-11a) — out of scope here.
-   - Insert each filtered entry's prompt at the right index of
-     the role-mapped history stream: `depth` counts back from
-     the end, `reverse_depth` counts forward. Normalize using
-     the entry's `role` decorator. Match the SPA's exact
-     insertion order so
-     `src/ts/process/__fixtures__/upstream/lorebook-position-depth.jsonl`
-     round-trips byte-for-byte.
-   - Cover: single depth entry at depth=1, multiple entries at
-     the same depth, `reverse_depth` ordering, role
-     decoration on the inserted chat.
+   - Inspect `src/ts/tokenizer.ts` and decide reuse vs. port.
+     `tiktoken` and `@huggingface/transformers` are already in
+     `package.json`; the SPA dispatcher is environment-agnostic
+     for OpenAI models but pulls in `DBState` for per-model
+     defaults — at minimum we need a Svelte-free
+     `tokenize(text, model)` + `tokenizeChat(chat, model)` pair
+     that takes an explicit model string.
+   - Stand up `server/fastify/src/prompt/tokens.ts` (currently
+     a throwing stub) with the chosen surface. Cover the
+     prompt-assembly models that already appear in the
+     fixtures (`gpt-4o` etc. via `o200k_base`); other model
+     dispatchers can land per-fixture as they come up.
+   - Isolated unit tests: empty string, ASCII baseline,
+     multimodal-aware chat tokenization if the SPA does
+     anything special there.
 
-   Skip-list: token-budget truncation (7-7d) parked behind
-   7-8a, the `postEverything` slot, and browser-only plugin
-   execution.
+   Skip-list: 7-8b (token preflight across the template
+   walker), 7-8c (budget finalization), 7-7d (re-enter once
+   7-8a lands), 7-5e (same).
 
-   If 7-7e turns out to need too much new plumbing in
-   isolation (e.g. requires changing the history `buildHistory`
-   signature in a way that ripples into 7-5a/b/c), pivot to
-   **7-8a — server tokenizer** instead. 7-8a unblocks 7-7d
-   _and_ 7-5e and is a clean parallel front per the ROADMAP.
+   If 7-8a's model dispatcher matrix is too wide to ship as
+   one slice, defer to **7-9a — trigger sandbox** or
+   **7-10a — template card parsing** instead; both are
+   independently shippable parallel fronts.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -69,7 +68,7 @@ the short pickup runbook.
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 624
+   tests green. Last recorded baselines are `pnpm api:test`: 640
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
