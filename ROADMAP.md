@@ -126,6 +126,7 @@ multi-subsystem work behind small labels.
 | 7-11i   | `807f5d1a` | Added the `info` SSE event to `/chat`: `timings.prompt` + `tokens.{prompt,total}` + clamped `responseBudget` emitted on the success path (after `prompt`/`stage(prompt,end)`, before `done`); error/`stopSending` path emits none. Closes Tier 3.                                                       |
 | 7-12a   | `a3a1e6e2` | Browser client adapter `requestServerChat` (`serverChat.ts`): POSTs `AssembleInput` to `/chat` with `risu-auth`, stream-parses `stage`/`prompt`/`info`/`error`/`done` (ignores dispatch-coupled events), returns `{ status }`. Shared `sseParse.ts`; `db.useServerPromptAssembly` gate (not yet wired). |
 | 7-12b   | `2b5603a2` | Additively extended the `prompt` event (and `/preview-prompt` JSON) with the full `OpenAIChat[]` `formated` rows + `biases` (`messages` stays the lossy projection). `assemblePrompt` folds both into `result.prompt`; client mirror + mock + adapter surface them. Unblocks 7-12c preview wiring.      |
+| 7-12c   | `8cf7fd63` | Wired the `sendChat` **preview** paths through `/chat` behind the gate: `preview` → `previewFormated`, `previewPrompt` → `previewBody`, `error`→`throwError`, `aborted`→false. Send/continue/regenerate stay local (7-12d). Cross-assembler parity test deferred (needs a normalized-DB bridge).        |
 
 ## Remaining Slices
 
@@ -287,17 +288,17 @@ Preset templates (`templates.ts`):
   the 7-9e request-state transform plugs in. **Closes the template
   renderer.**
 
-Current default pickup: **7-12c** (preview-path `sendChat` wiring +
-real-assembler dual-mode parity, Tier 4). Tier 3 is closed; **7-12a** (the
-browser client adapter `requestServerChat`, behind the
-`db.useServerPromptAssembly` gate) and **7-12b** (the additive `prompt`-event
-`formated` + `biases` extension) are landed. The template renderer
-(7-10a–f), the closed critical-path assembler (7-11a–f), both generation
-routes — `/api/v1/generate/chat` (7-11g, SSE) and
-`/api/v1/generate/preview-prompt` (7-11h, JSON) — and the `/chat` `info`
-telemetry (7-11i) are landed. `message_patch` (chat-row deltas) is
-dispatch-coupled, so the live **send-path** wiring + full send sweep folds
-into 7-12d.
+Current default pickup: **7-12d** (live send-path wiring + provider
+dispatch cluster, Tier 4). Tier 3 is closed; **7-12a** (the browser client
+adapter `requestServerChat`), **7-12b** (the additive `prompt`-event
+`formated` + `biases` extension), and **7-12c** (the preview-path
+`sendChat` wiring, behind the `db.useServerPromptAssembly` gate) are
+landed. The template renderer (7-10a–f), the closed critical-path
+assembler (7-11a–f), both generation routes — `/api/v1/generate/chat`
+(7-11g, SSE) and `/api/v1/generate/preview-prompt` (7-11h, JSON) — and the
+`/chat` `info` telemetry (7-11i) are landed. The send path is blocked on
+`message_patch` (chat-row deltas), so the live **send-path** wiring + full
+send sweep + dispatch all fold into 7-12d.
 
 ### Tier 3 — Root + route wiring (all Tier 1 + 2 real)
 
@@ -397,8 +398,8 @@ from Phase 5 shrink to thin SSE iterators.
   (no behavior change to `serverCompletion.ts`). Added the
   `db.useServerPromptAssembly` gate (default false, orthogonal to
   `useServerGeneration`) — **defined but not wired** into `sendChat`; the
-  live integration is 7-12c. Read-only: standalone adapter + mocked unit
-  tests, no server change.
+  live preview integration is 7-12c. Read-only: standalone adapter + mocked
+  unit tests, no server change.
 - **7-12b** — additive `prompt`-event extension. **Landed `2b5603a2`.**
   Extended the `prompt` SSE event (and the `/preview-prompt` JSON body)
   with the full `OpenAIChat[]` `formated` rows + the `biases` logit rows;
@@ -407,23 +408,34 @@ from Phase 5 shrink to thin SSE iterators.
   sync; the client mirror, `serverChatFetch` mock, and `requestServerChat`
   surface them. Additive to the locked SSE contract. Unblocks the 7-12c
   preview wiring (the browser needs the full rows to set `previewFormated`).
-- **7-12c** — preview-path `sendChat` wiring + dual-mode parity. Gate the
-  `sendChat` **preview path** (`preview` / `previewPrompt`) on
-  `useServerPromptAssembly`: `previewPrompt` → `previewBody` from
-  `promptInfo.promptText`, `preview` → `previewFormated` from the 7-12b
-  `formated`. Parity test: make the `serverChatFetch` mock run the **real**
-  `assemblePrompt` in-process (Svelte-free; `loadDatabase` bound to the
-  fixture DB) and assert `previewFormated` matches the local sweep. The
-  preview path needs no dispatch and no chat-row deltas, so it is wireable
-  read-only.
+- **7-12c** — preview-path `sendChat` wiring. **Landed `8cf7fd63`.** Gated
+  the `sendChat` **preview path** (`preview` / `previewPrompt`) on
+  `useServerPromptAssembly`: short-circuits after `setupSendChatContext` to
+  `requestServerChat`, filling `previewFormated` from the 7-12b `formated`
+  and `previewBody` from `promptInfo.promptText`; `error` → `throwError`,
+  `aborted` → false. The preview path needs no dispatch and no chat-row
+  deltas, so it is wireable read-only. The send path stays local (7-12d).
+  Added `sendChat.serverPreview.test.ts`. **Note:** the planned
+  cross-assembler parity test was deferred — see the follow-up below.
 - **7-12d** — live **send-path** wiring + provider dispatch + the full
   server-backed send sweep + `message_patch` / `side_effect` events +
   error/abort restoration. The send path mutates `currentChat` in place
   (start-trigger mutations, the assistant row `orchestrateResponse` writes
   back); the read-only `/chat` route does not return those chat-row deltas,
   so this whole cluster is dispatch-coupled and lands together (likely
-  sub-sliced: dispatch, then `message_patch`, then `side_effect`, then
+  sub-sliced: `message_patch`, then dispatch, then `side_effect`, then
   restoration).
+- **Follow-up (parallel, not blocking) — cross-assembler dual-mode
+  parity.** Cross-check that the server `assemblePrompt` and the local
+  browser assembler agree on the same fixture DB. Deferred from 7-12c after
+  it proved infeasible as a focused slice: the dual-mode fixtures are
+  minimal seeds (no `formatingOrder`, etc.), so the server assembler needs
+  the SPA's `setDatabase` defaulting, which cannot be imported into the
+  server suite (`src/ts/*` alias + Svelte coupling; `assemblePrompt`'s `.js`
+  specifiers don't resolve under SPA vite). Needs a **normalized-DB parity
+  artifact**: have the SPA sweep emit the post-`setDatabase` DB + its
+  assembled prompt, then a server test consume it and assert
+  `assemblePrompt` agrees.
 
 ### Tier 5 — Closeout
 
@@ -442,18 +454,21 @@ from Phase 5 shrink to thin SSE iterators.
   payload), **both generation routes are real** — `/chat` (7-11g, SSE)
   and `/preview-prompt` (7-11h, JSON) — and the `/chat` `info` telemetry
   (7-11i) is landed. **Tier 3 is closed**, and the Tier 4 client adapter
-  (7-12a) + the `prompt`-event `formated`/`biases` extension (7-12b) are
-  landed; next is the preview-path wiring + dual-mode parity (7-12c).
+  (7-12a) + the `prompt`-event `formated`/`biases` extension (7-12b) +
+  the preview-path wiring (7-12c) are landed; next is the live send-path
+  wiring + dispatch cluster (7-12d).
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).
 
 ## Sequential order (default)
 
-1. **7-12c** — preview-path `sendChat` wiring + dual-mode parity
-2. **7-12d** — live send-path wiring + dispatch + `message_patch` /
+1. **7-12d** — live send-path wiring + dispatch + `message_patch` /
    `side_effect` + restoration
-3. **7-13** — phase 7 closeout
+2. **7-13** — phase 7 closeout
+
+(Parallel, non-blocking: the deferred cross-assembler dual-mode parity
+test — needs a normalized-DB artifact bridge; see Tier 4.)
 
 Optional polish slot (skip in default order, revisit on demand):
 

@@ -2,8 +2,8 @@
 
 Date: 2026-05-24
 Branch: `fastify`
-Head: `2b5603a2 feat: emit formated + biases on the /chat prompt event (Phase 7-12b)`
-Latest feature slice: `2b5603a2 feat: emit formated + biases on the /chat prompt event (Phase 7-12b)`
+Head: `8cf7fd63 feat: route sendChat preview path through /chat behind the gate (Phase 7-12c)`
+Latest feature slice: `8cf7fd63 feat: route sendChat preview path through /chat behind the gate (Phase 7-12c)`
 
 This is the day-to-day runbook for **Phase 7 in progress**:
 current branch head, verification baselines, and the next pickup.
@@ -65,6 +65,7 @@ Landed Phase 7 slices:
 | 7-11i   | `807f5d1a` | Added the `info` SSE event to `/chat`: timings + token counts emitted on the success path (after `prompt`/`stage(prompt,end)`, before `done`); `outputTokens` rides on a new `InfoEvent.responseBudget` field. `/preview-prompt` unchanged; `message_patch` deferred to 7-12.                                                     |
 | 7-12a   | `a3a1e6e2` | Browser client adapter (`serverChat.ts` `requestServerChat`): POSTs `AssembleInput` to `/chat` with `risu-auth`, stream-parses `stage`/`prompt`/`info`/`error`/`done` (ignores dispatch-coupled events), returns `{ status: 'ok'\|'error'\|'aborted' }`. Shared `sseParse.ts`, `db.useServerPromptAssembly` gate (not yet wired). |
 | 7-12b   | `2b5603a2` | Additively extended the `prompt` event (and `/preview-prompt` JSON) with the full `OpenAIChat[]` `formated` rows + `biases`; `messages` stays the lossy projection. `assemblePrompt` folds both into `result.prompt`; client mirror + mock + adapter surface them. Unblocks 7-12c preview wiring.                                 |
+| 7-12c   | `8cf7fd63` | Wired the `sendChat` **preview** paths to `/chat` behind the gate: `preview` → `previewFormated`, `previewPrompt` → `previewBody`, `error`→`throwError`, `aborted`→false. Send/continue/regenerate stay local (7-12d). Cross-assembler parity test deferred (needs a normalized-DB bridge — see Next Slice).                      |
 
 What is real in code:
 
@@ -159,70 +160,68 @@ abortReason }`, or a real HTTP **404** for `EntityNotFoundError` (no
   and ignores the dispatch-coupled `token` / `message_patch` / `side_effect`
   / `warning` events. The `db.useServerPromptAssembly` gate (default false,
   independent of `useServerGeneration`) is defined but **not yet wired**
-  into `sendChat` — that live integration is 7-12c. `serverChatEvents.ts`
-  mirrors the locked `PromptChatEvent` union client-side.
+  into `sendChat`. `serverChatEvents.ts` mirrors the locked
+  `PromptChatEvent` union client-side.
 - The `/chat` `prompt` event (and `/preview-prompt` JSON) now carries the
   full `OpenAIChat[]` `formated` rows + `biases` alongside the lossy
   `messages` projection (7-12b, `2b5603a2`). `assemblePrompt` folds both
   into `result.prompt`, so both routes stay in sync; `requestServerChat`
-  surfaces them via `ServerChatPrompt`. This is the prerequisite for the
-  7-12c preview wiring (the browser needs the full rows to set
-  `previewFormated`).
+  surfaces them via `ServerChatPrompt`.
+- `sendChat` now routes the **preview** paths through `/chat` (7-12c,
+  `8cf7fd63`): with `isFastifyServer && db.useServerPromptAssembly`, a
+  `preview` / `previewPrompt` call short-circuits (right after
+  `setupSendChatContext`) to `requestServerChat` and fills
+  `previewFormated` / `previewBody` from the server payload — no dispatch,
+  no chat-row deltas. `send` / `continue` / `regenerate` stay on the local
+  assembler (7-12d). The gate still defaults **off**.
 
-Last recorded baselines after 7-12b:
+Last recorded baselines after 7-12c:
 
 - `pnpm api:test`: 882 across 42 files
-- `pnpm test`: 615 across 48 files (+ 4 skipped)
+- `pnpm test`: 618 across 49 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-12c preview-path `sendChat` wiring + dual-mode parity
+## Next Slice — 7-12d live send-path wiring + dispatch cluster
 
-Pick up **7-12c — wire `requestServerChat` into the `sendChat` preview
-path + real-assembler parity test** (Tier 4).
+Pick up **7-12d — wire the `sendChat` send path through `/chat` + provider
+dispatch** (Tier 4). This is the dispatch-coupled remainder.
 
-7-12b (`2b5603a2`) landed the `formated` + `biases` payload extension, so
-the adapter now returns everything a preview needs. 7-12c flips the
-`db.useServerPromptAssembly` gate on the **preview path only** — the read-only
-part that needs no dispatch and no chat-row deltas.
+7-12c (`8cf7fd63`) landed the preview-path wiring. The send / continue /
+regenerate path is what's left, and it is **blocked on chat-row deltas**:
+the local send path mutates `currentChat` in place (start-trigger chat
+mutations in `buildHistoryWindow`, the assistant row `orchestrateResponse`
+writes back), but the read-only `/chat` route returns the assembled prompt
+without those deltas. So 7-12d is a cluster that lands together (likely
+sub-sliced):
 
-### Scope sketch
+- emit `message_patch` (authoritative chat-row deltas) from the route so
+  the browser can apply the server's chat mutations;
+- gate the send-path local-assembly block (`index.svelte.ts` ~177–345) on
+  `useServerPromptAssembly`, feed `requestServerChat` → `dispatchRequest`
+  (the 7-12b `formated` + `biases` are already on the payload);
+- re-run the 12 server-backed sendChat fixtures through `/chat` for the
+  full assembly sweep;
+- `side_effect` events (TTS / image / hypav3) + error/abort restoration.
 
-- short-circuit early in `sendChat` (`index.svelte.ts`, after
-  `setupSendChatContext`, before the ~177–345 local-assembly block),
-  guarded by `isFastifyServer && db.useServerPromptAssembly &&
-(arg.preview || arg.previewPrompt)`:
-  - `previewPrompt` → `previewBody = result.prompt.promptInfo.promptText`;
-  - `preview` → `previewFormated = result.prompt.formated` (7-12b);
-  - on `error` / `aborted`, route through `throwError` / return false to
-    match the local path.
-- the **send / continue / regenerate** path stays local — see the
-  boundary note below.
+### Deferred follow-up — cross-assembler dual-mode parity test
 
-### Parity test (the valuable part)
+7-12c was meant to include a parity test running the **real**
+`assemblePrompt` over the dual-mode fixtures vs. the local sweep's
+`expected/*.json`. **Confirmed infeasible as a focused slice**: the
+fixtures are minimal seeds (no `formatingOrder`, etc.), so the server
+assembler needs the SPA's `setDatabase` defaulting — which can't be
+imported into the server suite (`src/ts/*` alias + Svelte coupling, and
+`assemblePrompt`'s `.js` specifiers don't resolve under SPA vite). It
+needs a **normalized-DB parity artifact**: have the SPA sweep emit the
+post-`setDatabase` DB + its assembled prompt, then a server test consumes
+that and asserts `assemblePrompt` agrees. Its own slice; runs in parallel,
+not blocking 7-12d.
 
-Make the `serverChatFetch` mock call the **real** `assemblePrompt`
-in-process (it is Svelte-free; bind `AssembleDeps.loadDatabase` to the
-fixture DB) and serialize its result as SSE. Then run a fixture in
-`preview` mode with the gate on and assert `previewFormated` equals the
-local sweep's output — a genuine cross-check that the server and local
-browser assemblers agree on the same fixture DB.
+### Out of scope (still deferred)
 
-### Important boundary note
-
-The send path mutates `currentChat` in place (start-trigger chat
-mutations in `buildHistoryWindow`, the row `orchestrateResponse` writes
-back). The read-only `/chat` route returns the assembled prompt but
-**not** those chat-row deltas — that is the deferred `message_patch`. So
-the live **send-path** wiring + full send sweep stays in **7-12d**
-(dispatch-coupled), not this slice.
-
-### Out of scope (defer to 7-12d)
-
-- live send-path wiring + provider dispatch + `varChanged` persistence +
-  `message_patch` / `side_effect` events + restoration — **7-12d / 6**.
-  Hypa V3 stays **Phase 8**; browser plugin/Lua + inlay asset lookup stay
-  deferred.
+- Hypa V3 → **Phase 8**; browser plugin/Lua + inlay asset lookup stay
+  deferred; `varChanged` persistence rides with dispatch (7-12d / 6).
 
 ### Verification
 
@@ -233,9 +232,9 @@ pnpm test
 pnpm build
 ```
 
-7-12c is the default next pickup. 7-12a (adapter) + 7-12b (payload
-extension) are landed; Tier 3 is closed (assembler 7-11a–f, routes
-7-11g/h, telemetry 7-11i).
+7-12d is the default next pickup. 7-12a (adapter) + 7-12b (payload
+extension) + 7-12c (preview wiring) are landed; Tier 3 is closed
+(assembler 7-11a–f, routes 7-11g/h, telemetry 7-11i).
 
 ## Patterns To Keep
 

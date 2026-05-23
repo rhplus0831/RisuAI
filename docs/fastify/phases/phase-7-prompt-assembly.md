@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: in-progress (46 slices landed as of 2026-05-24).
+Status: in-progress (47 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -59,10 +59,11 @@ the Tier 4 client adapter `requestServerChat` (`serverChat.ts`, 7-12a) is
 landed behind the `db.useServerPromptAssembly` gate, as is the 7-12b
 `prompt`-event extension (the full `OpenAIChat[]` `formated` rows +
 `biases` now ride alongside the lossy `messages` projection on both
-`/chat` and `/preview-prompt`). The adapter is **not yet wired** into the
-live `sendChat` flow — the read-only preview wiring is 7-12c. The
-remaining Phase 7 work is the rest of the Tier 4 browser adapter
-(7-12c onward). See
+`/chat` and `/preview-prompt`) and the 7-12c preview-path wiring (`sendChat`
+routes `preview` / `previewPrompt` through `/chat` behind the gate). The
+**send** path is not yet wired — it is dispatch-coupled (needs
+`message_patch` chat-row deltas) and lands with 7-12d. The remaining
+Phase 7 work is the rest of the Tier 4 browser adapter (7-12d onward). See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -254,6 +255,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-11i   | `807f5d1a` | Added the `info` SSE event to `/chat`: `timings.prompt` + `tokens.{prompt,total}` + clamped `responseBudget` emitted on the success path (after `prompt`/`stage(prompt,end)`, before `done`); error/`stopSending` path emits none. Closes Tier 3.                                                                                           |
 | 7-12a   | `a3a1e6e2` | Browser client adapter `requestServerChat` (`serverChat.ts`): POSTs `AssembleInput` to `/chat` with `risu-auth`, stream-parses `stage`/`prompt`/`info`/`error`/`done` (ignores dispatch-coupled events), returns `{ status }`. Shared `sseParse.ts` (lifted from `serverCompletion.ts`); `db.useServerPromptAssembly` gate (not yet wired). |
 | 7-12b   | `2b5603a2` | Additively extended the `prompt` event (and `/preview-prompt` JSON) with the full `OpenAIChat[]` `formated` rows + `biases` (`messages` stays the lossy projection). `assemblePrompt` folds both into `result.prompt`; client mirror + mock + adapter surface them. Unblocks 7-12c preview wiring.                                          |
+| 7-12c   | `8cf7fd63` | Wired the `sendChat` **preview** paths through `/chat` behind the gate: `preview` → `previewFormated`, `previewPrompt` → `previewBody`, `error`→`throwError`, `aborted`→false. Send/continue/regenerate stay local (7-12d). Added `sendChat.serverPreview.test.ts`. Cross-assembler parity test deferred (needs a normalized-DB bridge).    |
 
 ## Remaining roadmap
 
@@ -772,22 +774,34 @@ from Phase 5 shrink to thin SSE iterators.
   client `PromptEvent` mirror, the `serverChatFetch` mock, and
   `requestServerChat` (via `ServerChatPrompt`) surface them. Additive to
   the locked SSE contract. Unblocks the 7-12c preview wiring.
-- **7-12c** — Preview-path `sendChat` wiring + dual-mode parity. Gate the
-  `sendChat` **preview path** (`preview` / `previewPrompt`) on
-  `useServerPromptAssembly`: `previewPrompt` → `previewBody` from
-  `promptInfo.promptText`, `preview` → `previewFormated` from the 7-12b
-  `formated`. Parity test: make the `serverChatFetch` mock run the **real**
-  `assemblePrompt` in-process (Svelte-free; `loadDatabase` bound to the
-  fixture DB) and assert `previewFormated` matches the local sweep. The
-  preview path needs no dispatch and no chat-row deltas, so it is wireable
-  read-only.
+- **7-12c** — Preview-path `sendChat` wiring. **Landed `8cf7fd63`**
+  (3 added SPA tests, test 615 → 618). Gated the `sendChat` **preview
+  path** (`preview` / `previewPrompt`) on `useServerPromptAssembly`: a
+  short-circuit right after `setupSendChatContext` calls `requestServerChat`
+  and fills `previewBody` from `promptInfo.promptText` (`previewPrompt`) or
+  `previewFormated` from the 7-12b `formated` (`preview`); `error` →
+  `throwError`, `aborted` → false. The preview path needs no dispatch and
+  no chat-row deltas, so it is wireable read-only. The send path stays
+  local (7-12d). Added `sendChat.serverPreview.test.ts`. **The planned
+  cross-assembler parity test was deferred** — see the follow-up below.
 - **7-12d** — Live **send-path** wiring + provider dispatch + the full
   server-backed send sweep + `message_patch` / `side_effect` events +
   error/abort restoration. The send path mutates `currentChat` in place
   (start-trigger mutations, the assistant row `orchestrateResponse` writes
   back); the read-only `/chat` route does not return those chat-row
   deltas, so this cluster is dispatch-coupled and lands together (likely
-  sub-sliced: dispatch → `message_patch` → `side_effect` → restoration).
+  sub-sliced: `message_patch` → dispatch → `side_effect` → restoration).
+- **Follow-up (parallel, not blocking) — cross-assembler dual-mode
+  parity.** Cross-check that the server `assemblePrompt` and the local
+  browser assembler agree on the same fixture DB. Deferred from 7-12c after
+  it proved infeasible as a focused slice: the dual-mode fixtures are
+  minimal seeds (no `formatingOrder`, etc.), so the server assembler needs
+  the SPA's `setDatabase` defaulting, which cannot be imported into the
+  server suite (`src/ts/*` alias + Svelte coupling; `assemblePrompt`'s `.js`
+  specifiers do not resolve under SPA vite). Needs a **normalized-DB parity
+  artifact**: have the SPA sweep emit the post-`setDatabase` DB + its
+  assembled prompt, then a server test consume it and assert
+  `assemblePrompt` agrees.
 
 ### Tier 5 — Closeout
 
