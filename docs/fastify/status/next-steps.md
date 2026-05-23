@@ -6,39 +6,39 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with nineteen slices landed through 7-7d:
-chat route scaffold, parser/static/plain leaves, history through
-multimodal inlays, regex scripts, active-module helpers, lorebook
+Phase 7 is active with twenty slices landed through 7-5e: chat
+route scaffold, parser/static/plain leaves, history through
+multimodal inlays + `addedTokens` accumulator + depth-prompt
+preflight, regex scripts, active-module helpers, lorebook
 activation/depth/budget-truncation helpers, and the minimal server
 tokenizer. `assemble`, `templates`, and `triggers` remain throwing
-stubs; `tokens` is now real at the minimal text-only surface and
-`lorebook` is feature-complete. Use
+stubs; `tokens` is real at the minimal text-only surface and
+`history` + `lorebook` are feature-complete (modulo the 7-5d
+start-trigger integration, blocked on 7-9c). Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-5e — history tokenizer
-   accumulation + depth-prompt token preflight.** 7-8a landed the
-   minimal server tokenizer (`17fca64f`) and 7-7d closed the
-   lorebook truncation chain (`f0382df8`), so the history walk is
-   the only remaining Tier 1 sub-slice that depends directly on
-   7-8a. 7-7e already shipped the `applyDepthPrompts` splicer plus
-   `getDepthPrompts` / `resolvePosition`.
+1. **Continue Phase 7 with slice 7-8b — token preflight accounting
+   across the template walker.** 7-5e (`febe67ce`) closed out the
+   last Tier 1 sub-slice tied to 7-8a, so the remaining tokens /
+   budget chain is purely Tier 2: 7-8b → 7-8c.
 
    Verified slice scope:
-   - Thread `tokenizeChat` from `tokens.ts` through the existing
-     history walk in `history.ts` so each emitted message carries
-     a real `tokens` count.
-   - Add a chat-window budget cutoff that drops the oldest
-     in-budget messages first (matches the SPA's
-     `buildHistoryWindow.ts` accounting).
-   - Preflight the depth-prompt splice landed in 7-7e so
-     over-budget entries are trimmed before insertion.
+   - Port `src/ts/process/promptBudget/preflightTemplateTokens.ts` into
+     a Svelte-free function that walks the active prompt template and
+     returns an `{ addedTokens, memoryCardUsed, hasCachePoint }` shape.
+   - Reuse `tokenizeChat` + `encodingForModel` from 7-8a; mirror the
+     `tokenizerOptionsFromDb` seam introduced in 7-5e so the gpt /
+     non-gpt overhead and `useName` rules stay consistent.
+   - Multimodal image-token math stays deferred per the 2026-05-23
+     scope re-verification — add it only when a fixture forces the
+     issue.
 
-   After 7-5e closes, the next default pickup is **7-8b**
-   (template-wide token preflight) → **7-8c** (final budget
-   pruning). The independently shippable parallel fronts remain
+   After 7-8b closes, the next default pickup is **7-8c** (final
+   budget pruning) before moving to triggers (7-9a) and templates
+   (7-10a). The independently shippable parallel fronts remain
    **7-9a** (trigger sandbox) and **7-10a** (template card
    parsing).
 
@@ -49,7 +49,7 @@ stubs; `tokens` is now real at the minimal text-only surface and
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 661
+   tests green. Last recorded baselines are `pnpm api:test`: 668
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -116,6 +116,7 @@ stubs; `tokens` is now real at the minimal text-only surface and
 | 7-7e  | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` splicer.       |
 | 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`.              |
 | 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget`. |
+| 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight.                                       |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

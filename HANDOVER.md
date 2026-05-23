@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `f0382df8 feat: lorebook budget-aware truncation (Phase 7-7d)`
+Head: `febe67ce feat: history tokenizer accumulation + depth-prompt preflight (Phase 7-5e)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -39,6 +39,7 @@ Landed Phase 7 slices:
 | 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.          |
 | 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`. |
 | 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.           |
+| 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.              |
 
 What is real in code:
 
@@ -49,8 +50,9 @@ What is real in code:
   `variables.ts`, `staticSections.ts`, `plainSections.ts`,
   `history.ts` (deterministic walk + per-message scripts +
   sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill,
-  multimodal inlays, `{{asset_prompt::}}`, and the `applyDepthPrompts`
-  splicer from 7-7e), `scripts.ts` (full SPA-parity regex chain:
+  multimodal inlays, `{{asset_prompt::}}`, the `applyDepthPrompts`
+  splicer from 7-7e, and the 7-5e `addedTokens` accumulator +
+  optional depth-prompt token preflight), `scripts.ts` (full SPA-parity regex chain:
   preset + character + module regex, `@@`-actions, `ableFlag` DSL,
   `cbs` / `no_end_nl` actions, outScript prep), `modules.ts`
   (`getActiveModules` + `getModuleRegexScripts` + `getModuleAssets`),
@@ -67,8 +69,10 @@ What is real in code:
   cache (Phase 7-8a).
 - `assemble.ts`, `templates.ts`, and `triggers.ts` still throw
   Phase 7 not-implemented errors.
-- `history.ts` does not yet handle start triggers or tokenizer
-  accumulation (7-5d/e).
+- `history.ts` does not yet handle start triggers (7-5d, blocked
+  on 7-9c). 7-5e (`febe67ce`) landed the `addedTokens`
+  accumulator + depth-prompt preflight; the only remaining
+  history gap is the start-trigger token contribution.
 - `scripts.ts` does not yet handle script-cache,
   `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
   hooks — all 7-6e or out-of-scope.
@@ -80,53 +84,57 @@ What is real in code:
   resolution). No remaining lorebook slices.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-7d:
+Last recorded baselines after 7-5e:
 
-- `pnpm api:test`: 661 across 36 files
+- `pnpm api:test`: 668 across 36 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-5e history tokenizer + depth prompts
+## Next Slice — 7-8b template-wide token preflight
 
-Pick up **7-5e — history tokenizer accumulation + depth-prompt
-token preflight**.
+Pick up **7-8b — token preflight accounting across the template
+walker**.
 
-7-8a (`17fca64f`) shipped the minimal server tokenizer and 7-7d
-(`f0382df8`) closed out the last lorebook sub-slice, so the
-lorebook activation report now carries real `tokens` and the only
-remaining Tier 1 sub-slice that depends directly on 7-8a is the
-history walk. 7-7e already shipped the `applyDepthPrompts` splicer
-and `getDepthPrompts` / `resolvePosition` helpers; this slice is
-about wiring tokens into the history walk and budget-checking the
-depth-prompt splice.
+7-5e (`febe67ce`) closed the last Tier 1 sub-slice tied to 7-8a, so
+the remaining tokens / budget chain is purely Tier 2: 7-8b
+(template-wide preflight) → 7-8c (final budget pruning). The
+independently shippable parallel fronts remain **7-9a** (trigger
+sandbox) and **7-10a** (template card parsing) — pick those
+instead if 7-8b is blocked.
 
-After 7-5e closes, the default progression is **7-8b** (template-wide
-preflight) → **7-8c** (final budget pruning). The independently
-shippable parallel fronts remain **7-9a** (trigger sandbox) and
-**7-10a** (template card parsing).
+### Scope sketch (SPA reference)
 
-### Scope sketch (SPA references)
-
-- `src/ts/process/promptAssembly/buildHistoryWindow.ts`: history
-  walk accumulates `tokens` per message and stops adding once the
-  window budget is hit. Port the budget accounting using
-  `tokenizeChat` from `tokens.ts`.
-- `src/ts/process/index.svelte.ts:275-283`: depth-prompt splicer.
-  7-7e already ports the splice itself in `history.ts`; this slice
-  adds the token preflight so over-budget depth prompts are
-  trimmed before the splice.
-- Surface the resolved `model` and the assembly's chat-token
-  budget through the existing history input seam — do not pull in
-  Svelte state.
+- `src/ts/process/promptBudget/preflightTemplateTokens.ts` is the
+  port target. The SPA walks the active prompt template and tallies
+  the token contribution of each card before assembly, returning
+  `{ addedTokens, memoryCardUsed, hasCachePoint }` for the
+  coordinator to add to `currentTokens` and to gate the memory
+  window.
+- Reuse `tokenizeChat` + `encodingForModel` from 7-8a. Match the
+  tokenizer config seam used in `history.ts:tokenizerOptionsFromDb`
+  (gpt → overhead 5 / noName; everything else → overhead 3 / name).
+- Treat the template as the SPA does today (the
+  `promptTemplate` array out of `db`); 7-10a/b/c/d/e will refine
+  card parsing.
 
 ### Tests
 
-Add history-walk tests covering:
+Add isolated server tests in `__tests__/tokens.preflight.test.ts`
+(or under the existing `tokens.test.ts` if the surface stays small):
 
-- Per-message `tokens` accumulation under cl100k_base and o200k.
-- Window-budget cutoff drops the oldest in-budget messages first.
-- Depth-prompt splice respects the per-entry token count.
+- Plain text cards tally per-card overhead + content tokens.
+- `memoryCardUsed` toggles only when a memory card is encountered.
+- `hasCachePoint` toggles only when a cache marker is encountered.
+- Empty template yields `{ addedTokens: 0, memoryCardUsed: false,
+hasCachePoint: false }`.
+
+### Out of scope (defer)
+
+- Multimodal image-token math — keep deferred until a fixture needs
+  it (per ROADMAP 2026-05-23 scope re-verification).
+- Final budget pruning / fallback chains — that's 7-8c.
+- Template card _parsing_ shape changes — those land in 7-10a/b/c/d/e.
 
 ### Verification
 
@@ -137,9 +145,8 @@ pnpm test
 pnpm build
 ```
 
-If 7-5e is blocked, the parallel next-ups are **7-9a** (trigger
-sandbox), **7-10a** (template card parsing), or **7-8b** (token
-preflight across the template walker — depends only on 7-8a).
+If 7-8b is blocked, the parallel next-ups are **7-9a** (trigger
+sandbox) or **7-10a** (template card parsing).
 
 ## Patterns To Keep
 

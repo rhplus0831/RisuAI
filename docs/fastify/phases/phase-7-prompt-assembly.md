@@ -2,21 +2,22 @@
 
 Date: 2026-05-23
 
-Status: in-progress (19 slices landed as of 2026-05-23).
+Status: in-progress (20 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
-`history.ts` (through multimodal inlays + `{{asset_prompt::}}` +
-the new `applyDepthPrompts` splicer), `scripts.ts` (regex chain
-through module regex), `modules.ts` (`getActiveModules`,
-`getModuleRegexScripts`, `getModuleAssets`), `lorebook.ts`
-(constant + keyword + recursive activation with `searchMatch`,
-child mirror, conditional-activation decorators, recursion loop +
-`recursivePrompt`, `matchLog`, `inject_lore` rewrites, the 7-7e
-depth-prompt helpers `getDepthPrompts` / `resolvePosition`, and
-the 7-7d budget-aware truncation chain), and `tokens.ts` (the
-7-8a minimal server tokenizer over `cl100k_base` / `o200k_base`)
-are real. The remaining assembly modules under
-`server/fastify/src/prompt/` (`assemble`, `templates`, `triggers`)
-are still throwing stubs. See
+`history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
+the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
+accumulator + optional depth-prompt token preflight),
+`scripts.ts` (regex chain through module regex), `modules.ts`
+(`getActiveModules`, `getModuleRegexScripts`, `getModuleAssets`),
+`lorebook.ts` (constant + keyword + recursive activation with
+`searchMatch`, child mirror, conditional-activation decorators,
+recursion loop + `recursivePrompt`, `matchLog`, `inject_lore`
+rewrites, the 7-7e depth-prompt helpers `getDepthPrompts` /
+`resolvePosition`, and the 7-7d budget-aware truncation chain),
+and `tokens.ts` (the 7-8a minimal server tokenizer over
+`cl100k_base` / `o200k_base`) are real. The remaining assembly
+modules under `server/fastify/src/prompt/` (`assemble`,
+`templates`, `triggers`) are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -178,6 +179,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` history splicer.              |
 | 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`. |
 | 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.           |
+| 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.              |
 
 ## Remaining roadmap
 
@@ -210,8 +212,21 @@ along the dependency seams:
 - **7-5c** — Multimodal inlays + `{{asset_prompt::}}` replacement.
   **Landed `50a1770b`** (13 tests, api:test 569 → 582).
 - **7-5d** — Start trigger integration. Depends on Triggers (7-9c).
-- **7-5e** — Tokenizer accumulation + depthPrompts wiring. **Unblocked
-  by 7-8a (`17fca64f`); Lorebook 7-7e already landed.**
+- **7-5e** — Tokenizer accumulation + depthPrompts preflight.
+  **Landed `febe67ce`** (7 tests, api:test 661 → 668).
+  `HistoryWindowResult` gains `addedTokens: number`;
+  `buildHistoryWindow` tallies it across examples, the
+  start-new-chat marker, the first message, and per-message rows,
+  using a tokenizer config derived from `db.aiModel` (gpt →
+  overhead 5 / `noName`; everything else → overhead 3 / `name`)
+  plus `encodingForModel` for `cl100k_base` / `o200k_base`
+  routing. A new optional `report?: LorebookActivationReport`
+  trailing parameter triggers a depth-prompt preflight that
+  tokenizes each resolved body (same `resolvePosition` +
+  `expandVariables` path `applyDepthPrompts` uses) without
+  splicing — the splice still happens in `applyDepthPrompts` so
+  the SPA's two-step `buildHistoryWindow` (count) → `index.svelte.ts`
+  (splice) contract is preserved.
 
 **7-6 — Scripts port.** Port `processScript` + `processScriptFull`
 from `src/ts/process/scripts.ts` (431 LOC in the SPA). Now in
