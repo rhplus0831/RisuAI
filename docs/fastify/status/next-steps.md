@@ -2,64 +2,41 @@
 
 Date: 2026-05-23
 
-Use this list to pick the next chunk of work. Phase 5 closed on
-2026-05-22 with all 28 extraction slices landed; the historical
-slice record now lives in
-[`sendchat-slicing.md`](sendchat-slicing.md). The `/completion`
-part of Phase 6 closed on 2026-05-22 with 27 slices landed; see
-the "Closeout" section in
-[`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
-for what landed, what was deferred to Phase 7, and what's
-deferred until a fixture demands it. Phase 7 (prompt assembly) is
-in progress as of 2026-05-23 — seventeen slices landed: the chat
-route scaffold, Svelte-free parser adapter, static/plain prompt
-sections, history shaping through multimodal inlays, regex scripts,
-active-module helpers, and the full lorebook stack (constant +
-keyword + recursive activation, plus depth-prompt helpers and the
-`applyDepthPrompts` history splicer). The remaining assembly
-modules under `server/fastify/src/prompt/` (`assemble`,
-`templates`, `tokens`, `triggers`) are still stubs. [`ROADMAP.md`](../../../ROADMAP.md)
-at the repo root has the strategic view of the remaining slices.
-The tiered roadmap for the rest of Phase 7 lives in the
-[Remaining roadmap](../phases/phase-7-prompt-assembly.md#remaining-roadmap)
-section of the phase doc; [`HANDOVER.md`](../../../HANDOVER.md) is
-the short pickup runbook.
+Use this list to pick the next chunk of work. Phase 5 and the
+`/completion` part of Phase 6 are closed; their details live in
+[`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
+[Closeout](../phases/phase-6-server-generation.md#closeout).
+Phase 7 is active with seventeen slices landed through 7-7e:
+chat route scaffold, parser/static/plain leaves, history through
+multimodal inlays, regex scripts, active-module helpers, and
+lorebook activation/depth helpers. `assemble`, `templates`,
+`tokens`, and `triggers` remain throwing stubs. Use
+[`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
+[`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
 1. **Continue Phase 7 with slice 7-8a — server tokenizer.**
-   The lorebook chain is closed at a clean cut (7-7e landed in
-   `c0f3fb3a`; only 7-7d remains, parked behind this slice).
-   7-8a is the single biggest unblocker in Tier 2: it frees
-   both 7-7d (lorebook budget filter) and 7-5e (history
-   tokenizer accumulation + depth-prompt token preflight) in
-   one move.
+   The activation/depth lorebook work is at a clean handoff
+   (`c0f3fb3a` landed 7-7e). 7-8a unblocks both 7-7d
+   (lorebook budget filter) and 7-5e (history tokenizer
+   accumulation + depth-prompt token preflight).
 
    Verified slice scope:
-   - `src/ts/tokenizer.ts` is a 654-line browser dispatcher across
-     17 tokenizer families plus Svelte `DBState`, plugin tokenizer
-     hooks, browser-loaded `/token/...` assets, Google count-token
-     calls, local GGUF tokenization, and multimodal image-token
-     math. Do **not** port that full matrix in 7-8a.
    - Stand up `server/fastify/src/prompt/tokens.ts` (currently a
      throwing stub) with the capped server surface:
      `encodingForModel(model)`, `tokenize(text, model)`,
      `tokenizeChat(chat, model, opts)`, and `tokenizeChats(...)`.
      Use `@dqbd/tiktoken` with `cl100k_base` / `o200k_base`,
      explicit model strings, and a small module-scope encoder cache.
-   - Keep chat counting text-only for this slice: content tokens,
-     per-message overhead, optional `name`, and optional
-     `thoughts`. Multimodal image-token math waits for 7-8b/c or a
-     fixture that needs it.
+   - Keep chat counting text-only: content tokens, per-message
+     overhead, optional `name`, and optional `thoughts`.
+   - Do not port the full browser tokenizer dispatcher, Svelte
+     stores, plugin/custom tokenizers, remote/local provider
+     tokenizers, or multimodal image-token math in 7-8a.
    - Isolated unit tests only: encoding selection, empty string,
      ASCII baseline, text chat overhead, `name`, `thoughts`, and
      `tokenizeChats` summing.
-
-   Skip-list: 7-8b (token preflight across the template walker),
-   7-8c (budget finalization), 7-7d (re-enter once 7-8a lands),
-   7-5e (same), exact non-tiktoken provider tokenizers, plugin /
-   custom tokenizers, Google remote count-token calls, local GGUF
-   tokenization, and multimodal image-token math.
 
    If even the capped tiktoken import path gets blocked, defer to
    **7-9a — trigger sandbox** or **7-10a — template card parsing**

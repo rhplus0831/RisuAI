@@ -8,8 +8,7 @@ codebase is the source of truth; these docs describe the intended
 direction, current status, and the boundary decisions task agents need
 before widening behavior.
 
-Each doc is short on purpose so an LLM agent can load only the shards
-it needs.
+The docs are sharded so an agent can load only the slice it needs.
 
 ## Scope
 

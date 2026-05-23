@@ -183,9 +183,12 @@ parallel by different agents; the inter-tier dependencies in the
 LOC + test scope at the start of each slice** — the breakdown below
 is the planning resolution, not a contract.
 
-### Tier 1 — Fill in the assembly module stubs
+### Tier 1 — Finish partially landed prompt helpers
 
-Order chosen to minimize cross-stub coupling.
+Order chosen to minimize helper coupling. `assemble.ts`,
+`templates.ts`, `tokens.ts`, and `triggers.ts` are still the
+throwing stubs; the files below are real but have deferred
+sub-slices.
 
 **7-5a … 7-5e — History shaping.** Port `buildHistoryWindow` +
 `formatHistoryMessage` from `src/ts/process/promptAssembly/`. The
@@ -203,7 +206,7 @@ along the dependency seams:
   **Landed `50a1770b`** (13 tests, api:test 569 → 582).
 - **7-5d** — Start trigger integration. Depends on Triggers (7-9c).
 - **7-5e** — Tokenizer accumulation + depthPrompts wiring. Depends
-  on Tokens (7-8) and Lorebook (7-7e).
+  on the minimal tokenizer (7-8a); Lorebook 7-7e already landed.
 
 **7-6 — Scripts port.** Port `processScript` + `processScriptFull`
 from `src/ts/process/scripts.ts` (431 LOC in the SPA). Now in

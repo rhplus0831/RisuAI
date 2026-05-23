@@ -66,13 +66,13 @@ Slices are numbered in the order they should be picked up.
 Slices marked with `(parallel)` can run alongside the previous
 slice when staffed by another agent.
 
-### Tier 1 — Fill in the remaining assembly stubs
+### Tier 1 — Finish partially landed prompt helpers
 
 History (`history.ts`):
 
 - **7-5d** — start trigger integration. Blocked on 7-9c.
 - **7-5e** — tokenizer accumulation + depth prompts. Blocked
-  on 7-8 and 7-7e.
+  on 7-8a; 7-7e already landed the depth-prompt helpers.
 
 Scripts (`scripts.ts`):
 
@@ -120,15 +120,16 @@ Preset templates (`templates.ts`):
 - **7-10d** — position slots (after 7-10a).
 - **7-10e** — systemized chat hoisting (after 7-10a).
 
-Tier 2 ordering: 7-8a → 7-8b → 7-8c first (longest pole; tokens
-gate 7-5e), then 7-9a → 7-9b/9c, then 7-10a → 7-10b/c/d/e in
-parallel after card parsing lands.
+Tier 2 ordering starts with 7-8a because it unblocks 7-7d and
+7-5e. Then continue 7-8b → 7-8c for template-wide preflight and
+final budget pruning, 7-9a → 7-9b/9c for triggers, and
+7-10a → 7-10b/c/d/e for templates.
 
 ### Tier 1 sub-slices unblocked by Tier 2
 
 - **7-5d** — start trigger integration (needs 7-9c).
 - **7-5e** — tokenizer accumulation + depth prompts (needs
-  7-8c; 7-7e already landed).
+  7-8a; 7-7e already landed).
 - **7-7d** — lorebook budget-aware truncation (needs 7-8a).
 
 These slot in as soon as their Tier 2 dependencies land. Do
@@ -188,19 +189,19 @@ from Phase 5 shrink to thin SSE iterators.
 
 1. **7-8a** — server tokenizer
 2. **7-7d** — lorebook budget-aware truncation (unblocked by 7-8a)
-3. **7-8b** — token preflight
-4. **7-8c** — budget finalization
-5. **7-9a** — trigger sandbox
-6. **7-9b** — `editInput` / `editRequest` hooks
-7. **7-9c** — `start` trigger
-8. **7-10a** — template card parsing
-9. **7-10b** — chat range cards
-10. **7-10c** — cache markers
-11. **7-10d** — position slots
-12. **7-10e** — systemized chat hoisting
-13. **7-5d** — history start trigger (unblocked by 7-9c)
-14. **7-5e** — history tokenizer + depth prompts (unblocked by
-    7-8c; 7-7e already landed)
+3. **7-5e** — history tokenizer + depth prompts (unblocked by
+   7-8a; 7-7e already landed)
+4. **7-8b** — token preflight
+5. **7-8c** — budget finalization
+6. **7-9a** — trigger sandbox
+7. **7-9b** — `editInput` / `editRequest` hooks
+8. **7-9c** — `start` trigger
+9. **7-5d** — history start trigger (unblocked by 7-9c)
+10. **7-10a** — template card parsing
+11. **7-10b** — chat range cards
+12. **7-10c** — cache markers
+13. **7-10d** — position slots
+14. **7-10e** — systemized chat hoisting
 15. **7-11a** — `assemble.ts` root entry
 16. **7-11b** — wire `/api/v1/generate/chat`
 17. **7-11c** — `/api/v1/generate/preview-prompt`
