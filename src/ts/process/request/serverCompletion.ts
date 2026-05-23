@@ -3,6 +3,7 @@ import { isFastifyServer } from '../../platform'
 import { getDatabase } from '../../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
 import { applyChatTemplate } from '../templates/chatTemplate'
+import { parseSseEvent } from './sseParse'
 import { unstringlizeChat } from '../stringlize'
 import type { OpenAIChat } from '../index.svelte'
 import type { RequestDataArgumentExtended, requestDataResponse } from './request'
@@ -1002,16 +1003,6 @@ interface CompletionJsonResponse {
   type?: unknown
   result?: unknown
   model?: unknown
-}
-
-function parseSseEvent(block: string): { event: string; data: string } {
-  let event = 'message'
-  let data = ''
-  for (const line of block.split('\n')) {
-    if (line.startsWith('event: ')) event = line.slice(7).trim()
-    else if (line.startsWith('data: ')) data += line.slice(6)
-  }
-  return { event, data }
 }
 
 async function readSseStream(

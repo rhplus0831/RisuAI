@@ -693,6 +693,7 @@ export function setDatabase(data: Database) {
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
   data.useServerGeneration ??= false
+  data.useServerPromptAssembly ??= false
   if (!isNodeServer && !isTauri) {
     //this is intended to forcely reduce the size of the database in web
     data.promptInfoInsideChat = false
@@ -1224,6 +1225,13 @@ export interface Database {
   echoMessage?: string
   echoDelay?: number
   useServerGeneration?: boolean
+  /**
+   * Phase 7-12a: route browser prompt assembly through the server
+   * `POST /api/v1/generate/chat` route instead of the in-browser path.
+   * Independent of `useServerGeneration` (server-side dispatch). The
+   * adapter (`serverChat.ts`) exists; live `sendChat` wiring is 7-12b.
+   */
+  useServerPromptAssembly?: boolean
   createFolderOnBranch?: boolean
   hamburgerButtonBottom?: boolean
   enableRemoteSaving?: boolean
