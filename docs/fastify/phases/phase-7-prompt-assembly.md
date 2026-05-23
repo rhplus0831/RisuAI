@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (20 slices landed as of 2026-05-23).
+Status: in-progress (21 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -14,9 +14,12 @@ accumulator + optional depth-prompt token preflight),
 recursion loop + `recursivePrompt`, `matchLog`, `inject_lore`
 rewrites, the 7-7e depth-prompt helpers `getDepthPrompts` /
 `resolvePosition`, and the 7-7d budget-aware truncation chain),
-and `tokens.ts` (the 7-8a minimal server tokenizer over
-`cl100k_base` / `o200k_base`) are real. The remaining assembly
-modules under `server/fastify/src/prompt/` (`assemble`,
+`tokens.ts` (the 7-8a minimal server tokenizer over
+`cl100k_base` / `o200k_base`), `preflight.ts` (the 7-8b
+template-wide token preflight + `PromptUnformatedSlots` shape),
+and `tokenizerConfig.ts` (shared `tokenizerOptionsFromDb` helper
+used by `history.ts` and `preflight.ts`) are real. The remaining
+assembly modules under `server/fastify/src/prompt/` (`assemble`,
 `templates`, `triggers`) are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
@@ -158,28 +161,29 @@ thin adapters in server-backed mode. The coordinator posts to
 
 ## Landed slices
 
-| Slice | Commit     | Summary                                                                                                                      |
-| ----- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 7-1   | `3d2426c4` | Scaffolded auth-gated `POST /api/v1/generate/chat`, locked the nine-event SSE taxonomy, and added prompt module stubs.       |
-| 7-2a  | `9eed5093` | Added Svelte-free parser DI seams for chat variables and `trigger_id`.                                                       |
-| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` and helpers into Svelte-free modules while preserving SPA re-exports.                                |
-| 7-2c  | `7ed156e6` | Wired the server parser adapter and real `expandVariables`.                                                                  |
-| 7-3   | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                      |
-| 7-4   | `051a5dcd` | Ported plain prompt sections: main, jailbreak, global note, and role splitting.                                              |
-| 7-5a  | `c44e53fc` | Ported the deterministic history walk: examples, start-new-chat marker, first message, filters, and role mapping.            |
-| 7-6a  | `9a60380d` | Added the minimal regex script processor for preset and character scripts.                                                   |
-| 7-5b  | `7ad226b9` | Added per-message scripts, sendName wrapping, `<Thoughts>` extraction, and memo/UUID backfill.                               |
-| 7-6b  | `8414d5c7` | Added scripts `@@`-action prefixes: no-op emotion, inject, move-top/bottom, and repeat-back.                                 |
-| 7-6c  | `5aae492b` | Added the `ableFlag` action DSL, outScript prep, `cbs`/`no_end_nl`, and SPA-parity flag defaults.                            |
-| 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain through active-module helpers.                                              |
-| 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                              |
-| 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                |
-| 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, and `matchLog`.             |
-| 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.                       |
-| 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` history splicer.              |
-| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`. |
-| 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.           |
-| 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.              |
+| Slice | Commit     | Summary                                                                                                                                  |
+| ----- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 7-1   | `3d2426c4` | Scaffolded auth-gated `POST /api/v1/generate/chat`, locked the nine-event SSE taxonomy, and added prompt module stubs.                   |
+| 7-2a  | `9eed5093` | Added Svelte-free parser DI seams for chat variables and `trigger_id`.                                                                   |
+| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` and helpers into Svelte-free modules while preserving SPA re-exports.                                            |
+| 7-2c  | `7ed156e6` | Wired the server parser adapter and real `expandVariables`.                                                                              |
+| 7-3   | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                                  |
+| 7-4   | `051a5dcd` | Ported plain prompt sections: main, jailbreak, global note, and role splitting.                                                          |
+| 7-5a  | `c44e53fc` | Ported the deterministic history walk: examples, start-new-chat marker, first message, filters, and role mapping.                        |
+| 7-6a  | `9a60380d` | Added the minimal regex script processor for preset and character scripts.                                                               |
+| 7-5b  | `7ad226b9` | Added per-message scripts, sendName wrapping, `<Thoughts>` extraction, and memo/UUID backfill.                                           |
+| 7-6b  | `8414d5c7` | Added scripts `@@`-action prefixes: no-op emotion, inject, move-top/bottom, and repeat-back.                                             |
+| 7-6c  | `5aae492b` | Added the `ableFlag` action DSL, outScript prep, `cbs`/`no_end_nl`, and SPA-parity flag defaults.                                        |
+| 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain through active-module helpers.                                                          |
+| 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                                          |
+| 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                            |
+| 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, and `matchLog`.                         |
+| 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.                                   |
+| 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` history splicer.                          |
+| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.             |
+| 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                       |
+| 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                          |
+| 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list returning `{ addedTokens, memoryCardUsed, hasCachePoint }`. |
 
 ## Remaining roadmap
 
@@ -369,8 +373,28 @@ consumers.
   tokenizers, plugin/custom tokenizers, Google remote count-token
   calls, local GGUF models, and multimodal image-token math.
 - **7-8b** — Token preflight accounting across the template walker.
-  Add multimodal image-token accounting here only if a fixture makes
-  it observable.
+  **Landed `d488ab7f`** (27 tests, api:test 668 → 695).
+  `server/fastify/src/prompt/preflight.ts` exports
+  `preflightTemplateTokens(input) → { addedTokens, memoryCardUsed,
+hasCachePoint }` and the `PromptUnformatedSlots` shape the future
+  assemble root (7-11a) will feed in. Card coverage matches SPA:
+  `persona` / `description` / `authornote` `innerFormat` +
+  `defaultText` fallback, `lorebook` pass-through, `postEverything`
+  - optional `postEndInnerFormat`, `plain` / `jailbreak` (gated on
+    `db.jailbreakToggle`) / `cot` (gated on `db.chainOfThought`) with
+    `globalNote` `replaceGlobalNote` wrapping and the inlined
+    `prebuiltAssetCommand` constant (suppressed by
+    `{{//@customimageinstruction}}`), `chatML` parser (inlined,
+    routed through `expandVariables`), `chat` range math (positive,
+    negative tail-relative, `'end'`, `-1000`, `start >= end`), and
+    `sendChatAsSystem` systemize on a `structuredClone` so the
+    caller's `chats` slot is not mutated. `memory` / `cache` cards
+    flip flags without touching tokens. Null-template fallback
+    tokenizes every slot once. Also lifts `tokenizerOptionsFromDb`
+    out of `history.ts` into a shared `tokenizerConfig.ts` so 7-5e
+    and 7-8b read the same gpt-vs-non-gpt overhead + `useName`
+    rules. Add multimodal image-token accounting here only if a
+    fixture makes it observable.
 - **7-8c** — Budget finalization (pruning order, fallback chains).
 
 **7-9a … 7-9c — Triggers.** Port `src/ts/process/triggers.ts`.

@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `febe67ce feat: history tokenizer accumulation + depth-prompt preflight (Phase 7-5e)`
+Head: `d488ab7f feat: template-wide token preflight (Phase 7-8b)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -17,29 +17,30 @@ this file only records the current handoff state and the next slice.
 
 Landed Phase 7 slices:
 
-| Slice | Commit     | Summary                                                                                                                      |
-| ----- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 7-1   | `3d2426c4` | Scaffolded auth-gated `POST /api/v1/generate/chat`, locked the nine prompt SSE event names, and added prompt module shells.  |
-| 7-2a  | `9eed5093` | Added Svelte-free DI seams for chat variables and `trigger_id`.                                                              |
-| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` and helpers into Svelte-free modules while preserving SPA re-exports.                                |
-| 7-2c  | `7ed156e6` | Wired the server parser adapter: `promptScope.ts`, `cbsAdapter.ts`, `promptVariablesBoot.ts`, and real `expandVariables`.    |
-| 7-3   | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                      |
-| 7-4   | `051a5dcd` | Ported plain prompt sections: main, jailbreak, and global note.                                                              |
-| docs  | `e7a76f32` | Organized the remaining Phase 7 roadmap into tiers.                                                                          |
-| 7-5a  | `c44e53fc` | Ported the minimal history walk: examples, start-new-chat marker, first message, makeMs filter, per-message role mapping.    |
-| 7-6a  | `9a60380d` | Ported the minimal regex script processor: preset+character regex chain, mode filter, flag sanitization, CBS in replacement. |
-| 7-5b  | `7ad226b9` | Added per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill on the history walk.             |
-| 7-6b  | `8414d5c7` | Added scripts `@@`-action prefixes: `@@emo` (no-op), `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`.             |
-| 7-6c  | `5aae492b` | Added `ableFlag <order, actions>` DSL, `cbs`/`no_end_nl` actions, outScript prep, and SPA-parity flag defaults.              |
-| 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain via new `getActiveModules` + `getModuleRegexScripts` helpers.               |
-| 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                              |
-| 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                |
-| 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch` port, child mirror, conditional-activation decorators, and `matchLog`.        |
-| 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt` accumulation, three recursion decorators.    |
-| 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.          |
-| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`. |
-| 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.           |
-| 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.              |
+| Slice | Commit     | Summary                                                                                                                                   |
+| ----- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 7-1   | `3d2426c4` | Scaffolded auth-gated `POST /api/v1/generate/chat`, locked the nine prompt SSE event names, and added prompt module shells.               |
+| 7-2a  | `9eed5093` | Added Svelte-free DI seams for chat variables and `trigger_id`.                                                                           |
+| 7-2b  | `bb2c78b5` | Lifted `risuChatParser` and helpers into Svelte-free modules while preserving SPA re-exports.                                             |
+| 7-2c  | `7ed156e6` | Wired the server parser adapter: `promptScope.ts`, `cbsAdapter.ts`, `promptVariablesBoot.ts`, and real `expandVariables`.                 |
+| 7-3   | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                                   |
+| 7-4   | `051a5dcd` | Ported plain prompt sections: main, jailbreak, and global note.                                                                           |
+| docs  | `e7a76f32` | Organized the remaining Phase 7 roadmap into tiers.                                                                                       |
+| 7-5a  | `c44e53fc` | Ported the minimal history walk: examples, start-new-chat marker, first message, makeMs filter, per-message role mapping.                 |
+| 7-6a  | `9a60380d` | Ported the minimal regex script processor: preset+character regex chain, mode filter, flag sanitization, CBS in replacement.              |
+| 7-5b  | `7ad226b9` | Added per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill on the history walk.                          |
+| 7-6b  | `8414d5c7` | Added scripts `@@`-action prefixes: `@@emo` (no-op), `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`.                          |
+| 7-6c  | `5aae492b` | Added `ableFlag <order, actions>` DSL, `cbs`/`no_end_nl` actions, outScript prep, and SPA-parity flag defaults.                           |
+| 7-6d  | `cb5675d8` | Wired module regex scripts into the script chain via new `getActiveModules` + `getModuleRegexScripts` helpers.                            |
+| 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                                           |
+| 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                             |
+| 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch` port, child mirror, conditional-activation decorators, and `matchLog`.                     |
+| 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt` accumulation, three recursion decorators.                 |
+| 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.                       |
+| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.              |
+| 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                        |
+| 7-5e  | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                           |
+| 7-8b  | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list, returning `{ addedTokens, memoryCardUsed, hasCachePoint }`. |
 
 What is real in code:
 
@@ -67,6 +68,13 @@ What is real in code:
   (`encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`)
   over `cl100k_base` / `o200k_base` with a module-scope encoder
   cache (Phase 7-8a).
+- `preflight.ts` runs the template-wide token preflight
+  (`preflightTemplateTokens`), returning `{ addedTokens,
+memoryCardUsed, hasCachePoint }` and the
+  `PromptUnformatedSlots` shape the future assemble root will
+  feed in (Phase 7-8b).
+- `tokenizerConfig.ts` houses the shared `tokenizerOptionsFromDb`
+  helper used by `history.ts` (7-5e) and `preflight.ts` (7-8b).
 - `assemble.ts`, `templates.ts`, and `triggers.ts` still throw
   Phase 7 not-implemented errors.
 - `history.ts` does not yet handle start triggers (7-5d, blocked
@@ -84,57 +92,56 @@ What is real in code:
   resolution). No remaining lorebook slices.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-5e:
+Last recorded baselines after 7-8b:
 
-- `pnpm api:test`: 668 across 36 files
+- `pnpm api:test`: 695 across 37 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-8b template-wide token preflight
+## Next Slice — 7-8c budget finalization
 
-Pick up **7-8b — token preflight accounting across the template
-walker**.
+Pick up **7-8c — final budget pruning + fallback chains**.
 
-7-5e (`febe67ce`) closed the last Tier 1 sub-slice tied to 7-8a, so
-the remaining tokens / budget chain is purely Tier 2: 7-8b
-(template-wide preflight) → 7-8c (final budget pruning). The
-independently shippable parallel fronts remain **7-9a** (trigger
-sandbox) and **7-10a** (template card parsing) — pick those
-instead if 7-8b is blocked.
+7-8b (`d488ab7f`) shipped the template-wide preflight, so the
+assemble root will have a single `addedTokens` figure plus the
+`memoryCardUsed` / `hasCachePoint` flags. The remaining Tier 2
+tokens / budget work is final pruning: deciding which slots get
+trimmed when the running `currentTokens` exceeds the model's
+context limit. After 7-8c lands, the budget chain is closed and the
+next sequential pickup is **7-9a** (trigger sandbox).
 
 ### Scope sketch (SPA reference)
 
-- `src/ts/process/promptBudget/preflightTemplateTokens.ts` is the
-  port target. The SPA walks the active prompt template and tallies
-  the token contribution of each card before assembly, returning
-  `{ addedTokens, memoryCardUsed, hasCachePoint }` for the
-  coordinator to add to `currentTokens` and to gate the memory
-  window.
-- Reuse `tokenizeChat` + `encodingForModel` from 7-8a. Match the
-  tokenizer config seam used in `history.ts:tokenizerOptionsFromDb`
-  (gpt → overhead 5 / noName; everything else → overhead 3 / name).
-- Treat the template as the SPA does today (the
-  `promptTemplate` array out of `db`); 7-10a/b/c/d/e will refine
-  card parsing.
+- `src/ts/process/promptBudget/finalizeRequestBudget.ts` is the
+  port target. The SPA walks the prebuilt slots in priority order,
+  dropping / trimming entries until the request fits, and returns
+  the final `OpenAIChat[]` plus telemetry the SPA surfaces in the
+  `info` SSE event.
+- Reuse `tokenizeChat` + `tokenizerOptionsFromDb` from `tokens.ts`
+  / `tokenizerConfig.ts`. Consume the output of
+  `preflightTemplateTokens` (or call it internally — the SPA
+  threads it through `index.svelte.ts`).
+- Keep the API synchronous and Svelte-free; the model string flows
+  in via `db.aiModel` like 7-8a / 7-8b / 7-5e.
 
 ### Tests
 
-Add isolated server tests in `__tests__/tokens.preflight.test.ts`
-(or under the existing `tokens.test.ts` if the surface stays small):
+Add isolated server tests in `__tests__/budgetFinalize.test.ts` (or
+extend `preflight.test.ts` if the surface stays small):
 
-- Plain text cards tally per-card overhead + content tokens.
-- `memoryCardUsed` toggles only when a memory card is encountered.
-- `hasCachePoint` toggles only when a cache marker is encountered.
-- Empty template yields `{ addedTokens: 0, memoryCardUsed: false,
-hasCachePoint: false }`.
+- Pure pass-through when total tokens fit under `db.maxContext`.
+- Drops the lowest-priority slot first when over budget.
+- Respects `db.maxResponse` headroom (response budget reserved on
+  top of `maxContext`).
+- Multimodal accounting stays deferred per the 2026-05-23 scope
+  re-verification.
 
 ### Out of scope (defer)
 
-- Multimodal image-token math — keep deferred until a fixture needs
-  it (per ROADMAP 2026-05-23 scope re-verification).
-- Final budget pruning / fallback chains — that's 7-8c.
-- Template card _parsing_ shape changes — those land in 7-10a/b/c/d/e.
+- Memory-window adapter (Phase 8 owns Hypa V3).
+- Card-render side effects — that lands with 7-10.
+- Route wiring — that lands with 7-11a / 7-11b.
 
 ### Verification
 
@@ -145,7 +152,7 @@ pnpm test
 pnpm build
 ```
 
-If 7-8b is blocked, the parallel next-ups are **7-9a** (trigger
+If 7-8c is blocked, the parallel next-ups are **7-9a** (trigger
 sandbox) or **7-10a** (template card parsing).
 
 ## Patterns To Keep
