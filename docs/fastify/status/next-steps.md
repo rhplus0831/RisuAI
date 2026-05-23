@@ -44,28 +44,28 @@ extension (the full `OpenAIChat[]` `formated` rows + `biases` now ride on
 both `/chat` and `/preview-prompt`) and the 7-12c preview-path wiring
 (`sendChat` routes `preview` / `previewPrompt` through `/chat` behind the
 gate; the send path stays local). The tokens / budget chain (7-8a/b/c) is
-fully landed,
-`preflight` covers every card type the SPA emits, and `history` (now
-async, closing 7-5d) and `lorebook` are feature-complete. Use
+fully landed, `preflight` covers every card type the SPA emits, and
+`history` (now async, closing 7-5d) and `lorebook` are feature-complete. Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. \*\*Continue Phase 7 with slice 7-12d — live send-path `sendChat` wiring
-   - dispatch cluster (Tier 4).** 7-12c (`8cf7fd63`) landed the read-only
-     preview-path wiring. The send / continue / regenerate path is what's
-     left, and it is **blocked on chat-row deltas\*\* — the local send path
-     mutates `currentChat` in place (start-trigger mutations, the assistant
-     row `orchestrateResponse` writes back), but the read-only `/chat` route
-     returns the assembled prompt without those deltas. So 7-12d is a cluster
-     (likely sub-sliced):
-   * emit `message_patch` (authoritative chat-row deltas) from the route;
-   * gate the send-path local-assembly block (`index.svelte.ts` ~177–345)
-     on `useServerPromptAssembly`, feed `requestServerChat` →
-     `dispatchRequest` (the 7-12b `formated` + `biases` are on the payload);
-   * re-run the 12 server-backed sendChat fixtures through `/chat`;
-   * `side_effect` events + error/abort restoration.
+1. **Continue Phase 7 with 7-12d-i — server→browser mutation handoff
+   and `varChanged` persistence.** 7-12c (`8cf7fd63`) landed the
+   read-only preview wiring. The send / continue / regenerate path is
+   still blocked on chat-row deltas because local send mutates
+   `currentChat` before and after dispatch, while `/chat` currently
+   returns only the assembled prompt.
+
+   Land the 7-12d chain in the order recorded in
+   [`ROADMAP.md`](../../../ROADMAP.md): first capture the mutation
+   contract, then serialize it as `message_patch`, then add server-side
+   chunk transport and send-path orchestration, then wire `tts`
+   `side_effect` + `error.restoration`. Keep the 38 local sendChat
+   snapshots, the 12-fixture server-backed sweep, and the Fastify
+   generation tests green. Last recorded baselines are `pnpm api:test`:
+   882 and `pnpm test`: 618 + 4 skipped.
 
    **Deferred follow-up (parallel, not blocking) — cross-assembler dual-mode
    parity.** Planned for 7-12c but **confirmed infeasible** as a focused
@@ -77,15 +77,10 @@ async, closing 7-5d) and `lorebook` are feature-complete. Use
    SPA sweep emits the post-`setDatabase` DB + its assembled prompt; a
    server test consumes it and asserts `assemblePrompt` agrees).
 
-   The decision on the three deferred providers (Ooba
-   OAI-compatible, NovelAI text, NovelList) remains **D — wait
-   for the server-side flatten**; memos in
-   [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md) and
-   [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
-   explain why. Keep the 38 local sendChat snapshots, the
-   12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 882
-   and `pnpm test`: 618 + 4 skipped.
+   The deferred-provider decision for Ooba OAI-compatible, NovelAI
+   text, and NovelList remains **D — wait for server-side flattening**;
+   see [`design/ooba-oai-compat.md`](../design/ooba-oai-compat.md) and
+   [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md).
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
    still gated by `requireAuth`, so password-protected deployments
@@ -176,7 +171,7 @@ async, closing 7-5d) and `lorebook` are feature-complete. Use
 | 7-11g   | `89a80c19` | Wired POST /api/v1/generate/chat to assemblePrompt: dataDir + loadPersisted seam, body → AssembleInput, SSE stream stage(validate) → stage(prompt,start) → prompt → stage(prompt,end) → done (SSE error on stopSending/throw).                                                                           |
 | 7-11h   | `24a8b0fe` | Added POST /api/v1/generate/preview-prompt: one-shot JSON shortcut (validatePreview + forced preview_prompt) returning result.prompt, { stopSending, abortReason }, or HTTP 404 (EntityNotFoundError) for bad IDs / missing DB.                                                                          |
 | 7-11i   | `807f5d1a` | Added the `info` SSE event to /chat: timings.prompt + tokens.{prompt,total} + clamped responseBudget on the success path (after prompt/stage(prompt,end), before done); error/stopSending path emits none. Closes Tier 3.                                                                                |
-| 7-12a   | `a3a1e6e2` | Browser client adapter requestServerChat (serverChat.ts): POSTs AssembleInput to /chat with risu-auth, stream-parses stage/prompt/info/error/done (ignores dispatch-coupled events), returns { status }. Shared sseParse.ts; db.useServerPromptAssembly gate (not yet wired).                            |
+| 7-12a   | `a3a1e6e2` | Browser client adapter requestServerChat (serverChat.ts): POSTs AssembleInput to /chat with risu-auth, stream-parses stage/prompt/info/error/done (ignores dispatch-coupled events), returns { status }. Shared sseParse.ts; introduced the db.useServerPromptAssembly gate used by 7-12c.               |
 | 7-12b   | `2b5603a2` | Additively extended the prompt event (and /preview-prompt JSON) with the full OpenAIChat[] formated rows + biases (messages stays the lossy projection). assemblePrompt folds both into result.prompt; client mirror + mock + adapter surface them. Unblocks 7-12c preview wiring.                       |
 | 7-12c   | `8cf7fd63` | Wired the sendChat preview paths through /chat behind the gate: preview → previewFormated, previewPrompt → previewBody, error→throwError, aborted→false. Send/continue/regenerate stay local (7-12d). Added sendChat.serverPreview.test.ts. Cross-assembler parity test deferred (normalized-DB bridge). |
 

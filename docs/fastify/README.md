@@ -17,14 +17,16 @@ Fastify owns bootstrap, JSON import, content-addressed assets,
 backups, static SPA serving, provider proxy fetch, stream-job
 WebSocket transport, Risu hub passthrough, the legacy NodeStorage
 key-value surface, and the closed `/api/v1/generate/completion`
-provider matrix. Phase 7 has landed the `/api/v1/generate/chat`
-scaffold plus server-side variable expansion, static/plain prompt
-sections, history shaping through multimodal inlays and the
-start-trigger handoff, regex scripts, active-module helpers,
-lorebook activation through budget truncation, the minimal tokenizer
-and budget helpers, the Phase 7-safe trigger runner through
-request/display state adapters, and the template renderer through
-content + chat cards. The root assembler is still a stub.
+provider matrix. Phase 7 has landed server-side prompt assembly
+through 7-12c: prompt leaves, history, regex scripts, modules,
+lorebook activation, token/budget helpers, the Phase 7-safe trigger
+runner, the complete template renderer, `assemblePrompt`, both
+generation routes (`/api/v1/generate/chat` and
+`/api/v1/generate/preview-prompt`), `/chat` `info` telemetry, the
+browser `/chat` adapter, the `prompt` payload `formated` / `biases`
+extension, and gated server-backed preview/preview-prompt wiring.
+The live send/continue/regenerate path still runs locally until
+7-12d adds chat-row deltas and dispatch streaming.
 Express has been deleted. The Dockerfile and compose file target
 Fastify on port 6002 with `/app/data` persisted; `tsx` and
 `@fastify/websocket` are runtime dependencies after `1eddbfba`.
@@ -52,10 +54,11 @@ In scope:
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 closed
   the completion route in Phase 6-28 (`398a3ae6`, hash backfilled by
-  `a8cb123b`). Phase 7 slices through 7-10f are now landed,
-  including lorebook budget truncation, the tokens / budget chain, the
-  Phase 7-safe trigger runner, and the complete template renderer; the
-  current provider matrix lives in
+  `a8cb123b`). Phase 7 has landed through 7-12c, including the
+  complete prompt assembler, `/chat` SSE route, preview-prompt JSON
+  route, browser `/chat` adapter, additive prompt payload, and gated
+  preview wiring; the remaining Phase 7 work is the 7-12d send-path /
+  dispatch cluster. The current provider matrix lives in
   [`coverage/providers.md`](coverage/providers.md), and the active
   slice history lives in [`status/next-steps.md`](status/next-steps.md).
 - A display-only browser client in server-backed mode.

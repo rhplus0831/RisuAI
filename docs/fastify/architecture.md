@@ -5,7 +5,7 @@ Date: 2026-05-24
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
 Phase 3, the Phase 6 completion-route files through closeout slice
-6-28, and Phase 7 slices through 7-10f already exist; modules
+6-28, and Phase 7 slices through 7-12c already exist; modules
 marked by later phases are target layout, not current implementation.
 
 ## Server module layout
@@ -34,7 +34,7 @@ server/fastify/
       hub.ts
       legacyStorage.ts
       generation.ts       POST /api/v1/generate/completion
-      generationChat.ts   POST /api/v1/generate/chat scaffold
+      generationChat.ts   POST /api/v1/generate/chat + preview-prompt
     generation/
       frames.ts           shared completion result/frame types
       additionalParams.ts body/header overlay helper
@@ -70,7 +70,7 @@ server/fastify/
       history.ts          history shaping through multimodal inlays
       scripts.ts          regex script chain used by prompt leaves
       modules.ts          active module regex/assets helpers
-      assemble.ts         prompt assembly root (stub)
+      assemble.ts         prompt assembly root
       lorebook.ts         activation, recursion, depth helpers, budget filter
       templates.ts        complete prompt-template renderer
       tokens.ts           minimal tiktoken helpers for budget accounting
@@ -138,10 +138,18 @@ Implemented now:
   Anthropic, Mistral, Cohere, OpenAI Responses, and OpenAI legacy
   instruct formats, plus Vertex AI Gemini, AWS Bedrock Claude, and
   Stable Horde text. Unsupported provider strings return `501`.
-- `POST /api/v1/generate/chat` - Phase 7 scaffold. It is
-  auth-gated, validates `chatId`, `characterId`, mode-specific
-  fields, and emits the current validate -> error -> done SSE
-  sequence with `phase-7 prompt assembly not yet implemented`.
+- `POST /api/v1/generate/chat` - Phase 7 prompt assembly stream.
+  It is auth-gated, validates `chatId`, `characterId`, mode-specific
+  fields, calls `assemblePrompt`, and emits the current append-only
+  prompt SSE taxonomy. The success path streams
+  `stage(validate)`, `stage(prompt,start)`, `prompt`,
+  `stage(prompt,end)`, `info`, and `done`; bad ids, missing
+  databases, trigger stops, and budget overflow become terminal
+  SSE `error` + `done`.
+- `POST /api/v1/generate/preview-prompt` - one-shot JSON prompt
+  preview. It forces `preview_prompt` mode, returns the assembled
+  `prompt` payload on success, `{ stopSending, abortReason }` on
+  trigger/overflow abort, and HTTP 404 for missing scope.
 - Optional static serving from `RISU_API_STATIC_ROOT`, including
   `GET /` and non-API GET SPA fallback.
 
@@ -158,8 +166,8 @@ list):
   in the current tree.
 - `POST /api/v1/generate/count-tokens`,
   `GET /api/v1/generate/encodings`.
-- Full `/api/v1/generate/chat` assembly + dispatch wiring and
-  `POST /api/v1/generate/preview-prompt`.
+- `/api/v1/generate/chat` provider dispatch, `message_patch`,
+  `side_effect`, `error.restoration`, and send-path browser wiring.
 - `GET /api/v1/export/risusave`, `GET /api/v1/export/bundle`, and
   multipart `.risu` import in Phase 9, after the server owns the
   final per-resource schema. No Phase 2 server export route exists.
@@ -243,10 +251,11 @@ At the target state, the server owns:
 - Prompt assembly, tokenization, lorebook activation, and Hypa V3
   memory after Phases 7-8 close. Today the Phase 7 variable,
   static-section, plain-section, history, script, module, lorebook,
-  token/budget, trigger, and template renderer helpers through
-  content + chat cards are server-side. The root assembler, memory /
-  cache template cards, render finalization, and chat-route wiring are
-  still pending.
+  token/budget, trigger, template renderer, memory/cache card,
+  `assemblePrompt`, and chat-route surfaces are server-side. Preview
+  and preview-prompt can already use `/chat` behind
+  `db.useServerPromptAssembly`; live send/continue/regenerate remain
+  local until 7-12d adds mutation patches and provider dispatch.
 
 Browser owns:
 

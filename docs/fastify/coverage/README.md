@@ -8,12 +8,11 @@ Fastify route tests exist, the Phase 4 `sendChat`
 characterization fixtures have landed, and Phase 5 helper tests now
 cover extracted browser-side seams. Phase 6 route and provider
 tests cover the current `/api/v1/generate/completion` slices.
-Phase 7 now has chat-route scaffold tests plus prompt variable,
-static-section, plain-section, history, script, module-helper, and
-lorebook tests, plus token, preflight, budget-finalization, and
-trigger-runner tests, plus template renderer tests through content +
-chat cards; later helper routes and Phases 8-9 remain planning
-artifacts until their routes land.
+Phase 7 now has `/chat` and `/preview-prompt` route tests, prompt
+leaf tests, token/preflight/budget/trigger tests, template renderer
+tests, assembler tests, and browser `/chat` adapter + preview wiring
+tests. Later helper routes and Phases 8-9 remain planning artifacts
+until their routes land.
 
 ## Shards
 

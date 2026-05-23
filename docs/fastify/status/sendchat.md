@@ -683,13 +683,15 @@ what each fixture pins.
   `/api/v1/generate/completion`. Prompt-flattening providers such
   as NovelAI, NovelList, and ooba OAI-compatible move with Phase 7.
 - **Phase 7.** Stage 2 prompt assembly moves server-side. In
-  progress: the server has the `/api/v1/generate/chat` scaffold
-  plus variable expansion, static/plain sections, history shaping
-  through token/depth preflight and start-trigger handoff, regex
-  scripts, active-module helpers, lorebook activation through budget
-  truncation, the minimal token/budget helpers, the Phase 7-safe
-  trigger runner, and the complete template renderer. Root assembly and
-  route wiring remain.
+  progress: the server has the `/api/v1/generate/chat` SSE route,
+  `/api/v1/generate/preview-prompt` JSON route, variable expansion,
+  static/plain sections, history, regex scripts, active-module
+  helpers, lorebook activation, token/budget helpers, the Phase
+  7-safe trigger runner, the complete template renderer, and
+  `assemblePrompt`. The browser `/chat` adapter is wired for
+  `preview` and `previewPrompt` behind `db.useServerPromptAssembly`;
+  send/continue/regenerate still run locally until 7-12d adds
+  mutation patches and server-side dispatch.
 - **Phase 9.** Stages 1 + 4 move server-side; Stage 0 becomes a
   ~50-line bridge that owns the UI lease, abort forwarding, and
   side-effect dispatch.

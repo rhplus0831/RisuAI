@@ -64,14 +64,17 @@ under [`status/`](status/).
   The client adapter is flag-gated by `db.useServerGeneration`; the
   current matrix and remaining local-only paths are tracked in
   [`coverage/providers.md`](coverage/providers.md).
-- Phase 7 prompt assembly is in progress. Thirty-five slices have
-  landed through 7-10f: the auth-gated
-  `POST /api/v1/generate/chat` scaffold, the locked nine-event prompt
-  SSE taxonomy, server-side `expandVariables`, static/plain prompt
-  sections, feature-complete history/lorebook/token-budget/trigger
-  fronts, and the complete template renderer (`renderFinalPrompt`
-  included). `assemble` remains a stub; next work is the re-sliced
-  7-11a state/context loader before the smaller 7-11 root/route pieces.
+- Phase 7 prompt assembly is in progress. Forty-seven slices have
+  landed through 7-12c: the auth-gated `/chat` route scaffold, locked
+  prompt SSE taxonomy, server-side prompt leaves, history, regex
+  scripts, modules, lorebook activation, token/budget helpers, the
+  Phase 7-safe trigger runner, complete template renderer,
+  `assemblePrompt`, both generation routes, `/chat` `info` telemetry,
+  the browser `/chat` adapter, additive `prompt` payload
+  (`formated` + `biases`), and gated server-backed preview /
+  preview-prompt wiring. The next default pickup is the 7-12d-i
+  server→browser mutation handoff; send/continue/regenerate still run
+  locally until the 7-12d dispatch cluster lands.
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production
   dependencies only, and `tsx` plus `@fastify/websocket` are now

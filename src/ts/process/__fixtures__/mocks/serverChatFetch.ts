@@ -1,9 +1,9 @@
 /**
- * Fetch stub for the Phase 7-12a `/chat` adapter and the upcoming 7-12b
- * dual-mode assembly sweep. Emulates `POST /api/v1/generate/chat` well
- * enough to round-trip the named SSE taxonomy (`stage` / `prompt` / `info`
- * / `error` / `done`). Tokenizer JSON fetches (`/token/*`) pass through the
- * shared shim; any other URL is rejected so an accidental escape surfaces.
+ * Fetch stub for the Phase 7-12a `/chat` adapter and 7-12c preview wiring.
+ * Emulates `POST /api/v1/generate/chat` well enough to round-trip the named
+ * SSE taxonomy (`stage` / `prompt` / `info` / `error` / `done`). Tokenizer
+ * JSON fetches (`/token/*`) pass through the shared shim; any other URL is
+ * rejected so an accidental escape surfaces.
  */
 
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'

@@ -9,14 +9,15 @@ full (provider proxy, stream-job WebSocket, hub passthrough,
 client URL switchover, legacy NodeStorage / crypto surface, and
 Express deletion), and Phase 6 completion-route slices through
 the 6-28 closeout all exist on the `fastify` branch. Phase 7 has
-landed 43 slices through 7-11h: the chat-route scaffold + the wired
-`/api/v1/generate/chat` route, the `/api/v1/generate/preview-prompt`
-JSON shortcut, parser/static/plain leaves, history shaping through
-added-token preflight + start-trigger handoff, regex scripts, module
-helpers, lorebook activation through budget-aware truncation, the
-tokens / budget chain, the Phase 7-safe trigger runner through the
-`runStartTrigger` handoff, the complete template renderer, and the
-closed critical-path assembler (`assemblePrompt`, 7-11a–f):
+landed 47 slices through 7-12c: the chat-route scaffold, the wired
+`/api/v1/generate/chat` SSE route, the
+`/api/v1/generate/preview-prompt` JSON shortcut, parser/static/plain
+leaves, history, regex scripts, module helpers, lorebook activation,
+tokens / budget, the Phase 7-safe trigger runner, the complete
+template renderer, the closed critical-path assembler
+(`assemblePrompt`, 7-11a–f), `/chat` `info` telemetry, the browser
+`/chat` adapter, the additive `prompt` payload (`formated` +
+`biases`), and gated server-backed preview/preview-prompt wiring:
 
 - `server/fastify/src/index.ts` boots the app on
   `RISU_API_HOST` / `RISU_API_PORT` (defaults `0.0.0.0:6002`).
@@ -139,15 +140,17 @@ closed critical-path assembler (`assemblePrompt`, 7-11a–f):
   (pre-stream 400), binds `AssembleDeps.loadDatabase` to
   `loadPersisted(dataDir).database`, then calls `assemblePrompt` and
   streams `stage: validate` start/end, `stage: prompt` start, the
-  assembled `prompt` event, `stage: prompt` end, and `done`; a
-  `stopSending` result or any thrown error (bad IDs, missing database)
-  becomes a terminal SSE `error` + `done`. `POST
-/api/v1/generate/preview-prompt` (7-11h) is the one-shot JSON variant
-  (`validatePreview` + forced `preview_prompt` mode): it returns the
-  `result.prompt` payload, `{ stopSending, abortReason }`, or a real
+  assembled `prompt` event, `stage: prompt` end, `info`, and `done`.
+  The `info` event (7-11i) carries `timings.prompt`,
+  `tokens.{prompt,total}`, and `responseBudget`; a `stopSending`
+  result or any thrown error (bad IDs, missing database) becomes a
+  terminal SSE `error` + `done` with no `info`.
+  `POST /api/v1/generate/preview-prompt` (7-11h) is the one-shot JSON
+  variant (`validatePreview` + forced `preview_prompt` mode): it returns
+  the `result.prompt` payload, `{ stopSending, abortReason }`, or a real
   HTTP 404 (`EntityNotFoundError`) for bad IDs / missing database. Both
-  are read-only — `varChanged` persistence + provider dispatch land with
-  Phase 7-12.
+  routes are read-only — `varChanged` persistence + provider dispatch
+  land with Phase 7-12d.
 - `server/fastify/src/prompt/variables.ts`, `staticSections.ts`,
   `plainSections.ts`, `history.ts`, `scripts.ts`, `modules.ts`,
   `lorebook.ts`, `tokens.ts`, `preflight.ts`, `budgetFinalize.ts`,
@@ -218,17 +221,15 @@ been removed; `server/node/` no longer exists.
   because they need server-owned character / user state for prompt
   flattening.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
-  In progress. Forty-three slices have landed through 7-11h:
-  `/api/v1/generate/chat` scaffold + the wired route, nine-event prompt
-  SSE taxonomy, server-side variable expansion, static/plain prompt
-  sections, history shaping through multimodal inlays + token preflight +
-  start-trigger handoff, regex scripts, module helpers, lorebook
-  constant / keyword / recursive / depth / budget truncation helpers,
-  the tokens / budget chain, the trigger runner through the
-  `runStartTrigger` handoff, the complete template renderer, the closed
-  critical-path assembler (7-11a–f), the wired `/api/v1/generate/chat`
-  route (7-11g), and the `/api/v1/generate/preview-prompt` JSON shortcut
-  (7-11h). Next slice is 7-11i, the `/chat` SSE `info` telemetry event.
+  In progress. Forty-seven slices have landed through 7-12c:
+  `/api/v1/generate/chat`, the nine-event prompt SSE taxonomy,
+  server-side prompt leaves, history through start-trigger handoff,
+  regex scripts, module helpers, lorebook helpers, tokens / budget,
+  the trigger runner, complete template renderer, critical-path
+  assembler, `/chat` `info` telemetry, `/preview-prompt`, the browser
+  `/chat` adapter, additive `prompt` payload, and gated preview wiring.
+  Next slice is 7-12d-i, the server→browser mutation handoff that
+  unblocks `message_patch` and live send-path dispatch.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 
 ## Reference: what move-to-fastify shipped

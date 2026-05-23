@@ -3,10 +3,10 @@
 Date: 2026-05-24
 
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
-completion-route tests, and the Phase 7 chat scaffold / prompt leaf
-tests exist under `server/fastify/__tests__/`. Unlanded helper
-routes plus the remaining Phase 7 work and Phases 8-9 remain target
-test rows.
+completion-route tests, and Phase 7 `/chat`, `/preview-prompt`, and
+prompt-helper tests exist under `server/fastify/__tests__/`.
+Unlanded helper routes plus the remaining Phase 7 dispatch work and
+Phases 8-9 remain target test rows.
 
 ## Phase 1: Foundation
 
@@ -81,8 +81,8 @@ Per-provider request / response coverage lives in
 | Route                                       | Pinned behavior                           | Status      |
 | ------------------------------------------- | ----------------------------------------- | ----------- |
 | `POST /api/v1/generate/chat` (validation)   | Auth, body validation for modes/ids/options (pre-stream 400), `text/event-stream` response. | covered by `server/fastify/__tests__/generation.chat.test.ts` |
-| `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> `stage(prompt,end)` -> `done`; `stopSending`/bad-ID/missing-DB -> terminal SSE `error` + `done`. | covered (7-11g) by `generation.chat.test.ts` |
-| `POST /api/v1/generate/chat` (dispatch)     | Provider dispatch + `varChanged` persistence. | Phase 7-12 / 6; not started |
+| `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> `stage(prompt,end)` -> `info` -> `done`; `stopSending`/bad-ID/missing-DB -> terminal SSE `error` + `done` with no `info`. | covered (7-11g/i) by `generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (dispatch)     | `varChanged` persistence, `message_patch`, provider dispatch, `side_effect`, and restoration. | Phase 7-12d; not started |
 | `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled via `mode: continue`; dispatch not started |
 | `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | dispatch not started |
 | `POST /api/v1/generate/preview-prompt`      | One-shot JSON assembled prompt; `result.prompt` on success, `{ stopSending }` on abort, HTTP 404 for bad IDs / missing DB. | covered (7-11h) by `generation.chat.test.ts` |

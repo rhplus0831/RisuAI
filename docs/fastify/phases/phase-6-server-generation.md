@@ -27,10 +27,10 @@ phases or a fixture-driven trigger.
 
 ## Landed So Far
 
-As of 2026-05-22, Phase 6 has landed `POST
-/api/v1/generate/completion`, the normalized SSE envelope, the
-server-backed client adapter, and provider dispatch through
-Phase 6-27 (`cb6d876c`), ending with the dual-mode fixture sweep
+As of 2026-05-22, Phase 6 has landed
+`POST /api/v1/generate/completion`, the normalized SSE envelope, the
+server-backed client adapter, and provider dispatch through Phase 6-27
+(`cb6d876c`), ending with the dual-mode fixture sweep
 extended to cover the providers routed after the original 7-fixture
 set. The dual-mode fixture sweep now covers twelve fixtures (the
 seven provider-parity originals plus Vertex Gemini, Bedrock, Horde,

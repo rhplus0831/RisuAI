@@ -7,13 +7,13 @@
  * prompt to a provider), `/chat` performs server-side prompt *assembly* and
  * streams back the assembled `prompt` payload plus `info` telemetry.
  *
- * This slice is **read-only**: it consumes `stage` / `prompt` / `info` /
- * `error` / `done` and tolerates (ignores) the dispatch-coupled `token` /
- * `message_patch` / `side_effect` / `warning` events, which land with
- * provider dispatch in Phase 7-12c/d. The adapter is built but not yet wired
- * into the live `sendChat` flow — that integration is 7-12b. Note that the
- * `prompt` event does not carry `biases` or the full `OpenAIChat[]`, so live
- * dispatch wiring needs an additive SSE payload extension first.
+ * This adapter consumes `stage` / `prompt` / `info` / `error` / `done` and
+ * tolerates (ignores) the dispatch-coupled `token` / `message_patch` /
+ * `side_effect` / `warning` events until the 7-12d send-path dispatch
+ * cluster lands. It is wired for read-only preview paths behind
+ * `db.useServerPromptAssembly`; send/continue/regenerate still run locally.
+ * The `prompt` event now carries the full `formated` rows and `biases`
+ * additively (7-12b), so previews can use the server payload directly.
  */
 
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'

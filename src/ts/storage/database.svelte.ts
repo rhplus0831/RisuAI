@@ -28,9 +28,7 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.characters)) {
     data.characters = []
   }
-  data.characters = data.characters.filter(
-    (c) => (c as { type?: string } | null)?.type !== 'group',
-  )
+  data.characters = data.characters.filter((c) => (c as { type?: string } | null)?.type !== 'group')
   if (checkNullish(data.apiType)) {
     data.apiType = 'gemini-3-flash-preview'
   }
@@ -744,10 +742,7 @@ export function setCurrentCharacter(char: character) {
   DBState.db.characters[get(selectedCharID)] = char
 }
 
-export function getCharacterByIndex(
-  index: number,
-  options: getDatabaseOptions = {},
-): character {
+export function getCharacterByIndex(index: number, options: getDatabaseOptions = {}): character {
   const db = getDatabase(options)
   if (!db.characters) {
     db.characters = []
@@ -785,7 +780,7 @@ export interface DynamicOutput {
 }
 
 export interface Database {
-  characters: (character)[]
+  characters: character[]
   apiType: string
   openAIKey: string
   proxyKey: string
@@ -1229,7 +1224,8 @@ export interface Database {
    * Phase 7-12a: route browser prompt assembly through the server
    * `POST /api/v1/generate/chat` route instead of the in-browser path.
    * Independent of `useServerGeneration` (server-side dispatch). The
-   * adapter (`serverChat.ts`) exists; live `sendChat` wiring is 7-12b.
+   * adapter (`serverChat.ts`) is wired for preview paths as of 7-12c;
+   * send/continue/regenerate wait for the 7-12d dispatch cluster.
    */
   useServerPromptAssembly?: boolean
   createFolderOnBranch?: boolean

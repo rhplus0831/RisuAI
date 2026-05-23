@@ -17,15 +17,16 @@ Stage 4 work into browser modules under `src/ts/process/`,
 `src/ts/process/dispatch/`, and `src/ts/process/postGeneration/`,
 and Phase 6 has closed Stage 3 completion dispatch through
 `/api/v1/generate/completion` for the provider matrix listed in
-[`status/server.md`](status/server.md). Phase 7 has landed the
-chat route scaffold plus the variable/static/plain/history leaves,
-regex script processing, active-module helpers, lorebook activation
-through budget truncation, minimal token/budget helpers, the Phase
-7-safe trigger runner through request/display state adapters and
-start-trigger handoff, and template rendering through content + chat
-cards. The root Stage 2 handoff is not wired yet. The ownership
-described below is still the migration target, not a claim that every
-stage has moved.
+[`status/server.md`](status/server.md). Phase 7 has landed prompt
+assembly through 7-12c: prompt leaves, history, regex scripts,
+active-module helpers, lorebook activation, token/budget helpers, the
+Phase 7-safe trigger runner, the complete template renderer,
+`assemblePrompt`, `/api/v1/generate/chat`,
+`/api/v1/generate/preview-prompt`, `/chat` `info` telemetry, the
+browser `/chat` adapter, and gated server-backed preview paths. The
+live send/continue/regenerate path still uses the local Stage 2/3
+coordinator until 7-12d adds chat-row deltas and dispatch streaming.
+The ownership described below is the migration target.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -141,12 +142,12 @@ the delegated post-generation helpers under
   (provider dispatch) server-side.
 - Phase 7 (`phases/phase-7-prompt-assembly.md`) moves Stage 2
   (prompt assembly) server-side. It is in progress: slices 7-1
-  through 7-10f landed the scaffold, prompt leaves, history shaping,
-  scripts, module helpers, lorebook activation through budget
-  truncation, the tokens / budget chain, the trigger runner through
-  request/display state adapters + start-trigger handoff, and the
-  complete template renderer. The root assembler and route wiring
-  remain.
+  through 7-12c landed the scaffold, prompt leaves, history shaping,
+  scripts, module helpers, lorebook activation, tokens / budget,
+  trigger runner, complete renderer, assembler, `/chat` + preview
+  routes, browser `/chat` adapter, additive prompt payload, and gated
+  preview wiring. The remaining Phase 7 work is the live send-path /
+  dispatch cluster.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
   server-side resource that Stage 2 reads from.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1

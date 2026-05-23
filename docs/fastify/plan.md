@@ -31,7 +31,7 @@ Where the codebase stands after the Phase 3 closeout on 2026-05-21,
 the Phase 4 characterization slice on 2026-05-20, the Phase 5
 closeout on 2026-05-22, the Phase 6 completion-route closeout in
 Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`), and
-Phase 7 slices through 7-10f:
+Phase 7 slices through 7-12c:
 
 - `server/fastify/` exists with app boot, config loading,
   `node:sqlite` schema metadata, password + ES256 assertion auth,
@@ -98,11 +98,15 @@ Phase 7 slices through 7-10f:
 - Phase 7 is in progress. The prompt leaves, history, regex scripts,
   module helpers, lorebook activation/truncation, minimal tokenizer,
   template preflight, final budget pruning, the Phase 7-safe trigger
-  runner through request/display state adapters + start-trigger
-  handoff, and the complete template renderer are implemented and
-  tested. `assemble.ts` is still a throwing stub;
-  `/api/v1/generate/chat` currently validates the request and emits
-  the Phase 7 not-implemented SSE sequence.
+  runner, complete template renderer, `assemblePrompt`, and both
+  generation routes are implemented and tested.
+  `POST /api/v1/generate/chat` streams `stage`, `prompt`, `info`,
+  `error`, and `done` events for server-side prompt assembly;
+  `POST /api/v1/generate/preview-prompt` returns the assembled prompt
+  as JSON. The browser `/chat` adapter is wired for `preview` and
+  `previewPrompt` when `db.useServerPromptAssembly` is enabled. The
+  live send/continue/regenerate path still runs locally until 7-12d
+  adds mutation handoff, `message_patch`, and server-side dispatch.
 - Phase 0 removal targets are deleted from the live pipeline:
   - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
     `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
@@ -161,13 +165,11 @@ rules. The headline order:
    Phase 7.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
-   triggers. In progress: slices through 7-10f landed the route
-   scaffold, parser/static/plain leaves, history shaping through
-   token/depth preflight and start-trigger handoff, regex scripts,
-   module helpers, lorebook activation through budget truncation, the
-   tokens / budget chain, the trigger runner through request/display
-   state adapters, and the complete template renderer. `assemble`
-   remains a stub; 7-11 was re-sliced into smaller root/route pieces.
+   triggers. In progress: slices through 7-12c landed the prompt
+   leaves, complete renderer, assembler, `/chat` SSE route,
+   `/preview-prompt` JSON route, browser `/chat` adapter, additive
+   `prompt` payload, and gated preview wiring. Remaining Phase 7 work
+   is the 7-12d send-path / dispatch cluster, followed by closeout.
 8. **Memory** - Hypa V3 chunking, embeddings, summarization as an
    async job queue on the server.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation

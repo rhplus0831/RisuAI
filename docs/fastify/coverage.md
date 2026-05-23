@@ -56,13 +56,15 @@ shards under [`coverage/`](coverage/).
   `bedrock.test.ts`, `sigv4.test.ts`, and `horde.test.ts` cover
   the closed Phase 6 completion-route providers through
   `pnpm api:test`.
-- Phase 7 has route-scaffold coverage in `generation.chat.test.ts`
-  plus prompt leaf coverage in `promptVariables.test.ts`,
-  `staticSections.test.ts`, `plainSections.test.ts`,
-  `history.test.ts`, `scripts.test.ts`, `modules.test.ts`,
-  `lorebook.test.ts`, `tokens.test.ts`, `preflight.test.ts`,
-  `budgetFinalize.test.ts`, `triggers.test.ts`, and
-  `templates.test.ts`.
+- Phase 7 has `/chat` and `/preview-prompt` route coverage in
+  `generation.chat.test.ts`, prompt leaf coverage in
+  `promptVariables.test.ts`, `staticSections.test.ts`,
+  `plainSections.test.ts`, `history.test.ts`, `scripts.test.ts`,
+  `modules.test.ts`, `lorebook.test.ts`, `tokens.test.ts`,
+  `preflight.test.ts`, `budgetFinalize.test.ts`, `triggers.test.ts`,
+  `templates.test.ts`, `memory.test.ts`, and `assemble.test.ts`, plus
+  browser adapter / preview wiring coverage in `serverChat.test.ts`,
+  `sseParse.test.ts`, and `sendChat.serverPreview.test.ts`.
 
 ## Where to look
 

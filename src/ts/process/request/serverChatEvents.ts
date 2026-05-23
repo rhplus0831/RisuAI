@@ -7,10 +7,10 @@
  * the server. The discriminator (`type`) is carried as the SSE `event:`
  * name; the JSON `data:` line holds the rest of the fields.
  *
- * Phase 7-12a (read-only) consumes `stage` / `prompt` / `info` / `error` /
- * `done`. The dispatch-coupled `token` / `message_patch` / `side_effect` /
+ * Phase 7-12a consumes `stage` / `prompt` / `info` / `error` / `done`.
+ * The dispatch-coupled `token` / `message_patch` / `side_effect` /
  * `warning` events are declared here for completeness but are tolerated
- * (ignored) until provider dispatch lands in Phase 7-12c/d.
+ * (ignored) until the 7-12d send-path dispatch cluster lands.
  */
 
 import type { OpenAIChat } from '../index.svelte'
