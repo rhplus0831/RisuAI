@@ -13,6 +13,7 @@ import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { getModuleTriggers } from './modules.js'
 import { encodingForModel, tokenize } from './tokens.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
+import { applyV2DataEffect } from './triggerDataEffects.js'
 import { expandVariables } from './variables.js'
 
 /**
@@ -64,9 +65,12 @@ import { expandVariables } from './variables.js'
  * deterministic V2 state effects `v2CutChat` / `v2ModifyChat` /
  * `v2SystemPrompt` / `v2Impersonate`.
  *
+ * 7-9d-ii adds the V2 safe data helpers (message readers, string /
+ * array / dict / math, random, tokenize, regex, quick chat search) in
+ * `triggerDataEffects.ts`, dispatched from this switch's `default`
+ * case via `applyV2DataEffect`.
+ *
  * Still deferred (later slices, see `ROADMAP.md`):
- *   - 7-9d-ii: the V2 safe data helpers (message readers, string /
- *     array / dict / math, random, tokenize, regex, quick chat search).
  *   - 7-9e: request/display state adapters + the display/request
  *     effect allowlists (`triggers.ts:1444-1449`).
  *   - 7-9f: prompt/history effects + `start` trigger handoff.
@@ -727,11 +731,23 @@ export async function runTrigger(
           }
           break
         }
-        // Deferred (no-op): `command`; the `lowLevelAccess`-gated
-        // alert/LLM/image/similarity/regex V1 + V2 arms; the V2 safe
-        // data helpers (7-9d-ii); request/display state (7-9e); the
-        // persistent lorebook/character/persona/note arms; and
-        // `triggercode` / `triggerlua`.
+        default: {
+          // 7-9d-ii safe data helpers (message readers, string /
+          // array / dict / math, random, tokenize, regex, quick chat
+          // search). Returns false for arms still deferred (`command`;
+          // the `lowLevelAccess`-gated alert/LLM/image/similarity/regex;
+          // request/display state (7-9e); the persistent lorebook /
+          // character / persona / note arms; `triggercode` /
+          // `triggerlua`), which fall through as no-ops.
+          applyV2DataEffect(effect, {
+            engine,
+            expand,
+            chat,
+            char: workingChar,
+            model: ctx.model,
+          })
+          break
+        }
       }
     }
   }

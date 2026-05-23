@@ -737,3 +737,141 @@ describe('Phase 7-9d-i V2 control flow', () => {
     expect(result?.chat.message.at(-1)).toEqual({ role: 'user', data: 'hi' })
   })
 })
+
+describe('Phase 7-9d-ii V2 safe data helpers', () => {
+  it('concatenates strings into an output var', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2ConcatString',
+            source1Type: 'value',
+            source1: 'foo',
+            source2Type: 'value',
+            source2: 'bar',
+            outputVar: 'out',
+          }),
+        ]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$out']).toBe('foobar')
+  })
+
+  it('round-trips an array var through make / push / length / pop', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'v2MakeArrayVar', var: 'arr' }),
+          eff({ type: 'v2PushArrayVar', var: 'arr', valueType: 'value', value: 'x' }),
+          eff({ type: 'v2PushArrayVar', var: 'arr', valueType: 'value', value: 'y' }),
+          eff({ type: 'v2GetArrayVarLength', var: 'arr', outputVar: 'len' }),
+          eff({ type: 'v2PopArrayVar', var: 'arr', outputVar: 'popped' }),
+        ]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$len']).toBe('2')
+    expect(result?.chat.scriptstate?.['$popped']).toBe('y')
+    expect(result?.chat.scriptstate?.['$arr']).toBe('["x"]')
+  })
+
+  it('sets, gets, and checks a dict key', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'v2MakeDictVar', var: 'd' }),
+          eff({ type: 'v2SetDictVar', varType: 'var', var: 'd', keyType: 'value', key: 'k', valueType: 'value', value: 'v' }),
+          eff({ type: 'v2GetDictVar', varType: 'var', var: 'd', keyType: 'value', key: 'k', outputVar: 'got' }),
+          eff({ type: 'v2HasDictKey', varType: 'var', var: 'd', keyType: 'value', key: 'k', outputVar: 'has' }),
+        ]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$got']).toBe('v')
+    expect(result?.chat.scriptstate?.['$has']).toBe('1')
+  })
+
+  it('evaluates a calculation with $var substitution', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'v2Calculate', expressionType: 'value', expression: '($a + 2) * 3', outputVar: 'calc' }),
+        ]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', {
+      chat: makeChat({ scriptstate: { $a: '4' } }),
+    })
+    expect(result?.chat.scriptstate?.['$calc']).toBe('18')
+  })
+
+  it('tokenizes to a positive count', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'v2Tokenize', valueType: 'value', value: 'hello world foo bar', outputVar: 'tok' }),
+        ]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(Number(result?.chat.scriptstate?.['$tok'])).toBeGreaterThan(0)
+  })
+
+  it('regex-tests for a hit and a miss', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'v2RegexTest', valueType: 'value', value: 'hello', regexType: 'value', regex: '^h', flagsType: 'value', flags: '', outputVar: 'hit' }),
+          eff({ type: 'v2RegexTest', valueType: 'value', value: 'hello', regexType: 'value', regex: '^z', flagsType: 'value', flags: '', outputVar: 'miss' }),
+        ]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$hit']).toBe('1')
+    expect(result?.chat.scriptstate?.['$miss']).toBe('0')
+  })
+
+  it('quick-searches the recent chat', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'v2QuickSearchChat', valueType: 'value', value: 'quick', depthType: 'value', depth: '1', condition: 'strict', outputVar: 'qs' }),
+        ]),
+      ],
+    })
+    const chat = makeChat({ message: [{ role: 'char', data: 'the quick brown fox' }] as never })
+    const result = await runTrigger(ctx, char, 'output', { chat })
+    expect(result?.chat.scriptstate?.['$qs']).toBe('1')
+  })
+
+  it('reads the last message', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'v2GetLastMessage', outputVar: 'last' })]),
+      ],
+    })
+    const chat = makeChat({
+      message: [
+        { role: 'user', data: 'first' },
+        { role: 'char', data: 'second' },
+      ] as never,
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat })
+    expect(result?.chat.scriptstate?.['$last']).toBe('second')
+  })
+
+  it('does not abort the run when a make-var name is malformed', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'v2MakeArrayVar', var: '[]' }),
+          eff({ type: 'v2SetVar', operator: '=', var: 'after', valueType: 'value', value: 'ok', indent: 0 }),
+        ]),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result).not.toBeNull()
+    expect(result?.chat.scriptstate?.['$after']).toBe('ok')
+  })
+})
