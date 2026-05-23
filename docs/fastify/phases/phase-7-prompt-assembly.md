@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: in-progress (39 slices landed as of 2026-05-24).
+Status: in-progress (40 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -43,10 +43,12 @@ template renderer is **complete**, and `assemble.ts` now holds the
 7-11a state/context loader (`beginAssembly`), the 7-11b static/plain
 slot fill (`fillStaticSlots`), the 7-11c lorebook placement +
 preflight (`fillLorebookSlots`, with `buildLorebookContext` in
-`lorebook.ts`), and the 7-11d history window + bias rows
-(`fillHistoryAndBias`), though `assemblePrompt` still throws past scope
-resolution. The rest of Tier 3 (memory, render, route wiring) is the
-remaining Phase 7 work. See
+`lorebook.ts`), the 7-11d history window + bias rows
+(`fillHistoryAndBias`), and the 7-11e memory bridge + post-history slot
+mutations (`fillMemoryAndPostHistory`, with the non-Hypa
+`buildMemoryWindow` in `memory.ts`), though `assemblePrompt` still
+throws past scope resolution. The rest of Tier 3 (render + budget, then
+route wiring) is the remaining Phase 7 work. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -231,6 +233,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-11b   | `d08ca586` | `assemble.ts` static/plain slot fill: `fillStaticSlots` wires plain sections (non-utility/non-template) + author note / cot / description / persona into `state.unformated`.                                                                          |
 | 7-11c   | `34e820d9` | `assemble.ts` lorebook placement + preflight: `buildLorebookContext` (distribution + `positionParser` + `depthPrompts`) + `fillLorebookSlots` (activate → distribute → `preflightTemplateTokens` → `currentTokens`).                                  |
 | 7-11d   | `3992b967` | `assemble.ts` history window + bias rows: async `fillHistoryAndBias` runs `buildHistoryWindow` (thread `currentChat`/`triggerResult`/`varChanged`, honor `stopSending`, fold `addedTokens`, capture `historyMessages`) + unescaped/expanded `biases`. |
+| 7-11e   | `dd4bd14c` | `assemble.ts` memory bridge + post-history: `memory.ts` `buildMemoryWindow` (non-Hypa budget trim → `lastChat` promotion → memory split) + `fillMemoryAndPostHistory` (window → `applyDepthPrompts` splice → `additonalSysPrompt` placement).         |
 
 ## Remaining roadmap
 
@@ -246,7 +249,9 @@ Order chosen to minimize helper coupling. `assemble.ts` now holds the
 7-11a state/context loader (`beginAssembly`) + the 7-11b static/plain
 slot fill (`fillStaticSlots`) + the 7-11c lorebook placement + preflight
 (`fillLorebookSlots`) + the 7-11d history window + bias rows
-(`fillHistoryAndBias`) but still throws past scope resolution;
+(`fillHistoryAndBias`) + the 7-11e memory bridge + post-history slot
+mutations (`fillMemoryAndPostHistory`) but still throws past scope
+resolution;
 `templates.ts` is the **complete** template renderer
 (7-10a–f): every card type renders, `renderByTemplate` returns
 `{ formated, promptInfo }`, and the top-level `renderFinalPrompt` adds
@@ -656,13 +661,22 @@ usingPromptTemplate, NO_ASSETS, state.report)`, threads the
   rows are only _captured_ — `unformated.chats` fill is 7-11e. Inlay
   asset lookup stays browser-side (`NO_ASSETS`). No memory-window bridge
   or final render.
-- **7-11e** — Memory bridge + post-history slot mutations. Port the
-  non-Hypa budget fallback from
-  `src/ts/process/promptAssembly/buildMemoryWindow.ts`, promote
-  `lastChat`, split `memories[]` for memory template cards, mark
-  removable rows, apply lorebook depth prompts, and merge
-  `triggerResult.additonalSysPrompt` into the right slots. Hypa V3
-  summary creation remains Phase 8. No final render or budget pruning.
+- **7-11e** — Memory bridge + post-history slot mutations. **Landed
+  `dd4bd14c`** (15 added tests, api:test 856 → 868). Ported the non-Hypa
+  budget fallback of `buildMemoryWindow.ts` into a server `memory.ts`
+  (`buildMemoryWindow`: trim the oldest rows under `db.maxContext`,
+  `stopSending` when only one row would remain, `lastChat` promotion on
+  the non-template path, the `supaMemory`/`hypaMemory` split into
+  `memories`, `removable` marking, `currentChat.lastMemory`). Added
+  `fillMemoryAndPostHistory(state)` (sync): run the window → fill
+  `unformated.chats` + `state.memories`, reuse `applyDepthPrompts`
+  (7-7e) for the `:275-283` depth splice, and place the start trigger's
+  `additonalSysPrompt` rows (`.promptend` → `postEverything`,
+  `.historyend` → `lastChat` push, `.start` → `lastChat` unshift).
+  `currentTokens` is written back from the window for telemetry honesty
+  (7-11f re-tokenizes the render). Hypa V3 summary creation remains
+  Phase 8, so `memories` is empty in practice today. No final render or
+  budget pruning.
 - **7-11f** — Final render + budgeted prompt payload. Call
   `renderFinalPrompt` with `formatOrder`, `memories`, `positionParser`,
   `isContinue`, and the deterministic request-edit seam; run

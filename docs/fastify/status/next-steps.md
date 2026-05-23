@@ -6,7 +6,7 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with thirty-nine slices landed through 7-11d:
+Phase 7 is active with forty slices landed through 7-11e:
 chat route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight + start-trigger handoff, regex scripts, active-module
@@ -26,9 +26,11 @@ pre-push, `depth_prompt` splice, `editRequest` seam →
 `assemble` now holds the 7-11a state/context loader (`beginAssembly`),
 the 7-11b static/plain slot fill (`fillStaticSlots`), the 7-11c
 lorebook placement + preflight (`fillLorebookSlots`, with
-`buildLorebookContext` in `lorebook.ts`), and the 7-11d history window +
-bias rows (`fillHistoryAndBias`), but still throws past scope
-resolution. The tokens / budget chain (7-8a/b/c) is fully
+`buildLorebookContext` in `lorebook.ts`), the 7-11d history window +
+bias rows (`fillHistoryAndBias`), and the 7-11e memory bridge +
+post-history slot mutations (`fillMemoryAndPostHistory`, with the
+non-Hypa `buildMemoryWindow` in `memory.ts`), but still throws past
+scope resolution. The tokens / budget chain (7-8a/b/c) is fully
 landed, `preflight` covers every card type the SPA emits, and `history`
 (now async, closing 7-5d) and `lorebook` are feature-complete. Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
@@ -36,39 +38,40 @@ landed, `preflight` covers every card type the SPA emits, and `history`
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-11e — memory bridge + post-history
-   slot mutations.** 7-11d (`3992b967`) captured `state.historyMessages`
-   / `triggerResult` / `biases` and threaded `currentChat` /
-   `currentTokens` / `stopSending`. 7-11e bridges those history rows into
-   `unformated.chats` through the (non-Hypa) memory window, then applies
-   the post-history slot mutations. SPA reference is
-   `src/ts/process/index.svelte.ts:243-263` (memory window), `:275-283`
-   (depth-prompt splice), and `:285-304` (`additonalSysPrompt`).
+1. **Continue Phase 7 with slice 7-11f — final render + budgeted prompt
+   payload.** 7-11e (`dd4bd14c`) completed the slots — filled
+   `unformated.chats` / `lastChat`, set `state.memories`, spliced the
+   depth prompts, and placed `additonalSysPrompt`. 7-11f renders the
+   slots into the flat `OpenAIChat[]`, runs the budget recheck, and
+   returns the `prompt` event payload — closing the critical-path
+   assembler. SPA reference is `src/ts/process/index.svelte.ts:306-345`.
 
    Verified slice scope:
-   - port the **non-Hypa budget fallback** of
-     `src/ts/process/promptAssembly/buildMemoryWindow.ts` into a server
-     `memory.ts` (Hypa V3 summary creation stays **Phase 8** — only the
-     fallback path walking `chats` under `maxContextTokens` is in scope):
-     input is `state.historyMessages` + `currentTokens` +
-     `maxContextTokens`; on the "too many tokens" condition return
-     `stopSending`; write surviving rows into `unformated.chats`, promote
-     the trailing chat into `unformated.lastChat` when no prompt template
-     is used, split `memories[]` for memory-template cards, mark
-     over-budget rows `removable: true`, record the lowest surviving
-     `memo` on `currentChat.lastMemory`.
-   - depth-prompt splice (`:275-283`): for each `state.depthPrompts`,
-     `expandVariables(positionParser(prompt), { …ctx, chara })` and splice
-     into `unformated.chats` at `pos === 'depth' ? depth : len - depth`.
-   - `additonalSysPrompt` (`:285-304`): from `state.triggerResult`, push
-     `.promptend` → `postEverything`, `.historyend` → `lastChat` (push),
-     `.start` → `lastChat` (unshift).
-   - extend `AssemblyState` with `memories` (+ whatever the memory window
-     threads forward).
-   - Follow-ups are 7-11f final render + budgeted prompt payload, 7-11g
-     chat route wiring, 7-11h preview shortcut, and 7-11i telemetry. Hypa
-     V3 stays Phase 8; browser plugin/Lua stays deferred. Inlay/multimodal
-     asset lookup stays browser-side (`NO_ASSETS`).
+   - call `renderFinalPrompt({ ctx, currentChar, unformated,
+promptTemplate, usingPromptTemplate, formatOrder: state.formatOrder,
+memories: state.memories, positionParser: state.positionParser,
+hasCachePoint: state.hasCachePoint, isContinue, editRequest })` →
+     `{ formated, promptText }`. `state.formatOrder` **already** has
+     `postEverything` appended (7-11a), so do **not** re-push it.
+     `isContinue` derives from `input.mode === 'continue'`; pass the
+     identity `editRequest` default (the 7-9e request-state transform /
+     browser Lua wiring stays a dispatch-time concern).
+   - run `finalizeRequestBudget({ db, formated, maxContextTokens:
+db.maxContext, maxResponse: db.maxResponse })`; on `!ok` abort
+     (`stopSending` / error), else take `formated` / `inputTokens` /
+     `outputTokens`.
+   - assemble the `AssembleResult` (`Omit<PromptEvent, 'type'>`):
+     `messages` from the budgeted `formated`, `promptInfo` (carry
+     `promptText` + token counts), `lorebookActivation` from
+     `state.report`. `biases` rides along for dispatch (7-12) but is not
+     a `PromptEvent` field.
+   - unblock `assemblePrompt`: chain `beginAssembly` → `fillStaticSlots`
+     → `fillLorebookSlots` → `await fillHistoryAndBias` →
+     `fillMemoryAndPostHistory` → render/budget, removing the throw.
+   - Follow-ups are 7-11g chat route wiring, 7-11h preview shortcut, and
+     7-11i telemetry. Provider dispatch is Phase 7-12 / 6 territory; Hypa
+     V3 stays Phase 8; browser plugin/Lua + inlay asset lookup stay
+     deferred (`NO_ASSETS`).
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -77,7 +80,7 @@ landed, `preflight` covers every card type the SPA emits, and `history`
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 856
+   tests green. Last recorded baselines are `pnpm api:test`: 868
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -164,6 +167,7 @@ landed, `preflight` covers every card type the SPA emits, and `history`
 | 7-11b   | `d08ca586` | assemble.ts static/plain slot fill: fillStaticSlots wires plain sections (non-utility/non-template) + author note / cot / description / persona into state.unformated.                                                            |
 | 7-11c   | `34e820d9` | assemble.ts lorebook placement + preflight: buildLorebookContext (distribution + positionParser + depthPrompts) + fillLorebookSlots (activate → distribute → preflightTemplateTokens → currentTokens).                            |
 | 7-11d   | `3992b967` | assemble.ts history window + bias rows: async fillHistoryAndBias runs buildHistoryWindow (thread currentChat/triggerResult/varChanged, honor stopSending, fold addedTokens, capture historyMessages) + unescaped/expanded biases. |
+| 7-11e   | `dd4bd14c` | assemble.ts memory bridge + post-history: memory.ts buildMemoryWindow (non-Hypa budget trim → lastChat promotion → memory split) + fillMemoryAndPostHistory (window → applyDepthPrompts splice → additonalSysPrompt placement).   |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

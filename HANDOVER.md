@@ -2,8 +2,8 @@
 
 Date: 2026-05-24
 Branch: `fastify`
-Head: `3992b967 feat: assemble.ts history window + bias rows (Phase 7-11d)`
-Latest feature slice: `3992b967 feat: assemble.ts history window + bias rows (Phase 7-11d)`
+Head: `dd4bd14c feat: assemble.ts memory bridge + post-history slot mutations (Phase 7-11e)`
+Latest feature slice: `dd4bd14c feat: assemble.ts memory bridge + post-history slot mutations (Phase 7-11e)`
 
 This is the day-to-day runbook for **Phase 7 in progress**:
 current branch head, verification baselines, and the next pickup.
@@ -58,6 +58,7 @@ Landed Phase 7 slices:
 | 7-11b   | `d08ca586` | `assemble.ts` static/plain slot fill: `fillStaticSlots` wires plain sections (non-utility/non-template) + author note / cot / description / persona into `state.unformated`.                                                                                                |
 | 7-11c   | `34e820d9` | `assemble.ts` lorebook placement + preflight: `buildLorebookContext` (slot distribution + `positionParser` + `depthPrompts`) + `fillLorebookSlots` (activate → distribute → `preflightTemplateTokens` → `currentTokens`).                                                   |
 | 7-11d   | `3992b967` | `assemble.ts` history window + bias rows: async `fillHistoryAndBias` runs `buildHistoryWindow` (thread `currentChat`/`triggerResult`/`varChanged`, honor `stopSending`, fold `addedTokens`, capture `historyMessages`) + unescaped/expanded `biases`. `NO_ASSETS` exported. |
+| 7-11e   | `dd4bd14c` | `assemble.ts` memory bridge + post-history: `memory.ts` `buildMemoryWindow` (non-Hypa budget trim → `lastChat` promotion → memory split → `unformated.chats`) + `fillMemoryAndPostHistory` (window → `applyDepthPrompts` splice → `additonalSysPrompt` placement).          |
 
 What is real in code:
 
@@ -94,7 +95,7 @@ What is real in code:
   returning `{ formated, promptText }`. `preflight.ts` is unchanged — it
   never supplies the prompt-info sink and still keeps only the
   `memoryCardUsed` / `hasCachePoint` flags.
-- `assemble.ts` holds the 7-11a/b/c/d assembler steps. `beginAssembly`
+- `assemble.ts` holds the 7-11a/b/c/d/e assembler steps. `beginAssembly`
   (7-11a) resolves scope through the `AssembleDeps.loadDatabase` seam
   (id→index, `EntityNotFoundError` on miss), builds the shared
   `ExpandContext` + `createEmptyUnformatedSlots`, and runs
@@ -110,62 +111,73 @@ What is real in code:
   with `state.report`, threads the start-trigger mutations (`currentChat`
   / `triggerResult` / `varChanged`), honors `stopSending` (short-circuit),
   folds `addedTokens` into `currentTokens`, captures `historyMessages`,
-  and collects the unescaped + variable-expanded `biases`. The history
-  rows are only **captured** — `unformated.chats` fill is 7-11e.
+  and collects the unescaped + variable-expanded `biases`.
+  `fillMemoryAndPostHistory(state)` (7-11e, sync) runs the non-Hypa
+  `buildMemoryWindow` (`memory.ts`) over `historyMessages` — budget trim
+  under `db.maxContext`, `lastChat` promotion (non-template), memory
+  split, `removable` marking — to fill `unformated.chats` + `state.memories`,
+  honors `stopSending`, then splices the depth prompts (`applyDepthPrompts`)
+  and places the trigger `additonalSysPrompt` rows into
+  `postEverything` / `lastChat`. Hypa V3 summary creation stays Phase 8.
   `assemblePrompt(input, deps)` builds the state (surfacing bad-ID errors
   early) and still throws past scope resolution. Tier 3 was re-sliced on
-  2026-05-24 (the old 7-11a was too large); the remaining path is
-  memory/post-history slot mutations (7-11e), final render + budget
-  (7-11f), then route/preview/telemetry wiring (7-11g/h/i).
+  2026-05-24 (the old 7-11a was too large); the remaining path is the
+  final render + budget (7-11f), then route/preview/telemetry wiring
+  (7-11g/h/i).
 
-Last recorded baselines after 7-11d:
+Last recorded baselines after 7-11e:
 
-- `pnpm api:test`: 856 across 41 files
+- `pnpm api:test`: 868 across 42 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-11e memory bridge + post-history slot mutations
+## Next Slice — 7-11f final render + budgeted prompt payload
 
-Pick up **7-11e — memory bridge + post-history slot mutations**.
+Pick up **7-11f — final render + budgeted prompt payload**.
 
-7-11d (`3992b967`) captured `state.historyMessages` / `triggerResult` /
-`biases` and threaded `currentChat` / `currentTokens` / `stopSending`.
-7-11e bridges those history rows into `unformated.chats` through the
-(non-Hypa) memory window, then applies the post-history slot mutations.
-SPA reference is `index.svelte.ts:243-263` (memory window), `:275-283`
-(depth-prompt splice), and `:285-304` (`additonalSysPrompt`).
+7-11e (`dd4bd14c`) filled `unformated.chats` / `lastChat`, set
+`state.memories`, spliced the depth prompts, and placed
+`additonalSysPrompt`. The slots are now complete. 7-11f renders them into
+the flat `OpenAIChat[]`, runs the budget recheck, and returns the
+`prompt` event payload — closing the critical-path assembler.
+SPA reference is `index.svelte.ts:306-345`.
 
 ### Scope sketch (SPA reference, `index.svelte.ts`)
 
-- port the **non-Hypa budget fallback** of
-  `src/ts/process/promptAssembly/buildMemoryWindow.ts` into a server
-  `memory.ts` (Hypa V3 summary creation stays **Phase 8** — only the
-  fallback path that walks `chats` under `maxContextTokens` is in scope):
-  - input is `state.historyMessages` + `state.currentTokens` +
-    `maxContextTokens`; on the "too many tokens" condition return
-    `stopSending: true` (root aborts);
-  - write surviving rows into `unformated.chats`; promote the trailing
-    chat into `unformated.lastChat` when no prompt template is in use;
-  - split `memories[]` for memory-template cards and mark over-budget
-    rows `removable: true`; record the lowest surviving `memo` on
-    `currentChat.lastMemory`.
-- depth-prompt splice (`:275-283`): for each `state.depthPrompts` entry,
-  `expandVariables(positionParser(prompt), { ...ctx, chara })` and splice
-  into `unformated.chats` at `pos === 'depth' ? depth : len - depth`.
-- `additonalSysPrompt` (`:285-304`): from `state.triggerResult`, push
-  `.promptend` → `postEverything`, `.historyend` → `lastChat` (push),
-  `.start` → `lastChat` (unshift).
-- extend `AssemblyState` with `memories` (and whatever the memory window
-  needs to thread `currentChat` / `currentTokens` forward).
+- add (likely async) `renderAndBudget(state)` (or fold into
+  `assemblePrompt`) that:
+  - calls `renderFinalPrompt({ ctx, currentChar, unformated,
+promptTemplate, usingPromptTemplate, formatOrder: state.formatOrder,
+memories: state.memories, positionParser: state.positionParser,
+hasCachePoint: state.hasCachePoint, isContinue, editRequest })` →
+    `{ formated, promptText }`. Note `state.formatOrder` **already** has
+    `postEverything` appended (7-11a `buildFormatOrder`), so do **not**
+    re-push it. `isContinue` derives from `input.mode === 'continue'`.
+    For `editRequest`, pass the identity default for now (the 7-9e
+    request-state transform / browser Lua wiring stays a dispatch-time
+    concern);
+  - runs `finalizeRequestBudget({ db, formated, maxContextTokens:
+db.maxContext, maxResponse: db.maxResponse })` → on `!ok`, abort
+    (`stopSending` / error); else take `formated` / `inputTokens` /
+    `outputTokens`.
+- assemble the `AssembleResult` (`Omit<PromptEvent, 'type'>`):
+  `messages` from the budgeted `formated`, `promptInfo` (carry
+  `promptText` + token counts), and `lorebookActivation` from
+  `state.report`. `biases` (7-11d) rides along for the eventual dispatch
+  (7-12) but is not a `PromptEvent` field.
+- unblock `assemblePrompt(input, deps)`: chain `beginAssembly` →
+  `fillStaticSlots` → `fillLorebookSlots` → `await fillHistoryAndBias` →
+  `fillMemoryAndPostHistory` → render/budget, returning the payload (or a
+  `stopSending` result). Remove the throw.
 
 ### Out of scope (defer)
 
-- `renderFinalPrompt` + `finalizeRequestBudget` + prompt payload —
-  **7-11f**; route/preview/telemetry — **7-11g/h/i**.
-- Hypa V3 summary creation stays **Phase 8**; browser plugin/Lua stays
-  deferred. Inlay/multimodal asset lookup stays browser-side
-  (`NO_ASSETS`).
+- Route wiring / SSE emission — **7-11g**; preview shortcut — **7-11h**;
+  `info` / `message_patch` telemetry — **7-11i**.
+- Provider dispatch (`dispatchRequest`) is **Phase 7-12 / 6** territory;
+  7-11f stops at the assembled payload. Hypa V3 stays **Phase 8**;
+  browser plugin/Lua + inlay asset lookup stay deferred.
 
 ### Verification
 
@@ -176,8 +188,8 @@ pnpm test
 pnpm build
 ```
 
-7-11e is the default next pickup. Tier 3 runs 7-11a → 7-11f as the
-critical-path assembly slices before route wiring (7-11g/h/i).
+7-11f is the default next pickup and the last critical-path assembly
+slice; route wiring (7-11g/h/i) follows.
 
 ## Patterns To Keep
 

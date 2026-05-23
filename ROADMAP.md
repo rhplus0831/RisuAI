@@ -119,6 +119,7 @@ multi-subsystem work behind small labels.
 | 7-11b   | `d08ca586` | `assemble.ts` static/plain slot fill: `fillStaticSlots` wires plain sections (non-utility/non-template) + author note / cot / description / persona into `state.unformated`.                                                                          |
 | 7-11c   | `34e820d9` | `assemble.ts` lorebook placement + preflight: `buildLorebookContext` (distribution + `positionParser` + `depthPrompts`) + `fillLorebookSlots` (activate → distribute → `preflightTemplateTokens` → `currentTokens`).                                  |
 | 7-11d   | `3992b967` | `assemble.ts` history window + bias rows: async `fillHistoryAndBias` runs `buildHistoryWindow` (thread `currentChat`/`triggerResult`/`varChanged`, honor `stopSending`, fold `addedTokens`, capture `historyMessages`) + unescaped/expanded `biases`. |
+| 7-11e   | `dd4bd14c` | `assemble.ts` memory bridge + post-history: `memory.ts` `buildMemoryWindow` (non-Hypa budget trim → `lastChat` promotion → memory split) + `fillMemoryAndPostHistory` (window → `applyDepthPrompts` splice → `additonalSysPrompt` placement).         |
 
 ## Remaining Slices
 
@@ -280,12 +281,12 @@ Preset templates (`templates.ts`):
   the 7-9e request-state transform plugs in. **Closes the template
   renderer.**
 
-Current default pickup: **7-11e** (memory bridge + post-history slot
-mutations). The template renderer (7-10a–f) and the 7-11a/b/c/d
-assembler steps (loader, static/plain fill, lorebook placement +
-preflight, history window + bias rows) are landed; the assembler now
-bridges history into `unformated.chats` and applies the post-history
-slot mutations.
+Current default pickup: **7-11f** (final render + budgeted prompt
+payload). The template renderer (7-10a–f) and the 7-11a–e assembler
+steps (loader, static/plain fill, lorebook placement + preflight,
+history window + bias rows, memory bridge + post-history mutations) are
+landed; the slots are complete, so 7-11f renders them and runs the
+budget recheck to close the critical-path assembler.
 
 ### Tier 3 — Root + route wiring (all Tier 1 + 2 real)
 
@@ -323,12 +324,14 @@ surfaces and add focused `assemble` tests as each seam lands.
   and collects the unescaped + variable-expanded `biases`. `NO_ASSETS`
   exported from `history.ts`. History rows are only captured here; the
   `unformated.chats` fill is 7-11e. No memory-window bridge or render.
-- **7-11e** — memory bridge + post-history slot mutations. Port the
-  non-Hypa budget fallback from `buildMemoryWindow.ts`, promote
-  `lastChat`, split `memories[]` for memory template cards, mark
-  removable rows, apply lorebook depth prompts, and merge
-  `triggerResult.additonalSysPrompt` into the right slots. Hypa V3
-  summary creation remains Phase 8. No final render or budget pruning.
+- **7-11e** — memory bridge + post-history slot mutations. **Landed
+  `dd4bd14c`.** Ported the non-Hypa budget fallback into `memory.ts`
+  (`buildMemoryWindow`: trim under `db.maxContext`, `lastChat`
+  promotion, memory split, `removable` marking, `lastMemory`) and added
+  `fillMemoryAndPostHistory`: run the window → fill `unformated.chats` +
+  `state.memories`, `applyDepthPrompts` splice, `additonalSysPrompt`
+  placement into `postEverything` / `lastChat`. Hypa V3 summary creation
+  remains Phase 8. No final render or budget pruning.
 - **7-11f** — final render + budgeted prompt payload. Call
   `renderFinalPrompt` with `formatOrder`, `memories`, `positionParser`,
   `isContinue`, and the deterministic request-edit seam; run
@@ -370,26 +373,25 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Parallelism notes
 
-- The template renderer is closed (7-10a–f landed) and the 7-11a/b/c/d
-  loader + static/plain fill + lorebook placement + history/bias are in.
-  7-11e and 7-11f are now the critical-path assembly slices; 7-11g/h/i
-  can split once their direct deps are in.
+- The template renderer is closed (7-10a–f landed) and the 7-11a–e
+  loader + static/plain fill + lorebook placement + history/bias +
+  memory bridge are in. 7-11f is the last critical-path assembly slice;
+  7-11g/h/i can split once their direct deps are in.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).
 
 ## Sequential order (default)
 
-1. **7-11e** — memory bridge + post-history slot mutations
-2. **7-11f** — final render + budgeted prompt payload
-3. **7-11g** — wire `/api/v1/generate/chat`
-4. **7-11h** — `/api/v1/generate/preview-prompt`
-5. **7-11i** — SSE telemetry (`info`, `message_patch`)
-6. **7-12a** — browser client adapter
-7. **7-12b** — dual-mode fixture sweep
-8. **7-12c** — side-effect dispatch
-9. **7-12d** — error / abort restoration
-10. **7-13** — phase 7 closeout
+1. **7-11f** — final render + budgeted prompt payload
+2. **7-11g** — wire `/api/v1/generate/chat`
+3. **7-11h** — `/api/v1/generate/preview-prompt`
+4. **7-11i** — SSE telemetry (`info`, `message_patch`)
+5. **7-12a** — browser client adapter
+6. **7-12b** — dual-mode fixture sweep
+7. **7-12c** — side-effect dispatch
+8. **7-12d** — error / abort restoration
+9. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 
