@@ -232,7 +232,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
     const unformated = makeSlots({
       description: [row({ role: 'system', content: 'hello' })],
     })
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter(),
       unformated,
@@ -247,7 +247,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
     const unformated = makeSlots({
       authorNote: [row({ role: 'system', content: '' })],
     })
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter(),
       unformated,
@@ -259,7 +259,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
 
   it('renders a plain/main card and maps bot role to assistant', () => {
     const db = makeDatabase()
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter(),
       makeSlots(),
@@ -268,7 +268,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
     )
     expect(out).toEqual([{ role: 'system', content: 'system line' }])
 
-    const botOut = renderByTemplate(
+    const { formated: botOut } = renderByTemplate(
       ctxFor(db),
       makeCharacter(),
       makeSlots(),
@@ -280,7 +280,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
 
   it('applies replaceGlobalNote ({{original}}) on a globalNote card', () => {
     const db = makeDatabase()
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter({ replaceGlobalNote: '[[{{original}}]]' }),
       makeSlots(),
@@ -292,7 +292,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
 
   it('appends prebuiltAssetCommand on a globalNote card when the char opts in', () => {
     const db = makeDatabase()
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter({ prebuiltAssetCommand: true } as Partial<character>),
       makeSlots(),
@@ -309,10 +309,12 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
       { type: 'jailbreak', type2: 'normal', text: 'jb', role: 'system' },
       { type: 'cot', type2: 'normal', text: 'cot', role: 'system' },
     ])
-    expect(renderByTemplate(ctxFor(off), makeCharacter(), makeSlots(), cards, true)).toEqual([])
+    expect(renderByTemplate(ctxFor(off), makeCharacter(), makeSlots(), cards, true).formated).toEqual(
+      [],
+    )
 
     const on = makeDatabase({ jailbreakToggle: true, chainOfThought: true } as Partial<Database>)
-    const out = renderByTemplate(ctxFor(on), makeCharacter(), makeSlots(), cards, true)
+    const { formated: out } = renderByTemplate(ctxFor(on), makeCharacter(), makeSlots(), cards, true)
     // Two consecutive memo-less system rows coalesce on gpt4.
     expect(out).toHaveLength(1)
     expect(out[0].content).toBe('jb\n\ncot')
@@ -335,7 +337,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
       lorebook: [row({ role: 'system', content: 'lore', memo: 'l' })],
       postEverything: [row({ role: 'system', content: 'post', memo: 'p' })],
     })
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter(),
       unformated,
@@ -347,7 +349,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
 
   it('splits a chatML card into role-tagged rows', () => {
     const db = makeDatabase()
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter(),
       makeSlots(),
@@ -367,7 +369,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
 
   it('applies the injected positionParser to card text', () => {
     const db = makeDatabase()
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter(),
       makeSlots(),
@@ -394,7 +396,7 @@ describe('Phase 7-10c chat cards', () => {
     card: PromptItem,
     unformated = chatSlots(),
     char = makeCharacter(),
-  ): OpenAIChat[] => renderByTemplate(ctxFor(db), char, unformated, [card], true)
+  ): OpenAIChat[] => renderByTemplate(ctxFor(db), char, unformated, [card], true).formated
 
   it('emits the full chat for rangeEnd "end"', () => {
     const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: 0, rangeEnd: 'end' })
@@ -510,7 +512,7 @@ describe('Phase 7-10d memory cards', () => {
   ]
 
   it('clones the injected memories and passes them through unwrapped', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase()),
       makeCharacter(),
       makeSlots(),
@@ -523,7 +525,7 @@ describe('Phase 7-10d memory cards', () => {
   })
 
   it('wraps each memory row via innerFormat {{slot}}', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase()),
       makeCharacter(),
       makeSlots(),
@@ -536,7 +538,7 @@ describe('Phase 7-10d memory cards', () => {
   })
 
   it('does NOT run positionParser on the memory innerFormat', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase()),
       makeCharacter(),
       makeSlots(),
@@ -564,7 +566,7 @@ describe('Phase 7-10d memory cards', () => {
   })
 
   it('emits nothing for a memory card with no injected memories', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase()),
       makeCharacter(),
       makeSlots(),
@@ -593,7 +595,7 @@ describe('Phase 7-10d cache markers', () => {
     out.filter((r) => r.cachePoint).map((r) => r.content)
 
   it('marks up to `depth` rows whose role matches the cache card', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase()),
       makeCharacter(),
       slotsWithChat(),
@@ -605,7 +607,7 @@ describe('Phase 7-10d cache markers', () => {
   })
 
   it('treats role "all" as any role and stops at `depth`', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase()),
       makeCharacter(),
       slotsWithChat(),
@@ -616,7 +618,7 @@ describe('Phase 7-10d cache markers', () => {
   })
 
   it('automatic cache point marks the last 3 user rows after a chat card', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase({ automaticCachePoint: true } as Partial<Database>)),
       makeCharacter(),
       slotsWithChat(),
@@ -627,7 +629,7 @@ describe('Phase 7-10d cache markers', () => {
   })
 
   it('does not auto-mark when automaticCachePoint is off', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase()),
       makeCharacter(),
       slotsWithChat(),
@@ -638,7 +640,7 @@ describe('Phase 7-10d cache markers', () => {
   })
 
   it('suppresses the automatic walk-back when an explicit cache card is present', () => {
-    const out = renderByTemplate(
+    const { formated: out } = renderByTemplate(
       ctxFor(makeDatabase({ automaticCachePoint: true } as Partial<Database>)),
       makeCharacter(),
       slotsWithChat(),
@@ -647,5 +649,153 @@ describe('Phase 7-10d cache markers', () => {
     )
     // Only the explicit cache card fires (last user row), not the 3-deep walk-back.
     expect(cachePoints(out)).toEqual(['u4'])
+  })
+})
+
+describe('Phase 7-10e prompt-info capture', () => {
+  const captureDb = (): Database =>
+    makeDatabase({
+      promptInfoInsideChat: true,
+      promptTextInfoInsideChat: true,
+    } as Partial<Database>)
+
+  it('captures the raw innerFormat per row for persona / description / authornote', () => {
+    const unformated = makeSlots({
+      description: [row({ role: 'system', content: 'hello' })],
+      personaPrompt: [row({ role: 'user', content: 'p' })],
+      authorNote: [row({ role: 'assistant', content: 'an' })],
+    })
+    const { formated, promptInfo } = renderByTemplate(
+      ctxFor(captureDb()),
+      makeCharacter(),
+      unformated,
+      [
+        { type: 'description', innerFormat: 'D: {{slot}}' },
+        { type: 'persona', innerFormat: 'P: {{slot}}' },
+        { type: 'authornote', innerFormat: 'A: {{slot}}' },
+      ],
+      true,
+    )
+    // The rendered rows still expand `{{slot}}`...
+    expect(formated.map((r) => r.content)).toEqual(['D: hello', 'P: p', 'A: an'])
+    // ...while the info rows carry the raw innerFormat with the row's role.
+    expect(promptInfo).toEqual([
+      { role: 'system', content: 'D: {{slot}}' },
+      { role: 'user', content: 'P: {{slot}}' },
+      { role: 'assistant', content: 'A: {{slot}}' },
+    ])
+  })
+
+  it('does not capture when a card has no innerFormat', () => {
+    const unformated = makeSlots({
+      description: [row({ role: 'system', content: 'hello' })],
+    })
+    const { promptInfo } = renderByTemplate(
+      ctxFor(captureDb()),
+      makeCharacter(),
+      unformated,
+      [{ type: 'description' }],
+      true,
+    )
+    expect(promptInfo).toEqual([])
+  })
+
+  it('captures a plain card parsed content but excludes globalNote', () => {
+    const { formated, promptInfo } = renderByTemplate(
+      ctxFor(captureDb()),
+      makeCharacter(),
+      makeSlots(),
+      [
+        { type: 'plain', type2: 'main', text: 'hello-main', role: 'system' },
+        { type: 'plain', type2: 'globalNote', text: 'gn', role: 'system' },
+      ],
+      true,
+    )
+    // Both rows render (the two system rows coalesce on a gpt model)...
+    expect(formated.map((r) => r.content)).toEqual(['hello-main\n\ngn'])
+    // ...but only the non-globalNote card is captured.
+    expect(promptInfo).toEqual([{ role: 'system', content: 'hello-main' }])
+  })
+
+  it('captures the raw innerFormat per row for a memory card', () => {
+    const { promptInfo } = renderByTemplate(
+      ctxFor(captureDb()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'memory', innerFormat: 'M: {{slot}}' }],
+      true,
+      undefined,
+      [row({ role: 'assistant', content: 'm0' })],
+    )
+    expect(promptInfo).toEqual([{ role: 'assistant', content: 'M: {{slot}}' }])
+  })
+
+  it('skips an info row for a whitespace-only innerFormat', () => {
+    const unformated = makeSlots({
+      description: [row({ role: 'system', content: 'hello' })],
+    })
+    const { promptInfo } = renderByTemplate(
+      ctxFor(captureDb()),
+      makeCharacter(),
+      unformated,
+      [{ type: 'description', innerFormat: '   ' }],
+      true,
+    )
+    expect(promptInfo).toEqual([])
+  })
+
+  it('leaves promptInfo undefined when the capture flags are off', () => {
+    const unformated = makeSlots({
+      description: [row({ role: 'system', content: 'hello' })],
+    })
+    const { promptInfo } = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      unformated,
+      [{ type: 'description', innerFormat: 'D: {{slot}}' }],
+      true,
+    )
+    expect(promptInfo).toBeUndefined()
+  })
+})
+
+describe('Phase 7-10e content trim', () => {
+  it('trims rendered row contents on the template path', () => {
+    const { formated } = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'plain', type2: 'main', text: '  spaced  ', role: 'system' }],
+      true,
+    )
+    expect(formated[0].content).toBe('spaced')
+  })
+
+  it('trims captured prompt-info row contents', () => {
+    const unformated = makeSlots({
+      description: [row({ role: 'system', content: 'hello' })],
+    })
+    const { promptInfo } = renderByTemplate(
+      ctxFor(
+        makeDatabase({
+          promptInfoInsideChat: true,
+          promptTextInfoInsideChat: true,
+        } as Partial<Database>),
+      ),
+      makeCharacter(),
+      unformated,
+      [{ type: 'description', innerFormat: '  D: {{slot}}  ' }],
+      true,
+    )
+    expect(promptInfo).toEqual([{ role: 'system', content: 'D: {{slot}}' }])
+  })
+
+  it('trims rendered row contents on the non-template path', () => {
+    const out = renderByFormatOrder(
+      makeSlots({ main: [row({ role: 'system', content: '  x  ' })] }),
+      ['main'],
+      'gpt4',
+    )
+    expect(out[0].content).toBe('x')
   })
 })
