@@ -30,6 +30,8 @@ import { buildMemoryWindow } from './promptAssembly/buildMemoryWindow'
 import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 import { dispatchRequest } from './dispatch/dispatchRequest'
+import { isFastifyServer } from '../platform'
+import { requestServerChat } from './request/serverChat'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -171,6 +173,40 @@ export async function sendChat(
   currentChar = nowChatroom
   let currentChat = runCurrentChatFunction(nowChatroom.chats[selectedChat])
   nowChatroom.chats[selectedChat] = currentChat
+
+  // 7-12c: server-side prompt assembly for the read-only preview paths.
+  // The `/chat` route assembles the prompt server-side and returns it; for
+  // `preview` / `previewPrompt` no dispatch happens and no chat-row deltas
+  // need to come back, so this is safe behind the gate. The send / continue
+  // / regenerate path stays local until `message_patch` lands (7-12d).
+  if (
+    isFastifyServer &&
+    DBState.db.useServerPromptAssembly &&
+    (arg.preview || arg.previewPrompt)
+  ) {
+    const served = await requestServerChat(
+      {
+        chatId: currentChat.id ?? '',
+        characterId: currentChar.chaId,
+        mode: arg.previewPrompt ? 'preview_prompt' : 'preview',
+      },
+      abortSignal,
+    )
+    if (served.status === 'aborted') {
+      return false
+    }
+    if (served.status === 'error') {
+      throwError(served.error)
+      return false
+    }
+    if (arg.previewPrompt) {
+      const promptText = served.prompt.promptInfo?.promptText
+      previewBody = typeof promptText === 'string' ? promptText : ''
+    } else {
+      previewFormated = (served.prompt.formated as OpenAIChat[]) ?? []
+    }
+    return true
+  }
 
   setProcessStage(1)
   stageTimings.stage1Start = Date.now()
