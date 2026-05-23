@@ -6,7 +6,7 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with thirty slices landed through 7-10a:
+Phase 7 is active with thirty-one slices landed through 7-10b:
 chat route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight + start-trigger handoff, regex scripts, active-module
@@ -15,44 +15,42 @@ minimal server tokenizer, the template-wide token preflight, the
 request budget finalization, the trigger model + runner shell, the
 trigger variable/condition engine, the deterministic V1 trigger
 effects, V2 control flow, V2 safe data helpers, the request/display
-state adapters, the `runStartTrigger` handoff, and the template
-renderer foundation. `assemble` remains a throwing stub; the trigger
-front is complete (`triggers`, 7-9a–f) and `templates` holds the 7-10a
-foundation (`normalizeTemplate`, `buildFormatOrder`, `coalesceRows`,
-`renderByFormatOrder`, the slot contract) with the per-card `switch`
-deferred to 7-10b–f. The tokens / budget chain (7-8a/b/c) is fully
-landed, `preflight` covers every card type the SPA emits, and `history`
-(now async, closing 7-5d) + `lorebook` are feature-complete. Use
+state adapters, the `runStartTrigger` handoff, the template renderer
+foundation, and the template content cards. `assemble` remains a
+throwing stub; the trigger front is complete (`triggers`, 7-9a–f) and
+`templates` holds the 7-10a foundation plus the 7-10b content cards
+(the shared `renderContentCard` + `renderByTemplate`, also consumed by
+`preflight`) with `chat` / `memory` / `cache` rendering deferred to
+7-10c/d. The tokens / budget chain (7-8a/b/c) is fully landed,
+`preflight` covers every card type the SPA emits, and `history` (now
+async, closing 7-5d) + `lorebook` are feature-complete. Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-10b — content cards.** 7-10a
-   (`765886be`) landed the renderer foundation (`normalizeTemplate`,
-   `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, the slot
-   contract). 7-10b builds the per-card `switch` in `templates.ts`,
-   starting with the content cards. SPA reference is the template-walk
-   `switch` in `renderFinalPrompt.ts:135-260`.
+1. **Continue Phase 7 with slice 7-10c — chat cards + systemized
+   chat.** 7-10b (`978ade30`) landed the content cards via the shared
+   `renderContentCard`. 7-10c adds the `chat` card to that builder. SPA
+   reference is the `chat` branch at `renderFinalPrompt.ts:267-300` and
+   `systemizeChat.ts`; both already exist on the server inside
+   `preflight.ts`, so the slice is mostly a lift-into-the-shared-builder
+   like 7-10b.
 
    Verified slice scope:
-   - `persona` / `description` / `authornote`: clone the slot, wrap each
-     row via `risuChatParser(positionParser(innerFormat, type)).replace(
-'{{slot}}', content)` when the card has an `innerFormat`; `authornote`
-     falls back to `card.defaultText`. Then `coalesceRows`.
-   - `lorebook`: push `unformated.lorebook`. `postEverything`: push the
-     slot, then append `promptSettings.postEndInnerFormat` when set.
-   - `plain` / `jailbreak` / `cot`: skip `jailbreak`/`cot` unless their
-     db toggles are on; map `role` (`bot→assistant`); resolve via
-     `positionParser` + `risuChatParser`; `globalNote` applies
-     `replaceGlobalNote` (`{{original}}`) + `prebuiltAssetCommand`.
-   - `chatML`: reuse the existing server `parseChatML`.
-   - Add a `renderByTemplate(...)` walk dispatching these content cards;
-     route `chat` / `memory` / `cache` cards to later-slice handlers
-     (stub/skip for now).
-   - Do not port `chat`/`systemizeChat` (7-10c), `memory`/`cache`
-     (7-10d), prompt-info finalization (7-10e), render finalization
-     (7-10f), or the Tier 3 assemble root / route wiring.
+   - Extend `renderContentCard` (or a sibling) for the `chat` card:
+     range math (`rangeStart`/`rangeEnd`, the `-1000` "all" sentinel,
+     negative offsets clamped to `[0, len]`, empty when `start >= end`),
+     slice `unformated.chats`, and when `usingPromptTemplate &&
+sendChatAsSystem && !card.chatAsOriginalOnSystem` run `systemizeChat`
+     on a clone.
+   - Lift `systemizeChat` from `preflight.ts` into `templates.ts`
+     (shared), as 7-10b did for `parseChatML` / `renderContentCard`.
+   - Refactor `preflight.ts`'s `chat` case to consume the shared
+     builder, leaving only `memory` / `cache` inline.
+   - Do not port `memory`/`cache` (7-10d), prompt-info finalization
+     (7-10e), render finalization (7-10f), or the Tier 3 assemble root /
+     route wiring.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -61,7 +59,7 @@ landed, `preflight` covers every card type the SPA emits, and `history`
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 782
+   tests green. Last recorded baselines are `pnpm api:test`: 792
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -139,6 +137,7 @@ landed, `preflight` covers every card type the SPA emits, and `history`
 | 7-9e    | `51155665` | Request/display state adapters: display/request allowlists + v2Get/SetDisplayState + five request-state arms.            |
 | 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes 7-5d.                            |
 | 7-10a   | `765886be` | Template renderer foundation: normalizeTemplate / buildFormatOrder / coalesceRows / renderByFormatOrder + slot contract. |
+| 7-10b   | `978ade30` | Content cards: shared renderContentCard + renderByTemplate; preflight refactored to consume the same builder.            |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

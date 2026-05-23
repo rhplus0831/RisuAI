@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (30 slices landed as of 2026-05-23).
+Status: in-progress (31 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -31,7 +31,9 @@ the 7-9e request/display state adapters (mode allowlists +
 (closing the Tier 1 7-5d). The trigger and history fronts are complete.
 `templates.ts` holds the 7-10a renderer foundation (`normalizeTemplate`,
 `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, the
-`UnformatedPromptSlots` contract); the per-card `switch` is 7-10b–f.
+`UnformatedPromptSlots` contract) and the 7-10b content cards (the
+shared `renderContentCard` + `renderByTemplate`, which `preflight.ts`
+also consumes); `chat` / `memory` / `cache` rendering is 7-10c/d.
 `assemble.ts` is still a throwing stub. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
@@ -208,6 +210,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.           |
 | 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.  |
 | 7-10a   | `765886be` | Template renderer foundation: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, `UnformatedPromptSlots`.   |
+| 7-10b   | `978ade30` | Content cards: shared `renderContentCard` + `renderByTemplate`; `preflight.ts` refactored to consume the same per-card builder.          |
 
 ## Remaining roadmap
 
@@ -220,8 +223,9 @@ is the planning resolution, not a contract.
 ### Tier 1 — Finish partially landed prompt helpers
 
 Order chosen to minimize helper coupling. `assemble.ts` is still a
-throwing stub; `templates.ts` holds the 7-10a renderer foundation (the
-per-card `switch` is 7-10b–f). `tokens.ts` is real at the minimal
+throwing stub; `templates.ts` holds the 7-10a foundation + 7-10b
+content cards (the `chat` / `memory` / `cache` cards are 7-10c/d).
+`tokens.ts` is real at the minimal
 text-only surface, and `triggers.ts` is real through the
 request/display adapters and the `runStartTrigger` handoff — the
 trigger front is complete. The files below are real; `history.ts` is
@@ -531,11 +535,14 @@ responsibility:
   (branch-free non-template walk), and the canonical
   `UnformatedPromptSlots` contract (re-exported by `preflight.ts`). No
   per-card branches yet.
-- **7-10b** — Content cards. Render persona, description,
-  authornote, lorebook, plain/jailbreak/cot, `chatML`, and
-  `postEverything` cards, including inner-format/default-text
-  wrapping, `postEndInnerFormat`, global-note replacement, the
-  prebuilt asset command, and prompt-info capture for these cards.
+- **7-10b** — Content cards. **Landed `978ade30`** (10 added tests).
+  Shared `renderContentCard` (persona / description / authornote /
+  lorebook / postEverything / plain / jailbreak / cot / chatML, with
+  inner-format/default-text wrapping, `postEndInnerFormat`, global-note
+  replacement + prebuilt asset command, toggle gating) plus
+  `renderByTemplate`. `preflight.ts` now consumes the same builder so
+  token counting and rendering can't drift. Prompt-info capture for
+  these cards is 7-10e.
 - **7-10c** — Chat cards + systemized chat. Port range math
   (`-1000`, negative offsets, `end`, empty ranges),
   `sendChatAsSystem`, `chatAsOriginalOnSystem`, example-name

@@ -110,6 +110,7 @@ multi-subsystem work behind small labels.
 | 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.           |
 | 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.  |
 | 7-10a   | `765886be` | Template renderer foundation: `normalizeTemplate`, `buildFormatOrder`, `coalesceRows`, `renderByFormatOrder`, `UnformatedPromptSlots`.   |
+| 7-10b   | `978ade30` | Content cards: shared `renderContentCard` + `renderByTemplate`; `preflight.ts` refactored to consume the same per-card builder.          |
 
 ## Remaining Slices
 
@@ -227,11 +228,14 @@ Preset templates (`templates.ts`):
   system-coalescing helper), `renderByFormatOrder` (branch-free
   non-template walk), and the canonical `UnformatedPromptSlots` slot
   contract (re-exported by `preflight.ts`). No per-card branches yet.
-- **7-10b** — content cards. Render persona, description,
-  authornote, lorebook, plain/jailbreak/cot, `chatML`, and
-  `postEverything` cards, including inner-format/default-text
-  wrapping, `postEndInnerFormat`, global-note replacement, the
-  prebuilt asset command, and prompt-info capture for these cards.
+- **7-10b** — content cards. **Landed `978ade30`.** Shared
+  `renderContentCard` for persona / description / authornote /
+  lorebook / postEverything / plain / jailbreak / cot / chatML
+  (inner-format/default-text wrapping, `postEndInnerFormat`,
+  global-note replacement + prebuilt asset command, toggle gating)
+  plus `renderByTemplate`. `preflight.ts` refactored to consume the
+  same builder so token counting and rendering can't drift.
+  Prompt-info capture for these cards is 7-10e.
 - **7-10c** — chat cards + systemized chat. Port range math
   (`-1000`, negative offsets, `end`, empty ranges),
   `sendChatAsSystem`, `chatAsOriginalOnSystem`, example-name
@@ -250,11 +254,12 @@ Preset templates (`templates.ts`):
   Phase 7-safe request-state transform from 7-9e. Browser Lua
   `editRequest` hooks stay deferred with plugin/Lua execution.
 
-Current default pickup: **7-10b** (content cards). The trigger and
-history fronts are complete and 7-10a landed the renderer foundation;
-the remaining work is the template card renderer (7-10b–f) then the
-Tier 3 root/route wiring. The already-landed support chain is
-7-7d/7-5e, 7-8a/b/c, 7-9a/b/c/d-i/d-ii/e/f, and 7-10a.
+Current default pickup: **7-10c** (chat cards + systemized chat). The
+trigger and history fronts are complete and 7-10a/b landed the renderer
+foundation + content cards; the remaining work is the rest of the
+template card renderer (7-10c–f) then the Tier 3 root/route wiring. The
+already-landed support chain is 7-7d/7-5e, 7-8a/b/c,
+7-9a/b/c/d-i/d-ii/e/f, and 7-10a/b.
 
 ### Tier 1 sub-slices unblocked by Tier 2
 
@@ -314,30 +319,29 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- With the trigger and history fronts complete and 7-10a landed, the
-  remaining work is the template card renderer (**7-10b** then
-  7-10c–f) and, once those land, the Tier 3 root/route wiring.
+- With the trigger and history fronts complete and 7-10a/b landed, the
+  remaining work is the rest of the template card renderer (**7-10c**
+  then 7-10d–f) and, once those land, the Tier 3 root/route wiring.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).
 
 ## Sequential order (default)
 
-1. **7-10b** — content cards
-2. **7-10c** — chat cards + systemized chat
-3. **7-10d** — memory cards + cache markers
-4. **7-10e** — position + prompt-info finalization
-5. **7-10f** — render finalization + request-edit boundary
-6. **7-11a** — `assemble.ts` state loader + slot orchestration
-7. **7-11b** — memory-window bridge + final render
-8. **7-11c** — wire `/api/v1/generate/chat`
-9. **7-11d** — `/api/v1/generate/preview-prompt`
-10. **7-11e** — SSE telemetry (`info`, `message_patch`)
-11. **7-12a** — browser client adapter
-12. **7-12b** — dual-mode fixture sweep
-13. **7-12c** — side-effect dispatch
-14. **7-12d** — error / abort restoration
-15. **7-13** — phase 7 closeout
+1. **7-10c** — chat cards + systemized chat
+2. **7-10d** — memory cards + cache markers
+3. **7-10e** — position + prompt-info finalization
+4. **7-10f** — render finalization + request-edit boundary
+5. **7-11a** — `assemble.ts` state loader + slot orchestration
+6. **7-11b** — memory-window bridge + final render
+7. **7-11c** — wire `/api/v1/generate/chat`
+8. **7-11d** — `/api/v1/generate/preview-prompt`
+9. **7-11e** — SSE telemetry (`info`, `message_patch`)
+10. **7-12a** — browser client adapter
+11. **7-12b** — dual-mode fixture sweep
+12. **7-12c** — side-effect dispatch
+13. **7-12d** — error / abort restoration
+14. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 
