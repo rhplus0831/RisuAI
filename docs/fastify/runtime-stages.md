@@ -19,9 +19,10 @@ and Phase 6 has closed Stage 3 completion dispatch through
 `/api/v1/generate/completion` for the provider matrix listed in
 [`status/server.md`](status/server.md). Phase 7 has landed the
 chat route scaffold plus the variable/static/plain/history leaves,
-regex script processing, and active-module helpers, but the root
-Stage 2 handoff is not wired yet. The ownership described below is
-still the migration target, not a claim that every stage has moved.
+regex script processing, active-module helpers, and lorebook
+activation through depth-prompt helpers, but the root Stage 2
+handoff is not wired yet. The ownership described below is still the
+migration target, not a claim that every stage has moved.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -136,9 +137,11 @@ the delegated post-generation helpers under
   (provider dispatch) server-side.
 - Phase 7 (`phases/phase-7-prompt-assembly.md`) moves Stage 2
   (prompt assembly) server-side. It is in progress: slices 7-1
-  through 7-6d plus 7-5c landed the scaffold, prompt leaves,
-  history shaping, scripts, and module helpers; lorebook,
-  templates, tokens, triggers, and root route wiring remain.
+  through 7-7e landed the scaffold, prompt leaves, history shaping,
+  scripts, module helpers, and lorebook activation through
+  depth-prompt helpers; templates, tokens, triggers, and root route
+  wiring remain. Lorebook budget truncation (7-7d) is parked behind
+  the 7-8a server tokenizer.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
   server-side resource that Stage 2 reads from.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1

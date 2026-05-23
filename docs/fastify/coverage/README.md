@@ -9,9 +9,9 @@ characterization fixtures have landed, and Phase 5 helper tests now
 cover extracted browser-side seams. Phase 6 route and provider
 tests cover the current `/api/v1/generate/completion` slices.
 Phase 7 now has chat-route scaffold tests plus prompt variable,
-static-section, plain-section, history, script, and module-helper
-tests; later helper routes and Phases 8-9 remain planning artifacts
-until their routes land.
+static-section, plain-section, history, script, module-helper, and
+lorebook tests; later helper routes and Phases 8-9 remain planning
+artifacts until their routes land.
 
 ## Shards
 

@@ -35,31 +35,35 @@ the short pickup runbook.
    tokenizer accumulation + depth-prompt token preflight) in
    one move.
 
-   Slice scope:
-   - Inspect `src/ts/tokenizer.ts` and decide reuse vs. port.
-     `tiktoken` and `@huggingface/transformers` are already in
-     `package.json`; the SPA dispatcher is environment-agnostic
-     for OpenAI models but pulls in `DBState` for per-model
-     defaults — at minimum we need a Svelte-free
-     `tokenize(text, model)` + `tokenizeChat(chat, model)` pair
-     that takes an explicit model string.
-   - Stand up `server/fastify/src/prompt/tokens.ts` (currently
-     a throwing stub) with the chosen surface. Cover the
-     prompt-assembly models that already appear in the
-     fixtures (`gpt-4o` etc. via `o200k_base`); other model
-     dispatchers can land per-fixture as they come up.
-   - Isolated unit tests: empty string, ASCII baseline,
-     multimodal-aware chat tokenization if the SPA does
-     anything special there.
+   Verified slice scope:
+   - `src/ts/tokenizer.ts` is a 654-line browser dispatcher across
+     17 tokenizer families plus Svelte `DBState`, plugin tokenizer
+     hooks, browser-loaded `/token/...` assets, Google count-token
+     calls, local GGUF tokenization, and multimodal image-token
+     math. Do **not** port that full matrix in 7-8a.
+   - Stand up `server/fastify/src/prompt/tokens.ts` (currently a
+     throwing stub) with the capped server surface:
+     `encodingForModel(model)`, `tokenize(text, model)`,
+     `tokenizeChat(chat, model, opts)`, and `tokenizeChats(...)`.
+     Use `@dqbd/tiktoken` with `cl100k_base` / `o200k_base`,
+     explicit model strings, and a small module-scope encoder cache.
+   - Keep chat counting text-only for this slice: content tokens,
+     per-message overhead, optional `name`, and optional
+     `thoughts`. Multimodal image-token math waits for 7-8b/c or a
+     fixture that needs it.
+   - Isolated unit tests only: encoding selection, empty string,
+     ASCII baseline, text chat overhead, `name`, `thoughts`, and
+     `tokenizeChats` summing.
 
-   Skip-list: 7-8b (token preflight across the template
-   walker), 7-8c (budget finalization), 7-7d (re-enter once
-   7-8a lands), 7-5e (same).
+   Skip-list: 7-8b (token preflight across the template walker),
+   7-8c (budget finalization), 7-7d (re-enter once 7-8a lands),
+   7-5e (same), exact non-tiktoken provider tokenizers, plugin /
+   custom tokenizers, Google remote count-token calls, local GGUF
+   tokenization, and multimodal image-token math.
 
-   If 7-8a's model dispatcher matrix is too wide to ship as
-   one slice, defer to **7-9a — trigger sandbox** or
-   **7-10a — template card parsing** instead; both are
-   independently shippable parallel fronts.
+   If even the capped tiktoken import path gets blocked, defer to
+   **7-9a — trigger sandbox** or **7-10a — template card parsing**
+   instead; both are independently shippable parallel fronts.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -132,6 +136,7 @@ the short pickup runbook.
 | 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                   |
 | 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`. |
 | 7-7c  | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.       |
+| 7-7e  | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` splicer.      |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

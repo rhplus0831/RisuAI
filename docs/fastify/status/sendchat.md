@@ -684,9 +684,10 @@ what each fixture pins.
   as NovelAI, NovelList, and ooba OAI-compatible move with Phase 7.
 - **Phase 7.** Stage 2 prompt assembly moves server-side. In
   progress: the server has the `/api/v1/generate/chat` scaffold
-  plus variable expansion, static sections, and plain sections;
-  the root assembler and the history/lorebook/template/token/trigger
-  leaves remain to land.
+  plus variable expansion, static/plain sections, history shaping,
+  regex scripts, active-module helpers, and lorebook activation
+  through depth-prompt helpers; the root assembler and the
+  template/token/trigger leaves remain to land.
 - **Phase 9.** Stages 1 + 4 move server-side; Stage 0 becomes a
   ~50-line bridge that owns the UI lease, abort forwarding, and
   side-effect dispatch.

@@ -76,15 +76,17 @@ Under `server/fastify/src/prompt/`:
 - `assemble.ts` - walks the preset's `promptTemplate`. Substitutes
   `{{user}}`, `{{char}}`, persona, description, author note,
   example messages, scenario, jailbreak.
-- `lorebook.ts` - constant + keyword + recursion. Budget-aware.
-  Returns activation metadata (which entries fired, why) for
-  `prompt` SSE events.
+- `lorebook.ts` - constant + keyword + recursion, depth-prompt
+  metadata, and later budget-aware truncation. Returns activation
+  metadata (which entries fired, why) for `prompt` SSE events.
 - `history.ts` - chat history shaping (role mapping, multimodal
   fold-in, ChatML-style assembly).
 - `templates.ts` - prompt template cards (chat ranges, cache
   markers, systemized chat, position slots).
 - `tokens.ts` - budget pruning. Reuses or ports the existing
-  tokenizer dispatcher when the 7-8 token slice lands.
+  tokenizer surface when the 7-8 token slice lands. The first token
+  slice is intentionally tiktoken-only; exact provider tokenizers
+  are fixture-driven follow-ups.
 - `variables.ts` - `risuChatParser` port for variable expansion,
   `#when`, conditional cards.
 - `scripts.ts` - prompt regex script chain used by history and later
@@ -134,6 +136,11 @@ thin adapters in server-backed mode. The coordinator posts to
   custom prompt items return their text via the existing browser
   bridge for now. Server-side plugin execution is out of the
   migration scope.
+- **Do not port whole browser subsystems as support slices.** When a
+  helper such as tokenization fans out into provider-specific
+  browser assets, plugin hooks, or remote calls, Phase 7 ports only
+  the surface needed by the active assembly slice and defers exact
+  parity until a fixture demands it.
 - **Do not change the SSE event shape across phases.** Once Phase
   7 ships an event, Phase 9 must not rename it.
 
@@ -295,14 +302,36 @@ Tentative breakdown:
 
 ### Tier 2 — Supporting infrastructure
 
-**7-8a … 7-8c — Tokens / budget.** Port
+**7-8a … 7-8c — Tokens / budget.** Port the budget callers from
 `src/ts/process/promptBudget/{preflightTemplateTokens,
-finalizeRequestBudget}.ts`.
+finalizeRequestBudget}.ts`, but do **not** treat 7-8a as a full
+SPA tokenizer migration.
 
-- **7-8a** — Tokenizer integration on the server. The SPA's
-  `src/ts/tokenizer.ts` dispatcher is partly environment-agnostic;
-  decide reuse vs port at slice start.
-- **7-8b** — Token preflight accounting.
+Scope re-verification on 2026-05-23 found that
+`src/ts/tokenizer.ts` is a 654-line browser dispatcher across 17
+tokenizer families (`tik`, Mistral, NovelAI, Claude, Llama,
+NovelList, Gemma, Cohere, DeepSeek, GLM, and others). It depends on
+Svelte `DBState`, plugin tokenizer hooks, browser-loaded
+`/token/...` assets through `@mlc-ai/web-tokenizers`, Google
+count-token calls, local GGUF tokenization, and multimodal image
+math. Porting that entire dispatcher would exceed the intended
+support-slice size and is not required for the immediate Phase 7
+consumers.
+
+- **7-8a** — Minimal server tokenizer. Implement a synchronous,
+  Svelte-free surface in `server/fastify/src/prompt/tokens.ts`:
+  `encodingForModel(model)`, `tokenize(text, model)`,
+  `tokenizeChat(chat, model, opts)`, and `tokenizeChats(...)`.
+  Use `@dqbd/tiktoken` with `cl100k_base` and `o200k_base`, an
+  explicit model string, and a small module-scope encoder cache.
+  Count text-only chat messages plus optional name / thoughts
+  overhead. Out of scope: `@mlc-ai/web-tokenizers`, exact
+  Claude/Mistral/Llama/Gemma/Cohere/DeepSeek/NovelAI/NovelList/GLM
+  tokenizers, plugin/custom tokenizers, Google remote count-token
+  calls, local GGUF models, and multimodal image-token math.
+- **7-8b** — Token preflight accounting across the template walker.
+  Add multimodal image-token accounting here only if a fixture makes
+  it observable.
 - **7-8c** — Budget finalization (pruning order, fallback chains).
 
 **7-9a … 7-9c — Triggers.** Port `src/ts/process/triggers.ts`.

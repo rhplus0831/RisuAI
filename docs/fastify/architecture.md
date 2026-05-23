@@ -5,9 +5,8 @@ Date: 2026-05-23
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Phase 1, Phase 2,
 Phase 3, the Phase 6 completion-route files through closeout slice
-6-28, and Phase 7 slices 7-1 through 7-6d plus 7-5c already
-exist; modules marked by later phases are target layout, not
-current implementation.
+6-28, and Phase 7 slices through 7-7e already exist; modules marked
+by later phases are target layout, not current implementation.
 
 ## Server module layout
 
@@ -72,7 +71,7 @@ server/fastify/
       scripts.ts          regex script chain used by prompt leaves
       modules.ts          active module regex/assets helpers
       assemble.ts         prompt template walker (stub)
-      lorebook.ts         activation, recursion, budget (stub)
+      lorebook.ts         activation, recursion, depth helpers; budget pending
       templates.ts        prompt-template cards (stub)
       tokens.ts           budget accounting (stub)
       triggers.ts         editInput/editRequest hooks (stub)
@@ -237,8 +236,10 @@ At the target state, the server owns:
   server-backed adapter. Uncovered providers continue through the
   local browser dispatch path until a routed server slice lands.
 - Prompt assembly, tokenization, lorebook activation, and Hypa V3
-  memory after Phases 7-8 close. Today only the Phase 7 variable,
-  static-section, and plain-section leaves are server-side.
+  memory after Phases 7-8 close. Today the Phase 7 variable,
+  static-section, plain-section, history, script, module, and
+  lorebook leaves are server-side, but the root assembler and token /
+  trigger/template infrastructure are still pending.
 
 Browser owns:
 

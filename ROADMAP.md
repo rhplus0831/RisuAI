@@ -13,6 +13,31 @@ counts, next pickup) see [`HANDOVER.md`](HANDOVER.md). For the
 narrative phase doc see
 [`docs/fastify/phases/phase-7-prompt-assembly.md`](docs/fastify/phases/phase-7-prompt-assembly.md).
 
+## Scope Re-Verification (2026-05-23)
+
+The remaining plan was re-checked against the current prompt and
+tokenizer code after the tokenizer slice proved wider than the
+original wording implied. The only slice whose likely implementation
+scope materially exceeded its planning label is **7-8a**.
+
+- `src/ts/tokenizer.ts` is a 654-line browser dispatcher spanning
+  17 tokenizer families, Svelte `DBState`, plugin tokenizer hooks,
+  browser `fetch('/token/...')` assets, Google count-token calls,
+  local GGUF tokenization, and multimodal image-token math. Treating
+  7-8a as "port the dispatcher" would turn a support slice into a
+  provider-matrix migration.
+- **7-8a is now capped at the minimal server tokenizer surface**
+  needed by Phase 7 budget heuristics: explicit-model tiktoken
+  helpers (`cl100k_base` / `o200k_base`) plus text-only chat token
+  counting. It must not pull in Svelte stores, plugin execution,
+  `@mlc-ai/web-tokenizers`, Google remote count-token calls, local
+  model tokenizers, or multimodal image math.
+- Exact non-tiktoken provider tokenizers are follow-up work and land
+  only when a fixture or provider slice needs them. The immediate
+  Phase 7 consumers (7-7d lorebook truncation and 7-5e history token
+  accumulation) need stable conservative counts, not full tokenizer
+  parity.
+
 ## Landed slices
 
 | Slice | Commit     | Summary                                                                                                                          |
@@ -68,10 +93,15 @@ Lorebook (`lorebook.ts`):
 
 Tokens (`tokens.ts`):
 
-- **7-8a** — tokenizer integration on the server. The SPA's
-  `src/ts/tokenizer.ts` dispatcher is partly environment-
-  agnostic; decide reuse vs. port at slice start.
-- **7-8b** — token preflight accounting (after 7-8a).
+- **7-8a** — minimal server tokenizer. Implement explicit-model
+  tiktoken helpers (`encodingForModel`, `tokenize`,
+  `tokenizeChat`, `tokenizeChats`) for `cl100k_base` /
+  `o200k_base`, with text-only chat counting. Full SPA tokenizer
+  dispatcher parity is out of scope; provider-exact tokenizers land
+  later per fixture.
+- **7-8b** — token preflight accounting across the template walker
+  (after 7-8a). Add multimodal image-token accounting here only if
+  a fixture needs it.
 - **7-8c** — budget finalization (pruning order, fallback
   chains) (after 7-8b).
 
@@ -196,4 +226,6 @@ When a slice lands:
 
 When the roadmap shifts (e.g., a sub-slice gets re-scoped or
 combined), keep the **Sequential order** section as the single
-source of truth and update the per-tier notes to match.
+source of truth and update the per-tier notes to match. If the
+implementation check shows that a slice touches multiple independent
+subsystems, split it before work starts and record the boundary here.
