@@ -255,6 +255,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       'stage',
       'stage',
       'prompt',
+      'message_patch',
       'stage',
       'info',
       'done',
@@ -271,7 +272,14 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       prompt.data.messages,
     )
     expect(Array.isArray(prompt.data.biases)).toBe(true)
-    // The prompt stage closes, then telemetry rides before the terminal done.
+    const messagePatch = events.find((e) => e.type === 'message_patch')
+    expect(messagePatch?.data.patch).toMatchObject({
+      chatId: 'chat-1',
+      characterId: 'char-1',
+      messageMutations: expect.any(Array),
+      chatVarMutations: expect.any(Array),
+    })
+    // The prompt stage closes after the patch, then telemetry rides before the terminal done.
     expect(events.at(-3)).toEqual({ type: 'stage', data: { stage: 'prompt', status: 'end' } })
     expect(events.at(-2)?.type).toBe('info')
     expect(events.at(-1)).toEqual({ type: 'done', data: {} })
@@ -322,7 +330,13 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       payload: basePayload,
     })
     expect(res.statusCode).toBe(200)
-    expect(parseEvents(res.body).at(-1)?.type).toBe('done')
+    const events = parseEvents(res.body)
+    expect(events.at(-1)?.type).toBe('done')
+    const patch = events.find((e) => e.type === 'message_patch')?.data.patch as
+      | { chatVarMutations?: unknown[]; varChanged?: boolean }
+      | undefined
+    expect(patch?.varChanged).toBe(true)
+    expect(patch?.chatVarMutations).toEqual([{ key: '$score', before: null, after: '9' }])
 
     const bootstrap = await harness.app.inject({
       method: 'GET',

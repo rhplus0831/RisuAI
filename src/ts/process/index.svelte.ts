@@ -1,9 +1,5 @@
 import { get, writable } from 'svelte/store'
-import {
-  type character,
-  type MessageGenerationInfo,
-  type Chat,
-} from '../storage/database.svelte'
+import { type character, type MessageGenerationInfo, type Chat } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
 import { language } from '../../lang'
 import { alertError } from '../alert'
@@ -31,7 +27,8 @@ import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 import { dispatchRequest } from './dispatch/dispatchRequest'
 import { isFastifyServer } from '../platform'
-import { requestServerChat } from './request/serverChat'
+import { requestServerChat, type ServerChatInput } from './request/serverChat'
+import { applyServerMessagePatch } from './request/serverMessagePatch'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -63,6 +60,10 @@ export const abortChat = writable(false)
 export let requestTokenParts: { [key: string]: requestTokenPart[] } = {}
 export let previewFormated: OpenAIChat[] = []
 export let previewBody: string = ''
+
+function numberFrom(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
 
 export async function sendChat(
   chatProcessIndex = -1,
@@ -157,325 +158,375 @@ export async function sendChat(
   }
 
   try {
-  const setProcessStage = (stage: number) => chatProcessStage.set(stage)
+    const setProcessStage = (stage: number) => chatProcessStage.set(stage)
 
-  const ctx = setupSendChatContext({
-    chatProcessIndex,
-    chatAdditonalTokens: arg.chatAdditonalTokens,
-  })
-  selectedChar = ctx.selectedChar
-  selectedChat = ctx.selectedChat
-  const nowChatroom = ctx.nowChatroom
-  const promptInfo = ctx.promptInfo
-  const tokenizer = ctx.tokenizer
-  const maxContextTokens = ctx.maxContextTokens
-
-  currentChar = nowChatroom
-  let currentChat = runCurrentChatFunction(nowChatroom.chats[selectedChat])
-  nowChatroom.chats[selectedChat] = currentChat
-
-  // 7-12c: server-side prompt assembly for the read-only preview paths.
-  // The `/chat` route assembles the prompt server-side and returns it; for
-  // `preview` / `previewPrompt` no dispatch happens and no chat-row deltas
-  // need to come back, so this is safe behind the gate. The send / continue
-  // / regenerate path stays local until `message_patch` lands (7-12d).
-  if (
-    isFastifyServer &&
-    DBState.db.useServerPromptAssembly &&
-    (arg.preview || arg.previewPrompt)
-  ) {
-    const served = await requestServerChat(
-      {
-        chatId: currentChat.id ?? '',
-        characterId: currentChar.chaId,
-        mode: arg.previewPrompt ? 'preview_prompt' : 'preview',
-      },
-      abortSignal,
-    )
-    if (served.status === 'aborted') {
-      return false
-    }
-    if (served.status === 'error') {
-      throwError(served.error)
-      return false
-    }
-    if (arg.previewPrompt) {
-      const promptText = served.prompt.promptInfo?.promptText
-      previewBody = typeof promptText === 'string' ? promptText : ''
-    } else {
-      previewFormated = (served.prompt.formated as OpenAIChat[]) ?? []
-    }
-    return true
-  }
-
-  setProcessStage(1)
-  stageTimings.stage1Start = Date.now()
-  const unformated = {
-    main: [] as OpenAIChat[],
-    jailbreak: [] as OpenAIChat[],
-    chats: [] as OpenAIChat[],
-    lorebook: [] as OpenAIChat[],
-    globalNote: [] as OpenAIChat[],
-    authorNote: [] as OpenAIChat[],
-    lastChat: [] as OpenAIChat[],
-    description: [] as OpenAIChat[],
-    postEverything: [] as OpenAIChat[],
-    personaPrompt: [] as OpenAIChat[],
-  }
-
-  const { promptTemplate, usingPromptTemplate } = normalizeTemplate(currentChar)
-
-  if (!currentChar.utilityBot && !promptTemplate) {
-    const sections = buildPlainPromptSections(currentChar)
-    unformated.main.push(...sections.main)
-    unformated.jailbreak.push(...sections.jailbreak)
-    unformated.globalNote.push(...sections.globalNote)
-  }
-
-  unformated.authorNote.push(...buildAuthorNote(currentChar, currentChat))
-  unformated.postEverything.push(...buildCotInstruction(usingPromptTemplate))
-
-  unformated.description.push(await buildDescription(currentChar, currentChat))
-  unformated.personaPrompt.push(...buildPersona(currentChar))
-  unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
-
-  const lore = await buildLorebookContext(currentChar, unformated)
-  const { resolvePosition, positionParser, depthPrompts } = lore
-
-  //await tokenize currernt
-  let currentTokens = DBState.db.maxResponse
-
-  //for unexpected error
-  currentTokens += 50
-
-  const preflight = await preflightTemplateTokens(
-    promptTemplate,
-    usingPromptTemplate,
-    unformated,
-    tokenizer,
-    currentChar,
-    positionParser,
-  )
-  currentTokens += preflight.addedTokens
-  const memoryCardUsed = preflight.memoryCardUsed
-  const hasCachePoint = preflight.hasCachePoint
-
-  const history = await buildHistoryWindow({
-    currentChar,
-    currentChat,
-    usingPromptTemplate,
-    tokenizer,
-    findCharacterbyIdwithCache,
-    depthPrompts,
-    resolvePosition,
-  })
-  if (history.stopSending === true) {
-    return false
-  }
-  currentTokens += history.addedTokens
-  currentChat = history.currentChat
-  const triggerResult = history.triggerResult
-
-  const memWindow = await buildMemoryWindow({
-    chats: history.chats,
-    currentTokens,
-    maxContextTokens,
-    currentChat,
-    nowChatroom,
-    tokenizer,
-    selectedChar,
-    selectedChat,
-    memoryCardUsed,
-    promptTemplate,
-    unformated,
-    stageTimings,
-    throwError,
-    setProcessStage,
-  })
-  if (memWindow.stopSending === true) {
-    return false
-  }
-  currentChat = memWindow.currentChat
-  const memories = memWindow.memories
-
-  let biases: [string, number][] = DBState.db.bias.concat(currentChar.bias).map((v) => {
-    return [
-      risuChatParser(
-        v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'),
-        { chara: currentChar },
-      ),
-      v[1],
-    ]
-  })
-
-  for (const depthPrompt of depthPrompts) {
-    const chat: OpenAIChat = {
-      role: depthPrompt.role,
-      content: risuChatParser(resolvePosition(depthPrompt.prompt), { chara: currentChar }),
-    }
-    const depth =
-      depthPrompt.pos === 'depth' ? depthPrompt.depth : unformated.chats.length - depthPrompt.depth
-    unformated.chats.splice(depth, 0, chat)
-  }
-
-  if (triggerResult) {
-    if (triggerResult.additonalSysPrompt.promptend) {
-      unformated.postEverything.push({
-        role: 'system',
-        content: triggerResult.additonalSysPrompt.promptend,
-      })
-    }
-    if (triggerResult.additonalSysPrompt.historyend) {
-      unformated.lastChat.push({
-        role: 'system',
-        content: triggerResult.additonalSysPrompt.historyend,
-      })
-    }
-    if (triggerResult.additonalSysPrompt.start) {
-      unformated.lastChat.unshift({
-        role: 'system',
-        content: triggerResult.additonalSysPrompt.start,
-      })
-    }
-  }
-
-  //make into one
-
-  const formatOrder = safeStructuredClone(DBState.db.formatingOrder)
-  if (formatOrder) {
-    formatOrder.push('postEverything')
-  }
-
-  const render = await renderFinalPrompt({
-    currentChar,
-    unformated,
-    promptTemplate,
-    usingPromptTemplate,
-    formatOrder: formatOrder ?? [],
-    memories,
-    positionParser,
-    hasCachePoint,
-    isContinue: !!arg.continue,
-  })
-  let formated = render.formated
-  if (render.promptText) {
-    promptInfo.promptText = render.promptText
-  }
-
-  const budget = await finalizeRequestBudget(
-    formated,
-    maxContextTokens,
-    DBState.db.maxResponse,
-    tokenizer,
-  )
-  if (!budget.ok) {
-    throwError(
-      language.errors.toomuchtoken +
-        '\n\nAt token rechecking. Required Tokens: ' +
-        budget.inputTokens,
-    )
-    return false
-  }
-  formated = budget.formated
-  const inputTokens = budget.inputTokens
-  const outputTokens = budget.outputTokens
-
-  const dispatch = await dispatchRequest({
-    formated,
-    biases,
-    currentChar,
-    nowChatroom,
-    inputTokens,
-    outputTokens,
-    maxContextTokens,
-    stageTimings,
-    abortSignal,
-    isContinue: !!arg.continue,
-    isPreview: !!arg.preview,
-    isPreviewPrompt: !!arg.previewPrompt,
-    setProcessStage,
-  })
-  if (dispatch.status === 'preview') {
-    previewFormated = dispatch.formated
-    return true
-  }
-  if (dispatch.status === 'previewPrompt') {
-    previewBody = dispatch.body
-    return true
-  }
-  if (dispatch.status === 'aborted') {
-    return false
-  }
-  if (dispatch.status === 'failed') {
-    generationInfo = dispatch.generationInfo
-    throwError(dispatch.reason)
-    return false
-  }
-  const req = dispatch.req
-  const generationId = dispatch.generationId
-  generationInfo = dispatch.generationInfo
-
-  const orchestrate = await orchestrateResponse({
-    req,
-    arg,
-    nowChatroom,
-    currentChar,
-    currentChat,
-    selectedChar,
-    selectedChat,
-    generationId,
-    generationInfo,
-    promptInfo,
-    abortSignal,
-    reformatContent,
-    runCurrentChatFunction,
-  })
-  if (orchestrate.status === 'aborted') {
-    return false
-  }
-  if (orchestrate.status === 'continue') {
-    // Handoff — see iOwnDoingChat contract above.
-    doingChat.set(false)
-    iOwnDoingChat = false
-    return await sendChat(chatProcessIndex, {
+    const ctx = setupSendChatContext({
+      chatProcessIndex,
       chatAdditonalTokens: arg.chatAdditonalTokens,
-      continue: true,
-      signal: abortSignal,
-      usedContinueTokens: orchestrate.resultTokens,
     })
-  }
-  currentChat = orchestrate.currentChat
-  const result = orchestrate.result
-  const emoChanged = orchestrate.emoChanged
-  const resendChat = orchestrate.resendChat
+    selectedChar = ctx.selectedChar
+    selectedChat = ctx.selectedChat
+    const nowChatroom = ctx.nowChatroom
+    const promptInfo = ctx.promptInfo
+    const tokenizer = ctx.tokenizer
+    const maxContextTokens = ctx.maxContextTokens
 
-  const stage4 = await runStage4({
-    req,
-    currentChar,
-    result,
-    resendChat,
-    emoChanged,
-    abortSignal,
-    selectedChar,
-    selectedChat,
-    stageTimings,
-    generationInfo,
-    throwError,
-    setProcessStage,
-  })
-  if (stage4.status === 'resend') {
-    // Handoff — see iOwnDoingChat contract above.
-    doingChat.set(false)
-    iOwnDoingChat = false
-    return await sendChat(chatProcessIndex, {
-      signal: abortSignal,
+    currentChar = nowChatroom
+    let currentChat = nowChatroom.chats[selectedChat]
+
+    let formated: OpenAIChat[] = []
+    let biases: [string, number][] = []
+    let inputTokens = 0
+    let outputTokens = DBState.db.maxResponse
+    let assembledByServer = false
+
+    // 7-12d-ii: server-side prompt assembly with browser-side patch replay.
+    // Provider dispatch still runs locally through `dispatchRequest`; `/chat`
+    // only owns prompt assembly and the pre-dispatch chat/scriptstate deltas.
+    if (isFastifyServer && DBState.db.useServerPromptAssembly) {
+      const mode: ServerChatInput['mode'] = arg.previewPrompt
+        ? 'preview_prompt'
+        : arg.preview
+          ? 'preview'
+          : arg.continue
+            ? 'continue'
+            : 'send'
+      const lastMessage = currentChat.message.at(-1)
+      const userMessage =
+        mode === 'send' && lastMessage?.role === 'user' ? lastMessage.data : undefined
+      const canUseServerAssembly = mode !== 'send' || typeof userMessage === 'string'
+      if (canUseServerAssembly) {
+        setProcessStage(1)
+        stageTimings.stage1Start = Date.now()
+        const input: ServerChatInput = {
+          chatId: currentChat.id ?? '',
+          characterId: currentChar.chaId,
+          mode,
+        }
+        if (typeof userMessage === 'string') {
+          input.userMessage = userMessage
+        }
+        const served = await requestServerChat(input, abortSignal)
+        if (served.status === 'aborted') {
+          return false
+        }
+        if (served.status === 'error') {
+          throwError(served.error)
+          return false
+        }
+        stageTimings.stage1Duration =
+          numberFrom(served.info?.timings?.prompt) ?? Date.now() - stageTimings.stage1Start
+        if (arg.preview || arg.previewPrompt) {
+          if (arg.previewPrompt) {
+            const promptText = served.prompt.promptInfo?.promptText
+            previewBody = typeof promptText === 'string' ? promptText : ''
+          } else {
+            previewFormated = (served.prompt.formated as OpenAIChat[]) ?? []
+          }
+          return true
+        }
+
+        for (const patch of served.messagePatches) {
+          applyServerMessagePatch(currentChat, patch)
+        }
+        nowChatroom.chats[selectedChat] = currentChat
+
+        if (!served.prompt.formated) {
+          throwError('server prompt assembly did not return formated rows')
+          return false
+        }
+        formated = served.prompt.formated
+        biases = served.prompt.biases ?? []
+        const promptText = served.prompt.promptInfo?.promptText
+        if (Array.isArray(promptText)) {
+          promptInfo.promptText = promptText as OpenAIChat[]
+        }
+        inputTokens =
+          numberFrom(served.info?.tokens?.prompt) ??
+          numberFrom(served.prompt.promptInfo?.inputTokens) ??
+          0
+        outputTokens =
+          numberFrom(served.info?.responseBudget) ??
+          numberFrom(served.prompt.promptInfo?.outputTokens) ??
+          DBState.db.maxResponse
+        assembledByServer = true
+      }
+    }
+
+    if (!assembledByServer) {
+      currentChat = runCurrentChatFunction(currentChat)
+      nowChatroom.chats[selectedChat] = currentChat
+
+      setProcessStage(1)
+      stageTimings.stage1Start = Date.now()
+      const unformated = {
+        main: [] as OpenAIChat[],
+        jailbreak: [] as OpenAIChat[],
+        chats: [] as OpenAIChat[],
+        lorebook: [] as OpenAIChat[],
+        globalNote: [] as OpenAIChat[],
+        authorNote: [] as OpenAIChat[],
+        lastChat: [] as OpenAIChat[],
+        description: [] as OpenAIChat[],
+        postEverything: [] as OpenAIChat[],
+        personaPrompt: [] as OpenAIChat[],
+      }
+
+      const { promptTemplate, usingPromptTemplate } = normalizeTemplate(currentChar)
+
+      if (!currentChar.utilityBot && !promptTemplate) {
+        const sections = buildPlainPromptSections(currentChar)
+        unformated.main.push(...sections.main)
+        unformated.jailbreak.push(...sections.jailbreak)
+        unformated.globalNote.push(...sections.globalNote)
+      }
+
+      unformated.authorNote.push(...buildAuthorNote(currentChar, currentChat))
+      unformated.postEverything.push(...buildCotInstruction(usingPromptTemplate))
+
+      unformated.description.push(await buildDescription(currentChar, currentChat))
+      unformated.personaPrompt.push(...buildPersona(currentChar))
+      unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
+
+      const lore = await buildLorebookContext(currentChar, unformated)
+      const { resolvePosition, positionParser, depthPrompts } = lore
+
+      //await tokenize currernt
+      let currentTokens = DBState.db.maxResponse
+
+      //for unexpected error
+      currentTokens += 50
+
+      const preflight = await preflightTemplateTokens(
+        promptTemplate,
+        usingPromptTemplate,
+        unformated,
+        tokenizer,
+        currentChar,
+        positionParser,
+      )
+      currentTokens += preflight.addedTokens
+      const memoryCardUsed = preflight.memoryCardUsed
+      const hasCachePoint = preflight.hasCachePoint
+
+      const history = await buildHistoryWindow({
+        currentChar,
+        currentChat,
+        usingPromptTemplate,
+        tokenizer,
+        findCharacterbyIdwithCache,
+        depthPrompts,
+        resolvePosition,
+      })
+      if (history.stopSending === true) {
+        return false
+      }
+      currentTokens += history.addedTokens
+      currentChat = history.currentChat
+      const triggerResult = history.triggerResult
+
+      const memWindow = await buildMemoryWindow({
+        chats: history.chats,
+        currentTokens,
+        maxContextTokens,
+        currentChat,
+        nowChatroom,
+        tokenizer,
+        selectedChar,
+        selectedChat,
+        memoryCardUsed,
+        promptTemplate,
+        unformated,
+        stageTimings,
+        throwError,
+        setProcessStage,
+      })
+      if (memWindow.stopSending === true) {
+        return false
+      }
+      currentChat = memWindow.currentChat
+      const memories = memWindow.memories
+
+      biases = DBState.db.bias.concat(currentChar.bias).map((v) => {
+        return [
+          risuChatParser(
+            v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'),
+            { chara: currentChar },
+          ),
+          v[1],
+        ]
+      })
+
+      for (const depthPrompt of depthPrompts) {
+        const chat: OpenAIChat = {
+          role: depthPrompt.role,
+          content: risuChatParser(resolvePosition(depthPrompt.prompt), { chara: currentChar }),
+        }
+        const depth =
+          depthPrompt.pos === 'depth'
+            ? depthPrompt.depth
+            : unformated.chats.length - depthPrompt.depth
+        unformated.chats.splice(depth, 0, chat)
+      }
+
+      if (triggerResult) {
+        if (triggerResult.additonalSysPrompt.promptend) {
+          unformated.postEverything.push({
+            role: 'system',
+            content: triggerResult.additonalSysPrompt.promptend,
+          })
+        }
+        if (triggerResult.additonalSysPrompt.historyend) {
+          unformated.lastChat.push({
+            role: 'system',
+            content: triggerResult.additonalSysPrompt.historyend,
+          })
+        }
+        if (triggerResult.additonalSysPrompt.start) {
+          unformated.lastChat.unshift({
+            role: 'system',
+            content: triggerResult.additonalSysPrompt.start,
+          })
+        }
+      }
+
+      //make into one
+
+      const formatOrder = safeStructuredClone(DBState.db.formatingOrder)
+      if (formatOrder) {
+        formatOrder.push('postEverything')
+      }
+
+      const render = await renderFinalPrompt({
+        currentChar,
+        unformated,
+        promptTemplate,
+        usingPromptTemplate,
+        formatOrder: formatOrder ?? [],
+        memories,
+        positionParser,
+        hasCachePoint,
+        isContinue: !!arg.continue,
+      })
+      formated = render.formated
+      if (render.promptText) {
+        promptInfo.promptText = render.promptText
+      }
+
+      const budget = await finalizeRequestBudget(
+        formated,
+        maxContextTokens,
+        DBState.db.maxResponse,
+        tokenizer,
+      )
+      if (!budget.ok) {
+        throwError(
+          language.errors.toomuchtoken +
+            '\n\nAt token rechecking. Required Tokens: ' +
+            budget.inputTokens,
+        )
+        return false
+      }
+      formated = budget.formated
+      inputTokens = budget.inputTokens
+      outputTokens = budget.outputTokens
+    }
+
+    const dispatch = await dispatchRequest({
+      formated,
+      biases,
+      currentChar,
+      nowChatroom,
+      inputTokens,
+      outputTokens,
+      maxContextTokens,
+      stageTimings,
+      abortSignal,
+      isContinue: !!arg.continue,
+      isPreview: !!arg.preview,
+      isPreviewPrompt: !!arg.previewPrompt,
+      setProcessStage,
     })
-  }
-  return true
+    if (dispatch.status === 'preview') {
+      previewFormated = dispatch.formated
+      return true
+    }
+    if (dispatch.status === 'previewPrompt') {
+      previewBody = dispatch.body
+      return true
+    }
+    if (dispatch.status === 'aborted') {
+      return false
+    }
+    if (dispatch.status === 'failed') {
+      generationInfo = dispatch.generationInfo
+      throwError(dispatch.reason)
+      return false
+    }
+    const req = dispatch.req
+    const generationId = dispatch.generationId
+    generationInfo = dispatch.generationInfo
+
+    const orchestrate = await orchestrateResponse({
+      req,
+      arg,
+      nowChatroom,
+      currentChar,
+      currentChat,
+      selectedChar,
+      selectedChat,
+      generationId,
+      generationInfo,
+      promptInfo,
+      abortSignal,
+      reformatContent,
+      runCurrentChatFunction,
+    })
+    if (orchestrate.status === 'aborted') {
+      return false
+    }
+    if (orchestrate.status === 'continue') {
+      // Handoff — see iOwnDoingChat contract above.
+      doingChat.set(false)
+      iOwnDoingChat = false
+      return await sendChat(chatProcessIndex, {
+        chatAdditonalTokens: arg.chatAdditonalTokens,
+        continue: true,
+        signal: abortSignal,
+        usedContinueTokens: orchestrate.resultTokens,
+      })
+    }
+    currentChat = orchestrate.currentChat
+    const result = orchestrate.result
+    const emoChanged = orchestrate.emoChanged
+    const resendChat = orchestrate.resendChat
+
+    const stage4 = await runStage4({
+      req,
+      currentChar,
+      result,
+      resendChat,
+      emoChanged,
+      abortSignal,
+      selectedChar,
+      selectedChat,
+      stageTimings,
+      generationInfo,
+      throwError,
+      setProcessStage,
+    })
+    if (stage4.status === 'resend') {
+      // Handoff — see iOwnDoingChat contract above.
+      doingChat.set(false)
+      iOwnDoingChat = false
+      return await sendChat(chatProcessIndex, {
+        signal: abortSignal,
+      })
+    }
+    return true
   } finally {
     if (iOwnDoingChat) {
       doingChat.set(false)
     }
   }
 }
-

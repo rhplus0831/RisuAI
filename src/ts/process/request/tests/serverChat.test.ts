@@ -5,11 +5,13 @@ vi.mock('../../../storage/nodeStorage', () => ({
 }))
 
 import { requestServerChat, type ServerChatInput } from '../serverChat'
+import type { ServerChatMessagePatch } from '../serverChatEvents'
 import {
   getServerChatCalls,
   resetServerChatState,
   serverChatFetch,
   setServerChatError,
+  setServerChatMessagePatch,
   setServerChatPrompt,
 } from '../../__fixtures__/mocks/serverChatFetch'
 
@@ -40,6 +42,7 @@ describe('requestServerChat', () => {
     expect(res.prompt.promptInfo).toEqual({ promptText: 'hello there' })
     expect(res.info?.tokens).toEqual({ prompt: 7, total: 7 })
     expect(res.info?.responseBudget).toBe(50)
+    expect(res.messagePatches).toEqual([])
   })
 
   it('surfaces the full formated rows + biases from the prompt event (7-12b)', async () => {
@@ -58,6 +61,34 @@ describe('requestServerChat', () => {
     if (res.status !== 'ok') return
     expect(res.prompt.formated).toEqual([{ role: 'user', content: 'hi', name: 'Tess' }])
     expect(res.prompt.biases).toEqual([['hello', -100]])
+  })
+
+  it('collects message_patch events from the stream', async () => {
+    const patch: ServerChatMessagePatch = {
+      chatId: 'chat-1',
+      characterId: 'char-1',
+      selectedCharID: 0,
+      chatPage: 0,
+      varChanged: true,
+      messageMutations: [
+        {
+          type: 'replace_all',
+          source: 'run_var',
+          beforeLength: 1,
+          afterLength: 1,
+          messages: [{ role: 'user', data: 'hello' }],
+        },
+      ],
+      chatVarMutations: [{ key: '$mood', before: null, after: 'bright' }],
+      additionalSystemPrompt: [],
+    }
+    setServerChatMessagePatch(patch)
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChat(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.messagePatches).toEqual([patch])
   })
 
   it('sends the intent body and the risu-auth header', async () => {

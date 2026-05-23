@@ -12,16 +12,15 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 7, server-side prompt assembly.
-- Last landed slice: 7-12d-i, the typed assembly mutation payload plus
-  `varChanged` persistence for send-like `/chat` requests.
-- Current blocker: the typed mutation payload is still internal to
-  `AssembleResult`; the browser needs it serialized as `message_patch`
-  and applied before send / continue / regenerate can use server prompt
-  assembly.
-- Next default pickup: 7-12d-ii, `message_patch` SSE emission plus the
-  browser applier while provider dispatch still runs locally.
-- Last recorded baselines after 7-12d-i: `pnpm check` clean,
-  `pnpm api:test` 886 tests, `pnpm test` 618 tests plus 4 skipped, and
+- Last landed slice: 7-12d-ii, `message_patch` SSE emission plus the
+  browser applier for server prompt assembly while provider dispatch still
+  runs locally.
+- Current blocker: `/chat` still stops after prompt assembly; provider
+  chunks are not transported through the chat SSE taxonomy yet.
+- Next default pickup: 7-12d-iii-a, provider-agnostic server chunk
+  transport with server-only tests.
+- Last recorded baselines after 7-12d-ii: `pnpm check` clean,
+  `pnpm api:test` 887 tests, `pnpm test` 622 tests plus 4 skipped, and
   `pnpm build` passing with existing CSS / browser-externalization /
   plugin-timing / bundle-size warnings.
 
@@ -44,7 +43,7 @@ Completed phase detail and old landed-slice logs live in
 | Removals                                    | Closed; historical detail archived.                                            |
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                     |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening follows Phase 7 needs. |
-| Server-side prompt assembly                 | Active; 7-12d-ii `message_patch` applier is next.                              |
+| Server-side prompt assembly                 | Active; 7-12d-iii-a server chunk transport is next.                            |
 | Hypa V3 memory                              | Not started; waits for Phase 7.                                                |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces.   |
 

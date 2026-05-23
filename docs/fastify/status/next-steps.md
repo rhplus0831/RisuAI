@@ -7,50 +7,55 @@ were moved to [`../phases-completed/`](../phases-completed/).
 
 ## Last Done
 
-7-12d-i landed the server-side mutation contract on `AssembleResult` and
-persisted `varChanged` for send-like `/api/v1/generate/chat` requests.
-The payload now captures user-message appends, run-var / start-trigger
-message replacements, chat variable deltas, and `additonalSysPrompt`
-prompt-row inserts. Preview and preview-prompt remain read-only from the
-browser side.
+7-12d-ii serialized the 7-12d-i mutation contract as a typed
+`message_patch` SSE event, taught `requestServerChat` to collect patches,
+and added a narrow browser applier for append / replace-all message
+mutations plus chat `scriptstate` deltas.
+
+Behind `db.useServerPromptAssembly`, preview and preview-prompt still use
+server prompt assembly, and send-like calls can now consume the server
+prompt payload, apply patches, and continue into local `dispatchRequest`.
+Provider dispatch still runs in the browser. The server append path is
+idempotent when the persisted chat already contains the browser-added last
+user row.
 
 ## Immediate Pickup
 
-Start with 7-12d-ii: serialize the mutation contract as `message_patch`
-and add the browser applier.
+Start with 7-12d-iii-a: add provider-agnostic server chunk transport with
+server-only tests.
 
-Why this is next: 7-12d-i made the server mutations explicit, but the
-`/chat` SSE stream still emits only `prompt` / `info` / `done`. The
-browser cannot switch the send path to server assembly until those
-mutations are delivered and applied to `currentChat.message`.
+Why this is next: 7-12d-ii lets the browser consume server prompt assembly
+without relying on hidden local assembly side effects, but `/chat` still
+does not dispatch providers or stream token chunks. The next slice should
+prove the chat SSE taxonomy can carry provider output before wiring the
+browser orchestration around it.
 
 Expected scope:
 
-- Emit a `message_patch` event from `/api/v1/generate/chat` after the
-  `prompt` event for the 7-12d-i `result.mutations` payload.
-- Replace `MessagePatchEvent.patch: unknown` with the typed payload shape
-  on both server and browser mirrors.
-- Teach `requestServerChat` to collect `message_patch` events instead of
-  ignoring them.
-- Add a narrow SPA applier that handles append and replace-all message
-  mutations, plus the chat-variable deltas needed for `scriptstate`.
-- Wire only enough of `sendChat` to consume server prompt assembly and
-  apply patches before continuing to local `dispatchRequest`.
+- Add a small provider-agnostic transport layer for `/chat` server dispatch
+  chunks, mapping provider output into the locked `token`, `error`, and
+  `done` chat SSE events.
+- Keep this server-only: unit-test the transport with fake provider chunk
+  sources and do not wire `sendChat` orchestration to server dispatch yet.
+- Preserve the existing `prompt` -> `message_patch` -> `info` ordering from
+  7-12d-ii before provider output begins.
+- Do not add `generationId`, reroll accumulation, browser token handling,
+  `tts`, or rollback yet; those belong to later 7-12d slices.
 
-Out of scope for 7-12d-ii:
+Out of scope for 7-12d-iii-a:
 
-- Provider dispatch from `/chat`.
+- Browser send-path orchestration for server dispatch.
+- `generationId`, `addRerolls`, enriched terminal `done`, and gate
+  handling.
 - `tts` side effects and restoration rollback.
 - Hypa V3, plugin / Lua hooks, image generation, NovelAI string
   flattening, and low-level trigger effects.
 
-## Queue After 7-12d-ii
+## Queue After 7-12d-iii-a
 
-1. 7-12d-iii-a: add provider-agnostic server chunk transport with
-   server-only tests.
-2. 7-12d-iii-b: wire send-path orchestration, `generationId`,
+1. 7-12d-iii-b: wire send-path orchestration, `generationId`,
    `addRerolls`, enriched `done`, and end-to-end fixture coverage.
-3. 7-12d-iv: add `tts` `side_effect` and `error.restoration` rollback.
+2. 7-12d-iv: add `tts` `side_effect` and `error.restoration` rollback.
 
 ## Parallel Or Deferred
 
@@ -73,8 +78,8 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 7-12d-i: `pnpm check` clean,
-`pnpm api:test` 886 tests, `pnpm test` 618 tests plus 4 skipped, and
+Last recorded full baselines after 7-12d-ii: `pnpm check` clean,
+`pnpm api:test` 887 tests, `pnpm test` 622 tests plus 4 skipped, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and bundle-size warnings.
 
@@ -85,5 +90,7 @@ externalization, plugin-timing, and bundle-size warnings.
   [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md)
 - 7-12d-i closeout:
   [`../phases-completed/phase-7-prompt-assembly-7-12d-i.md`](../phases-completed/phase-7-prompt-assembly-7-12d-i.md)
+- 7-12d-ii closeout:
+  [`../phases-completed/phase-7-prompt-assembly-7-12d-ii.md`](../phases-completed/phase-7-prompt-assembly-7-12d-ii.md)
 - Server status: [`server.md`](server.md)
 - sendChat status: [`sendchat.md`](sendchat.md)

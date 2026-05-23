@@ -4,15 +4,16 @@ Date: 2026-05-24
 
 Status: in progress.
 
-Last completed slice: 7-12d-i added the typed server-side mutation
-payload to `AssembleResult` and persisted `varChanged` for send-like
-`/chat` requests. The send / continue / regenerate paths still run local
-assembly until the 7-12d-ii browser applier lands.
+Last completed slice: 7-12d-ii emitted the typed mutation payload as
+`message_patch`, added the browser applier, and let send-like paths use
+server prompt assembly while provider dispatch still runs locally.
 
 Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md).
 7-12d-i closeout:
 [`../phases-completed/phase-7-prompt-assembly-7-12d-i.md`](../phases-completed/phase-7-prompt-assembly-7-12d-i.md).
+7-12d-ii closeout:
+[`../phases-completed/phase-7-prompt-assembly-7-12d-ii.md`](../phases-completed/phase-7-prompt-assembly-7-12d-ii.md).
 
 ## Goal
 
@@ -27,13 +28,6 @@ without requiring the browser to own mutable send-time state.
   server-backed provider sweep, and the Fastify generation route tests.
 
 ## Remaining Work
-
-### 7-12d-ii - `message_patch` event and browser applier
-
-Serialize the 7-12d-i mutation contract as a `message_patch` SSE event and
-add the SPA applier. The send path should still run local provider
-dispatch in this slice: prompt from server, provider call from browser.
-Re-run the local and server-backed `sendChat` fixtures.
 
 ### 7-12d-iii - server dispatch and streaming
 

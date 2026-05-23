@@ -14,20 +14,20 @@ and fixture inventories are archived or covered by the coverage docs.
 - Phase 7 preview paths are server-backed behind
   `db.useServerPromptAssembly`: `preview` fills `previewFormated`, and
   `previewPrompt` fills `previewBody` from `/api/v1/generate/chat`.
-- Server assembly now produces a typed internal mutation payload for
+- Server assembly now emits a typed `message_patch` payload for
   user-message appends, start-trigger / run-var message replacements,
   chat-var deltas, and `additonalSysPrompt` rows.
-- Send / continue / regenerate still use local assembly and local
-  provider dispatch until the 7-12d `message_patch` applier and streaming
-  chain land.
+- Behind `db.useServerPromptAssembly`, send-like calls can consume the
+  server prompt payload, apply message/scriptstate patches, and then
+  continue into local browser provider dispatch.
 - The gate defaults off and is independent of `db.useServerGeneration`.
 
 ## Active Boundary
 
-The next risky boundary is the browser mutation applier. Server assembly
-has the typed deltas internally, but `/chat` still needs to emit
-`message_patch` and the SPA must apply those patches before local
-dispatch.
+The next risky boundary is server provider chunk transport. Browser
+provider dispatch remains local; `/chat` still needs a provider-agnostic
+token / done / error transport before send orchestration can move fully
+server-side.
 
 Track that work in [`next-steps.md`](next-steps.md) and
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md).

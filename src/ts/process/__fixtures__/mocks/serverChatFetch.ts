@@ -7,6 +7,7 @@
  */
 
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
+import type { ServerChatMessagePatch } from '../../request/serverChatEvents'
 
 export interface ServerChatCall {
   url: string
@@ -15,12 +16,14 @@ export interface ServerChatCall {
   chatId: string
   characterId: string
   mode: string
+  userMessage: string
 }
 
 interface ChatPayload {
   chatId?: unknown
   characterId?: unknown
   mode?: unknown
+  userMessage?: unknown
 }
 
 interface State {
@@ -36,6 +39,8 @@ interface State {
   /** Token counts returned on the `info` event. */
   inputTokens: number
   responseBudget: number
+  /** Optional mutation payload returned on the `message_patch` event. */
+  messagePatch: ServerChatMessagePatch | null
   /** When set, the stream emits a terminal `error` instead of `prompt`. */
   errorMessage: string | null
 }
@@ -53,6 +58,7 @@ function defaultState(): Omit<State, 'calls'> {
     promptInfo: { promptText: 'fixture prompt text' },
     inputTokens: 7,
     responseBudget: 50,
+    messagePatch: null,
     errorMessage: null,
   }
 }
@@ -83,6 +89,10 @@ export function setServerChatError(message: string): void {
   state.errorMessage = message
 }
 
+export function setServerChatMessagePatch(patch: ServerChatMessagePatch): void {
+  state.messagePatch = patch
+}
+
 function frame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
@@ -110,6 +120,9 @@ function sseChatResponse(): Response {
         formated: state.formated,
         biases: state.biases,
       })
+      if (state.messagePatch) {
+        push('message_patch', { patch: state.messagePatch })
+      }
       push('stage', { stage: 'prompt', status: 'end' })
       push('info', {
         timings: { prompt: 1 },
@@ -149,6 +162,7 @@ export async function serverChatFetch(
     chatId: typeof body.chatId === 'string' ? body.chatId : '',
     characterId: typeof body.characterId === 'string' ? body.characterId : '',
     mode: typeof body.mode === 'string' ? body.mode : '',
+    userMessage: typeof body.userMessage === 'string' ? body.userMessage : '',
   })
 
   return sseChatResponse()

@@ -7,18 +7,16 @@
  * prompt to a provider), `/chat` performs server-side prompt *assembly* and
  * streams back the assembled `prompt` payload plus `info` telemetry.
  *
- * This adapter consumes `stage` / `prompt` / `info` / `error` / `done` and
- * tolerates (ignores) the dispatch-coupled `token` / `message_patch` /
- * `side_effect` / `warning` events until the 7-12d send-path dispatch
- * cluster lands. It is wired for read-only preview paths behind
- * `db.useServerPromptAssembly`; send/continue/regenerate still run locally.
- * The `prompt` event now carries the full `formated` rows and `biases`
- * additively (7-12b), so previews can use the server payload directly.
+ * This adapter consumes `stage` / `prompt` / `message_patch` / `info` /
+ * `error` / `done`. Token / side-effect / warning events remain tolerated
+ * until later 7-12d slices move provider dispatch to `/chat`. The `prompt`
+ * event carries the full `formated` rows and `biases` additively (7-12b), so
+ * previews and the send path can use the server payload directly.
  */
 
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
 import { iterateSseEvents } from './sseParse'
-import type { InfoEvent, PromptEvent } from './serverChatEvents'
+import type { InfoEvent, PromptEvent, ServerChatMessagePatch } from './serverChatEvents'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 
@@ -43,7 +41,12 @@ export type ServerChatPrompt = Omit<PromptEvent, 'type'>
 export type ServerChatInfo = Omit<InfoEvent, 'type'>
 
 export type ServerChatResult =
-  | { status: 'ok'; prompt: ServerChatPrompt; info?: ServerChatInfo }
+  | {
+      status: 'ok'
+      prompt: ServerChatPrompt
+      info?: ServerChatInfo
+      messagePatches: ServerChatMessagePatch[]
+    }
   | { status: 'error'; error: string }
   | { status: 'aborted' }
 
@@ -104,6 +107,7 @@ export async function requestServerChat(
 
   let prompt: ServerChatPrompt | null = null
   let info: ServerChatInfo | undefined
+  const messagePatches: ServerChatMessagePatch[] = []
   let error: string | null = null
   let done = false
 
@@ -120,6 +124,11 @@ export async function requestServerChat(
       case 'info':
         info = data as unknown as ServerChatInfo
         break
+      case 'message_patch':
+        if (data.patch && typeof data.patch === 'object') {
+          messagePatches.push(data.patch as unknown as ServerChatMessagePatch)
+        }
+        break
       case 'error':
         error = typeof data.error === 'string' ? data.error : 'prompt assembly failed'
         done = true
@@ -127,8 +136,8 @@ export async function requestServerChat(
       case 'done':
         done = true
         break
-      // stage + dispatch-coupled events (token / message_patch / side_effect /
-      // warning) are ignored in the read-only 7-12a path.
+      // stage + dispatch-coupled events (token / side_effect / warning) are
+      // ignored until later 7-12d slices.
       default:
         break
     }
@@ -140,5 +149,5 @@ export async function requestServerChat(
   if (!prompt) {
     return { status: 'error', error: 'stream ended without a prompt event' }
   }
-  return { status: 'ok', prompt, info }
+  return { status: 'ok', prompt, info, messagePatches }
 }

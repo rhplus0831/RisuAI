@@ -199,6 +199,9 @@ async function streamAssembly(
       const promptMs = Date.now() - startedAt
       if (!result.stopSending && result.prompt) {
         emit({ type: 'prompt', ...result.prompt })
+        if (result.mutations) {
+          emit({ type: 'message_patch', patch: result.mutations })
+        }
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
         // 7-11i: assembly telemetry. `outputTokens` is the response *budget*,
         // not a completion count, so it rides on `responseBudget` rather than

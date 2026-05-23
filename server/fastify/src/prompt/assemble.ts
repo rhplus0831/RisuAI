@@ -418,6 +418,31 @@ function appendUserMessageRow(state: AssemblyState): void {
   const userMessage = state.input.userMessage
   if (state.input.mode !== 'send' || typeof userMessage !== 'string') return
 
+  const messages = (state.currentChat.message ??= [])
+  const lastIndex = messages.length - 1
+  const lastMessage = messages[lastIndex]
+  if (
+    lastMessage?.role === 'user' &&
+    lastMessage.data === userMessage &&
+    (lastMessage.name ?? null) === null
+  ) {
+    const message = {
+      ...structuredClone(lastMessage),
+      chatId: lastMessage.chatId ?? randomUUID(),
+      time: lastMessage.time ?? Date.now(),
+      name: null,
+    } as Message
+    messages[lastIndex] = message
+    state.messageMutations?.push({
+      type: 'append',
+      source: 'user_message',
+      index: lastIndex,
+      message: structuredClone(message),
+    })
+    state.messageMutationCheckpoint = cloneMessages(messages)
+    return
+  }
+
   const message = {
     role: 'user',
     data: userMessage,
@@ -425,7 +450,6 @@ function appendUserMessageRow(state: AssemblyState): void {
     chatId: randomUUID(),
     name: null,
   } as Message
-  const messages = (state.currentChat.message ??= [])
   const index = messages.length
   messages.push(message)
   state.messageMutations?.push({

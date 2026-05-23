@@ -1,5 +1,6 @@
 import type { FastifyReply } from 'fastify'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { AssembleMutationPayload } from './assemble.js'
 
 /**
  * Phase 7 SSE event taxonomy for `POST /api/v1/generate/chat`.
@@ -56,15 +57,10 @@ export interface TokenEvent {
 
 export interface MessagePatchEvent {
   type: 'message_patch'
-  patch: unknown
+  patch: AssembleMutationPayload
 }
 
-export type SideEffectKind =
-  | 'tts'
-  | 'image'
-  | 'inlay_screen'
-  | 'hypav3_progress'
-  | 'stable_diff'
+export type SideEffectKind = 'tts' | 'image' | 'inlay_screen' | 'hypav3_progress' | 'stable_diff'
 
 export interface SideEffectEvent {
   type: 'side_effect'

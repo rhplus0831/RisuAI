@@ -775,4 +775,32 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
       { key: '$halted', before: null, after: 'yes' },
     ])
   })
+
+  it('does not duplicate a user message that the persisted chat already contains', async () => {
+    const db = mutationDb({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          firstMessage: 'Hi.',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [msg('user', 'new user', 'msg-1')],
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'new user' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations?.messageMutations).toHaveLength(1)
+    expect(result.mutations?.messageMutations[0]).toMatchObject({
+      type: 'append',
+      source: 'user_message',
+      index: 0,
+      message: { role: 'user', data: 'new user', chatId: 'msg-1' },
+    })
+  })
 })

@@ -57,8 +57,14 @@ import {
   getServerChatCalls,
   resetServerChatState,
   serverChatFetch,
+  setServerChatMessagePatch,
   setServerChatPrompt,
 } from '../__fixtures__/mocks/serverChatFetch'
+import {
+  getServerCompletionCalls,
+  resetServerCompletionCalls,
+  serverCompletionFetch,
+} from '../__fixtures__/mocks/serverCompletionFetch'
 import { DBState } from '../../stores.svelte'
 import { abortChat, chatProcessStage, doingChat } from '../index.svelte'
 import * as chatModule from '../index.svelte'
@@ -66,8 +72,10 @@ import * as chatModule from '../index.svelte'
 let cleanups: (() => void)[] = []
 
 beforeEach(() => {
+  vi.stubGlobal('safeStructuredClone', (v: unknown) => JSON.parse(JSON.stringify(v)))
   platformState.isFastifyServer = true
   resetServerChatState()
+  resetServerCompletionCalls()
   doingChat.set(false)
   abortChat.set(false)
   chatProcessStage.set(0)
@@ -130,5 +138,59 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     // assert no /chat call was recorded.
     await chatModule.sendChat(-1, { preview: true }).catch(() => {})
     expect(getServerChatCalls()).toHaveLength(0)
+  })
+
+  it('routes send through /chat assembly, applies patches, and dispatches locally', async () => {
+    await seedEcho()
+    setServerChatPrompt(
+      [{ role: 'user', content: 'server-only prompt' }],
+      { promptText: 'SERVER PROMPT', inputTokens: 11, outputTokens: 22 },
+      {
+        formated: [{ role: 'user', content: 'server-only prompt' }],
+      },
+    )
+    setServerChatMessagePatch({
+      chatId: '',
+      characterId: 'char-tess',
+      selectedCharID: 0,
+      chatPage: 0,
+      varChanged: true,
+      messageMutations: [
+        {
+          type: 'replace_all',
+          source: 'run_var',
+          beforeLength: 1,
+          afterLength: 1,
+          messages: [{ role: 'user', data: 'patched ping', chatId: 'msg-user-1' }],
+        },
+      ],
+      chatVarMutations: [{ key: '$mood', before: null, after: 'bright' }],
+      additionalSystemPrompt: [],
+    })
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.endsWith('/api/v1/generate/chat')) return serverChatFetch(input, init)
+      return serverCompletionFetch(input, init)
+    })
+
+    const ok = await chatModule.sendChat(-1)
+    expect(ok).toBe(true)
+
+    expect(getServerChatCalls()[0]).toMatchObject({
+      mode: 'send',
+      userMessage: 'ping',
+    })
+    expect(getServerCompletionCalls()[0]).toMatchObject({
+      url: '/api/v1/generate/completion',
+      messagesLength: 1,
+    })
+    const chat = DBState.db.characters[0].chats[0]
+    expect(chat.scriptstate?.$mood).toBe('bright')
+    expect(chat.message[0].data).toBe('patched ping')
+    expect(chat.message.at(-1)?.generationInfo).toMatchObject({
+      inputTokens: 7,
+      outputTokens: 50,
+    })
   })
 })
