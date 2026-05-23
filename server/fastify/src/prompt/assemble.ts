@@ -11,28 +11,42 @@ import {
   type FormatOrderKey,
   type UnformatedPromptSlots,
 } from './templates.js'
+import {
+  buildAuthorNote,
+  buildCotInstruction,
+  buildDescription,
+  buildPersona,
+} from './staticSections.js'
+import { buildPlainPromptSections } from './plainSections.js'
 import type { ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
 
 /**
  * Phase 7 Tier 3 root assembly entry point.
  *
- * 7-11a — state/context loader + assembler contract. This first Tier 3
- * slice is scoped strictly to loading and context shape:
+ * 7-11a — state/context loader + assembler contract:
  *   - resolve the persisted `Database` (and selected character / chat)
  *     through an explicit `AssembleDeps` seam, never a storage global,
  *   - build the empty `UnformatedPromptSlots` and the `ExpandContext`
  *     that every downstream slot builder reuses,
  *   - run the two pure template helpers (`normalizeTemplate`,
  *     `buildFormatOrder`),
- *   - return the `AssemblyState` that later 7-11 slices extend.
+ *   - return the `AssemblyState` that later 7-11 slices extend
+ *     (`beginAssembly`).
  *
- * Deferred to later 7-11 slices: static/plain slots (7-11b), lorebook +
- * preflight (7-11c), history + bias (7-11d), the memory-window bridge +
- * depth/additional-system-prompt placement (7-11e), the
- * `renderFinalPrompt` call + final budget pruning + prompt payload
- * (7-11f), and the route wiring / preview shortcut / SSE telemetry
- * (7-11g/h/i). `assemblePrompt` therefore still throws past scope
+ * 7-11b — static/plain slot fill (`fillStaticSlots`): wire the landed
+ * leaves into `state.unformated`, mirroring `index.svelte.ts:192-204` —
+ * plain sections (`main` / `jailbreak` / `globalNote`) on the
+ * non-utility, non-template path, then `authorNote`, the
+ * chain-of-thought into `postEverything`, `description`, and
+ * `personaPrompt`.
+ *
+ * Deferred to later 7-11 slices: lorebook + preflight (7-11c), history +
+ * bias (7-11d), the memory-window bridge + depth/additional-system-prompt
+ * placement (7-11e), the `renderFinalPrompt` call + final budget pruning
+ * + prompt payload (7-11f), and the route wiring / preview shortcut / SSE
+ * telemetry (7-11g/h/i). `buildInlayViewInstruction` (image-gen) stays
+ * deferred. `assemblePrompt` therefore still throws past scope
  * resolution.
  */
 
@@ -171,6 +185,33 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     presetId: input.presetId,
     loadoutId: input.loadoutId,
   }
+}
+
+/**
+ * 7-11b — fill the static/plain slots on the `AssemblyState`, mutating
+ * `state.unformated` in place. Mirrors `index.svelte.ts:192-204`:
+ *   - plain sections (`main` / `jailbreak` / `globalNote`) only on the
+ *     non-utility, non-template path,
+ *   - `authorNote`, the chain-of-thought into `postEverything`,
+ *     `description`, and `personaPrompt` always.
+ *
+ * Sync — every leaf is sync. `buildInlayViewInstruction` (`:204`) stays
+ * deferred (image-gen / `newGenData`).
+ */
+export function fillStaticSlots(state: AssemblyState): void {
+  const { ctx, currentChar, currentChat, unformated, promptTemplate, usingPromptTemplate } = state
+
+  if (!currentChar.utilityBot && !promptTemplate) {
+    const sections = buildPlainPromptSections(ctx, currentChar)
+    unformated.main.push(...sections.main)
+    unformated.jailbreak.push(...sections.jailbreak)
+    unformated.globalNote.push(...sections.globalNote)
+  }
+
+  unformated.authorNote.push(...buildAuthorNote(ctx, currentChat))
+  unformated.postEverything.push(...buildCotInstruction(ctx, usingPromptTemplate))
+  unformated.description.push(...buildDescription(ctx, currentChar))
+  unformated.personaPrompt.push(...buildPersona(ctx))
 }
 
 export async function assemblePrompt(

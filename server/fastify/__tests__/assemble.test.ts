@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import type {
   Chat,
   Database,
@@ -9,9 +9,15 @@ import {
   assemblePrompt,
   beginAssembly,
   createEmptyUnformatedSlots,
+  fillStaticSlots,
   type AssembleDeps,
   type AssembleInput,
 } from '../src/prompt/assemble.js'
+import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+
+beforeAll(() => {
+  bootPromptVariables()
+})
 
 function makeChat(overrides: Partial<Chat> = {}): Chat {
   return {
@@ -199,5 +205,88 @@ describe('Phase 7-11a assemblePrompt', () => {
     await expect(assemblePrompt(baseInput({ characterId: 'nope' }), depsFor(db))).rejects.toThrow(
       EntityNotFoundError,
     )
+  })
+})
+
+describe('Phase 7-11b fillStaticSlots', () => {
+  // A database whose static/plain leaves all produce content.
+  const staticDb = (
+    overrides: Partial<Database> = {},
+    charOverrides: Partial<character> = {},
+  ): Database =>
+    makeDatabase({
+      mainPrompt: 'MAIN',
+      jailbreak: 'JB',
+      jailbreakToggle: true,
+      globalNote: 'GN',
+      chainOfThought: true,
+      personaPrompt: 'PERSONA',
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          desc: 'DESC',
+          chats: [makeChat({ id: 'chat-1', note: 'NOTE' })],
+          ...charOverrides,
+        }),
+      ],
+      ...overrides,
+    } as Partial<Database>)
+
+  const fill = (db: Database, input = baseInput()) => {
+    const state = beginAssembly(input, depsFor(db))
+    fillStaticSlots(state)
+    return state.unformated
+  }
+
+  it('fills plain + static slots on the non-utility, null-template path', () => {
+    const u = fill(staticDb())
+    expect(u.main.map((r) => r.content)).toEqual(['MAIN'])
+    expect(u.jailbreak.map((r) => r.content)).toEqual(['JB'])
+    expect(u.globalNote.map((r) => r.content)).toEqual(['GN'])
+    expect(u.authorNote.map((r) => r.content)).toEqual(['NOTE'])
+    expect(u.description.map((r) => r.content)).toEqual(['DESC'])
+    expect(u.personaPrompt.map((r) => r.content)).toEqual(['PERSONA'])
+    // chain-of-thought lands in postEverything as a single system row.
+    expect(u.postEverything).toHaveLength(1)
+    expect(u.postEverything[0].role).toBe('system')
+  })
+
+  it('skips plain sections for a utility bot but keeps the static four', () => {
+    const u = fill(staticDb({}, { utilityBot: true }))
+    expect(u.main).toEqual([])
+    expect(u.jailbreak).toEqual([])
+    expect(u.globalNote).toEqual([])
+    expect(u.description.map((r) => r.content)).toEqual(['DESC'])
+    expect(u.personaPrompt.map((r) => r.content)).toEqual(['PERSONA'])
+    expect(u.authorNote.map((r) => r.content)).toEqual(['NOTE'])
+  })
+
+  it('skips plain sections when a prompt template is set', () => {
+    const u = fill(staticDb({ promptTemplate: [{ type: 'description' }] } as Partial<Database>))
+    expect(u.main).toEqual([])
+    expect(u.jailbreak).toEqual([])
+    expect(u.globalNote).toEqual([])
+    expect(u.description.map((r) => r.content)).toEqual(['DESC'])
+  })
+
+  it('omits jailbreak when the toggle is off', () => {
+    const u = fill(staticDb({ jailbreakToggle: false } as Partial<Database>))
+    expect(u.jailbreak).toEqual([])
+    expect(u.main.map((r) => r.content)).toEqual(['MAIN'])
+  })
+
+  it('omits the cot instruction when chainOfThought is off', () => {
+    const u = fill(staticDb({ chainOfThought: false } as Partial<Database>))
+    expect(u.postEverything).toEqual([])
+  })
+
+  it('omits persona when no personaPrompt is set', () => {
+    const u = fill(staticDb({ personaPrompt: '' } as Partial<Database>))
+    expect(u.personaPrompt).toEqual([])
+  })
+
+  it('omits author note when the chat note and default are empty', () => {
+    const u = fill(staticDb({}, { chats: [makeChat({ id: 'chat-1', note: '' })] }))
+    expect(u.authorNote).toEqual([])
   })
 })
