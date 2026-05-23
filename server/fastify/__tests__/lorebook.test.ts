@@ -998,3 +998,107 @@ describe('Phase 7-7c activateLorebook — recursion', () => {
     expect(report.actives.map((a) => a.source).sort()).toEqual(['A', 'B', 'C'])
   })
 })
+
+import {
+  getDepthPrompts,
+  resolvePosition,
+  type LoreEntryActive,
+  type LorebookActivationReport,
+} from '../src/prompt/lorebook.js'
+
+function makeActive(overrides: Partial<LoreEntryActive> = {}): LoreEntryActive {
+  return {
+    depth: 0,
+    pos: '',
+    prompt: '',
+    role: 'system',
+    order: 100,
+    priority: 100,
+    source: '',
+    inject: null,
+    ...overrides,
+  }
+}
+
+function makeReport(actives: LoreEntryActive[]): LorebookActivationReport {
+  return { actives, disabledUIPrompts: [], matchLog: [] }
+}
+
+describe('Phase 7-7e getDepthPrompts', () => {
+  it('keeps `pos=depth` entries with depth > 0', () => {
+    const r = makeReport([
+      makeActive({ pos: 'depth', depth: 1, source: 'a' }),
+      makeActive({ pos: 'depth', depth: 3, source: 'b' }),
+    ])
+    expect(getDepthPrompts(r).map((a) => a.source)).toEqual(['a', 'b'])
+  })
+
+  it('keeps `pos=reverse_depth` entries (any depth)', () => {
+    const r = makeReport([
+      makeActive({ pos: 'reverse_depth', depth: 0, source: 'a' }),
+      makeActive({ pos: 'reverse_depth', depth: 2, source: 'b' }),
+    ])
+    expect(getDepthPrompts(r).map((a) => a.source)).toEqual(['a', 'b'])
+  })
+
+  it('excludes `pos=depth` with depth === 0 (those land in postEverything)', () => {
+    const r = makeReport([
+      makeActive({ pos: 'depth', depth: 0, source: 'end' }),
+      makeActive({ pos: 'depth', depth: 1, source: 'd1' }),
+    ])
+    expect(getDepthPrompts(r).map((a) => a.source)).toEqual(['d1'])
+  })
+
+  it('excludes other positions (`""`, `after_desc`, `pt_*`, etc.)', () => {
+    const r = makeReport([
+      makeActive({ pos: '', source: 'plain' }),
+      makeActive({ pos: 'after_desc', source: 'desc' }),
+      makeActive({ pos: 'pt_slot', source: 'slot' }),
+      makeActive({ pos: 'depth', depth: 2, source: 'd2' }),
+    ])
+    expect(getDepthPrompts(r).map((a) => a.source)).toEqual(['d2'])
+  })
+})
+
+describe('Phase 7-7e resolvePosition', () => {
+  it('substitutes {{position::name}} with the matching pt_<name> body', () => {
+    const r = makeReport([
+      makeActive({ pos: 'pt_slot', prompt: 'SLOT VALUE' }),
+    ])
+    expect(resolvePosition('before {{position::slot}} after', r)).toBe(
+      'before SLOT VALUE after',
+    )
+  })
+
+  it('joins multiple pt_<name> matches with newlines', () => {
+    const r = makeReport([
+      makeActive({ pos: 'pt_slot', prompt: 'A' }),
+      makeActive({ pos: 'pt_slot', prompt: 'B' }),
+    ])
+    expect(resolvePosition('{{position::slot}}', r)).toBe('A\nB')
+  })
+
+  it('resolves transitive references up to maxDepth', () => {
+    // pt_outer body itself contains {{position::inner}}, which resolves
+    // to "INNER" on the second pass.
+    const r = makeReport([
+      makeActive({ pos: 'pt_outer', prompt: 'wrapping {{position::inner}}' }),
+      makeActive({ pos: 'pt_inner', prompt: 'INNER' }),
+    ])
+    expect(resolvePosition('{{position::outer}}', r)).toBe('wrapping INNER')
+  })
+
+  it('strips unresolved markers after the nesting cap', () => {
+    // pt_loop references itself; after 5 passes the marker is stripped.
+    const r = makeReport([
+      makeActive({ pos: 'pt_loop', prompt: '{{position::loop}}' }),
+    ])
+    expect(resolvePosition('{{position::loop}}', r)).toBe('')
+  })
+
+  it('strips markers with no matching pt_ entry', () => {
+    expect(resolvePosition('a {{position::missing}} b', makeReport([]))).toBe(
+      'a  b',
+    )
+  })
+})

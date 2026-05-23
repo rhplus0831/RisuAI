@@ -14,6 +14,11 @@ import {
   getActiveModules,
   getModuleAssets,
 } from './modules.js'
+import {
+  getDepthPrompts,
+  resolvePosition,
+  type LorebookActivationReport,
+} from './lorebook.js'
 
 /**
  * Phase 7-5a/b/c history walk ported from the SPA's
@@ -402,4 +407,49 @@ export function buildHistoryWindow(
   }
 
   return { messages }
+}
+
+/**
+ * Phase 7-7e: splice lorebook depth-prompts into a built history
+ * window. Mirrors `src/ts/process/index.svelte.ts:275-283` — the SPA
+ * runs this at the assemble root, after `buildHistoryWindow` and
+ * `buildMemoryWindow`, against the final flattened chats array.
+ *
+ * Index semantics:
+ *   - `@@depth N`         → splice at index `N` (counts from start).
+ *   - `@@reverse_depth N` → splice at index `messages.length - N`
+ *                           (counts from end), recomputed per
+ *                           insertion so prior splices shift the
+ *                           target.
+ *
+ * Iteration order follows `report.actives` (which `activateLorebook`
+ * already sorted + reversed) so the final layout matches the SPA
+ * fixture `__fixtures__/db/lorebook-position-depth.json`.
+ *
+ * `{{position::pt_<name>}}` markers inside each depth-prompt body
+ * are resolved against the same `report` (a `pt_<name>` entry's
+ * decorator-stripped prompt is inlined), then CBS / `{{user}}` etc.
+ * are expanded via `expandVariables`.
+ *
+ * Mutates `messages` in place to preserve the SPA's splice semantics
+ * (a single growing array, so subsequent `reverse_depth` calculations
+ * see the post-insert length); returns it for chaining.
+ *
+ * `pos === 'depth' && depth === 0` entries are intentionally excluded
+ * — those belong to the `postEverything` slot owned by the template
+ * walker (7-10) or the assemble root (7-11a).
+ */
+export function applyDepthPrompts(
+  messages: OpenAIChat[],
+  ctx: ExpandContext,
+  currentChar: character,
+  report: LorebookActivationReport,
+): OpenAIChat[] {
+  for (const dp of getDepthPrompts(report)) {
+    const body = resolvePosition(dp.prompt, report)
+    const content = expandVariables(body, { ...ctx, chara: currentChar }).text
+    const idx = dp.pos === 'depth' ? dp.depth : messages.length - dp.depth
+    messages.splice(idx, 0, { role: dp.role, content })
+  }
+  return messages
 }

@@ -628,3 +628,49 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
     matchLog,
   }
 }
+
+/**
+ * Phase 7-7e depth-prompt helpers. The SPA inserts these at the
+ * assemble root (`src/ts/process/index.svelte.ts:275-283`), not
+ * inside the history walk, so we expose them as standalone helpers
+ * that the eventual 7-11a assembler can call between
+ * `buildHistoryWindow` and the final render.
+ */
+
+export function getDepthPrompts(report: LorebookActivationReport): LoreEntryActive[] {
+  return report.actives.filter(
+    (a) => (a.pos === 'depth' && a.depth > 0) || a.pos === 'reverse_depth',
+  )
+}
+
+const POSITION_REGEX = /\{\{position::(.+?)\}\}/g
+
+/**
+ * Substitutes `{{position::<name>}}` markers in `text` with the
+ * concatenated prompts of every active entry whose `pos` is
+ * `pt_<name>`. Mirrors `src/ts/process/promptAssembly/buildLorebookContext.ts:36-63`:
+ * iterates up to `maxDepth` times so a `pt_X` slot whose body
+ * references another `{{position::Y}}` can resolve transitively;
+ * any markers still present after the cap are stripped. Default
+ * cap of 5 matches the SPA.
+ */
+export function resolvePosition(
+  text: string,
+  report: LorebookActivationReport,
+  maxDepth = 5,
+): string {
+  let result = text
+  for (let i = 0; i < maxDepth; i++) {
+    let replaced = false
+    result = result.replace(POSITION_REGEX, (_, name: string) => {
+      replaced = true
+      const posKey = ('pt_' + name) as `pt_${string}`
+      return report.actives
+        .filter((a) => a.pos === posKey)
+        .map((a) => a.prompt)
+        .join('\n')
+    })
+    if (!replaced) break
+  }
+  return result.replace(POSITION_REGEX, '')
+}

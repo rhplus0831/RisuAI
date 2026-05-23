@@ -6,11 +6,16 @@ import type {
   character,
 } from '../../../src/ts/storage/database.svelte'
 import {
+  applyDepthPrompts,
   buildHistoryWindow,
   exampleMessage,
   type AssetLookup,
 } from '../src/prompt/history.js'
-import type { MultiModal } from '../../../src/ts/process/index.svelte'
+import type {
+  LoreEntryActive,
+  LorebookActivationReport,
+} from '../src/prompt/lorebook.js'
+import type { MultiModal, OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 
@@ -1247,5 +1252,183 @@ describe('Phase 7-5c multimodals + thoughts coexist on the same chat', () => {
     expect(msg?.content).toBe('visible ')
     expect(msg?.thoughts).toEqual(['secret'])
     expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'PIC' }])
+  })
+})
+
+function makeActive(overrides: Partial<LoreEntryActive> = {}): LoreEntryActive {
+  return {
+    depth: 0,
+    pos: '',
+    prompt: '',
+    role: 'system',
+    order: 100,
+    priority: 100,
+    source: '',
+    inject: null,
+    ...overrides,
+  }
+}
+
+function makeReport(actives: LoreEntryActive[] = []): LorebookActivationReport {
+  return { actives, disabledUIPrompts: [], matchLog: [] }
+}
+
+function depthCtx(): ExpandContext {
+  return { database: makeDatabase() }
+}
+
+describe('Phase 7-7e applyDepthPrompts', () => {
+  it('returns the array unchanged when no depth entries are active', () => {
+    const messages: OpenAIChat[] = [
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+    ]
+    const out = applyDepthPrompts(
+      messages,
+      depthCtx(),
+      makeCharacter(),
+      makeReport([
+        makeActive({ pos: '', prompt: 'plain' }),
+        makeActive({ pos: 'after_desc', prompt: 'desc' }),
+      ]),
+    )
+    expect(out).toBe(messages)
+    expect(out.map((m) => m.content)).toEqual(['hello', 'hi'])
+  })
+
+  it('@@depth 1 inserts at index 1 (right after the first message)', () => {
+    const messages: OpenAIChat[] = [
+      { role: 'system', content: '[Start a new chat]' },
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'reply' },
+    ]
+    applyDepthPrompts(
+      messages,
+      depthCtx(),
+      makeCharacter(),
+      makeReport([
+        makeActive({ pos: 'depth', depth: 1, prompt: 'INSERTED', source: 'd1' }),
+      ]),
+    )
+    expect(messages.map((m) => m.content)).toEqual([
+      '[Start a new chat]',
+      'INSERTED',
+      'first',
+      'reply',
+    ])
+  })
+
+  it('@@reverse_depth 1 inserts at length-1 (just before the last message)', () => {
+    const messages: OpenAIChat[] = [
+      { role: 'system', content: '[Start a new chat]' },
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'last' },
+    ]
+    applyDepthPrompts(
+      messages,
+      depthCtx(),
+      makeCharacter(),
+      makeReport([
+        makeActive({ pos: 'reverse_depth', depth: 1, prompt: 'TAIL', source: 'r1' }),
+      ]),
+    )
+    expect(messages.map((m) => m.content)).toEqual([
+      '[Start a new chat]',
+      'first',
+      'TAIL',
+      'last',
+    ])
+  })
+
+  it('honors the entry role on the inserted chat', () => {
+    const messages: OpenAIChat[] = [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b' },
+    ]
+    applyDepthPrompts(
+      messages,
+      depthCtx(),
+      makeCharacter(),
+      makeReport([
+        makeActive({ pos: 'depth', depth: 1, prompt: 'U', role: 'user', source: 'd' }),
+      ]),
+    )
+    expect(messages[1]).toEqual({ role: 'user', content: 'U' })
+  })
+
+  it('iterates report.actives in order; reverse_depth uses the live length', () => {
+    // Mirrors the SPA fixture lorebook-position-depth.json: when both
+    // a reverse_depth=1 and depth=1 entry fire, the resulting layout
+    // depends on the order they appear in `report.actives` (which is
+    // the post-sort+reverse order from activateLorebook).
+    const messages: OpenAIChat[] = [
+      { role: 'system', content: 'NewChat' },
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'reply' },
+      { role: 'user', content: 'second' },
+    ]
+    applyDepthPrompts(
+      messages,
+      depthCtx(),
+      makeCharacter(),
+      makeReport([
+        makeActive({ pos: 'reverse_depth', depth: 1, prompt: 'REV', source: 'r' }),
+        makeActive({ pos: 'depth', depth: 1, prompt: 'FWD', source: 'd' }),
+      ]),
+    )
+    // Step 1: splice REV at length-1 = 3 -> [NewChat, first, reply, REV, second]
+    // Step 2: splice FWD at 1 -> [NewChat, FWD, first, reply, REV, second]
+    expect(messages.map((m) => m.content)).toEqual([
+      'NewChat',
+      'FWD',
+      'first',
+      'reply',
+      'REV',
+      'second',
+    ])
+  })
+
+  it('expands {{user}} CBS in the depth-prompt body', () => {
+    const messages: OpenAIChat[] = [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b' },
+    ]
+    applyDepthPrompts(
+      messages,
+      depthCtx(),
+      makeCharacter(),
+      makeReport([
+        makeActive({
+          pos: 'depth',
+          depth: 1,
+          prompt: 'hello {{user}}',
+          source: 'cbs',
+        }),
+      ]),
+    )
+    // makeDatabase sets username='Alex'.
+    expect(messages[1].content).toBe('hello Alex')
+  })
+
+  it('resolves {{position::pt_slot}} markers against the same report', () => {
+    const messages: OpenAIChat[] = [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b' },
+    ]
+    applyDepthPrompts(
+      messages,
+      depthCtx(),
+      makeCharacter(),
+      makeReport([
+        makeActive({
+          pos: 'depth',
+          depth: 1,
+          prompt: 'top: {{position::slot}}',
+          source: 'd',
+        }),
+        makeActive({ pos: 'pt_slot', prompt: 'SLOTBODY' }),
+      ]),
+    )
+    expect(messages[1].content).toBe('top: SLOTBODY')
   })
 })
