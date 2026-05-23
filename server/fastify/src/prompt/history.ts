@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type {
   Chat,
-  Database,
   Message,
   character,
 } from '../../../../src/ts/storage/database.svelte'
@@ -20,12 +19,8 @@ import {
   resolvePosition,
   type LorebookActivationReport,
 } from './lorebook.js'
-import {
-  encodingForModel,
-  tokenizeChat,
-  type TokenEncoding,
-  type TokenizeChatOptions,
-} from './tokens.js'
+import { tokenizeChat } from './tokens.js'
+import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 /**
  * Phase 7-5a/b/c history walk ported from the SPA's
@@ -356,29 +351,6 @@ export interface HistoryWindowResult {
    * 7-5d.
    */
   addedTokens: number
-}
-
-/**
- * Tokenizer config derived from `db.aiModel`, matching the SPA call
- * site at `src/ts/process/sendChatContext.ts:92-103`:
- *   - `gpt*` models: per-message overhead 5, `useName: 'noName'`.
- *   - everything else: per-message overhead 3, `useName: 'name'`.
- * The encoding falls out of `encodingForModel(db.aiModel)`; non-gpt
- * model strings still resolve to `cl100k_base` as a conservative
- * fallback (see `tokens.ts`).
- */
-function tokenizerOptionsFromDb(db: Database): {
-  encoding: TokenEncoding
-  options: TokenizeChatOptions
-} {
-  const isGpt = (db.aiModel ?? '').startsWith('gpt')
-  return {
-    encoding: encodingForModel(db.aiModel),
-    options: {
-      chatAdditionalTokens: isGpt ? 5 : 3,
-      useName: isGpt ? 'noName' : 'name',
-    },
-  }
 }
 
 export function buildHistoryWindow(
