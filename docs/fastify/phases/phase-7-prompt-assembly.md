@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (24 slices landed as of 2026-05-23).
+Status: in-progress (25 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -21,11 +21,14 @@ template-wide token preflight + `PromptUnformatedSlots` shape),
 `budgetFinalize.ts` (the 7-8c request budget finalization), and
 `tokenizerConfig.ts` (shared `tokenizerOptionsFromDb` helper used
 by `history.ts`, `preflight.ts`, and `budgetFinalize.ts`) are
-real. `triggers.ts` now hosts the 7-9a trigger model + runner shell
-plus the 7-9b variable/condition engine (`collectTriggers` /
-`matchesTrigger` / `evaluateConditions` / `runTrigger` with the
-`createTriggerVarEngine` from `triggerVars.ts`), though it executes no
-effects yet. The remaining assembly modules under
+real. `triggers.ts` now hosts the 7-9a trigger model + runner shell,
+the 7-9b variable/condition engine, and the 7-9c deterministic V1
+effects (`collectTriggers` / `matchesTrigger` / `evaluateConditions` /
+`runTrigger` with the `createTriggerVarEngine` from `triggerVars.ts`,
+running `setvar` / `systemprompt` / `impersonate` / `cutchat` /
+`modifychat` / `stop` / bounded `runtrigger`); V2 effects,
+request/display adapters, and the start-trigger handoff are still
+pending (7-9d/e/f). The remaining assembly modules under
 `server/fastify/src/prompt/` (`assemble`, `templates`) are still
 throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
@@ -197,6 +200,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.          |
 | 7-9a  | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.          |
 | 7-9b  | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.          |
+| 7-9c  | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.      |
 
 ## Remaining roadmap
 
@@ -455,9 +459,13 @@ character/persona/lorebook mutations wait for Phase 9 command APIs.
   `TriggerRunResult` extended with `varChanged`, and `parseKeyValue`
   lifted into `src/ts/util/parseKeyValue.ts`. Conditions are wired
   into `runTrigger`.
-- **7-9c** — Deterministic V1 effects: `setvar`, `systemprompt`,
-  `impersonate`, `cutchat`, `modifychat`, `stop`, bounded
-  `runtrigger`, and additional-system-prompt token accounting.
+- **7-9c** — Deterministic V1 effects. **Landed `cae61155`** (10
+  added tests). `setvar` (numeric ops), `systemprompt` (slot
+  accumulation + token count), `impersonate` / `cutchat` /
+  `modifychat` (chat-message edits on `result.chat`), `stop`, and
+  bounded `runtrigger` recursion (threading `ctx`, OR-ing recursive
+  `varChanged`). Effect-loop scaffold + `engine.setChat`. `command`
+  and the `lowLevelAccess`-gated arms fall through as no-ops.
 - **7-9d** — V2 control flow + safe data effects: local vars,
   if/else, loops/breaks, random, regex, tokenize, string/array/dict
   helpers, math, quick chat search, comments.

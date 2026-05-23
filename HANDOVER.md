@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `cb23202b feat: trigger variables + conditions (Phase 7-9b)`
+Head: `cae61155 feat: deterministic V1 trigger effects (Phase 7-9c)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -44,6 +44,7 @@ Landed Phase 7 slices:
 | 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.           |
 | 7-9a  | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the `runTrigger` shell (no effect execution). |
 | 7-9b  | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.           |
+| 7-9c  | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.       |
 
 What is real in code:
 
@@ -82,15 +83,26 @@ What is real in code:
   (`var` / `value` / `chatindex` / `exists`, all operators, expanded
   via `expandVariables`), and `runTrigger` (input cloning, no-trigger
   `null` return, recursion / trigger-id threading, default-variable +
-  var-engine construction, per-trigger condition evaluation, and
-  terminal token accounting). The post-condition body is still a
-  no-op effect seam for 7-9c/d.
+  var-engine construction, per-trigger condition evaluation, the
+  deterministic V1 effect arms from 7-9c, and terminal token
+  accounting).
+- The 7-9c V1 effect arms in `runTrigger`: `setvar` (numeric ops via
+  the var engine), `systemprompt` (slot accumulation feeding the
+  token count), `impersonate` / `cutchat` / `modifychat` (chat-message
+  edits on the returned `result.chat`), `stop` (`stopSending`), and
+  bounded `runtrigger` recursion (`recursiveCount < 10` unless
+  `lowLevelAccess`, threading `ctx` through the recursive call and
+  OR-ing recursive `varChanged`). The effect-loop scaffold tracks
+  `currentIndent` via `engine.setIndent`. Deferred arms (`command`,
+  the `lowLevelAccess`-gated alert/LLM/image/similarity/regex,
+  `triggercode`/`triggerlua`, V2) fall through as no-ops.
 - `triggerVars.ts` (7-9b) exports `createTriggerVarEngine`: the
   ported `getVar` / `setVar`, local-variable scope stack
   (`declareLocalVar` / `setLocalVar` / `clearLocalVarsAtIndent`),
-  `displayMode` `tempVars` fallback, and `varChanged` tracking.
-  `setVar` persists into the single `database` snapshot (the SPA's
-  three-store sync + `ReloadGUIPointer` bump are dropped).
+  `displayMode` `tempVars` fallback, `varChanged` tracking, and
+  `setChat` (7-9c repoints the engine after a `runtrigger` chat
+  reassignment). `setVar` persists into the single `database` snapshot
+  (the SPA's three-store sync + `ReloadGUIPointer` bump are dropped).
 - `parseKeyValue` was lifted into `src/ts/util/parseKeyValue.ts`
   (Svelte-free) and re-exported from `src/ts/util.ts` (7-9b), so the
   trigger path resolves default variables without pulling in Svelte
@@ -114,8 +126,10 @@ memoryCardUsed, hasCachePoint }` and the
   helper used by `history.ts` (7-5e), `preflight.ts` (7-8b), and
   `budgetFinalize.ts` (7-8c).
 - `assemble.ts` and `templates.ts` still throw Phase 7
-  not-implemented errors. `triggers.ts` is now a real (effect-free)
-  runner with the variable/condition engine wired (7-9a/b).
+  not-implemented errors. `triggers.ts` is now a real runner with the
+  variable/condition engine and deterministic V1 effects wired
+  (7-9a/b/c); only V2 effects, request/display adapters, and the
+  start-trigger handoff remain (7-9d/e/f).
 - `history.ts` does not yet handle start triggers (7-5d, blocked
   on 7-9f after the trigger re-scope). 7-5e (`febe67ce`) landed the
   `addedTokens` accumulator + depth-prompt preflight; the only remaining
@@ -131,73 +145,70 @@ memoryCardUsed, hasCachePoint }` and the
   resolution). No remaining lorebook slices.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-9b:
+Last recorded baselines after 7-9c:
 
-- `pnpm api:test`: 733 across 39 files
+- `pnpm api:test`: 743 across 39 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-9c deterministic V1 effects
+## Next Slice — 7-9d V2 control flow + safe data effects
 
-Pick up **7-9c — deterministic V1 effect core**.
+Pick up **7-9d — V2 control flow + safe data effects**.
 
-7-9b (`cb23202b`) landed the variable + condition engine and wired
-condition evaluation into `runTrigger`. The post-condition body of
-the selected-trigger loop is still an explicit `// 7-9c/d` no-op
-seam. 7-9c fills in the deterministic V1 effect arms so a passing
-trigger actually mutates chat / system-prompt / control state.
+7-9c (`cae61155`) landed the deterministic V1 effect arms. The
+effect loop in `runTrigger` is currently a `for…of` over
+`trigger.effect`. 7-9d adds the V2 dialect, whose control flow
+(`v2If` / `v2Else` / `v2EndIndent` / loops / `v2BreakLoop`) jumps
+around the effect list by index — so the **first task is converting
+the loop to an index-based `for (let index = 0; …; index++)`** that
+the V2 arms can advance/rewind (`triggers.ts:1442`,
+`1751-1933`).
 
-7-9c stays Svelte-free, driving the existing `createTriggerVarEngine`
-(`setVar` / local scopes / `currentIndent`) and the `TriggerRunContext`
-scope. **7-10a** (template normalization + slot contract) remains an
-equally valid parallel pickup if you'd rather start the template
-front.
+7-9d stays Svelte-free, driving the existing var engine (local-var
+scopes + `setIndent` + `clearLocalVarsAtIndent` are already there for
+this) and the `TriggerRunContext`. **7-10a** (template normalization
+
+- slot contract) remains an equally valid parallel pickup.
 
 ### Scope sketch (SPA reference)
 
-- Port the effect loop scaffold (`triggers.ts:1442-1456`): the
-  `for (index…)` walk over `trigger.effect`, the `currentIndent`
-  update from `effect.indent` (feed `engine.setIndent`), and the
-  V1 `switch (effect.type)`. The `display` / `request` allowlist
-  guards (`triggers.ts:1444-1449`) are 7-9e — leave them as a seam
-  or a permissive default for now.
-- Port the deterministic V1 arms:
-  - `setvar` (`triggers.ts:1457-1488`): `=` / `+=` / `-=` / `*=`
-    / `/=` numeric ops via `engine.getVar` / `engine.setVar`,
-    expanding `effect.var` / `effect.value` through `expandVariables`.
-  - `systemprompt` (`triggers.ts:~1490-1494`): `additonalSysPrompt[location] += value + '\n\n'`
-    for `start` / `historyend` / `promptend`.
-  - `impersonate`, `cutchat`, `modifychat`, `stop`
-    (set `stopSending`), and bounded `runtrigger`
-    (`triggers.ts:~1500-1530`): recurse through `runTrigger` with
-    `recursiveCount + 1` and a sane bound, threading
-    `additonalSysPrompt` / `chat` back out.
-- Keep the working chat clone and the db chat in sync as effects
-  mutate the clone (the 7-9b parity note): mirror chat mutations onto
-  the persisted `database.characters[selectedCharID].chats[chatPage]`
-  the same way `engine.setVar` already does.
-- The terminal token accounting already in `runTrigger` will now see
-  populated `additonalSysPrompt` slots — confirm it matches
-  `triggers.ts:3321-3330`.
+- Convert the effect loop to index-based; add a per-trigger numeric
+  loop-counter map (the SPA's inner `tempVars: Record<string, number>`
+  at `triggers.ts:1341`, used by `v2LoopNTimes` / the
+  `loopTimes > 100` lag-prevention `sleep`).
+- Control flow: `v2Header` (`:1696`), `v2If` / `v2IfAdvanced`
+  (`:1751-1867`, including the `∈` / `∋` / `∌` / `≒` / `≡` operators
+  and the fail-skip-to-`v2EndIndent` / `v2Else` jump), `v2Else`
+  (`:1869`), `v2EndIndent` (`:1880`, loop-back when `endOfLoop` +
+  `clearLocalVarsAtIndent`), `v2Loop` / `v2LoopNTimes` (`:1920`),
+  `v2BreakLoop` (`:1925`).
+- Vars: `v2SetVar` (`:1700`, adds the `%=` operator), `v2DeclareLocalVar`
+  (`:1740`) via `engine.declareLocalVar`.
+- Bounded `v2RunTrigger` (`:1934`) mirroring the V1 `runtrigger` arm
+  (note it reads `effect.target`, not `effect.value`).
+- Safe data helpers (no I/O): `v2Random`, `v2Tokenize` (use
+  `tokens.ts`), `v2QuickSearchChat`, regex test/extract, and the
+  string / array / dict / math helpers from the type union
+  (`triggers.ts:84-164`). Each writes back through `engine.setVar`.
 
 ### Tests
 
-Extend `__tests__/triggers.test.ts`: `setvar` each operator + var
-persistence + `varChanged`, `systemprompt` slot accumulation +
-`tokens` > 0, `impersonate` / `cutchat` / `modifychat` chat
-mutation, `stop` sets `stopSending`, and bounded `runtrigger`
-recursion (including the recursion cap). Drive these through
-`runTrigger` now that effects are observable in the result.
+Extend `__tests__/triggers.test.ts`: an `if` block runs/skips on its
+condition; `if`/`else` picks the right branch; a counted loop runs N
+times and `break` exits early; `v2SetVar` `%=`; a local var declared
+inside a block is cleared at `v2EndIndent`; `v2Random` /
+`v2Tokenize` / a string or array helper writes its var; bounded
+`v2RunTrigger` recursion. Drive through `runTrigger`.
 
 ### Out of scope (defer)
 
-- V2 safe control-flow/data effects — 7-9d.
 - Request/display state adapters + allowlists — 7-9e.
 - `start` trigger history handoff — 7-9f (consumed by 7-5d).
 - Input hook adapter — 7-9g only if Phase 7 needs it before Phase 9.
-- Command, alert, LLM, image, similarity, and Lua/`triggercode`
-  effects — deferred beyond Phase 7 per the roadmap boundary.
+- V2 low-level arms (alert/LLM/image/similarity, persona/character/
+  lorebook mutation, GUI/update) and `command` — deferred beyond
+  Phase 7 per the roadmap boundary.
 
 ### Verification
 
@@ -208,7 +219,7 @@ pnpm test
 pnpm build
 ```
 
-If 7-9c is blocked, the parallel next-up is **7-10a** (template
+If 7-9d is blocked, the parallel next-up is **7-10a** (template
 normalization + slot contract).
 
 ## Patterns To Keep

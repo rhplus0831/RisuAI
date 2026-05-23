@@ -104,6 +104,7 @@ multi-subsystem work behind small labels.
 | 7-8c  | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.          |
 | 7-9a  | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the effect-free `runTrigger` shell.          |
 | 7-9b  | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.          |
+| 7-9c  | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.      |
 
 ## Remaining Slices
 
@@ -159,12 +160,17 @@ Triggers (`triggers.ts`):
   `database` / `selectedCharID` / `chatPage`, `TriggerRunResult`
   extended with `varChanged`, and `parseKeyValue` lifted into a
   Svelte-free module. Conditions are wired into `runTrigger`.
-- **7-9c** — deterministic V1 effect core. **(next)** Port `setvar`,
-  `systemprompt`, `impersonate`, `cutchat`, `modifychat`, `stop`, and
-  bounded `runtrigger` recursion, including additional-system-prompt
-  token accounting. Defer command, alert, LLM, image, similarity, and
-  Lua/code effects.
-- **7-9d** — V2 control flow + safe data effects. Port the safe subset:
+- **7-9c** — deterministic V1 effect core. **Landed `cae61155`.**
+  `setvar` (numeric ops), `systemprompt` (slot accumulation + token
+  count), `impersonate` / `cutchat` / `modifychat` (chat-message edits
+  on `result.chat`), `stop`, and bounded `runtrigger` recursion
+  (`recursiveCount < 10` unless `lowLevelAccess`, threading `ctx` +
+  OR-ing recursive `varChanged`). Effect-loop scaffold tracks
+  `currentIndent` via `engine.setIndent`; `engine.setChat` repoints
+  after the `runtrigger` chat reassignment. `command` and the
+  `lowLevelAccess`-gated arms fall through as no-ops.
+- **7-9d** — V2 control flow + safe data effects. **(next)** Convert
+  the effect loop to index-based, then port the safe subset:
   `v2SetVar`, local vars, `v2If` / `v2IfAdvanced`, `v2Else`,
   `v2EndIndent`, loops/breaks, random, regex test/extract, tokenize,
   string/array/dict/math helpers, quick chat search, and comments.
@@ -218,11 +224,12 @@ Preset templates (`templates.ts`):
 
 The tokens / budget chain is fully landed (7-8a `17fca64f`, 7-8b
 `d488ab7f`, 7-8c `c83015b3`), along with 7-7d (`f0382df8`) and
-7-5e (`febe67ce`). 7-9a (`cddc035e`) + 7-9b (`cb23202b`) landed the
-trigger runner shell and the variable/condition engine. The next
-default pickup is **7-9c** (deterministic V1 effects) → 7-9d/e/f,
-with **7-10a** → 7-10b/c/d/e/f for templates as an equally valid
-parallel front.
+7-5e (`febe67ce`). 7-9a (`cddc035e`) + 7-9b (`cb23202b`) + 7-9c
+(`cae61155`) landed the trigger runner shell, the variable/condition
+engine, and the deterministic V1 effects. The next default pickup is
+**7-9d** (V2 control flow + safe data effects) → 7-9e/f, with
+**7-10a** → 7-10b/c/d/e/f for templates as an equally valid parallel
+front.
 
 ### Tier 1 sub-slices unblocked by Tier 2
 
@@ -282,37 +289,37 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are now **7-9c** (continues
+- The biggest parallel-able fronts are now **7-9d** (continues
   triggers; the next default, after 7-9a `cddc035e` + 7-9b
-  `cb23202b`) and **7-10a** (kicks off templates). 7-5d is the
-  remaining Tier 1 sub-slice and unblocks the moment 7-9f lands.
+  `cb23202b` + 7-9c `cae61155`) and **7-10a** (kicks off templates).
+  7-5d is the remaining Tier 1 sub-slice and unblocks the moment
+  7-9f lands.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or if Triggers
   (7-9e) opens the door to porting `runTrigger('display', …)`.
 
 ## Sequential order (default)
 
-1. **7-9c** — deterministic V1 effects
-2. **7-9d** — V2 control flow + safe data effects
-3. **7-9e** — request/display state adapters
-4. **7-9f** — prompt/history effects + `start` handoff
-5. **7-5d** — history start trigger (unblocked by 7-9f)
-6. **7-10a** — template normalization + slot contract
-7. **7-10b** — content cards
-8. **7-10c** — chat cards + systemized chat
-9. **7-10d** — memory cards + cache markers
-10. **7-10e** — position + prompt-info finalization
-11. **7-10f** — render finalization + request-edit boundary
-12. **7-11a** — `assemble.ts` state loader + slot orchestration
-13. **7-11b** — memory-window bridge + final render
-14. **7-11c** — wire `/api/v1/generate/chat`
-15. **7-11d** — `/api/v1/generate/preview-prompt`
-16. **7-11e** — SSE telemetry (`info`, `message_patch`)
-17. **7-12a** — browser client adapter
-18. **7-12b** — dual-mode fixture sweep
-19. **7-12c** — side-effect dispatch
-20. **7-12d** — error / abort restoration
-21. **7-13** — phase 7 closeout
+1. **7-9d** — V2 control flow + safe data effects
+2. **7-9e** — request/display state adapters
+3. **7-9f** — prompt/history effects + `start` handoff
+4. **7-5d** — history start trigger (unblocked by 7-9f)
+5. **7-10a** — template normalization + slot contract
+6. **7-10b** — content cards
+7. **7-10c** — chat cards + systemized chat
+8. **7-10d** — memory cards + cache markers
+9. **7-10e** — position + prompt-info finalization
+10. **7-10f** — render finalization + request-edit boundary
+11. **7-11a** — `assemble.ts` state loader + slot orchestration
+12. **7-11b** — memory-window bridge + final render
+13. **7-11c** — wire `/api/v1/generate/chat`
+14. **7-11d** — `/api/v1/generate/preview-prompt`
+15. **7-11e** — SSE telemetry (`info`, `message_patch`)
+16. **7-12a** — browser client adapter
+17. **7-12b** — dual-mode fixture sweep
+18. **7-12c** — side-effect dispatch
+19. **7-12d** — error / abort restoration
+20. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 
