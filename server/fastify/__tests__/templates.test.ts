@@ -11,6 +11,7 @@ import {
   normalizeTemplate,
   renderByFormatOrder,
   renderByTemplate,
+  renderFinalPrompt,
   type FormatOrderKey,
   type UnformatedPromptSlots,
 } from '../src/prompt/templates.js'
@@ -797,5 +798,126 @@ describe('Phase 7-10e content trim', () => {
       'gpt4',
     )
     expect(out[0].content).toBe('x')
+  })
+})
+
+describe('Phase 7-10f renderFinalPrompt', () => {
+  const chatTemplate: PromptItem[] = [{ type: 'chat', rangeStart: 0, rangeEnd: 'end' }]
+  const chatRows = (): UnformatedPromptSlots =>
+    makeSlots({
+      chats: [
+        row({ role: 'user', content: 'u0' }),
+        row({ role: 'assistant', content: 'a1' }),
+        row({ role: 'user', content: 'u2' }),
+      ],
+    })
+
+  it('pushes [Continue the last response] on a supported model when isContinue', async () => {
+    const { formated } = await renderFinalPrompt({
+      ctx: ctxFor(makeDatabase({ aiModel: 'gpt4' } as Partial<Database>)),
+      currentChar: makeCharacter(),
+      unformated: makeSlots(),
+      promptTemplate: [{ type: 'postEverything' }],
+      usingPromptTemplate: true,
+      formatOrder: [],
+      isContinue: true,
+    })
+    expect(formated.map((r) => r.content)).toEqual(['[Continue the last response]'])
+  })
+
+  it('does not push the continue marker on an unsupported model', async () => {
+    const { formated } = await renderFinalPrompt({
+      ctx: ctxFor(makeDatabase({ aiModel: 'gemini' } as Partial<Database>)),
+      currentChar: makeCharacter(),
+      unformated: makeSlots(),
+      promptTemplate: [{ type: 'postEverything' }],
+      usingPromptTemplate: true,
+      formatOrder: [],
+      isContinue: true,
+    })
+    expect(formated).toEqual([])
+  })
+
+  it('does not push the continue marker when isContinue is false', async () => {
+    const { formated } = await renderFinalPrompt({
+      ctx: ctxFor(makeDatabase({ aiModel: 'gpt4' } as Partial<Database>)),
+      currentChar: makeCharacter(),
+      unformated: makeSlots(),
+      promptTemplate: [{ type: 'postEverything' }],
+      usingPromptTemplate: true,
+      formatOrder: [],
+    })
+    expect(formated).toEqual([])
+  })
+
+  it('splices the character depth_prompt at length - depth', async () => {
+    const { formated } = await renderFinalPrompt({
+      ctx: ctxFor(makeDatabase()),
+      currentChar: makeCharacter({ depth_prompt: { depth: 1, prompt: 'DP' } } as Partial<character>),
+      unformated: chatRows(),
+      promptTemplate: chatTemplate,
+      usingPromptTemplate: true,
+      formatOrder: [],
+    })
+    expect(formated.map((r) => r.content)).toEqual(['u0', 'a1', 'DP', 'u2'])
+    expect(formated[2].role).toBe('system')
+  })
+
+  it('skips the depth_prompt splice when absent or empty', async () => {
+    const noDepth = await renderFinalPrompt({
+      ctx: ctxFor(makeDatabase()),
+      currentChar: makeCharacter(),
+      unformated: chatRows(),
+      promptTemplate: chatTemplate,
+      usingPromptTemplate: true,
+      formatOrder: [],
+    })
+    expect(noDepth.formated.map((r) => r.content)).toEqual(['u0', 'a1', 'u2'])
+
+    const emptyDepth = await renderFinalPrompt({
+      ctx: ctxFor(makeDatabase()),
+      currentChar: makeCharacter({ depth_prompt: { depth: 1, prompt: '' } } as Partial<character>),
+      unformated: chatRows(),
+      promptTemplate: chatTemplate,
+      usingPromptTemplate: true,
+      formatOrder: [],
+    })
+    expect(emptyDepth.formated.map((r) => r.content)).toEqual(['u0', 'a1', 'u2'])
+  })
+
+  it('applies the editRequest seam to both formated and promptText', async () => {
+    const bang = (rows: OpenAIChat[]): OpenAIChat[] =>
+      rows.map((r) => ({ ...r, content: r.content + '!' }))
+    const { formated, promptText } = await renderFinalPrompt({
+      ctx: ctxFor(
+        makeDatabase({
+          promptInfoInsideChat: true,
+          promptTextInfoInsideChat: true,
+        } as Partial<Database>),
+      ),
+      currentChar: makeCharacter(),
+      unformated: makeSlots({ description: [row({ role: 'system', content: 'hello' })] }),
+      promptTemplate: [{ type: 'description', innerFormat: 'D: {{slot}}' }],
+      usingPromptTemplate: true,
+      formatOrder: [],
+      editRequest: bang,
+    })
+    expect(formated).toEqual([{ role: 'system', content: 'D: hello!' }])
+    expect(promptText).toEqual([{ role: 'system', content: 'D: {{slot}}!' }])
+  })
+
+  it('renders the non-template path with promptText undefined', async () => {
+    const { formated, promptText } = await renderFinalPrompt({
+      ctx: ctxFor(makeDatabase()),
+      currentChar: makeCharacter({ depth_prompt: { depth: 1, prompt: 'DP' } } as Partial<character>),
+      unformated: makeSlots({ main: [row({ role: 'system', content: 'm' })] }),
+      promptTemplate: null,
+      usingPromptTemplate: false,
+      formatOrder: ['main'],
+    })
+    // depth_prompt still splices on the non-template path...
+    expect(formated.map((r) => r.content)).toEqual(['DP', 'm'])
+    // ...but there is no prompt-info capture there.
+    expect(promptText).toBeUndefined()
   })
 })

@@ -50,12 +50,20 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * the non-template paths. The injected `positionParser` is already the
  * position seam (Tier 3 builds the real `resolvePosition`).
  *
- * Deferred to 7-10f: the `depth_prompt` splice, the
- * `runLuaEditTrigger('editRequest')` handoff, the `isContinue`
- * `[Continue the last response]` push, and the unifying top-level
- * `renderFinalPrompt` entry. The assemble root that fills these slots,
- * builds the injection-lore-aware `positionParser`, and applies
- * `triggerResult.additonalSysPrompt` is Tier 3 (7-11a/b).
+ * 7-10f adds the unifying top-level `renderFinalPrompt` entry
+ * (`renderFinalPrompt.ts:60-396`): the `isContinue`
+ * `[Continue the last response]` pre-push, dispatch to the template vs
+ * non-template path renderer, the `depth_prompt` splice (after the
+ * 7-10e trim), and the `editRequest` request-edit seam (an injectable
+ * async identity by default; browser Lua execution stays deferred). It
+ * returns `{ formated, promptText }`. This completes the template
+ * renderer.
+ *
+ * Deferred to Tier 3 (7-11a/b): the assemble root that loads state,
+ * builds the injection-lore-aware `positionParser` / `resolvePosition`,
+ * supplies `memories` from `buildMemoryWindow`, applies
+ * `triggerResult.additonalSysPrompt`, wires the real `editRequest`, and
+ * connects the chat route.
  */
 
 /**
@@ -617,10 +625,132 @@ export function renderByTemplate(
     }
   }
 
-  // SPA trailing trim (`renderFinalPrompt.ts:359-369`). `depth_prompt`
-  // splice + `editRequest` Lua hook stay deferred to 7-10f.
+  // SPA trailing trim (`renderFinalPrompt.ts:359-369`). The `depth_prompt`
+  // splice + `editRequest` seam run after this, in the top-level
+  // `renderFinalPrompt` (7-10f).
   trimContentsInPlace(formated)
   if (promptInfo) trimContentsInPlace(promptInfo)
 
   return { formated, promptInfo }
+}
+
+/** Args for the top-level `renderFinalPrompt` entry (7-10f). */
+export interface RenderFinalPromptArgs {
+  ctx: ExpandContext
+  currentChar: character
+  unformated: UnformatedPromptSlots
+  promptTemplate: PromptItem[] | null
+  usingPromptTemplate: boolean
+  /** Cloned + `postEverything`-appended `formatingOrder`; non-template path only. */
+  formatOrder: FormatOrderKey[]
+  /** Memory rows for the `memory` template card (Tier 3 / `buildMemoryWindow`). */
+  memories?: OpenAIChat[]
+  /** `{{position::}}` + injection-lore substitution (Tier 3 builds the real one). */
+  positionParser?: (text: string, loc: string) => string
+  /** Pushes a `[Continue the last response]` system entry under gpt/claude/openrouter/reverse_proxy. */
+  isContinue?: boolean
+  /**
+   * The `editRequest` request-edit seam (`renderFinalPrompt.ts:384`).
+   * Defaults to an identity transform; Tier 3 / dispatch supplies the
+   * real one (this is where the 7-9e request-state transform plugs in).
+   * Browser Lua execution stays deferred.
+   */
+  editRequest?: (rows: OpenAIChat[]) => OpenAIChat[] | Promise<OpenAIChat[]>
+}
+
+export interface RenderFinalPromptResult {
+  formated: OpenAIChat[]
+  /** Defined only when the template path captured prompt-info. */
+  promptText?: OpenAIChat[]
+}
+
+/** Models that take the `isContinue` `[Continue the last response]` push. */
+function takesContinueMarker(aiModel: string): boolean {
+  return (
+    aiModel.startsWith('claude') ||
+    aiModel.startsWith('gpt') ||
+    aiModel.startsWith('openrouter') ||
+    aiModel.startsWith('reverse_proxy')
+  )
+}
+
+/**
+ * The top-level render entry (`renderFinalPrompt.ts:60-396`), unifying
+ * the template (`renderByTemplate`) and non-template
+ * (`renderByFormatOrder`) paths with the SPA's pre/post-walk steps:
+ *
+ *   1. `isContinue` pre-push onto `unformated.postEverything` (`:77-88`),
+ *   2. dispatch to the path renderer (each already trims its rows, 7-10e),
+ *   3. the `depth_prompt` splice (`:372-382`) — after the trim, so the
+ *      spliced row is left untrimmed, matching the SPA,
+ *   4. the `editRequest` request-edit seam over `formated` and
+ *      `promptInfo` (`:384`, `:387-393`).
+ *
+ * Returns `{ formated, promptText }`; `promptText` is the
+ * (editRequest'd) prompt-info array, defined only when the template
+ * path captured it.
+ */
+export async function renderFinalPrompt(
+  args: RenderFinalPromptArgs,
+): Promise<RenderFinalPromptResult> {
+  const {
+    ctx,
+    currentChar,
+    unformated,
+    promptTemplate,
+    usingPromptTemplate,
+    formatOrder,
+    memories = [],
+    positionParser = (text) => text,
+    isContinue = false,
+    editRequest = (rows) => rows,
+  } = args
+  const aiModel = ctx.database.aiModel ?? ''
+
+  // 1. `[Continue the last response]` pre-push (`renderFinalPrompt.ts:77-88`).
+  if (isContinue && takesContinueMarker(aiModel)) {
+    unformated.postEverything.push({
+      role: 'system',
+      content: '[Continue the last response]',
+    })
+  }
+
+  // 2. Dispatch. Each path renderer already trims its rows (7-10e); only
+  //    the template path captures prompt-info.
+  let formated: OpenAIChat[]
+  let promptInfo: OpenAIChat[] | undefined
+  if (promptTemplate) {
+    ;({ formated, promptInfo } = renderByTemplate(
+      ctx,
+      currentChar,
+      unformated,
+      promptTemplate,
+      usingPromptTemplate,
+      positionParser,
+      memories,
+    ))
+  } else {
+    formated = renderByFormatOrder(unformated, formatOrder, aiModel)
+    promptInfo = undefined
+  }
+
+  // 3. Character `depth_prompt` splice (`renderFinalPrompt.ts:372-382`).
+  //    Runs after the trim, so the inserted row is intentionally not
+  //    trimmed.
+  const depthPrompt = currentChar.depth_prompt
+  if (depthPrompt?.prompt && depthPrompt.prompt.length > 0) {
+    formated.splice(formated.length - depthPrompt.depth, 0, {
+      role: 'system',
+      content: expandVariables(depthPrompt.prompt, { ...ctx, chara: currentChar }).text,
+    })
+  }
+
+  // 4. `editRequest` request-edit seam (`renderFinalPrompt.ts:384,387-393`).
+  formated = await editRequest(formated)
+  let promptText: OpenAIChat[] | undefined
+  if (promptInfo) {
+    promptText = await editRequest(promptInfo)
+  }
+
+  return { formated, promptText }
 }
