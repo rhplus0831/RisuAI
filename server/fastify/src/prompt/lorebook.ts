@@ -8,6 +8,7 @@ import type {
 } from '../../../../src/ts/storage/database.svelte'
 import { pickHashRand } from '../../../../src/ts/util/loreHash'
 import { getActiveModules } from './modules.js'
+import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 
 /**
  * Phase 7-7a / 7-7b / 7-7c lorebook activation: constant + keyword +
@@ -83,6 +84,15 @@ export interface LoreEntryActive {
   role: 'system' | 'user' | 'assistant'
   order: number
   priority: number
+  /**
+   * Token count of the decorator-stripped `prompt` under the
+   * encoding resolved by `encodingForModel(input.model)`. Populated
+   * in 7-7d so the priority-desc budget filter has something to
+   * drop. Like the SPA (`lorebook.svelte.ts:584`), this is computed
+   * once at activation time and not refreshed after `inject_lore`
+   * mutates `prompt`.
+   */
+  tokens: number
   source: string
   inject: LoreInject | null
 }
@@ -108,6 +118,13 @@ export interface ActivateLorebookInput {
   database: Database
   currentChar: character
   currentChat: Chat
+  /**
+   * Optional model id used to pick the tiktoken encoding for the
+   * per-entry `tokens` count. Resolved through `encodingForModel`;
+   * leaving it `undefined` falls back to `cl100k_base`, matching the
+   * SPA's `tikJS` default (`tokenizer.ts:244`).
+   */
+  model?: string
 }
 
 const POSITION_NAMED = new Set(['after_desc', 'before_desc', 'personality', 'scenario'])
@@ -295,6 +312,13 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   const defaultScanDepth = currentChar.loreSettings?.scanDepth ?? database.loreBookDepth ?? 5
   const defaultFullWord = currentChar.loreSettings?.fullWordMatching ?? false
   const recursiveScanning = currentChar.loreSettings?.recursiveScanning ?? true
+
+  // SPA `:82`: `loreSettings.tokenBudget ?? db.loreBookToken`. The SPA
+  // migrator (`database.svelte.ts:87`) defaults `loreBookToken` to
+  // 800, so we fall back to the same value here when neither override
+  // is present.
+  const loreBudget = currentChar.loreSettings?.tokenBudget ?? database.loreBookToken ?? 800
+  const encoding: TokenEncoding = encodingForModel(input.model)
 
   // SPA `:263`: walk every not-yet-fired entry; if any new entry
   // activates with recursion enabled, flip `matching = true` for
@@ -564,6 +588,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         role,
         order,
         priority,
+        tokens: tokenize(stripped, encoding),
         source: entry.comment || `lorebook ${i}`,
         inject,
       })
@@ -591,17 +616,34 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
     }
   } // end while(matching)
 
-  // Priority desc (SPA :623). 7-7d will splice in budget-aware
-  // truncation between these two sorts.
+  // Priority desc (SPA :623).
   actives.sort((a, b) => b.priority - a.priority)
+
+  // Budget-aware truncation (SPA :627-635). Strictly sequential
+  // through the priority-desc list: an entry that doesn't fit is
+  // skipped, but later (lower-priority) entries that *do* fit still
+  // slip in. `@@ignore_on_max_context` was already demoted to
+  // `priority = -1000` by the 7-7a decorator, so those entries sit
+  // at the tail of this list and get dropped first. Token counts
+  // are not refreshed after the `inject_lore` mutations below; this
+  // matches the SPA comment at `:649` ("performance over accuracy").
+  let usedTokens = 0
+  const budgeted = actives.filter((a) => {
+    if (usedTokens + a.tokens <= loreBudget) {
+      usedTokens += a.tokens
+      return true
+    }
+    return false
+  })
+
   // Order desc (SPA :637).
-  actives.sort((a, b) => b.order - a.order)
+  budgeted.sort((a, b) => b.order - a.order)
 
   // Apply lore-targeting injections, then drop the injectors from the
   // active list. Mirrors SPA :641-673; cheap and self-contained, so
-  // landing it here avoids a re-pass when 7-7d/7-10 wire placement.
-  const injectors = actives.filter((a) => a.inject?.lore)
-  const survivors = actives.filter((a) => !a.inject?.lore)
+  // landing it here avoids a re-pass when 7-10 wires placement.
+  const injectors = budgeted.filter((a) => a.inject?.lore)
+  const survivors = budgeted.filter((a) => !a.inject?.lore)
   for (const inj of injectors) {
     const target = survivors.find((s) => s.source === inj.inject!.location)
     if (!target) continue

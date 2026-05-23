@@ -103,6 +103,7 @@ describe('Phase 7-7a activateLorebook — sources', () => {
         role: 'system',
         order: 100,
         priority: 100,
+        tokens: 4,
         source: 'World info',
         inject: null,
       },
@@ -1014,6 +1015,7 @@ function makeActive(overrides: Partial<LoreEntryActive> = {}): LoreEntryActive {
     role: 'system',
     order: 100,
     priority: 100,
+    tokens: 0,
     source: '',
     inject: null,
     ...overrides,
@@ -1100,5 +1102,175 @@ describe('Phase 7-7e resolvePosition', () => {
     expect(resolvePosition('a {{position::missing}} b', makeReport([]))).toBe(
       'a  b',
     )
+  })
+})
+
+describe('Phase 7-7d activateLorebook — budget truncation', () => {
+  it('attaches per-entry tokens under the default cl100k_base encoding', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          // 'high priority entry' tokenizes to 3 on cl100k_base.
+          makeLore({ comment: 'a', content: 'high priority entry' }),
+        ],
+      }),
+      currentChat: makeChat(),
+    })
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0].tokens).toBe(3)
+  })
+
+  it('routes to o200k_base when input.model is in the o200k prefix list', () => {
+    // `café résumé 漢字` diverges: cl100k_base → 9, o200k_base → 6.
+    const lore = makeLore({ comment: 'a', content: 'café résumé 漢字' })
+    const cl = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      currentChat: makeChat(),
+    })
+    const o200 = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({ globalLore: [lore] }),
+      currentChat: makeChat(),
+      model: 'gpt-4o',
+    })
+    expect(cl.actives[0].tokens).toBe(9)
+    expect(o200.actives[0].tokens).toBe(6)
+  })
+
+  it('keeps highest-priority entries until the budget is exhausted', () => {
+    // Each body is 3 tokens on cl100k_base; budget 7 fits two and
+    // drops the third.
+    const lores = [
+      makeLore({
+        comment: 'high',
+        content: 'high priority entry',
+        insertorder: 1,
+      }),
+      makeLore({
+        comment: 'mid',
+        content: 'mid priority entry',
+        insertorder: 2,
+      }),
+      makeLore({
+        comment: 'low',
+        content: 'low priority entry',
+        insertorder: 3,
+      }),
+    ]
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: lores,
+        loreSettings: { tokenBudget: 7, scanDepth: 5, recursiveScanning: true },
+      }),
+      currentChat: makeChat(),
+    })
+    // SPA priority defaults to insertorder, so 'low' (3) ranks above
+    // 'mid' (2) and 'high' (1). The 7-token budget fits two 3-token
+    // entries; the final `survivors.reverse()` flips order-desc into
+    // ascending insertorder, putting 'mid' before 'low'.
+    expect(report.actives.map((a) => a.source)).toEqual(['mid', 'low'])
+  })
+
+  it('drops @@ignore_on_max_context entries first via the -1000 priority demotion', () => {
+    // Budget 3 holds exactly one 3-token entry. The ignored entry's
+    // decorator demotes priority to -1000, so it sorts last and is
+    // dropped first.
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            comment: 'ignored',
+            content: '@@ignore_on_max_context\nhigh priority entry',
+          }),
+          makeLore({
+            comment: 'kept',
+            content: 'mid priority entry',
+          }),
+        ],
+        loreSettings: { tokenBudget: 3, scanDepth: 5, recursiveScanning: true },
+      }),
+      currentChat: makeChat(),
+    })
+    expect(report.actives.map((a) => a.source)).toEqual(['kept'])
+  })
+
+  it('falls back to database.loreBookToken when loreSettings.tokenBudget is missing', () => {
+    const report = activateLorebook({
+      database: makeDb({ loreBookToken: 3 } as Partial<Database>),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            comment: 'high',
+            content: 'high priority entry',
+            insertorder: 10,
+          }),
+          makeLore({
+            comment: 'low',
+            content: 'low priority entry',
+            insertorder: 1,
+          }),
+        ],
+      }),
+      currentChat: makeChat(),
+    })
+    expect(report.actives.map((a) => a.source)).toEqual(['high'])
+  })
+
+  it('re-sorts survivors by order desc after the budget filter', () => {
+    // Two 3-token entries both fit a 6-token budget; surviving order
+    // should be insertorder desc, not priority desc.
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            comment: 'low-order',
+            content: 'high priority entry',
+            insertorder: 1,
+          }),
+          makeLore({
+            comment: 'high-order',
+            content: 'mid priority entry',
+            insertorder: 10,
+          }),
+        ],
+        loreSettings: { tokenBudget: 6, scanDepth: 5, recursiveScanning: true },
+      }),
+      currentChat: makeChat(),
+    })
+    // After the SPA's final reverse() the assembly-facing order is
+    // ascending by `order`, so the low-order entry comes first.
+    expect(report.actives.map((a) => a.source)).toEqual(['low-order', 'high-order'])
+  })
+
+  it('skips an oversized high-priority entry and admits a lower-priority entry that fits', () => {
+    // SPA semantics: the filter is sequential through priority-desc;
+    // an entry that doesn't fit is rejected, but a later (lower-priority)
+    // entry that *does* fit still slips in.
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            comment: 'oversized',
+            content: 'high priority entry mid priority entry low priority entry',
+            insertorder: 10,
+          }),
+          makeLore({
+            comment: 'fits',
+            content: 'short',
+            insertorder: 1,
+          }),
+        ],
+        loreSettings: { tokenBudget: 4, scanDepth: 5, recursiveScanning: true },
+      }),
+      currentChat: makeChat(),
+    })
+    // 'oversized' (9 tokens) > 4 → rejected; 'fits' (1 token) ≤ 4 → kept.
+    expect(report.actives.map((a) => a.source)).toEqual(['fits'])
   })
 })
