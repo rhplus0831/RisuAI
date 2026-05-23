@@ -10,15 +10,14 @@ import { pickHashRand } from '../../../../src/ts/util/loreHash'
 import { getActiveModules } from './modules.js'
 
 /**
- * Phase 7-7a / 7-7b lorebook activation: constant + keyword matching.
+ * Phase 7-7a / 7-7b / 7-7c lorebook activation: constant + keyword +
+ * recursive.
  *
- * Ports the always-on and keyword-driven slices of
- * `src/ts/process/lorebook.svelte.ts:loadLoreBookV3Prompt` into a
+ * Ports the always-on, keyword-driven, and recursive-scanning slices
+ * of `src/ts/process/lorebook.svelte.ts:loadLoreBookV3Prompt` into a
  * Svelte-free, request-scoped function. The decorator parser scaffold
  * here is reused by the remaining slices:
  *
- *   - 7-7c: recursion (`recursive`, `unrecursive`,
- *     `no_recursive_search`) + `recursivePrompt` accumulation.
  *   - 7-7d: token-budget truncation (requires `tokens` from 7-8).
  *   - 7-7e: depth-prompt emission into history.
  *
@@ -32,21 +31,32 @@ import { getActiveModules } from './modules.js'
  *     `activate_only_after`, `activate_only_every`, `is_greeting`,
  *     `probability`, `activate`, `dont_activate`,
  *     `keep_activate_after_match`, `dont_activate_after_match`.
+ *   - 7-7c: `recursive`, `unrecursive`, `no_recursive_search`.
  *
- * `instruct_*`, `is_user_icon`, and recursion decorators stay on the
- * `default: return false` path until their slice lands.
+ * `instruct_*` and `is_user_icon` stay on the `default: return false`
+ * path until their use cases come up.
  *
  * Note on `CCardLib.decorator.parse`: every leading `@@`-line is
  * stripped from the body regardless of the hook's return value. The
  * hook's `return false` only sets a flag that enables a following
- * `@@@`-conditional decorator (out of scope for 7-7a/7-7b). For the
- * two `*_after_match` decorators we still `return false` to preserve
- * SPA parity in case a preset chains a `@@@` line after them.
+ * `@@@`-conditional decorator (out of scope for 7-7a/7-7b/7-7c). For
+ * the two `*_after_match` decorators we still `return false` to
+ * preserve SPA parity in case a preset chains a `@@@` line after them.
  *
  * Note on `additional_keys`: SPA semantics are **AND** between the
  * entry's `key` and each `additional_keys` decorator (each pushed as
  * a separate positive query that must all match). Keys *within* a
  * single decorator are OR-combined inside `searchMatch`.
+ *
+ * Note on recursion (7-7c): after an entry activates, its
+ * decorator-stripped body is pushed into `recursivePrompt` (subject
+ * to the per-entry `recursive`/`unrecursive` decorator or the global
+ * `char.loreSettings.recursiveScanning`, default true per SPA `:85`).
+ * The outer `while (matching)` loop re-walks the entries against the
+ * growing recursive layer; `activatedIndexes` keeps each entry firing
+ * at most once, which bounds the loop at O(N) outer passes.
+ * `@@no_recursive_search` lets a single entry's search ignore the
+ * recursive layer (its `key` still has to be in the actual messages).
  */
 
 export interface LoreInject {
@@ -100,12 +110,7 @@ export interface ActivateLorebookInput {
   currentChat: Chat
 }
 
-const POSITION_NAMED = new Set([
-  'after_desc',
-  'before_desc',
-  'personality',
-  'scenario',
-])
+const POSITION_NAMED = new Set(['after_desc', 'before_desc', 'personality', 'scenario'])
 
 function collectEntries(input: ActivateLorebookInput): loreBook[] {
   const { database, currentChar, currentChat } = input
@@ -117,10 +122,7 @@ function collectEntries(input: ActivateLorebookInput): loreBook[] {
   return [...characterLore, ...chatLore, ...moduleLore]
 }
 
-function findCharByChaId(
-  database: Database,
-  chaId: string | undefined,
-): character | undefined {
+function findCharByChaId(database: Database, chaId: string | undefined): character | undefined {
   if (!chaId) return undefined
   return database.characters?.find((c) => c?.chaId === chaId)
 }
@@ -146,15 +148,24 @@ interface SearchArg {
   regex: boolean
   fullWordMatching: boolean
   all?: boolean
+  dontSearchWhenRecursive?: boolean
+}
+
+interface RecursivePromptEntry {
+  prompt: string
+  data: string
+  source: string
 }
 
 /**
  * Ports `searchMatch` from
- * `src/ts/process/lorebook.svelte.ts:97-239` minus the recursive
- * prompt accumulation. Walks the last `searchDepth` messages, builds
- * SPA-shaped `\x01{{name}}:body\x01` log prompts, and matches keys
- * against the lowercased message data with the SPA's exact
- * full-word / partial-word and `all`-mode semantics.
+ * `src/ts/process/lorebook.svelte.ts:97-239`. Walks the last
+ * `searchDepth` messages, builds SPA-shaped `\x01{{name}}:body\x01`
+ * log prompts, and matches keys against the lowercased message data
+ * with the SPA's exact full-word / partial-word and `all`-mode
+ * semantics. Concatenates the accumulated `recursivePrompt` layer
+ * (SPA `:141-150`) unless the current query opted out via
+ * `@@no_recursive_search`.
  *
  * The regex path requires `/pattern/flags`; on malformed input it
  * returns false (SPA `:155`). Matched entries push into `matchLog`
@@ -166,6 +177,7 @@ function searchMatch(
   database: Database,
   currentChar: character,
   matchLog: LoreMatchLogEntry[],
+  recursivePrompt: RecursivePromptEntry[],
 ): boolean {
   const sliced = messages.slice(messages.length - arg.searchDepth, messages.length)
   const trimmedKeys: string[] = []
@@ -177,22 +189,32 @@ function searchMatch(
 
   const username = database.username ?? 'user'
 
-  const mList = sliced.map((msg, i) => {
-    if (msg.role === 'user') {
+  const mList = sliced
+    .map((msg, i) => {
+      if (msg.role === 'user') {
+        return {
+          source: `message ${i} by user`,
+          prompt: `\x01{{${username}}}:` + msg.data + '\x01',
+          data: msg.data,
+        }
+      }
+      const speakerName =
+        msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
       return {
-        source: `message ${i} by user`,
-        prompt: `\x01{{${username}}}:` + msg.data + '\x01',
+        source: `message ${i} by char`,
+        prompt: `\x01{{${speakerName}}}:` + msg.data + '\x01',
         data: msg.data,
       }
-    }
-    const speakerName =
-      msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
-    return {
-      source: `message ${i} by char`,
-      prompt: `\x01{{${speakerName}}}:` + msg.data + '\x01',
-      data: msg.data,
-    }
-  })
+    })
+    .concat(
+      arg.dontSearchWhenRecursive
+        ? []
+        : recursivePrompt.map((m) => ({
+            source: 'lorebook ' + m.source,
+            prompt: m.prompt,
+            data: m.data,
+          })),
+    )
 
   if (arg.regex) {
     for (const m of mList) {
@@ -259,276 +281,315 @@ function searchMatch(
   return allMode && allModeMatched
 }
 
-export function activateLorebook(
-  input: ActivateLorebookInput,
-): LorebookActivationReport {
+export function activateLorebook(input: ActivateLorebookInput): LorebookActivationReport {
   const { database, currentChar, currentChat } = input
   const entries = collectEntries(input)
   const actives: LoreEntryActive[] = []
   const disabledUIPrompts: string[] = []
   const matchLog: LoreMatchLogEntry[] = []
   const activatedIndexes = new Set<number>()
+  const recursivePrompt: RecursivePromptEntry[] = []
 
   // Includes the (implicit) first message, matching SPA `:84`.
   const chatLength = (currentChat.message?.length ?? 0) + 1
-  const defaultScanDepth =
-    currentChar.loreSettings?.scanDepth ?? database.loreBookDepth ?? 5
+  const defaultScanDepth = currentChar.loreSettings?.scanDepth ?? database.loreBookDepth ?? 5
   const defaultFullWord = currentChar.loreSettings?.fullWordMatching ?? false
+  const recursiveScanning = currentChar.loreSettings?.recursiveScanning ?? true
 
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i]
-    if (!entry) continue
-    if (entry.mode === 'folder') continue
-    // SPA `:269`: skip entries that have neither always-on nor a key.
-    if (!entry.alwaysActive && !entry.key) continue
+  // SPA `:263`: walk every not-yet-fired entry; if any new entry
+  // activates with recursion enabled, flip `matching = true` for
+  // another pass against the grown `recursivePrompt` layer.
+  // `activatedIndexes.has(i)` bounds the outer loop at O(entries.length)
+  // passes since each entry can only contribute once.
+  let matching = true
+  while (matching) {
+    matching = false
 
-    let activated = true
-    let forceState: 'none' | 'activate' | 'deactivate' = 'none'
-    let keepAfterMatch = false
-    let dontAfterMatch = false
-    let pos: LorePosition = ''
-    let depth = 0
-    let role: 'system' | 'user' | 'assistant' = 'system'
-    let order = entry.insertorder
-    let priority = entry.insertorder
-    let inject: LoreInject | null = null
-    let scanDepth = defaultScanDepth
-    let fullWordMatching = defaultFullWord
-    const searchQueries: { keys: string[]; negative: boolean; all?: boolean }[] = []
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i]
+      if (!entry) continue
+      if (activatedIndexes.has(i)) continue
+      if (entry.mode === 'folder') continue
+      // SPA `:269`: skip entries that have neither always-on nor a key.
+      if (!entry.alwaysActive && !entry.key) continue
 
-    // SPA `:294-307` child mirror: take over parent's content+comment
-    // and force-activate iff the parent at index j hasn't fired yet.
-    if (entry.mode === 'child') {
-      activated = false
-      for (let j = 0; j < i; j++) {
-        if (entries[j] && entries[j].id === entry.id) {
-          if (!activatedIndexes.has(j)) {
-            entry.comment = entries[j].comment
-            entry.content = entries[j].content
-            entry.alwaysActive = true
-            activated = true
+      let activated = true
+      let forceState: 'none' | 'activate' | 'deactivate' = 'none'
+      let keepAfterMatch = false
+      let dontAfterMatch = false
+      let pos: LorePosition = ''
+      let depth = 0
+      let role: 'system' | 'user' | 'assistant' = 'system'
+      let order = entry.insertorder
+      let priority = entry.insertorder
+      let inject: LoreInject | null = null
+      let scanDepth = defaultScanDepth
+      let fullWordMatching = defaultFullWord
+      let itemRecursive: 'global' | true | false = 'global'
+      let dontSearchWhenRecursive = false
+      const searchQueries: { keys: string[]; negative: boolean; all?: boolean }[] = []
+
+      // SPA `:294-307` child mirror: take over parent's content+comment
+      // and force-activate iff the parent at index j hasn't fired yet.
+      if (entry.mode === 'child') {
+        activated = false
+        for (let j = 0; j < i; j++) {
+          if (entries[j] && entries[j].id === entry.id) {
+            if (!activatedIndexes.has(j)) {
+              entry.comment = entries[j].comment
+              entry.content = entries[j].content
+              entry.alwaysActive = true
+              activated = true
+            }
+            break
           }
-          break
         }
       }
-    }
 
-    const stripped = CCardLib.decorator.parse(entry.content, (name, arg) => {
-      switch (name) {
-        case 'end': {
-          pos = 'depth'
-          depth = 0
-          return
-        }
-        case 'depth':
-        case 'reverse_depth': {
-          const int = parseInt(arg[0])
-          if (Number.isNaN(int)) return false
-          depth = int
-          pos = name === 'depth' ? 'depth' : 'reverse_depth'
-          return
-        }
-        case 'role': {
-          if (arg[0] === 'user' || arg[0] === 'assistant' || arg[0] === 'system') {
-            role = arg[0]
+      const stripped = CCardLib.decorator.parse(entry.content, (name, arg) => {
+        switch (name) {
+          case 'end': {
+            pos = 'depth'
+            depth = 0
             return
           }
-          return false
-        }
-        case 'position': {
-          const value = arg[0]
-          if (value.startsWith('pt_')) {
-            pos = value as LorePosition
+          case 'depth':
+          case 'reverse_depth': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            depth = int
+            pos = name === 'depth' ? 'depth' : 'reverse_depth'
             return
           }
-          if (POSITION_NAMED.has(value)) {
-            pos = value as LorePosition
+          case 'role': {
+            if (arg[0] === 'user' || arg[0] === 'assistant' || arg[0] === 'system') {
+              role = arg[0]
+              return
+            }
+            return false
+          }
+          case 'position': {
+            const value = arg[0]
+            if (value.startsWith('pt_')) {
+              pos = value as LorePosition
+              return
+            }
+            if (POSITION_NAMED.has(value)) {
+              pos = value as LorePosition
+              return
+            }
+            return false
+          }
+          case 'inject_lore': {
+            inject ??= { operation: 'append', location: '', param: '', lore: true }
+            inject.location = arg.join(' ')
+            inject.lore = true
             return
           }
-          return false
-        }
-        case 'inject_lore': {
-          inject ??= { operation: 'append', location: '', param: '', lore: true }
-          inject.location = arg.join(' ')
-          inject.lore = true
-          return
-        }
-        case 'inject_at': {
-          inject ??= { operation: 'append', location: '', param: '', lore: false }
-          inject.location = arg.join(' ')
-          inject.lore = false
-          return
-        }
-        case 'inject_replace': {
-          inject ??= { operation: 'replace', location: '', param: '', lore: false }
-          inject.operation = 'replace'
-          inject.param = arg.join(' ')
-          return
-        }
-        case 'inject_prepend': {
-          inject ??= { operation: 'prepend', location: '', param: '', lore: false }
-          inject.operation = 'prepend'
-          inject.param = arg.join(' ')
-          return
-        }
-        case 'ignore_on_max_context': {
-          priority = -1000
-          return
-        }
-        case 'priority': {
-          const int = parseInt(arg[0])
-          if (Number.isNaN(int)) return false
-          priority = int
-          return
-        }
-        case 'disable_ui_prompt': {
-          if (arg[0] === 'post_history_instructions' || arg[0] === 'system_prompt') {
-            disabledUIPrompts.push(arg[0])
+          case 'inject_at': {
+            inject ??= { operation: 'append', location: '', param: '', lore: false }
+            inject.location = arg.join(' ')
+            inject.lore = false
             return
           }
-          return false
-        }
-        case 'additional_keys': {
-          searchQueries.push({ keys: arg, negative: false })
-          return
-        }
-        case 'exclude_keys': {
-          searchQueries.push({ keys: arg, negative: true })
-          return
-        }
-        case 'exclude_keys_all': {
-          searchQueries.push({ keys: arg, negative: true, all: true })
-          return
-        }
-        case 'match_full_word': {
-          fullWordMatching = true
-          return
-        }
-        case 'match_partial_word': {
-          fullWordMatching = false
-          return
-        }
-        case 'scan_depth': {
-          const int = parseInt(arg[0])
-          if (Number.isNaN(int)) return false
-          scanDepth = int
-          return
-        }
-        case 'activate_only_after': {
-          const int = parseInt(arg[0])
-          if (Number.isNaN(int)) return false
-          if (chatLength < int) activated = false
-          return
-        }
-        case 'activate_only_every': {
-          const int = parseInt(arg[0])
-          if (Number.isNaN(int)) return false
-          if (chatLength % int !== 0) activated = false
-          return
-        }
-        case 'is_greeting': {
-          const int = parseInt(arg[0])
-          if (Number.isNaN(int)) return false
-          if ((currentChat.fmIndex ?? -1) + 1 !== int) activated = false
-          return
-        }
-        case 'probability': {
-          const int = parseInt(arg[0])
-          if (Number.isNaN(int)) return false
-          if (Math.random() * 100 > int) activated = false
-          return
-        }
-        case 'activate': {
-          forceState = 'activate'
-          return
-        }
-        case 'dont_activate': {
-          forceState = 'deactivate'
-          return
-        }
-        case 'keep_activate_after_match': {
-          if (readChatVar(currentChat, '__internal_ka_' + loreId(entry)) === 'true') {
+          case 'inject_replace': {
+            inject ??= { operation: 'replace', location: '', param: '', lore: false }
+            inject.operation = 'replace'
+            inject.param = arg.join(' ')
+            return
+          }
+          case 'inject_prepend': {
+            inject ??= { operation: 'prepend', location: '', param: '', lore: false }
+            inject.operation = 'prepend'
+            inject.param = arg.join(' ')
+            return
+          }
+          case 'ignore_on_max_context': {
+            priority = -1000
+            return
+          }
+          case 'priority': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            priority = int
+            return
+          }
+          case 'disable_ui_prompt': {
+            if (arg[0] === 'post_history_instructions' || arg[0] === 'system_prompt') {
+              disabledUIPrompts.push(arg[0])
+              return
+            }
+            return false
+          }
+          case 'additional_keys': {
+            searchQueries.push({ keys: arg, negative: false })
+            return
+          }
+          case 'exclude_keys': {
+            searchQueries.push({ keys: arg, negative: true })
+            return
+          }
+          case 'exclude_keys_all': {
+            searchQueries.push({ keys: arg, negative: true, all: true })
+            return
+          }
+          case 'match_full_word': {
+            fullWordMatching = true
+            return
+          }
+          case 'match_partial_word': {
+            fullWordMatching = false
+            return
+          }
+          case 'scan_depth': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            scanDepth = int
+            return
+          }
+          case 'activate_only_after': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            if (chatLength < int) activated = false
+            return
+          }
+          case 'activate_only_every': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            if (chatLength % int !== 0) activated = false
+            return
+          }
+          case 'is_greeting': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            if ((currentChat.fmIndex ?? -1) + 1 !== int) activated = false
+            return
+          }
+          case 'probability': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            if (Math.random() * 100 > int) activated = false
+            return
+          }
+          case 'activate': {
             forceState = 'activate'
-          } else {
-            keepAfterMatch = true
+            return
           }
-          // `return false` matches SPA `:346`. The decorator line is
-          // stripped from the body by ccardlib regardless; the return
-          // value only enables a following `@@@` conditional, which is
-          // out of scope for 7-7a/7-7b.
-          return false
-        }
-        case 'dont_activate_after_match': {
-          if (readChatVar(currentChat, '__internal_da_' + loreId(entry)) === 'true') {
+          case 'dont_activate': {
             forceState = 'deactivate'
+            return
+          }
+          case 'keep_activate_after_match': {
+            if (readChatVar(currentChat, '__internal_ka_' + loreId(entry)) === 'true') {
+              forceState = 'activate'
+            } else {
+              keepAfterMatch = true
+            }
+            // `return false` matches SPA `:346`. The decorator line is
+            // stripped from the body by ccardlib regardless; the return
+            // value only enables a following `@@@` conditional, which is
+            // out of scope for 7-7a/7-7b.
+            return false
+          }
+          case 'dont_activate_after_match': {
+            if (readChatVar(currentChat, '__internal_da_' + loreId(entry)) === 'true') {
+              forceState = 'deactivate'
+            } else {
+              dontAfterMatch = true
+            }
+            return false
+          }
+          case 'recursive': {
+            itemRecursive = true
+            return
+          }
+          case 'unrecursive': {
+            itemRecursive = false
+            return
+          }
+          case 'no_recursive_search': {
+            dontSearchWhenRecursive = true
+            return
+          }
+          default: {
+            return false
+          }
+        }
+      })
+
+      if (activated && forceState === 'none' && !entry.alwaysActive) {
+        searchQueries.push({ keys: entry.key.split(','), negative: false })
+        if (entry.secondkey && entry.selective) {
+          searchQueries.push({ keys: entry.secondkey.split(','), negative: false })
+        }
+        for (const q of searchQueries) {
+          const hit = searchMatch(
+            currentChat.message ?? [],
+            {
+              keys: q.keys,
+              searchDepth: scanDepth,
+              regex: entry.useRegex ?? false,
+              fullWordMatching,
+              all: q.all,
+              dontSearchWhenRecursive,
+            },
+            database,
+            currentChar,
+            matchLog,
+            recursivePrompt,
+          )
+          if (q.negative) {
+            if (hit) {
+              activated = false
+              break
+            }
           } else {
-            dontAfterMatch = true
-          }
-          return false
-        }
-        default: {
-          return false
-        }
-      }
-    })
-
-    if (activated && forceState === 'none' && !entry.alwaysActive) {
-      searchQueries.push({ keys: entry.key.split(','), negative: false })
-      if (entry.secondkey && entry.selective) {
-        searchQueries.push({ keys: entry.secondkey.split(','), negative: false })
-      }
-      for (const q of searchQueries) {
-        const hit = searchMatch(
-          currentChat.message ?? [],
-          {
-            keys: q.keys,
-            searchDepth: scanDepth,
-            regex: entry.useRegex ?? false,
-            fullWordMatching,
-            all: q.all,
-          },
-          database,
-          currentChar,
-          matchLog,
-        )
-        if (q.negative) {
-          if (hit) {
-            activated = false
-            break
-          }
-        } else {
-          if (!hit) {
-            activated = false
-            break
+            if (!hit) {
+              activated = false
+              break
+            }
           }
         }
       }
+
+      if (forceState === 'activate') activated = true
+      else if (forceState === 'deactivate') activated = false
+
+      if (!activated) continue
+
+      actives.push({
+        depth,
+        pos,
+        prompt: stripped,
+        role,
+        order,
+        priority,
+        source: entry.comment || `lorebook ${i}`,
+        inject,
+      })
+      activatedIndexes.add(i)
+
+      if (keepAfterMatch) {
+        writeChatVar(currentChat, '__internal_ka_' + loreId(entry), 'true')
+      }
+      if (dontAfterMatch) {
+        writeChatVar(currentChat, '__internal_da_' + loreId(entry), 'true')
+      }
+
+      // SPA `:606-618`: seed the recursive layer with the
+      // decorator-stripped body. Per-entry `@@recursive` / `@@unrecursive`
+      // overrides the global `loreSettings.recursiveScanning` default.
+      const recurse = itemRecursive === 'global' ? recursiveScanning : itemRecursive
+      if (recurse) {
+        matching = true
+        recursivePrompt.push({
+          prompt: stripped,
+          data: stripped,
+          source: entry.comment || `lorebook ${i}`,
+        })
+      }
     }
-
-    if (forceState === 'activate') activated = true
-    else if (forceState === 'deactivate') activated = false
-
-    if (!activated) continue
-
-    actives.push({
-      depth,
-      pos,
-      prompt: stripped,
-      role,
-      order,
-      priority,
-      source: entry.comment || `lorebook ${i}`,
-      inject,
-    })
-    activatedIndexes.add(i)
-
-    if (keepAfterMatch) {
-      writeChatVar(currentChat, '__internal_ka_' + loreId(entry), 'true')
-    }
-    if (dontAfterMatch) {
-      writeChatVar(currentChat, '__internal_da_' + loreId(entry), 'true')
-    }
-  }
+  } // end while(matching)
 
   // Priority desc (SPA :623). 7-7d will splice in budget-aware
   // truncation between these two sorts.

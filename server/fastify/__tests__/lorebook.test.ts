@@ -774,3 +774,227 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     ])
   })
 })
+
+describe('Phase 7-7c activateLorebook — recursion', () => {
+  it('chains A -> B: B fires on the second pass via A activated body', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            comment: 'A',
+            content: 'A body mentions dog.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'dog',
+            comment: 'B',
+            content: 'B body about dogs.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    const sources = report.actives.map((a) => a.source).sort()
+    expect(sources).toEqual(['A', 'B'])
+    expect(report.matchLog.find((m) => m.activated === 'dog')?.source).toBe(
+      'lorebook A',
+    )
+  })
+
+  it('deep chain A -> B -> C activates all three across three passes', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'alpha',
+            comment: 'A',
+            content: 'A links to bravo.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'bravo',
+            comment: 'B',
+            content: 'B links to charlie.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'charlie',
+            comment: 'C',
+            content: 'C body.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Start with alpha.' })],
+      }),
+    })
+    expect(report.actives.map((a) => a.source).sort()).toEqual(['A', 'B', 'C'])
+  })
+
+  it('a constant entry seeds the recursive layer without any user message', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: true,
+            comment: 'Always',
+            content: 'Always-on body mentions secret.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'secret',
+            comment: 'Followup',
+            content: 'Followup body.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({ message: [] }),
+    })
+    expect(report.actives.map((a) => a.source).sort()).toEqual([
+      'Always',
+      'Followup',
+    ])
+  })
+
+  it('global loreSettings.recursiveScanning=false suppresses the chain', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        loreSettings: {
+          tokenBudget: 800,
+          scanDepth: 5,
+          recursiveScanning: false,
+        },
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            comment: 'A',
+            content: 'A body mentions dog.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'dog',
+            comment: 'B',
+            content: 'B body.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    expect(report.actives.map((a) => a.source)).toEqual(['A'])
+  })
+
+  it('@@unrecursive on the parent blocks the chain even when global is true', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            comment: 'A',
+            content: '@@unrecursive\nA mentions dog.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'dog',
+            comment: 'B',
+            content: 'B body.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    expect(report.actives.map((a) => a.source)).toEqual(['A'])
+  })
+
+  it('@@recursive on an entry overrides a globally-disabled recursiveScanning', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        loreSettings: {
+          tokenBudget: 800,
+          scanDepth: 5,
+          recursiveScanning: false,
+        },
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            comment: 'A',
+            content: '@@recursive\nA mentions dog.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'dog',
+            comment: 'B',
+            content: 'B body.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    expect(report.actives.map((a) => a.source).sort()).toEqual(['A', 'B'])
+  })
+
+  it('@@no_recursive_search makes one entry ignore the recursive layer only', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            comment: 'A',
+            content: 'A body mentions dog.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'dog',
+            comment: 'B',
+            content: '@@no_recursive_search\nB body.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'Tell me about cats.' })],
+      }),
+    })
+    // B's keyword `dog` lives only in A's recursive entry; with
+    // @@no_recursive_search B's search skips that layer and the
+    // real message has no `dog`, so B never fires.
+    expect(report.actives.map((a) => a.source)).toEqual(['A'])
+  })
+
+  it('terminates when always-on entries mention each other', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({ alwaysActive: true, comment: 'A', content: 'mentions B and C' }),
+          makeLore({ alwaysActive: true, comment: 'B', content: 'mentions A and C' }),
+          makeLore({ alwaysActive: true, comment: 'C', content: 'mentions A and B' }),
+        ],
+      }),
+      currentChat: makeChat({ message: [] }),
+    })
+    // Each entry can only fire once; the loop terminates cleanly.
+    expect(report.actives).toHaveLength(3)
+    expect(report.actives.map((a) => a.source).sort()).toEqual(['A', 'B', 'C'])
+  })
+})
