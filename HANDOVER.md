@@ -2,8 +2,8 @@
 
 Date: 2026-05-24
 Branch: `fastify`
-Head: `a3a1e6e2 feat: add browser client adapter for /api/v1/generate/chat (Phase 7-12a)`
-Latest feature slice: `a3a1e6e2 feat: add browser client adapter for /api/v1/generate/chat (Phase 7-12a)`
+Head: `2b5603a2 feat: emit formated + biases on the /chat prompt event (Phase 7-12b)`
+Latest feature slice: `2b5603a2 feat: emit formated + biases on the /chat prompt event (Phase 7-12b)`
 
 This is the day-to-day runbook for **Phase 7 in progress**:
 current branch head, verification baselines, and the next pickup.
@@ -64,6 +64,7 @@ Landed Phase 7 slices:
 | 7-11h   | `24a8b0fe` | Added `POST /api/v1/generate/preview-prompt`: one-shot **JSON** shortcut (`validatePreview` + forced `preview_prompt` mode) returning `result.prompt`, `{ stopSending, abortReason }`, or an HTTP 404 (`EntityNotFoundError`) for bad IDs / missing DB.                                                                           |
 | 7-11i   | `807f5d1a` | Added the `info` SSE event to `/chat`: timings + token counts emitted on the success path (after `prompt`/`stage(prompt,end)`, before `done`); `outputTokens` rides on a new `InfoEvent.responseBudget` field. `/preview-prompt` unchanged; `message_patch` deferred to 7-12.                                                     |
 | 7-12a   | `a3a1e6e2` | Browser client adapter (`serverChat.ts` `requestServerChat`): POSTs `AssembleInput` to `/chat` with `risu-auth`, stream-parses `stage`/`prompt`/`info`/`error`/`done` (ignores dispatch-coupled events), returns `{ status: 'ok'\|'error'\|'aborted' }`. Shared `sseParse.ts`, `db.useServerPromptAssembly` gate (not yet wired). |
+| 7-12b   | `2b5603a2` | Additively extended the `prompt` event (and `/preview-prompt` JSON) with the full `OpenAIChat[]` `formated` rows + `biases`; `messages` stays the lossy projection. `assemblePrompt` folds both into `result.prompt`; client mirror + mock + adapter surface them. Unblocks 7-12c preview wiring.                                 |
 
 What is real in code:
 
@@ -158,51 +159,70 @@ abortReason }`, or a real HTTP **404** for `EntityNotFoundError` (no
   and ignores the dispatch-coupled `token` / `message_patch` / `side_effect`
   / `warning` events. The `db.useServerPromptAssembly` gate (default false,
   independent of `useServerGeneration`) is defined but **not yet wired**
-  into `sendChat` — that live integration is 7-12b. `serverChatEvents.ts`
+  into `sendChat` — that live integration is 7-12c. `serverChatEvents.ts`
   mirrors the locked `PromptChatEvent` union client-side.
+- The `/chat` `prompt` event (and `/preview-prompt` JSON) now carries the
+  full `OpenAIChat[]` `formated` rows + `biases` alongside the lossy
+  `messages` projection (7-12b, `2b5603a2`). `assemblePrompt` folds both
+  into `result.prompt`, so both routes stay in sync; `requestServerChat`
+  surfaces them via `ServerChatPrompt`. This is the prerequisite for the
+  7-12c preview wiring (the browser needs the full rows to set
+  `previewFormated`).
 
-Last recorded baselines after 7-12a:
+Last recorded baselines after 7-12b:
 
 - `pnpm api:test`: 882 across 42 files
-- `pnpm test`: 614 across 48 files (+ 4 skipped)
+- `pnpm test`: 615 across 48 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-12b dual-mode assembly sweep + live `sendChat` wiring
+## Next Slice — 7-12c preview-path `sendChat` wiring + dual-mode parity
 
-Pick up **7-12b — wire `requestServerChat` into `sendChat` + dual-mode
-sweep** (Tier 4).
+Pick up **7-12c — wire `requestServerChat` into the `sendChat` preview
+path + real-assembler parity test** (Tier 4).
 
-7-12a (`a3a1e6e2`) landed the standalone adapter (`serverChat.ts`) + the
-`db.useServerPromptAssembly` gate, but did **not** touch the live flow.
-7-12b flips the gate at the assembly seam and re-runs the server-backed
-sendChat fixtures through the new `/chat` route to prove parity.
+7-12b (`2b5603a2`) landed the `formated` + `biases` payload extension, so
+the adapter now returns everything a preview needs. 7-12c flips the
+`db.useServerPromptAssembly` gate on the **preview path only** — the read-only
+part that needs no dispatch and no chat-row deltas.
 
 ### Scope sketch
 
-- check `db.useServerPromptAssembly` in `sendChat` (`index.svelte.ts`
-  ~177–345 is the local-assembly block that produces `formated` /
-  `biases` / `inputTokens` / `outputTokens` before `dispatchRequest`).
-  When the gate is on, replace that block with a `requestServerChat`
-  call and feed its output into the existing `dispatchRequest`.
-- extend the dual-mode fixture harness
-  (`sendChat.fixtures.serverBacked.test.ts` + `serverChatFetch.ts` mock,
-  added in 7-12a) to assert the assembled prompt matches the local path.
+- short-circuit early in `sendChat` (`index.svelte.ts`, after
+  `setupSendChatContext`, before the ~177–345 local-assembly block),
+  guarded by `isFastifyServer && db.useServerPromptAssembly &&
+(arg.preview || arg.previewPrompt)`:
+  - `previewPrompt` → `previewBody = result.prompt.promptInfo.promptText`;
+  - `preview` → `previewFormated = result.prompt.formated` (7-12b);
+  - on `error` / `aborted`, route through `throwError` / return false to
+    match the local path.
+- the **send / continue / regenerate** path stays local — see the
+  boundary note below.
 
-### Blocking precondition (decide first)
+### Parity test (the valuable part)
 
-The `prompt` SSE event currently carries only `messages` + `promptInfo`
-— **not** `biases` or the full `OpenAIChat[]` `formated`. `dispatchRequest`
-needs both. So 7-12b must first **additively** extend the `/chat` `prompt`
-(or `info`) event to emit `biases` + `formated` (the contract is locked
-but additive-only), then have the adapter surface them. Without that,
-only the preview path (which needs no dispatch) can be wired.
+Make the `serverChatFetch` mock call the **real** `assemblePrompt`
+in-process (it is Svelte-free; bind `AssembleDeps.loadDatabase` to the
+fixture DB) and serialize its result as SSE. Then run a fixture in
+`preview` mode with the gate on and assert `previewFormated` equals the
+local sweep's output — a genuine cross-check that the server and local
+browser assemblers agree on the same fixture DB.
 
-### Out of scope (defer)
+### Important boundary note
 
-- provider dispatch + `varChanged` persistence + `message_patch` /
-  `side_effect` events — **Phase 7-12c/d / 6**. Hypa V3 stays
-  **Phase 8**; browser plugin/Lua + inlay asset lookup stay deferred.
+The send path mutates `currentChat` in place (start-trigger chat
+mutations in `buildHistoryWindow`, the row `orchestrateResponse` writes
+back). The read-only `/chat` route returns the assembled prompt but
+**not** those chat-row deltas — that is the deferred `message_patch`. So
+the live **send-path** wiring + full send sweep stays in **7-12d**
+(dispatch-coupled), not this slice.
+
+### Out of scope (defer to 7-12d)
+
+- live send-path wiring + provider dispatch + `varChanged` persistence +
+  `message_patch` / `side_effect` events + restoration — **7-12d / 6**.
+  Hypa V3 stays **Phase 8**; browser plugin/Lua + inlay asset lookup stay
+  deferred.
 
 ### Verification
 
@@ -213,8 +233,9 @@ pnpm test
 pnpm build
 ```
 
-7-12b is the default next pickup. 7-12a (the adapter) is landed; Tier 3 is
-closed (assembler 7-11a–f, routes 7-11g/h, telemetry 7-11i).
+7-12c is the default next pickup. 7-12a (adapter) + 7-12b (payload
+extension) are landed; Tier 3 is closed (assembler 7-11a–f, routes
+7-11g/h, telemetry 7-11i).
 
 ## Patterns To Keep
 
