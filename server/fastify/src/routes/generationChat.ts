@@ -178,10 +178,21 @@ async function streamAssembly(
     emit({ type: 'stage', stage: 'prompt', status: 'start' })
 
     try {
+      const startedAt = Date.now()
       const result = await assemblePrompt(input, loadDatabaseDeps(dataDir))
+      const promptMs = Date.now() - startedAt
       if (!result.stopSending && result.prompt) {
         emit({ type: 'prompt', ...result.prompt })
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
+        // 7-11i: assembly telemetry. `outputTokens` is the response *budget*,
+        // not a completion count, so it rides on `responseBudget` rather than
+        // `tokens.completion` (which stays unset until dispatch in 7-12).
+        emit({
+          type: 'info',
+          timings: { prompt: promptMs },
+          tokens: { prompt: result.inputTokens, total: result.inputTokens },
+          responseBudget: result.outputTokens,
+        })
       } else {
         emit({
           type: 'error',

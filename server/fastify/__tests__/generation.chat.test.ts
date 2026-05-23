@@ -256,14 +256,39 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       'stage',
       'prompt',
       'stage',
+      'info',
       'done',
     ])
     const prompt = events.find((e) => e.type === 'prompt')!
     expect(Array.isArray(prompt.data.messages)).toBe(true)
     expect((prompt.data.messages as unknown[]).length).toBeGreaterThan(0)
-    // The final prompt stage closes only on success.
-    expect(events.at(-2)).toEqual({ type: 'stage', data: { stage: 'prompt', status: 'end' } })
+    // The prompt stage closes, then telemetry rides before the terminal done.
+    expect(events.at(-3)).toEqual({ type: 'stage', data: { stage: 'prompt', status: 'end' } })
+    expect(events.at(-2)?.type).toBe('info')
     expect(events.at(-1)).toEqual({ type: 'done', data: {} })
+  })
+
+  it('emits an info event with token counts and the response budget', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    const info = events.find((e) => e.type === 'info')!
+    expect(info).toBeDefined()
+    const tokens = info.data.tokens as { prompt?: number; total?: number }
+    expect(typeof tokens.prompt).toBe('number')
+    expect(tokens.total).toBe(tokens.prompt)
+    // `responseBudget` mirrors the clamped `maxResponse` from the fixture.
+    expect(info.data.responseBudget).toBe(50)
+    expect(typeof (info.data.timings as Record<string, number>).prompt).toBe('number')
   })
 
   it('emits an SSE error (not a 400) when the character is unknown', async () => {
@@ -282,6 +307,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(error).toBeDefined()
     expect(String(error!.data.error)).toMatch(/character not found/)
     expect(events.find((e) => e.type === 'prompt')).toBeUndefined()
+    // Telemetry rides only on the success path.
+    expect(events.find((e) => e.type === 'info')).toBeUndefined()
     expect(events.at(-1)?.type).toBe('done')
   })
 
