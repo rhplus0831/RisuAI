@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: in-progress (42 slices landed as of 2026-05-24).
+Status: in-progress (43 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -49,11 +49,12 @@ mutations (`fillMemoryAndPostHistory`, with the non-Hypa
 `buildMemoryWindow` in `memory.ts`), and the 7-11f final render + budget
 (`renderAndBudget`). `assemblePrompt` now chains 7-11a–f and returns the
 `AssembleResult` (the `prompt` SSE payload + dispatch metadata) or
-`{ stopSending }` — the critical-path assembler is **closed**, and the
-`POST /api/v1/generate/chat` route (7-11g) now calls `assemblePrompt`
-and streams the `stage` / `prompt` / `done` SSE events. The rest of
-Tier 3 (the preview-prompt shortcut + SSE telemetry) is the remaining
-Phase 7 work. See
+`{ stopSending }` — the critical-path assembler is **closed**, and both
+generation routes are real: `POST /api/v1/generate/chat` (7-11g) streams
+the `stage` / `prompt` / `done` SSE events, and `POST
+/api/v1/generate/preview-prompt` (7-11h) returns the assembled prompt as
+one-shot JSON. The rest of Tier 3 (the `info` SSE telemetry event) is
+the remaining Phase 7 work. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -241,6 +242,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-11e   | `dd4bd14c` | `assemble.ts` memory bridge + post-history: `memory.ts` `buildMemoryWindow` (non-Hypa budget trim → `lastChat` promotion → memory split) + `fillMemoryAndPostHistory` (window → `applyDepthPrompts` splice → `additonalSysPrompt` placement).                   |
 | 7-11f   | `3492bede` | `assemble.ts` final render + budget: `renderAndBudget` (`renderFinalPrompt` → `finalizeRequestBudget`, overflow → `abortReason`) + `assemblePrompt` chains 7-11a–f, returning the `AssembleResult` (`prompt` payload + dispatch metadata) or `{ stopSending }`. |
 | 7-11g   | `89a80c19` | Wired `POST /api/v1/generate/chat` to `assemblePrompt`: `dataDir` + `loadPersisted` seam, body → `AssembleInput`, SSE stream `stage(validate)` → `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `done` (SSE `error` on `stopSending`/throw).          |
+| 7-11h   | `24a8b0fe` | Added `POST /api/v1/generate/preview-prompt`: one-shot JSON shortcut (`validatePreview` + forced `preview_prompt`) returning `result.prompt`, `{ stopSending, abortReason }`, or HTTP 404 (`EntityNotFoundError`) for bad IDs / missing DB.                     |
 
 ## Remaining roadmap
 
@@ -706,12 +708,19 @@ usingPromptTemplate, NO_ASSETS, state.report)`, threads the
   thrown error (`EntityNotFoundError`, …) becoming a terminal SSE
   `error` + `done`. Body validation stays a pre-stream 400. Read-only —
   `varChanged` persistence + provider dispatch land with Phase 7-12.
-- **7-11h** — Add `POST /api/v1/generate/preview-prompt` shortcut. A
-  one-shot JSON endpoint returning the assembled `messages[]`
-  (`mode: 'preview_prompt'`) without dispatch; bad IDs can be a real
-  HTTP 404 (no SSE head).
-- **7-11i** — SSE telemetry: `info` event (timings, token counts),
-  `message_patch` for chat-row deltas.
+- **7-11h** — Add `POST /api/v1/generate/preview-prompt` shortcut.
+  **Landed `24a8b0fe`** (6 added route tests, api:test 875 → 881). A
+  one-shot JSON endpoint: `validatePreview` requires `chatId` +
+  `characterId` (mode forced to `preview_prompt`), then `assemblePrompt`
+  returns the `result.prompt` payload (`messages` / `promptInfo` /
+  `lorebookActivation`), `{ stopSending, abortReason }` on a
+  trigger/overflow abort, or a real HTTP 404 (`EntityNotFoundError`) for
+  bad IDs / missing database — no SSE head, so the `backups.ts` status-code
+  pattern applies. `loadDatabaseDeps` factors out the `loadPersisted`
+  seam shared with `streamAssembly`. Read-only.
+- **7-11i** — SSE telemetry: `info` event (timings, token counts) on the
+  `/chat` stream. `message_patch` (chat-row deltas) is dispatch-coupled,
+  so it folds into Phase 7-12 rather than this slice.
 
 ### Tier 4 — Browser adapter
 

@@ -6,7 +6,7 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with forty-two slices landed through 7-11g:
+Phase 7 is active with forty-three slices landed through 7-11h:
 chat route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight + start-trigger handoff, regex scripts, active-module
@@ -32,42 +32,40 @@ the lorebook placement + preflight (`fillLorebookSlots`, with
 (`fillMemoryAndPostHistory`, with the non-Hypa `buildMemoryWindow` in
 `memory.ts`), and the final render + budget (`renderAndBudget`).
 `assemblePrompt` returns the `AssembleResult` (the `prompt` SSE payload +
-dispatch metadata) or `{ stopSending }`, and the `POST
-/api/v1/generate/chat` route (7-11g) calls it and streams the `stage` /
-`prompt` / `done` SSE events. The tokens / budget chain (7-8a/b/c) is
-fully landed, `preflight` covers every card type the SPA emits, and
-`history` (now async, closing 7-5d) and `lorebook` are feature-complete.
-Use
+dispatch metadata) or `{ stopSending }`, and both generation routes are
+real: `/api/v1/generate/chat` (7-11g) streams the `stage` / `prompt` /
+`done` SSE events, and `/api/v1/generate/preview-prompt` (7-11h) returns
+the assembled prompt as one-shot JSON. The tokens / budget chain
+(7-8a/b/c) is fully landed, `preflight` covers every card type the SPA
+emits, and `history` (now async, closing 7-5d) and `lorebook` are
+feature-complete. Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-11h — `POST
-/api/v1/generate/preview-prompt`.** 7-11g (`89a80c19`) wired
-   `/api/v1/generate/chat` to `assemblePrompt` and streams the SSE events
-   (`mode: 'preview_prompt'` already returns the `prompt` event over SSE
-   there). 7-11h adds the DevTools shortcut: a one-shot **JSON** endpoint
-   that returns the assembled `messages[]` without dispatching.
+1. **Continue Phase 7 with slice 7-11i — `/chat` SSE `info`
+   telemetry.** 7-11h (`24a8b0fe`) added the `/preview-prompt` JSON
+   shortcut, so both generation routes are real. 7-11i adds the `info`
+   SSE event (assembly timings + token counts) to the `/chat` stream,
+   closing the Phase 7 SSE taxonomy on the routes that exist today.
 
    Verified slice scope:
-   - add a second `app.post('/api/v1/generate/preview-prompt', …)` in
-     `generationChat.ts` (reuse `toAssembleInput`, the `loadDatabase`
-     seam, and `requireAuth`); register it from the same
-     `registerGenerationChatRoutes`.
-   - validation: require `chatId` + `characterId`; force `mode` to
-     `'preview_prompt'` (no `userMessage` / `regenerateMessageId`
-     requirement).
-   - response is **plain JSON, not SSE**: on success `200 { messages,
-promptInfo, lorebookActivation }` (the `result.prompt` payload); on
-     `stopSending` decide the contract (e.g. `200 { stopSending: true,
-abortReason }` or a 4xx). Because no stream head is written,
-     `EntityNotFoundError` can be a real HTTP 404/400 here.
-   - the assembler runs read-only; no persistence (consistent with
-     7-11g).
-   - Follow-up is 7-11i telemetry (`info` / `message_patch`). Provider
-     dispatch + `varChanged` persistence are Phase 7-12 / 6 territory;
-     Hypa V3 stays Phase 8; browser plugin/Lua + inlay asset lookup stay
+   - emit an `InfoEvent` (`sseEvents.ts`: `{ timings?, tokens? }`) on the
+     `/chat` stream after the `prompt` event, before `done` (success
+     path). `tokens` maps from `result.inputTokens` (`outputTokens` is a
+     response _budget_, not a completion count — name it clearly or
+     omit). `timings` can start as a single `prompt` duration measured
+     around `assemblePrompt` in `streamAssembly`.
+   - decide whether the token counts also ride on `/preview-prompt` (it
+     is JSON, not SSE — fold into the body or skip).
+   - **Boundary:** `message_patch` (authoritative chat-row deltas) is
+     dispatch-coupled — no chat rows are committed in the read-only
+     assembly path — so it folds into Phase 7-12, not this slice. Do not
+     emit an empty patch.
+   - Follow-ups: provider dispatch + `varChanged` persistence +
+     `message_patch` / `side_effect` are Phase 7-12 / 6 territory; Hypa
+     V3 stays Phase 8; browser plugin/Lua + inlay asset lookup stay
      deferred (`NO_ASSETS`).
 
    The decision on the three deferred providers (Ooba
@@ -77,7 +75,7 @@ abortReason }` or a 4xx). Because no stream head is written,
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 875
+   tests green. Last recorded baselines are `pnpm api:test`: 881
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -167,6 +165,7 @@ abortReason }` or a 4xx). Because no stream head is written,
 | 7-11e   | `dd4bd14c` | assemble.ts memory bridge + post-history: memory.ts buildMemoryWindow (non-Hypa budget trim → lastChat promotion → memory split) + fillMemoryAndPostHistory (window → applyDepthPrompts splice → additonalSysPrompt placement).               |
 | 7-11f   | `3492bede` | assemble.ts final render + budget: renderAndBudget (renderFinalPrompt → finalizeRequestBudget, overflow → abortReason) + assemblePrompt chains 7-11a–f, returning the AssembleResult (prompt payload + dispatch metadata) or { stopSending }. |
 | 7-11g   | `89a80c19` | Wired POST /api/v1/generate/chat to assemblePrompt: dataDir + loadPersisted seam, body → AssembleInput, SSE stream stage(validate) → stage(prompt,start) → prompt → stage(prompt,end) → done (SSE error on stopSending/throw).                |
+| 7-11h   | `24a8b0fe` | Added POST /api/v1/generate/preview-prompt: one-shot JSON shortcut (validatePreview + forced preview_prompt) returning result.prompt, { stopSending, abortReason }, or HTTP 404 (EntityNotFoundError) for bad IDs / missing DB.               |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

@@ -85,7 +85,7 @@ Per-provider request / response coverage lives in
 | `POST /api/v1/generate/chat` (dispatch)     | Provider dispatch + `varChanged` persistence. | Phase 7-12 / 6; not started |
 | `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled via `mode: continue`; dispatch not started |
 | `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | dispatch not started |
-| `POST /api/v1/generate/preview-prompt`      | One-shot JSON assembled prompt.           | not started (7-11h) |
+| `POST /api/v1/generate/preview-prompt`      | One-shot JSON assembled prompt; `result.prompt` on success, `{ stopSending }` on abort, HTTP 404 for bad IDs / missing DB. | covered (7-11h) by `generation.chat.test.ts` |
 
 Plus: prompt snapshot tests - given a canned DB + preset + chat
 state, the assembled `messages[]` matches a recorded snapshot.
