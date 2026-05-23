@@ -2,8 +2,8 @@
 
 Date: 2026-05-24
 Branch: `fastify`
-Head: `2871960f feat: template prompt-info capture + content trim (Phase 7-10e)`
-Latest feature slice: `2871960f feat: template prompt-info capture + content trim (Phase 7-10e)`
+Head: `49df7eff feat: top-level renderFinalPrompt + request-edit boundary (Phase 7-10f)`
+Latest feature slice: `49df7eff feat: top-level renderFinalPrompt + request-edit boundary (Phase 7-10f)`
 
 This is the day-to-day runbook for **Phase 7 in progress**:
 current branch head, verification baselines, and the next pickup.
@@ -53,6 +53,7 @@ Landed Phase 7 slices:
 | 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts`'s `chat` case removed (only `memory`/`cache` inline).                                    |
 | 7-10d   | `3983d2d0` | Memory cards + cache markers: `memory` (clone + `innerFormat` wrap, no positionParser), explicit `cache` walk-back, and the automatic 3-deep `user` cache point — all in `renderByTemplate`.               |
 | 7-10e   | `2871960f` | Prompt-info capture + content trim: `renderByTemplate` returns `{ formated, promptInfo }`, collects the parallel info array via a `deps.promptInfo` sink, and trims both arrays (+ `renderByFormatOrder`). |
+| 7-10f   | `49df7eff` | Top-level `renderFinalPrompt`: `isContinue` pre-push, template/non-template dispatch, `depth_prompt` splice, and the injectable `editRequest` seam → `{ formated, promptText }`. Closes the renderer.      |
 
 What is real in code:
 
@@ -75,84 +76,76 @@ What is real in code:
   recursive trigger calls, token accounting, `varChanged`, and the
   `runStartTrigger` handoff. Browser plugin/Lua hooks, low-level
   effects, and persistent resource mutations stay deferred.
-- `templates.ts` is no longer a stub. It holds the 7-10a renderer
-  foundation, 7-10b content cards, the 7-10c chat/systemized-chat
-  path, the 7-10d `memory` / `cache` cards, and the 7-10e prompt-info
-  capture + content trim. `renderContentCard` is shared by rendering
-  and `preflight.ts`; it returns `null` only for `memory` / `cache`,
-  which `renderByTemplate` handles inline (memory builds rows from the
-  injected `memories`; explicit `cache` and the automatic 3-deep `user`
-  cache point mutate the accumulated `formated`). `renderByTemplate` now
-  returns `{ formated, promptInfo }` (`RenderedTemplate`): when both
-  `promptInfoInsideChat` and `promptTextInfoInsideChat` are on it
-  collects a parallel info array via the `deps.promptInfo` sink, and it
-  trims row contents on both the template and (via `renderByFormatOrder`)
-  the non-template paths. `preflight.ts` is unchanged — it never
-  supplies the sink and still keeps only the `memoryCardUsed` /
-  `hasCachePoint` flags.
+- `templates.ts` is the **complete** template renderer. It holds the
+  7-10a foundation, 7-10b content cards, the 7-10c chat/systemized-chat
+  path, the 7-10d `memory` / `cache` cards, the 7-10e prompt-info
+  capture + content trim, and the 7-10f top-level `renderFinalPrompt`.
+  `renderContentCard` is shared by rendering and `preflight.ts`; it
+  returns `null` only for `memory` / `cache`, which `renderByTemplate`
+  handles inline. `renderByTemplate` returns `{ formated, promptInfo }`
+  (`RenderedTemplate`) and trims its rows; `renderByFormatOrder` trims
+  the non-template path. `renderFinalPrompt(args)` is the async entry
+  that unifies both paths with the `isContinue` pre-push, the
+  `depth_prompt` splice, and the injectable `editRequest` seam,
+  returning `{ formated, promptText }`. `preflight.ts` is unchanged — it
+  never supplies the prompt-info sink and still keeps only the
+  `memoryCardUsed` / `hasCachePoint` flags.
 - `assemble.ts` still throws a Phase 7 not-implemented error. Tier 3
-  owns state loading, `triggerResult.additonalSysPrompt` placement,
-  final memory/render wiring (including supplying the `memories`
-  input), and connecting the chat route to the assembled prompt.
+  owns state loading, building the real `positionParser` /
+  `resolvePosition`, supplying `memories` from `buildMemoryWindow`,
+  `triggerResult.additonalSysPrompt` placement, wiring the real
+  `editRequest`, calling `renderFinalPrompt`, and connecting the chat
+  route to the assembled prompt.
 
-Last recorded baselines after 7-10e:
+Last recorded baselines after 7-10f:
 
-- `pnpm api:test`: 819 across 40 files
+- `pnpm api:test`: 826 across 40 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-10f render finalization + request-edit boundary
+## Next Slice — 7-11a assemble.ts state loader + slot orchestration
 
-Pick up **7-10f — render finalization + request-edit boundary**.
+Pick up **7-11a — `assemble.ts` state loader + slot orchestration**.
+This is the **first Tier 3 slice**: Tier 1 + 2 are now all real
+(history, lorebook, tokens/budget, triggers, and the complete template
+renderer through 7-10f), so the root can start stitching them together.
+It is a bigger jump than the 7-10 sub-slices — draw a concrete
+LOC/test scope at pickup.
 
-7-10e (`2871960f`) added prompt-info capture + the content trim, so each
-render path returns trimmed rows (`renderByTemplate` →
-`{ formated, promptInfo }`; `renderByFormatOrder` → trimmed rows). 7-10f
-adds the remaining tail of the SPA `renderFinalPrompt` and the unifying
-top-level entry. SPA reference is `renderFinalPrompt.ts:60-88`,
-`:372-396`.
+SPA reference is the assembly sequence in
+`src/ts/process/index.svelte.ts:~190-313`.
 
-### Scope sketch (SPA reference, `renderFinalPrompt.ts`)
+### Scope sketch (SPA reference, `index.svelte.ts`)
 
-- top-level `renderFinalPrompt(args) -> { formated, promptText }`
-  (`:60-396`): the entry that dispatches the template path
-  (`renderByTemplate`) vs the non-template path (`renderByFormatOrder`)
-  and applies the steps below. This is where the eventual public
-  contract lives; Tier 3 calls it.
-- `isContinue` pre-push (`:77-88`): when `isContinue` and `aiModel`
-  starts with `claude` / `gpt` / `openrouter` / `reverse_proxy`, push
-  `{ role: 'system', content: '[Continue the last response]' }` onto
-  `unformated.postEverything` **before** the walk.
-- `depth_prompt` splice (`:372-382`): when
-  `currentChar.depth_prompt?.prompt?.length > 0`, splice a
-  `{ role: 'system', content: <expanded prompt> }` row in at
-  `formated.length - depth_prompt.depth`. Runs **after** the 7-10e trim,
-  so it lives in the top-level, not inside the path renderers.
-- `editRequest` Lua handoff (`:384`, `:387-393`):
-  `runLuaEditTrigger(currentChar, 'editRequest', formated)` (and the
-  same over `promptInfo` to produce `promptText`). Browser Lua
-  execution stays deferred (plugin/Lua boundary) — port this as a
-  pass-through seam that 7-11b / dispatch and the 7-9e request-state
-  transform plug into.
-
-### Important structural note
-
-The trim already happens inside `renderByTemplate` / `renderByFormatOrder`
-(7-10e), and `depth_prompt` must run **after** it, so the splice belongs
-in the new top-level `renderFinalPrompt`, not back in the path
-renderers. Keep the path renderers as-is and layer the finalization on
-top. The `editRequest` seam should be a no-op-by-default function
-(identity transform) so the server build never pulls in browser Lua;
-Tier 3 / the dispatch layer supplies the real transform.
+- resolve scope: database / chat / character / preset, seeding the
+  `promptScope.ts` singleton (the existing single-user seam).
+- `normalizeTemplate(currentChar)` → `{ promptTemplate,
+usingPromptTemplate }` (already in `templates.ts`).
+- build the unformatted slots into `UnformatedPromptSlots` using the
+  landed leaves: `staticSections.ts`
+  (`buildDescription` / `buildAuthorNote` / `buildPersona` /
+  `buildCotInstruction`), `plainSections.ts`
+  (`buildPlainPromptSections`), `lorebook.ts` (`activateLorebook` →
+  the `lorebook` slot + the `positionParser`/`resolvePosition`), and
+  `history.ts` (`buildHistoryWindow` → `chats` / `lastChat`).
+- token preflight: `preflightTemplateTokens` (`preflight.ts`) over the
+  assembled slots + template.
+- collect bias rows (logit-bias / bias-prompt rows the SPA gathers
+  pre-render).
+- **No route dispatch and no final render yet.**
 
 ### Out of scope (defer)
 
-- Real browser Lua `editRequest` execution (stays with plugin/Lua).
-- The assemble root that builds the injection-lore-aware
-  `positionParser`/`resolvePosition`, loads state, applies
-  `triggerResult.additonalSysPrompt`, and wires the chat route — Tier 3
-  (7-11a onward).
+- The memory-window bridge + the `renderFinalPrompt` call + final
+  budget pruning + `triggerResult.additonalSysPrompt` placement — that
+  is **7-11b** (`buildMemoryWindow` port, `memories[]` split, removable
+  marking, depth-prompt splice, start-trigger system-prompt merge).
+- Wiring `POST /api/v1/generate/chat` — 7-11c; the
+  `/api/v1/generate/preview-prompt` shortcut — 7-11d; SSE telemetry —
+  7-11e.
+- Hypa V3 summary creation stays Phase 8; browser plugin/Lua stays
+  deferred.
 
 ### Verification
 
@@ -163,8 +156,9 @@ pnpm test
 pnpm build
 ```
 
-7-10f is the default next pickup and closes the template renderer; then
-the Tier 3 root/route wiring (7-11a onward) begins.
+7-11a is the default next pickup. The template renderer (7-10) is fully
+landed; Tier 2 hands off to Tier 3, where 7-11a → 7-11b are the
+critical-path assembly slices before route wiring (7-11c/d/e).
 
 ## Patterns To Keep
 

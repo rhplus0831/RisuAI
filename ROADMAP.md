@@ -114,6 +114,7 @@ multi-subsystem work behind small labels.
 | 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts` `chat` case removed.                    |
 | 7-10d   | `3983d2d0` | Memory + cache cards: `memory` clone + `innerFormat` wrap, explicit `cache` walk-back, and automatic 3-deep `user` cache point in `renderByTemplate`.     |
 | 7-10e   | `2871960f` | Prompt-info capture + content trim: `renderByTemplate` returns `{ formated, promptInfo }`, collects info via a `deps.promptInfo` sink, trims both arrays. |
+| 7-10f   | `49df7eff` | Top-level `renderFinalPrompt`: `isContinue` pre-push, path dispatch, `depth_prompt` splice, injectable `editRequest` seam → `{ formated, promptText }`.   |
 
 ## Remaining Slices
 
@@ -262,16 +263,23 @@ Preset templates (`templates.ts`):
   row contents on both the template and non-template
   (`renderByFormatOrder`) paths. The `positionParser` seam was already
   threaded in 7-10b/c. `preflight.ts` unchanged.
-- **7-10f** — render finalization + request-edit boundary. Apply
-  character `depth_prompt`, return finalized rows + prompt-info rows,
-  and expose the handoff point that 7-11b/dispatch uses for the
-  Phase 7-safe request-state transform from 7-9e. Browser Lua
-  `editRequest` hooks stay deferred with plugin/Lua execution.
+- **7-10f** — render finalization + request-edit boundary. **Landed
+  `49df7eff`.** Added the top-level `renderFinalPrompt(args)`: the
+  `isContinue` `[Continue the last response]` pre-push, dispatch to the
+  template (`renderByTemplate`) vs non-template (`renderByFormatOrder`)
+  path, the `depth_prompt` splice (after the 7-10e trim, so the inserted
+  row stays untrimmed), and the injectable `editRequest` request-edit
+  seam (async identity by default) over `formated` + `promptInfo`,
+  returning `{ formated, promptText }`. `hasCachePoint` is not threaded
+  (the path renderer derives it). Browser Lua `editRequest` execution
+  stays deferred; Tier 3 / dispatch supplies the real transform, where
+  the 7-9e request-state transform plugs in. **Closes the template
+  renderer.**
 
-Current default pickup: **7-10f** (render finalization + request-edit
-boundary). History, lorebook, tokens/budget, triggers, and
-7-10a/b/c/d/e are already landed; 7-10f is the last template renderer
-slice before Tier 3 root/route wiring.
+Current default pickup: **7-11a** (`assemble.ts` state loader + slot
+orchestration). History, lorebook, tokens/budget, triggers, and the
+entire template renderer (7-10a–f) are landed; Tier 2 is complete and
+Tier 3 root/route wiring begins.
 
 ### Tier 3 — Root + route wiring (all Tier 1 + 2 real)
 
@@ -320,27 +328,25 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Parallelism notes
 
-- 7-10f is the last renderer slice (7-10e is landed); it layers
-  finalization on top of the path renderers.
-- After the renderer closes, 7-11a and 7-11b are the critical-path
-  assembly slices; 7-11c/d/e can split once their direct deps are in.
+- The template renderer is closed (7-10a–f landed). 7-11a and 7-11b
+  are now the critical-path assembly slices; 7-11c/d/e can split once
+  their direct deps are in.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).
 
 ## Sequential order (default)
 
-1. **7-10f** — render finalization + request-edit boundary
-2. **7-11a** — `assemble.ts` state loader + slot orchestration
-3. **7-11b** — memory-window bridge + final render
-4. **7-11c** — wire `/api/v1/generate/chat`
-5. **7-11d** — `/api/v1/generate/preview-prompt`
-6. **7-11e** — SSE telemetry (`info`, `message_patch`)
-7. **7-12a** — browser client adapter
-8. **7-12b** — dual-mode fixture sweep
-9. **7-12c** — side-effect dispatch
-10. **7-12d** — error / abort restoration
-11. **7-13** — phase 7 closeout
+1. **7-11a** — `assemble.ts` state loader + slot orchestration
+2. **7-11b** — memory-window bridge + final render
+3. **7-11c** — wire `/api/v1/generate/chat`
+4. **7-11d** — `/api/v1/generate/preview-prompt`
+5. **7-11e** — SSE telemetry (`info`, `message_patch`)
+6. **7-12a** — browser client adapter
+7. **7-12b** — dual-mode fixture sweep
+8. **7-12c** — side-effect dispatch
+9. **7-12d** — error / abort restoration
+10. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

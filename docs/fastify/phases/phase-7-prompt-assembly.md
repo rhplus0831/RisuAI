@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: in-progress (34 slices landed as of 2026-05-24).
+Status: in-progress (35 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -34,12 +34,14 @@ the 7-9e request/display state adapters (mode allowlists +
 `UnformatedPromptSlots` contract), the 7-10b content cards, the
 7-10c `chat` card + `systemizeChat` (the shared `renderContentCard` +
 `renderByTemplate`, which `preflight.ts` also consumes), the 7-10d
-`memory` / `cache` cards + automatic cache-point walk-back, and the
-7-10e prompt-info capture + content trim (`renderByTemplate` now returns
-`{ formated, promptInfo }`). The only remaining renderer work is the
-7-10f finalization boundary (`depth_prompt` splice, `editRequest`
-handoff, `isContinue`, and the unifying top-level entry). `assemble.ts`
-is still a throwing stub. See
+`memory` / `cache` cards + automatic cache-point walk-back, the
+7-10e prompt-info capture + content trim (`renderByTemplate` returns
+`{ formated, promptInfo }`), and the 7-10f top-level `renderFinalPrompt`
+(the `isContinue` pre-push, path dispatch, `depth_prompt` splice, and
+the injectable `editRequest` seam → `{ formated, promptText }`). The
+template renderer is **complete**; `assemble.ts` is still a throwing
+stub, so Tier 3 (the root + route wiring) is the remaining Phase 7 work.
+See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -219,6 +221,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-10c   | `0d2e0e17` | Chat cards + systemized chat: `chat` range math + `systemizeChat` lifted into `renderContentCard`; `preflight.ts` `chat` case removed.                    |
 | 7-10d   | `3983d2d0` | Memory + cache cards: `memory` clone + `innerFormat` wrap, explicit `cache` walk-back, and automatic 3-deep `user` cache point in `renderByTemplate`.     |
 | 7-10e   | `2871960f` | Prompt-info capture + content trim: `renderByTemplate` returns `{ formated, promptInfo }`, collects info via a `deps.promptInfo` sink, trims both arrays. |
+| 7-10f   | `49df7eff` | Top-level `renderFinalPrompt`: `isContinue` pre-push, path dispatch, `depth_prompt` splice, injectable `editRequest` seam → `{ formated, promptText }`.   |
 
 ## Remaining roadmap
 
@@ -231,11 +234,11 @@ is the planning resolution, not a contract.
 ### Tier 1 — Finish partially landed prompt helpers
 
 Order chosen to minimize helper coupling. `assemble.ts` is still a
-throwing stub; `templates.ts` holds the 7-10a foundation + 7-10b/c
-content + chat cards + the 7-10d `memory` / `cache` cards + the 7-10e
-prompt-info capture + trim (every card type renders and
-`renderByTemplate` returns `{ formated, promptInfo }`; only the 7-10f
-finalization boundary remains). `tokens.ts` is real at the minimal
+throwing stub; `templates.ts` is the **complete** template renderer
+(7-10a–f): every card type renders, `renderByTemplate` returns
+`{ formated, promptInfo }`, and the top-level `renderFinalPrompt` adds
+the `isContinue` pre-push, `depth_prompt` splice, and `editRequest`
+seam. `tokens.ts` is real at the minimal
 text-only surface, and `triggers.ts` is real through the
 request/display adapters and the `runStartTrigger` handoff — the
 trigger front is complete. The files below are real; `history.ts` is
@@ -579,11 +582,19 @@ responsibility:
   on both the template and non-template (`renderByFormatOrder`) paths.
   The `positionParser` seam was already threaded in 7-10b/c.
   `preflight.ts` unchanged (never supplies the sink).
-- **7-10f** — Render finalization + request-edit boundary. Apply
-  character `depth_prompt`, return finalized rows + prompt-info rows,
-  and expose the handoff point that 7-11b/dispatch uses for the
-  Phase 7-safe request-state transform from 7-9e. Browser Lua
-  `editRequest` hooks stay deferred with plugin/Lua execution.
+- **7-10f** — Render finalization + request-edit boundary. **Landed
+  `49df7eff`** (7 added tests). Added the top-level
+  `renderFinalPrompt(args)`: the `isContinue` `[Continue the last
+response]` pre-push (gpt / claude / openrouter / reverse_proxy),
+  dispatch to the template (`renderByTemplate`) vs non-template
+  (`renderByFormatOrder`) path, the `depth_prompt` splice at
+  `formated.length - depth` (after the 7-10e trim, so the inserted row
+  stays untrimmed), and the injectable `editRequest` request-edit seam
+  (async identity by default) over `formated` + `promptInfo`, returning
+  `{ formated, promptText }`. `hasCachePoint` is not threaded (the path
+  renderer derives it). Browser Lua `editRequest` execution stays
+  deferred; Tier 3 / dispatch supplies the real transform, where the
+  7-9e request-state transform plugs in. Closes the template renderer.
 
 ### Tier 3 — Root + route wiring
 

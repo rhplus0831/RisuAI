@@ -6,7 +6,7 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with thirty-four slices landed through 7-10e:
+Phase 7 is active with thirty-five slices landed through 7-10f:
 chat route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight + start-trigger handoff, regex scripts, active-module
@@ -15,53 +15,47 @@ minimal server tokenizer, the template-wide token preflight, the
 request budget finalization, the trigger model + runner shell, the
 trigger variable/condition engine, the deterministic V1 trigger
 effects, V2 control flow, V2 safe data helpers, the request/display
-state adapters, the `runStartTrigger` handoff, and the template
-renderer through every card type. `assemble` remains a throwing
-stub; the trigger front is complete (`triggers`, 7-9a–f) and
-`templates` holds the 7-10a foundation plus the 7-10b/c/d/e content +
-chat + memory/cache cards + prompt-info capture/trim (the shared
-`renderContentCard` + `renderByTemplate`, which now returns
-`{ formated, promptInfo }` and is also consumed by `preflight`); every
-template card type renders, leaving only the 7-10f finalization
-boundary. The tokens / budget chain (7-8a/b/c) is fully
-landed, `preflight` covers every card type the SPA emits, and `history`
-(now async, closing 7-5d) + `lorebook` are feature-complete. Use
+state adapters, the `runStartTrigger` handoff, and the **complete**
+template renderer. `assemble` remains a throwing stub; the trigger
+front is complete (`triggers`, 7-9a–f) and `templates` is the full
+renderer (7-10a–f): content + chat + memory/cache cards + prompt-info
+capture/trim, plus the top-level `renderFinalPrompt` (`isContinue`
+pre-push, `depth_prompt` splice, `editRequest` seam →
+`{ formated, promptText }`); `renderByTemplate` returns
+`{ formated, promptInfo }` and is also consumed by `preflight`. The
+tokens / budget chain (7-8a/b/c) is fully landed, `preflight` covers
+every card type the SPA emits, and `history` (now async, closing 7-5d)
+and `lorebook` are feature-complete. Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-10f — render finalization +
-   request-edit boundary.** 7-10e (`2871960f`) added prompt-info
-   capture + the content trim, so each render path returns trimmed rows
-   (`renderByTemplate` → `{ formated, promptInfo }`). 7-10f adds the
-   remaining tail of the SPA `renderFinalPrompt` plus the unifying
-   top-level entry. SPA reference is `renderFinalPrompt.ts:60-88`,
-   `:372-396`.
+1. **Continue Phase 7 with slice 7-11a — `assemble.ts` state loader +
+   slot orchestration.** This is the **first Tier 3 slice**: 7-10f
+   (`49df7eff`) closed the template renderer, so every Tier 1 + 2
+   module is real and the root can stitch them together. It is a bigger
+   jump than the 7-10 sub-slices — draw a concrete LOC/test scope at
+   pickup. SPA reference is the assembly sequence in
+   `src/ts/process/index.svelte.ts:~190-313`.
 
    Verified slice scope:
-   - top-level `renderFinalPrompt(args) -> { formated, promptText }`:
-     dispatches the template path (`renderByTemplate`) vs the
-     non-template path (`renderByFormatOrder`) and applies the steps
-     below. Tier 3 calls it.
-   - `isContinue` pre-push (`:77-88`): when `isContinue` and `aiModel`
-     starts with `claude` / `gpt` / `openrouter` / `reverse_proxy`,
-     push `[Continue the last response]` onto `unformated.postEverything`
-     before the walk.
-   - `depth_prompt` splice (`:372-382`): splice an expanded
-     `{ role: 'system' }` row at `formated.length - depth_prompt.depth`.
-     Runs after the 7-10e trim, so it lives in the top-level, not the
-     path renderers.
-   - `editRequest` Lua handoff (`:384`, `:387-393`): port as a
-     pass-through seam (identity transform by default) over `formated`
-     and `promptInfo`; real browser Lua execution stays deferred. 7-11b
-     / dispatch and the 7-9e request-state transform plug in here.
-   - Structural note: the trim already happens inside the path
-     renderers (7-10e) and `depth_prompt` must run after it, so layer
-     finalization in the new top-level rather than back in
-     `renderByTemplate` / `renderByFormatOrder`.
-   - Do not port real browser Lua `editRequest` execution, or the
-     Tier 3 assemble root / route wiring / real `resolvePosition`.
+   - resolve scope: database / chat / character / preset, seeding the
+     `promptScope.ts` singleton.
+   - `normalizeTemplate(currentChar)` (already in `templates.ts`).
+   - build the `UnformatedPromptSlots` from the landed leaves:
+     `staticSections.ts` (`buildDescription` / `buildAuthorNote` /
+     `buildPersona` / `buildCotInstruction`), `plainSections.ts`
+     (`buildPlainPromptSections`), `lorebook.ts` (`activateLorebook` →
+     the `lorebook` slot + `positionParser` / `resolvePosition`), and
+     `history.ts` (`buildHistoryWindow` → `chats` / `lastChat`).
+   - token preflight via `preflightTemplateTokens` (`preflight.ts`).
+   - collect bias rows (logit-bias / bias-prompt rows).
+   - No route dispatch and no final render yet.
+   - Do not port the memory-window bridge + `renderFinalPrompt` call +
+     budget pruning + `triggerResult.additonalSysPrompt` placement
+     (7-11b), the route wiring (7-11c/d/e), Hypa V3 (Phase 8), or
+     browser plugin/Lua.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -152,6 +146,7 @@ landed, `preflight` covers every card type the SPA emits, and `history`
 | 7-10c   | `0d2e0e17` | Chat cards + systemized chat: chat range math + systemizeChat lifted into renderContentCard; preflight chat case removed.                           |
 | 7-10d   | `3983d2d0` | Memory + cache cards: memory clone + innerFormat wrap, explicit cache walk-back, automatic 3-deep user cache point in renderByTemplate.             |
 | 7-10e   | `2871960f` | Prompt-info capture + content trim: renderByTemplate returns { formated, promptInfo }, collects info via a deps.promptInfo sink, trims both arrays. |
+| 7-10f   | `49df7eff` | Top-level renderFinalPrompt: isContinue pre-push, path dispatch, depth_prompt splice, injectable editRequest seam → { formated, promptText }.       |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
