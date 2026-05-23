@@ -605,3 +605,135 @@ describe('Phase 7-9c deterministic V1 effects', () => {
     expect(result).not.toBeNull()
   })
 })
+
+describe('Phase 7-9d-i V2 control flow', () => {
+  it('runs the if body when the condition passes and skips it when it fails', async () => {
+    const effects = [
+      eff({ type: 'v2If', condition: '=', source: 'x', targetType: 'value', target: '1', indent: 0 }),
+      eff({ type: 'v2SetVar', operator: '=', var: 'hit', valueType: 'value', value: 'yes', indent: 1 }),
+      eff({ type: 'v2EndIndent', indent: 1 }),
+    ]
+    const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+
+    const passed = await runTrigger(ctx, char, 'output', {
+      chat: makeChat({ scriptstate: { $x: '1' } }),
+    })
+    expect(passed?.chat.scriptstate?.['$hit']).toBe('yes')
+
+    const failed = await runTrigger(ctx, char, 'output', {
+      chat: makeChat({ scriptstate: { $x: '0' } }),
+    })
+    expect(failed?.chat.scriptstate?.['$hit'] ?? 'null').toBe('null')
+  })
+
+  it('selects the else branch when the if is false', async () => {
+    const effects = [
+      eff({ type: 'v2If', condition: '=', source: 'x', targetType: 'value', target: '1', indent: 0 }),
+      eff({ type: 'v2SetVar', operator: '=', var: 'branch', valueType: 'value', value: 'if', indent: 1 }),
+      eff({ type: 'v2EndIndent', indent: 1 }),
+      eff({ type: 'v2Else', indent: 0 }),
+      eff({ type: 'v2SetVar', operator: '=', var: 'branch', valueType: 'value', value: 'else', indent: 1 }),
+      eff({ type: 'v2EndIndent', indent: 1 }),
+    ]
+    const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+
+    const ifResult = await runTrigger(ctx, char, 'output', {
+      chat: makeChat({ scriptstate: { $x: '1' } }),
+    })
+    expect(ifResult?.chat.scriptstate?.['$branch']).toBe('if')
+
+    const elseResult = await runTrigger(ctx, char, 'output', {
+      chat: makeChat({ scriptstate: { $x: '0' } }),
+    })
+    expect(elseResult?.chat.scriptstate?.['$branch']).toBe('else')
+  })
+
+  it('runs a counted loop N times', async () => {
+    const effects = [
+      eff({ type: 'v2LoopNTimes', valueType: 'value', value: '3', indent: 0 }),
+      eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+      eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
+    ]
+    const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$count']).toBe('3')
+  })
+
+  it('v2BreakLoop exits the loop early', async () => {
+    const effects = [
+      eff({ type: 'v2LoopNTimes', valueType: 'value', value: '5', indent: 0 }),
+      eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+      eff({ type: 'v2BreakLoop', indent: 1 }),
+      eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
+    ]
+    const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$count']).toBe('1')
+  })
+
+  it('v2SetVar applies the %= operator', async () => {
+    const effects = [
+      eff({ type: 'v2SetVar', operator: '%=', var: 'm', valueType: 'value', value: '3', indent: 0 }),
+    ]
+    const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+    const result = await runTrigger(ctx, char, 'output', {
+      chat: makeChat({ scriptstate: { $m: '7' } }),
+    })
+    expect(result?.chat.scriptstate?.['$m']).toBe('1')
+  })
+
+  it('clears local vars declared inside a block at v2EndIndent', async () => {
+    const effects = [
+      eff({ type: 'v2If', condition: '=', source: 'x', targetType: 'value', target: '1', indent: 0 }),
+      eff({ type: 'v2DeclareLocalVar', var: 'loc', valueType: 'value', value: 'inside', indent: 1 }),
+      eff({ type: 'v2SetVar', operator: '=', var: 'captured', valueType: 'var', value: 'loc', indent: 1 }),
+      eff({ type: 'v2EndIndent', indent: 1 }),
+      eff({ type: 'v2SetVar', operator: '=', var: 'after', valueType: 'var', value: 'loc', indent: 0 }),
+    ]
+    const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+    const result = await runTrigger(ctx, char, 'output', {
+      chat: makeChat({ scriptstate: { $x: '1' } }),
+    })
+    expect(result?.chat.scriptstate?.['$captured']).toBe('inside')
+    expect(result?.chat.scriptstate?.['$after']).toBe('null')
+  })
+
+  it('v2StopTrigger halts the remaining effects', async () => {
+    const effects = [
+      eff({ type: 'v2SetVar', operator: '=', var: 'a', valueType: 'value', value: '1', indent: 0 }),
+      eff({ type: 'v2StopTrigger', indent: 0 }),
+      eff({ type: 'v2SetVar', operator: '=', var: 'b', valueType: 'value', value: '2', indent: 0 }),
+    ]
+    const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$a']).toBe('1')
+    expect(result?.chat.scriptstate?.['$b'] ?? 'null').toBe('null')
+  })
+
+  it('v2RunTrigger recurses into a manual trigger via effect.target', async () => {
+    const sub = makeTrigger({
+      comment: 'sub',
+      type: 'manual',
+      effect: [eff({ type: 'v2SetVar', operator: '=', var: 'hp', valueType: 'value', value: '42', indent: 0 })],
+    })
+    const outer = triggerWithEffects([eff({ type: 'v2RunTrigger', target: 'sub', indent: 0 })])
+    const char = makeChar({ triggerscript: [outer, sub] })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result?.chat.scriptstate?.['$hp']).toBe('42')
+    expect(result?.varChanged).toBe(true)
+  })
+
+  it('runs the deterministic V2 chat / prompt effects', async () => {
+    const effects = [
+      eff({ type: 'v2SystemPrompt', location: 'start', valueType: 'value', value: 'sys' }),
+      eff({ type: 'v2Impersonate', role: 'user', valueType: 'value', value: 'hi' }),
+      eff({ type: 'v2ModifyChat', indexType: 'value', index: '0', valueType: 'value', value: 'edited' }),
+    ]
+    const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+    const chat = makeChat({ message: [{ role: 'char', data: 'orig' }] as never })
+    const result = await runTrigger(ctx, char, 'output', { chat })
+    expect(result?.additonalSysPrompt.start).toBe('sys\n\n')
+    expect(result?.chat.message[0].data).toBe('edited')
+    expect(result?.chat.message.at(-1)).toEqual({ role: 'user', data: 'hi' })
+  })
+})

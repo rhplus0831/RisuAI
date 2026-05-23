@@ -51,8 +51,22 @@ import { expandVariables } from './variables.js'
  * `runTrigger` with `recursiveCount + 1`, bounded at 10 unless the
  * trigger has `lowLevelAccess`.
  *
+ * 7-9d-i adds the V2 control-flow core: the effect loop is now
+ * index-based (`for (let index…)`) so V2 control flow can advance /
+ * rewind `index`. Ported arms: `v2Header` / `v2Comment` /
+ * `v2ConsoleLog` (no-ops), `v2SetVar` (adds `%=`), `v2DeclareLocalVar`,
+ * `v2If` / `v2IfAdvanced` (incl. the `∈` / `∋` / `∌` / `≒` / `≡`
+ * operators with fail-skip to `v2EndIndent` / `v2Else`), `v2Else`,
+ * `v2EndIndent` (loop-back when `endOfLoop`, `clearLocalVarsAtIndent`,
+ * the `loopTimes > 100` lag guard), `v2Loop` / `v2LoopNTimes`,
+ * `v2BreakLoop`, `v2StopTrigger`, `v2StopPromptSending`, bounded
+ * `v2RunTrigger` (manual name from `effect.target`), and the
+ * deterministic V2 state effects `v2CutChat` / `v2ModifyChat` /
+ * `v2SystemPrompt` / `v2Impersonate`.
+ *
  * Still deferred (later slices, see `ROADMAP.md`):
- *   - 7-9d: V2 control flow + safe data effects.
+ *   - 7-9d-ii: the V2 safe data helpers (message readers, string /
+ *     array / dict / math, random, tokenize, regex, quick chat search).
  *   - 7-9e: request/display state adapters + the display/request
  *     effect allowlists (`triggers.ts:1444-1449`).
  *   - 7-9f: prompt/history effects + `start` trigger handoff.
@@ -135,6 +149,11 @@ export interface TriggerRunResult {
 
 function emptySysPrompt(): additonalSysPrompt {
   return { start: '', historyend: '', promptend: '' }
+}
+
+/** Yield to the event loop; mirrors the SPA loop lag guard (`triggers.ts:1911`). */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
@@ -339,7 +358,19 @@ export async function runTrigger(
       continue
     }
 
-    for (const effect of trigger.effect ?? []) {
+    // Var-or-value resolution shared by the V2 arms (`triggers.ts`):
+    // `value` expands the literal; `var` expands then reads the var.
+    const resolve = (raw: string, isValue: boolean): string =>
+      isValue ? expand(raw) : engine.getVar(expand(raw))
+
+    // Per-trigger loop counters for `v2LoopNTimes` + the lag guard
+    // (the SPA's inner numeric `tempVars`, `triggers.ts:1341`).
+    const loopCounts: Record<string, number> = {}
+
+    // Index-based walk (7-9d): V2 control flow advances/rewinds `index`.
+    const effects = trigger.effect ?? []
+    for (let index = 0; index < effects.length; index++) {
+      const effect = effects[index]
       // 7-9e adds the display/request effect allowlist guards
       // (`triggers.ts:1444-1449`).
       if (
@@ -395,7 +426,8 @@ export async function runTrigger(
           }
           break
         }
-        case 'stop': {
+        case 'stop':
+        case 'v2StopPromptSending': {
           stopSending = true
           break
         }
@@ -433,9 +465,273 @@ export async function runTrigger(
           }
           break
         }
-        // Deferred (no-op): `command`, the `lowLevelAccess`-gated
-        // alert/LLM/image/similarity/regex arms, V2 effects (7-9d),
-        // and `triggercode` / `triggerlua`.
+
+        // ---- V2 control flow + deterministic effects (7-9d-i) ----
+        case 'v2Header':
+        case 'v2Comment':
+        case 'v2ConsoleLog':
+        case 'v2Loop':
+        case 'v2LoopNTimes': {
+          // v2Header / v2Comment: markers. v2ConsoleLog: server no-op.
+          // v2Loop / v2LoopNTimes: looping is driven by `v2EndIndent`.
+          break
+        }
+        case 'v2SetVar': {
+          const effectValue = resolve(effect.value, effect.valueType === 'value')
+          const varKey = expand(effect.var)
+          let originalVar = Number(engine.getVar(varKey))
+          if (Number.isNaN(originalVar)) {
+            originalVar = 0
+          }
+          let resultValue = ''
+          switch (effect.operator) {
+            case '=':
+              resultValue = effectValue
+              break
+            case '+=':
+              resultValue = (originalVar + Number(effectValue)).toString()
+              break
+            case '-=':
+              resultValue = (originalVar - Number(effectValue)).toString()
+              break
+            case '*=':
+              resultValue = (originalVar * Number(effectValue)).toString()
+              break
+            case '/=':
+              resultValue = (originalVar / Number(effectValue)).toString()
+              break
+            case '%=':
+              resultValue = (originalVar % Number(effectValue)).toString()
+              break
+          }
+          engine.setVar(varKey, resultValue)
+          break
+        }
+        case 'v2DeclareLocalVar': {
+          const effectValue = resolve(effect.value, effect.valueType === 'value')
+          const varKey = expand(effect.var)
+          const finalValue =
+            effectValue === null || effectValue === undefined ? 'null' : effectValue
+          engine.declareLocalVar(varKey, finalValue, effect.indent)
+          break
+        }
+        case 'v2If':
+        case 'v2IfAdvanced': {
+          const sourceValue =
+            effect.type === 'v2If' || effect.sourceType === 'var'
+              ? engine.getVar(expand(effect.source))
+              : expand(effect.source)
+          const targetValue =
+            effect.targetType === 'value'
+              ? expand(effect.target)
+              : engine.getVar(expand(effect.target))
+          let pass = false
+          switch (effect.condition) {
+            case '=':
+              pass =
+                !isNaN(Number(sourceValue)) && !isNaN(Number(targetValue))
+                  ? Number(sourceValue) === Number(targetValue)
+                  : sourceValue === targetValue
+              break
+            case '!=':
+              pass =
+                !isNaN(Number(sourceValue)) && !isNaN(Number(targetValue))
+                  ? Number(sourceValue) !== Number(targetValue)
+                  : sourceValue !== targetValue
+              break
+            case '>':
+              pass = Number(sourceValue) > Number(targetValue)
+              break
+            case '<':
+              pass = Number(sourceValue) < Number(targetValue)
+              break
+            case '>=':
+              pass = Number(sourceValue) >= Number(targetValue)
+              break
+            case '<=':
+              pass = Number(sourceValue) <= Number(targetValue)
+              break
+            case '∈':
+              try {
+                pass = JSON.parse(targetValue).includes(sourceValue)
+              } catch {
+                pass = false
+              }
+              break
+            case '∋':
+              try {
+                pass = JSON.parse(sourceValue).includes(targetValue)
+              } catch {
+                pass = false
+              }
+              break
+            case '∌':
+              try {
+                pass = !JSON.parse(sourceValue).includes(targetValue)
+              } catch {
+                pass = true
+              }
+              break
+            case '≒': {
+              const num1 = Number(sourceValue)
+              const num2 = Number(targetValue)
+              pass =
+                Number.isNaN(num1) || Number.isNaN(num2)
+                  ? sourceValue.toLocaleLowerCase().replace(/ /g, '') ===
+                    targetValue.toLocaleLowerCase().replace(/ /g, '')
+                  : Math.abs(num1 - num2) < 0.0001
+              break
+            }
+            case '≡':
+              if (targetValue === 'true') {
+                pass = sourceValue === 'true' || sourceValue === '1'
+              } else if (targetValue === 'false') {
+                pass = !(sourceValue === 'true' || sourceValue === '1')
+              } else {
+                pass = sourceValue === targetValue
+              }
+              break
+          }
+
+          if (!pass) {
+            let indent = effect.indent + 1
+            for (; index < effects.length; index++) {
+              const ef = effects[index]
+              if (ef.type === 'v2EndIndent' && indent === ef.indent) {
+                const nextEf = effects[index + 1]
+                indent--
+                if (nextEf?.type === 'v2Else' && nextEf?.indent === indent) {
+                  index++
+                }
+                break
+              }
+            }
+          }
+          break
+        }
+        case 'v2Else': {
+          // The matching `if` already skipped its body here when false,
+          // so reaching `v2Else` normally means skip to its `v2EndIndent`.
+          const indent = effect.indent + 1
+          for (; index < effects.length; index++) {
+            const ef = effects[index]
+            if (ef.type === 'v2EndIndent' && indent === ef.indent) {
+              break
+            }
+          }
+          break
+        }
+        case 'v2EndIndent': {
+          if (effect.endOfLoop) {
+            const indent = effect.indent - 1
+            const originalIndex = index
+            for (; index >= 0; index--) {
+              const ef = effects[index]
+              if (
+                (ef.type === 'v2Loop' || ef.type === 'v2LoopNTimes') &&
+                indent === ef.indent
+              ) {
+                if (ef.type === 'v2LoopNTimes') {
+                  const loopValue = resolve(ef.value, ef.valueType === 'value')
+                  let valueNum = Number(loopValue)
+                  if (Number.isNaN(valueNum)) {
+                    valueNum = 0
+                  }
+                  const key = index + 'LoopNTimes'
+                  loopCounts[key] = (loopCounts[key] ?? 0) + 1
+                  if (loopCounts[key] >= valueNum) {
+                    index = originalIndex
+                  } else {
+                    break
+                  }
+                }
+                break
+              }
+            }
+
+            // Lag guard (`triggers.ts:1908-1913`).
+            loopCounts['loopTimes'] = (loopCounts['loopTimes'] ?? 0) + 1
+            if (loopCounts['loopTimes'] > 100) {
+              await sleep(1)
+              loopCounts['loopTimes'] = 0
+            }
+          }
+
+          engine.clearLocalVarsAtIndent(effect.indent)
+          break
+        }
+        case 'v2BreakLoop': {
+          for (; index < effects.length; index++) {
+            const ef = effects[index]
+            if (ef.type === 'v2EndIndent' && ef.endOfLoop) {
+              break
+            }
+          }
+          break
+        }
+        case 'v2StopTrigger': {
+          index = effects.length
+          break
+        }
+        case 'v2RunTrigger': {
+          if (recursiveCount < 10 || trigger.lowLevelAccess) {
+            recursiveCount++
+            const r = await runTrigger(ctx, workingChar, 'manual', {
+              chat,
+              recursiveCount,
+              additonalSysPrompt,
+              stopSending,
+              manualName: effect.target,
+            })
+            if (r) {
+              additonalSysPrompt = r.additonalSysPrompt
+              chat = r.chat
+              engine.setChat(chat)
+              stopSending = r.stopSending
+              recursionVarChanged ||= r.varChanged
+            }
+          }
+          break
+        }
+        case 'v2CutChat': {
+          let start = Number(resolve(effect.start, effect.startType === 'value'))
+          let end = Number(resolve(effect.end, effect.endType === 'value'))
+          if (Number.isNaN(start)) {
+            start = 0
+          }
+          if (Number.isNaN(end)) {
+            end = chat.message.length
+          }
+          chat.message = chat.message.slice(start, end)
+          break
+        }
+        case 'v2ModifyChat': {
+          const targetIndex = Number(resolve(effect.index, effect.indexType === 'value'))
+          const value = resolve(effect.value, effect.valueType === 'value')
+          if (chat.message[targetIndex]) {
+            chat.message[targetIndex].data = value
+          }
+          break
+        }
+        case 'v2SystemPrompt': {
+          additonalSysPrompt[effect.location] +=
+            resolve(effect.value, effect.valueType === 'value') + '\n\n'
+          break
+        }
+        case 'v2Impersonate': {
+          const value = resolve(effect.value, effect.valueType === 'value')
+          if (effect.role === 'user') {
+            chat.message.push({ role: 'user', data: value })
+          } else if (effect.role === 'char') {
+            chat.message.push({ role: 'char', data: value })
+          }
+          break
+        }
+        // Deferred (no-op): `command`; the `lowLevelAccess`-gated
+        // alert/LLM/image/similarity/regex V1 + V2 arms; the V2 safe
+        // data helpers (7-9d-ii); request/display state (7-9e); the
+        // persistent lorebook/character/persona/note arms; and
+        // `triggercode` / `triggerlua`.
       }
     }
   }
