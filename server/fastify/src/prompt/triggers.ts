@@ -1,21 +1,26 @@
 import type {
   Chat,
+  Database,
   character,
 } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type {
   additonalSysPrompt,
+  triggerCondition,
   triggerscript,
 } from '../../../../src/ts/process/triggers'
+import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { getModuleTriggers } from './modules.js'
 import { encodingForModel, tokenize } from './tokens.js'
+import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
+import { expandVariables } from './variables.js'
 
 /**
  * Phase 7-9a trigger model + runner shell, ported from the Svelte-bound
  * `runTrigger` in `src/ts/process/triggers.ts` (3350 lines, 151 effect
  * arms).
  *
- * This slice establishes ONLY the deterministic, store-free skeleton:
+ * 7-9a established the deterministic, store-free skeleton:
  *   - the trigger type surface and result shape (`TriggerMode`,
  *     `TriggerRunResult`, `TriggerRunArg`, `TriggerRunContext`),
  *   - module-trigger aggregation with inherited `lowLevelAccess`
@@ -27,9 +32,17 @@ import { encodingForModel, tokenize } from './tokens.js'
  *     (never `CurrentTriggerIdStore`), and the terminal token
  *     accounting + return shape.
  *
- * The shell does NOT evaluate conditions or execute any effect. Those
- * are the following slices (see `ROADMAP.md`):
- *   - 7-9b: variable + condition engine.
+ * 7-9b adds the variable + condition engine: `runTrigger` now builds
+ * the char + template `defaultVariables`, constructs the per-run
+ * `TriggerVarEngine` (`./triggerVars.js`), and evaluates each selected
+ * trigger's `conditions` (`var` / `value` / `chatindex` / `exists`)
+ * before its effects would run. Condition strings expand through the
+ * server `expandVariables` (`runVar: false`). A failing condition skips
+ * the trigger. The result now carries `varChanged` so the caller can
+ * decide whether to persist the database.
+ *
+ * The shell still executes NO effect. Those are the following slices
+ * (see `ROADMAP.md`):
  *   - 7-9c: deterministic V1 effects (`setvar`, `systemprompt`,
  *     `impersonate`, `cutchat`, `modifychat`, `stop`, bounded
  *     `runtrigger`).
@@ -55,15 +68,24 @@ export type TriggerMode =
   | 'request'
 
 /**
- * Svelte-free DI seam replacing the SPA's store reads. 7-9a only needs
- * the active module list (for trigger aggregation) and the model (for
- * terminal token accounting). Later slices extend this with the
- * database/character/chat scope used by the variable engine and the
- * effect handlers.
+ * Svelte-free DI seam replacing the SPA's store reads
+ * (`getDatabase()` / `getCurrentChat()` / `getCurrentCharacter()` /
+ * `selectedCharID` / `CurrentTriggerIdStore`).
+ *
+ * 7-9a needs the active module list (trigger aggregation) and the
+ * model (terminal token accounting). 7-9b adds the
+ * `database`/`selectedCharID`/`chatPage` scope the variable engine
+ * persists into and that condition-string expansion reads. Later
+ * slices extend this further for the effect handlers.
  */
 export interface TriggerRunContext {
   modules: RisuModule[]
   model?: string | null
+  database: Database
+  /** Index into `database.characters`; the scope `setVar` persists into. */
+  selectedCharID: number
+  /** Index into the selected character's `chats`. */
+  chatPage: number
 }
 
 /**
@@ -84,7 +106,14 @@ export interface TriggerRunArg {
   tempVars?: Record<string, string>
 }
 
-/** SPA `runTrigger` return shape (`triggers.ts:3341-3349`). */
+/**
+ * SPA `runTrigger` return shape (`triggers.ts:3341-3349`), plus
+ * `varChanged`. The SPA signals a chat-var write by bumping
+ * `ReloadGUIPointer` (browser-only); the server instead returns
+ * `varChanged` so the route can decide whether to persist the
+ * database, matching the `expandVariables` → `dirty` → `applyImport`
+ * pattern.
+ */
 export interface TriggerRunResult {
   additonalSysPrompt: additonalSysPrompt
   chat: Chat
@@ -93,6 +122,7 @@ export interface TriggerRunResult {
   sendAIprompt: boolean
   displayData: string | undefined
   tempVars: Record<string, string> | undefined
+  varChanged: boolean
 }
 
 function emptySysPrompt(): additonalSysPrompt {
@@ -145,10 +175,96 @@ export function matchesTrigger(
 }
 
 /**
- * Phase 7-9a runner shell. Collects triggers, clones inputs, applies
- * the selection filter, and returns the SPA result shape. Condition
- * evaluation and effect execution are deferred (see the module header);
- * the selected-trigger loop is left as an explicit seam for 7-9b/c/d.
+ * Evaluates a trigger's `conditions` (`triggers.ts:1353-1440`). All
+ * conditions must pass; evaluation short-circuits on the first failure.
+ *
+ * `var` reads through the variable engine, `value` compares a literal,
+ * `chatindex` compares `chat.message.length`, and `exists` scans the
+ * last `depth` messages with `strict` / `loose` / `regex` matching.
+ * Condition value/var strings are expanded through the injected
+ * `expand` (the server `expandVariables` with `runVar: false` in
+ * `runTrigger`), keeping effect-free condition checks side-effect-free.
+ */
+export function evaluateConditions(
+  conditions: triggerCondition[],
+  engine: TriggerVarEngine,
+  chat: Chat,
+  expand: (text: string) => string,
+): boolean {
+  for (const condition of conditions) {
+    let pass = true
+    if (
+      condition.type === 'var' ||
+      condition.type === 'chatindex' ||
+      condition.type === 'value'
+    ) {
+      let varValue: string | null =
+        condition.type === 'var'
+          ? (engine.getVar(condition.var) ?? 'null')
+          : condition.type === 'chatindex'
+            ? chat.message.length.toString()
+            : condition.var
+
+      if (varValue === undefined || varValue === null) {
+        pass = false
+      } else {
+        const conditionValue = expand(condition.value)
+        varValue = expand(varValue)
+        switch (condition.operator) {
+          case 'true':
+            if (varValue !== 'true' && varValue !== '1') pass = false
+            break
+          case '=':
+            if (varValue !== conditionValue) pass = false
+            break
+          case '!=':
+            if (varValue === conditionValue) pass = false
+            break
+          case '>':
+            if (Number(varValue) <= Number(conditionValue)) pass = false
+            break
+          case '<':
+            if (Number(varValue) >= Number(conditionValue)) pass = false
+            break
+          case '>=':
+            if (Number(varValue) < Number(conditionValue)) pass = false
+            break
+          case '<=':
+            if (Number(varValue) > Number(conditionValue)) pass = false
+            break
+          case 'null':
+            if (varValue !== 'null') pass = false
+            break
+        }
+      }
+    } else if (condition.type === 'exists') {
+      const conditionValue = expand(condition.value)
+      const val = expand(conditionValue)
+      const da = chat.message
+        .slice(0 - condition.depth)
+        .map((v) => v.data)
+        .join(' ')
+      if (condition.type2 === 'strict') {
+        pass = da.split(' ').includes(val)
+      } else if (condition.type2 === 'loose') {
+        pass = da.toLowerCase().includes(val.toLowerCase())
+      } else if (condition.type2 === 'regex') {
+        pass = new RegExp(val).test(da)
+      }
+    }
+    if (!pass) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * Phase 7-9a/b runner. Collects triggers, clones inputs, applies the
+ * selection filter, evaluates each selected trigger's conditions
+ * (7-9b), and returns the SPA result shape. Effect execution is still
+ * deferred (see the module header); the post-condition body is an
+ * explicit seam for 7-9c/d.
  *
  * Returns `null` when there are no triggers at all (SPA
  * `triggers.ts:1215-1220`). When triggers exist but none match the
@@ -158,6 +274,12 @@ export function matchesTrigger(
  * Cloning rules match the SPA (`triggers.ts:1186, 1207`): in
  * `displayMode` the caller's `char`/`chat` are used directly;
  * otherwise both are deep-cloned so the inputs are never mutated.
+ *
+ * Parity note: in 7-9b the working chat clone and the database chat
+ * hold identical `scriptstate` at condition-eval time (no effect has
+ * mutated state yet), so `engine.getVar` and the parser-side
+ * `{{getvar}}` agree. 7-9c must keep the two in sync once effects
+ * mutate the clone mid-run.
  */
 export async function runTrigger(
   ctx: TriggerRunContext,
@@ -180,15 +302,37 @@ export async function runTrigger(
     return null
   }
 
+  const defaultVariables = parseKeyValue(workingChar.defaultVariables ?? '').concat(
+    parseKeyValue(ctx.database.templateDefaultVariables ?? ''),
+  )
+  const engine = createTriggerVarEngine({
+    chat,
+    database: ctx.database,
+    selectedCharID: ctx.selectedCharID,
+    chatPage: ctx.chatPage,
+    defaultVariables,
+    displayMode: arg.displayMode,
+    tempVars: arg.tempVars,
+  })
+  const expand = (text: string): string =>
+    expandVariables(text, {
+      database: ctx.database,
+      selectedCharID: ctx.selectedCharID,
+      chatPage: ctx.chatPage,
+      chara: workingChar,
+      runVar: false,
+    }).text
+
   const selected = triggers.filter((trigger) =>
     matchesTrigger(trigger, mode, arg.manualName),
   )
-  for (const _trigger of selected) {
-    // 7-9b: evaluate `_trigger.conditions`.
-    // 7-9c/d: dispatch `_trigger.effect`, mutating `chat` /
-    // `additonalSysPrompt` / `stopSending` / `sendAIprompt` / `tempVars`
-    // through the explicit `ctx` (no Svelte stores).
-    void _trigger
+  for (const trigger of selected) {
+    if (!evaluateConditions(trigger.conditions ?? [], engine, chat, expand)) {
+      continue
+    }
+    // 7-9c/d: dispatch `trigger.effect` via `engine` + `ctx`, mutating
+    // `chat` / `additonalSysPrompt` / `stopSending` / `sendAIprompt` /
+    // `tempVars`.
   }
 
   // Terminal additional-system-prompt token accounting
@@ -210,5 +354,6 @@ export async function runTrigger(
     sendAIprompt,
     displayData: arg.displayData,
     tempVars: arg.tempVars,
+    varChanged: engine.varChanged,
   }
 }

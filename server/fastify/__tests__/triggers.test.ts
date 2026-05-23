@@ -1,17 +1,28 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import type {
   Chat,
+  Database,
   character,
 } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
-import type { triggerscript } from '../../../src/ts/process/triggers'
+import type { triggerCondition, triggerscript } from '../../../src/ts/process/triggers'
 import { getModuleTriggers } from '../src/prompt/modules.js'
 import {
   collectTriggers,
+  evaluateConditions,
   matchesTrigger,
   runTrigger,
   type TriggerRunContext,
 } from '../src/prompt/triggers.js'
+import { createTriggerVarEngine } from '../src/prompt/triggerVars.js'
+import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+
+beforeAll(() => {
+  bootPromptVariables()
+})
+
+/** Pass-through expander for condition tests that use no CBS syntax. */
+const identityExpand = (text: string): string => text
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {
@@ -56,7 +67,26 @@ function makeTrigger(overrides: Partial<triggerscript> = {}): triggerscript {
   } as triggerscript
 }
 
-const ctx: TriggerRunContext = { modules: [] }
+function makeDb(overrides: Partial<Database> = {}): Database {
+  return {
+    characters: [],
+    templateDefaultVariables: '',
+    currentChar: 0,
+    ...overrides,
+  } as unknown as Database
+}
+
+function makeCtx(overrides: Partial<TriggerRunContext> = {}): TriggerRunContext {
+  return {
+    modules: [],
+    database: makeDb(),
+    selectedCharID: 0,
+    chatPage: 0,
+    ...overrides,
+  }
+}
+
+const ctx: TriggerRunContext = makeCtx()
 
 describe('Phase 7-9a getModuleTriggers', () => {
   it('returns [] when no module declares triggers', () => {
@@ -205,12 +235,9 @@ describe('Phase 7-9a runTrigger shell', () => {
   it('includes module triggers when the character has none of its own', async () => {
     const char = makeChar({ triggerscript: [] })
     const mod = makeModule({ trigger: [makeTrigger({ type: 'output' })] })
-    const result = await runTrigger(
-      { modules: [mod] },
-      char,
-      'output',
-      { chat: makeChat() },
-    )
+    const result = await runTrigger(makeCtx({ modules: [mod] }), char, 'output', {
+      chat: makeChat(),
+    })
     expect(result).not.toBeNull()
   })
 
@@ -235,5 +262,215 @@ describe('Phase 7-9a runTrigger shell', () => {
       displayMode: true,
     })
     expect(result?.chat).toBe(chat)
+  })
+
+  it('skips a trigger whose condition fails but still returns a result', async () => {
+    const char = makeChar({
+      triggerscript: [
+        makeTrigger({
+          type: 'output',
+          conditions: [cond({ type: 'value', var: '1', value: '2', operator: '=' })],
+        }),
+      ],
+    })
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+    expect(result).not.toBeNull()
+    expect(result?.varChanged).toBe(false)
+  })
+})
+
+function cond(c: Record<string, unknown>): triggerCondition {
+  return c as unknown as triggerCondition
+}
+
+interface EngineSetup {
+  workingChat: Chat
+  db: Database
+}
+
+function makeEngine(
+  opts: {
+    scriptstate?: Record<string, unknown>
+    defaultVariables?: [string, string][]
+    displayMode?: boolean
+    tempVars?: Record<string, string>
+  } = {},
+): ReturnType<typeof createTriggerVarEngine> & EngineSetup {
+  // dbChat is the persisted chat; workingChat is the clone runTrigger makes.
+  const dbChat = makeChat({ scriptstate: { ...(opts.scriptstate ?? {}) } })
+  const char = makeChar({ chats: [dbChat] })
+  const db = makeDb({ characters: [char] })
+  const workingChat = structuredClone(dbChat)
+  const engine = createTriggerVarEngine({
+    chat: workingChat,
+    database: db,
+    selectedCharID: 0,
+    chatPage: 0,
+    defaultVariables: opts.defaultVariables ?? [],
+    displayMode: opts.displayMode,
+    tempVars: opts.tempVars,
+  })
+  return Object.assign(engine, { workingChat, db })
+}
+
+describe('Phase 7-9b trigger var engine', () => {
+  it('falls back to default variables, then null', () => {
+    const engine = makeEngine({ defaultVariables: [['greet', 'hi']] })
+    expect(engine.getVar('greet')).toBe('hi')
+    expect(engine.getVar('missing')).toBe('null')
+  })
+
+  it('reads chat scriptstate', () => {
+    const engine = makeEngine({ scriptstate: { $hp: '10' } })
+    expect(engine.getVar('hp')).toBe('10')
+  })
+
+  it('writes scriptstate, flips varChanged, and propagates to the db chat', () => {
+    const engine = makeEngine()
+    engine.setVar('hp', '5')
+    expect(engine.workingChat.scriptstate?.['$hp']).toBe('5')
+    expect(engine.varChanged).toBe(true)
+    // The persisted db chat now shares the working chat's scriptstate object.
+    expect(engine.db.characters[0].chats[0].scriptstate).toBe(
+      engine.workingChat.scriptstate,
+    )
+  })
+
+  it('local variables shadow scriptstate and stay local on write', () => {
+    const engine = makeEngine({ scriptstate: { $x: 'global' } })
+    engine.declareLocalVar('x', 'local', 0)
+    expect(engine.getVar('x')).toBe('local')
+    engine.setVar('x', 'updated')
+    expect(engine.getVar('x')).toBe('updated')
+    expect(engine.workingChat.scriptstate?.['$x']).toBe('global')
+    expect(engine.varChanged).toBe(false)
+  })
+
+  it('clearLocalVarsAtIndent drops vars at or above the indent', () => {
+    const engine = makeEngine()
+    engine.declareLocalVar('a', '1', 0)
+    engine.declareLocalVar('b', '2', 2)
+    engine.setIndent(2)
+    expect(engine.getVar('b')).toBe('2')
+    engine.clearLocalVarsAtIndent(2)
+    expect(engine.getVar('b')).toBe('null')
+    expect(engine.getVar('a')).toBe('1')
+  })
+
+  it('displayMode keeps writes in tempVars and leaves scriptstate untouched', () => {
+    const tempVars: Record<string, string> = {}
+    const engine = makeEngine({ displayMode: true, tempVars })
+    engine.setVar('x', '5')
+    expect(tempVars.x).toBe('5')
+    expect(engine.getVar('x')).toBe('5')
+    expect(engine.workingChat.scriptstate?.['$x']).toBeUndefined()
+    expect(engine.varChanged).toBe(false)
+  })
+})
+
+describe('Phase 7-9b evaluateConditions', () => {
+  it('passes a matching var condition and fails a mismatch', () => {
+    const engine = makeEngine({ scriptstate: { $hp: '10' } })
+    const chat = makeChat()
+    expect(
+      evaluateConditions(
+        [cond({ type: 'var', var: 'hp', value: '10', operator: '=' })],
+        engine,
+        chat,
+        identityExpand,
+      ),
+    ).toBe(true)
+    expect(
+      evaluateConditions(
+        [cond({ type: 'var', var: 'hp', value: '5', operator: '=' })],
+        engine,
+        chat,
+        identityExpand,
+      ),
+    ).toBe(false)
+  })
+
+  it('compares value literals and numeric operators', () => {
+    const engine = makeEngine()
+    const chat = makeChat()
+    const check = (operator: string, left: string, right: string) =>
+      evaluateConditions(
+        [cond({ type: 'value', var: left, value: right, operator })],
+        engine,
+        chat,
+        identityExpand,
+      )
+    expect(check('!=', '3', '4')).toBe(true)
+    expect(check('>', '5', '4')).toBe(true)
+    expect(check('<', '5', '4')).toBe(false)
+    expect(check('>=', '4', '4')).toBe(true)
+    expect(check('<=', '4', '4')).toBe(true)
+    expect(check('true', 'true', '')).toBe(true)
+    expect(check('true', 'false', '')).toBe(false)
+  })
+
+  it('checks the null operator against unset vars', () => {
+    const engine = makeEngine()
+    const chat = makeChat()
+    expect(
+      evaluateConditions(
+        [cond({ type: 'var', var: 'missing', value: '', operator: 'null' })],
+        engine,
+        chat,
+        identityExpand,
+      ),
+    ).toBe(true)
+  })
+
+  it('compares chatindex against the message count', () => {
+    const engine = makeEngine()
+    const chat = makeChat({
+      message: [
+        { role: 'user', data: 'a' },
+        { role: 'char', data: 'b' },
+      ] as never,
+    })
+    expect(
+      evaluateConditions(
+        [cond({ type: 'chatindex', value: '2', operator: '=' })],
+        engine,
+        chat,
+        identityExpand,
+      ),
+    ).toBe(true)
+  })
+
+  it('handles exists strict / loose / regex over the last depth messages', () => {
+    const engine = makeEngine()
+    const chat = makeChat({
+      message: [{ role: 'char', data: 'hello world' }] as never,
+    })
+    const exists = (value: string, type2: string) =>
+      evaluateConditions(
+        [cond({ type: 'exists', value, type2, depth: 1 })],
+        engine,
+        chat,
+        identityExpand,
+      )
+    expect(exists('world', 'strict')).toBe(true)
+    expect(exists('planet', 'strict')).toBe(false)
+    expect(exists('WORLD', 'loose')).toBe(true)
+    expect(exists('wor.d', 'regex')).toBe(true)
+  })
+
+  it('requires every condition to pass', () => {
+    const engine = makeEngine({ scriptstate: { $hp: '10' } })
+    const chat = makeChat()
+    expect(
+      evaluateConditions(
+        [
+          cond({ type: 'var', var: 'hp', value: '10', operator: '=' }),
+          cond({ type: 'value', var: '1', value: '2', operator: '=' }),
+        ],
+        engine,
+        chat,
+        identityExpand,
+      ),
+    ).toBe(false)
   })
 })
