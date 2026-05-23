@@ -6,38 +6,41 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with eighteen slices landed through 7-8a:
+Phase 7 is active with nineteen slices landed through 7-7d:
 chat route scaffold, parser/static/plain leaves, history through
 multimodal inlays, regex scripts, active-module helpers, lorebook
-activation/depth helpers, and the minimal server tokenizer.
-`assemble`, `templates`, and `triggers` remain throwing stubs;
-`tokens` is now real at the minimal text-only surface. Use
+activation/depth/budget-truncation helpers, and the minimal server
+tokenizer. `assemble`, `templates`, and `triggers` remain throwing
+stubs; `tokens` is now real at the minimal text-only surface and
+`lorebook` is feature-complete. Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-7d — lorebook budget-aware
-   truncation.** 7-8a landed the minimal server tokenizer
-   (`17fca64f`), so each active lorebook entry can now carry a
-   real `tokens` field and the priority-desc filter has something
-   to drop.
+1. **Continue Phase 7 with slice 7-5e — history tokenizer
+   accumulation + depth-prompt token preflight.** 7-8a landed the
+   minimal server tokenizer (`17fca64f`) and 7-7d closed the
+   lorebook truncation chain (`f0382df8`), so the history walk is
+   the only remaining Tier 1 sub-slice that depends directly on
+   7-8a. 7-7e already shipped the `applyDepthPrompts` splicer plus
+   `getDepthPrompts` / `resolvePosition`.
 
    Verified slice scope:
-   - Walk the entries returned by `lorebook.ts`, tokenize each
-     under the assembly's model using
-     `encodingForModel` + `tokenize`/`tokenizeChat`, and attach a
-     `tokens` field.
-   - Drop entries above the configured budget in priority-desc
-     order, honoring `ignore_on_max_context` (already decoded by
-     7-7a).
-   - Keep the activation report shape stable so 7-11a / 7-11d can
-     still emit it.
+   - Thread `tokenizeChat` from `tokens.ts` through the existing
+     history walk in `history.ts` so each emitted message carries
+     a real `tokens` count.
+   - Add a chat-window budget cutoff that drops the oldest
+     in-budget messages first (matches the SPA's
+     `buildHistoryWindow.ts` accounting).
+   - Preflight the depth-prompt splice landed in 7-7e so
+     over-budget entries are trimmed before insertion.
 
-   After 7-7d closes, the natural next pickup is **7-5e — history
-   tokenizer accumulation + depth-prompt token preflight** (also
-   unblocked by 7-8a). Both 7-7d and 7-5e are sequential successors
-   of 7-8a and can run in parallel by different agents if staffed.
+   After 7-5e closes, the next default pickup is **7-8b**
+   (template-wide token preflight) → **7-8c** (final budget
+   pruning). The independently shippable parallel fronts remain
+   **7-9a** (trigger sandbox) and **7-10a** (template card
+   parsing).
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -46,7 +49,7 @@ activation/depth helpers, and the minimal server tokenizer.
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 654
+   tests green. Last recorded baselines are `pnpm api:test`: 661
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -92,26 +95,27 @@ activation/depth helpers, and the minimal server tokenizer.
 
 ## Landed Phase 7 Slices
 
-| Slice | Commit     | Summary                                                                                                |
-| ----- | ---------- | ------------------------------------------------------------------------------------------------------ |
-| 7-1   | `3d2426c4` | Chat route scaffold, prompt SSE taxonomy, and prompt module stubs.                                     |
-| 7-2a  | `9eed5093` | Parser DI seams for chat variables and `trigger_id`.                                                   |
-| 7-2b  | `bb2c78b5` | Svelte-free `risuChatParser` extraction with SPA re-exports.                                           |
-| 7-2c  | `7ed156e6` | Server parser adapter and real `expandVariables`.                                                      |
-| 7-3   | `d0a2a7f3` | Static prompt sections.                                                                                |
-| 7-4   | `051a5dcd` | Plain prompt sections.                                                                                 |
-| 7-5a  | `c44e53fc` | Deterministic history walk.                                                                            |
-| 7-6a  | `9a60380d` | Minimal preset/character regex script chain.                                                           |
-| 7-5b  | `7ad226b9` | Per-message scripts, sendName, `<Thoughts>`, and memo/UUID backfill.                                   |
-| 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes.                                                                          |
-| 7-6c  | `5aae492b` | `ableFlag` action DSL, outScript prep, and flag defaults.                                              |
-| 7-6d  | `cb5675d8` | Module regex scripts through active-module helpers.                                                    |
-| 7-5c  | `50a1770b` | History multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module assets.                     |
-| 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                   |
-| 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`. |
-| 7-7c  | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.       |
-| 7-7e  | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` splicer.      |
-| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`.             |
+| Slice | Commit     | Summary                                                                                                 |
+| ----- | ---------- | ------------------------------------------------------------------------------------------------------- |
+| 7-1   | `3d2426c4` | Chat route scaffold, prompt SSE taxonomy, and prompt module stubs.                                      |
+| 7-2a  | `9eed5093` | Parser DI seams for chat variables and `trigger_id`.                                                    |
+| 7-2b  | `bb2c78b5` | Svelte-free `risuChatParser` extraction with SPA re-exports.                                            |
+| 7-2c  | `7ed156e6` | Server parser adapter and real `expandVariables`.                                                       |
+| 7-3   | `d0a2a7f3` | Static prompt sections.                                                                                 |
+| 7-4   | `051a5dcd` | Plain prompt sections.                                                                                  |
+| 7-5a  | `c44e53fc` | Deterministic history walk.                                                                             |
+| 7-6a  | `9a60380d` | Minimal preset/character regex script chain.                                                            |
+| 7-5b  | `7ad226b9` | Per-message scripts, sendName, `<Thoughts>`, and memo/UUID backfill.                                    |
+| 7-6b  | `8414d5c7` | Scripts `@@`-action prefixes.                                                                           |
+| 7-6c  | `5aae492b` | `ableFlag` action DSL, outScript prep, and flag defaults.                                               |
+| 7-6d  | `cb5675d8` | Module regex scripts through active-module helpers.                                                     |
+| 7-5c  | `50a1770b` | History multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module assets.                      |
+| 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                    |
+| 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`.  |
+| 7-7c  | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.        |
+| 7-7e  | `c0f3fb3a` | Lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` splicer.       |
+| 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats`.              |
+| 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget`. |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

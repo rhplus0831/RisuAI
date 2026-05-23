@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (18 slices landed as of 2026-05-23).
+Status: in-progress (19 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}` +
 the new `applyDepthPrompts` splicer), `scripts.ts` (regex chain
@@ -10,12 +10,13 @@ through module regex), `modules.ts` (`getActiveModules`,
 `getModuleRegexScripts`, `getModuleAssets`), `lorebook.ts`
 (constant + keyword + recursive activation with `searchMatch`,
 child mirror, conditional-activation decorators, recursion loop +
-`recursivePrompt`, `matchLog`, `inject_lore` rewrites, plus the
-7-7e depth-prompt helpers `getDepthPrompts` /
-`resolvePosition`), and `tokens.ts` (the 7-8a minimal server
-tokenizer over `cl100k_base` / `o200k_base`) are real. The
-remaining assembly modules under `server/fastify/src/prompt/`
-(`assemble`, `templates`, `triggers`) are still throwing stubs. See
+`recursivePrompt`, `matchLog`, `inject_lore` rewrites, the 7-7e
+depth-prompt helpers `getDepthPrompts` / `resolvePosition`, and
+the 7-7d budget-aware truncation chain), and `tokens.ts` (the
+7-8a minimal server tokenizer over `cl100k_base` / `o200k_base`)
+are real. The remaining assembly modules under
+`server/fastify/src/prompt/` (`assemble`, `templates`, `triggers`)
+are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -176,6 +177,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.                       |
 | 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, `applyDepthPrompts` history splicer.              |
 | 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`. |
+| 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.           |
 
 ## Remaining roadmap
 
@@ -285,12 +287,21 @@ Tentative breakdown:
   and the global `loreSettings.recursiveScanning` default.
   `activatedIndexes` keeps each entry firing at most once,
   bounding the outer loop at O(N) passes.
-- **7-7d** — Budget-aware truncation. **Unblocked by 7-8a
-  (`17fca64f`).** Tokenize each active entry under the assembly's
-  model, attach a `tokens` field, and drop entries above the
-  configured budget in priority-desc order (honoring
-  `ignore_on_max_context`, already decoded in 7-7a). Only
-  remaining lorebook slice.
+- **7-7d** — Budget-aware truncation. **Landed `f0382df8`** (7
+  new tests, api:test 654 → 661). `LoreEntryActive` gains a
+  `tokens` field computed at push time under
+  `encodingForModel(input.model)`. `activateLorebook` splices a
+  priority-desc → budget filter → order-desc chain in place of
+  the old single priority-desc sort. Budget resolves to
+  `loreSettings.tokenBudget ?? database.loreBookToken ?? 800`,
+  matching the SPA migrator default. The filter is strictly
+  sequential through priority-desc, so an oversized
+  high-priority entry is rejected while a later lower-priority
+  entry that fits still slips in. `@@ignore_on_max_context`
+  entries (already demoted to `priority = -1000` by 7-7a) sit at
+  the tail and get dropped first. Token counts are not
+  refreshed after `inject_lore` mutations — same trade-off the
+  SPA documents at `lorebook.svelte.ts:649`.
 - **7-7e** — Depth-prompt emission for history. **Landed
   `c0f3fb3a`** (16 new tests, api:test 624 → 640).
   `getDepthPrompts(report)` filters for

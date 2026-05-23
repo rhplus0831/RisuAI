@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `17fca64f feat: minimal server tokenizer (Phase 7-8a)`
+Head: `f0382df8 feat: lorebook budget-aware truncation (Phase 7-7d)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -38,6 +38,7 @@ Landed Phase 7 slices:
 | 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt` accumulation, three recursion decorators.    |
 | 7-7e  | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.          |
 | 7-8a  | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`. |
+| 7-7d  | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.           |
 
 What is real in code:
 
@@ -71,60 +72,61 @@ What is real in code:
 - `scripts.ts` does not yet handle script-cache,
   `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
   hooks — all 7-6e or out-of-scope.
-- `lorebook.ts` covers the full activation surface (constant
-  / keyword / recursive / depth-prompt). The only deferred
-  lorebook slice is 7-7d (budget-aware truncation); 7-8a is now
-  in, so the priority-desc filter has a tokenizer to attach a
-  real `tokens` field per active entry.
+- `lorebook.ts` covers the full activation surface: constant /
+  keyword / recursive / depth-prompt activation, plus the 7-7d
+  budget-aware truncation chain (per-entry `tokens` via
+  `encodingForModel(input.model)`, priority-desc filter,
+  `loreSettings.tokenBudget ?? database.loreBookToken ?? 800`
+  resolution). No remaining lorebook slices.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-8a:
+Last recorded baselines after 7-7d:
 
-- `pnpm api:test`: 654 across 36 files
+- `pnpm api:test`: 661 across 36 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-7d lorebook budget filter
+## Next Slice — 7-5e history tokenizer + depth prompts
 
-Pick up **7-7d — lorebook budget-aware truncation**.
+Pick up **7-5e — history tokenizer accumulation + depth-prompt
+token preflight**.
 
-7-8a landed the minimal server tokenizer (`encodingForModel`,
-`tokenize`, `tokenizeChat`, `tokenizeChats`), so each active
-lorebook entry can now carry a real `tokens` field and the
-priority-desc filter has something to drop. The SPA reference is
-the trailing token-budgeted truncation in `buildLorebookContext.ts`
-(activation-stage decorators like `ignore_on_max_context` are
-already handled by 7-7a; do not move them).
+7-8a (`17fca64f`) shipped the minimal server tokenizer and 7-7d
+(`f0382df8`) closed out the last lorebook sub-slice, so the
+lorebook activation report now carries real `tokens` and the only
+remaining Tier 1 sub-slice that depends directly on 7-8a is the
+history walk. 7-7e already shipped the `applyDepthPrompts` splicer
+and `getDepthPrompts` / `resolvePosition` helpers; this slice is
+about wiring tokens into the history walk and budget-checking the
+depth-prompt splice.
 
-After 7-7d closes, the natural next pickup is **7-5e — history
-tokenizer accumulation + depth-prompt token preflight** (also
-unblocked by 7-8a). Both 7-7d and 7-5e are sequential successors of
-7-8a; pick the one that is easiest to land cleanly given the
-current state. Then return to 7-8b/c for template-wide preflight
-and final budget pruning.
+After 7-5e closes, the default progression is **7-8b** (template-wide
+preflight) → **7-8c** (final budget pruning). The independently
+shippable parallel fronts remain **7-9a** (trigger sandbox) and
+**7-10a** (template card parsing).
 
-### Scope sketch
+### Scope sketch (SPA references)
 
-- Attach a `tokens` field to each entry in the lorebook activation
-  result by tokenizing its body under the assembly's model. Honor
-  `ignore_on_max_context` (already decoded in 7-7a) and the
-  `priority` ordering set up by 7-7a/b/c.
-- Drop entries above the configured budget in priority-desc order
-  until the total fits. Keep the activation report shape stable so
-  7-11a / 7-11d can still emit it.
-- Keep the API synchronous and Svelte-free; the model string flows
-  in from the route layer.
+- `src/ts/process/promptAssembly/buildHistoryWindow.ts`: history
+  walk accumulates `tokens` per message and stops adding once the
+  window budget is hit. Port the budget accounting using
+  `tokenizeChat` from `tokens.ts`.
+- `src/ts/process/index.svelte.ts:275-283`: depth-prompt splicer.
+  7-7e already ports the splice itself in `history.ts`; this slice
+  adds the token preflight so over-budget depth prompts are
+  trimmed before the splice.
+- Surface the resolved `model` and the assembly's chat-token
+  budget through the existing history input seam — do not pull in
+  Svelte state.
 
 ### Tests
 
-Add lorebook tests covering:
+Add history-walk tests covering:
 
-- Token-budget truncation drops the lowest-priority entry first.
-- `ignore_on_max_context` entries survive the filter even when
-  over budget.
-- Tokens are counted under the resolved encoding (`cl100k_base`
-  vs `o200k_base`).
+- Per-message `tokens` accumulation under cl100k_base and o200k.
+- Window-budget cutoff drops the oldest in-budget messages first.
+- Depth-prompt splice respects the per-entry token count.
 
 ### Verification
 
@@ -135,9 +137,9 @@ pnpm test
 pnpm build
 ```
 
-If 7-7d is blocked, the parallel next-ups are **7-5e** (history
-tokenizer + depth-prompt token preflight), **7-9a** (trigger
-sandbox), or **7-10a** (template card parsing).
+If 7-5e is blocked, the parallel next-ups are **7-9a** (trigger
+sandbox), **7-10a** (template card parsing), or **7-8b** (token
+preflight across the template walker — depends only on 7-8a).
 
 ## Patterns To Keep
 
