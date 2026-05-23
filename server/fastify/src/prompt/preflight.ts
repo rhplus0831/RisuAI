@@ -66,30 +66,6 @@ export interface PreflightInput {
   report?: LorebookActivationReport
 }
 
-/**
- * Inlined `systemizeChat` from
- * `src/ts/process/promptAssembly/systemizeChat.ts:9-23`. Mutates
- * rows in place: user/assistant roles become system with the role
- * (or `example_*` name) folded into the content.
- */
-function systemizeChat(chats: OpenAIChat[]): OpenAIChat[] {
-  for (let i = 0; i < chats.length; i++) {
-    const row = chats[i]
-    if (row.role === 'user' || row.role === 'assistant') {
-      const attr = row.attr ?? []
-      if (row.name?.startsWith('example_')) {
-        row.content = row.name + ': ' + row.content
-      } else if (!attr.includes('nameAdded')) {
-        row.content = row.role + ': ' + row.content
-      }
-      row.role = 'system'
-      delete row.memo
-      delete row.name
-    }
-  }
-  return chats
-}
-
 function positionParserFor(
   report: LorebookActivationReport | undefined,
 ): (text: string, loc: string) => string {
@@ -123,9 +99,9 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
   }
 
   for (const card of promptTemplate) {
-    // Content cards (persona / description / authornote / lorebook /
-    // postEverything / plain / jailbreak / cot / chatML) share the
-    // 7-10b `renderContentCard` builder; here we tokenize its rows.
+    // Content + chat cards share the 7-10b/c `renderContentCard`
+    // builder; here we tokenize its rows. Only `memory` / `cache`
+    // return `null` and are handled inline below.
     const contentRows = renderContentCard(card, {
       ctx,
       currentChar,
@@ -138,45 +114,10 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
       continue
     }
 
-    switch (card.type) {
-      case 'chat': {
-        const chats = unformated.chats
-        let start = card.rangeStart
-        let end = card.rangeEnd === 'end' ? chats.length : card.rangeEnd
-
-        if (start === -1000) {
-          start = 0
-          end = chats.length
-        }
-        if (start < 0) {
-          start = chats.length + start
-          if (start < 0) start = 0
-        }
-        if (end < 0) {
-          end = chats.length + end
-          if (end < 0) end = 0
-        }
-        if (start >= end) break
-
-        let slice = chats.slice(start, end)
-        if (
-          usingPromptTemplate &&
-          db.promptSettings?.sendChatAsSystem &&
-          !card.chatAsOriginalOnSystem
-        ) {
-          slice = systemizeChat(structuredClone(slice))
-        }
-        tokenizeAll(slice)
-        break
-      }
-      case 'memory': {
-        memoryCardUsed = true
-        break
-      }
-      case 'cache': {
-        hasCachePoint = true
-        break
-      }
+    if (card.type === 'memory') {
+      memoryCardUsed = true
+    } else if (card.type === 'cache') {
+      hasCachePoint = true
     }
   }
 

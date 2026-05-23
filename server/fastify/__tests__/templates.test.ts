@@ -365,10 +365,9 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
     ])
   })
 
-  it('skips chat / memory / cache cards (deferred to 7-10c/d)', () => {
+  it('skips memory / cache cards (deferred to 7-10d)', () => {
     const db = makeDatabase()
     const unformated = makeSlots({
-      chats: [row({ role: 'user', content: 'should-not-appear' })],
       description: [row({ role: 'system', content: 'desc' })],
     })
     const out = renderByTemplate(
@@ -376,7 +375,6 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
       makeCharacter(),
       unformated,
       tpl([
-        { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
         { type: 'memory' },
         { type: 'cache', name: 'c', depth: 1, role: 'all' },
         { type: 'description' },
@@ -397,5 +395,129 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
       (text) => text.toUpperCase(),
     )
     expect(out[0].content).toBe('ABC')
+  })
+})
+
+describe('Phase 7-10c chat cards', () => {
+  const chatSlots = (): UnformatedPromptSlots =>
+    makeSlots({
+      chats: [
+        row({ role: 'user', content: 'u0', memo: '0' }),
+        row({ role: 'assistant', content: 'a1', memo: '1' }),
+        row({ role: 'user', content: 'u2', memo: '2' }),
+      ],
+    })
+
+  const renderChat = (
+    db: Database,
+    card: PromptItem,
+    unformated = chatSlots(),
+    char = makeCharacter(),
+  ): OpenAIChat[] => renderByTemplate(ctxFor(db), char, unformated, [card], true)
+
+  it('emits the full chat for rangeEnd "end"', () => {
+    const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: 0, rangeEnd: 'end' })
+    expect(out.map((r) => r.content)).toEqual(['u0', 'a1', 'u2'])
+  })
+
+  it('slices an explicit numeric range', () => {
+    const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: 1, rangeEnd: 2 })
+    expect(out.map((r) => r.content)).toEqual(['a1'])
+  })
+
+  it('treats the -1000 sentinel as the whole chat', () => {
+    const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: -1000, rangeEnd: 0 })
+    expect(out.map((r) => r.content)).toEqual(['u0', 'a1', 'u2'])
+  })
+
+  it('resolves negative offsets from the end', () => {
+    const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: -2, rangeEnd: 'end' })
+    expect(out.map((r) => r.content)).toEqual(['a1', 'u2'])
+  })
+
+  it('emits nothing when start >= end', () => {
+    const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: 2, rangeEnd: 1 })
+    expect(out).toEqual([])
+  })
+
+  it('systemizes chat rows when sendChatAsSystem is on', () => {
+    const db = makeDatabase({
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: true,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: false,
+      },
+    } as Partial<Database>)
+    const out = renderChat(db, { type: 'chat', rangeStart: 0, rangeEnd: 'end' })
+    // user/assistant rows folded into system rows, then coalesced.
+    expect(out).toHaveLength(1)
+    expect(out[0].role).toBe('system')
+    expect(out[0].content).toBe('user: u0\n\nassistant: a1\n\nuser: u2')
+  })
+
+  it('honors chatAsOriginalOnSystem (no systemizing)', () => {
+    const db = makeDatabase({
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: true,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: false,
+      },
+    } as Partial<Database>)
+    const out = renderChat(db, {
+      type: 'chat',
+      rangeStart: 0,
+      rangeEnd: 'end',
+      chatAsOriginalOnSystem: true,
+    })
+    expect(out.map((r) => r.role)).toEqual(['user', 'assistant', 'user'])
+  })
+
+  it('folds example_ names instead of the role when systemizing', () => {
+    const db = makeDatabase({
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: true,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: false,
+      },
+    } as Partial<Database>)
+    const unformated = makeSlots({
+      chats: [row({ role: 'user', content: 'hi', name: 'example_user', memo: 'e' })],
+    })
+    const out = renderChat(db, { type: 'chat', rangeStart: 0, rangeEnd: 'end' }, unformated)
+    expect(out[0].content).toBe('example_user: hi')
+  })
+
+  it('does not mutate the source chats when systemizing (clone divergence)', () => {
+    const db = makeDatabase({
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: true,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: false,
+      },
+    } as Partial<Database>)
+    const unformated = chatSlots()
+    renderChat(db, { type: 'chat', rangeStart: 0, rangeEnd: 'end' }, unformated)
+    expect(unformated.chats.map((r) => r.role)).toEqual(['user', 'assistant', 'user'])
+    expect(unformated.chats[0].content).toBe('u0')
   })
 })

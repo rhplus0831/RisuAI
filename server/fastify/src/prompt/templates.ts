@@ -21,24 +21,26 @@ import { expandVariables, type ExpandContext } from './variables.js'
  *   - `renderByFormatOrder` (the branch-free non-template walk).
  *
  * 7-10b adds the content-card renderer:
- *   - `renderContentCard` (`renderFinalPrompt.ts:140-266`): the per-card
- *     row builder for `persona` / `description` / `authornote` /
- *     `lorebook` / `postEverything` / `plain` / `jailbreak` / `cot` /
- *     `chatML`. Returns `null` for `chat` / `memory` / `cache` (their
- *     handlers land in 7-10c/d). This is the single source of truth for
- *     per-card content: `preflight.ts` (7-8b) consumes the same builder
- *     to count tokens, so the two never drift.
+ *   - `renderContentCard` (`renderFinalPrompt.ts:140-300`): the per-card
+ *     row builder. This is the single source of truth for per-card
+ *     content: `preflight.ts` (7-8b) consumes the same builder to count
+ *     tokens, so the two never drift.
  *   - `renderByTemplate`: the template-walk path (`renderFinalPrompt.ts`
  *     `if (promptTemplate)` branch) that dispatches content cards
  *     through `renderContentCard` + `coalesceRows`.
  *
- * Deferred to later sub-slices: chat / systemized cards (7-10c),
- * memory / cache cards (7-10d), prompt-info text capture (7-10e), and
- * render finalization — the final trim, `depth_prompt` splice,
- * automatic cache-point walk-back, and `runLuaEditTrigger('editRequest')`
- * (7-10f). The assemble root that fills these slots, builds the
- * injection-lore-aware `positionParser`, and applies
- * `triggerResult.additonalSysPrompt` is Tier 3 (7-11a/b).
+ * 7-10c adds the `chat` card to `renderContentCard` (range math + the
+ * `systemizeChat` lift) so the builder now covers `persona` /
+ * `description` / `authornote` / `lorebook` / `postEverything` /
+ * `plain` / `jailbreak` / `cot` / `chatML` / `chat`, returning `null`
+ * only for `memory` / `cache`.
+ *
+ * Deferred to later sub-slices: memory / cache cards (7-10d),
+ * prompt-info text capture (7-10e), and render finalization — the final
+ * trim, `depth_prompt` splice, automatic cache-point walk-back, and
+ * `runLuaEditTrigger('editRequest')` (7-10f). The assemble root that
+ * fills these slots, builds the injection-lore-aware `positionParser`,
+ * and applies `triggerResult.additonalSysPrompt` is Tier 3 (7-11a/b).
  */
 
 /**
@@ -269,6 +271,32 @@ export function parseChatML(text: string, ctx: ExpandContext): OpenAIChat[] | nu
     })
 }
 
+/**
+ * Inlined `systemizeChat` from
+ * `src/ts/process/promptAssembly/systemizeChat.ts:9-23`. Mutates rows
+ * in place: `user` / `assistant` rows become `system` with the role
+ * (or the `example_*` name) folded into the content, dropping
+ * `memo` / `name`. Callers clone first when the source must be
+ * preserved (see the `chat` card).
+ */
+export function systemizeChat(chats: OpenAIChat[]): OpenAIChat[] {
+  for (let i = 0; i < chats.length; i++) {
+    const row = chats[i]
+    if (row.role === 'user' || row.role === 'assistant') {
+      const attr = row.attr ?? []
+      if (row.name?.startsWith('example_')) {
+        row.content = row.name + ': ' + row.content
+      } else if (!attr.includes('nameAdded')) {
+        row.content = row.role + ': ' + row.content
+      }
+      row.role = 'system'
+      delete row.memo
+      delete row.name
+    }
+  }
+  return chats
+}
+
 export interface ContentCardDeps {
   ctx: ExpandContext
   currentChar: character
@@ -368,19 +396,52 @@ export function renderContentCard(
     }
     case 'chatML':
       return parseChatML(card.text, { ...ctx, chara: currentChar }) ?? []
+    case 'chat': {
+      const chats = unformated.chats
+      let start = card.rangeStart
+      let end = card.rangeEnd === 'end' ? chats.length : card.rangeEnd
+
+      if (start === -1000) {
+        start = 0
+        end = chats.length
+      }
+      if (start < 0) {
+        start = chats.length + start
+        if (start < 0) start = 0
+      }
+      if (end < 0) {
+        end = chats.length + end
+        if (end < 0) end = 0
+      }
+      if (start >= end) return []
+
+      const slice = chats.slice(start, end)
+      if (
+        usingPromptTemplate &&
+        db.promptSettings?.sendChatAsSystem &&
+        !card.chatAsOriginalOnSystem
+      ) {
+        // Clone before systemizing so the shared `unformated.chats` is
+        // not mutated between the preflight pass and the render pass.
+        // The SPA mutates in place (`renderFinalPrompt.ts:297`); the
+        // output rows are identical either way.
+        return systemizeChat(structuredClone(slice))
+      }
+      return slice
+    }
     default:
-      // `chat` / `memory` / `cache` — 7-10c/d.
+      // `memory` / `cache` — 7-10d.
       return null
   }
 }
 
 /**
  * The template-walk render path (`renderFinalPrompt.ts` `if
- * (promptTemplate)` branch), 7-10b content cards only. Dispatches each
- * card through `renderContentCard` and `coalesceRows`. `chat` /
- * `memory` / `cache` cards are skipped here (7-10c/d), and the trailing
- * finalization (trim, `depth_prompt` splice, cache walk-back, Lua
- * `editRequest`) is 7-10f.
+ * (promptTemplate)` branch). Dispatches each card through
+ * `renderContentCard` (content + `chat` cards, 7-10b/c) and
+ * `coalesceRows`. `memory` / `cache` cards are skipped here (7-10d), and
+ * the trailing finalization (trim, `depth_prompt` splice, cache
+ * walk-back, Lua `editRequest`) is 7-10f.
  */
 export function renderByTemplate(
   ctx: ExpandContext,
@@ -404,7 +465,7 @@ export function renderByTemplate(
     if (rows) {
       coalesceRows(formated, rows, aiModel)
     }
-    // `null` → chat / memory / cache, deferred to 7-10c/d.
+    // `null` → memory / cache, deferred to 7-10d.
   }
   return formated
 }
