@@ -2,14 +2,15 @@
 
 Date: 2026-05-23
 
-Status: in-progress (15 slices landed as of 2026-05-23).
+Status: in-progress (16 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`),
 `scripts.ts` (regex chain through module regex), `modules.ts`
 (`getActiveModules`, `getModuleRegexScripts`, `getModuleAssets`),
-and `lorebook.ts` (constant + keyword activation with
+and `lorebook.ts` (constant + keyword + recursive activation with
 `searchMatch`, child mirror, conditional-activation decorators,
-`matchLog`, `inject_lore` rewrites) are real. The remaining assembly modules
+recursion loop + `recursivePrompt`, `matchLog`, `inject_lore`
+rewrites) are real. The remaining assembly modules
 under `server/fastify/src/prompt/` (`assemble`, `templates`,
 `tokens`, `triggers`) are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
@@ -162,6 +163,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                        |
 | 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.          |
 | 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, and `matchLog`.       |
+| 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.                 |
 
 ## Remaining roadmap
 
@@ -257,9 +259,22 @@ Tentative breakdown:
   `pickHashRand(5555, entry.content)` via the new Svelte-free
   `src/ts/util/loreHash.ts`. `matchLog` widens from `never[]` to
   `LoreMatchLogEntry[]`.
-- **7-7c** — Recursive activation within depth limit.
-- **7-7d** — Budget-aware truncation.
+- **7-7c** — Recursive activation. **Landed `b11902ad`**
+  (8 new tests, api:test 616 → 624). Wraps the per-entry walk
+  in an outer `while (matching)` loop, accumulates each fired
+  entry's decorator-stripped body into `recursivePrompt`, and
+  feeds it back through `searchMatch` (with the new
+  `dontSearchWhenRecursive` opt-out). Adds the three recursion
+  decorators (`recursive`, `unrecursive`, `no_recursive_search`)
+  and the global `loreSettings.recursiveScanning` default.
+  `activatedIndexes` keeps each entry firing at most once,
+  bounding the outer loop at O(N) passes.
+- **7-7d** — Budget-aware truncation. **Parked until 7-8a
+  lands** so the tokenizer can attach a real `tokens` field to
+  each active entry; the existing priority-desc filter then
+  has something to drop.
 - **7-7e** — Depth-prompt emission for history (consumed by 7-5e).
+  Picks up next per the post-7-7c ordering.
 
 ### Tier 2 — Supporting infrastructure
 

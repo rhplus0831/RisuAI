@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `25388d7d feat: lorebook keyword matching activation (Phase 7-7b)`
+Head: `b11902ad feat: lorebook recursive activation (Phase 7-7c)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -35,6 +35,7 @@ Landed Phase 7 slices:
 | 7-5c  | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                              |
 | 7-7a  | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                |
 | 7-7b  | `25388d7d` | Added lorebook keyword matching: `searchMatch` port, child mirror, conditional-activation decorators, and `matchLog`.        |
+| 7-7c  | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt` accumulation, three recursion decorators.    |
 
 What is real in code:
 
@@ -50,9 +51,11 @@ What is real in code:
   `@@`-actions, `ableFlag` DSL, `cbs` / `no_end_nl` actions,
   outScript prep), `modules.ts` (`getActiveModules` +
   `getModuleRegexScripts` + `getModuleAssets`), and `lorebook.ts`
-  (constant + keyword activation: `searchMatch`, child mirror,
-  conditional-activation decorators, `matchLog`, `inject_lore`
-  rewrites, `disabledUIPrompts`) are implemented and tested.
+  (constant + keyword + recursive activation: `searchMatch`,
+  child mirror, conditional-activation decorators, recursion
+  loop with `recursivePrompt` + `recursive`/`unrecursive`/
+  `no_recursive_search`, `matchLog`, `inject_lore` rewrites,
+  `disabledUIPrompts`) are implemented and tested.
 - `assemble.ts`, `templates.ts`, `tokens.ts`, and `triggers.ts`
   still throw Phase 7 not-implemented errors.
 - `history.ts` does not yet handle start triggers, tokenizer
@@ -60,65 +63,73 @@ What is real in code:
 - `scripts.ts` does not yet handle script-cache,
   `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
   hooks — all 7-6e or out-of-scope.
-- `lorebook.ts` covers always-on + keyword activation only;
-  recursion (7-7c), budget truncation (7-7d), and depth-prompt
-  emission into history (7-7e) are deferred. Recursion-touching
-  decorators (`recursive`, `unrecursive`, `no_recursive_search`)
-  stay on the `default: return false` path until 7-7c.
+- `lorebook.ts` covers always-on + keyword + recursive
+  activation. Token-budget truncation (7-7d) and depth-prompt
+  emission into history (7-7e) are still deferred; 7-7d is
+  blocked on Tokens (7-8a) for the real `tokens` field.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-7b:
+Last recorded baselines after 7-7c:
 
-- `pnpm api:test`: 616 across 35 files
+- `pnpm api:test`: 624 across 35 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
 ## Next Slice
 
-Pick up **7-7c - lorebook recursive activation**.
+Pick up **7-7e - lorebook depth-prompt emission into history**.
 
-`lorebook.ts` now handles always-on + keyword activation. 7-7c
-layers the recursion loop on top: after each pass through the
-entries, any newly-activated entry's content is appended to a
-`recursivePrompt` list, the search re-runs against
-`messages ++ recursivePrompt`, and entries can fire because their
-keywords are found in another entry's already-active body.
+The default ROADMAP sequence is 7-7c → 7-7d → 7-7e, but 7-7d
+(budget-aware truncation) needs the real per-entry `tokens`
+field that only lands with **Tokens 7-8a**. Rather than stub
+tokens or block here, jump past 7-7d to 7-7e and come back to
+7-7d immediately after 7-8a.
+
+7-7e wires the depth-positioned lorebook entries
+(`pos === 'depth'` with `depth > 0`, plus `pos === 'reverse_depth'`)
+into the `history.ts` walk. The browser source is
+`src/ts/process/promptAssembly/buildLorebookContext.ts:140-144`
+(extraction of `depthPrompts`) and the history-walk consumer
+hooked into `src/ts/process/promptAssembly/formatHistoryMessage.ts`.
 
 Slice scope:
 
-- Port the outer `while (matching)` loop from
-  `src/ts/process/lorebook.svelte.ts:241-621`. Each iteration:
-  walk the entries that have not fired yet, run searchMatch
-  (now also including the accumulated `recursivePrompt`), and
-  if any new entry activates flip `matching = true`.
-- Wire `recursivePrompt: { prompt, data, source }[]` and pass
-  it into `searchMatch`. Concat `recursivePrompt` into `mList`
-  unless `dontSearchWhenRecursive` is set on the current query
-  (`@@no_recursive_search` decorator).
-- Activate the recursion decorators:
-  - `recursive` — force per-entry recursion on.
-  - `unrecursive` — force per-entry recursion off.
-  - `no_recursive_search` — exclude prior recursive matches
-    from this entry's search window.
-- Honor the global `char.loreSettings.recursiveScanning`
-  default (defaults to true per SPA `:85`). Per-entry
-  `recursive`/`unrecursive` decorators override the global.
-- Cover: chained activation (A's body contains B's keyword →
-  B fires on the second pass), three-deep chain, recursion
-  disabled at the global level, `@@unrecursive` blocks
-  downstream chains, `@@no_recursive_search` ignores the
-  recursive layer for one entry.
+- Plumb `LoreEntryActive[]` (or the existing
+  `LorebookActivationReport`) into the history-walk input.
+  Decide whether to mutate the existing `buildHistory` API or
+  add a sibling helper that takes the report; lean toward the
+  sibling helper if the change set ends up large.
+- Filter the report to entries with `pos === 'depth' && depth > 0`
+  or `pos === 'reverse_depth'`. Skip `depth === 0` (those land
+  in `postEverything` via the template walker — out of scope
+  here).
+- Insert the entry text into the right index of the role-mapped
+  history stream: `depth` counts back from the end, `reverse_depth`
+  counts forward. Mirror the SPA's exact insertion order so the
+  existing snapshot fixtures (`lorebook-position-depth.jsonl`
+  in `src/ts/process/__fixtures__/`) round-trip identically.
+- Respect the entry's `role` decorator when normalizing the
+  inserted chat into `OpenAIChat`.
 
 Skip-list (still deferred):
 
-- Token-budget truncation (7-7d).
-- Depth-prompt emission for history (7-7e).
+- Token-budget truncation (7-7d) — parked behind Tokens 7-8a.
+- The `postEverything` slot for `depth === 0` entries — that
+  lives in the assemble.ts root (7-11a) or the template walker
+  (7-10), not in history.
 
-Same rhythm: extend `lorebook.test.ts` with a `Phase 7-7c
-activateLorebook — recursion` block, and run all four bars
+Same rhythm: extend `history.test.ts` (or add a dedicated
+`historyDepthPrompts.test.ts` if the surface stays clean) with
+the new fixtures, and run all four bars
 (`pnpm check`, `pnpm api:test`, `pnpm test`, `pnpm build`)
 before reporting back.
+
+If 7-7e turns out to be tightly coupled to the assembler root
+(too much new plumbing to make sense in isolation), the next
+agent should pivot to **7-8a — server tokenizer** instead;
+that unblocks 7-7d and 7-5e and is a clean parallel front per
+the ROADMAP.
 
 ## Patterns To Keep
 

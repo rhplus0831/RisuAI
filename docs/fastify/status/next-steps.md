@@ -11,12 +11,13 @@ the "Closeout" section in
 [`../phases/phase-6-server-generation.md`](../phases/phase-6-server-generation.md)
 for what landed, what was deferred to Phase 7, and what's
 deferred until a fixture demands it. Phase 7 (prompt assembly) is
-in progress as of 2026-05-23 — fifteen slices landed: the chat
+in progress as of 2026-05-23 — sixteen slices landed: the chat
 route scaffold, Svelte-free parser adapter, static/plain prompt
 sections, history shaping through multimodal inlays, regex scripts,
-active-module helpers, and lorebook constant + keyword activation.
-The remaining assembly modules under `server/fastify/src/prompt/`
-(`assemble`, `templates`, `tokens`, `triggers`) are still stubs. [`ROADMAP.md`](../../../ROADMAP.md)
+active-module helpers, and lorebook constant + keyword + recursive
+activation. The remaining assembly modules under
+`server/fastify/src/prompt/` (`assemble`, `templates`, `tokens`,
+`triggers`) are still stubs. [`ROADMAP.md`](../../../ROADMAP.md)
 at the repo root has the strategic view of the remaining slices.
 The tiered roadmap for the rest of Phase 7 lives in the
 [Remaining roadmap](../phases/phase-7-prompt-assembly.md#remaining-roadmap)
@@ -25,34 +26,41 @@ the short pickup runbook.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-7c — lorebook recursive
-   activation.** `lorebook.ts` now handles always-on + keyword
-   activation (7-7b landed in `25388d7d`). 7-7c layers the
-   recursion loop on top: after each pass, newly-activated
-   entries' content is added to `recursivePrompt`, the search
-   re-runs against `messages ++ recursivePrompt`, and entries
-   can fire because their keywords appear in another entry's
-   already-active body.
+1. **Continue Phase 7 with slice 7-7e — lorebook depth-prompt
+   emission for history.** `lorebook.ts` now handles the full
+   constant / keyword / recursive activation surface (7-7c
+   landed in `b11902ad`). The default ROADMAP order says 7-7d
+   next, but 7-7d (budget-aware truncation) needs the real
+   per-entry `tokens` field from Tokens **7-8a** — so we jump
+   past it to 7-7e and come back to 7-7d after 7-8a.
 
    Slice scope:
-   - Port the outer `while (matching)` loop from
-     `src/ts/process/lorebook.svelte.ts:241-621`. Each iteration
-     walks entries that have not fired yet; if any new entry
-     activates, flip `matching = true` for another pass.
-   - Wire `recursivePrompt: { prompt, data, source }[]` and pass
-     it into `searchMatch`. Concat the list into `mList` unless
-     the current query has `dontSearchWhenRecursive`
-     (`@@no_recursive_search`).
-   - Activate the recursion decorators: `recursive` (per-entry
-     on), `unrecursive` (per-entry off), `no_recursive_search`
-     (this entry ignores the recursive layer).
-   - Honor `char.loreSettings.recursiveScanning` (defaults to
-     true per SPA `:85`). Per-entry decorators override the
-     global.
+   - Plumb the `LorebookActivationReport` (or just its
+     `actives` array) into the history walk. Filter to
+     `pos === 'depth' && depth > 0` plus
+     `pos === 'reverse_depth'`. `depth === 0` belongs to the
+     `postEverything` slot owned by the template walker (7-10)
+     or the assemble root (7-11a) — out of scope here.
+   - Insert each filtered entry's prompt at the right index of
+     the role-mapped history stream: `depth` counts back from
+     the end, `reverse_depth` counts forward. Normalize using
+     the entry's `role` decorator. Match the SPA's exact
+     insertion order so
+     `src/ts/process/__fixtures__/upstream/lorebook-position-depth.jsonl`
+     round-trips byte-for-byte.
+   - Cover: single depth entry at depth=1, multiple entries at
+     the same depth, `reverse_depth` ordering, role
+     decoration on the inserted chat.
 
-   Skip-list: token-budget truncation (7-7d), depth-prompt
-   emission for history (7-7e), and browser-only plugin
+   Skip-list: token-budget truncation (7-7d) parked behind
+   7-8a, the `postEverything` slot, and browser-only plugin
    execution.
+
+   If 7-7e turns out to need too much new plumbing in
+   isolation (e.g. requires changing the history `buildHistory`
+   signature in a way that ripples into 7-5a/b/c), pivot to
+   **7-8a — server tokenizer** instead. 7-8a unblocks 7-7d
+   _and_ 7-5e and is a clean parallel front per the ROADMAP.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -61,7 +69,7 @@ the short pickup runbook.
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 616
+   tests green. Last recorded baselines are `pnpm api:test`: 624
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -124,6 +132,7 @@ the short pickup runbook.
 | 7-5c  | `50a1770b` | History multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module assets.                     |
 | 7-7a  | `c815e067` | Lorebook constant (always-on) entries + decorator scaffold + `inject_lore` rewrites.                   |
 | 7-7b  | `25388d7d` | Lorebook keyword matching: `searchMatch`, child mirror, conditional-activation decorators, `matchLog`. |
+| 7-7c  | `b11902ad` | Lorebook recursive activation: `while (matching)` loop, `recursivePrompt`, recursion decorators.       |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:
