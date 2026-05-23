@@ -121,6 +121,7 @@ multi-subsystem work behind small labels.
 | 7-11d   | `3992b967` | `assemble.ts` history window + bias rows: async `fillHistoryAndBias` runs `buildHistoryWindow` (thread `currentChat`/`triggerResult`/`varChanged`, honor `stopSending`, fold `addedTokens`, capture `historyMessages`) + unescaped/expanded `biases`.           |
 | 7-11e   | `dd4bd14c` | `assemble.ts` memory bridge + post-history: `memory.ts` `buildMemoryWindow` (non-Hypa budget trim → `lastChat` promotion → memory split) + `fillMemoryAndPostHistory` (window → `applyDepthPrompts` splice → `additonalSysPrompt` placement).                   |
 | 7-11f   | `3492bede` | `assemble.ts` final render + budget: `renderAndBudget` (`renderFinalPrompt` → `finalizeRequestBudget`, overflow → `abortReason`) + `assemblePrompt` chains 7-11a–f, returning the `AssembleResult` (`prompt` payload + dispatch metadata) or `{ stopSending }`. |
+| 7-11g   | `89a80c19` | Wired `POST /api/v1/generate/chat` to `assemblePrompt`: `dataDir` + `loadPersisted` seam, body → `AssembleInput`, SSE stream `stage(validate)` → `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `done` (SSE `error` on `stopSending`/throw).          |
 
 ## Remaining Slices
 
@@ -282,13 +283,12 @@ Preset templates (`templates.ts`):
   the 7-9e request-state transform plugs in. **Closes the template
   renderer.**
 
-Current default pickup: **7-11g** (wire `POST /api/v1/generate/chat`).
-The template renderer (7-10a–f) and the 7-11a–f assembler steps (loader,
-static/plain fill, lorebook placement + preflight, history window + bias
-rows, memory bridge + post-history mutations, final render + budget) are
-landed — the critical-path assembler is **closed**: `assemblePrompt`
-returns the full payload. 7-11g wires that into the route and streams
-the SSE events.
+Current default pickup: **7-11h** (`POST /api/v1/generate/preview-prompt`).
+The template renderer (7-10a–f), the closed critical-path assembler
+(7-11a–f), and the wired `/api/v1/generate/chat` route (7-11g) are
+landed — `assemblePrompt` returns the full payload and the `/chat`
+route streams it over SSE. 7-11h adds the one-shot JSON preview
+shortcut; 7-11i adds the `info` / `message_patch` telemetry.
 
 ### Tier 3 — Root + route wiring (all Tier 1 + 2 real)
 
@@ -344,15 +344,24 @@ surfaces and add focused `assemble` tests as each seam lands.
   `{ stopSending, abortReason }`. The throw is gone; the critical-path
   assembler is closed. No route dispatch yet.
 - **7-11g** — wire `POST /api/v1/generate/chat` to call `assemble.ts`
-  and emit `prompt` + `done` SSE events. Currently the route emits
-  `phase-7 not yet implemented`.
-- **7-11h** — add `POST /api/v1/generate/preview-prompt` shortcut.
+  and emit `prompt` + `done` SSE events. **Landed `89a80c19`.** The
+  route takes `dataDir`, binds `loadDatabase` to
+  `loadPersisted(dataDir).database`, maps the body → `AssembleInput`,
+  and streams `stage(validate)` → `stage(prompt,start)` → `prompt` →
+  `stage(prompt,end)` → `done`; `stopSending` or any thrown error
+  (bad IDs, missing database) is a terminal SSE `error` + `done`. Body
+  validation stays a pre-stream 400. Read-only — `varChanged`
+  persistence + provider dispatch land with Phase 7-12.
+- **7-11h** — add `POST /api/v1/generate/preview-prompt` shortcut. A
+  one-shot JSON endpoint returning the assembled `messages[]`
+  (`mode: 'preview_prompt'`) without dispatch; bad IDs can be a real
+  HTTP 404 (no stream head).
 - **7-11i** — SSE telemetry: `info` event (timings, token counts),
   `message_patch` for chat-row deltas.
 
-7-11a through 7-11f are the critical-path assembly predecessors.
-7-11g/h/i can each pick up immediately when their direct dependency is
-in.
+7-11a through 7-11f (the critical-path assembler) and 7-11g (the `/chat`
+route) are landed. 7-11h (preview shortcut) and 7-11i (telemetry) can
+each pick up immediately.
 
 ### Tier 4 — Browser adapter
 
@@ -379,24 +388,24 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Parallelism notes
 
-- The template renderer is closed (7-10a–f landed) and the **whole
-  critical-path assembler (7-11a–f) is closed** — `assemblePrompt`
-  returns the full payload. 7-11g (route wiring) is the next pickup;
-  7-11h (preview) and 7-11i (telemetry) can split once 7-11g lands.
+- The template renderer is closed (7-10a–f landed), the **critical-path
+  assembler (7-11a–f) is closed** (`assemblePrompt` returns the full
+  payload), and the **`/api/v1/generate/chat` route (7-11g) is wired**.
+  7-11h (preview shortcut) is the next pickup; 7-11i (telemetry) can
+  split alongside it.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).
 
 ## Sequential order (default)
 
-1. **7-11g** — wire `/api/v1/generate/chat`
-2. **7-11h** — `/api/v1/generate/preview-prompt`
-3. **7-11i** — SSE telemetry (`info`, `message_patch`)
-4. **7-12a** — browser client adapter
-5. **7-12b** — dual-mode fixture sweep
-6. **7-12c** — side-effect dispatch
-7. **7-12d** — error / abort restoration
-8. **7-13** — phase 7 closeout
+1. **7-11h** — `/api/v1/generate/preview-prompt`
+2. **7-11i** — SSE telemetry (`info`, `message_patch`)
+3. **7-12a** — browser client adapter
+4. **7-12b** — dual-mode fixture sweep
+5. **7-12c** — side-effect dispatch
+6. **7-12d** — error / abort restoration
+7. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

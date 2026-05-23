@@ -128,17 +128,24 @@ budget chain, the Phase 7-safe trigger runner through the
   Cohere, legacy instruct, Responses, Kobold, ooba legacy,
   Bedrock, and Horde are currently buffered-only and reject
   `stream: true` with a 400.
-- `server/fastify/src/routes/generationChat.ts` adds the Phase 7
-  chat scaffold. It validates `chatId`, `characterId`, mode, and
-  mode-specific fields, then streams `stage: validate` start/end,
-  an `error` event with `phase-7 prompt assembly not yet implemented`,
-  and `done`. The route does not call `assemble.ts` yet.
+- `server/fastify/src/routes/generationChat.ts` is the Phase 7 chat
+  route (7-11g). It validates `chatId`, `characterId`, mode, and
+  mode-specific fields (pre-stream 400), binds
+  `AssembleDeps.loadDatabase` to `loadPersisted(dataDir).database`,
+  then calls `assemblePrompt` and streams `stage: validate` start/end,
+  `stage: prompt` start, the assembled `prompt` event, `stage: prompt`
+  end, and `done`. A `stopSending` result or any thrown error (bad IDs,
+  missing database) becomes a terminal SSE `error` + `done`. The route
+  is read-only — `varChanged` persistence + provider dispatch land with
+  Phase 7-12. `POST /api/v1/generate/preview-prompt` is not added yet
+  (7-11h).
 - `server/fastify/src/prompt/variables.ts`, `staticSections.ts`,
   `plainSections.ts`, `history.ts`, `scripts.ts`, `modules.ts`,
   `lorebook.ts`, `tokens.ts`, `preflight.ts`, `budgetFinalize.ts`,
   `tokenizerConfig.ts`, `triggerVars.ts`, `triggerDataEffects.ts`,
-  `triggers.ts`, and `templates.ts` are real Phase 7 helpers.
-  `assemble.ts` still throws a Phase 7 not-implemented error.
+  `triggers.ts`, `templates.ts`, `memory.ts`, and `assemble.ts` are
+  real Phase 7 helpers. `assemblePrompt` chains 7-11a–f and returns the
+  assembled payload (or `{ stopSending }`).
 - Known limitation: `ANY /api/v1/hub/*` keeps `requireAuth`, so
   on password-protected deployments browser-loaded resources
   (`<img src=hubURL/...>`, `<iframe src=hubURL/...>`) will 401
@@ -202,17 +209,17 @@ been removed; `server/node/` no longer exists.
   because they need server-owned character / user state for prompt
   flattening.
 - **Phase 7.** Server-side prompt assembly + lorebook activation.
-  In progress. Thirty-five slices have landed through 7-10f:
-  `/api/v1/generate/chat` scaffold, nine-event prompt SSE taxonomy,
-  server-side variable expansion, static/plain prompt sections,
-  history shaping through multimodal inlays + token preflight +
+  In progress. Forty-two slices have landed through 7-11g:
+  `/api/v1/generate/chat` scaffold + the wired route, nine-event prompt
+  SSE taxonomy, server-side variable expansion, static/plain prompt
+  sections, history shaping through multimodal inlays + token preflight +
   start-trigger handoff, regex scripts, module helpers, lorebook
   constant / keyword / recursive / depth / budget truncation helpers,
   the tokens / budget chain, the trigger runner through the
-  `runStartTrigger` handoff, and the complete template renderer.
-  The trigger, history, lorebook, token-budget, and template fronts are
-  complete; next slice is 7-11a, the re-sliced assemble state/context
-  loader.
+  `runStartTrigger` handoff, the complete template renderer, the closed
+  critical-path assembler (7-11a–f), and the wired `/api/v1/generate/chat`
+  route (7-11g). Next slice is 7-11h, the `/api/v1/generate/preview-prompt`
+  shortcut.
 - **Phase 8.** Hypa V3 chunking + embeddings + summary jobs.
 
 ## Reference: what move-to-fastify shipped

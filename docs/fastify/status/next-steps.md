@@ -6,7 +6,7 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with forty-one slices landed through 7-11f:
+Phase 7 is active with forty-two slices landed through 7-11g:
 chat route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight + start-trigger handoff, regex scripts, active-module
@@ -32,43 +32,43 @@ the lorebook placement + preflight (`fillLorebookSlots`, with
 (`fillMemoryAndPostHistory`, with the non-Hypa `buildMemoryWindow` in
 `memory.ts`), and the final render + budget (`renderAndBudget`).
 `assemblePrompt` returns the `AssembleResult` (the `prompt` SSE payload +
-dispatch metadata) or `{ stopSending }`; route wiring is 7-11g. The
-tokens / budget chain (7-8a/b/c) is fully landed, `preflight` covers
-every card type the SPA emits, and `history` (now async, closing 7-5d)
-and `lorebook` are feature-complete. Use
+dispatch metadata) or `{ stopSending }`, and the `POST
+/api/v1/generate/chat` route (7-11g) calls it and streams the `stage` /
+`prompt` / `done` SSE events. The tokens / budget chain (7-8a/b/c) is
+fully landed, `preflight` covers every card type the SPA emits, and
+`history` (now async, closing 7-5d) and `lorebook` are feature-complete.
+Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
 [`ROADMAP.md`](../../../ROADMAP.md) for the strategic order.
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-11g — wire `POST
-/api/v1/generate/chat`.** 7-11f (`3492bede`) closed the critical-path
-   assembler: `assemblePrompt` returns the `AssembleResult` (the `prompt`
-   payload + dispatch metadata) or `{ stopSending }`. 7-11g replaces the
-   route's "not yet implemented" scaffold
-   (`server/fastify/src/routes/generationChat.ts`, which today emits
-   `stage(validate)` → `error` → `done`) with a real `assemblePrompt`
-   call and streams the SSE events.
+1. **Continue Phase 7 with slice 7-11h — `POST
+/api/v1/generate/preview-prompt`.** 7-11g (`89a80c19`) wired
+   `/api/v1/generate/chat` to `assemblePrompt` and streams the SSE events
+   (`mode: 'preview_prompt'` already returns the `prompt` event over SSE
+   there). 7-11h adds the DevTools shortcut: a one-shot **JSON** endpoint
+   that returns the assembled `messages[]` without dispatching.
 
    Verified slice scope:
-   - bind `AssembleDeps.loadDatabase` to the persisted store
-     (`loadPersisted(dataDir).database`) — the route owns the storage
-     import so `assemble.ts` stays storage-global-free; thread `dataDir`
-     like the other generation routes.
-   - map the validated `ChatRequestBody` → `AssembleInput`.
-   - event flow: `stage(validate)` → `stage(prompt, start)` →
-     `await assemblePrompt` → on success emit `prompt` (`result.prompt`),
-     `stage(prompt, end)`, `done`; on `stopSending` emit a terminal
-     `error` (or `done` with no result — confirm the SSE contract)
-     carrying `abortReason`.
-   - error handling: `EntityNotFoundError` before the stream head is a
-     400; once streaming has begun it must be an SSE `error` event.
-   - persistence: persist the database when the start trigger wrote chat
-     state (`varChanged`). That flag is on the state today, not the
-     `AssembleResult`, so surfacing it may need a small result addition.
-   - Follow-ups are 7-11h preview shortcut and 7-11i telemetry. Provider
-     dispatch is Phase 7-12 / 6 territory; Hypa V3 stays Phase 8; browser
-     plugin/Lua + inlay asset lookup stay deferred (`NO_ASSETS`).
+   - add a second `app.post('/api/v1/generate/preview-prompt', …)` in
+     `generationChat.ts` (reuse `toAssembleInput`, the `loadDatabase`
+     seam, and `requireAuth`); register it from the same
+     `registerGenerationChatRoutes`.
+   - validation: require `chatId` + `characterId`; force `mode` to
+     `'preview_prompt'` (no `userMessage` / `regenerateMessageId`
+     requirement).
+   - response is **plain JSON, not SSE**: on success `200 { messages,
+promptInfo, lorebookActivation }` (the `result.prompt` payload); on
+     `stopSending` decide the contract (e.g. `200 { stopSending: true,
+abortReason }` or a 4xx). Because no stream head is written,
+     `EntityNotFoundError` can be a real HTTP 404/400 here.
+   - the assembler runs read-only; no persistence (consistent with
+     7-11g).
+   - Follow-up is 7-11i telemetry (`info` / `message_patch`). Provider
+     dispatch + `varChanged` persistence are Phase 7-12 / 6 territory;
+     Hypa V3 stays Phase 8; browser plugin/Lua + inlay asset lookup stay
+     deferred (`NO_ASSETS`).
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -77,7 +77,7 @@ and `lorebook` are feature-complete. Use
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 873
+   tests green. Last recorded baselines are `pnpm api:test`: 875
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -166,6 +166,7 @@ and `lorebook` are feature-complete. Use
 | 7-11d   | `3992b967` | assemble.ts history window + bias rows: async fillHistoryAndBias runs buildHistoryWindow (thread currentChat/triggerResult/varChanged, honor stopSending, fold addedTokens, capture historyMessages) + unescaped/expanded biases.             |
 | 7-11e   | `dd4bd14c` | assemble.ts memory bridge + post-history: memory.ts buildMemoryWindow (non-Hypa budget trim → lastChat promotion → memory split) + fillMemoryAndPostHistory (window → applyDepthPrompts splice → additonalSysPrompt placement).               |
 | 7-11f   | `3492bede` | assemble.ts final render + budget: renderAndBudget (renderFinalPrompt → finalizeRequestBudget, overflow → abortReason) + assemblePrompt chains 7-11a–f, returning the AssembleResult (prompt payload + dispatch metadata) or { stopSending }. |
+| 7-11g   | `89a80c19` | Wired POST /api/v1/generate/chat to assemblePrompt: dataDir + loadPersisted seam, body → AssembleInput, SSE stream stage(validate) → stage(prompt,start) → prompt → stage(prompt,end) → done (SSE error on stopSending/throw).                |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

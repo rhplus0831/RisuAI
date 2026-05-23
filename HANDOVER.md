@@ -2,8 +2,8 @@
 
 Date: 2026-05-24
 Branch: `fastify`
-Head: `3492bede feat: assemble.ts final render + budgeted prompt payload (Phase 7-11f)`
-Latest feature slice: `3492bede feat: assemble.ts final render + budgeted prompt payload (Phase 7-11f)`
+Head: `89a80c19 feat: wire POST /api/v1/generate/chat to assemblePrompt (Phase 7-11g)`
+Latest feature slice: `89a80c19 feat: wire POST /api/v1/generate/chat to assemblePrompt (Phase 7-11g)`
 
 This is the day-to-day runbook for **Phase 7 in progress**:
 current branch head, verification baselines, and the next pickup.
@@ -60,13 +60,18 @@ Landed Phase 7 slices:
 | 7-11d   | `3992b967` | `assemble.ts` history window + bias rows: async `fillHistoryAndBias` runs `buildHistoryWindow` (thread `currentChat`/`triggerResult`/`varChanged`, honor `stopSending`, fold `addedTokens`, capture `historyMessages`) + unescaped/expanded `biases`. `NO_ASSETS` exported.     |
 | 7-11e   | `dd4bd14c` | `assemble.ts` memory bridge + post-history: `memory.ts` `buildMemoryWindow` (non-Hypa budget trim → `lastChat` promotion → memory split → `unformated.chats`) + `fillMemoryAndPostHistory` (window → `applyDepthPrompts` splice → `additonalSysPrompt` placement).              |
 | 7-11f   | `3492bede` | `assemble.ts` final render + budget: `renderAndBudget` (`renderFinalPrompt` → `finalizeRequestBudget`, overflow → `abortReason`) + `assemblePrompt` chains 7-11a–f and returns the `AssembleResult` (`prompt` payload + dispatch metadata) or `{ stopSending }`. Throw removed. |
+| 7-11g   | `89a80c19` | Wired `POST /api/v1/generate/chat`: route takes `dataDir`, binds `loadDatabase` to `loadPersisted`, maps body → `AssembleInput`, and streams `stage(validate)` → `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `done` (SSE `error` on `stopSending`/throw).          |
 
 What is real in code:
 
 - `server/fastify/src/routes/generationChat.ts` validates request
-  bodies and emits `stage(validate)` -> `error` -> `done`; it does
-  **not** call `assemble.ts` yet. There is still no
-  `/api/v1/generate/preview-prompt` route.
+  bodies (pre-stream 400), then calls `assemblePrompt` and streams
+  `stage(validate)` → `stage(prompt,start)` → `prompt` →
+  `stage(prompt,end)` → `done`; a `stopSending` result or any thrown
+  error (bad IDs, missing database) becomes a terminal SSE `error` +
+  `done`. `loadDatabase` reads `loadPersisted(dataDir).database`
+  (read-only — `varChanged` persistence + provider dispatch are 7-12).
+  There is still no `/api/v1/generate/preview-prompt` route (7-11h).
 - Prompt leaves are implemented and tested: variables/SSE taxonomy,
   static/plain sections, async feature-complete `history.ts`
   (multimodal inlays, `{{asset_prompt::}}`, `addedTokens`,
@@ -130,59 +135,52 @@ What is real in code:
   payload (`messages` / `promptInfo` / `lorebookActivation`) plus the
   dispatch metadata (`formated` / `biases` / `inputTokens` /
   `outputTokens`) — or `{ stopSending: true, abortReason }` on a
-  trigger/overflow abort. The throw is gone. Tier 3 was re-sliced on
-  2026-05-24 (the old 7-11a was too large); the remaining path is the
-  route/preview/telemetry wiring (7-11g/h/i).
+  trigger/overflow abort. The throw is gone. `generationChat.ts` (7-11g)
+  now calls `assemblePrompt` and streams the result. Tier 3 was
+  re-sliced on 2026-05-24 (the old 7-11a was too large); the remaining
+  path is the preview shortcut (7-11h) + SSE telemetry (7-11i).
 
-Last recorded baselines after 7-11f:
+Last recorded baselines after 7-11g:
 
-- `pnpm api:test`: 873 across 42 files
+- `pnpm api:test`: 875 across 42 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-11g wire `POST /api/v1/generate/chat`
+## Next Slice — 7-11h `POST /api/v1/generate/preview-prompt`
 
-Pick up **7-11g — route wiring + SSE emission**.
+Pick up **7-11h — preview-prompt shortcut**.
 
-7-11f (`3492bede`) closed the critical-path assembler: `assemblePrompt`
-returns the `AssembleResult` (`prompt` payload + dispatch metadata) or
-`{ stopSending }`. 7-11g replaces the route's "not yet implemented"
-scaffold with a real `assemblePrompt` call and streams the events.
-The route is `server/fastify/src/routes/generationChat.ts` (today it
-emits `stage(validate)` → `error('phase-7 … not yet implemented')` →
-`done`).
+7-11g (`89a80c19`) wired `/api/v1/generate/chat` to `assemblePrompt` and
+streams the SSE events (`mode: 'preview_prompt'` already returns the
+`prompt` event over SSE there). 7-11h adds the DevTools shortcut: a
+one-shot **JSON** endpoint that returns the assembled `messages[]`
+without dispatching. SPA intent: phase doc `### Routes`
+(`/api/v1/generate/preview-prompt`).
 
 ### Scope sketch
 
-- bind `AssembleDeps.loadDatabase` to the persisted store — the route
-  owns the storage import (`loadPersisted(dataDir).database`), keeping
-  `assemble.ts` storage-global-free. Thread `dataDir` the same way the
-  other generation routes do.
-- map the validated `ChatRequestBody` → `AssembleInput` (`chatId` /
-  `characterId` / `presetId` / `loadoutId` / `mode` /
-  `regenerateMessageId` / `userMessage` / `resetMessages` /
-  `expectedRevision` / `inlayAssets`).
-- event flow: `stage(validate, start/end)` → `stage(prompt, start)` →
-  `await assemblePrompt` → on success emit `prompt` (`result.prompt`)
-  then `stage(prompt, end)` then `done`; on `stopSending` emit a
-  terminal `error` (or a `done` with no result — confirm the SSE
-  contract) carrying `abortReason`.
-- error handling: `EntityNotFoundError` from `assemblePrompt` → a 400 /
-  terminal `error` event (the stream head is already written, so it
-  must be an SSE `error`, not an HTTP code, once streaming has begun).
-- persistence: when `result`/state reports `varChanged` (start-trigger
-  `setvar`), persist the database. Surfacing `varChanged` from
-  `assemblePrompt` may need a small `AssembleResult` addition (it is on
-  the state today, not the result).
+- add a second `app.post('/api/v1/generate/preview-prompt', …)` in
+  `generationChat.ts` (reuse `toAssembleInput`, the `loadDatabase` seam,
+  and `requireAuth`); register it from the same `registerGenerationChatRoutes`.
+- validation: require `chatId` + `characterId`; force `mode` to
+  `'preview_prompt'` (no `userMessage` / `regenerateMessageId`
+  requirement). Reuse the shared validators where they fit.
+- response is **plain JSON, not SSE** (this is the key difference from
+  `/chat`): on success `200 { messages, promptInfo, lorebookActivation }`
+  (the `result.prompt` payload); on `stopSending` decide the contract
+  (e.g. `200 { stopSending: true, abortReason }` or a 4xx). Because no
+  stream head is written, **`EntityNotFoundError` can be a real HTTP
+  404/400** here (unlike `/chat`).
+- the assembler runs read-only; no persistence (consistent with 7-11g).
 
 ### Out of scope (defer)
 
-- Preview shortcut (`/api/v1/generate/preview-prompt`) — **7-11h**;
-  `info` / `message_patch` / `side_effect` telemetry — **7-11i**.
-- Provider dispatch (`dispatchRequest`) is **Phase 7-12 / 6**; 7-11g
-  stops after emitting the assembled `prompt` + `done`. Hypa V3 stays
-  **Phase 8**; browser plugin/Lua + inlay asset lookup stay deferred.
+- `info` / `message_patch` / `side_effect` SSE telemetry on `/chat` —
+  **7-11i**.
+- Provider dispatch (`dispatchRequest`) + `varChanged` persistence —
+  **Phase 7-12 / 6**. Hypa V3 stays **Phase 8**; browser plugin/Lua +
+  inlay asset lookup stay deferred.
 
 ### Verification
 
@@ -193,8 +191,8 @@ pnpm test
 pnpm build
 ```
 
-7-11g is the default next pickup; the critical-path assembler (7-11a–f)
-is closed. 7-11h/i can split once 7-11g lands.
+7-11h is the default next pickup; the critical-path assembler (7-11a–f)
+is closed and `/chat` (7-11g) is wired. 7-11i follows.
 
 ## Patterns To Keep
 

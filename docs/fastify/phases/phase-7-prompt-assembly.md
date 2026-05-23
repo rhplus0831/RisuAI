@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: in-progress (41 slices landed as of 2026-05-24).
+Status: in-progress (42 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -49,9 +49,11 @@ mutations (`fillMemoryAndPostHistory`, with the non-Hypa
 `buildMemoryWindow` in `memory.ts`), and the 7-11f final render + budget
 (`renderAndBudget`). `assemblePrompt` now chains 7-11a–f and returns the
 `AssembleResult` (the `prompt` SSE payload + dispatch metadata) or
-`{ stopSending }` — the critical-path assembler is **closed**. The rest
-of Tier 3 (route wiring + SSE emission) is the remaining Phase 7 work.
-See
+`{ stopSending }` — the critical-path assembler is **closed**, and the
+`POST /api/v1/generate/chat` route (7-11g) now calls `assemblePrompt`
+and streams the `stage` / `prompt` / `done` SSE events. The rest of
+Tier 3 (the preview-prompt shortcut + SSE telemetry) is the remaining
+Phase 7 work. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -238,6 +240,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-11d   | `3992b967` | `assemble.ts` history window + bias rows: async `fillHistoryAndBias` runs `buildHistoryWindow` (thread `currentChat`/`triggerResult`/`varChanged`, honor `stopSending`, fold `addedTokens`, capture `historyMessages`) + unescaped/expanded `biases`.           |
 | 7-11e   | `dd4bd14c` | `assemble.ts` memory bridge + post-history: `memory.ts` `buildMemoryWindow` (non-Hypa budget trim → `lastChat` promotion → memory split) + `fillMemoryAndPostHistory` (window → `applyDepthPrompts` splice → `additonalSysPrompt` placement).                   |
 | 7-11f   | `3492bede` | `assemble.ts` final render + budget: `renderAndBudget` (`renderFinalPrompt` → `finalizeRequestBudget`, overflow → `abortReason`) + `assemblePrompt` chains 7-11a–f, returning the `AssembleResult` (`prompt` payload + dispatch metadata) or `{ stopSending }`. |
+| 7-11g   | `89a80c19` | Wired `POST /api/v1/generate/chat` to `assemblePrompt`: `dataDir` + `loadPersisted` seam, body → `AssembleInput`, SSE stream `stage(validate)` → `stage(prompt,start)` → `prompt` → `stage(prompt,end)` → `done` (SSE `error` on `stopSending`/throw).          |
 
 ## Remaining roadmap
 
@@ -692,10 +695,21 @@ usingPromptTemplate, NO_ASSETS, state.report)`, threads the
   `inputTokens` / `outputTokens` for dispatch); `AssemblyState` gains
   `isContinue` (from `input.mode`). The throw is gone — the critical-path
   assembler is closed. No route dispatch yet.
-- **7-11g** — Wire `POST /api/v1/generate/chat` (currently emits "not
-  yet implemented") to call `assemble.ts` and emit `prompt` + `done`
-  SSE events.
-- **7-11h** — Add `POST /api/v1/generate/preview-prompt` shortcut.
+- **7-11g** — Wire `POST /api/v1/generate/chat` to call `assemble.ts`
+  and emit `prompt` + `done` SSE events. **Landed `89a80c19`** (2 added
+  route tests, api:test 873 → 875). `registerGenerationChatRoutes` takes
+  `dataDir` and binds `AssembleDeps.loadDatabase` to
+  `loadPersisted(dataDir).database`; `toAssembleInput` maps the validated
+  body; `streamAssembly` writes the SSE head then emits
+  `stage(validate)` → `stage(prompt,start)` → `prompt` →
+  `stage(prompt,end)` → `done`, with a `stopSending` result or any
+  thrown error (`EntityNotFoundError`, …) becoming a terminal SSE
+  `error` + `done`. Body validation stays a pre-stream 400. Read-only —
+  `varChanged` persistence + provider dispatch land with Phase 7-12.
+- **7-11h** — Add `POST /api/v1/generate/preview-prompt` shortcut. A
+  one-shot JSON endpoint returning the assembled `messages[]`
+  (`mode: 'preview_prompt'`) without dispatch; bad IDs can be a real
+  HTTP 404 (no SSE head).
 - **7-11i** — SSE telemetry: `info` event (timings, token counts),
   `message_patch` for chat-row deltas.
 

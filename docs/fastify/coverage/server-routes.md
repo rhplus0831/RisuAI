@@ -80,21 +80,22 @@ Per-provider request / response coverage lives in
 
 | Route                                       | Pinned behavior                           | Status      |
 | ------------------------------------------- | ----------------------------------------- | ----------- |
-| `POST /api/v1/generate/chat` (scaffold)     | Auth, body validation for modes/ids/options, `text/event-stream` response, and validate -> `phase-7 prompt assembly not yet implemented` -> done SSE sequence. | covered by `server/fastify/__tests__/generation.chat.test.ts` |
-| `POST /api/v1/generate/chat` (send)         | Full pipeline: assemble + dispatch.       | route scaffolded; assembly not started |
-| `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | not started |
-| `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | not started |
-| `POST /api/v1/generate/chat` (preview)      | Returns assembled prompt only.            | mode accepted by scaffold; assembly not started |
-| `POST /api/v1/generate/preview-prompt`      | Same shape as preview mode.               | not started |
+| `POST /api/v1/generate/chat` (validation)   | Auth, body validation for modes/ids/options (pre-stream 400), `text/event-stream` response. | covered by `server/fastify/__tests__/generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> `stage(prompt,end)` -> `done`; `stopSending`/bad-ID/missing-DB -> terminal SSE `error` + `done`. | covered (7-11g) by `generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (dispatch)     | Provider dispatch + `varChanged` persistence. | Phase 7-12 / 6; not started |
+| `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled via `mode: continue`; dispatch not started |
+| `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | dispatch not started |
+| `POST /api/v1/generate/preview-prompt`      | One-shot JSON assembled prompt.           | not started (7-11h) |
 
 Plus: prompt snapshot tests - given a canned DB + preset + chat
 state, the assembled `messages[]` matches a recorded snapshot.
 Prompt leaf tests already exist for `variables.ts`,
 `staticSections.ts`, `plainSections.ts`, `history.ts`,
 `scripts.ts`, `modules.ts`, `lorebook.ts`, `tokens.ts`,
-`preflight.ts`, `budgetFinalize.ts`, `triggers.ts`, and
-`templates.ts`; the root prompt snapshot suite waits until
-`assemble.ts` is real.
+`preflight.ts`, `budgetFinalize.ts`, `triggers.ts`,
+`templates.ts`, `memory.ts`, and `assemble.ts` (the full
+7-11a–f chain); a recorded `messages[]` snapshot suite can layer
+on now that `assemblePrompt` is real.
 
 ## Phase 8: Memory
 
