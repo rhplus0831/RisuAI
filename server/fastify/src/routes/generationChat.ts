@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
-import { loadPersisted } from '../repository.js'
+import { EntityNotFoundError, loadPersisted } from '../repository.js'
 import {
   assemblePrompt,
   type AssembleDeps,
@@ -81,6 +81,32 @@ function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: str
   return { ok: true }
 }
 
+/**
+ * Validation for the preview-prompt shortcut. The mode is forced to
+ * `preview_prompt`, so the `send` / `regenerate` / mode-enum rules in
+ * `validate` do not apply — only the scope IDs are required, plus the
+ * shared optional-field type checks.
+ */
+function validatePreview(body: ChatRequestBody): { ok: true } | { ok: false; error: string } {
+  if (!isNonEmptyString(body.chatId)) return { ok: false, error: 'chatId is required' }
+  if (!isNonEmptyString(body.characterId)) {
+    return { ok: false, error: 'characterId is required' }
+  }
+  if (body.presetId !== undefined && typeof body.presetId !== 'string') {
+    return { ok: false, error: 'presetId must be a string when provided' }
+  }
+  if (body.loadoutId !== undefined && typeof body.loadoutId !== 'string') {
+    return { ok: false, error: 'loadoutId must be a string when provided' }
+  }
+  if (body.expectedRevision !== undefined && typeof body.expectedRevision !== 'number') {
+    return { ok: false, error: 'expectedRevision must be a number when provided' }
+  }
+  if (body.inlayAssets !== undefined && !Array.isArray(body.inlayAssets)) {
+    return { ok: false, error: 'inlayAssets must be an array when provided' }
+  }
+  return { ok: true }
+}
+
 function attachAbort(req: FastifyRequest): {
   signal: AbortSignal
   cleanup: () => void
@@ -113,6 +139,18 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
 }
 
 /**
+ * The assembler dependency surface bound to the persisted store. The
+ * route owns the storage import so `assemble.ts` stays
+ * storage-global-free. Read-only — `varChanged` persistence lands with
+ * Phase 7-12.
+ */
+function loadDatabaseDeps(dataDir: string): AssembleDeps {
+  return {
+    loadDatabase: () => loadPersisted(dataDir).database as Database | null,
+  }
+}
+
+/**
  * Phase 7-11g: stream the assembled prompt. The SSE head is written
  * up front, so every assembly failure (bad IDs, missing database, a
  * trigger/overflow `stopSending`) is a terminal `error` event rather
@@ -139,12 +177,8 @@ async function streamAssembly(
     emit({ type: 'stage', stage: 'validate', status: 'end' })
     emit({ type: 'stage', stage: 'prompt', status: 'start' })
 
-    const deps: AssembleDeps = {
-      loadDatabase: () => loadPersisted(dataDir).database as Database | null,
-    }
-
     try {
-      const result = await assemblePrompt(input, deps)
+      const result = await assemblePrompt(input, loadDatabaseDeps(dataDir))
       if (!result.stopSending && result.prompt) {
         emit({ type: 'prompt', ...result.prompt })
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
@@ -186,5 +220,32 @@ export function registerGenerationChatRoutes(
     }
 
     await streamAssembly(req, reply, toAssembleInput(body), dataDir)
+  })
+
+  // 7-11h: one-shot JSON preview. Unlike `/chat` this never opens an SSE
+  // stream, so scope errors surface as real HTTP status codes.
+  app.post('/api/v1/generate/preview-prompt', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    const body = (req.body ?? {}) as ChatRequestBody
+    const validation = validatePreview(body)
+    if (!validation.ok) {
+      return badRequest(reply, validation.error)
+    }
+
+    const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
+    try {
+      const result = await assemblePrompt(input, loadDatabaseDeps(dataDir))
+      if (result.stopSending) {
+        return { stopSending: true, abortReason: result.abortReason }
+      }
+      return result.prompt
+    } catch (err) {
+      if (err instanceof EntityNotFoundError) {
+        reply.code(404)
+        return { error: err.message }
+      }
+      throw err
+    }
   })
 }

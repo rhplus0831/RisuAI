@@ -316,3 +316,89 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(events.find((e) => e.type === 'prompt')).toBeDefined()
   })
 })
+
+describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
+  const previewPayload = { chatId: 'chat-1', characterId: 'char-1' }
+
+  it('returns 401 without auth once a password is set', async () => {
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2' },
+    })
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      payload: previewPayload,
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('rejects a body missing chatId with 400', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: { characterId: 'char-1' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'chatId is required' })
+  })
+
+  it('rejects a body missing characterId with 400', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'characterId is required' })
+  })
+
+  it('returns the assembled prompt as JSON for a seeded database', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: previewPayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toMatch(/application\/json/)
+    const body = res.json()
+    expect(Array.isArray(body.messages)).toBe(true)
+    expect(body.messages.length).toBeGreaterThan(0)
+    expect(body.promptInfo).toBeDefined()
+  })
+
+  it('returns 404 (not an SSE error) when the character is unknown', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1', characterId: 'nope' },
+    })
+    expect(res.statusCode).toBe(404)
+    expect(String(res.json().error)).toMatch(/character not found/)
+  })
+
+  it('returns 404 when no database is persisted', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: previewPayload,
+    })
+    expect(res.statusCode).toBe(404)
+    expect(String(res.json().error)).toMatch(/database not found/)
+  })
+})
