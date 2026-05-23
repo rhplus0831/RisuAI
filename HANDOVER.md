@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Branch: `fastify`
-Head: `51155665 feat: V2 trigger request/display state adapters (Phase 7-9e)`
+Head: `5291a0b0 feat: start-trigger handoff + history integration (Phase 7-9f/7-5d)`
 
 The strategic view of remaining Phase 7 slices lives in
 [`ROADMAP.md`](ROADMAP.md). This file stays as the day-to-day
@@ -17,37 +17,38 @@ this file only records the current handoff state and the next slice.
 
 Landed Phase 7 slices:
 
-| Slice   | Commit     | Summary                                                                                                                                        |
-| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7-1     | `3d2426c4` | Scaffolded auth-gated `POST /api/v1/generate/chat`, locked the nine prompt SSE event names, and added prompt module shells.                    |
-| 7-2a    | `9eed5093` | Added Svelte-free DI seams for chat variables and `trigger_id`.                                                                                |
-| 7-2b    | `bb2c78b5` | Lifted `risuChatParser` and helpers into Svelte-free modules while preserving SPA re-exports.                                                  |
-| 7-2c    | `7ed156e6` | Wired the server parser adapter: `promptScope.ts`, `cbsAdapter.ts`, `promptVariablesBoot.ts`, and real `expandVariables`.                      |
-| 7-3     | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                                        |
-| 7-4     | `051a5dcd` | Ported plain prompt sections: main, jailbreak, and global note.                                                                                |
-| docs    | `e7a76f32` | Organized the remaining Phase 7 roadmap into tiers.                                                                                            |
-| 7-5a    | `c44e53fc` | Ported the minimal history walk: examples, start-new-chat marker, first message, makeMs filter, per-message role mapping.                      |
-| 7-6a    | `9a60380d` | Ported the minimal regex script processor: preset+character regex chain, mode filter, flag sanitization, CBS in replacement.                   |
-| 7-5b    | `7ad226b9` | Added per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill on the history walk.                               |
-| 7-6b    | `8414d5c7` | Added scripts `@@`-action prefixes: `@@emo` (no-op), `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`.                               |
-| 7-6c    | `5aae492b` | Added `ableFlag <order, actions>` DSL, `cbs`/`no_end_nl` actions, outScript prep, and SPA-parity flag defaults.                                |
-| 7-6d    | `cb5675d8` | Wired module regex scripts into the script chain via new `getActiveModules` + `getModuleRegexScripts` helpers.                                 |
-| 7-5c    | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                                                |
-| 7-7a    | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                                  |
-| 7-7b    | `25388d7d` | Added lorebook keyword matching: `searchMatch` port, child mirror, conditional-activation decorators, and `matchLog`.                          |
-| 7-7c    | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt` accumulation, three recursion decorators.                      |
-| 7-7e    | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.                            |
-| 7-8a    | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.                   |
-| 7-7d    | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                             |
-| 7-5e    | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                                |
-| 7-8b    | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list, returning `{ addedTokens, memoryCardUsed, hasCachePoint }`.      |
-| 7-8c    | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.                |
-| 7-9a    | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the `runTrigger` shell (no effect execution).      |
-| 7-9b    | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.                |
-| 7-9c    | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.            |
-| 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects.       |
-| 7-9d-ii | `faec5145` | V2 safe data helpers in `triggerDataEffects.ts`: message readers, string/array/dict/math, random, tokenize, regex, quick search.               |
-| 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2GetDisplayState`/`v2SetDisplayState` + the five request-state arms. |
+| Slice   | Commit     | Summary                                                                                                                                                       |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7-1     | `3d2426c4` | Scaffolded auth-gated `POST /api/v1/generate/chat`, locked the nine prompt SSE event names, and added prompt module shells.                                   |
+| 7-2a    | `9eed5093` | Added Svelte-free DI seams for chat variables and `trigger_id`.                                                                                               |
+| 7-2b    | `bb2c78b5` | Lifted `risuChatParser` and helpers into Svelte-free modules while preserving SPA re-exports.                                                                 |
+| 7-2c    | `7ed156e6` | Wired the server parser adapter: `promptScope.ts`, `cbsAdapter.ts`, `promptVariablesBoot.ts`, and real `expandVariables`.                                     |
+| 7-3     | `d0a2a7f3` | Ported static prompt sections: description, author note, persona, and chain-of-thought.                                                                       |
+| 7-4     | `051a5dcd` | Ported plain prompt sections: main, jailbreak, and global note.                                                                                               |
+| docs    | `e7a76f32` | Organized the remaining Phase 7 roadmap into tiers.                                                                                                           |
+| 7-5a    | `c44e53fc` | Ported the minimal history walk: examples, start-new-chat marker, first message, makeMs filter, per-message role mapping.                                     |
+| 7-6a    | `9a60380d` | Ported the minimal regex script processor: preset+character regex chain, mode filter, flag sanitization, CBS in replacement.                                  |
+| 7-5b    | `7ad226b9` | Added per-message scripts + sendName wrapper + `<Thoughts>` extraction + memo/UUID backfill on the history walk.                                              |
+| 7-6b    | `8414d5c7` | Added scripts `@@`-action prefixes: `@@emo` (no-op), `@@inject`, `@@move_top`, `@@move_bottom`, `@@repeat_back`.                                              |
+| 7-6c    | `5aae492b` | Added `ableFlag <order, actions>` DSL, `cbs`/`no_end_nl` actions, outScript prep, and SPA-parity flag defaults.                                               |
+| 7-6d    | `cb5675d8` | Wired module regex scripts into the script chain via new `getActiveModules` + `getModuleRegexScripts` helpers.                                                |
+| 7-5c    | `50a1770b` | Added history multimodal inlays, `{{asset_prompt::}}`, `AssetLookup`, and module asset triples.                                                               |
+| 7-7a    | `c815e067` | Ported lorebook constant (always-on) entries with the in-scope decorator scaffold and `inject_lore` rewrites.                                                 |
+| 7-7b    | `25388d7d` | Added lorebook keyword matching: `searchMatch` port, child mirror, conditional-activation decorators, and `matchLog`.                                         |
+| 7-7c    | `b11902ad` | Added lorebook recursive activation: `while (matching)` loop, `recursivePrompt` accumulation, three recursion decorators.                                     |
+| 7-7e    | `c0f3fb3a` | Added lorebook depth-prompt helpers: `getDepthPrompts`, `resolvePosition`, and `applyDepthPrompts` history splicer.                                           |
+| 7-8a    | `17fca64f` | Minimal server tokenizer: `encodingForModel`, `tokenize`, `tokenizeChat`, `tokenizeChats` over `cl100k_base` / `o200k_base`.                                  |
+| 7-7d    | `f0382df8` | Lorebook budget-aware truncation: per-entry `tokens`, priority-desc filter, `loreSettings.tokenBudget` resolution.                                            |
+| 7-5e    | `febe67ce` | History `addedTokens` accumulator + depth-prompt token preflight when a `LorebookActivationReport` is supplied.                                               |
+| 7-8b    | `d488ab7f` | Template-wide token preflight: `preflightTemplateTokens` walks the card list, returning `{ addedTokens, memoryCardUsed, hasCachePoint }`.                     |
+| 7-8c    | `c83015b3` | Request budget finalization: `finalizeRequestBudget` trims `removable` rows under `maxContextTokens` and clamps `outputTokens`.                               |
+| 7-9a    | `cddc035e` | Trigger model + runner shell: `getModuleTriggers`, `collectTriggers`, `matchesTrigger`, and the `runTrigger` shell (no effect execution).                     |
+| 7-9b    | `cb23202b` | Trigger variables + conditions: `createTriggerVarEngine`, `evaluateConditions`, context/result extension, `parseKeyValue` lift.                               |
+| 7-9c    | `cae61155` | Deterministic V1 effects: `setvar`, `systemprompt`, `impersonate`, `stop`, `cutchat`, `modifychat`, bounded `runtrigger` recursion.                           |
+| 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects.                      |
+| 7-9d-ii | `faec5145` | V2 safe data helpers in `triggerDataEffects.ts`: message readers, string/array/dict/math, random, tokenize, regex, quick search.                              |
+| 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2GetDisplayState`/`v2SetDisplayState` + the five request-state arms.                |
+| 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`: chat mutation, token contribution, `stopSending`, `varChanged`. Closes 7-5d. |
 
 What is real in code:
 
@@ -75,14 +76,18 @@ What is real in code:
   triggers. `getModuleTriggers` clones entries and applies inherited
   `lowLevelAccess` without mutating module-owned objects.
 - `triggers.ts` is the Svelte-free Phase 7-safe runner through
-  7-9e: trigger collection/filtering, explicit context threading,
+  7-9f: trigger collection/filtering, explicit context threading,
   variable/condition evaluation, deterministic V1 effects, V2 control
   flow, V2 state effects, bounded recursive `runtrigger` /
   `v2RunTrigger`, the `display`/`request` effect allowlists
   (`safeSubset` / `displayAllowList` / `requestAllowList` guarded at the
   top of the effect loop), the mutable `displayState` holder threaded
   from `arg.displayData` to `result.displayData`, terminal token
-  accounting, and `varChanged`.
+  accounting, and `varChanged`. It also exports `runStartTrigger`
+  (7-9f), the handoff adapter that bridges the prompt-pipeline
+  `ExpandContext` scope to a `TriggerRunContext` and runs the `start`
+  trigger; `history.ts` consumes it. The trigger front is complete for
+  Phase 7.
 - `triggerVars.ts` owns the trigger variable engine: `getVar` /
   `setVar`, local scopes, `displayMode` temp vars, `setChat`, and
   persistence into the single database snapshot. `parseKeyValue` was
@@ -118,13 +123,19 @@ memoryCardUsed, hasCachePoint }` and the
 - `assemble.ts` and `templates.ts` still throw Phase 7
   not-implemented errors. `triggers.ts` is now a real runner with the
   variable/condition engine, deterministic V1 effects, V2 control
-  flow, V2 safe data helpers, and the request/display state adapters
-  wired (7-9a/b/c/d-i/d-ii/e); only the start-trigger handoff
-  (7-9f) remains on the trigger front.
-- `history.ts` does not yet handle start triggers (7-5d, blocked
-  on 7-9f after the trigger re-scope). 7-5e (`febe67ce`) landed the
-  `addedTokens` accumulator + depth-prompt preflight; the only remaining
-  history gap is the start-trigger token contribution.
+  flow, V2 safe data helpers, the request/display state adapters, and
+  the `runStartTrigger` handoff wired (7-9a/b/c/d-i/d-ii/e/f); the
+  trigger front is complete for Phase 7. The remaining trigger work
+  (applying `triggerResult.additonalSysPrompt` to prompt slots) belongs
+  to the assemble root (Tier 3).
+- `history.ts` is feature-complete. `buildHistoryWindow` is now `async`
+  and runs the start trigger via `runStartTrigger` after the
+  first-message push: it re-runs `makeMs` against the mutated chat,
+  folds `triggerResult.tokens` into `addedTokens`, early-returns on
+  `stopSending`, and surfaces `triggerResult` / `currentChat` /
+  `varChanged` in `HistoryWindowResult` (7-9f closes 7-5d). 7-5e
+  (`febe67ce`) landed the `addedTokens` accumulator + depth-prompt
+  preflight.
 - `scripts.ts` does not yet handle script-cache,
   `runLuaEditTrigger`, `runTrigger('display', …)`, or `pluginV2`
   hooks — all 7-6e or out-of-scope.
@@ -136,47 +147,46 @@ memoryCardUsed, hasCachePoint }` and the
   resolution). No remaining lorebook slices.
 - There is no `/api/v1/generate/preview-prompt` route yet.
 
-Last recorded baselines after 7-9e:
+Last recorded baselines after 7-9f:
 
-- `pnpm api:test`: 766 across 39 files
+- `pnpm api:test`: 771 across 39 files
 - `pnpm test`: 601 across 46 files (+ 4 skipped)
 - `pnpm check`: 0 errors / 0 warnings
 - `pnpm build`: passes with existing CSS / bundle-size warnings
 
-## Next Slice — 7-9f prompt/history effects + `start` handoff
+## Next Slice — 7-10a template normalization + slot contract
 
-Pick up **7-9f — prompt/history effects + `start` trigger handoff**.
+Pick up **7-10a — template normalization + slot contract**.
 
-7-9e (`51155665`) closed the trigger data front: the runner now
-handles V1, V2 control flow, V2 safe data helpers, and the
-request/display state adapters. 7-9f is the last trigger sub-slice —
-it wires `runTrigger` into history's **start-trigger** path so the
-runner's chat mutations, additional-system-prompt slots, token
-contribution, and `stopSending` reach prompt assembly. It is consumed
-by **7-5d** (history start-trigger integration). **7-10a** (template
-normalization + slot contract) remains an equally valid parallel
-pickup.
+7-9f (`5291a0b0`) closed the trigger front and the last Tier 1 history
+sub-slice (7-5d). The remaining Phase 7 work is the template renderer
+(Tier 2 templates) and the Tier 3 root/route wiring. 7-10a starts the
+template front in `templates.ts` (currently a throwing stub). The SPA
+source is `src/ts/process/promptAssembly/{normalizeTemplate,
+renderFinalPrompt,systemizeChat}.ts` plus
+`src/ts/process/templates/*`.
 
-### Scope sketch
+### Scope sketch (SPA reference)
 
-- Run `runTrigger(ctx, char, 'start', …)` from the history walk's
-  start path (the `7-5d` seam in `history.ts`), passing the in-scope
-  chat so the result's `chat.message` mutations, `additonalSysPrompt`
-  slots, and `tokens` flow into the history output and the
-  `addedTokens` accumulator (7-5e).
-- Honor `stopSending` and `varChanged` from the result (persist the
-  database when `varChanged`, matching the `expandVariables` →
-  `dirty` → `applyImport` pattern).
-- Confirm the `start` mode's clone/`displayMode` semantics: a `start`
-  run is not `displayMode`, so char/chat are cloned and `setVar`
-  writes persist (unlike the 7-9e display/request runs).
+- Port `normalizeTemplate` (`normalizeTemplate.ts:10`): clone
+  `db.promptTemplate`, set `usingPromptTemplate = !!promptTemplate`,
+  append an implicit `{ type: 'postEverything' }` when absent, and swap
+  in the utility-bot forced template when `currentChar.utilityBot &&
+!(usingPromptTemplate && promptSettings.utilOverride)`.
+- Port the null-template `formatingOrder` fallback and the shared
+  row-filter / system-coalescing helper from `renderFinalPrompt.ts`
+  (the part that does not yet branch per card type).
+- Define the slot contract (`PromptUnformatedSlots` already referenced
+  by `preflight.ts`) that later 7-10b–f card renderers fill.
+- No individual template-card branches yet (those are 7-10b onward).
 
 ### Out of scope (defer)
 
-- Input hook adapter — 7-9g only if Phase 7 needs it before Phase 9.
-- V2 low-level arms (alert/LLM/image/similarity, persona/character/
-  lorebook mutation, GUI/update), `v2Wait`, and `command` — deferred
-  beyond Phase 7 per the roadmap boundary.
+- Content cards / chat cards / memory cards / cache markers / position
+  finalization — 7-10b through 7-10f.
+- The assemble root + route wiring (`assemble.ts`, applying
+  `triggerResult.additonalSysPrompt`, persisting `varChanged`) — Tier 3
+  (7-11a onward).
 
 ### Verification
 
@@ -187,8 +197,9 @@ pnpm test
 pnpm build
 ```
 
-If 7-9f is blocked, the parallel next-up is **7-10a** (template
-normalization + slot contract).
+There is no remaining trigger or history sub-slice; the template front
+(7-10a) is the default next pickup, with the Tier 3 root wiring after
+it.
 
 ## Patterns To Keep
 

@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-Status: in-progress (27 slices landed as of 2026-05-23).
+Status: in-progress (29 slices landed as of 2026-05-23).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -25,11 +25,12 @@ real. `triggers.ts` now hosts the Phase 7-safe trigger runner —
 the 7-9a model + shell, the 7-9b variable/condition engine, the 7-9c
 deterministic V1 effects, the V2 control/data batch (7-9d-i
 control flow + 7-9d-ii safe data helpers in `triggerDataEffects.ts`),
-and the 7-9e request/display state adapters (mode allowlists +
-`v2Get/SetDisplayState` + the five request-state arms); only the
-start-trigger handoff (7-9f) remains on the trigger front. The remaining assembly modules
-under `server/fastify/src/prompt/` (`assemble`, `templates`) are still
-throwing stubs. See
+the 7-9e request/display state adapters (mode allowlists +
+`v2Get/SetDisplayState` + the five request-state arms), and the 7-9f
+`runStartTrigger` handoff wired into the now-async `buildHistoryWindow`
+(closing the Tier 1 7-5d). The trigger and history fronts are complete;
+the remaining assembly modules under `server/fastify/src/prompt/`
+(`assemble`, `templates`) are still throwing stubs. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -203,6 +204,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects. |
 | 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.          |
 | 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.           |
+| 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.  |
 
 ## Remaining roadmap
 
@@ -217,9 +219,9 @@ is the planning resolution, not a contract.
 Order chosen to minimize helper coupling. `assemble.ts` and
 `templates.ts` are still the throwing stubs. `tokens.ts` is real
 at the minimal text-only surface, and `triggers.ts` is real through
-V2 safe data helpers with request/display adapters and the
-start-trigger handoff still deferred. The files below are real but
-have deferred sub-slices.
+the request/display adapters and the `runStartTrigger` handoff — the
+trigger front is complete. The files below are real; `history.ts` is
+now feature-complete.
 
 **7-5a … 7-5e — History shaping.** Port `buildHistoryWindow` +
 `formatHistoryMessage` from `src/ts/process/promptAssembly/`. The
@@ -235,7 +237,8 @@ along the dependency seams:
   **Landed `7ad226b9`** (13 tests, api:test 516 → 529).
 - **7-5c** — Multimodal inlays + `{{asset_prompt::}}` replacement.
   **Landed `50a1770b`** (13 tests, api:test 569 → 582).
-- **7-5d** — Start trigger integration. Depends on Triggers (7-9f).
+- **7-5d** — Start trigger integration. **Landed `5291a0b0`** (folded
+  into 7-9f). `buildHistoryWindow` is async and runs `runStartTrigger`.
 - **7-5e** — Tokenizer accumulation + depthPrompts preflight.
   **Landed `febe67ce`** (7 tests, api:test 661 → 668).
   `HistoryWindowResult` gains `addedTokens: number`;
@@ -491,10 +494,13 @@ character/persona/lorebook mutations wait for Phase 9 command APIs.
   `triggerDataEffects.ts`. Unblocks optional `editdisplay` work in 7-6e
   and the final request-state transform used by assemble/dispatch
   wiring.
-- **7-9f** — Prompt/history effects + `start` handoff: wire the
-  runner into history's start-trigger path, apply chat mutations,
-  additional system prompt slots, token contribution, and
-  `stopSending`. Consumed by 7-5d.
+- **7-9f** — Prompt/history effects + `start` handoff. **Landed
+  `5291a0b0`** (5 added tests). `runStartTrigger` bridges the
+  prompt-pipeline `ExpandContext` to a `TriggerRunContext`; the
+  now-async `buildHistoryWindow` applies chat mutations, the token
+  contribution, `stopSending`, and surfaces `triggerResult` /
+  `currentChat` / `varChanged`. Closes Tier 1 7-5d. Applying
+  `additonalSysPrompt` to prompt slots is the assemble root's job.
 - **7-9g** — Input hook adapter, only if Phase 7 needs the server to
   own Stage 1/user-row trigger behavior before Phase 9. If not, defer
   it to Phase 9.

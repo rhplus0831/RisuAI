@@ -64,18 +64,19 @@ under [`status/`](status/).
   The client adapter is flag-gated by `db.useServerGeneration`; the
   current matrix and remaining local-only paths are tracked in
   [`coverage/providers.md`](coverage/providers.md).
-- Phase 7 prompt assembly is in progress. Twenty-eight slices have
-  landed through 7-9e: the auth-gated
+- Phase 7 prompt assembly is in progress. Twenty-nine slices have
+  landed through 7-9f: the auth-gated
   `POST /api/v1/generate/chat` scaffold, the locked nine-event
   prompt SSE taxonomy, server-side `expandVariables`, static/plain
   prompt sections, history shaping through added-token/depth-prompt
-  preflight, regex scripts, active-module helpers, lorebook
-  activation through budget-aware truncation, the minimal server
-  tokenizer, template-wide token preflight, and request budget
-  finalization, plus the trigger model, variable/condition engine,
-  deterministic V1 effects, V2 control flow, V2 safe data helpers, and
-  the request/display state adapters. `assemble` and `templates`
-  remain stubs; next work is 7-9f, with 7-10a as the parallel template
+  preflight + start-trigger handoff, regex scripts, active-module
+  helpers, lorebook activation through budget-aware truncation, the
+  minimal server tokenizer, template-wide token preflight, and request
+  budget finalization, plus the trigger model, variable/condition
+  engine, deterministic V1 effects, V2 control flow, V2 safe data
+  helpers, the request/display state adapters, and the `runStartTrigger`
+  handoff. `assemble` and `templates` remain stubs; the trigger and
+  history fronts are complete, so next work is 7-10a, the template
   front.
 - The Dockerfile and compose file target Fastify on port 6002
   with `/app/data` persisted. The runtime image copies production

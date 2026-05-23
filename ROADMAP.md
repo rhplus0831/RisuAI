@@ -108,6 +108,7 @@ multi-subsystem work behind small labels.
 | 7-9d-i  | `1bd8313b` | V2 control-flow core: index-based loop, `v2If`/`v2Else`/`v2EndIndent`/loops/`v2BreakLoop`, `v2SetVar`, `v2RunTrigger`, V2 state effects. |
 | 7-9d-ii | `faec5145` | V2 safe data helpers (`triggerDataEffects.ts`): message readers, string/array/dict/math, random, tokenize, regex, quick search.          |
 | 7-9e    | `51155665` | Request/display state adapters: `display`/`request` effect allowlists + `v2Get/SetDisplayState` + the five request-state arms.           |
+| 7-9f    | `5291a0b0` | Start-trigger handoff (`runStartTrigger`) wired into async `buildHistoryWindow`; closes Tier 1 7-5d. Trigger + history fronts complete.  |
 
 ## Remaining Slices
 
@@ -119,10 +120,11 @@ slice when staffed by another agent.
 
 History (`history.ts`):
 
-- **7-5d** — start trigger integration. Blocked on 7-9f.
-  This is the only remaining history sub-slice; 7-5e
-  (`febe67ce`) landed the `addedTokens` accumulator + depth-prompt
-  preflight.
+- **7-5d** — start trigger integration. **Landed `5291a0b0`**
+  (folded into 7-9f). `buildHistoryWindow` is now async and runs the
+  start trigger via `runStartTrigger`. History is feature-complete;
+  7-5e (`febe67ce`) had already landed the `addedTokens` accumulator +
+  depth-prompt preflight.
 
 Scripts (`scripts.ts`):
 
@@ -198,11 +200,14 @@ Triggers (`triggers.ts`):
   `triggerDataEffects.ts`. Unblocks optional `runTrigger('display', …)`
   work in 7-6e and the final request-state transform used by
   assemble/dispatch wiring.
-- **7-9f** — prompt/history effects + `start` trigger handoff. **(next)**
-  Wire
-  the runner into history's start-trigger path, apply chat mutations,
-  additional-system-prompt slots, token contribution, and
-  `stopSending`. Consumed by 7-5d.
+- **7-9f** — prompt/history effects + `start` trigger handoff.
+  **Landed `5291a0b0`.** `runStartTrigger` bridges the prompt-pipeline
+  `ExpandContext` scope to a `TriggerRunContext` and runs the `start`
+  trigger; `buildHistoryWindow` (now async) applies chat mutations, the
+  token contribution, `stopSending`, and surfaces `triggerResult` /
+  `currentChat` / `varChanged`. Closes Tier 1 7-5d. Applying
+  `triggerResult.additonalSysPrompt` to prompt slots is the assemble
+  root's job (Tier 3).
 - **7-9g** — input hook adapter, if still required before the Phase 7
   browser adapter. Keep this limited to `runTrigger('input', …)` and
   editinput regex processing for the server-created user row. If Stage
@@ -242,15 +247,16 @@ Preset templates (`templates.ts`):
   Phase 7-safe request-state transform from 7-9e. Browser Lua
   `editRequest` hooks stay deferred with plugin/Lua execution.
 
-Current default pickup: **7-9f** (prompt/history effects + `start`
-handoff) → 7-5d. The template front starts at **7-10a** and can run in
-parallel. The already-landed support chain is 7-7d/7-5e, 7-8a/b/c,
-and 7-9a/b/c/d-i/d-ii/e.
+Current default pickup: **7-10a** (template normalization + slot
+contract). The trigger and history fronts are complete; the remaining
+work is the template renderer (7-10a–f) then the Tier 3 root/route
+wiring. The already-landed support chain is 7-7d/7-5e, 7-8a/b/c, and
+7-9a/b/c/d-i/d-ii/e/f.
 
 ### Tier 1 sub-slices unblocked by Tier 2
 
-- **7-5d** — start trigger integration (needs 7-9f). The only
-  remaining Tier 1 sub-slice; lands as soon as 7-9f is in.
+- **7-5d** — start trigger integration. **Landed `5291a0b0`** (folded
+  into 7-9f). No remaining Tier 1 sub-slices.
 
 These slot in as soon as their Tier 2 dependencies land. Do
 **not** wait for all of Tier 2 — pick them up the moment their
@@ -305,33 +311,31 @@ from Phase 5 shrink to thin SSE iterators.
 
 - Slices within a tier with no `Blocking` cell can run in
   parallel by different agents.
-- The biggest parallel-able fronts are **7-9f** (trigger
-  prompt/history + `start` handoff) and **7-10a** (template
-  normalization). 7-5d unblocks the moment 7-9f lands.
+- With the trigger and history fronts complete, the remaining
+  parallel-able fronts are the template renderer (**7-10a** then
+  7-10b–f) and, once those land, the Tier 3 root/route wiring.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).
 
 ## Sequential order (default)
 
-1. **7-9f** — prompt/history effects + `start` handoff
-2. **7-5d** — history start trigger (unblocked by 7-9f)
-3. **7-10a** — template normalization + slot contract
-4. **7-10b** — content cards
-5. **7-10c** — chat cards + systemized chat
-6. **7-10d** — memory cards + cache markers
-7. **7-10e** — position + prompt-info finalization
-8. **7-10f** — render finalization + request-edit boundary
-9. **7-11a** — `assemble.ts` state loader + slot orchestration
-10. **7-11b** — memory-window bridge + final render
-11. **7-11c** — wire `/api/v1/generate/chat`
-12. **7-11d** — `/api/v1/generate/preview-prompt`
-13. **7-11e** — SSE telemetry (`info`, `message_patch`)
-14. **7-12a** — browser client adapter
-15. **7-12b** — dual-mode fixture sweep
-16. **7-12c** — side-effect dispatch
-17. **7-12d** — error / abort restoration
-18. **7-13** — phase 7 closeout
+1. **7-10a** — template normalization + slot contract
+2. **7-10b** — content cards
+3. **7-10c** — chat cards + systemized chat
+4. **7-10d** — memory cards + cache markers
+5. **7-10e** — position + prompt-info finalization
+6. **7-10f** — render finalization + request-edit boundary
+7. **7-11a** — `assemble.ts` state loader + slot orchestration
+8. **7-11b** — memory-window bridge + final render
+9. **7-11c** — wire `/api/v1/generate/chat`
+10. **7-11d** — `/api/v1/generate/preview-prompt`
+11. **7-11e** — SSE telemetry (`info`, `message_patch`)
+12. **7-12a** — browser client adapter
+13. **7-12b** — dual-mode fixture sweep
+14. **7-12c** — side-effect dispatch
+15. **7-12d** — error / abort restoration
+16. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 
