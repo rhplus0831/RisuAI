@@ -605,6 +605,11 @@ export async function assemblePrompt(
         outputTokens: state.outputTokens,
       },
       lorebookActivation: state.report,
+      // 7-12b: carry the full rows + biases on the wire so the browser
+      // adapter can drive a preview / dispatch, not just the lossy
+      // `messages` projection. Additive to the locked SSE contract.
+      formated,
+      biases: state.biases,
     },
     formated,
     biases: state.biases,

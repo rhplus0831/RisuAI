@@ -25,8 +25,12 @@ interface ChatPayload {
 
 interface State {
   calls: ServerChatCall[]
-  /** Messages returned on the `prompt` event. */
+  /** Messages returned on the `prompt` event (lossy projection). */
   promptMessages: Array<{ role: string; content: unknown }>
+  /** Full `OpenAIChat` rows returned on the `prompt` event (7-12b). */
+  formated: Array<Record<string, unknown>>
+  /** Logit-bias rows returned on the `prompt` event (7-12b). */
+  biases: [string, number][]
   /** promptInfo returned on the `prompt` event. */
   promptInfo: Record<string, unknown>
   /** Token counts returned on the `info` event. */
@@ -41,22 +45,23 @@ const DEFAULT_MESSAGES: Array<{ role: string; content: unknown }> = [
   { role: 'user', content: 'hi' },
 ]
 
-const state: State = {
-  calls: [],
-  promptMessages: DEFAULT_MESSAGES,
-  promptInfo: { promptText: 'fixture prompt text' },
-  inputTokens: 7,
-  responseBudget: 50,
-  errorMessage: null,
+function defaultState(): Omit<State, 'calls'> {
+  return {
+    promptMessages: DEFAULT_MESSAGES,
+    formated: DEFAULT_MESSAGES.map((m) => ({ ...m })),
+    biases: [],
+    promptInfo: { promptText: 'fixture prompt text' },
+    inputTokens: 7,
+    responseBudget: 50,
+    errorMessage: null,
+  }
 }
+
+const state: State = { calls: [], ...defaultState() }
 
 export function resetServerChatState(): void {
   state.calls = []
-  state.promptMessages = DEFAULT_MESSAGES
-  state.promptInfo = { promptText: 'fixture prompt text' }
-  state.inputTokens = 7
-  state.responseBudget = 50
-  state.errorMessage = null
+  Object.assign(state, defaultState())
 }
 
 export function getServerChatCalls(): ServerChatCall[] {
@@ -66,9 +71,12 @@ export function getServerChatCalls(): ServerChatCall[] {
 export function setServerChatPrompt(
   messages: Array<{ role: string; content: unknown }>,
   promptInfo: Record<string, unknown> = {},
+  opts: { formated?: Array<Record<string, unknown>>; biases?: [string, number][] } = {},
 ): void {
   state.promptMessages = messages
   state.promptInfo = promptInfo
+  state.formated = opts.formated ?? messages.map((m) => ({ ...m }))
+  if (opts.biases) state.biases = opts.biases
 }
 
 export function setServerChatError(message: string): void {
@@ -99,6 +107,8 @@ function sseChatResponse(): Response {
         messages: state.promptMessages,
         promptInfo: state.promptInfo,
         lorebookActivation: null,
+        formated: state.formated,
+        biases: state.biases,
       })
       push('stage', { stage: 'prompt', status: 'end' })
       push('info', {

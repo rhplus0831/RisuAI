@@ -1,4 +1,5 @@
 import type { FastifyReply } from 'fastify'
+import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 
 /**
  * Phase 7 SSE event taxonomy for `POST /api/v1/generate/chat`.
@@ -25,6 +26,15 @@ export interface PromptEvent {
   messages: Array<{ role: string; content: unknown }>
   promptInfo?: Record<string, unknown>
   lorebookActivation?: unknown
+  /**
+   * The budgeted flat prompt as full `OpenAIChat` rows (7-12b). `messages`
+   * is a lossy `{ role, content }` projection of this; `formated` preserves
+   * the fields a provider dispatch / preview needs (names, cache points,
+   * multimodal content). Additive — the SSE contract stays append-only.
+   */
+  formated?: OpenAIChat[]
+  /** Logit-bias rows for dispatch (7-12b). */
+  biases?: [string, number][]
 }
 
 export interface InfoEvent {

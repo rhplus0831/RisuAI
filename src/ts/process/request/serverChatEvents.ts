@@ -13,6 +13,8 @@
  * (ignored) until provider dispatch lands in Phase 7-12c/d.
  */
 
+import type { OpenAIChat } from '../index.svelte'
+
 export type PromptChatStage = 'validate' | 'prompt' | 'provider' | 'done'
 
 export interface StageEvent {
@@ -26,6 +28,14 @@ export interface PromptEvent {
   messages: Array<{ role: string; content: unknown }>
   promptInfo?: Record<string, unknown>
   lorebookActivation?: unknown
+  /**
+   * The budgeted flat prompt as full `OpenAIChat` rows (7-12b). `messages`
+   * is a lossy `{ role, content }` projection; `formated` preserves the
+   * fields a preview / dispatch needs. Optional — older servers omit it.
+   */
+  formated?: OpenAIChat[]
+  /** Logit-bias rows for dispatch (7-12b). */
+  biases?: [string, number][]
 }
 
 export interface InfoEvent {

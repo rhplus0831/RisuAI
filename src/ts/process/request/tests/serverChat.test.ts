@@ -42,6 +42,24 @@ describe('requestServerChat', () => {
     expect(res.info?.responseBudget).toBe(50)
   })
 
+  it('surfaces the full formated rows + biases from the prompt event (7-12b)', async () => {
+    setServerChatPrompt(
+      [{ role: 'user', content: 'hi' }],
+      { promptText: 'hi' },
+      {
+        formated: [{ role: 'user', content: 'hi', name: 'Tess' }],
+        biases: [['hello', -100]],
+      },
+    )
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChat(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.prompt.formated).toEqual([{ role: 'user', content: 'hi', name: 'Tess' }])
+    expect(res.prompt.biases).toEqual([['hello', -100]])
+  })
+
   it('sends the intent body and the risu-auth header', async () => {
     vi.stubGlobal('fetch', serverChatFetch)
     await requestServerChat(baseInput, null)

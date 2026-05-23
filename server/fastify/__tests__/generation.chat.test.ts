@@ -262,6 +262,15 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const prompt = events.find((e) => e.type === 'prompt')!
     expect(Array.isArray(prompt.data.messages)).toBe(true)
     expect((prompt.data.messages as unknown[]).length).toBeGreaterThan(0)
+    // 7-12b: the prompt event also carries the full OpenAIChat rows + biases
+    // so the browser adapter can drive a preview / dispatch. `formated`
+    // preserves the `role`/`content` of the lossy `messages` projection.
+    const formated = prompt.data.formated as Array<{ role: string; content: unknown }>
+    expect(Array.isArray(formated)).toBe(true)
+    expect(formated.map((r) => ({ role: r.role, content: r.content }))).toEqual(
+      prompt.data.messages,
+    )
+    expect(Array.isArray(prompt.data.biases)).toBe(true)
     // The prompt stage closes, then telemetry rides before the terminal done.
     expect(events.at(-3)).toEqual({ type: 'stage', data: { stage: 'prompt', status: 'end' } })
     expect(events.at(-2)?.type).toBe('info')
@@ -401,6 +410,10 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(Array.isArray(body.messages)).toBe(true)
     expect(body.messages.length).toBeGreaterThan(0)
     expect(body.promptInfo).toBeDefined()
+    // 7-12b: full rows + biases ride on the JSON payload too.
+    expect(Array.isArray(body.formated)).toBe(true)
+    expect(body.formated.length).toBe(body.messages.length)
+    expect(Array.isArray(body.biases)).toBe(true)
   })
 
   it('returns 404 (not an SSE error) when the character is unknown', async () => {
