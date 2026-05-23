@@ -365,25 +365,6 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
     ])
   })
 
-  it('skips memory / cache cards (deferred to 7-10d)', () => {
-    const db = makeDatabase()
-    const unformated = makeSlots({
-      description: [row({ role: 'system', content: 'desc' })],
-    })
-    const out = renderByTemplate(
-      ctxFor(db),
-      makeCharacter(),
-      unformated,
-      tpl([
-        { type: 'memory' },
-        { type: 'cache', name: 'c', depth: 1, role: 'all' },
-        { type: 'description' },
-      ]),
-      true,
-    )
-    expect(out.map((r) => r.content)).toEqual(['desc'])
-  })
-
   it('applies the injected positionParser to card text', () => {
     const db = makeDatabase()
     const out = renderByTemplate(
@@ -519,5 +500,152 @@ describe('Phase 7-10c chat cards', () => {
     renderChat(db, { type: 'chat', rangeStart: 0, rangeEnd: 'end' }, unformated)
     expect(unformated.chats.map((r) => r.role)).toEqual(['user', 'assistant', 'user'])
     expect(unformated.chats[0].content).toBe('u0')
+  })
+})
+
+describe('Phase 7-10d memory cards', () => {
+  const mem = (): OpenAIChat[] => [
+    row({ role: 'assistant', content: 'm0' }),
+    row({ role: 'assistant', content: 'm1' }),
+  ]
+
+  it('clones the injected memories and passes them through unwrapped', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'memory' }],
+      true,
+      undefined,
+      mem(),
+    )
+    expect(out.map((r) => r.content)).toEqual(['m0', 'm1'])
+  })
+
+  it('wraps each memory row via innerFormat {{slot}}', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'memory', innerFormat: 'Mem: {{slot}}' }],
+      true,
+      undefined,
+      mem(),
+    )
+    expect(out.map((r) => r.content)).toEqual(['Mem: m0', 'Mem: m1'])
+  })
+
+  it('does NOT run positionParser on the memory innerFormat', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'memory', innerFormat: 'mem: {{slot}}' }],
+      true,
+      (text) => text.toUpperCase(),
+      mem(),
+    )
+    // positionParser would have uppercased the wrapper to "MEM:".
+    expect(out.map((r) => r.content)).toEqual(['mem: m0', 'mem: m1'])
+  })
+
+  it('does not mutate the injected memories source', () => {
+    const memories = mem()
+    renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'memory', innerFormat: 'Mem: {{slot}}' }],
+      true,
+      undefined,
+      memories,
+    )
+    expect(memories.map((r) => r.content)).toEqual(['m0', 'm1'])
+  })
+
+  it('emits nothing for a memory card with no injected memories', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'memory', innerFormat: 'Mem: {{slot}}' }],
+      true,
+    )
+    expect(out).toEqual([])
+  })
+})
+
+describe('Phase 7-10d cache markers', () => {
+  const slotsWithChat = (): UnformatedPromptSlots =>
+    makeSlots({
+      chats: [
+        row({ role: 'user', content: 'u0' }),
+        row({ role: 'assistant', content: 'a1' }),
+        row({ role: 'user', content: 'u2' }),
+        row({ role: 'assistant', content: 'a3' }),
+        row({ role: 'user', content: 'u4' }),
+      ],
+    })
+
+  const chatCard: PromptItem = { type: 'chat', rangeStart: 0, rangeEnd: 'end' }
+
+  const cachePoints = (out: OpenAIChat[]): string[] =>
+    out.filter((r) => r.cachePoint).map((r) => r.content)
+
+  it('marks up to `depth` rows whose role matches the cache card', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      slotsWithChat(),
+      [chatCard, { type: 'cache', name: 'c', depth: 2, role: 'user' }],
+      true,
+    )
+    // Walks from the end: u4, u2 are the last two user rows.
+    expect(cachePoints(out)).toEqual(['u2', 'u4'])
+  })
+
+  it('treats role "all" as any role and stops at `depth`', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      slotsWithChat(),
+      [chatCard, { type: 'cache', name: 'c', depth: 3, role: 'all' }],
+      true,
+    )
+    expect(cachePoints(out)).toEqual(['u2', 'a3', 'u4'])
+  })
+
+  it('automatic cache point marks the last 3 user rows after a chat card', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase({ automaticCachePoint: true } as Partial<Database>)),
+      makeCharacter(),
+      slotsWithChat(),
+      [chatCard],
+      true,
+    )
+    expect(cachePoints(out)).toEqual(['u0', 'u2', 'u4'])
+  })
+
+  it('does not auto-mark when automaticCachePoint is off', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      slotsWithChat(),
+      [chatCard],
+      true,
+    )
+    expect(cachePoints(out)).toEqual([])
+  })
+
+  it('suppresses the automatic walk-back when an explicit cache card is present', () => {
+    const out = renderByTemplate(
+      ctxFor(makeDatabase({ automaticCachePoint: true } as Partial<Database>)),
+      makeCharacter(),
+      slotsWithChat(),
+      [chatCard, { type: 'cache', name: 'c', depth: 1, role: 'user' }],
+      true,
+    )
+    // Only the explicit cache card fires (last user row), not the 3-deep walk-back.
+    expect(cachePoints(out)).toEqual(['u4'])
   })
 })

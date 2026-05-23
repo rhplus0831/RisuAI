@@ -35,9 +35,15 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * `plain` / `jailbreak` / `cot` / `chatML` / `chat`, returning `null`
  * only for `memory` / `cache`.
  *
- * Deferred to later sub-slices: memory / cache cards (7-10d),
- * prompt-info text capture (7-10e), and render finalization — the final
- * trim, `depth_prompt` splice, automatic cache-point walk-back, and
+ * 7-10d adds `memory` / `cache` and the automatic cache-point walk-back.
+ * `renderContentCard` still returns `null` for `memory` / `cache`
+ * because they are not pure row-builders: `memory` needs the injected
+ * `memories` input and `cache` (plus the automatic walk-back) mutates
+ * the accumulated `formated` array. Both are handled directly in
+ * `renderByTemplate`.
+ *
+ * Deferred to later sub-slices: prompt-info text capture (7-10e), and
+ * render finalization — the final trim, `depth_prompt` splice, and
  * `runLuaEditTrigger('editRequest')` (7-10f). The assemble root that
  * fills these slots, builds the injection-lore-aware `positionParser`,
  * and applies `triggerResult.additonalSysPrompt` is Tier 3 (7-11a/b).
@@ -308,9 +314,10 @@ export interface ContentCardDeps {
 
 /**
  * Build the OpenAIChat rows for a single content card
- * (`renderFinalPrompt.ts:140-266`). Returns `null` for `chat` /
- * `memory` / `cache`, whose handlers land in 7-10c/d. A gated-off
- * `jailbreak` / `cot` card returns `[]`.
+ * (`renderFinalPrompt.ts:140-266`). Returns `null` only for `memory` /
+ * `cache`, which `renderByTemplate` handles directly (7-10d) because
+ * they mutate injected/accumulated state rather than producing rows. A
+ * gated-off `jailbreak` / `cot` card returns `[]`.
  *
  * Shared by `preflight.ts` (which tokenizes the rows) and
  * `renderByTemplate` (which coalesces them), so the per-card content
@@ -437,11 +444,11 @@ export function renderContentCard(
 
 /**
  * The template-walk render path (`renderFinalPrompt.ts` `if
- * (promptTemplate)` branch). Dispatches each card through
- * `renderContentCard` (content + `chat` cards, 7-10b/c) and
- * `coalesceRows`. `memory` / `cache` cards are skipped here (7-10d), and
- * the trailing finalization (trim, `depth_prompt` splice, cache
- * walk-back, Lua `editRequest`) is 7-10f.
+ * (promptTemplate)` branch). Dispatches content + `chat` cards through
+ * `renderContentCard` + `coalesceRows`, and handles `memory` / `cache`
+ * plus the automatic cache-point walk-back inline (7-10d). The trailing
+ * finalization (trim, `depth_prompt` splice, Lua `editRequest`) is
+ * 7-10f.
  */
 export function renderByTemplate(
   ctx: ExpandContext,
@@ -450,8 +457,10 @@ export function renderByTemplate(
   promptTemplate: PromptItem[],
   usingPromptTemplate: boolean,
   positionParser: (text: string, loc: string) => string = (text) => text,
+  memories: OpenAIChat[] = [],
 ): OpenAIChat[] {
-  const aiModel = ctx.database.aiModel ?? ''
+  const db = ctx.database
+  const aiModel = db.aiModel ?? ''
   const deps: ContentCardDeps = {
     ctx,
     currentChar,
@@ -459,13 +468,70 @@ export function renderByTemplate(
     usingPromptTemplate,
     positionParser,
   }
+
+  // SPA `hasCachePoint` (from `preflightTemplateTokens`) is true iff the
+  // template contains an explicit `cache` card; the whole-template scan
+  // here is identical and keeps the renderer self-contained. It
+  // suppresses the automatic cache-point walk-back below.
+  const hasCachePoint = promptTemplate.some((card) => card.type === 'cache')
+
   const formated: OpenAIChat[] = []
   for (const card of promptTemplate) {
+    // `memory` builds rows from the injected `memories` and `cache`
+    // mutates the accumulated `formated` array, so both live here rather
+    // than in the pure `renderContentCard` row-builder.
+    if (card.type === 'memory') {
+      // `renderFinalPrompt.ts:317-333`. Memory deliberately does **not**
+      // run `positionParser` (unlike persona / description); it only
+      // wraps each row via `innerFormat` + `{{slot}}`.
+      const rows = structuredClone(memories)
+      if (card.innerFormat && rows.length > 0) {
+        const wrap = expandVariables(card.innerFormat, {
+          ...ctx,
+          chara: currentChar,
+        }).text
+        for (const row of rows) {
+          row.content = wrap.replace('{{slot}}', row.content)
+        }
+      }
+      coalesceRows(formated, rows, aiModel)
+      continue
+    }
+
+    if (card.type === 'cache') {
+      // `renderFinalPrompt.ts:335-348`: walk `formated` from the end,
+      // marking up to `depth` rows whose role matches (`all` matches any).
+      let pointer = formated.length - 1
+      let depthRemaining = card.depth
+      while (pointer >= 0 && depthRemaining > 0) {
+        if (formated[pointer].role === card.role || card.role === 'all') {
+          formated[pointer].cachePoint = true
+          depthRemaining--
+        }
+        pointer--
+      }
+      continue
+    }
+
     const rows = renderContentCard(card, deps)
     if (rows) {
       coalesceRows(formated, rows, aiModel)
     }
-    // `null` → memory / cache, deferred to 7-10d.
+
+    // Automatic cache point at the tail of a `chat` card
+    // (`renderFinalPrompt.ts:301-314`): when enabled and no explicit
+    // `cache` card suppresses it, mark the last 3 `user` rows.
+    if (card.type === 'chat' && db.automaticCachePoint && !hasCachePoint) {
+      let pointer = formated.length - 1
+      let depthRemaining = 3
+      while (pointer >= 0 && depthRemaining > 0) {
+        if (formated[pointer].role === 'user') {
+          formated[pointer].cachePoint = true
+          depthRemaining--
+        }
+        pointer--
+      }
+    }
   }
   return formated
 }
