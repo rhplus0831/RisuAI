@@ -5,6 +5,7 @@ import type {
   customscript,
 } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
+import type { triggerscript } from '../../../../src/ts/process/triggers'
 
 /**
  * Phase 7-6d server-side helpers ported from
@@ -19,10 +20,11 @@ import type { RisuModule } from '../../../../src/ts/process/modules'
  *
  * Module fields not in scope here (their consumers ship in later
  * slices):
- *   - `module.trigger`  — needs Triggers (7-9)
  *   - `module.lorebook` — needs Lorebook (7-7)
- *   - `module.assets`   — needs the multimodal/asset_prompt path (7-5c)
  *   - `module.cjs`      — browser-only plugin execution
+ *
+ * `module.regex` (7-6d), `module.assets` (7-5c), and `module.trigger`
+ * (7-9a) are now resolved by the helpers below.
  */
 
 function dedupeById(modules: RisuModule[]): RisuModule[] {
@@ -80,6 +82,27 @@ export function getModuleAssets(modules: RisuModule[]): [string, string, string]
   for (const m of modules) {
     if (!m?.assets) continue
     for (const a of m.assets) out.push(a)
+  }
+  return out
+}
+
+/**
+ * Returns the active modules' trigger scripts with `lowLevelAccess`
+ * inherited from the owning module. Mirrors
+ * `src/ts/process/modules.ts:435-452` `getModuleTriggers()` for the
+ * trigger runner (7-9a).
+ *
+ * Divergence from the SPA: the SPA mutates each trigger object in
+ * place (`t.lowLevelAccess = module.lowLevelAccess`). The server runs
+ * the chain once per assembly across requests, so we return shallow
+ * clones (`{ ...t, lowLevelAccess }`) and never mutate the module's
+ * own trigger objects.
+ */
+export function getModuleTriggers(modules: RisuModule[]): triggerscript[] {
+  const out: triggerscript[] = []
+  for (const m of modules) {
+    if (!m?.trigger) continue
+    for (const t of m.trigger) out.push({ ...t, lowLevelAccess: m.lowLevelAccess })
   }
   return out
 }
