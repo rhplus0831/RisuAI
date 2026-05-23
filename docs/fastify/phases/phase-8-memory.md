@@ -88,34 +88,226 @@ events, legacy serialized memory data, and budget-sensitive prompt
 selection. Phase 8 should therefore land as small server-owned
 slices:
 
-- **8-1 — Memory schema + repositories.** Add the migrations,
-  repository methods, and JSON mappers for chunks, summaries,
-  embeddings, and jobs. Include import/backfill mappers for existing
-  `hypaV3Data`, but do not start workers yet.
-- **8-2 — Job queue + progress events.** Implement the SQLite-backed
-  queue, single in-process worker, transition/retry/cancel rules,
-  and `memory.job` SSE / `hypav3_progress` side-effect emission.
-  Keep job handlers as stubs.
-- **8-3 — Summarization planner.** Port settings normalization,
-  orphan cleanup, summary-window selection, "cannot summarize
-  further" guards, and chunk batching. Return planned jobs and token
-  deltas without calling providers.
-- **8-4 — Summary generation worker.** Add the provider-backed
-  summarization calls, prompt construction, rate limiting, failure
-  persistence, and consecutive-success write behavior. Local
-  MLC/ONNX summary runtimes stay out of scope.
-- **8-5 — Embedding + similarity worker.** Add embedding fetch,
-  vector storage, contextual Voyage `voyage-context-3` support if
-  still configured, ranked chunk-to-summary selection, and the
-  recent/similar/random/important budget allocation.
-- **8-6 — Prompt memory adapter.** Replace the Phase 7/browser memory
-  bridge with server reads from `memory_summaries`, assemble the
-  `<Past Events Summary>` prompt row, and queue follow-up work when
-  summaries or embeddings are missing. Do not run summarization in
-  the prompt request hot path.
-- **8-7 — Routes + browser adapter.** Wire the memory routes, browser
-  progress listener, list/cancel UI paths, and fixture coverage for
-  `hypav3-memory`.
+- **8-1 — Memory storage foundation.** Establish the SQL tables,
+  repository surface, and legacy import/backfill path before worker or
+  provider behavior lands. Close the sub-slices below in order.
+  - **8-1a — Memory schema migration.** Add the first domain SQL
+    migration path for `risu.db`, bump the schema version, and create
+    `memory_chunks`, `memory_summaries`, `memory_embeddings`, and
+    `memory_jobs` with indexes, check constraints, and foreign-key /
+    cascade behavior where SQLite can enforce it. Do not add import
+    backfill or worker behavior in this slice.
+  - **8-1b — Memory repositories + row mappers.** Add typed repository
+    methods and JSON / blob mappers for chunks, summaries, embeddings,
+    and jobs. Cover create / read / update primitives, vector
+    encode/decode, status filtering, and validation errors. Jobs remain
+    inert data rows; no polling, retries, SSE, or handler dispatch yet.
+  - **8-1c — Legacy `hypaV3Data` import/backfill.** Add the
+    memory-specific mapper for existing chat `hypaV3Data` during JSON
+    import and any one-time boot backfill. Preserve summary text,
+    `chatMemos`, important/category/tag metadata where possible, define
+    how legacy summaries map to chunk rows, and keep bootstrap stitching
+    compatible until Phase 9 removes whole-database reads. Do not create
+    embeddings or summary jobs during import.
+- **8-2 — Memory queue and progress.** Build queue mechanics, worker
+  lifecycle, progress events, and routes before provider-backed memory
+  handlers. Close the sub-slices below in order.
+  - **8-2a — Memory job queue state machine.** Add enqueue, list,
+    claim, complete, fail, and cancel primitives over `memory_jobs`.
+    Cover payload validation, status filtering, legal transitions, and
+    deterministic repository tests. No timers, worker loop, retries,
+    SSE, or handler dispatch yet.
+  - **8-2b — Worker lifecycle + stub dispatch.** Add the single
+    in-process worker, Fastify startup/shutdown integration, polling,
+    one-at-a-time job claiming, and kind-based handler dispatch. Keep
+    `chunk`, `embed`, and `summarize` handlers as no-op stubs that only
+    prove lifecycle behavior.
+  - **8-2c — Retry, backoff, cancel, and boot recovery.** Add attempt
+    tracking, exponential backoff scheduling, max-retry failure
+    persistence, cancellation for pending/running jobs, and startup
+    handling for abandoned `running` jobs. Keep provider calls and real
+    memory mutations out of scope.
+  - **8-2d — Memory progress event contract.** Decide and implement the
+    smallest server event surface for memory progress: `memory.job`
+    events for queue state and Phase-7-compatible `hypav3_progress`
+    side effects where chat generation needs them. Do not wire browser
+    UI listeners here; that remains 8-7.
+  - **8-2e — Memory job routes.** Wire the auth-gated backend job API:
+    `POST /api/v1/memory/jobs`, `GET /api/v1/memory/jobs`, and
+    `DELETE /api/v1/memory/jobs/:id`. Route tests cover enqueue, list,
+    cancel, validation failures, and unauthorized access. Browser list /
+    cancel UI paths remain 8-7.
+- **8-3 — Memory planning.** Port the Hypa V3 settings, cleanup,
+  planner, and chunk/job bridge as pure or deterministic services
+  before any provider calls. Close the sub-slices below in order.
+  - **8-3a — Hypa V3 settings + planner contract.** Port the Hypa V3
+    preset defaults, settings normalization, ratio validation, and the
+    canonical choice between the legacy standard and experimental
+    planner semantics. Define the pure planner input/output contract,
+    including token deltas, planned windows, errors, and skipped-message
+    reasons. Do not mutate memory rows or enqueue jobs yet.
+  - **8-3b — Orphan cleanup.** Implement the server-side cleanup pass
+    for summaries/chunks whose source chat memos no longer exist.
+    Respect `preserveOrphanedMemory`, keep cleanup idempotent, and cover
+    repository tests for deleted, preserved, and partially matching
+    memo sets. Do not perform summary-window planning in this slice.
+  - **8-3c — Pure summarization window planner.** Port start-index
+    selection, memory-token reservation, summary-window selection,
+    skip rules for examples/new/empty/user messages, target-token
+    stopping, and "cannot summarize further" guards. Return planned
+    windows and token deltas only; no DB writes, provider calls, or job
+    enqueueing.
+  - **8-3d — Chunk/job planning bridge.** Convert pure planner windows
+    into deterministic `memory_chunks` rows and planned `summarize` jobs.
+    Cover idempotency, payload shape, status transitions expected by
+    8-4, and batching behavior. Still do not call providers.
+- **8-4 — Summary generation.** Bring over prompt construction,
+  provider-backed summary calls, job handling, and legacy ordering/rate
+  limits after the planner bridge exists. Close the sub-slices below in
+  order.
+  - **8-4a — Summary prompt builder.** Port the pure summary prompt
+    construction path: message sanitization, default summarize /
+    re-summarize prompts, `{{slot}}` replacement, ChatML parsing
+    fallback, provider-neutral options, and `<think>` / `<Thoughts>`
+    output scrubbing. Cover with deterministic unit tests. Do not call
+    providers, mutate memory rows, update jobs, or apply rate limiting
+    in this slice.
+  - **8-4b — Provider-backed summary adapter.** Add the server-side
+    non-streaming summary provider adapter for the supported API-backed
+    summarization model path. Reuse the existing server provider
+    dispatch seams where possible, normalize empty / failed responses
+    into typed errors, and cover mocked provider success and failure
+    cases. Local MLC / ONNX / WebLLM summary runtimes stay out of scope.
+    Do not wire the memory worker or write summaries yet.
+  - **8-4c — Summarize job handler.** Wire the `summarize` memory job
+    handler against the planned chunks from 8-3d: load the chunk
+    payload, build the prompt, call the summary adapter, persist
+    `memory_summaries`, mark chunks summarized, and complete or fail the
+    job through the 8-2 queue primitives. Cover idempotent re-runs,
+    missing chunk / chat rows, and summary write validation. Keep
+    embedding, similarity selection, prompt assembly reads, and browser
+    progress UI out of scope.
+  - **8-4d — Summary rate limiting and ordered writes.** Apply
+    `summarizationRequestsPerMinute`, `summarizationMaxConcurrent`, and
+    fail-fast cancellation semantics to batches of `summarize` jobs.
+    Preserve the legacy consecutive-success write behavior: summaries
+    are committed in planned order only until the first failed / empty
+    result, with later successes left uncommitted for retry. Persist
+    failure details through the queue state machine and cover ordering,
+    cancellation, and retry handoff tests.
+- **8-5 — Embeddings and selection.** Build embedding persistence and
+  pure ranking/allocation helpers before exposing the prompt-facing
+  selection facade. Close the sub-slices below in order.
+  - **8-5a — Embedding provider contract.** Define the server-side
+    embedding model contract, supported model ids, credential lookup,
+    request/response normalization, vector dimension validation, and
+    typed error shape. Support API-backed OpenAI-compatible embeddings
+    and custom embedding endpoints; explicitly keep browser-local
+    transformers / WebGPU runtimes out of scope. Do not persist vectors,
+    dispatch jobs, rank summaries, or alter prompt assembly in this
+    slice.
+  - **8-5b — Embed job handler + vector persistence.** Wire the `embed`
+    memory job handler through the 8-2 queue primitives: load planned
+    chunks, fetch embeddings through the provider contract, store
+    `memory_embeddings`, mark work completed or failed, and make reruns
+    idempotent when vectors already exist. Apply
+    `embeddingRequestsPerMinute` and `embeddingMaxConcurrent`; keep
+    contextual Voyage grouping, similarity ranking, and prompt selection
+    out of scope.
+  - **8-5c — Voyage contextual embeddings.** Add the optional
+    `voyage-context-3` path if the setting is still present: grouped
+    document embeddings, query embeddings, batching limits, context hash
+    / cache-key behavior, Voyage API errors, and model-specific tests.
+    This slice must still write through the same `memory_embeddings`
+    repository surface from 8-5b. Do not add selection logic here.
+  - **8-5d — Pure similarity ranking.** Port the deterministic ranking
+    helpers for memory selection: summary text chunking by
+    `summaryChunkSeparator`, query construction from the recent chat
+    window, weighted multi-query scoring, dot-product similarity,
+    chunk-to-summary parent ranking, and empty / missing-vector handling.
+    This is a pure service over supplied summaries, chunks, and vectors;
+    no provider calls, DB writes, job enqueueing, or prompt assembly.
+  - **8-5e — Pure memory budget allocator.** Port the budget-sensitive
+    summary selection order: important summaries first, then recent,
+    similar, and random summaries with unused-token carryover and token
+    accounting against `availableMemoryTokens`. Inject deterministic
+    randomness for tests. This slice returns selected summary ids and
+    accounting details only; it does not fetch embeddings or read from
+    the prompt assembler.
+  - **8-5f — Memory selection service facade.** Combine repository reads,
+    the 8-5d ranker, and the 8-5e allocator into the server service that
+    8-6a / 8-6b can call. Return selected summaries plus diagnostics for
+    missing summaries / embeddings so 8-6d can enqueue follow-up jobs
+    without doing summarization or embedding work in the prompt request
+    hot path.
+- **8-6 — Prompt memory integration.** Add the adapter seam, assemble
+  canonical prompt rows, replace the Phase 7 browser bridge, and queue
+  missing-memory follow-up work. Close the sub-slices below in order.
+  - **8-6a — Prompt memory adapter contract.** Add the server-side
+    `prompt/memory.ts` adapter seam that Phase 7's memory bridge can
+    call. Define Hypa V3 enable/disable rules, input context,
+    selected-summary output, diagnostics, and the no-hot-path-work
+    guarantee. Cover disabled memory, empty selection, and facade errors
+    with deterministic tests. Do not read SQL directly, mutate prompt
+    slots, or enqueue jobs in this slice.
+  - **8-6b — Summary prompt-row assembly.** Use the 8-5f memory selection
+    facade through the adapter contract and convert selected summaries
+    into the canonical memory rows expected by the template renderer:
+    `memo: "hypaMemory"` rows containing the `<Past Events Summary>`
+    payload. Preserve prompt-template `memory` card behavior versus the
+    non-template previous-conversation wrapper. Do not enqueue follow-up
+    work or alter queue state yet.
+  - **8-6c — Assemble integration.** Replace the Phase 7/browser Hypa V3
+    bridge inside the root prompt assembler with the 8-6 adapter.
+    Preserve the existing memory-window accounting, `memoryCardUsed`
+    handling, `memories[]` split, non-memory removable marking,
+    `lastChat` promotion, and final-render inputs. The prompt request
+    still only reads ready summaries; missing memory is tolerated.
+  - **8-6d — Missing-memory follow-up enqueue.** Use the diagnostics from
+    8-5f / 8-6a to enqueue idempotent `chunk`, `summarize`, and `embed`
+    follow-up jobs when the prompt request discovers missing summaries or
+    embeddings. The enqueue path must be best-effort, deduplicated, and
+    non-blocking for prompt assembly. Do not run summarization or
+    embedding calls in the prompt request hot path.
+- **8-7 — Browser memory surfaces.** Expose read routes, the browser
+  adapter, progress UI wiring, job list/cancel controls, and fixture
+  parity after server prompt integration exists. Close the sub-slices
+  below in order.
+  - **8-7a — Chunk + summary read routes.** Wire the auth-gated backend
+    read API: `GET /api/v1/memory/chunks/:chatId` and
+    `GET /api/v1/memory/summaries/:chatId?model=...`. Route tests cover
+    auth, chat scoping, model filtering, empty chats, validation failures,
+    and the response shape expected by the browser adapter. Do not add
+    browser fetch code, UI wiring, job mutation routes, or fixture parity
+    in this slice.
+  - **8-7b — Browser memory API adapter.** Add the thin server-backed
+    browser client for memory chunks, summaries, job listing, and job
+    cancellation. Reuse the existing Fastify auth helper pattern,
+    normalize API failures into typed adapter errors, and cover the
+    adapter with fetch-mocked tests. Do not change the Hypa V3 modal UI,
+    progress listener, prompt assembly, or local-browser/Tauri behavior
+    here.
+  - **8-7c — Browser progress listener.** Wire Phase-7-compatible
+    `side_effect: { kind: "hypav3_progress" }` payloads and any queue
+    progress signal exposed by 8-2d into the existing
+    `hypaV3ProgressStore` shape (`open`, `miniMsg`, `msg`, `subMsg`).
+    Cover open/update/close behavior and malformed payload tolerance. Do
+    not add list/cancel controls or change the memory read APIs in this
+    slice.
+  - **8-7d — Memory job list/cancel UI path.** Add the minimal browser UI
+    path for viewing pending/running memory jobs and cancelling them
+    through the 8-7b adapter. Keep the legacy Hypa V3 summary editor's
+    category/tag mutation, delete/reset, bulk re-summary, translation,
+    and manual summary editing local until server write routes are
+    explicitly scoped. Cover loading, empty, error, and cancel states.
+  - **8-7e — `hypav3-memory` fixture parity.** Add server-backed fixture
+    coverage for `hypav3-memory` once the read routes, browser adapter,
+    progress listener, and Phase 8 prompt-memory integration are in
+    place. Pin the canonical `memo: "hypaMemory"` prompt row,
+    memory-card versus previous-conversation wrapping, tolerated
+    missing-memory diagnostics, and the observable progress/list-cancel
+    side effects needed by the browser. Do not broaden provider coverage
+    or reopen Phase 8 memory selection algorithms here.
 - **8-8 — Phase 8 closeout.** Run the full verification matrix,
   document what exact model/provider memory paths are supported, and
   flip handoff docs to Phase 9.
