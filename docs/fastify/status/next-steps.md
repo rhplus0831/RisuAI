@@ -6,7 +6,7 @@ Use this list to pick the next chunk of work. Phase 5 and the
 `/completion` part of Phase 6 are closed; their details live in
 [`sendchat-slicing.md`](sendchat-slicing.md) and the Phase 6
 [Closeout](../phases/phase-6-server-generation.md#closeout).
-Phase 7 is active with thirty-six slices landed through 7-11a:
+Phase 7 is active with thirty-seven slices landed through 7-11b:
 chat route scaffold, parser / static / plain leaves, history through
 multimodal inlays + `addedTokens` accumulator + depth-prompt
 preflight + start-trigger handoff, regex scripts, active-module
@@ -25,8 +25,9 @@ pre-push, `depth_prompt` splice, `editRequest` seam →
 `{ formated, promptInfo }` and is also consumed by `preflight`.
 `assemble` now holds the 7-11a state/context loader (`beginAssembly`:
 scope resolution via the `AssembleDeps` seam + empty slots +
-`ExpandContext` + normalized template / format order) but still throws
-past scope resolution. The tokens / budget chain (7-8a/b/c) is fully
+`ExpandContext` + normalized template / format order) and the 7-11b
+static/plain slot fill (`fillStaticSlots`), but still throws past scope
+resolution. The tokens / budget chain (7-8a/b/c) is fully
 landed, `preflight` covers every card type the SPA emits, and `history`
 (now async, closing 7-5d) and `lorebook` are feature-complete. Use
 [`HANDOVER.md`](../../../HANDOVER.md) for the pickup runbook and
@@ -34,31 +35,35 @@ landed, `preflight` covers every card type the SPA emits, and `history`
 
 ## Immediate
 
-1. **Continue Phase 7 with slice 7-11b — static/plain slot fill.**
-   7-11a (`e0902944`) landed `beginAssembly` (scope resolution + empty
-   slots + `ExpandContext` + normalized template / format order). 7-11b
-   fills the static/plain slots on that `AssemblyState` using the landed
-   leaves. SPA reference is `src/ts/process/index.svelte.ts:192-204`.
+1. **Continue Phase 7 with slice 7-11c — lorebook placement + token
+   preflight.** 7-11b (`d08ca586`) filled the static/plain slots. 7-11c
+   runs lorebook activation, distributes the entries into the slots,
+   builds the `positionParser` + `depthPrompts`, and runs the
+   template-wide token preflight. SPA reference is
+   `src/ts/process/index.svelte.ts:206-225` and `buildLorebookContext.ts`.
 
    Verified slice scope:
-   - plain sections (`:192-197`): when `!utilityBot && !promptTemplate`,
-     `buildPlainPromptSections(ctx, currentChar)` → `main` / `jailbreak`
-     / `globalNote`.
-   - `buildAuthorNote(ctx, currentChat)` → `authorNote`;
-     `buildCotInstruction(ctx, usingPromptTemplate)` → `postEverything`;
-     `buildDescription(ctx, currentChar)` → `description`;
-     `buildPersona(ctx)` → `personaPrompt`.
-   - the leaves already exist and are unit-tested; 7-11b only wires them
-     into the slots (e.g. a `fillStaticSlots(state)` step) with focused
-     `assemble` tests per path (utility-bot / template / null-template).
-   - `buildInlayViewInstruction` (`:204`) stays deferred (image-gen).
-   - No lorebook, history, preflight, memory bridge, render, budget, or
-     route dispatch.
-   - Follow-ups are 7-11c lorebook + preflight, 7-11d history + bias,
-     7-11e memory/post-history slot mutations, 7-11f final render +
-     budgeted prompt payload, 7-11g chat route wiring, 7-11h preview
-     shortcut, and 7-11i telemetry. Hypa V3 stays Phase 8; browser
-     plugin/Lua stays deferred.
+   - port `buildLorebookContext` (the server has `activateLorebook`,
+     `resolvePosition`, `getDepthPrompts` but not the slot-distribution
+     wrapper): push `pos === '' && inject === null` → `lorebook`;
+     `after_desc`/`personality`/`scenario` → `description` (push),
+     `before_desc` → `unshift`; `depth === 0` non-assistant then
+     assistant-prefill → `postEverything`. Return
+     `positionParser = (text, _loc) => resolvePosition(text, report)`
+     (injection lore is dead server-side) and
+     `depthPrompts = getDepthPrompts(report)`.
+   - token preflight (`:210-225`): `currentTokens = db.maxResponse + 50`,
+     then `preflightTemplateTokens({ …, report })`; add
+     `preflight.addedTokens`, capture `memoryCardUsed` / `hasCachePoint`.
+   - extend `AssemblyState` with `report` / `positionParser` /
+     `depthPrompts` / `currentTokens` / `memoryCardUsed` /
+     `hasCachePoint`.
+   - No history (the depth-prompt _splice_ into `chats` is 7-11e), memory
+     bridge, render, budget, or route dispatch.
+   - Follow-ups are 7-11d history + bias, 7-11e memory/post-history slot
+     mutations, 7-11f final render + budgeted prompt payload, 7-11g chat
+     route wiring, 7-11h preview shortcut, and 7-11i telemetry. Hypa V3
+     stays Phase 8; browser plugin/Lua stays deferred.
 
    The decision on the three deferred providers (Ooba
    OAI-compatible, NovelAI text, NovelList) remains **D — wait
@@ -67,7 +72,7 @@ landed, `preflight` covers every card type the SPA emits, and `history`
    [`design/novelai-novellist-stringlize.md`](../design/novelai-novellist-stringlize.md)
    explain why. Keep the 38 local sendChat snapshots, the
    12-fixture server-backed sweep, and the Fastify generation
-   tests green. Last recorded baselines are `pnpm api:test`: 839
+   tests green. Last recorded baselines are `pnpm api:test`: 846
    and `pnpm test`: 601 + 4 skipped.
 
 2. **Follow-up: hub-route session auth.** `ANY /api/v1/hub/*` is
@@ -151,6 +156,7 @@ landed, `preflight` covers every card type the SPA emits, and `history`
 | 7-10e   | `2871960f` | Prompt-info capture + content trim: renderByTemplate returns { formated, promptInfo }, collects info via a deps.promptInfo sink, trims both arrays.                                         |
 | 7-10f   | `49df7eff` | Top-level renderFinalPrompt: isContinue pre-push, path dispatch, depth_prompt splice, injectable editRequest seam → { formated, promptText }.                                               |
 | 7-11a   | `e0902944` | assemble.ts state/context loader: AssembleDeps seam, beginAssembly scope resolution + EntityNotFoundError, createEmptyUnformatedSlots, ExpandContext, normalizeTemplate + buildFormatOrder. |
+| 7-11b   | `d08ca586` | assemble.ts static/plain slot fill: fillStaticSlots wires plain sections (non-utility/non-template) + author note / cot / description / persona into state.unformated.                      |
 
 The detailed per-slice notes that used to live in this file were
 folded into the current status shards:

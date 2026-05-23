@@ -116,6 +116,7 @@ multi-subsystem work behind small labels.
 | 7-10e   | `2871960f` | Prompt-info capture + content trim: `renderByTemplate` returns `{ formated, promptInfo }`, collects info via a `deps.promptInfo` sink, trims both arrays.                                                   |
 | 7-10f   | `49df7eff` | Top-level `renderFinalPrompt`: `isContinue` pre-push, path dispatch, `depth_prompt` splice, injectable `editRequest` seam → `{ formated, promptText }`.                                                     |
 | 7-11a   | `e0902944` | `assemble.ts` state/context loader: `AssembleDeps` seam, `beginAssembly` scope resolution + `EntityNotFoundError`, `createEmptyUnformatedSlots`, `ExpandContext`, `normalizeTemplate` + `buildFormatOrder`. |
+| 7-11b   | `d08ca586` | `assemble.ts` static/plain slot fill: `fillStaticSlots` wires plain sections (non-utility/non-template) + author note / cot / description / persona into `state.unformated`.                                |
 
 ## Remaining Slices
 
@@ -277,10 +278,11 @@ Preset templates (`templates.ts`):
   the 7-9e request-state transform plugs in. **Closes the template
   renderer.**
 
-Current default pickup: **7-11b** (static/plain slot fill). History,
-lorebook, tokens/budget, triggers, the entire template renderer
-(7-10a–f), and the 7-11a state/context loader are landed; the assembler
-now starts filling slots.
+Current default pickup: **7-11c** (lorebook placement + token
+preflight). History, lorebook, tokens/budget, triggers, the entire
+template renderer (7-10a–f), the 7-11a state/context loader, and the
+7-11b static/plain slot fill are landed; the assembler now adds lorebook
+distribution + preflight.
 
 ### Tier 3 — Root + route wiring (all Tier 1 + 2 real)
 
@@ -296,12 +298,12 @@ surfaces and add focused `assemble` tests as each seam lands.
   `buildFormatOrder`, returning the `AssemblyState` later slices extend.
   `assemblePrompt(input, deps)` builds that state and still throws past
   scope resolution. Preset/loadout identity is recorded only.
-- **7-11b** — static/plain slot fill. Using 7-11a state, fill `main`,
-  `jailbreak`, `globalNote`, `authorNote`, `description`,
-  `personaPrompt`, and `postEverything` from `staticSections.ts` and
-  `plainSections.ts`. Keep `buildInlayViewInstruction` deferred until
-  the image-generation/newGenData path exists. No lorebook, history, or
-  preflight.
+- **7-11b** — static/plain slot fill. **Landed `d08ca586`.**
+  `fillStaticSlots(state)` fills `main` / `jailbreak` / `globalNote`
+  (via `buildPlainPromptSections`, only on the non-utility, non-template
+  path) plus `authorNote` / `postEverything` (cot) / `description` /
+  `personaPrompt` from `staticSections.ts`. `buildInlayViewInstruction`
+  stays deferred (image-gen). No lorebook, history, or preflight.
 - **7-11c** — lorebook placement + token preflight. Run
   `activateLorebook`, port the root-local `buildLorebookContext`
   placement (`lorebook` / `description` / `postEverything`,
@@ -361,8 +363,8 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Parallelism notes
 
-- The template renderer is closed (7-10a–f landed) and the 7-11a
-  state/context loader is in. 7-11b through 7-11f are now the
+- The template renderer is closed (7-10a–f landed) and the 7-11a/b
+  loader + static/plain fill are in. 7-11c through 7-11f are now the
   critical-path assembly slices; 7-11g/h/i can split once their direct
   deps are in.
 - 7-6e is optional polish. Skip in the default order; revisit
@@ -371,19 +373,18 @@ from Phase 5 shrink to thin SSE iterators.
 
 ## Sequential order (default)
 
-1. **7-11b** — static/plain slot fill
-2. **7-11c** — lorebook placement + token preflight
-3. **7-11d** — history window + bias rows
-4. **7-11e** — memory bridge + post-history slot mutations
-5. **7-11f** — final render + budgeted prompt payload
-6. **7-11g** — wire `/api/v1/generate/chat`
-7. **7-11h** — `/api/v1/generate/preview-prompt`
-8. **7-11i** — SSE telemetry (`info`, `message_patch`)
-9. **7-12a** — browser client adapter
-10. **7-12b** — dual-mode fixture sweep
-11. **7-12c** — side-effect dispatch
-12. **7-12d** — error / abort restoration
-13. **7-13** — phase 7 closeout
+1. **7-11c** — lorebook placement + token preflight
+2. **7-11d** — history window + bias rows
+3. **7-11e** — memory bridge + post-history slot mutations
+4. **7-11f** — final render + budgeted prompt payload
+5. **7-11g** — wire `/api/v1/generate/chat`
+6. **7-11h** — `/api/v1/generate/preview-prompt`
+7. **7-11i** — SSE telemetry (`info`, `message_patch`)
+8. **7-12a** — browser client adapter
+9. **7-12b** — dual-mode fixture sweep
+10. **7-12c** — side-effect dispatch
+11. **7-12d** — error / abort restoration
+12. **7-13** — phase 7 closeout
 
 Optional polish slot (skip in default order, revisit on demand):
 

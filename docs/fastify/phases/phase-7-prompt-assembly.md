@@ -2,7 +2,7 @@
 
 Date: 2026-05-24
 
-Status: in-progress (36 slices landed as of 2026-05-24).
+Status: in-progress (37 slices landed as of 2026-05-24).
 `variables.ts`, `staticSections.ts`, `plainSections.ts`,
 `history.ts` (through multimodal inlays + `{{asset_prompt::}}`,
 the `applyDepthPrompts` splicer, and the 7-5e `addedTokens`
@@ -40,10 +40,10 @@ the 7-9e request/display state adapters (mode allowlists +
 (the `isContinue` pre-push, path dispatch, `depth_prompt` splice, and
 the injectable `editRequest` seam → `{ formated, promptText }`). The
 template renderer is **complete**, and `assemble.ts` now holds the
-7-11a state/context loader (`beginAssembly`: scope resolution + empty
-slots + `ExpandContext` + normalized template / format order) though it
-still throws past scope resolution. The rest of Tier 3 (slot fill,
-render, route wiring) is the remaining Phase 7 work. See
+7-11a state/context loader (`beginAssembly`) and the 7-11b static/plain
+slot fill (`fillStaticSlots`), though `assemblePrompt` still throws past
+scope resolution. The rest of Tier 3 (lorebook + preflight, history,
+memory, render, route wiring) is the remaining Phase 7 work. See
 [Remaining roadmap](#remaining-roadmap) below for the tiered slice
 plan, and [`ROADMAP.md`](../../../ROADMAP.md) for the strategic
 ordering of the remaining slices.
@@ -225,6 +225,7 @@ thin adapters in server-backed mode. The coordinator posts to
 | 7-10e   | `2871960f` | Prompt-info capture + content trim: `renderByTemplate` returns `{ formated, promptInfo }`, collects info via a `deps.promptInfo` sink, trims both arrays.                                                   |
 | 7-10f   | `49df7eff` | Top-level `renderFinalPrompt`: `isContinue` pre-push, path dispatch, `depth_prompt` splice, injectable `editRequest` seam → `{ formated, promptText }`.                                                     |
 | 7-11a   | `e0902944` | `assemble.ts` state/context loader: `AssembleDeps` seam, `beginAssembly` scope resolution + `EntityNotFoundError`, `createEmptyUnformatedSlots`, `ExpandContext`, `normalizeTemplate` + `buildFormatOrder`. |
+| 7-11b   | `d08ca586` | `assemble.ts` static/plain slot fill: `fillStaticSlots` wires plain sections (non-utility/non-template) + author note / cot / description / persona into `state.unformated`.                                |
 
 ## Remaining roadmap
 
@@ -237,8 +238,9 @@ is the planning resolution, not a contract.
 ### Tier 1 — Finish partially landed prompt helpers
 
 Order chosen to minimize helper coupling. `assemble.ts` now holds the
-7-11a state/context loader (`beginAssembly`) but still throws past scope
-resolution; `templates.ts` is the **complete** template renderer
+7-11a state/context loader (`beginAssembly`) + the 7-11b static/plain
+slot fill (`fillStaticSlots`) but still throws past scope resolution;
+`templates.ts` is the **complete** template renderer
 (7-10a–f): every card type renders, `renderByTemplate` returns
 `{ formated, promptInfo }`, and the top-level `renderFinalPrompt` adds
 the `isContinue` pre-push, `depth_prompt` splice, and `editRequest`
@@ -618,12 +620,13 @@ collection. Keep the root work split by integration seam:
   `buildFormatOrder`, returning the `AssemblyState` later slices extend.
   Preset/loadout identity is recorded only. `assemblePrompt(input,
 deps)` builds that state and still throws past scope resolution.
-- **7-11b** — Static/plain slot fill. Using 7-11a state, fill `main`,
-  `jailbreak`, `globalNote`, `authorNote`, `description`,
-  `personaPrompt`, and `postEverything` from `staticSections.ts` and
-  `plainSections.ts`. Keep `buildInlayViewInstruction` deferred until
-  the image-generation/newGenData path exists. No lorebook, history, or
-  preflight.
+- **7-11b** — Static/plain slot fill. **Landed `d08ca586`** (7 added
+  tests). `fillStaticSlots(state)` fills `main` / `jailbreak` /
+  `globalNote` via `buildPlainPromptSections` (only on the non-utility,
+  non-template path) plus `authorNote` / `postEverything` (cot) /
+  `description` / `personaPrompt` from `staticSections.ts`.
+  `buildInlayViewInstruction` stays deferred (image-gen/`newGenData`).
+  No lorebook, history, or preflight.
 - **7-11c** — Lorebook placement + token preflight. Run
   `activateLorebook`, port the root-local `buildLorebookContext`
   placement (`lorebook` / `description` / `postEverything`,
