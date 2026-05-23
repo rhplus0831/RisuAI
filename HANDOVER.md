@@ -208,8 +208,14 @@ and [ROADMAP.md](ROADMAP.md)):
 - **7-12d-ii** — `message_patch` SSE event + SPA applier; send path
   still runs **local** dispatch (prompt comes from server, provider
   call stays browser-side). Re-runs the 12 sendChat fixtures. Medium.
-- **7-12d-iii** — server-side provider dispatch + streaming + chunk
-  `message_patch`. Largest sub-slice (≥600 LOC); don't combine.
+- **7-12d-iii** — server-side provider dispatch + streaming. **Split
+  2026-05-24 by responsibility (option c)**: Phase 6 already exports
+  the 15 provider streaming wrappers, so iii-a is the provider-agnostic
+  chunk transport (server-only tests, no SPA observability yet) and
+  iii-b is the orchestration + send-path wiring (`generationId`,
+  `addRerolls` accumulator, `done` enrichment,
+  `useServerPromptAssembly` gating, end-to-end fixture sweep). Strictly
+  sequential: iii-a then iii-b.
 - **7-12d-iv** — `tts` `side_effect` + `error.restoration` rollback.
   Image-gen / Hypa V3 / NovelAI string-flattening / plugin hooks stay
   deferred. Small.

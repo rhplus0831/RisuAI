@@ -441,14 +441,31 @@ from Phase 5 shrink to thin SSE iterators.
     path still runs **local** dispatch — the prompt comes from server,
     the provider call stays browser-side. Run the 12 server-backed
     fixture suite.
-  - **7-12d-iii** — server-side provider dispatch + streaming. Add the
-    streaming provider adapter to the `/chat` route (no Phase 6
-    `/api/v1/generate/completion` chain — `dispatchRequest` itself is
-    SPA-tied; the route inlines its own dispatch). Emit `token` events
-    on chunks, emit `message_patch` for the assistant placeholder + each
-    chunk-driven row update, gate the send-path local `dispatchRequest`
-    on `useServerPromptAssembly`. This is the largest sub-slice
-    (≥600 LOC) and should not be combined with anything else.
+  - **7-12d-iii** — server-side provider dispatch + streaming. **Split
+    2026-05-24 by responsibility (option c)** after the audit found
+    Phase 6 already exports 15 streaming provider wrappers
+    (`runOpenAIStream` and friends in
+    `server/fastify/src/routes/generation.ts:34-70`), so the work is
+    bridging + orchestration, not per-provider porting. Sequencing
+    within iii is strict: iii-a must land before iii-b can wire the SPA
+    send path. Land:
+    - **7-12d-iii-a** — transport bridge. Provider-agnostic. Pick the
+      provider via the existing `getServerCompletionProvider` helper
+      (`src/ts/process/request/serverCompletion.ts:528`), call the
+      matching Phase 6 streaming wrapper, read its chunk stream, emit
+      `token` events per chunk, emit `message_patch` for the assistant
+      placeholder row + each chunk-driven row update, parse the finish
+      reason, forward abort signals. No `addRerolls`, no `done`-event
+      enrichment, no SPA gating. Server-only tests; the SPA cannot yet
+      observe the chunks. Covers all 15 Phase 6 providers in one slice
+      (they share the same post-Phase-6 chunk shape).
+    - **7-12d-iii-b** — orchestration + send-path wiring. Threads the
+      `generationId`, accumulates the last-chunk dict for `addRerolls`,
+      enriches the `done` event with the final result + `generationInfo`
+      shape `orchestrateResponse` expects, then gates the SPA
+      `dispatchRequest` call on `useServerPromptAssembly` so the send
+      path actually routes through `/chat`. Re-runs the 12 server-backed
+      fixtures end-to-end.
   - **7-12d-iv** — `side_effect` + error/abort restoration. Wire the one
     Phase-7-real `side_effect` producer (`tts` after dispatch completes,
     if `db.ttsAutoSpeech`); SPA dispatches via the existing `sayTTS`
@@ -489,12 +506,12 @@ from Phase 5 shrink to thin SSE iterators.
   (7-12a) + the `prompt`-event `formated`/`biases` extension (7-12b) +
   the preview-path wiring (7-12c) are landed; next is the dispatch
   cluster 7-12d-i → 7-12d-iv.
-- The four 7-12d sub-slices are **strictly sequential**: i defines what
-  the server mutates, ii serializes it as `message_patch`, iii moves
-  dispatch server-side and starts producing chunk-driven patches, iv
-  layers `side_effect` (only `tts` has a Phase 7 producer) and
-  restoration on top. Running them in parallel would duplicate the
-  payload-shape decision in i across multiple PRs.
+- The 7-12d sub-slices are **strictly sequential**: i defines what
+  the server mutates, ii serializes it as `message_patch`, iii-a moves
+  the chunk transport server-side, iii-b layers send-path orchestration
+  - SPA gating, iv layers `side_effect` (only `tts` has a Phase 7
+    producer) and restoration on top. Running them in parallel would
+    duplicate the payload-shape decision in i across multiple PRs.
 - 7-6e is optional polish. Skip in the default order; revisit
   only if profiling demands the script cache or to port
   `runTrigger('display', …)` (unblocked by 7-9e).
@@ -505,10 +522,13 @@ from Phase 5 shrink to thin SSE iterators.
    persistence (read-only on the SPA side)
 2. **7-12d-ii** — `message_patch` SSE event + SPA applier; send path
    still runs local dispatch
-3. **7-12d-iii** — server-side provider dispatch + streaming + chunk
-   `message_patch`
-4. **7-12d-iv** — `tts` `side_effect` + `error.restoration` rollback
-5. **7-13** — phase 7 closeout
+3. **7-12d-iii-a** — server-side chunk transport (provider-agnostic,
+   server-only tests; SPA cannot yet observe chunks)
+4. **7-12d-iii-b** — orchestration + SPA send-path wiring
+   (`generationId`, `addRerolls` accumulator, `done` enrichment,
+   `useServerPromptAssembly` gating)
+5. **7-12d-iv** — `tts` `side_effect` + `error.restoration` rollback
+6. **7-13** — phase 7 closeout
 
 (Parallel, non-blocking: the deferred cross-assembler dual-mode parity
 test — needs a normalized-DB artifact bridge; see Tier 4.)

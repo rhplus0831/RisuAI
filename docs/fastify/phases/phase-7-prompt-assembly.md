@@ -809,15 +809,40 @@ from Phase 5 shrink to thin SSE iterators.
     this slice — the prompt comes from the server, the provider call
     stays browser-side. Re-runs the 12 server-backed sendChat fixtures
     via `/chat`. Medium (~400–600 LOC).
-  - **7-12d-iii** — server-side provider dispatch + streaming. Add the
-    streaming provider adapter inline in the `/chat` route (Phase 6
-    `/api/v1/generate/completion` is not chainable — `dispatchRequest`
-    is SPA-tied, so the route must own its own dispatch loop). Emit
-    `token` events on chunks, emit `message_patch` for the assistant
-    placeholder row + each chunk-driven update, gate the send-path
-    local `dispatchRequest` call on `useServerPromptAssembly`. **Do not
-    combine with anything else** — this is the largest sub-slice
-    (≥600 LOC) and has its own per-provider regression surface.
+  - **7-12d-iii** — server-side provider dispatch + streaming. **Split
+    2026-05-24 by responsibility (option c).** The audit's original
+    "≥600 LOC, don't combine" framing assumed the route had to inline a
+    per-provider dispatch loop from scratch; the re-check found Phase 6
+    already exports 15 provider streaming wrappers
+    (`runOpenAIStream` and friends, imported at
+    `server/fastify/src/routes/generation.ts:34-70`) and the SPA's
+    `getServerCompletionProvider`
+    (`src/ts/process/request/serverCompletion.ts:528`) already maps
+    `LLMFormat` → provider name. The real Phase-7-unique surface is
+    the chunk→SSE bridge plus the orchestration around it, which split
+    cleanly by responsibility:
+    - **7-12d-iii-a** — **transport bridge** (provider-agnostic). Look
+      the provider up via `getServerCompletionProvider`, call the
+      matching Phase 6 streaming wrapper, iterate its chunk stream,
+      emit `token` events per chunk, emit `message_patch` for the
+      assistant placeholder row + each chunk-driven row update, parse
+      the finish reason, forward abort signals. All 15 Phase 6
+      providers ride the same chunk shape after Phase 6's
+      normalization, so one slice covers all of them. **Server-only
+      tests** — the SPA still calls local `dispatchRequest`, so the
+      chunks land but no client observes them. No `addRerolls`, no
+      `done`-event enrichment, no SPA gating.
+    - **7-12d-iii-b** — **orchestration + SPA send-path wiring.** Add
+      the `generationId` (`v4()`) threading, accumulate the last-chunk
+      dict so the SPA can call `addRerolls` post-stream, enrich the
+      `done` event with the final `result` + the `generationInfo`
+      shape `orchestrateResponse` expects (model, stage timings,
+      `inputTokens`/`outputTokens`, `maxContext`), then flip
+      `dispatchRequest` (`src/ts/process/dispatch/dispatchRequest.ts`)
+      to short-circuit on `useServerPromptAssembly && isFastifyServer`
+      and route through `/chat`. Re-runs the 12 server-backed sendChat
+      fixture suite end-to-end. **Strictly sequential after iii-a** —
+      iii-b has nothing to wire if the chunks aren't emitting.
   - **7-12d-iv** — `side_effect` event + `error.restoration` rollback.
     Wire the one Phase-7-real `side_effect` producer: `tts` after
     dispatch completes if `db.ttsAutoSpeech`. The SPA dispatches via
@@ -829,10 +854,12 @@ from Phase 5 shrink to thin SSE iterators.
     failure; SPA applies it on `error`. Small (~200–300 LOC).
 
   **Sequencing is strict.** Parallelizing i and ii duplicates the
-  payload-shape decision; running iii before ii means dispatch has no
-  patch channel; running iv before iii means `restoration` has nothing
-  to roll back. **Image generation, NovelAI/NovelList string-flattening,
-  and plugin/Lua hooks stay deferred** past Phase 7 regardless.
+  payload-shape decision; running iii-a before ii means dispatch has no
+  patch channel; running iii-b before iii-a means orchestration has no
+  chunks to orchestrate; running iv before iii-b means `restoration`
+  has nothing to roll back. **Image generation, NovelAI/NovelList
+  string-flattening, and plugin/Lua hooks stay deferred** past Phase 7
+  regardless.
 
 - **Follow-up (parallel, not blocking) — cross-assembler dual-mode
   parity.** Cross-check that the server `assemblePrompt` and the local

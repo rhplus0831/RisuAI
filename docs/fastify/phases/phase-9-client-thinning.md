@@ -147,14 +147,27 @@ Use this slice order when Phase 9 starts:
     replacement rules, reorder semantics, `baseRevision` conflict
     behavior, and SSE event names before writing handlers. Prefer a
     small number of typed resource commands over one field-level patch
-    endpoint per database property. **Also lock the plugin-write
-    strategy** (gates 9-4f): given that `setDatabase` / `setDatabaseLite`
-    today write at field level through a 26-entry whitelist
-    (`src/ts/plugins/plugins.svelte.ts:37-61, 763-793`), pick one of
-    (a) plugins call typed commands directly, (b) a translation bridge
-    converts plugin writes into command calls and rejects unmappable
-    fields, or (c) only `pluginCustomStorage` survives and the 25 other
-    whitelisted keys become hard rejections. Record the choice in 9-0d.
+    endpoint per database property. **Plugin-write strategy locked
+    2026-05-24 (option b — translation bridge):** keep `setDatabase` /
+    `setDatabaseLite` as the plugin-facing API; behind the call, a
+    bridge parses the incoming partial-`Database` object key by key and
+    dispatches typed commands per resource family. Unknown keys
+    continue to route to `pluginCustomStorage` (current SPA fallback at
+    `src/ts/plugins/plugins.svelte.ts:763-793`). 9-0c's responsibility
+    is the _mapping table_: for each of the 24 entries in
+    `allowedDbKeys` (`plugins.svelte.ts:501-526`) — `characters`,
+    `modules`, `enabledModules`, `moduleIntergration`, `pluginV2`,
+    `personas`, `plugins`, `pluginCustomStorage`, `temperature`,
+    `askRemoval`, `maxContext`, `maxResponse`, `frequencyPenalty`,
+    `PresensePenalty`, `theme`, `textTheme`, `lineHeight`,
+    `seperateModelsForAxModels`, `seperateModels`, `customCSS`,
+    `guiHTML`, `colorSchemeName`, `selectedPersona`, `characterOrder` —
+    name the typed command (or composite "apply-all" command) the
+    bridge will call and the revision/conflict behavior for plugin
+    writes that span multiple commands. Record the table in 9-0d. (The
+    earlier sketch listed the whitelist as 26 entries; actual count is
+    24.) Implementation lands in **9-4f-i** (bridge + composite command)
+    and **9-4f-ii** (wiring + tests).
   - **9-0d — Readiness checklist.** Publish the final command map and
     a coverage checklist that shows each mutation family is assigned to
     9-2a through 9-2f, 9-3a through 9-3f, 9-4a through 9-4g,
@@ -173,12 +186,55 @@ Use this slice order when Phase 9 starts:
   templates, personas, translator presets, and loadouts each have
   distinct rollback risks. Close the sub-slices below in order.
   - **9-2a — Scalar settings groups.** Move per-group scalar settings
-    first with typed patch commands and client helpers. Cover provider
-    selection, sampler/request options, prompt-related scalar fields,
-    fallback model settings, UI/display settings that belong in the
-    main database, and translator language mode. Do not move provider
-    key masking, localForage gating, module/plugin state, asset-heavy
-    imports, or read-only `DBState.db` enforcement here.
+    first with typed patch commands and client helpers. Do not move
+    module/plugin state, asset-heavy imports, or read-only `DBState.db`
+    enforcement here. **Split 2026-05-24 by rollback risk (option c)**
+    after the audit found `database.svelte.ts` carries ~130 scalar
+    fields with substantially different invariants (samplers have
+    bounds, API keys are secrets, prompt scalars affect prompt
+    assembly, UI fields are cosmetic). Bundling them in one slice
+    repeats the Phase 7 "single slice hides multiple subsystems"
+    pattern. Land:
+    - **9-2a-i — Secrets and providers.** API keys
+      (`openAIKey`, `claudeAPIKey`, `googleAccessToken`, `mistralKey`,
+      `cohereAPIKey`, `proxyKey`, `voyageApiKey`, `elevenLabKey`,
+      `NAIApiKey`, custom-provider keys, reverse-proxy keys), provider
+      selection (`apiType`, `aiModel`, `subModel`,
+      `seperateModelsForAxModels`, `seperateModels`, `customAPIFormat`),
+      and reverse-proxy configuration (`forceReplaceUrl`,
+      `customProxyRequestModel`, `customModels`). Ships with **masking
+      design wired from day one** — `/api/v1/bootstrap` returns
+      `***` placeholders for any key field, command writes accept the
+      placeholder as "leave unchanged", and the masking gate
+      (`RISU_MASK_SERVER_KEYS`, 9-6f) is honored if already on. This
+      slice is the masking proving ground; 9-6f only has to flip the
+      flag once 9-2a-i + every other provider path is real.
+    - **9-2a-ii — Runtime tunables.** Sampler parameters
+      (`temperature`, `frequencyPenalty`, `PresensePenalty`, `top_p`,
+      `min_p`, `top_k`, `repetition_penalty`), context/response budgets
+      (`maxContext`, `maxResponse`, `askRemoval`), prompt-behavior
+      scalars (`mainPrompt`, `jailbreak`, `additionalPrompt`,
+      `sendChatAsSystem`, `sendName`, `trimStartNewChat`,
+      `maxThoughtTagDepth`, `customChainOfThought`), and runtime
+      toggles (`useStreaming`, `genTime`, `extractJson`,
+      `rememberToolUsage`, `automaticCachePoint`, `chainOfThought`,
+      `jailbreakToggle`). These share validation patterns (numeric
+      bounds, boolean toggles, prompt-string sanitization) and all
+      affect generation behavior, so they ship and roll back together.
+      **Boundary note:** the prompt-behavior scalars overlap 9-2c
+      (prompt templates/items); 9-0c's mapping table must decide which
+      slice owns each `promptSettings` field. Default here: scalars
+      that affect prompt assembly globally land in 9-2a-ii; per-item
+      / per-template edits land in 9-2c.
+    - **9-2a-iii — Cosmetics.** UI / display
+      (`theme`, `textTheme`, `lineHeight`, `zoomsize`, `customCSS`,
+      `guiHTML`, `colorSchemeName`), TTS scalars
+      (`ttsAutoSpeech`, `ttsProvider`, `ttsMode`), translator scalars
+      not owned by 9-2e (`translator`, `translatorMaxResponse`,
+      `translatorPrompt`), and image-generation scalars
+      (`sdProvider`, `sdSteps`, `sdCFG`, `sdNegative`,
+      `outputImageModal`). Lowest rollback risk; lands last in the
+      9-2a chain.
   - **9-2b — Bot presets.** Move bot preset create/update/delete/
     reorder/select/copy/import flows, preserving the current
     `saveCurrentPreset`, `changeToPreset`, and `setPreset` behavior
@@ -330,22 +386,46 @@ Use this slice order when Phase 9 starts:
   - **9-4f — Plugin-storage kv and plugin database adapters.** Move
     `pluginCustomStorage`, plugin `pluginStorage`, safe DB proxy
     custom-property writes, and plugin-exposed `setDatabase`/
-    `setDatabaseLite` writes to commands or explicit server-backed
-    unsupported/no-op behavior. **Architecture decision lives in 9-0c,
-    not here.** Scope re-check on 2026-05-24 against
-    `src/ts/plugins/plugins.svelte.ts:37-61, 763-793` and
+    `setDatabaseLite` writes to commands. Scope re-check on 2026-05-24
+    against `src/ts/plugins/plugins.svelte.ts:501-526, 763-793` and
     `src/ts/plugins/apiV3/risuai.d.ts:1406, 1412` found that
-    `setDatabase`/`setDatabaseLite` filter writes through a 26-entry
+    `setDatabase`/`setDatabaseLite` filter writes through a 24-entry
     `allowedDbKeys` whitelist (`characters`, `modules`, `personas`,
-    `plugins`, `pluginCustomStorage`, etc.) and silently route unknown
-    keys to `pluginCustomStorage`. This is **field-level** mutation
-    that escapes any resource-level command map. 9-0c must lock one of:
-    (a) plugins call typed commands directly; (b) a translation bridge
-    converts plugin writes into command calls and rejects unmappable
-    fields; (c) only `pluginCustomStorage` survives and the 25 other
-    whitelisted keys become hard rejections. 9-4f then implements the
-    locked choice. **Do not start 9-4f until the 9-0c readiness
-    checklist (9-0d) lists this decision as resolved.**
+    `plugins`, `pluginCustomStorage`, plus 20 scalar settings keys) and
+    silently route unknown keys to `pluginCustomStorage`. This is
+    **field-level** mutation that escapes any resource-level command
+    map. **Strategy locked 2026-05-24 in 9-0c (option b — translation
+    bridge);** 9-4f implements it, split into two sub-slices because the
+    bridge + composite command and the wiring + plugin-side tests have
+    independent rollback risks. **Do not start 9-4f-i until the 9-0c
+    readiness checklist (9-0d) lists the per-key mapping table as
+    resolved.**
+    - **9-4f-i — Translation bridge + composite "apply-all" command.**
+      Build the server-side bridge that consumes a partial-`Database`
+      object (the shape `setDatabase` accepts today), looks each
+      top-level key up in the 9-0c mapping table, and dispatches the
+      named typed command. Add the composite command endpoint that
+      accepts batched mixed-resource writes in a single transaction
+      with one `baseRevision` per touched resource and one merged 409
+      response on conflict, so a plugin write that touches
+      `characters` + `temperature` + `selectedPersona` lands or rolls
+      back atomically. Unknown keys keep routing to
+      `pluginCustomStorage` via the existing kv command from the same
+      slice. Cover bridge mapping, composite-command transaction,
+      partial 409, and unknown-key fallback with unit + route tests. No
+      plugin-side wiring yet.
+    - **9-4f-ii — Plugin API wiring + plugin-side tests.** Replace the
+      SPA `setDatabase` / `setDatabaseLite` implementations at
+      `plugins.svelte.ts:763-793` with calls into the 9-4f-i composite
+      command (in server-backed web mode) while preserving the Tauri /
+      local path. Update the safe DB proxy custom-property writes and
+      `pluginStorage` to use the new commands. Run the plugin API
+      fixture suite end-to-end against a server-backed harness to prove
+      existing plugins still round-trip writes that touch the 24
+      whitelisted keys and `pluginCustomStorage`. Document any
+      whitelisted key whose typed command shape is not yet a clean fit
+      (likely the legacy `pluginV2` / `moduleIntergration` keys) so
+      9-4g's compatibility sweep catches them.
   - **9-4g — Compatibility sweep and focused tests.** Verify the 9-4
     families have no remaining direct `DBState.db` writes in
     server-backed web paths, excluding test-only, Tauri/local-only,
@@ -364,17 +444,41 @@ Use this slice order when Phase 9 starts:
     per-request SSE pattern Phase 7's `/chat` route uses. Scope
     re-check on 2026-05-24 against
     `server/fastify/src/routes/generationChat.ts:169-174` and the
-    `prompt/sseEvents.ts` writer found no existing connection
+    `prompt/sseEvents.ts` writer (107 LOC, type taxonomy + a single
+    `writePromptChatEvent` helper) found no existing connection
     registry, broadcaster, or event bus — `/chat` writes SSE headers
-    once per request and emits inline. 9-5a has to build the
-    persistent-connection infrastructure from scratch: connection
-    registry tracking active subscribers, an event broadcaster that
-    fans command-emission events out to every connected client,
-    heartbeat/keepalive (proxies and browsers drop idle SSE
-    connections), connection lifecycle cleanup on drop, and
-    auth/session handling. Tests prove an existing successful command
-    emits an observable event to a connected client. **Do not wire the
-    browser projection client in this slice.**
+    once per request and emits inline. **Split 2026-05-24 into two
+    sub-slices (option b)** because the persistent transport surface
+    has independent correctness concerns (heartbeat tuning,
+    backpressure, reconnection semantics) from the command-event
+    fan-out, and the transport can land in parallel with 9-2/3/4 while
+    the broadcaster waits on those slices to lock the per-resource
+    event shapes. **Do not wire the browser projection client in either
+    sub-slice** — that is 9-5b/c.
+    - **9-5a-i — Persistent SSE transport.** Build the route +
+      infrastructure: connection registry keyed by auth/session,
+      heartbeat/keepalive timer (default 25s — under typical proxy
+      idle limits), lifecycle cleanup on socket close/error,
+      backpressure handling (slow-client policy: bounded queue per
+      subscriber, drop-oldest on overflow with a logged warning),
+      auth/session ties (single-user today, contract accommodates
+      future multi-user). Expose a no-op broadcaster API
+      (`events.broadcast(event)`) and emit a single `hello` event on
+      connect so the route is testable end-to-end. Tests prove
+      connect, heartbeat delivery, clean drop, slow-client
+      drop-oldest, and reconnection after server restart. **No
+      command integrations yet.**
+    - **9-5a-ii — Command event fan-out + per-resource catalog.**
+      Lock the per-resource event shape catalog (`character.created`,
+      `character.updated`, `character.deleted`, `chat.created`, …),
+      wire the 9-5a-i broadcaster into the command-success path in
+      9-1's harness command, and emit the matching event from every
+      command that has landed by then. Tests prove a successful
+      command emits the expected event to every connected subscriber
+      with the right payload shape. **Blocked on 9-1 closing** so
+      the harness command exists; can run in parallel with 9-2/3/4
+      slice work after that (each new command opens with "and emit
+      the corresponding event" as part of its scope).
   - **9-5b — Bootstrap projection loader.** Add
     `src/ts/server/bootstrap.ts` to load `/api/v1/bootstrap` on app
     start and switch the web startup hydration path through that

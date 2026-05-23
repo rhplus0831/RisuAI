@@ -172,6 +172,15 @@ slices:
     Respect `preserveOrphanedMemory`, keep cleanup idempotent, and cover
     repository tests for deleted, preserved, and partially matching
     memo sets. Do not perform summary-window planning in this slice.
+    **Cascade behavior locked 2026-05-24 (option b):** when a summary is
+    orphaned, delete its `memory_summaries` row, then its parent
+    `memory_chunks` row, then cascade-delete the matching
+    `memory_embeddings` rows (by `chunk_id` FK). Re-summarizing the same
+    range later re-creates chunk + re-embeds — accepted trade-off in
+    exchange for a clean data model. SPA `cleanOrphanedSummary`
+    (`src/ts/process/memory/hypav3.ts:1519-1534`) only filters
+    in-memory summaries because it has no separate chunk store; the
+    server cascade is the schema-aware equivalent.
   - **8-3c — Pure summarization window planner.** Port start-index
     selection, memory-token reservation, summary-window selection,
     skip rules for examples/new/empty/user messages, target-token
@@ -195,18 +204,19 @@ slices:
     in this slice.
   - **8-4b — Provider-backed summary adapter.** Add the server-side
     non-streaming summary provider adapter for the supported API-backed
-    summarization model path. **Re-verified 2026-05-24:** the Phase 6
-    `server/fastify/src/routes/generation.ts` already provides a
-    `handleOpenAICompatibleBuffered` non-streaming path (~lines
-    1215-1251) for OpenAI-compatible providers, but the SPA's
-    `requestChatData` (`src/ts/process/request/request.ts`) — the SPA
-    summarize call site (`hypav3.ts:1590-1598`) — is **not** ported to
-    the server. So this slice has to build a summary-specific
-    server-side adapter that wraps the existing buffered generation
-    path (and any per-provider buffered seams Phase 6 already has) into
-    a single non-streaming summary call returning `{ text, tokens } |
-{ error }`. Normalize empty / failed responses into typed errors,
-    and cover mocked provider success and failure cases. **Local MLC /
+    summarization model path. **Approach locked 2026-05-24 (option a):**
+    extract a `summarizeOnce(messages, opts)` helper that wraps
+    `runOpenAI` (imported at `server/fastify/src/routes/generation.ts:34`)
+    directly. **Do not** call or refactor `handleOpenAICompatibleBuffered`
+    (`generation.ts:1215-1251`) — it is route-handler-shaped (takes
+    `req`/`reply` and writes to the reply) and cannot be invoked from
+    inside a job handler. `runOpenAI` already returns
+    `{ type, result, model, aborted? }`; the helper normalizes that into
+    `{ text, tokens } | { error }`, swallows the aborted case as an
+    error, and resolves the provider variant the same way the route
+    does. The SPA's `requestChatData` (`src/ts/process/request/request.ts`,
+    SPA summarize call site `hypav3.ts:1590-1598`) is **not** ported —
+    it is provider-routing logic, not a reusable adapter. **Local MLC /
     ONNX / WebLLM summary runtimes stay out of scope** (matches the
     "no local runtimes server-side" boundary). Do not wire the memory
     worker or write summaries yet.
@@ -236,7 +246,20 @@ slices:
     and custom embedding endpoints; explicitly keep browser-local
     transformers / WebGPU runtimes out of scope. Do not persist vectors,
     dispatch jobs, rank summaries, or alter prompt assembly in this
-    slice.
+    slice. **Row shape locked 2026-05-24 (option a + grouping
+    metadata):** `memory_embeddings` stores one row per chunk-level
+    vector (flat) with two extra columns `group_id TEXT NULL` and
+    `group_index INTEGER NULL`. Standard providers (OpenAI / Cohere /
+    custom) write rows with `group_id = NULL` and one row per chunk.
+    Voyage `voyage-context-3` (`src/ts/process/memory/contextualEmbedding.ts`)
+    contextualizes chunks against their group siblings but still returns
+    one vector per chunk; the 8-5c adapter writes one flat row per
+    chunk with `group_id = <document-group-uuid>` and `group_index =
+<0-based position within group>` so the original grouping can be
+    reconstructed for query-time context. Selection in 8-5d treats rows
+    with `group_id` and rows without identically (dot-product over the
+    vector blob); the metadata is preserved for future re-querying or
+    cache-key derivation but is not load-bearing for 8-5d/e.
   - **8-5b — Embed job handler + vector persistence.** Wire the `embed`
     memory job handler through the 8-2 queue primitives: load planned
     chunks, fetch embeddings through the provider contract, store
@@ -327,10 +350,21 @@ slices:
     slice.
   - **8-7d — Memory job list/cancel UI path.** Add the minimal browser UI
     path for viewing pending/running memory jobs and cancelling them
-    through the 8-7b adapter. Keep the legacy Hypa V3 summary editor's
-    category/tag mutation, delete/reset, bulk re-summary, translation,
-    and manual summary editing local until server write routes are
-    explicitly scoped. Cover loading, empty, error, and cancel states.
+    through the 8-7b adapter. Cover loading, empty, error, and cancel
+    states. **Scope locked 2026-05-24 (option c, deferral):** in
+    server-backed mode, hide or disable the entire bulk-re-summary
+    surface in `HypaV3Modal.svelte` (the `resummarizeBulkSelected` /
+    `applyBulkResummary` / `rerollBulkResummary` / `cancelBulkResummary`
+    / `toggleBulkResummaryTranslation` flow at lines 207-340 and the
+    `BulkResummaryResult` / `BulkEditActions` sub-components). Per-summary
+    metadata edits (category/tag, important toggle, delete/reset, manual
+    text editing, translation) also stay disabled in server-backed mode
+    because they would write directly to the local `hypaV3Data` and
+    diverge from the server's `memory_summaries` table. Tauri / local
+    mode keeps the full modal as-is. Memory write routes (preview-only
+    re-summarize jobs, per-summary metadata commands, manual text
+    overrides) are deferred to a follow-up phase and explicitly out of
+    Phase 8 scope.
   - **8-7e — `hypav3-memory` fixture parity.** Add server-backed fixture
     coverage for `hypav3-memory` once the read routes, browser adapter,
     progress listener, and Phase 8 prompt-memory integration are in
