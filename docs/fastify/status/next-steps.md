@@ -11,68 +11,62 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-5e added a pure `memoryBudgetAllocator` helper. It selects supplied
-`MemorySummary` rows across important, recent, similar, and random
-buckets, accepts ranked similar rows from `memorySimilarityRanking`,
-uses deterministic seed-based random ordering, suppresses duplicates, and
-returns diagnostics for budget pressure, unknown ranked rows, and missing
-allocation categories. It does not call providers, read or write SQLite,
-enqueue jobs, or touch prompt assembly.
+8-5f added `memorySelectionService`, a prompt-facing read-only facade
+that loads ready summaries, chunks, and persisted embeddings for a
+chat/model pair, ranks supplied query vectors with
+`memorySimilarityRanking`, allocates summaries with
+`memoryBudgetAllocator`, and returns repository/ranking/allocation
+diagnostics. It accepts supplied query vectors and budget settings; it
+does not call providers, generate embeddings, summarize, enqueue jobs, or
+touch prompt assembly.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-5f - Memory selection service facade**.
+Continue Phase 8 with **8-6a - Prompt memory adapter contract**.
 
 Expected scope:
 
-- Add a prompt-facing memory selection service/facade under
-  `server/fastify/src/` that orchestrates repository reads,
-  `memorySimilarityRanking`, and `memoryBudgetAllocator`.
-- Read ready summaries for a chat/model plus their chunks and persisted
-  embeddings from the repository layer; keep writes out of this slice.
-- Accept supplied query vectors and memory budget inputs from the future
-  prompt adapter rather than generating embeddings in the hot path.
-- Return selected summaries plus ranking/allocation diagnostics that
-  8-6 can surface as missing-summary / missing-embedding / budget
-  pressure information.
-- Preserve the no-hot-path-work boundary: no provider calls, no
-  summarization, no embedding generation, no queue enqueueing, and no
-  browser UI.
-- Add focused tests for repository orchestration, missing chunks /
-  embeddings diagnostics, empty inputs, budget pressure passthrough,
-  model/chat filtering, and deterministic allocator wiring.
+- Define the server prompt-memory adapter contract that 8-6b/8-6c will
+  use to request Hypa V3 memory rows during prompt assembly.
+- Specify enable/disable rules, input context, selected-summary output,
+  diagnostics, and how missing memory should be reported without doing
+  hot-path provider work.
+- Wire the contract to `selectMemorySummaries` only as far as needed to
+  prove the boundary; canonical prompt rows start in 8-6b.
+- Keep embedding generation, summary generation, queue writes, browser
+  UI, and full prompt-row assembly out of this slice.
+- Add focused tests for disabled memory, empty memory, selected-summary
+  passthrough, diagnostics passthrough, and no-hot-path-work behavior.
 
-Out of scope for 8-5f:
+Out of scope for 8-6a:
 
 - Embedding provider dispatch and query embedding generation.
 - Summary generation, chunk planning, queue writes, and follow-up job
   enqueueing.
-- Prompt-row assembly; that starts in 8-6.
+- Summary prompt-row assembly; that starts in 8-6b.
 - Browser progress UI, browser listeners, and browser list/cancel
   controls.
 - Browser-local embedding runtimes.
 
 Implementation notes:
 
-- Reuse `listMemorySummaries`, `listMemoryChunks`, and
-  `listMemoryEmbeddings`; avoid adding repository writes.
-- Reuse the `RankedMemorySummary` output from
-  `memorySimilarityRanking` and the `allocateMemorySummaries` output from
-  `memoryBudgetAllocator`; the facade should compose these modules rather
-  than duplicating their rules.
-- `memoryBudgetAllocator` reads importance from `metadata.isImportant`
-  by default and accepts a pure override. Imported legacy Hypa V3 rows
-  already populate that metadata field.
-- The allocator defaults token cost to `MemorySummary.tokens`; pass a
-  pure callback later if the prompt adapter needs separator/system-row
-  overhead included.
+- Reuse `selectMemorySummaries`; do not duplicate repository, ranking, or
+  allocation rules in the prompt adapter.
+- `memorySelectionService` already reports repository diagnostics
+  (`summaryIdsMissingEmbeddings`, `chunkIdsMissingSummaries`, counts),
+  ranking diagnostics, and allocation diagnostics.
+- Query vectors should still be supplied to the adapter. Generating those
+  vectors remains deferred so prompt assembly stays free of provider
+  calls.
+- The adapter can define a stable shape for future 8-6d follow-up queue
+  requests, but it should not enqueue them in 8-6a.
 - Preserve the no-compatibility-migrations policy: update current
   Fastify shapes directly if the contract needs a tighter shape.
 
-## Queue After 8-5e
+## Queue After 8-5f
 
-1. 8-6a - Prompt memory adapter contract.
-2. 8-6b - Summary prompt-row assembly.
+1. 8-6b - Summary prompt-row assembly.
+2. 8-6c - Assemble integration.
 
 ## Parallel Or Deferred
 
@@ -95,22 +89,22 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-5e: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 1023 tests, and
+Last recorded full baselines after 8-5f: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 1028 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-5e verification:
+Focused 8-5f verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memoryBudgetAllocator.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memorySelectionService.test.ts --config server/fastify/vitest.config.ts
 ```
 
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-5e.md`](../phases-completed/phase-8-memory-8-5e.md)
+  [`../phases-completed/phase-8-memory-8-5f.md`](../phases-completed/phase-8-memory-8-5f.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Phase 7 final summary:

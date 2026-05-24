@@ -2,8 +2,8 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-5e - Pure memory budget
-allocator**. Next slice: **8-5f - Memory selection service facade**.
+Status: in progress. Completed through **8-5f - Memory selection service
+facade**. Next slice: **8-6a - Prompt memory adapter contract**.
 
 ## Goal
 
@@ -87,6 +87,10 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
 - Similarity ranking and budget allocation are pure and facade-facing:
   they do not call providers, read or write repositories, enqueue jobs,
   or inspect prompt assembly state.
+- The 8-5f memory selection facade composes repository reads, similarity
+  ranking, and budget allocation. It accepts supplied query vectors and
+  budget inputs, returns selected summaries plus repository/ranking/
+  allocation diagnostics, and remains read-only.
 
 ## Scope
 
@@ -139,12 +143,6 @@ browser progress store.
 
 ## Remaining Slice Plan
 
-- **8-5 - Embeddings and selection.** Build embedding persistence and
-  pure ranking/allocation helpers before exposing the prompt-facing
-  selection facade.
-  - **8-5f - Memory selection service facade.** Combine repository
-    reads, ranking, and allocation. Return selected summaries plus
-    diagnostics for missing summaries / embeddings.
 - **8-6 - Prompt memory integration.** Add the server prompt-memory
   adapter, assemble canonical memory prompt rows, replace the Phase 7
   browser bridge, and queue missing-memory follow-up work.
