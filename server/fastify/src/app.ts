@@ -26,10 +26,12 @@ import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES, loadPersisted } from './repository.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
+import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 
 export interface BuildAppOptions {
   config?: AppConfig
   generationChat?: GenerationChatRouteOptions
+  memoryWorker?: false | Omit<MemoryWorkerOptions, 'db'>
 }
 
 export interface BuiltApp {
@@ -63,6 +65,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   const db = openDatabase(config.dataDir)
   backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
+  const memoryWorker =
+    opts.memoryWorker === false ? null : new MemoryWorker({ db, ...opts.memoryWorker })
+  memoryWorker?.start()
   const authState = createAuthState(config.dataDir)
   const streamJobRegistry = new JobRegistry()
   const gcTimer = setInterval(() => {
@@ -71,6 +76,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   gcTimer.unref()
 
   app.addHook('onClose', async () => {
+    await memoryWorker?.stop()
     clearInterval(gcTimer)
     for (const job of streamJobRegistry.list()) {
       streamJobRegistry.deleteJob(job.id)

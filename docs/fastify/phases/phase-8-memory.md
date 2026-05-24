@@ -9,8 +9,8 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-2a - Memory job queue state
-machine**.
+Status: in progress. Next slice: **8-2c - Retry, backoff, cancel, and
+boot recovery**.
 
 ## Preconditions
 
@@ -140,7 +140,7 @@ the current schema and import paths directly.
     in-process worker, Fastify startup/shutdown integration, polling,
     one-at-a-time job claiming, and kind-based handler dispatch. Keep
     `chunk`, `embed`, and `summarize` handlers as no-op stubs that only
-    prove lifecycle behavior.
+    prove lifecycle behavior. Closed on 2026-05-24.
   - **8-2c — Retry, backoff, cancel, and boot recovery.** Add attempt
     tracking, exponential backoff scheduling, max-retry failure
     persistence, cancellation for pending/running jobs, and startup

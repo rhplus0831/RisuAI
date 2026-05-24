@@ -1,0 +1,126 @@
+import type { DatabaseSync } from 'node:sqlite'
+import {
+  claimNextMemoryJob,
+  completeMemoryJob,
+  failMemoryJob,
+  type MemoryJob,
+  type MemoryJobKind,
+} from './memoryRepository.js'
+
+export const MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS = 1_000
+
+export type MemoryJobHandler = (job: MemoryJob) => void | Promise<void>
+
+export type MemoryJobHandlers = {
+  [K in MemoryJobKind]: MemoryJobHandler
+}
+
+export interface MemoryWorkerOptions {
+  db: DatabaseSync
+  pollIntervalMs?: number
+  handlers?: Partial<MemoryJobHandlers>
+  onError?: (error: unknown) => void
+}
+
+export class MemoryWorker {
+  private readonly db: DatabaseSync
+  private readonly pollIntervalMs: number
+  private readonly handlers: MemoryJobHandlers
+  private readonly onError: (error: unknown) => void
+  private timer: NodeJS.Timeout | null = null
+  private inFlight: Promise<boolean> | null = null
+  private active = false
+
+  constructor(opts: MemoryWorkerOptions) {
+    this.db = opts.db
+    this.pollIntervalMs = normalizePollIntervalMs(opts.pollIntervalMs)
+    this.handlers = {
+      chunk: noopMemoryJobHandler,
+      embed: noopMemoryJobHandler,
+      summarize: noopMemoryJobHandler,
+      ...opts.handlers,
+    }
+    this.onError = opts.onError ?? defaultMemoryWorkerErrorHandler
+  }
+
+  get isRunning(): boolean {
+    return this.active
+  }
+
+  get isProcessing(): boolean {
+    return this.inFlight !== null
+  }
+
+  start(): void {
+    if (this.active) return
+    this.active = true
+    this.schedule(0)
+  }
+
+  async stop(): Promise<void> {
+    if (!this.active && this.timer === null && this.inFlight === null) return
+    this.active = false
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    if (this.inFlight) {
+      await this.inFlight
+    }
+  }
+
+  async tick(): Promise<boolean> {
+    if (this.inFlight) return false
+    const task = this.processOne()
+    this.inFlight = task
+    try {
+      return await task
+    } finally {
+      this.inFlight = null
+    }
+  }
+
+  private schedule(delayMs: number): void {
+    if (!this.active || this.timer) return
+    this.timer = setTimeout(() => {
+      this.timer = null
+      void this.tick()
+        .catch((error) => {
+          this.onError(error)
+          return false
+        })
+        .finally(() => {
+          this.schedule(this.pollIntervalMs)
+        })
+    }, delayMs)
+    this.timer.unref()
+  }
+
+  private async processOne(): Promise<boolean> {
+    const job = claimNextMemoryJob(this.db)
+    if (!job) return false
+
+    try {
+      await this.handlers[job.kind](job)
+      completeMemoryJob(this.db, job.id)
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error)
+      failMemoryJob(this.db, job.id, message || 'memory job handler failed')
+    }
+    return true
+  }
+}
+
+function normalizePollIntervalMs(value: number | undefined): number {
+  if (value === undefined) return MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS
+  if (!Number.isFinite(value) || value < 0) return MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS
+  return Math.floor(value)
+}
+
+function noopMemoryJobHandler(): void {
+  // Stub dispatch only; real memory mutation lands in later Phase 8 slices.
+}
+
+function defaultMemoryWorkerErrorHandler(error: unknown): void {
+  console.error('memory worker failed', error)
+}

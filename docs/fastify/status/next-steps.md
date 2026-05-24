@@ -11,38 +11,43 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-2a landed the memory job queue state machine. The repository now has
-explicit enqueue, list, claim, complete, fail, and cancel primitives over
-`memory_jobs`. Claiming atomically moves the oldest matching pending job
-to running, ordered by `created_at, id`; completion/failure/cancellation
-only apply to legal source states; malformed payloads, statuses, ids, and
-empty failure errors still raise `ValidationError`. Jobs remain data rows
-only.
+8-2b landed the in-process memory worker lifecycle and no-op dispatch
+surface. `server/fastify/src/memoryWorker.ts` owns start/stop
+idempotency, polling, one-at-a-time claiming through the 8-2a queue
+primitives, kind-based dispatch for `chunk`, `embed`, and `summarize`,
+successful completion, and handler-exception failure persistence.
+`buildApp()` now starts the worker after DB open/backfill and stops it
+before closing the DB. Handlers are still stubs; jobs now move, but they
+do not mutate memory rows.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-2b - Worker lifecycle + stub dispatch**.
+Continue Phase 8 with **8-2c - Retry, backoff, cancel, and boot recovery**.
 
 Expected scope:
 
-- Add the single in-process memory worker lifecycle.
-- Wire Fastify startup/shutdown integration.
-- Poll and claim one job at a time using the 8-2a queue primitives.
-- Dispatch by job kind (`chunk`, `embed`, `summarize`) to no-op stub
-  handlers that only prove lifecycle behavior.
-- Cover start/stop idempotency, one-at-a-time claiming, handler dispatch,
-  and graceful shutdown in deterministic tests.
+- Add attempt tracking and next-run scheduling to the current
+  `memory_jobs` schema. There are no Fastify users yet, so update the
+  current schema and repository types directly rather than preserving
+  intermediate shapes.
+- Teach claiming to ignore jobs whose retry/backoff time has not arrived.
+- Add exponential backoff and max-retry failure persistence for handler
+  failures.
+- Define cancellation behavior for pending and running jobs against the
+  current single in-process worker.
+- On startup, recover abandoned `running` jobs from a prior process.
+- Cover retry timing, max attempts, pending/running cancellation, and boot
+  recovery in deterministic worker/repository tests.
 
-Out of scope for 8-2b:
+Out of scope for 8-2c:
 
-- Retry/backoff, boot recovery, SSE progress, routes, provider calls,
-  real memory mutation handlers, and browser UI.
+- SSE progress, routes, provider calls, real memory mutation handlers, and
+  browser UI.
 
-## Queue After 8-2b
+## Queue After 8-2c
 
-1. 8-2c - Retry, backoff, cancel, and boot recovery.
-2. 8-2d - Memory progress event contract.
-3. 8-2e - Memory job routes.
+1. 8-2d - Memory progress event contract.
+2. 8-2e - Memory job routes.
 
 ## Parallel Or Deferred
 
@@ -65,15 +70,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-2a: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 914 tests, and
+Last recorded full baselines after 8-2b: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 920 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-2a verification:
+Focused 8-2b verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memoryLegacyImport.test.ts server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/db.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/memoryRepository.test.ts --config server/fastify/vitest.config.ts
 ```
 
 ## References
@@ -89,6 +94,8 @@ pnpm exec vitest run server/fastify/__tests__/memoryLegacyImport.test.ts server/
   [`../phases-completed/phase-8-memory-8-1c.md`](../phases-completed/phase-8-memory-8-1c.md)
 - 8-2a closeout:
   [`../phases-completed/phase-8-memory-8-2a.md`](../phases-completed/phase-8-memory-8-2a.md)
+- 8-2b closeout:
+  [`../phases-completed/phase-8-memory-8-2b.md`](../phases-completed/phase-8-memory-8-2b.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:
