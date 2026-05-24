@@ -34,8 +34,8 @@ next concrete pickup is in [`next-steps.md`](next-steps.md).
   cannot send `risu-auth` may need session-cookie support later.
 - Ooba OAI-compatible, NovelAI text, and NovelList remain deferred until
   server-side prompt string flattening is available.
-- Hypa V3 memory jobs belong to Phase 8; the next pickup is 8-4d summary
-  rate limiting and ordered writes.
+- Hypa V3 memory is in Phase 8; the next pickup is the 8-5f memory
+  selection service facade.
 - Browser plugin / Lua execution and image generation side effects remain
   outside the prompt assembly closeout.
 

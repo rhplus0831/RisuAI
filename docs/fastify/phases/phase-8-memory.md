@@ -2,8 +2,8 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-5d - Pure similarity
-ranking**. Next slice: **8-5e - Pure memory budget allocator**.
+Status: in progress. Completed through **8-5e - Pure memory budget
+allocator**. Next slice: **8-5f - Memory selection service facade**.
 
 ## Goal
 
@@ -57,6 +57,10 @@ Completed through 8-5d:
   summaries/chunks, and flat embedding rows are ranked through defensive
   cosine similarity with deterministic tie-breaking and diagnostics for
   invalid or incomplete inputs.
+- **8-5e - Pure memory budget allocator:** supplied summaries and ranked
+  similar rows are selected across important, recent, similar, and
+  deterministic-random buckets with duplicate suppression and
+  budget-pressure diagnostics.
 
 Carry-forward decisions from completed work:
 
@@ -80,9 +84,9 @@ Carry-forward decisions from completed work:
 - Standard embedding writes are idempotent by `{ chatId, chunkId,
 model }` with empty `group_id` / `group_index`; contextual Voyage
   writes use the same uniqueness surface and populate group metadata.
-- Similarity ranking is pure and allocation-facing: it does not call
-  providers, read or write repositories, enqueue jobs, or inspect prompt
-  assembly state.
+- Similarity ranking and budget allocation are pure and facade-facing:
+  they do not call providers, read or write repositories, enqueue jobs,
+  or inspect prompt assembly state.
 
 ## Scope
 
@@ -138,9 +142,6 @@ browser progress store.
 - **8-5 - Embeddings and selection.** Build embedding persistence and
   pure ranking/allocation helpers before exposing the prompt-facing
   selection facade.
-  - **8-5e - Pure memory budget allocator.** Port important, recent,
-    similar, and random summary selection with deterministic randomness
-    for tests.
   - **8-5f - Memory selection service facade.** Combine repository
     reads, ranking, and allocation. Return selected summaries plus
     diagnostics for missing summaries / embeddings.
