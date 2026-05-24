@@ -11,40 +11,41 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-2d landed the memory progress event contract. `memoryEvents.ts`
-defines the reusable `memory.job` event shape plus the
-Phase-7-compatible `hypav3_progress` side-effect payload. `MemoryWorker`
-now accepts `onEvent` and emits deterministic job events for claim,
-completion, retry, terminal failure, and boot recovery transitions.
-Cancelled running jobs do not emit a misleading completion when their
-handler later settles. Enqueue/cancel route emissions remain for 8-2e,
-where those transitions will be introduced at the route boundary.
+8-2e landed the auth-gated memory job API. `POST /api/v1/memory/jobs`
+enqueues pending jobs, `GET /api/v1/memory/jobs` lists active jobs by
+default with optional `chatId`, `kind`, and `status` filters, and
+`DELETE /api/v1/memory/jobs/:id` cancels pending/running jobs. Route-owned
+enqueue and cancel transitions reuse the 8-2d `memory.job` event
+contract with the Phase-7-compatible `hypav3_progress` side effect.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-2e - Memory job routes**.
+Continue Phase 8 with **8-3a - Hypa V3 settings + planner contract**.
 
 Expected scope:
 
-- Wire the auth-gated backend job API:
-  `POST /api/v1/memory/jobs`, `GET /api/v1/memory/jobs`, and
-  `DELETE /api/v1/memory/jobs/:id`.
-- Reuse the 8-2d `memory.job` event contract for enqueue and cancel
-  transitions where the route owns those state changes.
-- Route tests should cover enqueue, list, cancel, validation failures,
-  and unauthorized access.
-- Keep responses deterministic and scoped to the current repository job
-  shape.
+- Port the Hypa V3 preset defaults and settings normalization to a
+  server-side pure module.
+- Preserve the locked planner choice: settings carrying
+  `useExperimentalImpl: true` should fall back to the standard planner
+  path with a one-time migration warning later, not invoke the
+  experimental planner.
+- Define the pure planner input/output contract for the standard
+  planner, including token deltas, planned windows, errors, and
+  skipped-message reasons.
+- Add deterministic tests for settings defaults, normalization, ratio
+  validation, and the planner contract boundaries.
 
-Out of scope for 8-2e:
+Out of scope for 8-3a:
 
-- Provider calls, real memory mutation handlers, chunk/summary read
-  routes, browser UI listeners, and browser list/cancel controls.
+- Mutating memory rows, enqueuing jobs from planner output, provider
+  calls, summary prompt construction, embedding, prompt-facing summary
+  selection, browser listeners, and browser list/cancel controls.
 
-## Queue After 8-2e
+## Queue After 8-3a
 
-1. 8-3a - Hypa V3 settings + planner contract.
-2. 8-3b - Orphan cleanup.
+1. 8-3b - Orphan cleanup.
+2. 8-3c - Pure summarization window planner.
 
 ## Parallel Or Deferred
 
@@ -67,16 +68,19 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-2d: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 931 tests, and
+Last recorded full baselines after 8-2e: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 937 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-2d verification:
+Focused 8-2e verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/memoryRepository.test.ts --config server/fastify/vitest.config.ts
-pnpm exec vitest run server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/db.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryRepository.test.ts --config server/fastify/vitest.config.ts
+pnpm check
+pnpm test
+pnpm api:test
+pnpm build
 ```
 
 ## References
@@ -98,6 +102,8 @@ pnpm exec vitest run server/fastify/__tests__/memoryWorker.test.ts server/fastif
   [`../phases-completed/phase-8-memory-8-2c.md`](../phases-completed/phase-8-memory-8-2c.md)
 - 8-2d closeout:
   [`../phases-completed/phase-8-memory-8-2d.md`](../phases-completed/phase-8-memory-8-2d.md)
+- 8-2e closeout:
+  [`../phases-completed/phase-8-memory-8-2e.md`](../phases-completed/phase-8-memory-8-2e.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

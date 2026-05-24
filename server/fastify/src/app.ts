@@ -20,11 +20,13 @@ import { bootPromptVariables } from './prompt/promptVariablesBoot.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
 import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
+import { registerMemoryJobRoutes } from './routes/memoryJobs.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES, loadPersisted } from './repository.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
+import type { MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 
@@ -32,6 +34,7 @@ export interface BuildAppOptions {
   config?: AppConfig
   generationChat?: GenerationChatRouteOptions
   memoryWorker?: false | Omit<MemoryWorkerOptions, 'db'>
+  memoryEvents?: MemoryEventSink
 }
 
 export interface BuiltApp {
@@ -66,7 +69,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const db = openDatabase(config.dataDir)
   backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
   const memoryWorker =
-    opts.memoryWorker === false ? null : new MemoryWorker({ db, ...opts.memoryWorker })
+    opts.memoryWorker === false
+      ? null
+      : new MemoryWorker({ db, onEvent: opts.memoryEvents, ...opts.memoryWorker })
   memoryWorker?.start()
   const authState = createAuthState(config.dataDir)
   const streamJobRegistry = new JobRegistry()
@@ -96,6 +101,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerLegacyStorageRoutes(app, authState, config.dataDir)
   registerGenerationRoutes(app, authState)
   registerGenerationChatRoutes(app, db, authState, config.dataDir, opts.generationChat)
+  registerMemoryJobRoutes(app, db, authState, { onEvent: opts.memoryEvents })
   bootPromptVariables()
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {

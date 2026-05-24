@@ -9,7 +9,7 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-2e - Memory job routes**.
+Status: in progress. Next slice: **8-3a - Hypa V3 settings + planner contract**.
 
 ## Preconditions
 
@@ -154,7 +154,7 @@ the current schema and import paths directly.
     `POST /api/v1/memory/jobs`, `GET /api/v1/memory/jobs`, and
     `DELETE /api/v1/memory/jobs/:id`. Route tests cover enqueue, list,
     cancel, validation failures, and unauthorized access. Browser list /
-    cancel UI paths remain 8-7.
+    cancel UI paths remain 8-7. Closed on 2026-05-24.
 - **8-3 — Memory planning.** Port the Hypa V3 settings, cleanup,
   planner, and chunk/job bridge as pure or deterministic services
   before any provider calls. Close the sub-slices below in order.
