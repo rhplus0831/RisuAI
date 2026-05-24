@@ -20,3 +20,7 @@ for active or remaining phase scope, boundaries, and exit criteria.
 Completed slice logs and historical detail belong in
 `docs/fastify/phases-completed/`; do not turn the active phase/status
 docs back into long work logs.
+
+There are no actual Fastify users yet, so do not write compatibility
+migrations during this process. Update the current schema and import
+paths directly instead of preserving old intermediate Fastify shapes.

@@ -40,7 +40,7 @@ the phase file.
 ```
 
 Phase 8 is the active phase. Phase 7 is closed, and 8-1a-i has landed,
-so the next pickup is 8-1a-ii memory tables on top of the runner.
+so the next pickup is 8-1a-ii memory tables in the current schema.
 Phase 9 waits for the
 server-owned generation, prompt assembly, and memory surfaces to settle.
 

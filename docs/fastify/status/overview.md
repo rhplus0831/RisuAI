@@ -17,7 +17,7 @@ Concise snapshot of each migration workstream. Historical detail is in
 | 5 - sendChat extraction                 | Complete    | Closed 2026-05-22.                                           |
 | 6 - Server-side generation              | Complete    | Closed 2026-05-22 for `/completion`.                         |
 | 7 - Server-side prompt assembly         | Complete    | Closed 2026-05-24 after closeout verification.               |
-| 8 - Hypa V3 memory server-side          | In progress | Next slice: 8-1a-ii memory tables on top of the runner.      |
+| 8 - Hypa V3 memory server-side          | In progress | Next slice: 8-1a-ii memory tables in the current schema.     |
 | 9 - Client thinning                     | Not started | Waits for server-owned prompt, generation, and memory paths. |
 
 ## Workstreams

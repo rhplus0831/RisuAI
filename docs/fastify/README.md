@@ -10,6 +10,10 @@ before widening behavior.
 
 The docs are sharded so an agent can load only the slice it needs.
 
+Policy note: there are no actual Fastify users yet, so this process does
+not need compatibility migrations. Update the current schema and import
+paths directly instead of preserving old intermediate Fastify shapes.
+
 ## Scope
 
 Current status: Phases 0-6 are closed and Phase 7 is in progress.
@@ -84,6 +88,9 @@ short form.
   during the migration window; per-resource SQL tables land in later
   server phases as APIs need durable shapes. Content-addressed assets
   live on disk under `data/assets/`.
+- **No compatibility migrations.** No actual users run the Fastify
+  server yet, so phases should edit the current schema and import paths
+  directly instead of preserving old intermediate Fastify shapes.
 - **Sequence.** Remove first, then port. Phase 0 strips the deprecated
   features so the surface that gets ported is smaller.
 - **sendChat.** Tests first, extraction second. Phase 5 shrank

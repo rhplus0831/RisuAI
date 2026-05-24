@@ -198,8 +198,9 @@ Conscious differences vs the `move-to-fastify` branch:
   rationale.
 - Per-resource SQL tables land in later server phases, when an
   extracted API defines the shape that resource actually needs.
-  Each extraction runs a one-time boot migration that moves the field out of
-  `db.json`. When `db.json` is empty, it is deleted.
+  There are no actual Fastify users yet, so do not write compatibility
+  migrations for intermediate Fastify shapes; update the current schema
+  and import paths directly. When `db.json` is empty, it is deleted.
 - Assets are stored on disk as `data/assets/<sha256>.<ext>`. Asset
   metadata (size, contentType) lives in `db.json.assets` during
   Phase 2 and moves into SQL when the asset API graduates.

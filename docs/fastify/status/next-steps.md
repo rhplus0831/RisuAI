@@ -5,6 +5,10 @@ Date: 2026-05-24
 Use this file as the day-to-day pickup runbook. Completed slice tables
 were moved to [`../phases-completed/`](../phases-completed/).
 
+Policy note: there are no actual Fastify users yet, so this process does
+not need compatibility migrations. Update the current schema and import
+paths directly instead of preserving old intermediate Fastify shapes.
+
 ## Last Done
 
 8-1a-i landed the first `risu.db` schema migration runner:
@@ -16,19 +20,19 @@ newer-schema rejection.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-1a-ii - Memory tables on top of the runner**.
+Continue Phase 8 with **8-1a-ii - Memory tables in the current schema**.
 
 Expected scope:
 
-- Bump `CURRENT_SCHEMA_VERSION` from 1 to 2.
-- Add migration version 2 to the existing typed registry in
-  `server/fastify/src/db.ts`.
+- Add the memory tables to the current `risu.db` schema. Because there
+  are no actual users yet, do not add a compatibility migration for a
+  version-1 Fastify database.
 - Create `memory_chunks`, `memory_summaries`, `memory_embeddings`, and
   `memory_jobs`.
 - Add indexes, check constraints, and foreign-key / cascade behavior
   where SQLite can enforce it.
-- Extend the migration tests to prove the table migration runs from
-  version 1 and remains reapply-safe.
+- Extend DB/bootstrap tests around fresh schema creation and re-open
+  idempotence.
 
 Out of scope for 8-1a-ii:
 

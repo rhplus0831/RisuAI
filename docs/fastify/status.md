@@ -6,6 +6,10 @@ This is the live Fastify migration handoff. It replaces the former root
 handoff and roadmap files, which were removed so this status tree is the
 single place for current pickup state.
 
+Policy note: there are no actual Fastify users yet, so this process does
+not need compatibility migrations. Update the current schema and import
+paths directly instead of preserving old intermediate Fastify shapes.
+
 Completed phase detail and old landed-slice logs live in
 [`phases-completed/`](phases-completed/).
 
@@ -14,7 +18,7 @@ Completed phase detail and old landed-slice logs live in
 - Active phase: Phase 8, Hypa V3 memory.
 - Last landed slice: 8-1a-i, migration runner + version bump.
 - Current blocker: none recorded.
-- Next default pickup: 8-1a-ii, memory tables on top of the runner.
+- Next default pickup: 8-1a-ii, memory tables in the current schema.
 - Last recorded full baselines after 8-1a-i: `pnpm check` clean,
   `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 900 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
@@ -43,12 +47,14 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-1a-ii memory tables on top of the runner.            |
+| Hypa V3 memory                              | Active; next slice is 8-1a-ii memory tables in the current schema.           |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules
 
 - Keep this file short: last done, current blocker, next pickup, and links.
+- Keep the no-compatibility-migrations policy visible while there are no
+  actual Fastify users.
 - Put the actionable runbook in [`status/next-steps.md`](status/next-steps.md).
 - Put completed logs and old status snapshots in
   [`phases-completed/`](phases-completed/).

@@ -91,10 +91,14 @@ events, legacy serialized memory data, and budget-sensitive prompt
 selection. Phase 8 should therefore land as small server-owned
 slices:
 
+Policy note: there are no actual Fastify users yet. Do not write
+compatibility migrations for intermediate Fastify database shapes; update
+the current schema and import paths directly.
+
 - **8-1 — Memory storage foundation.** Establish the SQL tables,
   repository surface, and legacy import/backfill path before worker or
   provider behavior lands. Close the sub-slices below in order.
-  - **8-1a — Memory schema migration.** Split this slice into two so
+  - **8-1a — Memory schema foundation.** Split this slice into two so
     the table DDL doesn't get bundled with framework work:
     - **8-1a-i — Migration runner + version bump.** Closed on
       2026-05-24. `CURRENT_SCHEMA_VERSION = 1`, `openDatabase()` applies
@@ -103,13 +107,12 @@ slices:
       tests cover version bumping, idempotent reapply, and newer-schema
       rejection, plus the missing singleton-row guard. No memory tables
       landed in this slice.
-    - **8-1a-ii — Memory tables on top of the runner.** Add the first
-      real migration step by bumping `CURRENT_SCHEMA_VERSION` to 2 and
-      creating `memory_chunks`,
-      `memory_summaries`, `memory_embeddings`, and `memory_jobs` with
-      indexes, check constraints, and foreign-key / cascade behavior
-      where SQLite can enforce it. Do not add import backfill or
-      worker behavior in this slice.
+    - **8-1a-ii — Memory tables in the current schema.** Add
+      `memory_chunks`, `memory_summaries`, `memory_embeddings`, and
+      `memory_jobs` with indexes, check constraints, and foreign-key /
+      cascade behavior where SQLite can enforce it. Do not add a
+      compatibility migration, import backfill, or worker behavior in
+      this slice.
   - **8-1b — Memory repositories + row mappers.** Add typed repository
     methods and JSON / blob mappers for chunks, summaries, embeddings,
     and jobs. Cover create / read / update primitives, vector
