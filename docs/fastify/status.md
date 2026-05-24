@@ -16,14 +16,14 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 8, Hypa V3 memory.
-- Last landed slice: 8-1c, legacy `hypaV3Data` import/backfill.
+- Last landed slice: 8-2a, memory job queue state machine.
 - Current blocker: none recorded.
-- Next default pickup: 8-2a, memory job queue state machine.
-- Last recorded full baselines after 8-1c: `pnpm check` clean,
-  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 912 tests, and
+- Next default pickup: 8-2b, worker lifecycle + stub dispatch.
+- Last recorded full baselines after 8-2a: `pnpm check` clean,
+  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 914 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Focused verification after 8-1c:
+- Focused verification after 8-2a:
   `pnpm exec vitest run server/fastify/__tests__/memoryLegacyImport.test.ts server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/db.test.ts --config server/fastify/vitest.config.ts`
   passed.
 
@@ -47,7 +47,7 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-2a memory job queue state machine.                   |
+| Hypa V3 memory                              | Active; next slice is 8-2b worker lifecycle + stub dispatch.                 |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules

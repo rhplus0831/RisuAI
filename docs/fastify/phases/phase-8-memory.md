@@ -135,7 +135,7 @@ the current schema and import paths directly.
     claim, complete, fail, and cancel primitives over `memory_jobs`.
     Cover payload validation, status filtering, legal transitions, and
     deterministic repository tests. No timers, worker loop, retries,
-    SSE, or handler dispatch yet.
+    SSE, or handler dispatch yet. Closed on 2026-05-24.
   - **8-2b — Worker lifecycle + stub dispatch.** Add the single
     in-process worker, Fastify startup/shutdown integration, polling,
     one-at-a-time job claiming, and kind-based handler dispatch. Keep

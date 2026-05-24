@@ -11,36 +11,38 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-1c landed legacy `hypaV3Data` import/backfill. JSON import now
-replaces SQLite memory rows from legacy summaries, boot backfill
-idempotently stitches existing `db.json` summaries into
-`memory_chunks` / `memory_summaries`, and legacy important/category/tag
-metadata is preserved in nullable `memory_summaries.metadata_json`.
-Import/backfill creates no embeddings and no memory jobs.
+8-2a landed the memory job queue state machine. The repository now has
+explicit enqueue, list, claim, complete, fail, and cancel primitives over
+`memory_jobs`. Claiming atomically moves the oldest matching pending job
+to running, ordered by `created_at, id`; completion/failure/cancellation
+only apply to legal source states; malformed payloads, statuses, ids, and
+empty failure errors still raise `ValidationError`. Jobs remain data rows
+only.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-2a - Memory job queue state machine**.
+Continue Phase 8 with **8-2b - Worker lifecycle + stub dispatch**.
 
 Expected scope:
 
-- Add enqueue, list, claim, complete, fail, and cancel primitives over
-  `memory_jobs`.
-- Cover payload validation, status filtering, legal transitions, and
-  deterministic repository tests.
-- Keep jobs as data rows only; no timers, worker loop, retries, SSE, or
-  handler dispatch yet.
+- Add the single in-process memory worker lifecycle.
+- Wire Fastify startup/shutdown integration.
+- Poll and claim one job at a time using the 8-2a queue primitives.
+- Dispatch by job kind (`chunk`, `embed`, `summarize`) to no-op stub
+  handlers that only prove lifecycle behavior.
+- Cover start/stop idempotency, one-at-a-time claiming, handler dispatch,
+  and graceful shutdown in deterministic tests.
 
-Out of scope for 8-2a:
+Out of scope for 8-2b:
 
-- Worker polling/lifecycle, retry/backoff, SSE progress, routes,
-  provider calls, memory mutation handlers, and browser UI.
+- Retry/backoff, boot recovery, SSE progress, routes, provider calls,
+  real memory mutation handlers, and browser UI.
 
-## Queue After 8-2a
+## Queue After 8-2b
 
-1. 8-2b - Worker lifecycle + stub dispatch.
-2. 8-2c - Retry, backoff, cancel, and boot recovery.
-3. 8-2d - Memory progress event contract.
+1. 8-2c - Retry, backoff, cancel, and boot recovery.
+2. 8-2d - Memory progress event contract.
+3. 8-2e - Memory job routes.
 
 ## Parallel Or Deferred
 
@@ -63,12 +65,12 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-1c: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 912 tests, and
+Last recorded full baselines after 8-2a: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 914 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-1c verification:
+Focused 8-2a verification:
 
 ```bash
 pnpm exec vitest run server/fastify/__tests__/memoryLegacyImport.test.ts server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/db.test.ts --config server/fastify/vitest.config.ts
@@ -85,6 +87,8 @@ pnpm exec vitest run server/fastify/__tests__/memoryLegacyImport.test.ts server/
   [`../phases-completed/phase-8-memory-8-1b.md`](../phases-completed/phase-8-memory-8-1b.md)
 - 8-1c closeout:
   [`../phases-completed/phase-8-memory-8-1c.md`](../phases-completed/phase-8-memory-8-1c.md)
+- 8-2a closeout:
+  [`../phases-completed/phase-8-memory-8-2a.md`](../phases-completed/phase-8-memory-8-2a.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

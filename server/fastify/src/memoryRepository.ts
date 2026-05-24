@@ -100,6 +100,13 @@ export interface CreateMemoryJobInput {
   error?: string | null
 }
 
+export interface EnqueueMemoryJobInput {
+  id: string
+  chatId: string
+  kind: MemoryJobKind
+  payload: unknown
+}
+
 type SqlValue = string | number | bigint | null | Buffer
 
 interface MemoryChunkRow {
@@ -190,6 +197,13 @@ function requireJobStatus(value: string): MemoryJobStatus {
     throw new ValidationError(`Invalid memory job status: ${value}`)
   }
   return value
+}
+
+function requireJobStatusList(statuses: readonly MemoryJobStatus[]): MemoryJobStatus[] {
+  if (statuses.length === 0) {
+    throw new ValidationError('memory job statuses filter must not be empty')
+  }
+  return statuses.map((status) => requireJobStatus(status))
 }
 
 function runStatement(statement: StatementSync, ...values: SqlValue[]): void {
@@ -600,6 +614,17 @@ export function createMemoryJob(db: DatabaseSync, input: CreateMemoryJobInput): 
   return getMemoryJob(db, input.id) as MemoryJob
 }
 
+export function enqueueMemoryJob(db: DatabaseSync, input: EnqueueMemoryJobInput): MemoryJob {
+  return createMemoryJob(db, {
+    id: input.id,
+    chatId: input.chatId,
+    kind: input.kind,
+    payload: input.payload,
+    status: 'pending',
+    error: null,
+  })
+}
+
 export function getMemoryJob(db: DatabaseSync, id: string): MemoryJob | null {
   requireString(id, 'job id')
   const row = db.prepare('SELECT * FROM memory_jobs WHERE id = ?').get(id) as
@@ -610,7 +635,12 @@ export function getMemoryJob(db: DatabaseSync, id: string): MemoryJob | null {
 
 export function listMemoryJobs(
   db: DatabaseSync,
-  filter: { chatId?: string; kind?: MemoryJobKind; status?: MemoryJobStatus } = {},
+  filter: {
+    chatId?: string
+    kind?: MemoryJobKind
+    status?: MemoryJobStatus
+    statuses?: readonly MemoryJobStatus[]
+  } = {},
 ): MemoryJob[] {
   const conditions: string[] = []
   const values: SqlValue[] = []
@@ -627,6 +657,11 @@ export function listMemoryJobs(
     conditions.push('status = ?')
     values.push(requireJobStatus(filter.status))
   }
+  if (filter.statuses !== undefined) {
+    const statuses = requireJobStatusList(filter.statuses)
+    conditions.push(`status IN (${statuses.map(() => '?').join(', ')})`)
+    values.push(...statuses)
+  }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
   const rows = db
     .prepare(
@@ -639,6 +674,86 @@ export function listMemoryJobs(
     )
     .all(...values) as MemoryJobRow[]
   return rows.map(mapMemoryJobRow)
+}
+
+export function claimNextMemoryJob(
+  db: DatabaseSync,
+  filter: { chatId?: string; kind?: MemoryJobKind } = {},
+): MemoryJob | null {
+  const conditions = ['status = ?']
+  const values: SqlValue[] = ['pending']
+  if (filter.chatId !== undefined) {
+    requireString(filter.chatId, 'chat id')
+    conditions.push('chat_id = ?')
+    values.push(filter.chatId)
+  }
+  if (filter.kind !== undefined) {
+    conditions.push('kind = ?')
+    values.push(requireJobKind(filter.kind))
+  }
+  const row = db
+    .prepare(
+      `
+        UPDATE memory_jobs
+        SET status = 'running',
+            error = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = (
+          SELECT id
+          FROM memory_jobs
+          WHERE ${conditions.join(' AND ')}
+          ORDER BY created_at, id
+          LIMIT 1
+        )
+        RETURNING *
+      `,
+    )
+    .get(...values) as MemoryJobRow | undefined
+  return row ? mapMemoryJobRow(row) : null
+}
+
+function transitionMemoryJobStatus(
+  db: DatabaseSync,
+  id: string,
+  fromStatuses: readonly MemoryJobStatus[],
+  toStatus: MemoryJobStatus,
+  patch: { error?: string | null } = {},
+): MemoryJob | null {
+  requireString(id, 'job id')
+  const legalFromStatuses = requireJobStatusList(fromStatuses)
+  const legalToStatus = requireJobStatus(toStatus)
+  const updates = ['status = ?', "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"]
+  const values: SqlValue[] = [legalToStatus]
+  if (Object.hasOwn(patch, 'error')) {
+    updates.push('error = ?')
+    values.push(patch.error ?? null)
+  }
+  values.push(...legalFromStatuses, id)
+  const row = db
+    .prepare(
+      `
+        UPDATE memory_jobs
+        SET ${updates.join(', ')}
+        WHERE status IN (${legalFromStatuses.map(() => '?').join(', ')})
+          AND id = ?
+        RETURNING *
+      `,
+    )
+    .get(...values) as MemoryJobRow | undefined
+  return row ? mapMemoryJobRow(row) : null
+}
+
+export function completeMemoryJob(db: DatabaseSync, id: string): MemoryJob | null {
+  return transitionMemoryJobStatus(db, id, ['running'], 'completed', { error: null })
+}
+
+export function failMemoryJob(db: DatabaseSync, id: string, error: string): MemoryJob | null {
+  requireString(error, 'job error')
+  return transitionMemoryJobStatus(db, id, ['running'], 'failed', { error })
+}
+
+export function cancelMemoryJob(db: DatabaseSync, id: string): MemoryJob | null {
+  return transitionMemoryJobStatus(db, id, ['pending', 'running'], 'cancelled', { error: null })
 }
 
 export function updateMemoryJob(

@@ -4,12 +4,17 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../src/db.js'
 import {
+  cancelMemoryJob,
+  claimNextMemoryJob,
+  completeMemoryJob,
   createMemoryChunk,
   createMemoryEmbedding,
   createMemoryJob,
   createMemorySummary,
   decodeEmbeddingVector,
   encodeEmbeddingVector,
+  enqueueMemoryJob,
+  failMemoryJob,
   getMemoryChunk,
   getMemoryEmbedding,
   getMemoryJob,
@@ -353,6 +358,9 @@ describe('memory repository jobs', () => {
         'job-1',
         'job-3',
       ])
+      expect(listMemoryJobs(db, { statuses: ['pending', 'running'] }).map((row) => row.id)).toEqual(
+        ['job-1', 'job-2', 'job-3'],
+      )
 
       expect(
         updateMemoryJob(db, 'job-1', {
@@ -367,6 +375,120 @@ describe('memory repository jobs', () => {
         error: 'summary failed',
       })
       expect(updateMemoryJob(db, 'missing', { status: 'cancelled' })).toBeNull()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('enqueues and claims pending jobs in deterministic queue order', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const enqueued = enqueueMemoryJob(db, {
+        id: 'job-b',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: { chunkId: 'chunk-2' },
+      })
+      enqueueMemoryJob(db, {
+        id: 'job-a',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: { chunkId: 'chunk-1' },
+      })
+      enqueueMemoryJob(db, {
+        id: 'job-c',
+        chatId: 'chat-2',
+        kind: 'embed',
+        payload: { chunkId: 'chunk-3' },
+      })
+      db.prepare("UPDATE memory_jobs SET created_at = '2026-05-24T00:00:00.000Z'").run()
+
+      expect(enqueued).toMatchObject({
+        id: 'job-b',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        status: 'pending',
+        error: null,
+      })
+      expect(claimNextMemoryJob(db, { kind: 'embed' })).toMatchObject({
+        id: 'job-c',
+        status: 'running',
+      })
+      expect(claimNextMemoryJob(db, { chatId: 'chat-1' })).toMatchObject({
+        id: 'job-a',
+        status: 'running',
+      })
+      expect(claimNextMemoryJob(db, { chatId: 'chat-1' })).toMatchObject({
+        id: 'job-b',
+        status: 'running',
+      })
+      expect(claimNextMemoryJob(db)).toBeNull()
+      expect(listMemoryJobs(db, { status: 'pending' })).toEqual([])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('completes, fails, and cancels only legal queue transitions', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'complete-me',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        payload: {},
+      })
+      enqueueMemoryJob(db, {
+        id: 'fail-me',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: { chunkId: 'chunk-1' },
+      })
+      enqueueMemoryJob(db, {
+        id: 'cancel-pending',
+        chatId: 'chat-1',
+        kind: 'embed',
+        payload: { chunkId: 'chunk-1' },
+      })
+      enqueueMemoryJob(db, {
+        id: 'cancel-running',
+        chatId: 'chat-1',
+        kind: 'embed',
+        payload: { chunkId: 'chunk-2' },
+      })
+
+      expect(completeMemoryJob(db, 'complete-me')).toBeNull()
+      expect(failMemoryJob(db, 'fail-me', 'not running yet')).toBeNull()
+
+      expect(claimNextMemoryJob(db, { kind: 'chunk' })).toMatchObject({ id: 'complete-me' })
+      expect(completeMemoryJob(db, 'complete-me')).toMatchObject({
+        id: 'complete-me',
+        status: 'completed',
+        error: null,
+      })
+      expect(failMemoryJob(db, 'complete-me', 'too late')).toBeNull()
+      expect(cancelMemoryJob(db, 'complete-me')).toBeNull()
+
+      expect(claimNextMemoryJob(db, { kind: 'summarize' })).toMatchObject({ id: 'fail-me' })
+      expect(failMemoryJob(db, 'fail-me', 'summary failed')).toMatchObject({
+        id: 'fail-me',
+        status: 'failed',
+        error: 'summary failed',
+      })
+      expect(completeMemoryJob(db, 'fail-me')).toBeNull()
+
+      expect(cancelMemoryJob(db, 'cancel-pending')).toMatchObject({
+        id: 'cancel-pending',
+        status: 'cancelled',
+        error: null,
+      })
+      expect(claimNextMemoryJob(db, { kind: 'embed' })).toMatchObject({ id: 'cancel-running' })
+      expect(cancelMemoryJob(db, 'cancel-running')).toMatchObject({
+        id: 'cancel-running',
+        status: 'cancelled',
+      })
+      expect(cancelMemoryJob(db, 'cancel-running')).toBeNull()
+      expect(completeMemoryJob(db, 'missing')).toBeNull()
     } finally {
       db.close()
     }
@@ -399,6 +521,16 @@ describe('memory repository jobs', () => {
         }),
       ).toThrow(ValidationError)
       expect(() => updateMemoryJob(db, 'job-1', { payload: undefined })).toThrow(ValidationError)
+      expect(() =>
+        enqueueMemoryJob(db, {
+          id: '',
+          chatId: 'chat-1',
+          kind: 'chunk',
+          payload: {},
+        }),
+      ).toThrow(ValidationError)
+      expect(() => listMemoryJobs(db, { statuses: [] })).toThrow(ValidationError)
+      expect(() => failMemoryJob(db, 'job-1', '')).toThrow(ValidationError)
 
       expect(() =>
         mapMemoryJobRow({
