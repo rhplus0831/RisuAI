@@ -27,8 +27,8 @@ the phase file.
 | 4 - sendChat tests | Closed 2026-05-20 | [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md) |
 | 5 - sendChat extraction | Closed 2026-05-22 | [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md) |
 | 6 - Server-side generation | Closed 2026-05-22 | [`phase-6-server-generation.md`](phase-6-server-generation.md) |
-| 7 - Server-side prompt assembly | In progress | [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md) |
-| 8 - Hypa V3 memory server-side | Not started | [`phase-8-memory.md`](phase-8-memory.md) |
+| 7 - Server-side prompt assembly | Closed 2026-05-24 | [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md) |
+| 8 - Hypa V3 memory server-side | In progress | [`phase-8-memory.md`](phase-8-memory.md) |
 | 9 - Client thinning | Not started | [`phase-9-client-thinning.md`](phase-9-client-thinning.md) |
 
 ## Dependency Order
@@ -39,9 +39,9 @@ the phase file.
 0 -> 4 -> 5 -> 6
 ```
 
-Phase 7 is the active phase. Phase 8 depends on the storage foundation
-and the server prompt walker. Phase 9 waits for the server-owned
-generation, prompt assembly, and memory surfaces to settle.
+Phase 8 is the active phase. Phase 7 is closed, so the next pickup is
+8-1a-i migration runner + version bump. Phase 9 waits for the
+server-owned generation, prompt assembly, and memory surfaces to settle.
 
 ## Completed Detail
 

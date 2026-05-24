@@ -11,13 +11,11 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Snapshot
 
-- Active phase: Phase 7, server-side prompt assembly.
-- Last landed slice: 7-12d-iv, typed `/chat` TTS side effects and
-  dispatch-error restoration rollback.
-- Current blocker: Phase 7 needs a closeout check before Phase 8 starts.
-- Next default pickup: Phase 7 closeout check, then Phase 8 Hypa V3
-  memory.
-- Last recorded baselines after 7-12d-iv: `pnpm check` clean,
+- Active phase: Phase 8, Hypa V3 memory.
+- Last landed slice: Phase 7 closeout check.
+- Current blocker: none recorded.
+- Next default pickup: 8-1a-i, migration runner + version bump.
+- Last recorded baselines after Phase 7 closeout: `pnpm check` clean,
   `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 895 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and bundle-size warnings.
@@ -26,8 +24,8 @@ Completed phase detail and old landed-slice logs live in
 
 - [`status/next-steps.md`](status/next-steps.md) - exact next slice and
   verification commands.
-- [`phases/phase-7-prompt-assembly.md`](phases/phase-7-prompt-assembly.md)
-  - active Phase 7 scope and exit criteria.
+- [`phases/phase-8-memory.md`](phases/phase-8-memory.md) - active Phase
+  8 scope, boundaries, and slice plan.
 - [`status/server.md`](status/server.md) - current Fastify route surface.
 - [`status/sendchat.md`](status/sendchat.md) - current `sendChat`
   boundary and fixture guardrails.
@@ -40,9 +38,9 @@ Completed phase detail and old landed-slice logs live in
 | ------------------------------------------- | ------------------------------------------------------------------------------ |
 | Removals                                    | Closed; historical detail archived.                                            |
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                     |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening follows Phase 7 needs. |
-| Server-side prompt assembly                 | Active; closeout check is next.                                                |
-| Hypa V3 memory                              | Not started; next after Phase 7 closeout.                                      |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.        |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                               |
+| Hypa V3 memory                              | Active; next slice is 8-1a-i migration runner + version bump.                  |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces.   |
 
 ## Maintenance Rules

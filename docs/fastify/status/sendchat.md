@@ -28,10 +28,11 @@ and fixture inventories are archived or covered by the coverage docs.
 
 ## Active Boundary
 
-Rollback and side effects are now covered for server-dispatched `/chat`.
-TTS arrives as typed `side_effect` events, and terminal provider errors
-can restore the pre-dispatch chat message/scriptstate snapshot before
-the existing error path reports the failure.
+Phase 7 prompt assembly is closed. Rollback and side effects are covered
+for server-dispatched `/chat`: TTS arrives as typed `side_effect` events,
+and terminal provider errors can restore the pre-dispatch chat
+message/scriptstate snapshot before the existing error path reports the
+failure.
 
 Track that work in [`next-steps.md`](next-steps.md) and
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md).

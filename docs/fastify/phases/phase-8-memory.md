@@ -9,6 +9,9 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
+Status: in progress. Next slice: **8-1a-i - Migration runner + version
+bump**.
+
 ## Preconditions
 
 - Phase 0 closed (Supa, Hypa V2, Hanurai are already gone).

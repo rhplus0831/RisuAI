@@ -25,7 +25,7 @@ docs.
 
 ## Current Server Work
 
-Phase 7 needs a closeout check before Phase 8 Hypa V3 memory starts. The
+Phase 7 prompt assembly is closed. Phase 8 Hypa V3 memory is active; the
 next concrete pickup is in [`next-steps.md`](next-steps.md).
 
 ## Watch Points
@@ -34,10 +34,10 @@ next concrete pickup is in [`next-steps.md`](next-steps.md).
   cannot send `risu-auth` may need session-cookie support later.
 - Ooba OAI-compatible, NovelAI text, and NovelList remain deferred until
   server-side prompt string flattening is available.
-- Hypa V3 memory jobs belong to Phase 8, not the current server dispatch
-  work.
+- Hypa V3 memory jobs belong to Phase 8; start with the migration runner
+  before adding memory tables or workers.
 - Browser plugin / Lua execution and image generation side effects remain
-  outside 7-12d-iv.
+  outside the prompt assembly closeout.
 
 ## References
 
@@ -45,4 +45,4 @@ next concrete pickup is in [`next-steps.md`](next-steps.md).
   [`../phases-completed/status-server-2026-05-24.md`](../phases-completed/status-server-2026-05-24.md)
 - Provider matrix: [`../coverage/providers.md`](../coverage/providers.md)
 - Server route coverage: [`../coverage/server-routes.md`](../coverage/server-routes.md)
-- Active phase: [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md)
+- Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)

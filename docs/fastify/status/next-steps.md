@@ -7,50 +7,44 @@ were moved to [`../phases-completed/`](../phases-completed/).
 
 ## Last Done
 
-7-12d-iv added the remaining server-dispatched `/chat` side-effect and
-rollback boundary. The route now emits typed `side_effect` events for TTS
-when `db.ttsAutoSpeech` is enabled, and provider dispatch failures after
-browser-visible mutations include `error.restoration` with the chat
-message/scriptstate snapshot needed to roll those mutations back.
-
-The browser `/chat` generation adapter carries terminal side effects and
-restoration payloads. `sendChat` applies server-sent TTS through the
-existing `sayTTS` path, suppresses duplicate streaming TTS for
-server-dispatched runs, restores chat state on terminal provider errors,
-and preserves the existing error reporting path.
+Phase 7 closeout passed. The server prompt assembly path is closed for
+send, continue, regenerate, preview, and preview-prompt behind
+`db.useServerPromptAssembly`; `/chat` SSE coverage pins prompt metadata,
+`message_patch`, provider tokens, typed TTS side effects, restoration
+errors, and enriched terminal `done` metadata.
 
 ## Immediate Pickup
 
-Start with a Phase 7 closeout check.
-
-Why this is next: the last active 7-12d implementation slice is landed,
-so the next agent should verify Phase 7 exit criteria and then open
-Phase 8 Hypa V3 memory.
+Start Phase 8 with **8-1a-i - Migration runner + version bump**.
 
 Expected scope:
 
-- Confirm the Phase 7 exit criteria are met for send, continue,
-  regenerate, preview, and preview-prompt behind
-  `db.useServerPromptAssembly`.
-- Refresh the full verification baseline.
-- Move any remaining Phase 7 notes into the completed archive and keep
-  the live status docs short.
-- If clean, update the handoff so Phase 8 Hypa V3 memory is the default
-  pickup.
+- Add the first domain SQL migration path for `risu.db`.
+- Keep `CURRENT_SCHEMA_VERSION` and the `schema_version` bootstrap row as
+  the source of truth.
+- Add a typed registry of ordered migration steps.
+- Add `applyMigrations(db, fromVersion)` that runs each step in a single
+  transaction and updates the existing `schema_version` row after a
+  successful step.
+- Add an idempotent reapply guard and tests proving migrations are
+  runnable and reapply-safe.
+- Bump the schema version for the runner framework only.
 
-Out of scope for the closeout check:
+Out of scope for 8-1a-i:
 
-- Implementing Phase 8 memory routes, Phase 9 client thinning, image
-  generation, NovelAI string flattening, or plugin / Lua hooks.
+- Memory tables, memory repositories, import/backfill, workers, routes,
+  provider calls, SSE progress, prompt memory selection, and browser UI.
 
-## Queue After Closeout
+## Queue After 8-1a-i
 
-1. Phase 8 Hypa V3 memory pickup.
+1. 8-1a-ii - Memory tables on top of the runner.
+2. 8-1b - Memory repositories + row mappers.
+3. 8-1c - Legacy `hypaV3Data` import/backfill.
 
 ## Parallel Or Deferred
 
-- Normalized-DB cross-assembler parity artifact: useful, but not blocking
-  the closeout check.
+- Normalized-DB cross-assembler parity artifact: useful historical check,
+  but no longer blocking Phase 7 closeout.
 - Hub-route session auth: browser-loaded hub resources can still 401 on
   password-protected deployments because they cannot send `risu-auth`.
 - Ooba OAI-compatible, NovelAI text, and NovelList: wait for server-side
@@ -68,21 +62,25 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 7-12d-iv: `pnpm check` clean,
+Last recorded full baselines after Phase 7 closeout: `pnpm check` clean,
 `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 895 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and bundle-size warnings.
 
-Focused 7-12d-iv verification:
+Focused Phase 7 closeout verification:
 
 ```bash
 pnpm exec vitest run server/fastify/__tests__/generation.chat.test.ts --config server/fastify/vitest.config.ts
-pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/process/request/tests/serverMessagePatch.test.ts src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
+pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/process/request/tests/serverMessagePatch.test.ts src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts
 ```
 
 ## References
 
-- Active phase: [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md)
+- Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
+- Phase 7 closeout:
+  [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
+- Phase 7 final summary:
+  [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md)
 - Phase 7 archive through 7-12c:
   [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md)
 - 7-12d-i closeout:

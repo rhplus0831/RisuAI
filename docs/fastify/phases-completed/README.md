@@ -24,6 +24,7 @@ track the next piece of work.
 | 7-12d-iii-a - Chunk transport           | [`phase-7-prompt-assembly-7-12d-iii-a.md`](phase-7-prompt-assembly-7-12d-iii-a.md)     | Provider-agnostic `/chat` token/error/done transport and tests.         |
 | 7-12d-iii-b - Server dispatch           | [`phase-7-prompt-assembly-7-12d-iii-b.md`](phase-7-prompt-assembly-7-12d-iii-b.md)     | Production `/chat` dispatch, browser stream adapter, and fixture sweep. |
 | 7-12d-iv - Side effects / rollback      | [`phase-7-prompt-assembly-7-12d-iv.md`](phase-7-prompt-assembly-7-12d-iv.md)           | Typed TTS side effect and terminal error restoration rollback.          |
+| 7 - Prompt assembly closeout            | [`phase-7-prompt-assembly-closeout.md`](phase-7-prompt-assembly-closeout.md)           | Final exit-criteria check and Phase 8 handoff.                          |
 
 ## Historical Status Logs
 

@@ -2,10 +2,14 @@
 
 Date: 2026-05-24
 
-Status: in progress.
+Status: closed 2026-05-24.
 
-Last completed slice: 7-12d-iv added typed `/chat` TTS side effects and
-dispatch-error restoration rollback behind `db.useServerPromptAssembly`.
+Closeout archive:
+[`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md).
+
+Final implementation slice: 7-12d-iv added typed `/chat` TTS side
+effects and dispatch-error restoration rollback behind
+`db.useServerPromptAssembly`.
 
 Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md).
@@ -29,38 +33,30 @@ without requiring the browser to own mutable send-time state.
 ## Preconditions
 
 - Phases 1-6 are closed.
-- The active guardrails are the local `sendChat` fixture sweep, the
+- The final guardrails are the local `sendChat` fixture sweep, the
   server-backed provider sweep, and the Fastify generation route tests.
 
-## Remaining Work
+## Closeout Summary
 
-### Closeout Check
-
-Run the Phase 7 closeout pass before opening Phase 8.
-
-Expected work:
-
-- Confirm send, continue, regenerate, preview, and preview-prompt all use
-  the server prompt assembly path behind `db.useServerPromptAssembly`.
-- Confirm the locked `/chat` SSE taxonomy covers prompt metadata,
-  `message_patch`, provider tokens, TTS side effects, restoration errors,
-  and enriched terminal `done` metadata.
-- Refresh the full verification baseline and archive any remaining
-  Phase 7 notes.
+Phase 7 closeout confirmed send, continue, regenerate, preview, and
+preview-prompt can use the server prompt assembly path behind
+`db.useServerPromptAssembly`. The locked `/chat` SSE taxonomy covers
+prompt metadata, `message_patch`, provider tokens, TTS side effects,
+restoration errors, and enriched terminal `done` metadata.
 
 ## Optional Or Parallel Work
 
 - Build the normalized-DB parity artifact for cross-assembler tests. This
-  is not blocking the closeout check.
+  did not block Phase 7 closeout.
 - Add script-cache and `runTrigger('display', ...)` support only if
-  `editdisplay` work needs it before closeout.
+  `editdisplay` work needs it in a later phase.
 - Add the input hook adapter only if Stage 1 becomes server-owned before
   Phase 9; otherwise defer it.
 - Revisit hub-route session auth for browser-loaded hub resources.
 
 ## Boundaries
 
-- Hypa V3 memory belongs to Phase 8.
+- Hypa V3 memory belongs to Phase 8, now active.
 - Browser plugin / Lua execution, low-level LLM or image effects, and
   persistent character / persona / lorebook mutations stay out of Phase 7.
 - Ooba OAI-compatible, NovelAI text, and NovelList remain deferred until
@@ -70,13 +66,15 @@ Expected work:
 
 ## Exit Criteria
 
-- `send`, `continue`, `regenerate`, preview, and preview-prompt can use the
-  server prompt assembly path behind `db.useServerPromptAssembly`.
-- Browser-visible chat mutations are represented as typed server events and
-  applied without relying on hidden local assembly side effects.
-- Server-side dispatch streams through the locked SSE taxonomy.
-- The local `sendChat` fixtures, server-backed sweep, Fastify API tests,
-  type check, and build pass.
+- Closed: `send`, `continue`, `regenerate`, preview, and preview-prompt
+  can use the server prompt assembly path behind
+  `db.useServerPromptAssembly`.
+- Closed: browser-visible chat mutations are represented as typed server
+  events and applied without relying on hidden local assembly side
+  effects.
+- Closed: server-side dispatch streams through the locked SSE taxonomy.
+- Closed: the local `sendChat` fixtures, server-backed sweep, Fastify API
+  tests, type check, and build pass.
 
 ## Verification
 
