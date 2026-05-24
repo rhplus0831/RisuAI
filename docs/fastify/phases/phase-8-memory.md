@@ -2,9 +2,9 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-4d - Summary rate limiting
-and ordered writes**. Next slice: **8-5a - Embedding provider
-contract**.
+Status: in progress. Completed through **8-5a - Embedding provider
+contract**. Next slice: **8-5b - Embed job handler + vector
+persistence**.
 
 ## Goal
 
@@ -29,7 +29,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-4d:
+Completed through 8-5a:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -42,6 +42,9 @@ Completed through 8-4d:
 - **8-4a through 8-4d - Summary generation foundation:** summary prompt
   builder, API-backed summary adapter, single-job summarize handler,
   summarize batch rate limiting, and ordered writes.
+- **8-5a - Embedding provider contract:** server-side embedding model
+  resolver, OpenAI-compatible/custom endpoint adapter, response
+  normalization, vector dimension validation, and typed provider errors.
 
 Carry-forward decisions from completed work:
 
@@ -58,6 +61,10 @@ Carry-forward decisions from completed work:
   planned order only until the first failed, cancelled, or empty result.
   Later staged successes remain uncommitted and are handed back to queue
   retry/fail primitives.
+- Embedding provider calls are supported only for API-backed OpenAI
+  embedding aliases and custom embedding endpoints. Browser-local
+  transformers / WebGPU models remain out of server scope; Voyage
+  contextual grouping remains deferred to 8-5c.
 
 ## Scope
 
@@ -66,13 +73,13 @@ Carry-forward decisions from completed work:
 Current schema includes:
 
 - `memory_chunks(id, chat_id, message_id, range_start_seq,
-  range_end_seq, text, status, created_at, updated_at)`
+range_end_seq, text, status, created_at, updated_at)`
 - `memory_summaries(id, chat_id, chunk_id, model, text, tokens,
-  created_at)`
+created_at)`
 - `memory_embeddings(id, chat_id, chunk_id, model, vector_blob, dim,
-  group_id, group_index, created_at)`
+group_id, group_index, created_at)`
 - `memory_jobs(id, chat_id, kind, status, payload_json, error,
-  created_at, updated_at)`
+created_at, updated_at)`
 
 `memory_chunks.text` and `memory_summaries.text` are large and do not
 belong in `extension_fields`.
@@ -113,11 +120,6 @@ browser progress store.
 - **8-5 - Embeddings and selection.** Build embedding persistence and
   pure ranking/allocation helpers before exposing the prompt-facing
   selection facade.
-  - **8-5a - Embedding provider contract.** Define server-side embedding
-    model ids, credential lookup, request/response normalization, vector
-    dimension validation, and typed errors. Support API-backed
-    OpenAI-compatible embeddings and custom embedding endpoints. Keep
-    browser-local transformers / WebGPU out of scope.
   - **8-5b - Embed job handler + vector persistence.** Fetch embeddings
     through the provider contract, persist `memory_embeddings`, mark work
     completed or failed, make reruns idempotent, and apply embedding

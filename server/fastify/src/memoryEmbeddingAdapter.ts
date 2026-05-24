@@ -1,0 +1,160 @@
+import type { MemoryEmbeddingModelRequest } from './memoryEmbeddingModel.js'
+
+export type EmbeddingProviderErrorCode =
+  | 'configuration'
+  | 'aborted'
+  | 'fetch'
+  | 'upstream'
+  | 'invalid-json'
+  | 'invalid-response'
+  | 'dimension-mismatch'
+
+export interface MemoryEmbeddingProviderError {
+  error: string
+  code: EmbeddingProviderErrorCode
+}
+
+export interface MemoryEmbeddingAdapterResult {
+  model: string
+  vectors: Float32Array[]
+  dim: number
+}
+
+export interface EmbedTextsOptions {
+  request: MemoryEmbeddingModelRequest
+  input: readonly string[]
+  expectedDim?: number
+  signal: AbortSignal
+}
+
+interface EmbeddingResponse {
+  data?: unknown
+  error?: { message?: unknown }
+}
+
+interface EmbeddingResponseItem {
+  embedding?: unknown
+  index?: unknown
+}
+
+export async function embedTexts(
+  opts: EmbedTextsOptions,
+): Promise<MemoryEmbeddingAdapterResult | MemoryEmbeddingProviderError> {
+  const input = [...opts.input]
+  if (input.length === 0) {
+    return { error: 'embedding input must not be empty', code: 'configuration' }
+  }
+  if (input.some((value) => typeof value !== 'string')) {
+    return { error: 'embedding input must contain only strings', code: 'configuration' }
+  }
+  if (opts.signal.aborted) return { error: 'aborted', code: 'aborted' }
+
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (opts.request.apiKey) headers.authorization = `Bearer ${opts.request.apiKey}`
+
+  const body: Record<string, unknown> = { input }
+  if (opts.request.wireModel) body.model = opts.request.wireModel
+
+  let response: Response
+  try {
+    response = await fetch(opts.request.endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: opts.signal,
+    })
+  } catch (err) {
+    if (opts.signal.aborted) return { error: 'aborted', code: 'aborted' }
+    const msg = err instanceof Error ? err.message : String(err)
+    return { error: `embedding fetch failed: ${msg}`, code: 'fetch' }
+  }
+
+  let json: EmbeddingResponse
+  try {
+    json = (await response.json()) as EmbeddingResponse
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { error: `invalid embedding JSON: ${msg}`, code: 'invalid-json' }
+  }
+
+  if (!response.ok) {
+    const upstreamMsg =
+      typeof json.error?.message === 'string' ? json.error.message : `HTTP ${response.status}`
+    return { error: upstreamMsg, code: 'upstream' }
+  }
+
+  const normalized = normalizeEmbeddingData(json.data, input.length)
+  if ('error' in normalized) return normalized
+
+  const dim = opts.expectedDim ?? normalized.vectors[0]?.length
+  if (typeof dim !== 'number' || !Number.isInteger(dim) || dim <= 0) {
+    return { error: 'embedding dimension must be a positive integer', code: 'dimension-mismatch' }
+  }
+  for (const vector of normalized.vectors) {
+    if (vector.length !== dim) {
+      return {
+        error: `embedding dimension mismatch: expected ${dim}, got ${vector.length}`,
+        code: 'dimension-mismatch',
+      }
+    }
+  }
+
+  return { model: opts.request.model, vectors: normalized.vectors, dim }
+}
+
+function normalizeEmbeddingData(
+  rawData: unknown,
+  expectedCount: number,
+): { vectors: Float32Array[] } | MemoryEmbeddingProviderError {
+  if (!Array.isArray(rawData)) {
+    return { error: 'embedding response data must be an array', code: 'invalid-response' }
+  }
+  if (rawData.length !== expectedCount) {
+    return {
+      error: `embedding response count mismatch: expected ${expectedCount}, got ${rawData.length}`,
+      code: 'invalid-response',
+    }
+  }
+
+  const vectors = new Array<Float32Array>(expectedCount)
+  const hasIndexes = rawData.some(
+    (item) => typeof (item as EmbeddingResponseItem)?.index === 'number',
+  )
+
+  for (let i = 0; i < rawData.length; i += 1) {
+    const item = rawData[i] as EmbeddingResponseItem
+    const index = hasIndexes ? item.index : i
+    if (!Number.isInteger(index) || index < 0 || index >= expectedCount) {
+      return { error: 'embedding response contains an invalid index', code: 'invalid-response' }
+    }
+    if (vectors[index] !== undefined) {
+      return { error: 'embedding response contains duplicate indexes', code: 'invalid-response' }
+    }
+
+    const vector = normalizeVector(item.embedding)
+    if ('error' in vector) return vector
+    vectors[index] = vector.vector
+  }
+
+  if (vectors.some((vector) => vector === undefined)) {
+    return { error: 'embedding response is missing one or more indexes', code: 'invalid-response' }
+  }
+
+  return { vectors }
+}
+
+function normalizeVector(raw: unknown): { vector: Float32Array } | MemoryEmbeddingProviderError {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { error: 'embedding vector must be a non-empty number array', code: 'invalid-response' }
+  }
+
+  const vector = new Float32Array(raw.length)
+  for (let i = 0; i < raw.length; i += 1) {
+    const value = raw[i]
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return { error: 'embedding vector values must be finite numbers', code: 'invalid-response' }
+    }
+    vector[i] = value
+  }
+  return { vector }
+}
