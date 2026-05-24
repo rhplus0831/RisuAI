@@ -1,0 +1,197 @@
+import { createHash } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
+import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { HypaV3MemoryPlan, HypaV3PlannedWindow } from './memoryPlanner.js'
+import {
+  createMemoryChunk,
+  enqueueMemoryJob,
+  getMemoryChunk,
+  getMemoryJob,
+  type MemoryChunk,
+  type MemoryJob,
+} from './memoryRepository.js'
+import { ValidationError } from './repository.js'
+
+const CHUNK_ID_PREFIX = 'hypav3-chunk'
+const SUMMARIZE_JOB_ID_PREFIX = 'hypav3-summarize'
+const SUMMARIZE_PAYLOAD_SCHEMA_VERSION = 1
+
+export interface HypaV3SummarizeJobPayload {
+  schemaVersion: 1
+  chunkId: string
+  model: string
+  rangeStartSeq: number
+  rangeEndSeq: number
+  messageIndexes: number[]
+  chatMemos: string[]
+}
+
+export interface PlanHypaV3ChunkJobsInput {
+  db: DatabaseSync
+  chatId: string
+  chats: readonly OpenAIChat[]
+  plan: HypaV3MemoryPlan
+  model?: string
+  maxAttempts?: number
+  nextRunAt?: string
+}
+
+export interface PlannedHypaV3ChunkJob {
+  window: HypaV3PlannedWindow
+  chunk: MemoryChunk
+  job: MemoryJob | null
+  payload: HypaV3SummarizeJobPayload
+  chunkCreated: boolean
+  jobCreated: boolean
+}
+
+export interface PlanHypaV3ChunkJobsResult {
+  planned: PlannedHypaV3ChunkJob[]
+  chunksCreated: number
+  jobsCreated: number
+}
+
+export function planHypaV3ChunkJobs(
+  input: PlanHypaV3ChunkJobsInput,
+): PlanHypaV3ChunkJobsResult {
+  validateInput(input)
+
+  if (input.plan.errors.length > 0 || input.plan.plannedWindows.length === 0) {
+    return { planned: [], chunksCreated: 0, jobsCreated: 0 }
+  }
+
+  const model = input.model ?? input.plan.settings.summarizationModel
+  if (typeof model !== 'string' || model.length === 0) {
+    throw new ValidationError('summarization model must be a non-empty string')
+  }
+
+  return withTransaction(input.db, () => {
+    const planned: PlannedHypaV3ChunkJob[] = []
+    let chunksCreated = 0
+    let jobsCreated = 0
+
+    for (const window of input.plan.plannedWindows) {
+      const chunkText = buildChunkText(input.chats, window)
+      if (chunkText.length === 0) continue
+
+      const chunkId = buildPlannedChunkId(input.chatId, window, chunkText)
+      const existingChunk = getMemoryChunk(input.db, chunkId)
+      const chunk =
+        existingChunk ??
+        createMemoryChunk(input.db, {
+          id: chunkId,
+          chatId: input.chatId,
+          messageId: window.chatMemos.at(-1) ?? null,
+          rangeStartSeq: window.startIndex,
+          rangeEndSeq: window.endIndexExclusive - 1,
+          text: chunkText,
+        })
+      if (!existingChunk) chunksCreated += 1
+
+      const payload = buildSummarizeJobPayload({ chunkId, model, window })
+      const jobId = buildSummarizeJobId(input.chatId, chunkId, model)
+      const existingJob = getMemoryJob(input.db, jobId)
+      const shouldEnqueue = chunk.status !== 'summarized' && existingJob === null
+      const job = shouldEnqueue
+        ? enqueueMemoryJob(input.db, {
+            id: jobId,
+            chatId: input.chatId,
+            kind: 'summarize',
+            payload,
+            maxAttempts: input.maxAttempts,
+            nextRunAt: input.nextRunAt,
+          })
+        : existingJob
+      if (shouldEnqueue) jobsCreated += 1
+
+      planned.push({
+        window,
+        chunk,
+        job,
+        payload,
+        chunkCreated: existingChunk === null,
+        jobCreated: shouldEnqueue,
+      })
+    }
+
+    return { planned, chunksCreated, jobsCreated }
+  })
+}
+
+export function buildSummarizeJobPayload(input: {
+  chunkId: string
+  model: string
+  window: HypaV3PlannedWindow
+}): HypaV3SummarizeJobPayload {
+  return {
+    schemaVersion: SUMMARIZE_PAYLOAD_SCHEMA_VERSION,
+    chunkId: input.chunkId,
+    model: input.model,
+    rangeStartSeq: input.window.startIndex,
+    rangeEndSeq: input.window.endIndexExclusive - 1,
+    messageIndexes: [...input.window.messageIndexes],
+    chatMemos: [...input.window.chatMemos],
+  }
+}
+
+export function buildChunkText(
+  chats: readonly OpenAIChat[],
+  window: HypaV3PlannedWindow,
+): string {
+  return window.messageIndexes
+    .map((index) => {
+      const chat = chats[index]
+      if (!chat) {
+        throw new ValidationError(`planned message index ${index} is outside the chat list`)
+      }
+      return `${chat.role}: ${sanitizeSummaryContent(chat.content)}`
+    })
+    .join('\n')
+}
+
+function validateInput(input: PlanHypaV3ChunkJobsInput): void {
+  if (typeof input.chatId !== 'string' || input.chatId.length === 0) {
+    throw new ValidationError('chat id must be a non-empty string')
+  }
+}
+
+function buildPlannedChunkId(
+  chatId: string,
+  window: HypaV3PlannedWindow,
+  chunkText: string,
+): string {
+  return `${CHUNK_ID_PREFIX}-${shortHash(
+    JSON.stringify({
+      chatId,
+      rangeStartSeq: window.startIndex,
+      rangeEndSeq: window.endIndexExclusive - 1,
+      messageIndexes: window.messageIndexes,
+      chatMemos: window.chatMemos,
+      chunkText,
+    }),
+  )}`
+}
+
+function buildSummarizeJobId(chatId: string, chunkId: string, model: string): string {
+  return `${SUMMARIZE_JOB_ID_PREFIX}-${shortHash(JSON.stringify({ chatId, chunkId, model }))}`
+}
+
+function sanitizeSummaryContent(content: string): string {
+  return content.replaceAll('\r\n', '\n').trim()
+}
+
+function shortHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 24)
+}
+
+function withTransaction<T>(db: DatabaseSync, fn: () => T): T {
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    const result = fn()
+    db.exec('COMMIT')
+    return result
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}

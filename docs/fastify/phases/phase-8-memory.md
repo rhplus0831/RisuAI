@@ -9,7 +9,7 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-3d - Chunk/job planning bridge**.
+Status: in progress. Next slice: **8-4a - Summary prompt builder**.
 
 ## Preconditions
 
@@ -198,6 +198,7 @@ the current schema and import paths directly.
     into deterministic `memory_chunks` rows and planned `summarize` jobs.
     Cover idempotency, payload shape, status transitions expected by
     8-4, and batching behavior. Still do not call providers.
+    Closed on 2026-05-24.
 - **8-4 — Summary generation.** Bring over prompt construction,
   provider-backed summary calls, job handling, and legacy ordering/rate
   limits after the planner bridge exists. Close the sub-slices below in
