@@ -1,5 +1,5 @@
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import type { DoneEvent, PromptChatEvent } from './sseEvents.js'
+import type { DoneEvent, ErrorEvent, PromptChatEvent } from './sseEvents.js'
 
 export type PromptChatEmit = (event: PromptChatEvent) => void
 
@@ -12,6 +12,12 @@ export interface ProviderChunkTransportResult {
 export type ProviderDoneMetadata = (
   result: string,
 ) => Omit<DoneEvent, 'type' | 'result'> | undefined
+
+export interface ProviderChunkTransportOptions {
+  doneMetadata?: ProviderDoneMetadata
+  sideEffects?: (result: string) => PromptChatEvent[]
+  errorRestoration?: () => ErrorEvent['restoration']
+}
 
 function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message.length > 0) return err.message
@@ -28,9 +34,16 @@ export async function emitProviderChunks(
   frames: AsyncIterable<CompletionStreamFrame>,
   emit: PromptChatEmit,
   signal?: AbortSignal,
-  doneMetadata?: ProviderDoneMetadata,
+  options: ProviderChunkTransportOptions | ProviderDoneMetadata = {},
 ): Promise<ProviderChunkTransportResult> {
   let result = ''
+  const normalizedOptions: ProviderChunkTransportOptions =
+    typeof options === 'function' ? { doneMetadata: options } : options
+  const emitSideEffects = (): void => {
+    for (const event of normalizedOptions.sideEffects?.(result) ?? []) {
+      emit(event)
+    }
+  }
 
   if (signal?.aborted) {
     return { status: 'aborted', result }
@@ -48,7 +61,8 @@ export async function emitProviderChunks(
         continue
       }
 
-      emit({ type: 'done', result, ...(doneMetadata?.(result) ?? {}) })
+      emitSideEffects()
+      emit({ type: 'done', result, ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
       return {
         status: 'done',
         result,
@@ -59,11 +73,16 @@ export async function emitProviderChunks(
     if (signal?.aborted) {
       return { status: 'aborted', result }
     }
-    emit({ type: 'error', error: errorMessage(err) })
-    emit({ type: 'done', ...(doneMetadata?.(result) ?? {}) })
+    emit({
+      type: 'error',
+      error: errorMessage(err),
+      restoration: normalizedOptions.errorRestoration?.(),
+    })
+    emit({ type: 'done', ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
     return { status: 'error', result }
   }
 
-  emit({ type: 'done', result, ...(doneMetadata?.(result) ?? {}) })
+  emitSideEffects()
+  emit({ type: 'done', result, ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
   return { status: 'done', result }
 }

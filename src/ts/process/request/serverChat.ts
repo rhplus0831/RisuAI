@@ -17,7 +17,14 @@
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
 import type { MessageGenerationInfo } from '../../storage/database.svelte'
 import { iterateSseEvents } from './sseParse'
-import type { DoneEvent, InfoEvent, PromptEvent, ServerChatMessagePatch } from './serverChatEvents'
+import type {
+  DoneEvent,
+  InfoEvent,
+  PromptEvent,
+  ServerChatMessagePatch,
+  ServerChatRestoration,
+  ServerChatSideEffect,
+} from './serverChatEvents'
 import type { requestDataResponse, StreamResponseChunk } from './request'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
@@ -55,6 +62,8 @@ export type ServerChatResult =
 export interface ServerChatTerminal {
   status: 'done' | 'error'
   error?: string
+  restoration?: ServerChatRestoration
+  sideEffects?: ServerChatSideEffect[]
   done?: Omit<DoneEvent, 'type'>
 }
 
@@ -238,6 +247,7 @@ export async function requestServerChatGeneration(
   let info: ServerChatInfo | undefined
   let donePayload: Omit<DoneEvent, 'type'> | undefined
   const messagePatches: ServerChatMessagePatch[] = []
+  const sideEffects: ServerChatSideEffect[] = []
   let readyResolved = false
   let terminalResolved = false
   let tokenResult = ''
@@ -303,6 +313,11 @@ export async function requestServerChatGeneration(
                   messagePatches.push(data.patch as unknown as ServerChatMessagePatch)
                 }
                 break
+              case 'side_effect':
+                if (typeof data.kind === 'string') {
+                  sideEffects.push(data as unknown as ServerChatSideEffect)
+                }
+                break
               case 'token': {
                 const content = typeof data.content === 'string' ? data.content : ''
                 tokenResult += content
@@ -313,7 +328,15 @@ export async function requestServerChatGeneration(
                 const error =
                   typeof data.error === 'string' ? data.error : 'provider dispatch failed'
                 resolveReadyOnce({ status: 'error', error })
-                resolveTerminalOnce({ status: 'error', error })
+                resolveTerminalOnce({
+                  status: 'error',
+                  error,
+                  restoration:
+                    data.restoration && typeof data.restoration === 'object'
+                      ? (data.restoration as unknown as ServerChatRestoration)
+                      : undefined,
+                  sideEffects,
+                })
                 controller.close()
                 return
               }
@@ -332,7 +355,7 @@ export async function requestServerChatGeneration(
                       : 'stream ended without a prompt event',
                   })
                 }
-                resolveTerminalOnce({ status: 'done', done: donePayload })
+                resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects })
                 controller.close()
                 return
               default:

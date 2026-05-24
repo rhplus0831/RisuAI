@@ -28,10 +28,10 @@ and fixture inventories are archived or covered by the coverage docs.
 
 ## Active Boundary
 
-The next risky boundary is rollback and side effects. 7-12d-iv should add
-the typed `tts` `side_effect` event and an `error.restoration` path for
-server-dispatch failures that happen after browser-visible mutations have
-started.
+Rollback and side effects are now covered for server-dispatched `/chat`.
+TTS arrives as typed `side_effect` events, and terminal provider errors
+can restore the pre-dispatch chat message/scriptstate snapshot before
+the existing error path reports the failure.
 
 Track that work in [`next-steps.md`](next-steps.md) and
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md).

@@ -1,5 +1,9 @@
 import type { Chat, Message } from '../../storage/database.svelte'
-import type { ServerChatMessageMutation, ServerChatMessagePatch } from './serverChatEvents'
+import type {
+  ServerChatMessageMutation,
+  ServerChatMessagePatch,
+  ServerChatRestoration,
+} from './serverChatEvents'
 
 function cloneMessage(message: Message): Message {
   return structuredClone(message)
@@ -47,4 +51,14 @@ export function applyServerMessagePatch(chat: Chat, patch: ServerChatMessagePatc
       chat.scriptstate[mutation.key] = mutation.after
     }
   }
+}
+
+export function applyServerChatRestoration(chat: Chat, restoration: ServerChatRestoration): void {
+  chat.message = cloneMessages(restoration.messages)
+  if (restoration.scriptstate && Object.keys(restoration.scriptstate).length > 0) {
+    chat.scriptstate = structuredClone(restoration.scriptstate)
+  } else {
+    delete chat.scriptstate
+  }
+  chat.isStreaming = false
 }

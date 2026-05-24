@@ -7,7 +7,7 @@
  */
 
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
-import type { ServerChatMessagePatch } from '../../request/serverChatEvents'
+import type { ServerChatMessagePatch, ServerChatRestoration } from '../../request/serverChatEvents'
 
 export interface ServerChatCall {
   url: string
@@ -43,6 +43,9 @@ interface State {
   messagePatch: ServerChatMessagePatch | null
   /** Optional provider result returned as `/chat` token + enriched done events. */
   dispatchResult: string | null
+  dispatchError: string | null
+  emitTtsSideEffect: boolean
+  restoration: ServerChatRestoration | null
   generationId: string
   generationInfo: Record<string, unknown> | null
   /** When set, the stream emits a terminal `error` instead of `prompt`. */
@@ -64,6 +67,9 @@ function defaultState(): Omit<State, 'calls'> {
     responseBudget: 50,
     messagePatch: null,
     dispatchResult: null,
+    dispatchError: null,
+    emitTtsSideEffect: false,
+    restoration: null,
     generationId: 'uuid-0',
     generationInfo: null,
     errorMessage: null,
@@ -109,10 +115,26 @@ export function setServerChatDispatchResult(
   result: string,
   generationInfo: Record<string, unknown>,
   generationId = 'uuid-0',
+  opts: { emitTtsSideEffect?: boolean } = {},
 ): void {
   state.dispatchResult = result
+  state.dispatchError = null
   state.generationId = generationId
   state.generationInfo = { ...generationInfo, generationId }
+  state.emitTtsSideEffect = !!opts.emitTtsSideEffect
+}
+
+export function setServerChatDispatchError(
+  message: string,
+  generationInfo: Record<string, unknown>,
+  restoration: ServerChatRestoration,
+  generationId = 'uuid-0',
+): void {
+  state.dispatchResult = null
+  state.dispatchError = message
+  state.generationId = generationId
+  state.generationInfo = { ...generationInfo, generationId }
+  state.restoration = restoration
 }
 
 function frame(event: string, data: unknown): string {
@@ -150,13 +172,32 @@ function sseChatResponse(): Response {
         timings: { prompt: 1 },
         tokens: { prompt: state.inputTokens, total: state.inputTokens },
         responseBudget: state.responseBudget,
-        generationId: state.dispatchResult !== null ? state.generationId : undefined,
-        generationInfo: state.dispatchResult !== null ? state.generationInfo : undefined,
+        generationId:
+          state.dispatchResult !== null || state.dispatchError !== null
+            ? state.generationId
+            : undefined,
+        generationInfo:
+          state.dispatchResult !== null || state.dispatchError !== null
+            ? state.generationInfo
+            : undefined,
       })
       if (state.dispatchResult !== null) {
         push('token', { content: state.dispatchResult })
+        if (state.emitTtsSideEffect) {
+          push('side_effect', {
+            kind: 'tts',
+            payload: { text: state.dispatchResult, characterId: 'char-1' },
+          })
+        }
         push('done', {
           result: state.dispatchResult,
+          generationId: state.generationId,
+          generationInfo: state.generationInfo,
+        })
+      } else if (state.dispatchError !== null) {
+        push('token', { content: 'partial' })
+        push('error', { error: state.dispatchError, restoration: state.restoration })
+        push('done', {
           generationId: state.generationId,
           generationInfo: state.generationInfo,
         })

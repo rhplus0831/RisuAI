@@ -12,14 +12,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 7, server-side prompt assembly.
-- Last landed slice: 7-12d-iii-b, production `/chat` provider dispatch
-  plus browser send-path orchestration.
-- Current blocker: server-dispatched `/chat` still needs typed `tts`
-  `side_effect` events and `error.restoration` rollback.
-- Next default pickup: 7-12d-iv, add `tts` `side_effect` and
-  `error.restoration` rollback.
-- Last recorded baselines after 7-12d-iii-b: `pnpm check` clean,
-  `pnpm test` 635 tests plus 4 skipped, `pnpm api:test` 894 tests, and
+- Last landed slice: 7-12d-iv, typed `/chat` TTS side effects and
+  dispatch-error restoration rollback.
+- Current blocker: Phase 7 needs a closeout check before Phase 8 starts.
+- Next default pickup: Phase 7 closeout check, then Phase 8 Hypa V3
+  memory.
+- Last recorded baselines after 7-12d-iv: `pnpm check` clean,
+  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 895 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and bundle-size warnings.
 
@@ -42,8 +41,8 @@ Completed phase detail and old landed-slice logs live in
 | Removals                                    | Closed; historical detail archived.                                            |
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                     |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening follows Phase 7 needs. |
-| Server-side prompt assembly                 | Active; 7-12d-iv side effects / rollback is next.                              |
-| Hypa V3 memory                              | Not started; waits for Phase 7.                                                |
+| Server-side prompt assembly                 | Active; closeout check is next.                                                |
+| Hypa V3 memory                              | Not started; next after Phase 7 closeout.                                      |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces.   |
 
 ## Maintenance Rules

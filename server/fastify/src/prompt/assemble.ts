@@ -163,6 +163,15 @@ export interface AssembleMutationPayload {
   additionalSystemPrompt: AssembleAdditionalSystemPromptMutation[]
 }
 
+export interface AssembleRestorationPayload {
+  chatId: string
+  characterId: string
+  selectedCharID: number
+  chatPage: number
+  messages: Message[]
+  scriptstate?: Record<string, string | number | boolean>
+}
+
 /**
  * The full assembler output (7-11f). `prompt` is the `prompt` SSE event
  * payload the route emits (7-11g); the remaining fields carry the data
@@ -187,6 +196,8 @@ export interface AssembleResult {
   outputTokens?: number
   /** Server-owned chat and variable mutations produced during assembly. */
   mutations?: AssembleMutationPayload
+  /** Browser-visible state from before the server-owned mutations replay. */
+  restoration?: AssembleRestorationPayload
 }
 
 /**
@@ -273,6 +284,7 @@ export interface AssemblyState {
   /** Set to `'overflow'` when the budget recheck cannot fit the pinned rows. */
   abortReason?: 'stopSending' | 'overflow'
   // --- 7-12d-i: typed mutation handoff (set while assembling) ---
+  initialMessages?: Message[]
   messageMutationCheckpoint?: Message[]
   initialScriptstate?: Record<string, string | number | boolean>
   messageMutations?: AssembleMessageMutation[]
@@ -360,6 +372,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     isContinue: input.mode === 'continue',
     presetId: input.presetId,
     loadoutId: input.loadoutId,
+    initialMessages: cloneMessages(currentChat.message ?? []),
     messageMutationCheckpoint: cloneMessages(currentChat.message ?? []),
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
     messageMutations: [],
@@ -503,6 +516,18 @@ function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
     messageMutations: state.messageMutations ?? [],
     chatVarMutations: buildChatVarMutations(state),
     additionalSystemPrompt: state.additionalSystemPromptMutations ?? [],
+  }
+}
+
+function buildRestorationPayload(state: AssemblyState): AssembleRestorationPayload {
+  const scriptstate = structuredClone(state.initialScriptstate ?? {})
+  return {
+    chatId: state.input.chatId,
+    characterId: state.input.characterId,
+    selectedCharID: state.selectedCharID,
+    chatPage: state.chatPage,
+    messages: cloneMessages(state.initialMessages ?? []),
+    scriptstate: Object.keys(scriptstate).length > 0 ? scriptstate : undefined,
   }
 }
 
@@ -821,6 +846,7 @@ export async function assemblePrompt(
       stopSending: true,
       abortReason: state.abortReason ?? 'stopSending',
       mutations: buildMutationPayload(state),
+      restoration: buildRestorationPayload(state),
     }
   }
 
@@ -846,5 +872,6 @@ export async function assemblePrompt(
     inputTokens: state.inputTokens,
     outputTokens: state.outputTokens,
     mutations: buildMutationPayload(state),
+    restoration: buildRestorationPayload(state),
   }
 }

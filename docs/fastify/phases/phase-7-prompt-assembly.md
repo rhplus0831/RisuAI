@@ -4,9 +4,8 @@ Date: 2026-05-24
 
 Status: in progress.
 
-Last completed slice: 7-12d-iii-b wired production `/chat` provider
-dispatch and browser send-path orchestration behind
-`db.useServerPromptAssembly`.
+Last completed slice: 7-12d-iv added typed `/chat` TTS side effects and
+dispatch-error restoration rollback behind `db.useServerPromptAssembly`.
 
 Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-through-7-12c.md`](../phases-completed/phase-7-prompt-assembly-through-7-12c.md).
@@ -18,6 +17,8 @@ Historical detail through 7-12c:
 [`../phases-completed/phase-7-prompt-assembly-7-12d-iii-a.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iii-a.md).
 7-12d-iii-b closeout:
 [`../phases-completed/phase-7-prompt-assembly-7-12d-iii-b.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iii-b.md).
+7-12d-iv closeout:
+[`../phases-completed/phase-7-prompt-assembly-7-12d-iv.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iv.md).
 
 ## Goal
 
@@ -33,27 +34,24 @@ without requiring the browser to own mutable send-time state.
 
 ## Remaining Work
 
-### 7-12d-iv - side effects and rollback
+### Closeout Check
 
-Add the `tts` `side_effect` event and `error.restoration` rollback path.
-Keep image generation, Hypa V3, NovelAI string flattening, and plugin hooks
-deferred.
+Run the Phase 7 closeout pass before opening Phase 8.
 
 Expected work:
 
-- Emit a typed `side_effect` event for TTS closeout work when generation
-  is server-dispatched through `/chat`.
-- Add a typed `error.restoration` payload for failures after browser
-  visible prompt/message mutations begin.
-- Teach the browser `/chat` generation adapter to apply restoration on
-  terminal errors while preserving the existing error report path.
-- Cover the rollback boundary in route tests and the server-backed
-  `sendChat` fixture sweep.
+- Confirm send, continue, regenerate, preview, and preview-prompt all use
+  the server prompt assembly path behind `db.useServerPromptAssembly`.
+- Confirm the locked `/chat` SSE taxonomy covers prompt metadata,
+  `message_patch`, provider tokens, TTS side effects, restoration errors,
+  and enriched terminal `done` metadata.
+- Refresh the full verification baseline and archive any remaining
+  Phase 7 notes.
 
 ## Optional Or Parallel Work
 
 - Build the normalized-DB parity artifact for cross-assembler tests. This
-  is not blocking 7-12d.
+  is not blocking the closeout check.
 - Add script-cache and `runTrigger('display', ...)` support only if
   `editdisplay` work needs it before closeout.
 - Add the input hook adapter only if Stage 1 becomes server-owned before

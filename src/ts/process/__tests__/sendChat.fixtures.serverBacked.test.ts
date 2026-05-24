@@ -93,14 +93,17 @@ import {
   getServerChatCalls,
   resetServerChatState,
   serverChatFetch,
+  setServerChatDispatchError,
   setServerChatDispatchResult,
   setServerChatInfo,
+  setServerChatMessagePatch,
   setServerChatPrompt,
 } from '../__fixtures__/mocks/serverChatFetch'
-import { resetSideEffectCalls } from '../__fixtures__/sideEffects'
+import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { loadProviderScript, resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
 import { DBState } from '../../stores.svelte'
+import type { Chat } from '../../storage/database.svelte'
 import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelte'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -465,5 +468,98 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
       mode: loaded.fixture.sendChatArgs?.continue ? 'continue' : 'send',
     })
     expect(getServerCompletionCalls()).toEqual([])
+  })
+
+  it('rolls back server-applied chat mutations when /chat dispatch fails after streaming starts', async () => {
+    const loaded = await loadFixture('simple-send')
+    cleanups.push(loaded.cleanup)
+    DBState.db.useServerPromptAssembly = true
+
+    const originalMessages = JSON.parse(
+      JSON.stringify(DBState.db.characters[0].chats[0].message),
+    ) as Chat['message']
+    setServerChatPrompt([{ role: 'user', content: 'Hi there' }], {}, {
+      formated: [{ role: 'user', content: 'Hi there' }],
+    })
+    setServerChatMessagePatch({
+      chatId: DBState.db.characters[0].chats[0].id ?? '',
+      characterId: DBState.db.characters[0].chaId,
+      selectedCharID: 0,
+      chatPage: 0,
+      varChanged: false,
+      messageMutations: [
+        {
+          type: 'append',
+          source: 'user_message',
+          index: 0,
+          message: originalMessages[0],
+        },
+      ],
+      chatVarMutations: [],
+      additionalSystemPrompt: [],
+    })
+    setServerChatDispatchError(
+      'provider exploded',
+      {
+        model: 'gpt-4o',
+        inputTokens: 233,
+        outputTokens: 200,
+        maxContext: 4000,
+      },
+      {
+        chatId: DBState.db.characters[0].chats[0].id ?? '',
+        characterId: DBState.db.characters[0].chaId,
+        selectedCharID: 0,
+        chatPage: 0,
+        messages: originalMessages,
+        scriptstate: {},
+      },
+      'uuid-0',
+    )
+
+    const result = await sendChat(-1, {})
+
+    expect(result).toBe(false)
+    expect(DBState.db.characters[0].chats[0].message).toEqual(originalMessages)
+    expect(DBState.db.characters[0].chats[0].isStreaming).toBe(false)
+    expect(getSideEffectCalls()).not.toContainEqual({
+      fn: 'sayTTS',
+      args: expect.any(Array),
+    })
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerCompletionCalls()).toEqual([])
+  })
+
+  it('runs server-sent tts side effects once on successful /chat dispatch', async () => {
+    const loaded = await loadFixture('simple-send')
+    cleanups.push(loaded.cleanup)
+    DBState.db.useServerPromptAssembly = true
+    DBState.db.ttsAutoSpeech = true
+
+    setServerChatPrompt([{ role: 'user', content: 'Hi there' }], {}, {
+      formated: [{ role: 'user', content: 'Hi there' }],
+    })
+    setServerChatInfo(233, 200)
+    setServerChatDispatchResult(
+      'Hello there!',
+      {
+        model: 'gpt-4o',
+        inputTokens: 233,
+        outputTokens: 200,
+        maxContext: 4000,
+      },
+      'uuid-0',
+      { emitTtsSideEffect: true },
+    )
+
+    const result = await sendChat(-1, {})
+
+    expect(result).toBe(true)
+    expect(getSideEffectCalls().filter((call) => call.fn === 'sayTTS')).toEqual([
+      {
+        fn: 'sayTTS',
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'Hello there!'],
+      },
+    ])
   })
 })

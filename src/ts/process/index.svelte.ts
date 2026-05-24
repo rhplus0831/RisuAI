@@ -34,7 +34,8 @@ import {
   type ServerChatInput,
   type ServerChatTerminal,
 } from './request/serverChat'
-import { applyServerMessagePatch } from './request/serverMessagePatch'
+import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
+import { sayTTS } from './tts'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -175,6 +176,17 @@ export async function sendChat(
 
   try {
     const setProcessStage = (stage: number) => chatProcessStage.set(stage)
+    const applyServerTerminalSideEffects = async (terminal: ServerChatTerminal): Promise<void> => {
+      for (const sideEffect of terminal.sideEffects ?? []) {
+        if (sideEffect.kind !== 'tts') continue
+        const payload = sideEffect.payload
+        if (!payload || typeof payload !== 'object') continue
+        const text = (payload as { text?: unknown }).text
+        if (typeof text === 'string' && text.length > 0) {
+          await sayTTS(currentChar, text)
+        }
+      }
+    }
 
     const ctx = setupSendChatContext({
       chatProcessIndex,
@@ -529,6 +541,7 @@ export async function sendChat(
       abortSignal,
       reformatContent,
       runCurrentChatFunction,
+      suppressStreamingTts: !!serverDispatch,
     })
     if (orchestrate.status === 'aborted') {
       return false
@@ -556,9 +569,15 @@ export async function sendChat(
         Object.assign(generationInfo, terminalInfo)
       }
       if (terminal.status === 'error') {
+        if (terminal.restoration) {
+          applyServerChatRestoration(currentChat, terminal.restoration)
+          nowChatroom.chats[selectedChat] = currentChat
+          DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+        }
         throwError(terminal.error ?? 'provider dispatch failed')
         return false
       }
+      await applyServerTerminalSideEffects(terminal)
     }
 
     const stage4 = await runStage4({

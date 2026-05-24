@@ -52,6 +52,7 @@ export interface OrchestrateResponseArgs {
   abortSignal: AbortSignal
   reformatContent: (data: string) => string
   runCurrentChatFunction: (chat: Chat) => Chat
+  suppressStreamingTts?: boolean
 }
 
 /**
@@ -84,6 +85,7 @@ export async function orchestrateResponse(
     abortSignal,
     reformatContent,
     runCurrentChatFunction,
+    suppressStreamingTts,
   } = args
   let currentChat = args.currentChat
   let result = ''
@@ -131,7 +133,7 @@ export async function orchestrateResponse(
       currentChat.message[stream.msgIndex].data = t
       DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
     }
-    if (DBState.db.ttsAutoSpeech) {
+    if (DBState.db.ttsAutoSpeech && !suppressStreamingTts) {
       await sayTTS(currentChar, result)
     }
   } else {

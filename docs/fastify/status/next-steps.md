@@ -7,53 +7,50 @@ were moved to [`../phases-completed/`](../phases-completed/).
 
 ## Last Done
 
-7-12d-iii-b wired production `/chat` provider dispatch and browser send
-orchestration. The route now resolves a server dispatch request from the
-assembled prompt and persisted database settings when
-`db.useServerPromptAssembly` is enabled, emits `info.generationId` /
-`info.generationInfo`, streams provider `token` events, and sends an
-enriched terminal `done`.
+7-12d-iv added the remaining server-dispatched `/chat` side-effect and
+rollback boundary. The route now emits typed `side_effect` events for TTS
+when `db.ttsAutoSpeech` is enabled, and provider dispatch failures after
+browser-visible mutations include `error.restoration` with the chat
+message/scriptstate snapshot needed to roll those mutations back.
 
-Browser send-like calls behind `db.useServerPromptAssembly` now consume
-the `/chat` token stream directly instead of continuing into local
-`dispatchRequest`. The existing response orchestration still applies the
-assistant row, output scripts, inlay screen, auto-continue, IGP, Stage 4,
-and `addRerolls`; server-dispatch fixture coverage proves these calls do
-not escape to `/api/v1/generate/completion`.
+The browser `/chat` generation adapter carries terminal side effects and
+restoration payloads. `sendChat` applies server-sent TTS through the
+existing `sayTTS` path, suppresses duplicate streaming TTS for
+server-dispatched runs, restores chat state on terminal provider errors,
+and preserves the existing error reporting path.
 
 ## Immediate Pickup
 
-Start with 7-12d-iv: add `tts` `side_effect` and
-`error.restoration` rollback.
+Start with a Phase 7 closeout check.
 
-Why this is next: the main server-dispatched send path is now wired, but
-provider errors after partial token output still surface as terminal
-errors without a restoration payload, and TTS remains a browser closeout
-side effect instead of a typed server event.
+Why this is next: the last active 7-12d implementation slice is landed,
+so the next agent should verify Phase 7 exit criteria and then open
+Phase 8 Hypa V3 memory.
 
 Expected scope:
 
-- Add a typed `side_effect` event for `tts` that matches the locked
-  `/chat` SSE taxonomy.
-- Add an `error.restoration` payload for server-dispatch failures after
-  browser-visible mutations begin.
-- Make the browser `/chat` generation adapter apply restoration on
-  terminal errors without disturbing the existing error reporting path.
-- Add route and sendChat fixture coverage for the rollback boundary.
+- Confirm the Phase 7 exit criteria are met for send, continue,
+  regenerate, preview, and preview-prompt behind
+  `db.useServerPromptAssembly`.
+- Refresh the full verification baseline.
+- Move any remaining Phase 7 notes into the completed archive and keep
+  the live status docs short.
+- If clean, update the handoff so Phase 8 Hypa V3 memory is the default
+  pickup.
 
-Out of scope for 7-12d-iv:
+Out of scope for the closeout check:
 
-- Hypa V3, plugin / Lua hooks, image generation, NovelAI string
-  flattening, and low-level trigger effects.
+- Implementing Phase 8 memory routes, Phase 9 client thinning, image
+  generation, NovelAI string flattening, or plugin / Lua hooks.
 
-## Queue After 7-12d-iv
+## Queue After Closeout
 
-1. Phase 7 closeout check, then Phase 8 Hypa V3 memory pickup.
+1. Phase 8 Hypa V3 memory pickup.
 
 ## Parallel Or Deferred
 
 - Normalized-DB cross-assembler parity artifact: useful, but not blocking
-  7-12d.
+  the closeout check.
 - Hub-route session auth: browser-loaded hub resources can still 401 on
   password-protected deployments because they cannot send `risu-auth`.
 - Ooba OAI-compatible, NovelAI text, and NovelList: wait for server-side
@@ -71,10 +68,17 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 7-12d-iii-b: `pnpm check` clean,
-`pnpm test` 635 tests plus 4 skipped, `pnpm api:test` 894 tests, and
+Last recorded full baselines after 7-12d-iv: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 895 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and bundle-size warnings.
+
+Focused 7-12d-iv verification:
+
+```bash
+pnpm exec vitest run server/fastify/__tests__/generation.chat.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/process/request/tests/serverMessagePatch.test.ts src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
+```
 
 ## References
 
@@ -89,5 +93,7 @@ externalization, plugin-timing, and bundle-size warnings.
   [`../phases-completed/phase-7-prompt-assembly-7-12d-iii-a.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iii-a.md)
 - 7-12d-iii-b closeout:
   [`../phases-completed/phase-7-prompt-assembly-7-12d-iii-b.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iii-b.md)
+- 7-12d-iv closeout:
+  [`../phases-completed/phase-7-prompt-assembly-7-12d-iv.md`](../phases-completed/phase-7-prompt-assembly-7-12d-iv.md)
 - Server status: [`server.md`](server.md)
 - sendChat status: [`sendchat.md`](sendchat.md)

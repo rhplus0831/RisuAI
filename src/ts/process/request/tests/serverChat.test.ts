@@ -10,6 +10,7 @@ import {
   getServerChatCalls,
   resetServerChatState,
   serverChatFetch,
+  setServerChatDispatchError,
   setServerChatDispatchResult,
   setServerChatError,
   setServerChatMessagePatch,
@@ -224,6 +225,57 @@ describe('requestServerChat', () => {
     await expect(res.terminal).resolves.toMatchObject({
       status: 'done',
       done: { result: 'server reply', generationId: 'uuid-0' },
+    })
+  })
+
+  it('collects side_effect events on the terminal dispatch result', async () => {
+    setServerChatPrompt([{ role: 'user', content: 'hello there' }], { promptText: 'hello there' })
+    setServerChatDispatchResult(
+      'server reply',
+      {
+        model: 'echo_model',
+        inputTokens: 7,
+        outputTokens: 50,
+      },
+      'uuid-tts',
+      { emitTtsSideEffect: true },
+    )
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    await expect(res.terminal).resolves.toMatchObject({
+      status: 'done',
+      sideEffects: [{ kind: 'tts', payload: { text: 'server reply', characterId: 'char-1' } }],
+    })
+  })
+
+  it('surfaces restoration on terminal dispatch errors', async () => {
+    const restoration = {
+      chatId: 'chat-1',
+      characterId: 'char-1',
+      selectedCharID: 0,
+      chatPage: 0,
+      messages: [{ role: 'user' as const, data: 'Hi there' }],
+      scriptstate: { $mood: 'calm' },
+    }
+    setServerChatPrompt([{ role: 'user', content: 'hello there' }], { promptText: 'hello there' })
+    setServerChatDispatchError(
+      'provider exploded',
+      { model: 'echo_model', inputTokens: 7, outputTokens: 50 },
+      restoration,
+      'uuid-error',
+    )
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    await expect(res.terminal).resolves.toMatchObject({
+      status: 'error',
+      error: 'provider exploded',
+      restoration,
     })
   })
 })

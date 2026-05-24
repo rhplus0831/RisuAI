@@ -102,6 +102,15 @@ export interface ServerChatMessagePatch {
   additionalSystemPrompt: ServerChatAdditionalSystemPromptMutation[]
 }
 
+export interface ServerChatRestoration {
+  chatId: string
+  characterId: string
+  selectedCharID: number
+  chatPage: number
+  messages: Message[]
+  scriptstate?: Record<string, string | number | boolean>
+}
+
 export interface MessagePatchEvent {
   type: 'message_patch'
   patch: ServerChatMessagePatch
@@ -113,6 +122,8 @@ export interface SideEffectEvent {
   payload: unknown
 }
 
+export type ServerChatSideEffect = Omit<SideEffectEvent, 'type'>
+
 export interface WarningEvent {
   type: 'warning'
   message: string
@@ -122,7 +133,7 @@ export interface WarningEvent {
 export interface ErrorEvent {
   type: 'error'
   error: string
-  restoration?: unknown
+  restoration?: ServerChatRestoration
 }
 
 export interface DoneEvent {

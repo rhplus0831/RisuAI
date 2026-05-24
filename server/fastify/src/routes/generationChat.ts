@@ -223,6 +223,12 @@ function createGenerationInfo(
   }
 }
 
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message.length > 0) return err.message
+  if (typeof err === 'string' && err.length > 0) return err
+  return fallback
+}
+
 function persistVarChanges(
   db: DatabaseSync,
   dataDir: string,
@@ -312,21 +318,47 @@ async function streamAssembly(
                 signal: context.signal,
               }))
           const providerStartedAt = Date.now()
-          const frames = await dispatchProvider({
-            input,
-            result: successfulResult,
-            database,
-            generationId,
-            generationInfo,
-            signal,
-          })
+          let frames: AsyncIterable<CompletionStreamFrame> | null | undefined
+          try {
+            frames = await dispatchProvider({
+              input,
+              result: successfulResult,
+              database,
+              generationId,
+              generationInfo,
+              signal,
+            })
+          } catch (err) {
+            emit({
+              type: 'error',
+              error: errorMessage(err, 'provider dispatch failed'),
+              restoration: successfulResult.restoration,
+            })
+            emit({ type: 'done', generationId, generationInfo })
+            terminalDoneEmitted = true
+          }
           if (frames) {
-            const transportResult = await emitProviderChunks(frames, emit, signal, () => {
-              const stageTiming = generationInfo.stageTiming as Record<string, unknown> | undefined
-              if (stageTiming) {
-                stageTiming.stage3 = Date.now() - providerStartedAt
-              }
-              return { generationId, generationInfo }
+            const transportResult = await emitProviderChunks(frames, emit, signal, {
+              doneMetadata: () => {
+                const stageTiming = generationInfo.stageTiming as
+                  | Record<string, unknown>
+                  | undefined
+                if (stageTiming) {
+                  stageTiming.stage3 = Date.now() - providerStartedAt
+                }
+                return { generationId, generationInfo }
+              },
+              sideEffects: (text) =>
+                database.ttsAutoSpeech
+                  ? [
+                      {
+                        type: 'side_effect',
+                        kind: 'tts',
+                        payload: { text, characterId: input.characterId },
+                      },
+                    ]
+                  : [],
+              errorRestoration: () => successfulResult.restoration,
             })
             terminalDoneEmitted = transportResult.status !== 'aborted'
           }

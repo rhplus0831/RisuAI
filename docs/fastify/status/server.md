@@ -25,9 +25,8 @@ docs.
 
 ## Current Server Work
 
-Phase 7 needs typed `/chat` side effects and rollback around the
-server-dispatched send path. The next concrete slice is 7-12d-iv in
-[`next-steps.md`](next-steps.md).
+Phase 7 needs a closeout check before Phase 8 Hypa V3 memory starts. The
+next concrete pickup is in [`next-steps.md`](next-steps.md).
 
 ## Watch Points
 

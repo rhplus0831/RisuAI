@@ -536,6 +536,52 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
+  it('emits a typed tts side_effect before done when auto speech is enabled', async () => {
+    await restartHarness({
+      dispatchProvider: () => {
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'spoken reply' }
+          yield { kind: 'done', finishReason: 'stop' }
+        }
+        return source()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      ttsAutoSpeech: true,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    expect(events.map((e) => e.type)).toEqual([
+      'stage',
+      'stage',
+      'stage',
+      'prompt',
+      'message_patch',
+      'stage',
+      'info',
+      'token',
+      'side_effect',
+      'done',
+    ])
+    expect(events.at(-2)).toEqual({
+      type: 'side_effect',
+      data: {
+        kind: 'tts',
+        payload: { text: 'spoken reply', characterId: 'char-1' },
+      },
+    })
+  })
+
   it('maps provider transport failures to error then done after prompt metadata', async () => {
     await restartHarness({
       dispatchProvider: () => {
@@ -572,7 +618,16 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ])
     expect(events.at(-2)).toEqual({
       type: 'error',
-      data: { error: 'provider exploded' },
+      data: {
+        error: 'provider exploded',
+        restoration: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          selectedCharID: 0,
+          chatPage: 0,
+          messages: [],
+        },
+      },
     })
     expect(events.at(-1)?.type).toBe('done')
     expect(typeof events.at(-1)?.data.generationId).toBe('string')
