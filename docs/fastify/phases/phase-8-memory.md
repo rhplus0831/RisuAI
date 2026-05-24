@@ -9,8 +9,8 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-1b - Memory repositories + row
-mappers**.
+Status: in progress. Next slice: **8-1c - Legacy `hypaV3Data`
+import/backfill**.
 
 ## Preconditions
 
@@ -120,6 +120,7 @@ the current schema and import paths directly.
     and jobs. Cover create / read / update primitives, vector
     encode/decode, status filtering, and validation errors. Jobs remain
     inert data rows; no polling, retries, SSE, or handler dispatch yet.
+    Closed on 2026-05-24.
   - **8-1c — Legacy `hypaV3Data` import/backfill.** Add the
     memory-specific mapper for existing chat `hypaV3Data` during JSON
     import and any one-time boot backfill. Preserve summary text,

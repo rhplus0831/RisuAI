@@ -11,39 +11,39 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-1a-ii landed the Hypa V3 memory table foundation in `risu.db`:
-`CURRENT_SCHEMA_VERSION` is now 2, fresh opens create
+8-1b landed typed repository primitives and row mappers for
 `memory_chunks`, `memory_summaries`, `memory_embeddings`, and
-`memory_jobs`, and focused DB / bootstrap / smoke tests cover table
-presence, reopen idempotence, memory check constraints, JSON payload
-validation, and chunk cascade behavior.
+`memory_jobs`. The repository covers create / read / update primitives,
+status and model filtering, uniqueness / constraint surfacing as
+`ValidationError`, job payload JSON mapping, and Float32 embedding
+vector encode/decode.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-1b - Memory repositories + row mappers**.
+Continue Phase 8 with **8-1c - Legacy `hypaV3Data` import/backfill**.
 
 Expected scope:
 
-- Add typed repository methods and row mappers for chunks, summaries,
-  embeddings, and jobs.
-- Cover create / read / update primitives, vector encode/decode, status
-  filtering, uniqueness conflicts, and validation errors.
-- Preserve the schema shape from 8-1a-ii, including
-  `memory_embeddings.group_id` and `group_index` for later contextual
-  embedding support.
-- Keep jobs as inert data rows; queue state-machine behavior starts in
-  8-2a.
+- Add the memory-specific mapper for existing chat `hypaV3Data` during
+  JSON import and any one-time boot backfill.
+- Preserve legacy summary text, `chatMemos`, and important/category/tag
+  metadata where possible.
+- Define how legacy summaries map to chunk rows.
+- Keep bootstrap stitching compatible until Phase 9 removes
+  whole-database reads.
+- Do not create embeddings or summary jobs during import.
 
-Out of scope for 8-1b:
+Out of scope for 8-1c:
 
-- Legacy `hypaV3Data` import/backfill, workers, routes, provider calls,
-  SSE progress, prompt memory selection, and browser UI.
+- Workers, queue state-machine behavior, routes, provider calls,
+  embeddings, summary jobs, SSE progress, prompt memory selection, and
+  browser UI.
 
-## Queue After 8-1b
+## Queue After 8-1c
 
-1. 8-1c - Legacy `hypaV3Data` import/backfill.
-2. 8-2a - Memory job queue state machine.
-3. 8-2b - Worker lifecycle + stub dispatch.
+1. 8-2a - Memory job queue state machine.
+2. 8-2b - Worker lifecycle + stub dispatch.
+3. 8-2c - Retry, backoff, cancel, and boot recovery.
 
 ## Parallel Or Deferred
 
@@ -66,15 +66,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-1a-ii: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 902 tests, and
+Last recorded full baselines after 8-1b: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 909 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
-externalization, plugin-timing, and bundle-size warnings.
+externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-1a-ii verification:
+Focused 8-1b verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/db.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/smoke.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/db.test.ts --config server/fastify/vitest.config.ts
 ```
 
 ## References
@@ -84,6 +84,8 @@ pnpm exec vitest run server/fastify/__tests__/db.test.ts server/fastify/__tests_
   [`../phases-completed/phase-8-memory-8-1a-i.md`](../phases-completed/phase-8-memory-8-1a-i.md)
 - 8-1a-ii closeout:
   [`../phases-completed/phase-8-memory-8-1a-ii.md`](../phases-completed/phase-8-memory-8-1a-ii.md)
+- 8-1b closeout:
+  [`../phases-completed/phase-8-memory-8-1b.md`](../phases-completed/phase-8-memory-8-1b.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:
