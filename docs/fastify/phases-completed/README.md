@@ -26,6 +26,7 @@ track the next piece of work.
 | 7-12d-iv - Side effects / rollback      | [`phase-7-prompt-assembly-7-12d-iv.md`](phase-7-prompt-assembly-7-12d-iv.md)           | Typed TTS side effect and terminal error restoration rollback.          |
 | 7 - Prompt assembly closeout            | [`phase-7-prompt-assembly-closeout.md`](phase-7-prompt-assembly-closeout.md)           | Final exit-criteria check and Phase 8 handoff.                          |
 | 8-1a-i - Migration runner               | [`phase-8-memory-8-1a-i.md`](phase-8-memory-8-1a-i.md)                                 | `risu.db` migration runner and schema version 1 bump.                   |
+| 8-1a-ii - Memory tables                 | [`phase-8-memory-8-1a-ii.md`](phase-8-memory-8-1a-ii.md)                               | Hypa V3 memory tables and schema version 2 bump.                        |
 
 ## Historical Status Logs
 

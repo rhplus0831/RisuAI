@@ -95,7 +95,7 @@ describe('Phase 2A bootstrap + import', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({
       revision: 0,
-      schemaVersion: 1,
+      schemaVersion: 2,
       database: null,
       assetBaseUrl: '/api/v1/assets',
     })
@@ -139,7 +139,7 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json()).toEqual({
       revision: 1,
-      schemaVersion: 1,
+      schemaVersion: 2,
       database: sample,
       assetBaseUrl: '/api/v1/assets',
     })

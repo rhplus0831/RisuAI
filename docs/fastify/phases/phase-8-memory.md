@@ -9,8 +9,8 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-1a-ii - Memory tables on top of
-the runner**.
+Status: in progress. Next slice: **8-1b - Memory repositories + row
+mappers**.
 
 ## Preconditions
 
@@ -107,12 +107,14 @@ the current schema and import paths directly.
       tests cover version bumping, idempotent reapply, and newer-schema
       rejection, plus the missing singleton-row guard. No memory tables
       landed in this slice.
-    - **8-1a-ii — Memory tables in the current schema.** Add
+    - **8-1a-ii — Memory tables in the current schema.** Closed on
+      2026-05-24. `CURRENT_SCHEMA_VERSION = 2`, fresh opens create
       `memory_chunks`, `memory_summaries`, `memory_embeddings`, and
-      `memory_jobs` with indexes, check constraints, and foreign-key /
-      cascade behavior where SQLite can enforce it. Do not add a
-      compatibility migration, import backfill, or worker behavior in
-      this slice.
+      `memory_jobs` with indexes, check constraints, and `chunk_id`
+      cascade behavior. `memory_embeddings` includes nullable
+      `group_id` and `group_index` for the later contextual embedding
+      adapter. No repository, import backfill, route, worker, provider,
+      or browser behavior landed in this slice.
   - **8-1b — Memory repositories + row mappers.** Add typed repository
     methods and JSON / blob mappers for chunks, summaries, embeddings,
     and jobs. Cover create / read / update primitives, vector

@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const CURRENT_SCHEMA_VERSION = 1
+export const CURRENT_SCHEMA_VERSION = 2
 
 export interface MigrationStep {
   version: number
@@ -16,6 +16,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: 'migration-runner-bootstrap',
     up: () => {
       // Version 1 establishes the migration runner. Memory tables start in v2.
+    },
+  },
+  {
+    version: 2,
+    name: 'hypa-v3-memory-tables',
+    up: (db) => {
+      createMemoryTables(db)
     },
   },
 ]
@@ -36,7 +43,16 @@ export function openDatabase(dataDir: string): DatabaseSync {
     db.exec(
       `INSERT OR IGNORE INTO schema_version (id, version, revision) VALUES (1, ${CURRENT_SCHEMA_VERSION}, 0)`,
     )
-    applyMigrations(db, getSchemaState(db).version)
+    const schemaState = getSchemaState(db)
+    if (schemaState.version > CURRENT_SCHEMA_VERSION) {
+      throw new Error(
+        `Database schema version ${schemaState.version} is newer than supported version ${CURRENT_SCHEMA_VERSION}`,
+      )
+    }
+    if (schemaState.version === CURRENT_SCHEMA_VERSION) {
+      createMemoryTables(db)
+    }
+    applyMigrations(db, schemaState.version)
   } catch (error) {
     db.close()
     throw error
@@ -121,4 +137,87 @@ export function bumpRevision(db: DatabaseSync): number {
     throw new Error('schema_version row missing; database not initialized')
   }
   return row.revision
+}
+
+function createMemoryTables(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_chunks (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      message_id TEXT,
+      range_start_seq INTEGER NOT NULL CHECK (range_start_seq >= 0),
+      range_end_seq INTEGER NOT NULL CHECK (range_end_seq >= range_start_seq),
+      text TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'summarized', 'failed')),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_chunks_chat_id
+      ON memory_chunks (chat_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_chunks_chat_status
+      ON memory_chunks (chat_id, status);
+    CREATE INDEX IF NOT EXISTS idx_memory_chunks_chat_range
+      ON memory_chunks (chat_id, range_start_seq, range_end_seq);
+
+    CREATE TABLE IF NOT EXISTS memory_summaries (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      chunk_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      text TEXT NOT NULL,
+      tokens INTEGER NOT NULL CHECK (tokens >= 0),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      FOREIGN KEY (chunk_id) REFERENCES memory_chunks(id) ON DELETE CASCADE,
+      UNIQUE (chunk_id, model)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_summaries_chat_id
+      ON memory_summaries (chat_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_summaries_chunk_id
+      ON memory_summaries (chunk_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_summaries_chat_model
+      ON memory_summaries (chat_id, model);
+
+    CREATE TABLE IF NOT EXISTS memory_embeddings (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      chunk_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      vector_blob BLOB NOT NULL,
+      dim INTEGER NOT NULL CHECK (dim > 0),
+      group_id TEXT,
+      group_index INTEGER CHECK (group_index IS NULL OR group_index >= 0),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      FOREIGN KEY (chunk_id) REFERENCES memory_chunks(id) ON DELETE CASCADE,
+      UNIQUE (chunk_id, model)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_embeddings_chat_id
+      ON memory_embeddings (chat_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_embeddings_chunk_id
+      ON memory_embeddings (chunk_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_embeddings_chat_model
+      ON memory_embeddings (chat_id, model);
+    CREATE INDEX IF NOT EXISTS idx_memory_embeddings_group
+      ON memory_embeddings (group_id, group_index);
+
+    CREATE TABLE IF NOT EXISTS memory_jobs (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('chunk', 'embed', 'summarize')),
+      status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+      payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_jobs_chat_id
+      ON memory_jobs (chat_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_created
+      ON memory_jobs (status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_memory_jobs_kind_status
+      ON memory_jobs (kind, status);
+  `)
 }

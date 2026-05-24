@@ -32,6 +32,30 @@ function seedSchemaVersion(dataDir: string, version: number, revision = 0): void
   }
 }
 
+function listTables(db: DatabaseSync): string[] {
+  return (
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as {
+      name: string
+    }[]
+  ).map((row) => row.name)
+}
+
+function insertMemoryChunk(db: DatabaseSync, id = 'chunk-1'): void {
+  db.prepare(
+    `
+      INSERT INTO memory_chunks (
+        id,
+        chat_id,
+        message_id,
+        range_start_seq,
+        range_end_seq,
+        text,
+        status
+      ) VALUES (?, 'chat-1', 'message-1', 0, 3, 'chunk text', 'pending')
+    `,
+  ).run(id)
+}
+
 afterEach(() => {
   for (const dataDir of dataDirs.splice(0)) {
     rmSync(dataDir, { recursive: true, force: true })
@@ -43,6 +67,13 @@ describe('schema migrations', () => {
     const db = openDatabase(makeDataDir())
     try {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 0 })
+      expect(listTables(db)).toEqual([
+        'memory_chunks',
+        'memory_embeddings',
+        'memory_jobs',
+        'memory_summaries',
+        'schema_version',
+      ])
     } finally {
       db.close()
     }
@@ -55,6 +86,13 @@ describe('schema migrations', () => {
     const db = openDatabase(dataDir)
     try {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 7 })
+      expect(listTables(db)).toEqual([
+        'memory_chunks',
+        'memory_embeddings',
+        'memory_jobs',
+        'memory_summaries',
+        'schema_version',
+      ])
     } finally {
       db.close()
     }
@@ -71,8 +109,105 @@ describe('schema migrations', () => {
     try {
       applyMigrations(second, getSchemaState(second).version)
       expect(getSchemaState(second)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 3 })
+      insertMemoryChunk(second)
+      const chunk = second
+        .prepare('SELECT id, status FROM memory_chunks WHERE id = ?')
+        .get('chunk-1')
+      expect(chunk).toEqual({ id: 'chunk-1', status: 'pending' })
     } finally {
       second.close()
+    }
+  })
+
+  it('enforces memory table status, kind, and payload constraints', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      expect(() => {
+        db.prepare(
+          `
+            INSERT INTO memory_chunks (
+              id,
+              chat_id,
+              range_start_seq,
+              range_end_seq,
+              text,
+              status
+            ) VALUES ('chunk-1', 'chat-1', 0, 1, 'text', 'queued')
+          `,
+        ).run()
+      }).toThrow()
+
+      expect(() => {
+        db.prepare(
+          `
+            INSERT INTO memory_jobs (
+              id,
+              chat_id,
+              kind,
+              status,
+              payload_json
+            ) VALUES ('job-1', 'chat-1', 'translate', 'pending', '{}')
+          `,
+        ).run()
+      }).toThrow()
+
+      expect(() => {
+        db.prepare(
+          `
+            INSERT INTO memory_jobs (
+              id,
+              chat_id,
+              kind,
+              status,
+              payload_json
+            ) VALUES ('job-2', 'chat-1', 'chunk', 'pending', 'not json')
+          `,
+        ).run()
+      }).toThrow()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('cascades summaries and embeddings when a memory chunk is deleted', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      insertMemoryChunk(db)
+      db.prepare(
+        `
+          INSERT INTO memory_summaries (
+            id,
+            chat_id,
+            chunk_id,
+            model,
+            text,
+            tokens
+          ) VALUES ('summary-1', 'chat-1', 'chunk-1', 'model-a', 'summary text', 12)
+        `,
+      ).run()
+      db.prepare(
+        `
+          INSERT INTO memory_embeddings (
+            id,
+            chat_id,
+            chunk_id,
+            model,
+            vector_blob,
+            dim
+          ) VALUES ('embedding-1', 'chat-1', 'chunk-1', 'model-a', X'00010203', 4)
+        `,
+      ).run()
+
+      db.prepare("DELETE FROM memory_chunks WHERE id = 'chunk-1'").run()
+
+      expect(db.prepare('SELECT COUNT(*) AS count FROM memory_summaries').get()).toEqual({
+        count: 0,
+      })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM memory_embeddings').get()).toEqual({
+        count: 0,
+      })
+    } finally {
+      db.close()
     }
   })
 
@@ -81,6 +216,13 @@ describe('schema migrations', () => {
     seedSchemaVersion(dataDir, CURRENT_SCHEMA_VERSION + 1)
 
     expect(() => openDatabase(dataDir)).toThrow(/newer than supported version/)
+
+    const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(listTables(db)).toEqual(['schema_version'])
+    } finally {
+      db.close()
+    }
   })
 
   it('requires the singleton schema_version row when applying migrations', () => {
