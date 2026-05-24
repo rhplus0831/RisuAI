@@ -16,16 +16,16 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 8, Hypa V3 memory.
-- Last landed slice: 8-2e, memory job routes.
+- Last landed slice: 8-3a, Hypa V3 settings + planner contract.
 - Current blocker: none recorded.
-- Next default pickup: 8-3a, Hypa V3 settings + planner contract.
-- Last recorded full baselines after 8-2e: `pnpm check` clean,
-  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 937 tests, and
+- Next default pickup: 8-3b, orphan cleanup.
+- Last recorded full baselines after 8-3a: `pnpm check` clean,
+  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 943 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Focused verification after 8-2e:
-  `pnpm exec vitest run server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryRepository.test.ts --config server/fastify/vitest.config.ts`
-  passed with 18 tests.
+- Focused verification after 8-3a:
+  `pnpm exec vitest run server/fastify/__tests__/memoryPlanner.test.ts --config server/fastify/vitest.config.ts`
+  passed with 6 tests.
 
 ## Start Here
 
@@ -47,7 +47,7 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-3a Hypa V3 settings + planner contract.              |
+| Hypa V3 memory                              | Active; next slice is 8-3b orphan cleanup.                                   |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules

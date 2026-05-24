@@ -11,41 +11,41 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-2e landed the auth-gated memory job API. `POST /api/v1/memory/jobs`
-enqueues pending jobs, `GET /api/v1/memory/jobs` lists active jobs by
-default with optional `chatId`, `kind`, and `status` filters, and
-`DELETE /api/v1/memory/jobs/:id` cancels pending/running jobs. Route-owned
-enqueue and cancel transitions reuse the 8-2d `memory.job` event
-contract with the Phase-7-compatible `hypav3_progress` side effect.
+8-3a landed the server-side Hypa V3 settings and pure standard-planner
+contract in `server/fastify/src/memoryPlanner.ts`. It ports the preset
+defaults, normalizes partial settings, routes `useExperimentalImpl: true`
+back to the standard planner with structured warning metadata, validates
+ratios/rate limits/concurrency settings, and exposes deterministic plan
+output for token deltas, planned windows, planner errors, and
+skipped-message reasons. No memory rows are mutated and no jobs are
+enqueued from planner output yet.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-3a - Hypa V3 settings + planner contract**.
+Continue Phase 8 with **8-3b - Orphan cleanup**.
 
 Expected scope:
 
-- Port the Hypa V3 preset defaults and settings normalization to a
-  server-side pure module.
-- Preserve the locked planner choice: settings carrying
-  `useExperimentalImpl: true` should fall back to the standard planner
-  path with a one-time migration warning later, not invoke the
-  experimental planner.
-- Define the pure planner input/output contract for the standard
-  planner, including token deltas, planned windows, errors, and
-  skipped-message reasons.
-- Add deterministic tests for settings defaults, normalization, ratio
-  validation, and the planner contract boundaries.
+- Implement the server-side cleanup pass for summaries/chunks whose
+  source chat memos no longer exist.
+- Respect `preserveOrphanedMemory` from the 8-3a normalized settings.
+- Keep cleanup idempotent.
+- Apply the locked cascade behavior: delete orphaned `memory_summaries`
+  rows, then their parent `memory_chunks` rows, and let matching
+  `memory_embeddings` rows cascade through the `chunk_id` foreign key.
+- Add repository/service tests for deleted, preserved, and partially
+  matching memo sets.
 
-Out of scope for 8-3a:
+Out of scope for 8-3b:
 
-- Mutating memory rows, enqueuing jobs from planner output, provider
-  calls, summary prompt construction, embedding, prompt-facing summary
-  selection, browser listeners, and browser list/cancel controls.
+- Summary-window planning changes, memory prompt selection, job enqueueing,
+  provider calls, summary prompt construction, embedding, browser
+  listeners, and browser list/cancel controls.
 
-## Queue After 8-3a
+## Queue After 8-3b
 
-1. 8-3b - Orphan cleanup.
-2. 8-3c - Pure summarization window planner.
+1. 8-3c - Pure summarization window planner.
+2. 8-3d - Chunk/job planning bridge.
 
 ## Parallel Or Deferred
 
@@ -68,15 +68,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-2e: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 937 tests, and
+Last recorded full baselines after 8-3a: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 943 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-2e verification:
+Focused 8-3a verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryRepository.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memoryPlanner.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 pnpm test
 pnpm api:test
@@ -104,6 +104,8 @@ pnpm build
   [`../phases-completed/phase-8-memory-8-2d.md`](../phases-completed/phase-8-memory-8-2d.md)
 - 8-2e closeout:
   [`../phases-completed/phase-8-memory-8-2e.md`](../phases-completed/phase-8-memory-8-2e.md)
+- 8-3a closeout:
+  [`../phases-completed/phase-8-memory-8-3a.md`](../phases-completed/phase-8-memory-8-3a.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

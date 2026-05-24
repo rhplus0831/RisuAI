@@ -9,7 +9,7 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-3a - Hypa V3 settings + planner contract**.
+Status: in progress. Next slice: **8-3b - Orphan cleanup**.
 
 ## Preconditions
 
@@ -171,6 +171,7 @@ the current schema and import paths directly.
     Define the pure planner input/output contract, including token
     deltas, planned windows, errors, and skipped-message reasons. Do
     not mutate memory rows or enqueue jobs yet.
+    Closed on 2026-05-24.
   - **8-3b — Orphan cleanup.** Implement the server-side cleanup pass
     for summaries/chunks whose source chat memos no longer exist.
     Respect `preserveOrphanedMemory`, keep cleanup idempotent, and cover
