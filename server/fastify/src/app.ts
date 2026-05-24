@@ -29,6 +29,7 @@ import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import type { MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
+import { createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 
 export interface BuildAppOptions {
   config?: AppConfig
@@ -68,10 +69,22 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   const db = openDatabase(config.dataDir)
   backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
+  const defaultMemoryHandlers = {
+    summarize: createSummarizeMemoryJobHandler({ db, dataDir: config.dataDir }),
+  }
+  const memoryWorkerOptions = opts.memoryWorker === false ? null : (opts.memoryWorker ?? {})
   const memoryWorker =
-    opts.memoryWorker === false
+    memoryWorkerOptions === null
       ? null
-      : new MemoryWorker({ db, onEvent: opts.memoryEvents, ...opts.memoryWorker })
+      : new MemoryWorker({
+          db,
+          onEvent: opts.memoryEvents,
+          ...memoryWorkerOptions,
+          handlers: {
+            ...defaultMemoryHandlers,
+            ...memoryWorkerOptions.handlers,
+          },
+        })
   memoryWorker?.start()
   const authState = createAuthState(config.dataDir)
   const streamJobRegistry = new JobRegistry()

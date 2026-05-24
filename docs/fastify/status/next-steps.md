@@ -1,6 +1,6 @@
 # Next Steps
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 Use this file as the day-to-day pickup runbook. Completed slice tables
 were moved to [`../phases-completed/`](../phases-completed/).
@@ -11,42 +11,39 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-4b added the provider-backed summary adapter in
-`server/fastify/src/memorySummaryAdapter.ts`. Planned summary prompt
-messages can now be sent through non-streaming OpenAI-compatible API
-providers via `summarizeOnce(messages, opts)`, which wraps `runOpenAI`
-directly and normalizes responses into `{ text, tokens } | { error }`.
-OpenAI, NanoGPT, and OpenRouter variant resolution is shared with the
-`/completion` route through `server/fastify/src/generation/openaiCompatible.ts`.
-Aborted responses normalize to errors, and provider output is scrubbed
-with the existing `<Thoughts>` / `<think>` summary cleanup helpers.
-This still does not wire the worker, write summaries, embed chunks,
-rate-limit batches, or touch browser UI.
+8-4c added the real summarize memory job handler in
+`server/fastify/src/memorySummarizeJobHandler.ts`. Planned summarize jobs
+now validate their 8-3d payloads, load the target chunk, verify persisted
+chat data, build the Hypa V3 summary prompt, call the API-backed
+`subModel` summary path through `summarizeOnce`, persist successful
+output to `memory_summaries`, and mark chunks summarized. Existing
+summaries for the same `{ chatId, chunkId, model }` converge without
+duplicate provider calls. Provider failures and invalid summary writes
+mark the chunk failed and let the 8-2 worker retry/fail the job through
+the queue primitives. Fastify startup wires this handler into the memory
+worker by default while preserving explicit handler overrides.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-4c - Summarize job handler**.
+Continue Phase 8 with **8-4d - Summary rate limiting and ordered writes**.
 
 Expected scope:
 
-- Wire the `summarize` memory job handler against the planned chunks
-  created by 8-3d.
-- Load the chunk payload and chunk row, then build the summary prompt
-  with `buildHypaV3SummaryPrompt`.
-- Call `summarizeOnce(messages, opts)` for the supported API-backed
-  summary model path.
-- Persist successful output to `memory_summaries`.
-- Mark chunks summarized and complete jobs through the 8-2 queue
-  primitives.
-- Fail jobs with useful errors for missing chunks, missing chat data,
-  prompt build errors, provider failures, and invalid summary writes.
+- Apply `summarizationRequestsPerMinute` and
+  `summarizationMaxConcurrent` to batches of summarize jobs.
+- Preserve the legacy consecutive-success write behavior: summaries are
+  committed in planned order only until the first failed or empty result.
+- Leave later successful results uncommitted for retry when an earlier
+  result in the batch fails.
+- Persist useful queue failure details and keep retry handoff compatible
+  with the existing 8-2 worker primitives.
+- Cover ordering, cancellation, retry handoff, and rate/concurrency
+  behavior with focused tests.
 
-Out of scope for 8-4c:
+Out of scope for 8-4d:
 
 - Embedding jobs or vector persistence.
 - Similarity selection and prompt assembly reads from memory summaries.
-- Summary rate limiting and ordered batch write behavior; that remains
-  8-4d.
 - Browser progress UI, browser listeners, and browser list/cancel
   controls.
 - Local MLC / ONNX / WebLLM summary runtimes.
@@ -55,16 +52,15 @@ Implementation notes:
 
 - `summarizeOnce` currently returns `tokens: 0` because `runOpenAI` does
   not expose upstream usage data yet.
-- Keep 8-4c idempotent: if a summary for the target chunk/model already
-  exists, the handler should avoid duplicate writes and still converge
-  the chunk/job state.
+- 8-4c keeps single-job writes idempotent. If 8-4d introduces batch
+  staging, preserve the existing `{ chatId, chunkId, model }`
+  convergence behavior for already-written summaries.
 - Preserve the no-compatibility-migrations policy: update current
-  Fastify shapes directly if the summarize payload needs tightening.
+  Fastify shapes directly if the queue payload needs tightening.
 
 ## Queue After 8-4c
 
-1. 8-4d - Summary rate limiting and ordered writes.
-2. 8-5a - Embedding provider contract.
+1. 8-5a - Embedding provider contract.
 
 ## Parallel Or Deferred
 
@@ -87,15 +83,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-4b: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 969 tests, and
+Last recorded full baselines after 8-4c: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 976 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-4b verification:
+Focused 8-4c verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memorySummaryAdapter.test.ts server/fastify/__tests__/memorySummaryPrompt.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memorySummarizeJobHandler.test.ts server/fastify/__tests__/memorySummaryAdapter.test.ts server/fastify/__tests__/memorySummaryPrompt.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 pnpm test
 pnpm api:test
@@ -135,6 +131,8 @@ pnpm build
   [`../phases-completed/phase-8-memory-8-4a.md`](../phases-completed/phase-8-memory-8-4a.md)
 - 8-4b closeout:
   [`../phases-completed/phase-8-memory-8-4b.md`](../phases-completed/phase-8-memory-8-4b.md)
+- 8-4c closeout:
+  [`../phases-completed/phase-8-memory-8-4c.md`](../phases-completed/phase-8-memory-8-4c.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

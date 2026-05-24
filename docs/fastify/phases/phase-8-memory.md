@@ -1,6 +1,6 @@
 # Phase 8 - Hypa V3 Memory Server-Side
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 ## Goal
 
@@ -9,7 +9,8 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-4c - Summarize job handler**.
+Status: in progress. Next slice: **8-4d - Summary rate limiting and
+ordered writes**.
 
 ## Preconditions
 
@@ -238,6 +239,7 @@ the current schema and import paths directly.
     missing chunk / chat rows, and summary write validation. Keep
     embedding, similarity selection, prompt assembly reads, and browser
     progress UI out of scope.
+    Closed on 2026-05-25.
   - **8-4d — Summary rate limiting and ordered writes.** Apply
     `summarizationRequestsPerMinute`, `summarizationMaxConcurrent`, and
     fail-fast cancellation semantics to batches of `summarize` jobs.
