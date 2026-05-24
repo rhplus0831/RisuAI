@@ -21,7 +21,7 @@ Phases 8-9 remain target test rows.
 
 | Route                                       | Pinned behavior                            | Status      |
 | ------------------------------------------- | ------------------------------------------ | ----------- |
-| `GET /api/v1/bootstrap`                     | Fresh data dir returns `revision: 0`, `schemaVersion: 0`, `database: null`, and `assetBaseUrl`. Requires auth once a password is set. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
+| `GET /api/v1/bootstrap`                     | Fresh data dir returns `revision: 0`, current `schemaVersion`, `database: null`, and `assetBaseUrl`. Requires auth once a password is set. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
 | `POST /api/v1/import/risusave`              | JSON `{ database }` replaces `db.json.database`, bumps revision, rejects missing database, returns zeroed `assetReport`. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
 | `POST /api/v1/assets`                       | Auth-gated raw upload computes SHA-256, writes `data/assets/<sha>.<ext>`, returns metadata + revision, and is idempotent on re-upload. | covered by `server/fastify/__tests__/assets.test.ts` |
 | `GET /api/v1/assets/:id`                    | Public read serves stored bytes with Content-Type, immutable cache header, and 404 for unknown / malformed ids. | covered by `server/fastify/__tests__/assets.test.ts` |

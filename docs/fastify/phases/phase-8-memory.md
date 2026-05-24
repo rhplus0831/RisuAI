@@ -9,8 +9,8 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-1a-i - Migration runner + version
-bump**.
+Status: in progress. Next slice: **8-1a-ii - Memory tables on top of
+the runner**.
 
 ## Preconditions
 
@@ -94,22 +94,18 @@ slices:
 - **8-1 — Memory storage foundation.** Establish the SQL tables,
   repository surface, and legacy import/backfill path before worker or
   provider behavior lands. Close the sub-slices below in order.
-  - **8-1a — Memory schema migration.** Scope re-check on 2026-05-24
-    against `server/fastify/src/db.ts:5-22` found that
-    `CURRENT_SCHEMA_VERSION = 0`, the only DDL today is the
-    `schema_version` bootstrap table itself, and there is **no migration
-    runner / `migrations/` directory / `applyMigrations` function** in
-    the repo. Split this slice into two so the table DDL doesn't get
-    bundled with framework work:
-    - **8-1a-i — Migration runner + version bump.** Add the first
-      domain SQL migration path for `risu.db`: a typed registry of
-      ordered migration steps, a `applyMigrations(db, fromVersion)`
-      executor that runs each step in a single transaction, version
-      bumping via the existing `schema_version` row, an idempotent
-      reapply guard, and a test harness that asserts migrations are
-      runnable and reapply-safe. No memory tables in this slice.
+  - **8-1a — Memory schema migration.** Split this slice into two so
+    the table DDL doesn't get bundled with framework work:
+    - **8-1a-i — Migration runner + version bump.** Closed on
+      2026-05-24. `CURRENT_SCHEMA_VERSION = 1`, `openDatabase()` applies
+      ordered migrations through `applyMigrations(db, fromVersion)`, the
+      existing `schema_version` row remains the source of truth, and
+      tests cover version bumping, idempotent reapply, and newer-schema
+      rejection, plus the missing singleton-row guard. No memory tables
+      landed in this slice.
     - **8-1a-ii — Memory tables on top of the runner.** Add the first
-      real migration step that creates `memory_chunks`,
+      real migration step by bumping `CURRENT_SCHEMA_VERSION` to 2 and
+      creating `memory_chunks`,
       `memory_summaries`, `memory_embeddings`, and `memory_jobs` with
       indexes, check constraints, and foreign-key / cascade behavior
       where SQLite can enforce it. Do not add import backfill or

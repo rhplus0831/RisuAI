@@ -48,7 +48,7 @@ describe('Fastify foundation smoke', () => {
   it('reports health', async () => {
     const res = await harness.app.inject({ method: 'GET', url: '/api/v1/health' })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ status: 'ok', revision: 0, schemaVersion: 0 })
+    expect(res.json()).toEqual({ status: 'ok', revision: 0, schemaVersion: 1 })
   })
 
   it('walks the no-password setup-login flow and accepts the resulting assertion', async () => {

@@ -7,18 +7,18 @@ Concise snapshot of each migration workstream. Historical detail is in
 
 ## Phase Progress
 
-| Phase | Status | Notes |
-| --- | --- | --- |
-| 0 - Removals | Complete | Closed 2026-05-20. |
-| 1 - Foundation | Complete | Closed 2026-05-20. |
-| 2 - Storage / import / assets / backups | Complete | Closed 2026-05-20. |
-| 3 - Proxy migration | Complete | Closed 2026-05-21; Express deleted. |
-| 4 - sendChat tests | Complete | Closed 2026-05-20. |
-| 5 - sendChat extraction | Complete | Closed 2026-05-22. |
-| 6 - Server-side generation | Complete | Closed 2026-05-22 for `/completion`. |
-| 7 - Server-side prompt assembly | Complete | Closed 2026-05-24 after closeout verification. |
-| 8 - Hypa V3 memory server-side | In progress | Next slice: 8-1a-i migration runner + version bump. |
-| 9 - Client thinning | Not started | Waits for server-owned prompt, generation, and memory paths. |
+| Phase                                   | Status      | Notes                                                        |
+| --------------------------------------- | ----------- | ------------------------------------------------------------ |
+| 0 - Removals                            | Complete    | Closed 2026-05-20.                                           |
+| 1 - Foundation                          | Complete    | Closed 2026-05-20.                                           |
+| 2 - Storage / import / assets / backups | Complete    | Closed 2026-05-20.                                           |
+| 3 - Proxy migration                     | Complete    | Closed 2026-05-21; Express deleted.                          |
+| 4 - sendChat tests                      | Complete    | Closed 2026-05-20.                                           |
+| 5 - sendChat extraction                 | Complete    | Closed 2026-05-22.                                           |
+| 6 - Server-side generation              | Complete    | Closed 2026-05-22 for `/completion`.                         |
+| 7 - Server-side prompt assembly         | Complete    | Closed 2026-05-24 after closeout verification.               |
+| 8 - Hypa V3 memory server-side          | In progress | Next slice: 8-1a-ii memory tables on top of the runner.      |
+| 9 - Client thinning                     | Not started | Waits for server-owned prompt, generation, and memory paths. |
 
 ## Workstreams
 

@@ -18,18 +18,18 @@ the phase file.
 
 ## Phase Index
 
-| Phase | Status | Open |
-| --- | --- | --- |
-| 0 - Removals | Closed 2026-05-20 | [`phase-0-removals.md`](phase-0-removals.md) |
-| 1 - Foundation | Closed 2026-05-20 | [`phase-1-foundation.md`](phase-1-foundation.md) |
-| 2 - Storage / import / assets / backups | Closed 2026-05-20 | [`phase-2-storage.md`](phase-2-storage.md) |
-| 3 - Proxy migration | Closed 2026-05-21 | [`phase-3-proxy.md`](phase-3-proxy.md) |
-| 4 - sendChat tests | Closed 2026-05-20 | [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md) |
-| 5 - sendChat extraction | Closed 2026-05-22 | [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md) |
-| 6 - Server-side generation | Closed 2026-05-22 | [`phase-6-server-generation.md`](phase-6-server-generation.md) |
-| 7 - Server-side prompt assembly | Closed 2026-05-24 | [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md) |
-| 8 - Hypa V3 memory server-side | In progress | [`phase-8-memory.md`](phase-8-memory.md) |
-| 9 - Client thinning | Not started | [`phase-9-client-thinning.md`](phase-9-client-thinning.md) |
+| Phase                                   | Status            | Open                                                           |
+| --------------------------------------- | ----------------- | -------------------------------------------------------------- |
+| 0 - Removals                            | Closed 2026-05-20 | [`phase-0-removals.md`](phase-0-removals.md)                   |
+| 1 - Foundation                          | Closed 2026-05-20 | [`phase-1-foundation.md`](phase-1-foundation.md)               |
+| 2 - Storage / import / assets / backups | Closed 2026-05-20 | [`phase-2-storage.md`](phase-2-storage.md)                     |
+| 3 - Proxy migration                     | Closed 2026-05-21 | [`phase-3-proxy.md`](phase-3-proxy.md)                         |
+| 4 - sendChat tests                      | Closed 2026-05-20 | [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md)       |
+| 5 - sendChat extraction                 | Closed 2026-05-22 | [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md)   |
+| 6 - Server-side generation              | Closed 2026-05-22 | [`phase-6-server-generation.md`](phase-6-server-generation.md) |
+| 7 - Server-side prompt assembly         | Closed 2026-05-24 | [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md)     |
+| 8 - Hypa V3 memory server-side          | In progress       | [`phase-8-memory.md`](phase-8-memory.md)                       |
+| 9 - Client thinning                     | Not started       | [`phase-9-client-thinning.md`](phase-9-client-thinning.md)     |
 
 ## Dependency Order
 
@@ -39,8 +39,9 @@ the phase file.
 0 -> 4 -> 5 -> 6
 ```
 
-Phase 8 is the active phase. Phase 7 is closed, so the next pickup is
-8-1a-i migration runner + version bump. Phase 9 waits for the
+Phase 8 is the active phase. Phase 7 is closed, and 8-1a-i has landed,
+so the next pickup is 8-1a-ii memory tables on top of the runner.
+Phase 9 waits for the
 server-owned generation, prompt assembly, and memory surfaces to settle.
 
 ## Completed Detail

@@ -54,9 +54,7 @@ async function signAssertion(
   return `${signingInput}.${sigB64}`
 }
 
-async function setupAuthedClient(
-  app: FastifyInstance,
-): Promise<{ assertion: string }> {
+async function setupAuthedClient(app: FastifyInstance): Promise<{ assertion: string }> {
   const setup = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/setup',
@@ -97,7 +95,7 @@ describe('Phase 2A bootstrap + import', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({
       revision: 0,
-      schemaVersion: 0,
+      schemaVersion: 1,
       database: null,
       assetBaseUrl: '/api/v1/assets',
     })
@@ -141,7 +139,7 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json()).toEqual({
       revision: 1,
-      schemaVersion: 0,
+      schemaVersion: 1,
       database: sample,
       assetBaseUrl: '/api/v1/assets',
     })
