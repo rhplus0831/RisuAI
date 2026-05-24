@@ -9,8 +9,8 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-1c - Legacy `hypaV3Data`
-import/backfill**.
+Status: in progress. Next slice: **8-2a - Memory job queue state
+machine**.
 
 ## Preconditions
 
@@ -127,7 +127,7 @@ the current schema and import paths directly.
     `chatMemos`, important/category/tag metadata where possible, define
     how legacy summaries map to chunk rows, and keep bootstrap stitching
     compatible until Phase 9 removes whole-database reads. Do not create
-    embeddings or summary jobs during import.
+    embeddings or summary jobs during import. Closed on 2026-05-24.
 - **8-2 — Memory queue and progress.** Build queue mechanics, worker
   lifecycle, progress events, and routes before provider-backed memory
   handlers. Close the sub-slices below in order.

@@ -166,6 +166,7 @@ function createMemoryTables(db: DatabaseSync): void {
       chunk_id TEXT NOT NULL,
       model TEXT NOT NULL,
       text TEXT NOT NULL,
+      metadata_json TEXT CHECK (metadata_json IS NULL OR json_valid(metadata_json)),
       tokens INTEGER NOT NULL CHECK (tokens >= 0),
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       FOREIGN KEY (chunk_id) REFERENCES memory_chunks(id) ON DELETE CASCADE,
@@ -220,4 +221,22 @@ function createMemoryTables(db: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_memory_jobs_kind_status
       ON memory_jobs (kind, status);
   `)
+  ensureColumn(
+    db,
+    'memory_summaries',
+    'metadata_json',
+    'ALTER TABLE memory_summaries ADD COLUMN metadata_json TEXT CHECK (metadata_json IS NULL OR json_valid(metadata_json))',
+  )
+}
+
+function ensureColumn(
+  db: DatabaseSync,
+  tableName: string,
+  columnName: string,
+  alterSql: string,
+): void {
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]
+  if (!rows.some((row) => row.name === columnName)) {
+    db.exec(alterSql)
+  }
 }

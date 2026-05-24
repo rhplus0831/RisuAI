@@ -23,8 +23,9 @@ import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
-import { SUPPORTED_ASSET_CONTENT_TYPES } from './repository.js'
+import { SUPPORTED_ASSET_CONTENT_TYPES, loadPersisted } from './repository.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
+import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 
 export interface BuildAppOptions {
   config?: AppConfig
@@ -61,6 +62,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   await app.register(fastifyWebsocket)
 
   const db = openDatabase(config.dataDir)
+  backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
   const authState = createAuthState(config.dataDir)
   const streamJobRegistry = new JobRegistry()
   const gcTimer = setInterval(() => {

@@ -43,6 +43,7 @@ export interface MemorySummary {
   chunkId: string
   model: string
   text: string
+  metadata: unknown | null
   tokens: number
   createdAt: string
 }
@@ -53,6 +54,7 @@ export interface CreateMemorySummaryInput {
   chunkId: string
   model: string
   text: string
+  metadata?: unknown | null
   tokens: number
 }
 
@@ -118,6 +120,7 @@ interface MemorySummaryRow {
   chunk_id: string
   model: string
   text: string
+  metadata_json: string | null
   tokens: number
   created_at: string
 }
@@ -244,12 +247,21 @@ export function mapMemoryChunkRow(row: MemoryChunkRow): MemoryChunk {
 }
 
 export function mapMemorySummaryRow(row: MemorySummaryRow): MemorySummary {
+  let metadata: unknown | null = null
+  if (row.metadata_json !== null) {
+    try {
+      metadata = JSON.parse(row.metadata_json)
+    } catch {
+      throw new ValidationError(`Invalid memory summary metadata JSON for summary ${row.id}`)
+    }
+  }
   return {
     id: row.id,
     chatId: row.chat_id,
     chunkId: row.chunk_id,
     model: row.model,
     text: row.text,
+    metadata,
     tokens: row.tokens,
     createdAt: row.created_at,
   }
@@ -292,6 +304,15 @@ function stringifyPayload(payload: unknown): string {
   const json = JSON.stringify(payload)
   if (json === undefined) {
     throw new ValidationError('memory job payload must be JSON serializable')
+  }
+  return json
+}
+
+function stringifyNullableMetadata(metadata: unknown | null | undefined): string | null {
+  if (metadata === undefined || metadata === null) return null
+  const json = JSON.stringify(metadata)
+  if (json === undefined) {
+    throw new ValidationError('memory summary metadata must be JSON serializable')
   }
   return json
 }
@@ -403,14 +424,16 @@ export function createMemorySummary(
         chunk_id,
         model,
         text,
+        metadata_json,
         tokens
-      ) VALUES (?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `),
     input.id,
     input.chatId,
     input.chunkId,
     input.model,
     input.text,
+    stringifyNullableMetadata(input.metadata),
     input.tokens,
   )
   return getMemorySummary(db, input.id) as MemorySummary

@@ -16,15 +16,15 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 8, Hypa V3 memory.
-- Last landed slice: 8-1b, memory repositories + row mappers.
+- Last landed slice: 8-1c, legacy `hypaV3Data` import/backfill.
 - Current blocker: none recorded.
-- Next default pickup: 8-1c, legacy `hypaV3Data` import/backfill.
-- Last recorded full baselines after 8-1b: `pnpm check` clean,
-  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 909 tests, and
+- Next default pickup: 8-2a, memory job queue state machine.
+- Last recorded full baselines after 8-1c: `pnpm check` clean,
+  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 912 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Focused verification after 8-1b:
-  `pnpm exec vitest run server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/db.test.ts --config server/fastify/vitest.config.ts`
+- Focused verification after 8-1c:
+  `pnpm exec vitest run server/fastify/__tests__/memoryLegacyImport.test.ts server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/db.test.ts --config server/fastify/vitest.config.ts`
   passed.
 
 ## Start Here
@@ -47,7 +47,7 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-1c legacy `hypaV3Data` import/backfill.              |
+| Hypa V3 memory                              | Active; next slice is 8-2a memory job queue state machine.                   |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules
