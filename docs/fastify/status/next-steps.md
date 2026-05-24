@@ -11,39 +11,37 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-3b landed `cleanupOrphanedMemory()` in
-`server/fastify/src/memoryRepository.ts`. The cleanup pass reads
-summary `metadata.chatMemos`, respects `preserveOrphanedMemory`, deletes
-orphaned `memory_summaries` rows and their parent `memory_chunks` rows
-inside one transaction, and relies on the existing `chunk_id` cascade for
-matching `memory_embeddings`. The pass is idempotent and preserves
-summaries whose metadata does not expose a `chatMemos` array.
+8-3c locked the pure standard Hypa V3 summarization window planner in
+`server/fastify/src/memoryPlanner.ts`. Focused tests now cover
+start-index fallback and advancement, empty-memory reservation,
+summary-window bounds, skipped-message reasons, skipped-only token
+deltas, target-token stopping, invalid settings, and
+cannot-summarize-further guards. The planner remains deterministic and
+does not write DB rows, enqueue jobs, call providers, or construct
+summary prompts.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-3c - Pure summarization window planner**.
+Continue Phase 8 with **8-3d - Chunk/job planning bridge**.
 
 Expected scope:
 
-- Port the pure summarization window planner behavior from the standard
-  Hypa V3 path.
-- Cover start-index selection, memory-token reservation,
-  summary-window selection, skip rules for examples/new/empty/user
-  messages, target-token stopping, and "cannot summarize further"
-  guards.
-- Return planned windows and token deltas only.
-- Keep the output deterministic for the 8-3d chunk/job bridge.
+- Convert pure planner windows into deterministic `memory_chunks` rows
+  and planned `summarize` jobs.
+- Preserve idempotency when the same chat/range is planned repeatedly.
+- Define and test the summarize job payload shape expected by 8-4.
+- Keep chunk creation and job enqueueing ordered and deterministic.
 
-Out of scope for 8-3c:
+Out of scope for 8-3d:
 
-- DB writes, job enqueueing, provider calls, summary prompt construction,
+- Provider calls, summary prompt construction, summary persistence,
   embedding, memory prompt selection, browser listeners, and browser
   list/cancel controls.
 
-## Queue After 8-3c
+## Queue After 8-3d
 
-1. 8-3d - Chunk/job planning bridge.
-2. 8-4a - Summary prompt builder.
+1. 8-4a - Summary prompt builder.
+2. 8-4b - Provider-backed summary adapter.
 
 ## Parallel Or Deferred
 
@@ -66,15 +64,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-3b: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 946 tests, and
+Last recorded full baselines after 8-3c: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 950 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-3b verification:
+Focused 8-3c verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memoryRepository.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memoryPlanner.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 pnpm test
 pnpm api:test
@@ -106,6 +104,8 @@ pnpm build
   [`../phases-completed/phase-8-memory-8-3a.md`](../phases-completed/phase-8-memory-8-3a.md)
 - 8-3b closeout:
   [`../phases-completed/phase-8-memory-8-3b.md`](../phases-completed/phase-8-memory-8-3b.md)
+- 8-3c closeout:
+  [`../phases-completed/phase-8-memory-8-3c.md`](../phases-completed/phase-8-memory-8-3c.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

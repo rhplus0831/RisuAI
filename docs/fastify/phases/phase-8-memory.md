@@ -9,7 +9,7 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-3c - Pure summarization window planner**.
+Status: in progress. Next slice: **8-3d - Chunk/job planning bridge**.
 
 ## Preconditions
 
@@ -193,6 +193,7 @@ the current schema and import paths directly.
     stopping, and "cannot summarize further" guards. Return planned
     windows and token deltas only; no DB writes, provider calls, or job
     enqueueing.
+    Closed on 2026-05-24.
   - **8-3d — Chunk/job planning bridge.** Convert pure planner windows
     into deterministic `memory_chunks` rows and planned `summarize` jobs.
     Cover idempotency, payload shape, status transitions expected by
