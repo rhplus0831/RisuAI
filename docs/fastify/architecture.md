@@ -1,12 +1,12 @@
 # Architecture
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 This doc describes the target shape of the Fastify server and the
-boundaries between it and the browser client. Phase 1, Phase 2,
-Phase 3, the Phase 6 completion-route files through closeout slice
-6-28, and Phase 7 slices through 7-12c already exist; modules
-marked by later phases are target layout, not current implementation.
+boundaries between it and the browser client. Current route coverage
+lives in [`coverage/server-routes.md`](coverage/server-routes.md);
+modules marked by later phases are target layout, not current
+implementation.
 
 ## Server module layout
 
@@ -109,68 +109,25 @@ compatibility routes are administrative or bridge operations and do
 not bump revision. Every future event includes the revision it
 represents.
 
-Implemented now:
+Implemented route families are tracked in
+[`coverage/server-routes.md`](coverage/server-routes.md). At a high
+level, the current Fastify API covers:
 
-- `GET /api/v1/health`
-- `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`,
-  `POST /api/v1/auth/login`, `POST /api/v1/auth/crypto`
-- `GET /api/v1/bootstrap` - full database snapshot
-- `POST /api/v1/import/risusave` - JSON `{ database }` import
-- `POST /api/v1/assets`, `GET /api/v1/assets/:id`,
-  `HEAD /api/v1/assets/:id`, `POST /api/v1/assets/exists`
-- `GET /api/v1/backups`, `POST /api/v1/backups`,
-  `POST /api/v1/backups/:id/restore`, `DELETE /api/v1/backups/:id`
-- `POST /api/v1/proxy/fetch`
-- `POST /api/v1/proxy/stream-jobs`,
-  `GET /api/v1/proxy/stream-jobs/:id/ws`,
-  `DELETE /api/v1/proxy/stream-jobs/:id`
-- `ANY /api/v1/hub/*` - passthrough to `RISU_HUB_URL`
-- `GET /api/v1/storage/list`, `GET /api/v1/storage/read`,
-  `POST /api/v1/storage/write`, `POST /api/v1/storage/remove`
-- `POST /api/v1/generate/completion` - auth-gated provider
-  dispatch. Current provider strings are `echo`, `openai`,
-  `nanogpt`, `openrouter`, `anthropic`, `mistral`, `cohere`,
-  `gemini`, `openai-legacy-instruct`, `openai-responses`,
-  `kobold`, `ooba-legacy`, `ollama`, `bedrock`, and `horde`.
-  The client adapter also routes covered variants such as
-  DeepSeek / DeepInfra keyIdentifier models, Ollama Cloud,
-  `reverse_proxy` / `xcustom:::` for OpenAI-compatible,
-  Anthropic, Mistral, Cohere, OpenAI Responses, and OpenAI legacy
-  instruct formats, plus Vertex AI Gemini, AWS Bedrock Claude, and
-  Stable Horde text. Unsupported provider strings return `501`.
-- `POST /api/v1/generate/chat` - Phase 7 prompt assembly stream.
-  It is auth-gated, validates `chatId`, `characterId`, mode-specific
-  fields, calls `assemblePrompt`, and emits the current append-only
-  prompt SSE taxonomy. The success path streams
-  `stage(validate)`, `stage(prompt,start)`, `prompt`,
-  `stage(prompt,end)`, `info`, and `done`; bad ids, missing
-  databases, trigger stops, and budget overflow become terminal
-  SSE `error` + `done`.
-- `POST /api/v1/generate/preview-prompt` - one-shot JSON prompt
-  preview. It forces `preview_prompt` mode, returns the assembled
-  `prompt` payload on success, `{ stopSending, abortReason }` on
-  trigger/overflow abort, and HTTP 404 for missing scope.
-- Optional static serving from `RISU_API_STATIC_ROOT`, including
-  `GET /` and non-API GET SPA fallback.
+- Health, auth, bootstrap, JSON save import, assets, backups, optional
+  static SPA serving, and legacy storage compatibility.
+- Proxy fetch, stream-job WebSocket, and Risu hub passthrough.
+- Auth-gated completion generation and chat / preview-prompt generation.
+- Phase 8 memory job surfaces as they land.
 
-Planned later (final shape is locked phase by phase, not by this
-list):
+Planned later, with final shapes locked phase by phase:
 
-- `GET /api/v1/events` - SSE stream of committed mutations
-- `POST /api/v1/commands/<resource>[/...]` - one endpoint per
-  resource family (character, chat, message, preset, persona, plugin,
-  module, ...). No whole-state PUT.
-- `POST /api/v1/generate/translate`, `tts`, and `image`. Stable
-  Horde text currently lands as provider `horde` on
-  `/api/v1/generate/completion`, so no separate Horde route exists
-  in the current tree.
-- `POST /api/v1/generate/count-tokens`,
-  `GET /api/v1/generate/encodings`.
-- `/api/v1/generate/chat` provider dispatch, `message_patch`,
-  `side_effect`, `error.restoration`, and send-path browser wiring.
-- `GET /api/v1/export/risusave`, `GET /api/v1/export/bundle`, and
-  multipart `.risu` import in Phase 9, after the server owns the
-  final per-resource schema. No Phase 2 server export route exists.
+- `GET /api/v1/events` - persistent SSE stream of committed mutations.
+- `POST /api/v1/commands/<resource>[/...]` - typed commands per resource
+  family; no whole-state PUT.
+- Helper generation routes for translate, TTS, image, token counting, and
+  encodings where the server owns the provider path.
+- `.risu` export, bundle export, and multipart `.risu` import in Phase 9,
+  after the server owns the final per-resource schema.
 
 Conscious differences vs the `move-to-fastify` branch:
 
@@ -223,16 +180,11 @@ not redesign auth in this migration unless a concrete need surfaces.
 
 ## Events
 
-Planned for Phase 9; not implemented in the current Fastify tree.
-`GET /api/v1/events` will be a Server-Sent Events stream. Every
-committed mutation emits one event:
-`{ revision, type, resource, ts, detail }`. The client subscribes
-once on startup and uses events to invalidate its in-memory
-projection.
-
-Heartbeats every 15s keep idle connections alive. Auth is via
-`risu-auth` query string (so EventSource works) or header (for
-fetch-based subscribers).
+Planned for Phase 9. `GET /api/v1/events` will be a persistent
+Server-Sent Events stream of committed mutations. The client subscribes
+once on startup and uses events to invalidate its in-memory projection.
+Transport details live in
+[`phases/phase-9-client-thinning.md`](phases/phase-9-client-thinning.md).
 
 ## Boundary rules
 

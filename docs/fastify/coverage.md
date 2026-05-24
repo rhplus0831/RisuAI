@@ -1,6 +1,6 @@
 # Test Coverage
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 This is the coverage router. Detail per area lives in the
 shards under [`coverage/`](coverage/).
@@ -65,6 +65,11 @@ shards under [`coverage/`](coverage/).
   `templates.test.ts`, `memory.test.ts`, and `assemble.test.ts`, plus
   browser adapter / preview wiring coverage in `serverChat.test.ts`,
   `sseParse.test.ts`, and `sendChat.serverPreview.test.ts`.
+- Phase 8 memory coverage has landed for schema/repository primitives,
+  legacy import, job queue routes, worker lifecycle/retry/progress,
+  planner/chunk bridge, summary prompt building, summary adapter, and the
+  8-4c summarize job handler in the focused
+  `server/fastify/__tests__/memory*.test.ts` files.
 
 ## Where to look
 

@@ -1,32 +1,22 @@
 # Runtime Stages
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 This doc describes the stages a `sendChat` invocation moves through
 and who owns each stage **after the migration**. Before migration
 they all live in the browser. The phases in [`phases/`](phases/)
 move each stage to its target owner.
 
-The stage names match the existing `stage1`-`stage4` timing markers
-in `src/ts/process/index.svelte.ts` so a reader can trace from the
-current code to the future shape. The current timing markers do not
-perfectly bracket the future server modules; they are trace anchors.
-Phase 5 has extracted Stage 1 setup plus the Stage 2 / Stage 3 /
-Stage 4 work into browser modules under `src/ts/process/`,
-`src/ts/process/promptAssembly/`, `src/ts/process/promptBudget/`,
-`src/ts/process/dispatch/`, and `src/ts/process/postGeneration/`,
-and Phase 6 has closed Stage 3 completion dispatch through
-`/api/v1/generate/completion` for the provider matrix listed in
-[`status/server.md`](status/server.md). Phase 7 has landed prompt
-assembly through 7-12c: prompt leaves, history, regex scripts,
-active-module helpers, lorebook activation, token/budget helpers, the
-Phase 7-safe trigger runner, the complete template renderer,
-`assemblePrompt`, `/api/v1/generate/chat`,
-`/api/v1/generate/preview-prompt`, `/chat` `info` telemetry, the
-browser `/chat` adapter, and gated server-backed preview paths. The
-live send/continue/regenerate path still uses the local Stage 2/3
-coordinator until 7-12d adds chat-row deltas and dispatch streaming.
-The ownership described below is the migration target.
+The stage names match the existing `stage1`-`stage4` timing markers in
+`src/ts/process/index.svelte.ts` so a reader can trace from current code
+to the future shape. The current timing markers do not perfectly bracket
+the future server modules; they are trace anchors.
+
+Phases 5, 6, and 7 are closed: `sendChat` has visible helper seams,
+completion dispatch is server-routed for the covered provider matrix, and
+prompt assembly / chat dispatch can run through Fastify behind the
+server-backed gate. Phase 8 is moving Hypa V3 memory into server tables
+and jobs. The ownership described below is the migration target.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -140,14 +130,8 @@ the delegated post-generation helpers under
   This is the "make the seam visible" step.
 - Phase 6 (`phases/phase-6-server-generation.md`) moves Stage 3
   (provider dispatch) server-side.
-- Phase 7 (`phases/phase-7-prompt-assembly.md`) moves Stage 2
-  (prompt assembly) server-side. It is in progress: slices 7-1
-  through 7-12c landed the scaffold, prompt leaves, history shaping,
-  scripts, module helpers, lorebook activation, tokens / budget,
-  trigger runner, complete renderer, assembler, `/chat` + preview
-  routes, browser `/chat` adapter, additive prompt payload, and gated
-  preview wiring. The remaining Phase 7 work is the live send-path /
-  dispatch cluster.
+- Phase 7 (`phases/phase-7-prompt-assembly.md`) moved Stage 2
+  (prompt assembly) server-side and closed the `/chat` dispatch path.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
   server-side resource that Stage 2 reads from.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1

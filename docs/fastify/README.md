@@ -1,6 +1,6 @@
 # Fastify Migration Roadmap
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 This directory is the working roadmap for moving Risuai from a thick
 browser app to a Fastify backend with a display-only client. The
@@ -16,38 +16,14 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Scope
 
-Current status: Phases 0-6 are closed and Phase 7 is in progress.
-Fastify owns bootstrap, JSON import, content-addressed assets,
-backups, static SPA serving, provider proxy fetch, stream-job
-WebSocket transport, Risu hub passthrough, the legacy NodeStorage
-key-value surface, and the closed `/api/v1/generate/completion`
-provider matrix. Phase 7 has landed server-side prompt assembly
-through 7-12c: prompt leaves, history, regex scripts, modules,
-lorebook activation, token/budget helpers, the Phase 7-safe trigger
-runner, the complete template renderer, `assemblePrompt`, both
-generation routes (`/api/v1/generate/chat` and
-`/api/v1/generate/preview-prompt`), `/chat` `info` telemetry, the
-browser `/chat` adapter, the `prompt` payload `formated` / `biases`
-extension, and gated server-backed preview/preview-prompt wiring.
-The live send/continue/regenerate path still runs locally until
-7-12d adds chat-row deltas and dispatch streaming.
-Express has been deleted. The Dockerfile and compose file target
-Fastify on port 6002 with `/app/data` persisted; `tsx` and
-`@fastify/websocket` are runtime dependencies after `1eddbfba`.
+Current status lives in [`status.md`](status.md). As of 2026-05-25,
+Phases 0-7 are closed and Phase 8, server-side Hypa V3 memory, is
+active. Fastify is the live server path; Express has been deleted. The
+Dockerfile and compose file target Fastify on port 6002 with `/app/data`
+persisted.
 
-Phase 5 closed on 2026-05-22: commits `3c5a92b2` through
-`a7e2831d` reduced `src/ts/process/index.svelte.ts` from 1625 to
-445 lines and extracted prompt assembly, request budgeting,
-provider dispatch, response orchestration, Stage 4 closeout, and
-entry-context setup into focused browser-side modules. The local
-fixture harness now has 38 snapshots: 17 Phase 4 fixtures, 9 Phase
-5 gates, and 12 Phase 6 provider parity fixtures (`echo-basic`,
-`openai-basic`, `anthropic-basic`, `mistral-basic`,
-`cohere-basic`, `deepseek-basic`, `gemini-basic`,
-`gemini-vertex-basic`, `bedrock-basic`, `horde-basic`,
-`mistral-reverse-proxy-basic`, `anthropic-reverse-proxy-basic`).
-A separate server-backed sweep checks those 12 fixtures through
-`/api/v1/generate/completion`.
+Historical phase logs live in [`phases-completed/`](phases-completed/).
+Route and test inventories live under [`coverage/`](coverage/).
 
 In scope:
 
@@ -57,12 +33,9 @@ In scope:
   Risu Account Sync, Google Drive sync, and the Supa / Hypa V2 /
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 closed
-  the completion route in Phase 6-28 (`398a3ae6`, hash backfilled by
-  `a8cb123b`). Phase 7 has landed through 7-12c, including the
-  complete prompt assembler, `/chat` SSE route, preview-prompt JSON
-  route, browser `/chat` adapter, additive prompt payload, and gated
-  preview wiring; the remaining Phase 7 work is the 7-12d send-path /
-  dispatch cluster. The current provider matrix lives in
+  the completion route and Phase 7 closed server-side prompt assembly,
+  including `/chat` dispatch and preview-prompt paths. The current
+  provider matrix lives in
   [`coverage/providers.md`](coverage/providers.md), and the next pickup
   lives in [`status/next-steps.md`](status/next-steps.md).
 - A display-only browser client in server-backed mode.

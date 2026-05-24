@@ -1,12 +1,12 @@
 # Server Route Tests
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
-completion-route tests, and Phase 7 `/chat`, `/preview-prompt`, and
-prompt-helper tests exist under `server/fastify/__tests__/`.
-Unlanded helper routes plus the remaining Phase 7 dispatch work and
-Phases 8-9 remain target test rows.
+completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and landed
+Phase 8 memory slices have coverage under `server/fastify/__tests__/`.
+Unlanded helper routes, remaining Phase 8 routes, and Phase 9 commands
+remain target test rows.
 
 ## Phase 1: Foundation
 
@@ -106,12 +106,15 @@ on now that `assemblePrompt` is real.
 | ------------------------------------------- | ----------------------------------------- | ----------- |
 | `GET /api/v1/memory/chunks/:chatId`         | Lists chunks with statuses.               | not started |
 | `GET /api/v1/memory/summaries/:chatId`      | Returns summaries for a model.            | not started |
-| `POST /api/v1/memory/jobs`                  | Enqueues a chunk/embed/summarize job.     | not started |
-| `GET /api/v1/memory/jobs`                   | Lists pending / running.                  | not started |
-| `DELETE /api/v1/memory/jobs/:id`            | Cancels a job.                            | not started |
+| `POST /api/v1/memory/jobs`                  | Auth-gated enqueue for `chunk`, `embed`, and `summarize`; emits `memory.job`. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
+| `GET /api/v1/memory/jobs`                   | Lists active jobs with chat/kind/status filters and validation. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
+| `DELETE /api/v1/memory/jobs/:id`            | Cancels pending/running jobs, is idempotent for terminal states, and emits progress. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
 
-Plus: job lifecycle (`pending -> running -> completed`), retry
-on failure, SSE memory.job events.
+Plus: repository primitives, job lifecycle (`pending -> running ->
+completed`), retry/backoff, boot recovery, progress events, memory
+planning, summary prompt building, summary adapter, and the 8-4c
+summarize job handler are covered by the focused memory tests under
+`server/fastify/__tests__/memory*.test.ts`.
 
 ## Phase 9: Commands
 

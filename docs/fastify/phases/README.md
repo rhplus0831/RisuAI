@@ -1,6 +1,6 @@
 # Migration Phases
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 These files track current or remaining migration work. Completed
 details, landed slice tables, and old status logs live in
@@ -39,10 +39,10 @@ the phase file.
 0 -> 4 -> 5 -> 6
 ```
 
-Phase 8 is the active phase. Phase 7 is closed, and 8-1a-i has landed,
-so the next pickup is 8-1a-ii memory tables in the current schema.
-Phase 9 waits for the
-server-owned generation, prompt assembly, and memory surfaces to settle.
+Phase 8 is the active phase. Phase 7 is closed, and Phase 8 has landed
+through 8-4c, so the next pickup is 8-4d summary rate limiting and
+ordered writes. Phase 9 waits for server-owned generation, prompt
+assembly, and memory surfaces to settle.
 
 ## Completed Detail
 

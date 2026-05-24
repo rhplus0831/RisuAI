@@ -1,6 +1,6 @@
 # Migration Plan
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 ## Goal
 
@@ -27,101 +27,26 @@ End state:
 
 ## Current Baseline
 
-Where the codebase stands after the Phase 3 closeout on 2026-05-21,
-the Phase 4 characterization slice on 2026-05-20, the Phase 5
-closeout on 2026-05-22, the Phase 6 completion-route closeout in
-Phase 6-28 (`398a3ae6`; hash backfilled by `a8cb123b`), and
-Phase 7 slices through 7-12c:
+The live pickup snapshot belongs in [`status.md`](status.md). As of
+2026-05-25, Phases 0-7 are closed and Phase 8 is active.
 
-- `server/fastify/` exists with app boot, config loading,
-  `node:sqlite` schema metadata, password + ES256 assertion auth,
-  `GET /api/v1/health`, `GET /api/v1/auth/status`,
-  `POST /api/v1/auth/setup`, `POST /api/v1/auth/login`,
-  `GET /api/v1/bootstrap`, JSON `POST /api/v1/import/risusave`,
-  raw asset routes, backup routes, `POST /api/v1/proxy/fetch`,
-  proxy stream-job HTTP + WebSocket routes, `ANY /api/v1/hub/*`,
-  versioned legacy storage routes, `POST /api/v1/auth/crypto`,
-  `POST /api/v1/generate/completion`, the Phase 7
-  `POST /api/v1/generate/chat` scaffold, and optional static SPA
-  serving.
-- `server/fastify/src/repository.ts` owns the migration-window
-  `data/db.json` blob, content-addressed `data/assets/`, and
-  `data/backups/`. `data/risu.db` still holds system metadata only:
-  `schema_version(id, version, revision)`.
-- Root `package.json` has `api:dev`, `api:start`, and `api:test`
-  for the Fastify server. The Dockerfile and compose file point at
-  `pnpm api:start` on port 6002 with `/app/data` persisted. The
-  runtime stage installs production dependencies only, and
-  `1eddbfba` promoted both `tsx` and `@fastify/websocket` into
-  `dependencies` so the current image layout is self-contained for
-  the TSX runtime. The legacy `runserver` script and `server/node/`
-  Express server have been removed. `server/hono/` remains a
-  separate static-serving scaffold and is not the migration path.
-- `src/ts/process/index.svelte.ts` is currently 445 lines and
-  remains the `sendChat` coordinator with explicit
-  `stage1`-`stage4` timing markers. Phase 5 moved auto-continue,
-  `doingChat` ownership, error reporting, prompt assembly,
-  request budgeting, provider dispatch, response orchestration,
-  Stage 4 closeout, and entry-context setup into focused helpers
-  under `src/ts/process/`, `promptAssembly/`, `promptBudget/`,
-  `postGeneration/`, and `dispatch/`.
-- `src/ts/process/__tests__/sendChat.fixtures.test.ts` now pins
-  the current `sendChat` behavior with 38 snapshots under
-  `src/ts/process/__fixtures__/`: the original 17 Phase 4
-  fixtures, nine Phase 5 gate fixtures
-  (`prompt-template-basic`, `utility-bot-template`,
-  `lorebook-position-depth`, `prompt-template-memory-cache`,
-  `history-media-fallback`, `start-trigger-control`,
-  `start-trigger-stop`, `prompt-info-text`, `preview-prompt`),
-  and twelve Phase 6 provider parity fixtures (`echo-basic`,
-  `openai-basic`, `anthropic-basic`, `mistral-basic`,
-  `cohere-basic`, `deepseek-basic`, `gemini-basic`,
-  `gemini-vertex-basic`, `bedrock-basic`, `horde-basic`,
-  `mistral-reverse-proxy-basic`, `anthropic-reverse-proxy-basic`).
-  The snapshots also assert that
-  `doingChat` is false after each fixture; `sendChat` clears the
-  lease it owns in a `finally` block.
-- `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-  runs those twelve Phase 6 provider fixtures through the
-  server-backed adapter, strips the local-only `providerCalls`
-  boundary from the shared snapshot, and asserts the recorded
-  `/api/v1/generate/completion` call shape separately.
-- Phase 6 has closed the completion route and provider dispatchers.
-  Current coverage includes the provider strings `echo`, `openai`,
-  `nanogpt`, `openrouter`, `anthropic`, `mistral`, `cohere`,
-  `gemini`,
-  `openai-legacy-instruct`, `openai-responses`, `kobold`,
-  `ooba-legacy`, `ollama`, `bedrock`, and `horde`, plus the
-  client-side variant gates documented in
-  [`coverage/providers.md`](coverage/providers.md). Unsupported
-  provider strings still return a documented `501`.
-- Phase 7 is in progress. The prompt leaves, history, regex scripts,
-  module helpers, lorebook activation/truncation, minimal tokenizer,
-  template preflight, final budget pruning, the Phase 7-safe trigger
-  runner, complete template renderer, `assemblePrompt`, and both
-  generation routes are implemented and tested.
-  `POST /api/v1/generate/chat` streams `stage`, `prompt`, `info`,
-  `error`, and `done` events for server-side prompt assembly;
-  `POST /api/v1/generate/preview-prompt` returns the assembled prompt
-  as JSON. The browser `/chat` adapter is wired for `preview` and
-  `previewPrompt` when `db.useServerPromptAssembly` is enabled. The
-  live send/continue/regenerate path still runs locally until 7-12d
-  adds mutation handoff, `message_patch`, and server-side dispatch.
-- Phase 0 removal targets are deleted from the live pipeline:
-  - `src/ts/process/group.ts`, `src/ts/sync/multiuser.ts`,
-    `src/ts/storage/accountStorage.ts`, `src/ts/sionyw.ts`, and
-    `src/ts/drive/` are gone.
-  - `peerjs` and `openid-client` are no longer dependencies.
-  - `src/ts/process/memory/{supaMemory,hypav2,hanuraiMemory}.ts`
-    are gone; only Hypa V3 remains as the active memory engine.
-  - A few inert compatibility names remain by design, such as
-    `supaMemory` as the per-chat Hypa V3 enable flag and
-    `memo: 'supaMemory'` protocol tags.
-  - Current known cleanup debt: stale, unreachable UI checks for
-    `char.type === 'group'` remain in `src/lib/Others/ChatList.svelte`
-    and `src/lib/Others/GridCatalog.svelte`; prompt-toggle
-    `type === 'group'` tokens in `src/lib/SideBars/Toggles.svelte`
-    and `src/ts/util.ts` are unrelated to chat groups.
+Stable baseline facts:
+
+- `server/fastify/` is the live server path. Express and the old
+  `runserver` script are gone.
+- Fastify owns auth, bootstrap, JSON import, assets, backups, proxy /
+  stream-job / hub routes, legacy storage compatibility, completion
+  generation, chat generation, preview-prompt, and Phase 8 memory queue
+  surfaces landed so far.
+- Domain state still uses the migration-window `data/db.json` blob for
+  resources not yet extracted to SQL. Memory uses dedicated SQL tables
+  added in Phase 8.
+- The browser keeps the `sendChat` UI coordinator, but Phase 6 owns
+  completion dispatch and Phase 7 owns prompt assembly / chat dispatch
+  when server-backed gates are enabled.
+- Current route, provider, fixture, and test inventories live under
+  [`coverage/`](coverage/). Historical slice detail lives in
+  [`phases-completed/`](phases-completed/).
 
 ## Sequence
 
@@ -165,11 +90,7 @@ rules. The headline order:
    Phase 7.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
-   triggers. In progress: slices through 7-12c landed the prompt
-   leaves, complete renderer, assembler, `/chat` SSE route,
-   `/preview-prompt` JSON route, browser `/chat` adapter, additive
-   `prompt` payload, and gated preview wiring. Remaining Phase 7 work
-   is the 7-12d send-path / dispatch cluster, followed by closeout.
+   triggers. Closed 2026-05-24.
 8. **Memory** - Hypa V3 chunking, embeddings, summarization as an
    async job queue on the server.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation
