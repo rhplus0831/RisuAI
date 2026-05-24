@@ -6,6 +6,7 @@ import { openDatabase } from '../src/db.js'
 import {
   cancelMemoryJob,
   claimNextMemoryJob,
+  cleanupOrphanedMemory,
   completeMemoryJob,
   createMemoryChunk,
   createMemoryEmbedding,
@@ -313,6 +314,194 @@ describe('memory repository embeddings', () => {
           groupIndex: -1,
         }),
       ).toThrow(ValidationError)
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('memory repository orphan cleanup', () => {
+  it('deletes orphaned summaries and chunks while cascading embeddings', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-keep',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'keep chunk',
+        status: 'summarized',
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-delete',
+        chatId: 'chat-1',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'delete chunk',
+        status: 'summarized',
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-other-chat',
+        chatId: 'chat-2',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'other chunk',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-keep',
+        chatId: 'chat-1',
+        chunkId: 'chunk-keep',
+        model: 'model-a',
+        text: 'keep summary',
+        metadata: { chatMemos: ['memo-a', 'memo-b'] },
+        tokens: 3,
+      })
+      createMemorySummary(db, {
+        id: 'summary-delete',
+        chatId: 'chat-1',
+        chunkId: 'chunk-delete',
+        model: 'model-a',
+        text: 'delete summary',
+        metadata: { chatMemos: ['memo-missing'] },
+        tokens: 3,
+      })
+      createMemorySummary(db, {
+        id: 'summary-other-chat',
+        chatId: 'chat-2',
+        chunkId: 'chunk-other-chat',
+        model: 'model-a',
+        text: 'other summary',
+        metadata: { chatMemos: ['memo-missing'] },
+        tokens: 3,
+      })
+      createMemoryEmbedding(db, {
+        id: 'embedding-delete',
+        chatId: 'chat-1',
+        chunkId: 'chunk-delete',
+        model: 'embed-a',
+        vector: [1, 2],
+      })
+
+      expect(
+        cleanupOrphanedMemory(db, {
+          chatId: 'chat-1',
+          currentChatMemos: ['memo-a', 'memo-b'],
+        }),
+      ).toEqual({ summariesDeleted: 1, chunksDeleted: 1 })
+
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
+        'summary-keep',
+      ])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
+        'chunk-keep',
+      ])
+      expect(getMemoryEmbedding(db, 'embedding-delete')).toBeNull()
+      expect(listMemorySummaries(db, { chatId: 'chat-2' }).map((row) => row.id)).toEqual([
+        'summary-other-chat',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('preserves orphaned rows when requested', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-1',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk text',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-1',
+        chatId: 'chat-1',
+        chunkId: 'chunk-1',
+        model: 'model-a',
+        text: 'summary text',
+        metadata: { chatMemos: ['removed-memo'] },
+        tokens: 3,
+      })
+
+      expect(
+        cleanupOrphanedMemory(db, {
+          chatId: 'chat-1',
+          currentChatMemos: [],
+          preserveOrphanedMemory: true,
+        }),
+      ).toEqual({ summariesDeleted: 0, chunksDeleted: 0 })
+
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
+        'summary-1',
+      ])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
+        'chunk-1',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('deletes partially matching memo sets and remains idempotent', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-partial',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 2,
+        text: 'partial chunk',
+        status: 'summarized',
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-unknown-metadata',
+        chatId: 'chat-1',
+        rangeStartSeq: 3,
+        rangeEndSeq: 4,
+        text: 'unknown metadata chunk',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-partial',
+        chatId: 'chat-1',
+        chunkId: 'chunk-partial',
+        model: 'model-a',
+        text: 'partial summary',
+        metadata: { chatMemos: ['memo-a', 'memo-gone'] },
+        tokens: 3,
+      })
+      createMemorySummary(db, {
+        id: 'summary-unknown-metadata',
+        chatId: 'chat-1',
+        chunkId: 'chunk-unknown-metadata',
+        model: 'model-a',
+        text: 'unknown metadata summary',
+        metadata: { source: 'legacy-hypav3' },
+        tokens: 3,
+      })
+
+      expect(
+        cleanupOrphanedMemory(db, {
+          chatId: 'chat-1',
+          currentChatMemos: ['memo-a'],
+        }),
+      ).toEqual({ summariesDeleted: 1, chunksDeleted: 1 })
+      expect(
+        cleanupOrphanedMemory(db, {
+          chatId: 'chat-1',
+          currentChatMemos: ['memo-a'],
+        }),
+      ).toEqual({ summariesDeleted: 0, chunksDeleted: 0 })
+
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
+        'summary-unknown-metadata',
+      ])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
+        'chunk-unknown-metadata',
+      ])
     } finally {
       db.close()
     }

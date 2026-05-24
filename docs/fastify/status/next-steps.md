@@ -11,41 +11,39 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-3a landed the server-side Hypa V3 settings and pure standard-planner
-contract in `server/fastify/src/memoryPlanner.ts`. It ports the preset
-defaults, normalizes partial settings, routes `useExperimentalImpl: true`
-back to the standard planner with structured warning metadata, validates
-ratios/rate limits/concurrency settings, and exposes deterministic plan
-output for token deltas, planned windows, planner errors, and
-skipped-message reasons. No memory rows are mutated and no jobs are
-enqueued from planner output yet.
+8-3b landed `cleanupOrphanedMemory()` in
+`server/fastify/src/memoryRepository.ts`. The cleanup pass reads
+summary `metadata.chatMemos`, respects `preserveOrphanedMemory`, deletes
+orphaned `memory_summaries` rows and their parent `memory_chunks` rows
+inside one transaction, and relies on the existing `chunk_id` cascade for
+matching `memory_embeddings`. The pass is idempotent and preserves
+summaries whose metadata does not expose a `chatMemos` array.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-3b - Orphan cleanup**.
+Continue Phase 8 with **8-3c - Pure summarization window planner**.
 
 Expected scope:
 
-- Implement the server-side cleanup pass for summaries/chunks whose
-  source chat memos no longer exist.
-- Respect `preserveOrphanedMemory` from the 8-3a normalized settings.
-- Keep cleanup idempotent.
-- Apply the locked cascade behavior: delete orphaned `memory_summaries`
-  rows, then their parent `memory_chunks` rows, and let matching
-  `memory_embeddings` rows cascade through the `chunk_id` foreign key.
-- Add repository/service tests for deleted, preserved, and partially
-  matching memo sets.
+- Port the pure summarization window planner behavior from the standard
+  Hypa V3 path.
+- Cover start-index selection, memory-token reservation,
+  summary-window selection, skip rules for examples/new/empty/user
+  messages, target-token stopping, and "cannot summarize further"
+  guards.
+- Return planned windows and token deltas only.
+- Keep the output deterministic for the 8-3d chunk/job bridge.
 
-Out of scope for 8-3b:
+Out of scope for 8-3c:
 
-- Summary-window planning changes, memory prompt selection, job enqueueing,
-  provider calls, summary prompt construction, embedding, browser
-  listeners, and browser list/cancel controls.
+- DB writes, job enqueueing, provider calls, summary prompt construction,
+  embedding, memory prompt selection, browser listeners, and browser
+  list/cancel controls.
 
-## Queue After 8-3b
+## Queue After 8-3c
 
-1. 8-3c - Pure summarization window planner.
-2. 8-3d - Chunk/job planning bridge.
+1. 8-3d - Chunk/job planning bridge.
+2. 8-4a - Summary prompt builder.
 
 ## Parallel Or Deferred
 
@@ -68,15 +66,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-3a: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 943 tests, and
+Last recorded full baselines after 8-3b: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 946 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-3a verification:
+Focused 8-3b verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memoryPlanner.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memoryRepository.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 pnpm test
 pnpm api:test
@@ -106,6 +104,8 @@ pnpm build
   [`../phases-completed/phase-8-memory-8-2e.md`](../phases-completed/phase-8-memory-8-2e.md)
 - 8-3a closeout:
   [`../phases-completed/phase-8-memory-8-3a.md`](../phases-completed/phase-8-memory-8-3a.md)
+- 8-3b closeout:
+  [`../phases-completed/phase-8-memory-8-3b.md`](../phases-completed/phase-8-memory-8-3b.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

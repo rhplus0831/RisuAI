@@ -122,6 +122,17 @@ export interface MemoryJobRetryOptions {
   backoffBaseMs?: number
 }
 
+export interface CleanupOrphanedMemoryInput {
+  chatId: string
+  currentChatMemos: readonly string[]
+  preserveOrphanedMemory?: boolean
+}
+
+export interface CleanupOrphanedMemoryResult {
+  summariesDeleted: number
+  chunksDeleted: number
+}
+
 type SqlValue = string | number | bigint | null | Buffer
 
 interface MemoryChunkRow {
@@ -388,6 +399,28 @@ function stringifyNullableMetadata(metadata: unknown | null | undefined): string
   return json
 }
 
+function readSummaryChatMemos(summary: MemorySummary): string[] | null {
+  if (!isRecord(summary.metadata)) return null
+  const chatMemos = summary.metadata.chatMemos
+  if (!Array.isArray(chatMemos)) return null
+  if (!chatMemos.every((memo): memo is string => typeof memo === 'string')) return null
+  return chatMemos
+}
+
+function isMemoSubset(chatMemos: readonly string[], currentChatMemos: ReadonlySet<string>): boolean {
+  return chatMemos.every((memo) => currentChatMemos.has(memo))
+}
+
+function deleteByIds(db: DatabaseSync, table: string, ids: readonly string[]): void {
+  if (ids.length === 0) return
+  const placeholders = ids.map(() => '?').join(', ')
+  runStatement(db.prepare(`DELETE FROM ${table} WHERE id IN (${placeholders})`), ...ids)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 export function createMemoryChunk(db: DatabaseSync, input: CreateMemoryChunkInput): MemoryChunk {
   requireString(input.id, 'chunk id')
   requireString(input.chatId, 'chat id')
@@ -551,6 +584,42 @@ export function listMemorySummaries(
     )
     .all(...values) as MemorySummaryRow[]
   return rows.map(mapMemorySummaryRow)
+}
+
+export function cleanupOrphanedMemory(
+  db: DatabaseSync,
+  input: CleanupOrphanedMemoryInput,
+): CleanupOrphanedMemoryResult {
+  requireString(input.chatId, 'chat id')
+  for (const memo of input.currentChatMemos) {
+    requireString(memo, 'current chat memo')
+  }
+  if (input.preserveOrphanedMemory === true) {
+    return { summariesDeleted: 0, chunksDeleted: 0 }
+  }
+
+  const currentChatMemos = new Set(input.currentChatMemos)
+  const orphanedSummaries = listMemorySummaries(db, { chatId: input.chatId }).filter((summary) => {
+    const chatMemos = readSummaryChatMemos(summary)
+    return chatMemos !== null && !isMemoSubset(chatMemos, currentChatMemos)
+  })
+  const summaryIds = orphanedSummaries.map((summary) => summary.id)
+  const chunkIds = [...new Set(orphanedSummaries.map((summary) => summary.chunkId))]
+
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    deleteByIds(db, 'memory_summaries', summaryIds)
+    deleteByIds(db, 'memory_chunks', chunkIds)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+
+  return {
+    summariesDeleted: summaryIds.length,
+    chunksDeleted: chunkIds.length,
+  }
 }
 
 export function createMemoryEmbedding(

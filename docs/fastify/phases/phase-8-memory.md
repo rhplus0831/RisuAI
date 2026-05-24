@@ -9,7 +9,7 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-3b - Orphan cleanup**.
+Status: in progress. Next slice: **8-3c - Pure summarization window planner**.
 
 ## Preconditions
 
@@ -186,6 +186,7 @@ the current schema and import paths directly.
     (`src/ts/process/memory/hypav3.ts:1519-1534`) only filters
     in-memory summaries because it has no separate chunk store; the
     server cascade is the schema-aware equivalent.
+    Closed on 2026-05-24.
   - **8-3c — Pure summarization window planner.** Port start-index
     selection, memory-token reservation, summary-window selection,
     skip rules for examples/new/empty/user messages, target-token
