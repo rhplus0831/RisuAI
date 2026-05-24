@@ -27,6 +27,7 @@ track the next piece of work.
 | 7 - Prompt assembly closeout            | [`phase-7-prompt-assembly-closeout.md`](phase-7-prompt-assembly-closeout.md)           | Final exit-criteria check and Phase 8 handoff.                          |
 | 8-1a-i - Migration runner               | [`phase-8-memory-8-1a-i.md`](phase-8-memory-8-1a-i.md)                                 | `risu.db` migration runner and schema version 1 bump.                   |
 | 8-1a-ii - Memory tables                 | [`phase-8-memory-8-1a-ii.md`](phase-8-memory-8-1a-ii.md)                               | Hypa V3 memory tables and schema version 2 bump.                        |
+| 8-4d - Summary ordered writes           | [`phase-8-memory-8-4d.md`](phase-8-memory-8-4d.md)                                     | Summarize batch rate limiting and consecutive-success commits.          |
 
 ## Historical Status Logs
 

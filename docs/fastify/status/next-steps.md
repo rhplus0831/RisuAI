@@ -11,56 +11,55 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-4c added the real summarize memory job handler in
-`server/fastify/src/memorySummarizeJobHandler.ts`. Planned summarize jobs
-now validate their 8-3d payloads, load the target chunk, verify persisted
-chat data, build the Hypa V3 summary prompt, call the API-backed
-`subModel` summary path through `summarizeOnce`, persist successful
-output to `memory_summaries`, and mark chunks summarized. Existing
-summaries for the same `{ chatId, chunkId, model }` converge without
-duplicate provider calls. Provider failures and invalid summary writes
-mark the chunk failed and let the 8-2 worker retry/fail the job through
-the queue primitives. Fastify startup wires this handler into the memory
-worker by default while preserving explicit handler overrides.
+8-4d added the summarize batch path. Fastify startup now wires a
+summarize batch handler by default while preserving explicit summarize
+handler overrides. The batch handler applies
+`summarizationMaxConcurrent`, spaces provider calls with
+`summarizationRequestsPerMinute`, stages successful provider results, and
+commits summaries in planned order only until the first failure,
+cancelled job, or invalid/empty write. Later staged successes are left
+uncommitted and returned to the existing retry/fail queue handoff.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-4d - Summary rate limiting and ordered writes**.
+Continue Phase 8 with **8-5a - Embedding provider contract**.
 
 Expected scope:
 
-- Apply `summarizationRequestsPerMinute` and
-  `summarizationMaxConcurrent` to batches of summarize jobs.
-- Preserve the legacy consecutive-success write behavior: summaries are
-  committed in planned order only until the first failed or empty result.
-- Leave later successful results uncommitted for retry when an earlier
-  result in the batch fails.
-- Persist useful queue failure details and keep retry handoff compatible
-  with the existing 8-2 worker primitives.
-- Cover ordering, cancellation, retry handoff, and rate/concurrency
-  behavior with focused tests.
+- Define the server-side embedding provider contract and typed result
+  shape.
+- Resolve embedding model ids and credentials for API-backed
+  OpenAI-compatible embeddings and custom embedding endpoints.
+- Normalize provider responses into vectors with dimension validation and
+  useful typed errors.
+- Keep browser-local transformers, WebGPU, WebLLM, MLC, and ONNX out of
+  server scope.
+- Add focused unit tests for credential lookup, request construction,
+  response normalization, dimension mismatch, and provider error
+  handling.
 
-Out of scope for 8-4d:
+Out of scope for 8-5a:
 
-- Embedding jobs or vector persistence.
-- Similarity selection and prompt assembly reads from memory summaries.
+- Embed job handler wiring and vector persistence.
+- Voyage contextual embedding grouping.
+- Similarity ranking and memory budget allocation.
+- Prompt assembly reads from memory summaries or embeddings.
 - Browser progress UI, browser listeners, and browser list/cancel
   controls.
-- Local MLC / ONNX / WebLLM summary runtimes.
+- Browser-local embedding runtimes.
 
 Implementation notes:
 
-- `summarizeOnce` currently returns `tokens: 0` because `runOpenAI` does
-  not expose upstream usage data yet.
-- 8-4c keeps single-job writes idempotent. If 8-4d introduces batch
-  staging, preserve the existing `{ chatId, chunkId, model }`
-  convergence behavior for already-written summaries.
+- Mirror the 8-4 summary adapter shape where practical, but keep the
+  contract embedding-specific: vector dimensions and provider model ids
+  matter more than token usage.
+- The schema already has `memory_embeddings`; 8-5a should not write it.
 - Preserve the no-compatibility-migrations policy: update current
-  Fastify shapes directly if the queue payload needs tightening.
+  Fastify shapes directly if the contract needs a tighter shape.
 
-## Queue After 8-4c
+## Queue After 8-4d
 
-1. 8-5a - Embedding provider contract.
+1. 8-5b - Embed job handler + vector persistence.
 
 ## Parallel Or Deferred
 
@@ -83,26 +82,22 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-4c: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 976 tests, and
+Last recorded full baselines after 8-4d: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 980 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-4c verification:
+Focused 8-4d verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memorySummarizeJobHandler.test.ts server/fastify/__tests__/memorySummaryAdapter.test.ts server/fastify/__tests__/memorySummaryPrompt.test.ts --config server/fastify/vitest.config.ts
-pnpm check
-pnpm test
-pnpm api:test
-pnpm build
+pnpm exec vitest run server/fastify/__tests__/memorySummarizeJobHandler.test.ts server/fastify/__tests__/memoryWorker.test.ts --config server/fastify/vitest.config.ts
 ```
 
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-4c.md`](../phases-completed/phase-8-memory-8-4c.md)
+  [`../phases-completed/phase-8-memory-8-4d.md`](../phases-completed/phase-8-memory-8-4d.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Phase 7 final summary:

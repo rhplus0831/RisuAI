@@ -6,6 +6,7 @@ import { normalizeHypaV3Settings, type HypaV3Settings } from './memoryPlanner.js
 import {
   createMemorySummary,
   getMemoryChunk,
+  getMemoryJob,
   listMemorySummaries,
   updateMemoryChunkStatus,
   type MemoryJob,
@@ -16,6 +17,7 @@ import {
   type MemorySummaryModelRequest,
 } from './memorySummaryModel.js'
 import { loadPersisted } from './repository.js'
+import type { MemoryJobBatchHandler } from './memoryWorker.js'
 
 export interface SummarizeMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -25,6 +27,8 @@ export interface SummarizeMemoryJobHandlerOptions {
     messages: Parameters<typeof summarizeOnce>[0],
     opts: Parameters<typeof summarizeOnce>[1],
   ) => Promise<SummaryAdapterResult>
+  sleep?: (ms: number) => Promise<void>
+  now?: () => number
 }
 
 interface HypaV3SummarizeJobPayload {
@@ -52,67 +56,243 @@ export function createSummarizeMemoryJobHandler(
   opts: SummarizeMemoryJobHandlerOptions,
 ): (job: MemoryJob) => Promise<void> {
   const summarize = opts.summarize ?? summarizeOnce
+  const acquireRateLimit = createSummaryRateLimiter(opts)
 
   return async (job: MemoryJob): Promise<void> => {
     if (job.kind !== 'summarize') {
       throw new Error(`summarize handler received ${job.kind} job`)
     }
 
-    const payload = parseSummarizePayload(job.payload)
-    const chunk = getMemoryChunk(opts.db, payload.chunkId)
-    if (!chunk) {
-      throw new Error(`memory chunk not found: ${payload.chunkId}`)
-    }
-    if (chunk.chatId !== job.chatId) {
-      throw new Error(`memory chunk ${payload.chunkId} does not belong to chat ${job.chatId}`)
-    }
-    if (chunk.rangeStartSeq !== payload.rangeStartSeq || chunk.rangeEndSeq !== payload.rangeEndSeq) {
-      throw new Error(`memory chunk ${payload.chunkId} range does not match summarize payload`)
-    }
-
-    const existing = listMemorySummaries(opts.db, {
-      chatId: job.chatId,
-      chunkId: chunk.id,
-      model: payload.model,
-    })[0]
-    if (existing) {
-      updateMemoryChunkStatus(opts.db, chunk.id, 'summarized')
-      return
-    }
-
     const database = loadDatabase(opts)
-    assertChatExists(database, job.chatId)
     const settings = resolveHypaV3Settings(database)
-    const modelRequest = resolveMemorySummaryModel(database, payload.model)
-    if (!modelRequest.ok) {
-      markChunkFailed(opts.db, chunk.id)
-      throw new Error(modelRequest.error)
-    }
-
-    const prompt = buildHypaV3SummaryPrompt({
-      chunkText: chunk.text,
-      settings,
-      isResummarize: false,
-    })
-    const controller = new AbortController()
-    const summary = await summarize(prompt.messages, {
-      ...modelRequest.request,
-      maxTokens: prompt.options.maxTokens,
-      temperature: prompt.options.temperature,
-      signal: controller.signal,
-    })
-    if ('error' in summary) {
-      markChunkFailed(opts.db, chunk.id)
-      throw new Error(summary.error)
-    }
-
-    persistSummary(opts.db, {
+    const result = await executeSummarizeJob({
+      opts,
       job,
-      payload,
-      request: modelRequest.request,
-      text: summary.text,
-      tokens: summary.tokens,
+      database,
+      settings,
+      summarize,
+      acquireRateLimit,
     })
+    if (result.kind === 'existing') return
+    persistSummary(opts.db, result)
+  }
+}
+
+export function createSummarizeMemoryJobBatchHandler(
+  opts: SummarizeMemoryJobHandlerOptions,
+): MemoryJobBatchHandler {
+  const summarize = opts.summarize ?? summarizeOnce
+  const acquireRateLimit = createSummaryRateLimiter(opts)
+
+  return async (firstJob, context): Promise<void> => {
+    const database = loadDatabase(opts)
+    const settings = resolveHypaV3Settings(database)
+    const maxConcurrent = Math.max(1, settings.summarizationMaxConcurrent)
+    const jobs = [firstJob]
+    while (true) {
+      const next = context.claimNext({ chatId: firstJob.chatId, kind: 'summarize' })
+      if (!next) break
+      jobs.push(next)
+    }
+
+    const orderedJobs = [...jobs].sort(compareSummarizeJobs)
+    const results = await runWithConcurrency(orderedJobs, maxConcurrent, async (job) => {
+      try {
+        return {
+          job,
+          result: await executeSummarizeJob({
+            opts,
+            job,
+            database,
+            settings,
+            summarize,
+            acquireRateLimit,
+          }),
+        } satisfies BatchJobResult
+      } catch (error) {
+        return {
+          job,
+          error: error instanceof Error && error.message ? error.message : String(error),
+        } satisfies BatchJobResult
+      }
+    })
+
+    let blockedByFailure: string | null = null
+    for (const item of results) {
+      if (blockedByFailure !== null) {
+        context.retryOrFail(item.job.id, blockedByFailure)
+        continue
+      }
+
+      if ('error' in item) {
+        blockedByFailure = item.error || 'summarize job failed'
+        context.retryOrFail(item.job.id, blockedByFailure)
+        continue
+      }
+
+      try {
+        if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
+          blockedByFailure = `summarize job ${item.job.id} is no longer running`
+          continue
+        }
+        if (item.result.kind === 'summary') {
+          persistSummary(opts.db, item.result)
+        }
+        context.complete(item.job.id)
+      } catch (error) {
+        blockedByFailure = error instanceof Error && error.message ? error.message : String(error)
+        context.retryOrFail(item.job.id, blockedByFailure)
+      }
+    }
+  }
+}
+
+type SummaryRateLimiter = (settings: HypaV3Settings) => Promise<void>
+
+type SummarizeExecutionResult =
+  | {
+      kind: 'existing'
+      job: MemoryJob
+      payload: HypaV3SummarizeJobPayload
+      chunkId: string
+    }
+  | {
+      kind: 'summary'
+      job: MemoryJob
+      payload: HypaV3SummarizeJobPayload
+      request: MemorySummaryModelRequest
+      text: string
+      tokens: number
+    }
+
+type BatchJobResult =
+  | { job: MemoryJob; result: SummarizeExecutionResult }
+  | { job: MemoryJob; error: string }
+
+async function executeSummarizeJob(input: {
+  opts: SummarizeMemoryJobHandlerOptions
+  job: MemoryJob
+  database: Database
+  settings: HypaV3Settings
+  summarize: NonNullable<SummarizeMemoryJobHandlerOptions['summarize']>
+  acquireRateLimit: SummaryRateLimiter
+}): Promise<SummarizeExecutionResult> {
+  const payload = parseSummarizePayload(input.job.payload)
+  const chunk = getMemoryChunk(input.opts.db, payload.chunkId)
+  if (!chunk) {
+    throw new Error(`memory chunk not found: ${payload.chunkId}`)
+  }
+  if (chunk.chatId !== input.job.chatId) {
+    throw new Error(`memory chunk ${payload.chunkId} does not belong to chat ${input.job.chatId}`)
+  }
+  if (chunk.rangeStartSeq !== payload.rangeStartSeq || chunk.rangeEndSeq !== payload.rangeEndSeq) {
+    throw new Error(`memory chunk ${payload.chunkId} range does not match summarize payload`)
+  }
+
+  const existing = listMemorySummaries(input.opts.db, {
+    chatId: input.job.chatId,
+    chunkId: chunk.id,
+    model: payload.model,
+  })[0]
+  if (existing) {
+    updateMemoryChunkStatus(input.opts.db, chunk.id, 'summarized')
+    return { kind: 'existing', job: input.job, payload, chunkId: chunk.id }
+  }
+
+  assertChatExists(input.database, input.job.chatId)
+  const modelRequest = resolveMemorySummaryModel(input.database, payload.model)
+  if (!modelRequest.ok) {
+    markChunkFailed(input.opts.db, chunk.id)
+    throw new Error(modelRequest.error)
+  }
+
+  const prompt = buildHypaV3SummaryPrompt({
+    chunkText: chunk.text,
+    settings: input.settings,
+    isResummarize: false,
+  })
+  const controller = new AbortController()
+  await input.acquireRateLimit(input.settings)
+  const summary = await input.summarize(prompt.messages, {
+    ...modelRequest.request,
+    maxTokens: prompt.options.maxTokens,
+    temperature: prompt.options.temperature,
+    signal: controller.signal,
+  })
+  if ('error' in summary) {
+    markChunkFailed(input.opts.db, chunk.id)
+    throw new Error(summary.error)
+  }
+
+  return {
+    kind: 'summary',
+    job: input.job,
+    payload,
+    request: modelRequest.request,
+    text: summary.text,
+    tokens: summary.tokens,
+  }
+}
+
+function createSummaryRateLimiter(opts: SummarizeMemoryJobHandlerOptions): SummaryRateLimiter {
+  const sleep = opts.sleep ?? defaultSleep
+  const now = opts.now ?? Date.now
+  let nextRequestAtMs = 0
+
+  return async (settings) => {
+    const requestsPerMinute = Math.max(1, settings.summarizationRequestsPerMinute)
+    const intervalMs = Math.ceil(60_000 / requestsPerMinute)
+    const current = now()
+    const waitMs = Math.max(0, nextRequestAtMs - current)
+    nextRequestAtMs = Math.max(current, nextRequestAtMs) + intervalMs
+    if (waitMs > 0) await sleep(waitMs)
+  }
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+async function runWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await run(items[index])
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
+function compareSummarizeJobs(left: MemoryJob, right: MemoryJob): number {
+  const leftPayload = tryParseSummarizePayload(left.payload)
+  const rightPayload = tryParseSummarizePayload(right.payload)
+  if (left.chatId !== right.chatId) return left.chatId.localeCompare(right.chatId)
+  if (leftPayload && rightPayload) {
+    const startDiff = leftPayload.rangeStartSeq - rightPayload.rangeStartSeq
+    if (startDiff !== 0) return startDiff
+    const endDiff = leftPayload.rangeEndSeq - rightPayload.rangeEndSeq
+    if (endDiff !== 0) return endDiff
+  }
+  const createdDiff = Date.parse(left.createdAt) - Date.parse(right.createdAt)
+  if (createdDiff !== 0) return createdDiff
+  return left.id.localeCompare(right.id)
+}
+
+function tryParseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload | null {
+  try {
+    return parseSummarizePayload(payload)
+  } catch {
+    return null
   }
 }
 

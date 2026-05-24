@@ -3,9 +3,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../src/db.js'
-import { createSummarizeMemoryJobHandler } from '../src/memorySummarizeJobHandler.js'
+import {
+  createSummarizeMemoryJobBatchHandler,
+  createSummarizeMemoryJobHandler,
+} from '../src/memorySummarizeJobHandler.js'
 import { MemoryWorker } from '../src/memoryWorker.js'
 import {
+  cancelMemoryJob,
   createMemoryChunk,
   enqueueMemoryJob,
   getMemoryChunk,
@@ -30,19 +34,19 @@ afterEach(() => {
   }
 })
 
-function payload(chunkId = 'chunk-1') {
+function payload(chunkId = 'chunk-1', rangeStartSeq = 0, rangeEndSeq = 1) {
   return {
     schemaVersion: 1,
     chunkId,
     model: 'subModel',
-    rangeStartSeq: 0,
-    rangeEndSeq: 1,
-    messageIndexes: [0, 1],
-    chatMemos: ['m0', 'm1'],
+    rangeStartSeq,
+    rangeEndSeq,
+    messageIndexes: [rangeStartSeq, rangeEndSeq],
+    chatMemos: [`m${rangeStartSeq}`, `m${rangeEndSeq}`],
   }
 }
 
-function database() {
+function database(settings: Record<string, unknown> = {}) {
   return {
     subModel: 'gpt-4o-mini',
     openAIKey: 'sk-test',
@@ -54,6 +58,7 @@ function database() {
           summarizationModel: 'subModel',
           summarizationPrompt: 'Summarize this: {{slot}}',
           reSummarizationPrompt: '',
+          ...settings,
         },
       },
     ],
@@ -75,6 +80,26 @@ function seedChunkAndJob(db: ReturnType<typeof openDatabase>, jobPayload = paylo
     chatId: 'chat-1',
     kind: 'summarize',
     payload: jobPayload,
+  })
+}
+
+function seedBatchJob(
+  db: ReturnType<typeof openDatabase>,
+  input: { id: string; chunkId: string; rangeStartSeq: number; rangeEndSeq: number; text: string },
+) {
+  createMemoryChunk(db, {
+    id: input.chunkId,
+    chatId: 'chat-1',
+    messageId: input.chunkId,
+    rangeStartSeq: input.rangeStartSeq,
+    rangeEndSeq: input.rangeEndSeq,
+    text: input.text,
+  })
+  return enqueueMemoryJob(db, {
+    id: input.id,
+    chatId: 'chat-1',
+    kind: 'summarize',
+    payload: payload(input.chunkId, input.rangeStartSeq, input.rangeEndSeq),
   })
 }
 
@@ -262,6 +287,220 @@ describe('summarize memory job handler', () => {
       await expect(handler(job)).rejects.toThrow('summary text must be a non-empty string')
       expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'failed' })
       expect(listMemorySummaries(db, { chatId: 'chat-1', chunkId: 'chunk-1' })).toHaveLength(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('commits batch summaries in planned order only until the first failed write', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk one',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'chunk two',
+      })
+      seedBatchJob(db, {
+        id: 'job-3',
+        chunkId: 'chunk-3',
+        rangeStartSeq: 4,
+        rangeEndSeq: 5,
+        text: 'chunk three',
+      })
+      const worker = new MemoryWorker({
+        db,
+        retry: {
+          now: '2026-05-25T00:00:00.000Z',
+          backoffBaseMs: 1_000,
+        },
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({
+            db,
+            loadDatabase: () => database({ summarizationMaxConcurrent: 3 }),
+            summarize: async (messages) => {
+              const text = String(messages[0]?.content ?? '')
+              if (text.includes('chunk two')) return { text: '', tokens: 0 }
+              return { text: `summary for ${text}`, tokens: 1 }
+            },
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId)).toEqual([
+        'chunk-1',
+      ])
+      expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'summarized' })
+      expect(getMemoryChunk(db, 'chunk-2')).toMatchObject({ status: 'failed' })
+      expect(getMemoryChunk(db, 'chunk-3')).toMatchObject({ status: 'pending' })
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed', error: null })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'summary text must be a non-empty string',
+        nextRunAt: '2026-05-25T00:00:01.000Z',
+      })
+      expect(getMemoryJob(db, 'job-3')).toMatchObject({
+        status: 'pending',
+        error: 'summary text must be a non-empty string',
+        nextRunAt: '2026-05-25T00:00:01.000Z',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('limits batch provider dispatch by summarizationMaxConcurrent', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk one',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'chunk two',
+      })
+      seedBatchJob(db, {
+        id: 'job-3',
+        chunkId: 'chunk-3',
+        rangeStartSeq: 4,
+        rangeEndSeq: 5,
+        text: 'chunk three',
+      })
+      let active = 0
+      let maxActive = 0
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({
+            db,
+            loadDatabase: () => database({ summarizationMaxConcurrent: 2 }),
+            summarize: async () => {
+              active += 1
+              maxActive = Math.max(maxActive, active)
+              await Promise.resolve()
+              active -= 1
+              return { text: 'summary', tokens: 1 }
+            },
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(maxActive).toBeLessThanOrEqual(2)
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId)).toEqual([
+        'chunk-1',
+        'chunk-2',
+        'chunk-3',
+      ])
+      expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', attemptCount: 1 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('applies summarizationRequestsPerMinute between provider dispatches', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk one',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'chunk two',
+      })
+      let now = 0
+      const sleeps: number[] = []
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({
+            db,
+            loadDatabase: () =>
+              database({ summarizationMaxConcurrent: 2, summarizationRequestsPerMinute: 60 }),
+            now: () => now,
+            sleep: async (ms) => {
+              sleeps.push(ms)
+              now += ms
+            },
+            summarize: async () => ({ text: 'summary', tokens: 1 }),
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(sleeps).toEqual([1_000])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(2)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('does not commit a staged summary after a running batch job is cancelled', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk one',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'chunk two',
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({
+            db,
+            loadDatabase: () => database({ summarizationMaxConcurrent: 2 }),
+            summarize: async (messages) => {
+              const text = String(messages[0]?.content ?? '')
+              if (text.includes('chunk one')) cancelMemoryJob(db, 'job-1')
+              return { text: 'summary', tokens: 1 }
+            },
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'summarize job job-1 is no longer running',
+      })
     } finally {
       db.close()
     }

@@ -18,10 +18,26 @@ export type MemoryJobHandlers = {
   [K in MemoryJobKind]: MemoryJobHandler
 }
 
+export interface MemoryJobBatchHandlerContext {
+  claimNext: (filter: { chatId?: string; kind?: MemoryJobKind }) => MemoryJob | null
+  complete: (jobId: string) => MemoryJob | null
+  retryOrFail: (jobId: string, error: string) => MemoryJob | null
+}
+
+export type MemoryJobBatchHandler = (
+  firstJob: MemoryJob,
+  context: MemoryJobBatchHandlerContext,
+) => void | Promise<void>
+
+export type MemoryJobBatchHandlers = Partial<{
+  summarize: MemoryJobBatchHandler
+}>
+
 export interface MemoryWorkerOptions {
   db: DatabaseSync
   pollIntervalMs?: number
   handlers?: Partial<MemoryJobHandlers>
+  batchHandlers?: MemoryJobBatchHandlers
   onEvent?: MemoryEventSink
   onError?: (error: unknown) => void
   retry?: MemoryJobRetryOptions
@@ -31,6 +47,7 @@ export class MemoryWorker {
   private readonly db: DatabaseSync
   private readonly pollIntervalMs: number
   private readonly handlers: MemoryJobHandlers
+  private readonly batchHandlers: MemoryJobBatchHandlers
   private readonly onEvent: MemoryEventSink | null
   private readonly onError: (error: unknown) => void
   private readonly retry: MemoryJobRetryOptions
@@ -47,6 +64,7 @@ export class MemoryWorker {
       summarize: noopMemoryJobHandler,
       ...opts.handlers,
     }
+    this.batchHandlers = opts.batchHandlers ?? {}
     this.onEvent = opts.onEvent ?? null
     this.onError = opts.onError ?? defaultMemoryWorkerErrorHandler
     this.retry = opts.retry ?? {}
@@ -117,6 +135,30 @@ export class MemoryWorker {
     this.emitJob(job)
 
     try {
+      if (job.kind === 'summarize' && this.batchHandlers.summarize) {
+        await this.batchHandlers.summarize(job, {
+          claimNext: (filter) => {
+            const claimed =
+              this.retry.now === undefined
+                ? claimNextMemoryJob(this.db, filter)
+                : claimNextMemoryJob(this.db, { ...filter, now: this.retry.now })
+            if (claimed) this.emitJob(claimed)
+            return claimed
+          },
+          complete: (jobId) => {
+            const completed = completeMemoryJob(this.db, jobId)
+            if (completed) this.emitJob(completed)
+            return completed
+          },
+          retryOrFail: (jobId, error) => {
+            const failedOrRetried = retryOrFailMemoryJob(this.db, jobId, error, this.retry)
+            if (failedOrRetried) this.emitJob(failedOrRetried)
+            return failedOrRetried
+          },
+        })
+        return true
+      }
+
       await this.handlers[job.kind](job)
       const completed = completeMemoryJob(this.db, job.id)
       if (completed) {

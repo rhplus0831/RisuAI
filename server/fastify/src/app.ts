@@ -29,7 +29,10 @@ import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import type { MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
-import { createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
+import {
+  createSummarizeMemoryJobBatchHandler,
+  createSummarizeMemoryJobHandler,
+} from './memorySummarizeJobHandler.js'
 
 export interface BuildAppOptions {
   config?: AppConfig
@@ -69,10 +72,17 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   const db = openDatabase(config.dataDir)
   backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
+  const defaultSummarizeOptions = { db, dataDir: config.dataDir }
   const defaultMemoryHandlers = {
-    summarize: createSummarizeMemoryJobHandler({ db, dataDir: config.dataDir }),
+    summarize: createSummarizeMemoryJobHandler(defaultSummarizeOptions),
   }
   const memoryWorkerOptions = opts.memoryWorker === false ? null : (opts.memoryWorker ?? {})
+  const defaultMemoryBatchHandlers =
+    memoryWorkerOptions?.handlers?.summarize === undefined
+      ? {
+          summarize: createSummarizeMemoryJobBatchHandler(defaultSummarizeOptions),
+        }
+      : {}
   const memoryWorker =
     memoryWorkerOptions === null
       ? null
@@ -83,6 +93,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
           handlers: {
             ...defaultMemoryHandlers,
             ...memoryWorkerOptions.handlers,
+          },
+          batchHandlers: {
+            ...defaultMemoryBatchHandlers,
+            ...memoryWorkerOptions.batchHandlers,
           },
         })
   memoryWorker?.start()

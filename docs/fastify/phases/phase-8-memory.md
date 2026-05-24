@@ -2,9 +2,9 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-4c - Summarize job
-handler**. Next slice: **8-4d - Summary rate limiting and ordered
-writes**.
+Status: in progress. Completed through **8-4d - Summary rate limiting
+and ordered writes**. Next slice: **8-5a - Embedding provider
+contract**.
 
 ## Goal
 
@@ -29,7 +29,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-4c:
+Completed through 8-4d:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -39,8 +39,9 @@ Completed through 8-4c:
   and job routes.
 - **8-3 - Memory planning:** Hypa V3 settings, standard planner contract,
   orphan cleanup, pure summary-window planner, and chunk/job bridge.
-- **8-4a through 8-4c - Summary generation foundation:** summary prompt
-  builder, API-backed summary adapter, and single-job summarize handler.
+- **8-4a through 8-4d - Summary generation foundation:** summary prompt
+  builder, API-backed summary adapter, single-job summarize handler,
+  summarize batch rate limiting, and ordered writes.
 
 Carry-forward decisions from completed work:
 
@@ -53,6 +54,10 @@ Carry-forward decisions from completed work:
 - Local MLC / ONNX / WebLLM summary runtimes stay out of server scope.
 - Summary writes converge on `{ chatId, chunkId, model }` for idempotent
   re-runs.
+- Summary batches stage successful provider results, then commit in
+  planned order only until the first failed, cancelled, or empty result.
+  Later staged successes remain uncommitted and are handed back to queue
+  retry/fail primitives.
 
 ## Scope
 
@@ -105,13 +110,6 @@ browser progress store.
 
 ## Remaining Slice Plan
 
-- **8-4d - Summary rate limiting and ordered writes.** Apply
-  `summarizationRequestsPerMinute`, `summarizationMaxConcurrent`, and
-  fail-fast cancellation semantics to batches of `summarize` jobs.
-  Preserve legacy consecutive-success behavior: summaries are committed
-  in planned order only until the first failed or empty result; later
-  successes remain uncommitted for retry. Cover ordering, cancellation,
-  retry handoff, and rate/concurrency behavior.
 - **8-5 - Embeddings and selection.** Build embedding persistence and
   pure ranking/allocation helpers before exposing the prompt-facing
   selection facade.
