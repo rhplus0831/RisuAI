@@ -130,10 +130,5 @@
     "vite": "^8.0.3",
     "vite-plugin-wasm": "3.6.0",
     "vitest": "^4.1.0"
-  },
-  "pnpm": {
-    "neverBuiltDependencies": [
-      "sharp"
-    ]
   }
 }
