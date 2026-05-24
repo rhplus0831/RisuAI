@@ -16,16 +16,16 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 8, Hypa V3 memory.
-- Last landed slice: 8-5c, Voyage contextual embeddings.
+- Last landed slice: 8-5d, pure similarity ranking.
 - Current blocker: none recorded.
-- Next default pickup: 8-5d, pure similarity ranking.
-- Last recorded full baselines after 8-5c: `pnpm check` clean,
-  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 1010 tests, and
+- Next default pickup: 8-5e, pure memory budget allocator.
+- Last recorded full baselines after 8-5d: `pnpm check` clean,
+  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 1017 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Focused verification after 8-5c:
-  `pnpm exec vitest run server/fastify/__tests__/memoryEmbeddingModel.test.ts server/fastify/__tests__/memoryEmbeddingAdapter.test.ts server/fastify/__tests__/memoryEmbedJobHandler.test.ts --config server/fastify/vitest.config.ts`
-  passed with 30 tests; `pnpm check` was clean.
+- Focused verification after 8-5d:
+  `pnpm exec vitest run server/fastify/__tests__/memorySimilarityRanking.test.ts --config server/fastify/vitest.config.ts`
+  passed with 7 tests; `pnpm check` was clean.
 
 ## Start Here
 
@@ -47,7 +47,7 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-5d pure similarity ranking.                          |
+| Hypa V3 memory                              | Active; next slice is 8-5e pure memory budget allocator.                     |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules

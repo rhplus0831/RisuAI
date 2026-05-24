@@ -31,6 +31,7 @@ track the next piece of work.
 | 8-5a - Embedding provider contract      | [`phase-8-memory-8-5a.md`](phase-8-memory-8-5a.md)                                     | API-backed/custom embedding resolver, adapter, and validation.          |
 | 8-5b - Embed job handler                | [`phase-8-memory-8-5b.md`](phase-8-memory-8-5b.md)                                     | Embed job handler, vector persistence, idempotence, and batch limits.   |
 | 8-5c - Voyage contextual embeddings     | [`phase-8-memory-8-5c.md`](phase-8-memory-8-5c.md)                                     | Voyage grouped embeddings with flat-table group metadata.               |
+| 8-5d - Pure similarity ranking          | [`phase-8-memory-8-5d.md`](phase-8-memory-8-5d.md)                                     | Pure cosine ranking over summaries, chunks, and embedding rows.         |
 
 ## Historical Status Logs
 

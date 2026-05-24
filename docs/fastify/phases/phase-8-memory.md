@@ -2,8 +2,8 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-5c - Voyage contextual
-embeddings**. Next slice: **8-5d - Pure similarity ranking**.
+Status: in progress. Completed through **8-5d - Pure similarity
+ranking**. Next slice: **8-5e - Pure memory budget allocator**.
 
 ## Goal
 
@@ -28,7 +28,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-5c:
+Completed through 8-5d:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -53,6 +53,10 @@ Completed through 8-5c:
   contextual document groups, calls Voyage contextualized embeddings, and
   persists vectors in `memory_embeddings` with `group_id` /
   `group_index`.
+- **8-5d - Pure similarity ranking:** supplied query vectors, memory
+  summaries/chunks, and flat embedding rows are ranked through defensive
+  cosine similarity with deterministic tie-breaking and diagnostics for
+  invalid or incomplete inputs.
 
 Carry-forward decisions from completed work:
 
@@ -76,6 +80,9 @@ Carry-forward decisions from completed work:
 - Standard embedding writes are idempotent by `{ chatId, chunkId,
 model }` with empty `group_id` / `group_index`; contextual Voyage
   writes use the same uniqueness surface and populate group metadata.
+- Similarity ranking is pure and allocation-facing: it does not call
+  providers, read or write repositories, enqueue jobs, or inspect prompt
+  assembly state.
 
 ## Scope
 
@@ -131,13 +138,6 @@ browser progress store.
 - **8-5 - Embeddings and selection.** Build embedding persistence and
   pure ranking/allocation helpers before exposing the prompt-facing
   selection facade.
-  - **8-5b - Embed job handler + vector persistence.** Fetch embeddings
-    through the provider contract, persist `memory_embeddings`, mark work
-    completed or failed, make reruns idempotent, and apply embedding
-    request rate/concurrency limits.
-  - **8-5d - Pure similarity ranking.** Port deterministic summary
-    ranking over supplied summaries, chunks, and vectors. No provider
-    calls, DB writes, jobs, or prompt assembly.
   - **8-5e - Pure memory budget allocator.** Port important, recent,
     similar, and random summary selection with deterministic randomness
     for tests.
