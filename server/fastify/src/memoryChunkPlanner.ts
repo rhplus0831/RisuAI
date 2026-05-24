@@ -10,6 +10,7 @@ import {
   type MemoryChunk,
   type MemoryJob,
 } from './memoryRepository.js'
+import { sanitizeSummaryMessageContent } from './memorySummaryPrompt.js'
 import { ValidationError } from './repository.js'
 
 const CHUNK_ID_PREFIX = 'hypav3-chunk'
@@ -177,7 +178,7 @@ function buildSummarizeJobId(chatId: string, chunkId: string, model: string): st
 }
 
 function sanitizeSummaryContent(content: string): string {
-  return content.replaceAll('\r\n', '\n').trim()
+  return sanitizeSummaryMessageContent(content)
 }
 
 function shortHash(value: string): string {

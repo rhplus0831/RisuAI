@@ -16,16 +16,17 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 8, Hypa V3 memory.
-- Last landed slice: 8-3d, chunk/job planning bridge.
+- Last landed slice: 8-4a, summary prompt builder.
 - Current blocker: none recorded.
-- Next default pickup: 8-4a, summary prompt builder.
-- Last recorded full baselines after 8-3d: `pnpm check` clean,
-  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 955 tests, and
+- Next default pickup: 8-4b, provider-backed summary adapter.
+- Last recorded full baselines after 8-4a: `pnpm check` clean,
+  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 962 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Focused verification after 8-3d:
-  `pnpm exec vitest run server/fastify/__tests__/memoryChunkPlanner.test.ts --config server/fastify/vitest.config.ts`
-  passed with 5 tests.
+- Focused verification after 8-4a:
+  `pnpm exec vitest run server/fastify/__tests__/memorySummaryPrompt.test.ts --config server/fastify/vitest.config.ts`
+  passed with 7 tests, the chunk planner focused test passed with 5
+  tests, and the full baseline passed.
 
 ## Start Here
 
@@ -47,7 +48,7 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-4a summary prompt builder.                             |
+| Hypa V3 memory                              | Active; next slice is 8-4b provider-backed summary adapter.                   |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules

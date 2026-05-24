@@ -11,39 +11,42 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-3d added the deterministic chunk/job planning bridge in
-`server/fastify/src/memoryChunkPlanner.ts`. Pure planner windows now
-become stable `memory_chunks` rows and planned `summarize` jobs with a
-versioned payload shape for 8-4. Focused tests cover ordered batching,
-idempotent replanning, existing summarized chunks, selected-message
-chunk text, skipped-message ranges, and no-op behavior for errored or
-empty plans. The bridge still does not call providers, build prompts,
-write summaries, embed chunks, or touch browser UI.
+8-4a added the pure summary prompt builder in
+`server/fastify/src/memorySummaryPrompt.ts`. Planned chunks can now be
+turned into provider-neutral `OpenAIChat[]` rows with browser-compatible
+default summarize / re-summarize prompts, `{{slot}}` replacement, ChatML
+parsing fallback, provider options, and `<Thoughts>` / `<think>` output
+scrubbers. Planned chunk text now shares summary sanitization for inlay
+tokens, line endings, and trimming. This still does not call providers,
+wire the worker, write summaries, embed chunks, or touch browser UI.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-4a - Summary prompt builder**.
+Continue Phase 8 with **8-4b - Provider-backed summary adapter**.
 
 Expected scope:
 
-- Port the pure summary prompt construction path for planned chunks.
-- Preserve message sanitization and default summarize / re-summarize
-  prompts from the browser path.
-- Implement `{{slot}}` replacement and ChatML parsing fallback.
-- Keep the output provider-neutral for the 8-4b summary adapter.
-- Scrub `<think>` and `<Thoughts>` output as pure helpers where
-  appropriate for later summary persistence.
+- Add a server-side non-streaming summary adapter for API-backed
+  summarization.
+- Extract a `summarizeOnce(messages, opts)` helper that wraps
+  `runOpenAI` directly.
+- Normalize `runOpenAI` responses into `{ text, tokens } | { error }`.
+- Treat aborted responses as errors.
+- Resolve the provider variant the same way the generation route does.
 
-Out of scope for 8-4a:
+Out of scope for 8-4b:
 
-- Provider calls, job handler wiring, summary persistence, embedding,
-  memory prompt selection, browser listeners, and browser list/cancel
-  controls.
+- Calling or refactoring `handleOpenAICompatibleBuffered`; it is
+  route-handler-shaped and writes to the reply.
+- Porting SPA `requestChatData` provider-routing logic.
+- Local MLC / ONNX / WebLLM summary runtimes.
+- Worker wiring, summary persistence, embedding, rate limiting, memory
+  prompt selection, browser listeners, and browser list/cancel controls.
 
-## Queue After 8-4a
+## Queue After 8-4b
 
-1. 8-4b - Provider-backed summary adapter.
-2. 8-4c - Summarize job handler.
+1. 8-4c - Summarize job handler.
+2. 8-4d - Summary rate limiting and ordered writes.
 
 ## Parallel Or Deferred
 
@@ -66,14 +69,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-3d: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 955 tests, and
+Last recorded full baselines after 8-4a: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 962 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-3d verification:
+Focused 8-4a verification:
 
 ```bash
+pnpm exec vitest run server/fastify/__tests__/memorySummaryPrompt.test.ts --config server/fastify/vitest.config.ts
 pnpm exec vitest run server/fastify/__tests__/memoryChunkPlanner.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 pnpm test
@@ -110,6 +114,8 @@ pnpm build
   [`../phases-completed/phase-8-memory-8-3c.md`](../phases-completed/phase-8-memory-8-3c.md)
 - 8-3d closeout:
   [`../phases-completed/phase-8-memory-8-3d.md`](../phases-completed/phase-8-memory-8-3d.md)
+- 8-4a closeout:
+  [`../phases-completed/phase-8-memory-8-4a.md`](../phases-completed/phase-8-memory-8-4a.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

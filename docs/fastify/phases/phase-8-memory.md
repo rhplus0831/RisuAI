@@ -9,7 +9,7 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-4a - Summary prompt builder**.
+Status: in progress. Next slice: **8-4b - Provider-backed summary adapter**.
 
 ## Preconditions
 
@@ -210,6 +210,7 @@ the current schema and import paths directly.
     output scrubbing. Cover with deterministic unit tests. Do not call
     providers, mutate memory rows, update jobs, or apply rate limiting
     in this slice.
+    Closed on 2026-05-24.
   - **8-4b — Provider-backed summary adapter.** Add the server-side
     non-streaming summary provider adapter for the supported API-backed
     summarization model path. **Approach locked 2026-05-24 (option a):**
