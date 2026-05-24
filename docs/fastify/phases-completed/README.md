@@ -29,6 +29,7 @@ track the next piece of work.
 | 8-1a-ii - Memory tables                 | [`phase-8-memory-8-1a-ii.md`](phase-8-memory-8-1a-ii.md)                               | Hypa V3 memory tables and schema version 2 bump.                        |
 | 8-4d - Summary ordered writes           | [`phase-8-memory-8-4d.md`](phase-8-memory-8-4d.md)                                     | Summarize batch rate limiting and consecutive-success commits.          |
 | 8-5a - Embedding provider contract      | [`phase-8-memory-8-5a.md`](phase-8-memory-8-5a.md)                                     | API-backed/custom embedding resolver, adapter, and validation.          |
+| 8-5b - Embed job handler                | [`phase-8-memory-8-5b.md`](phase-8-memory-8-5b.md)                                     | Embed job handler, vector persistence, idempotence, and batch limits.   |
 
 ## Historical Status Logs
 

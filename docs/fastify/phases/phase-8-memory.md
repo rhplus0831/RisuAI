@@ -2,9 +2,9 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-5a - Embedding provider
-contract**. Next slice: **8-5b - Embed job handler + vector
-persistence**.
+Status: in progress. Completed through **8-5b - Embed job handler +
+vector persistence**. Next slice: **8-5c - Voyage contextual
+embeddings**.
 
 ## Goal
 
@@ -29,7 +29,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-5a:
+Completed through 8-5b:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -45,6 +45,10 @@ Completed through 8-5a:
 - **8-5a - Embedding provider contract:** server-side embedding model
   resolver, OpenAI-compatible/custom endpoint adapter, response
   normalization, vector dimension validation, and typed provider errors.
+- **8-5b - Embed job handler + vector persistence:** embed jobs resolve
+  providers through the 8-5a contract, fetch standard embeddings, persist
+  one vector row per chunk/model, preserve queue retry/cancel behavior,
+  batch by chat, and apply embedding concurrency/rate settings.
 
 Carry-forward decisions from completed work:
 
@@ -65,6 +69,9 @@ Carry-forward decisions from completed work:
   embedding aliases and custom embedding endpoints. Browser-local
   transformers / WebGPU models remain out of server scope; Voyage
   contextual grouping remains deferred to 8-5c.
+- Standard embedding writes are idempotent by `{ chatId, chunkId,
+  model }`; `group_id` and `group_index` remain empty until contextual
+  grouping lands.
 
 ## Scope
 

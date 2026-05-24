@@ -29,9 +29,7 @@ export type MemoryJobBatchHandler = (
   context: MemoryJobBatchHandlerContext,
 ) => void | Promise<void>
 
-export type MemoryJobBatchHandlers = Partial<{
-  summarize: MemoryJobBatchHandler
-}>
+export type MemoryJobBatchHandlers = Partial<Record<MemoryJobKind, MemoryJobBatchHandler>>
 
 export interface MemoryWorkerOptions {
   db: DatabaseSync
@@ -135,8 +133,9 @@ export class MemoryWorker {
     this.emitJob(job)
 
     try {
-      if (job.kind === 'summarize' && this.batchHandlers.summarize) {
-        await this.batchHandlers.summarize(job, {
+      const batchHandler = this.batchHandlers[job.kind]
+      if (batchHandler) {
+        await batchHandler(job, {
           claimNext: (filter) => {
             const claimed =
               this.retry.now === undefined

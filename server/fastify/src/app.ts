@@ -30,6 +30,10 @@ import type { MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import {
+  createEmbedMemoryJobBatchHandler,
+  createEmbedMemoryJobHandler,
+} from './memoryEmbedJobHandler.js'
+import {
   createSummarizeMemoryJobBatchHandler,
   createSummarizeMemoryJobHandler,
 } from './memorySummarizeJobHandler.js'
@@ -73,16 +77,20 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const db = openDatabase(config.dataDir)
   backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
   const defaultSummarizeOptions = { db, dataDir: config.dataDir }
+  const defaultEmbedOptions = { db, dataDir: config.dataDir }
   const defaultMemoryHandlers = {
+    embed: createEmbedMemoryJobHandler(defaultEmbedOptions),
     summarize: createSummarizeMemoryJobHandler(defaultSummarizeOptions),
   }
   const memoryWorkerOptions = opts.memoryWorker === false ? null : (opts.memoryWorker ?? {})
-  const defaultMemoryBatchHandlers =
-    memoryWorkerOptions?.handlers?.summarize === undefined
-      ? {
-          summarize: createSummarizeMemoryJobBatchHandler(defaultSummarizeOptions),
-        }
-      : {}
+  const defaultMemoryBatchHandlers = {
+    ...(memoryWorkerOptions?.handlers?.embed === undefined
+      ? { embed: createEmbedMemoryJobBatchHandler(defaultEmbedOptions) }
+      : {}),
+    ...(memoryWorkerOptions?.handlers?.summarize === undefined
+      ? { summarize: createSummarizeMemoryJobBatchHandler(defaultSummarizeOptions) }
+      : {}),
+  }
   const memoryWorker =
     memoryWorkerOptions === null
       ? null
