@@ -1,7 +1,7 @@
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import type { HypaModel } from '../../../src/ts/process/memory/hypamemory'
 
-export type MemoryEmbeddingProvider = 'openai-compatible' | 'custom'
+export type MemoryEmbeddingProvider = 'openai-compatible' | 'custom' | 'voyage-contextual'
 
 export interface MemoryEmbeddingModelRequest {
   provider: MemoryEmbeddingProvider
@@ -20,6 +20,9 @@ const OPENAI_EMBEDDING_MODELS: Partial<Record<HypaModel, string>> = {
   openai3small: 'text-embedding-3-small',
   openai3large: 'text-embedding-3-large',
 }
+
+const VOYAGE_CONTEXTUAL_ENDPOINT = 'https://api.voyageai.com/v1/contextualizedembeddings'
+const VOYAGE_CONTEXTUAL_MODEL = 'voyage-context-3'
 
 const LOCAL_EMBEDDING_MODELS = new Set<string>([
   'MiniLM',
@@ -77,9 +80,17 @@ export function resolveMemoryEmbeddingModel(
   }
 
   if (model === 'voyageContext3') {
+    const apiKey = asTrimmedString(db.voyageApiKey)
+    if (!apiKey) return { ok: false, error: 'voyage-context-3 requires a Voyage API key' }
     return {
-      ok: false,
-      error: 'voyage-context-3 contextual embeddings are deferred to slice 8-5c',
+      ok: true,
+      request: {
+        provider: 'voyage-contextual',
+        model: VOYAGE_CONTEXTUAL_MODEL,
+        wireModel: VOYAGE_CONTEXTUAL_MODEL,
+        endpoint: VOYAGE_CONTEXTUAL_ENDPOINT,
+        apiKey,
+      },
     }
   }
 

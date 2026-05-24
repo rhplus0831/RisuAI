@@ -100,14 +100,31 @@ describe('memory embedding model resolver', () => {
     ).toEqual({ ok: false, error: 'custom embedding model requires a server URL' })
   })
 
-  it('rejects browser-local and deferred contextual embedding models', () => {
+  it('resolves Voyage contextual embeddings with explicit credentials', () => {
+    expect(
+      resolveMemoryEmbeddingModel(
+        db({ hypaModel: 'voyageContext3', voyageApiKey: ' voyage-key ' }),
+      ),
+    ).toEqual({
+      ok: true,
+      request: {
+        provider: 'voyage-contextual',
+        model: 'voyage-context-3',
+        wireModel: 'voyage-context-3',
+        endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
+        apiKey: 'voyage-key',
+      },
+    })
+  })
+
+  it('rejects browser-local models and requires Voyage credentials', () => {
     expect(resolveMemoryEmbeddingModel(db({ hypaModel: 'MiniLM' }))).toEqual({
       ok: false,
       error: 'server-side memory embeddings do not support browser-local model MiniLM',
     })
     expect(resolveMemoryEmbeddingModel(db({ hypaModel: 'voyageContext3' }))).toEqual({
       ok: false,
-      error: 'voyage-context-3 contextual embeddings are deferred to slice 8-5c',
+      error: 'voyage-context-3 requires a Voyage API key',
     })
   })
 })

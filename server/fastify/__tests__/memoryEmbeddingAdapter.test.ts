@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { embedTexts } from '../src/memoryEmbeddingAdapter.js'
+import { embedTextGroups, embedTexts } from '../src/memoryEmbeddingAdapter.js'
 import type { MemoryEmbeddingModelRequest } from '../src/memoryEmbeddingModel.js'
 
 afterEach(() => {
@@ -165,6 +165,80 @@ describe('memory embedding provider adapter', () => {
       }),
     ).resolves.toEqual({
       error: 'embedding vector values must be finite numbers',
+      code: 'invalid-response',
+    })
+  })
+
+  it('calls Voyage contextual embeddings with grouped document inputs', async () => {
+    let captured: { url: string; headers: Record<string, string>; body: unknown } | null = null
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      captured = {
+        url,
+        headers: init.headers as Record<string, string>,
+        body: JSON.parse(init.body as string),
+      }
+      return ok({
+        data: [
+          {
+            data: [{ embedding: [1, 2] }, { embedding: [3, 4] }],
+          },
+        ],
+      })
+    })
+
+    const result = await embedTextGroups({
+      request: request({
+        provider: 'voyage-contextual',
+        model: 'voyage-context-3',
+        wireModel: 'voyage-context-3',
+        endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
+      }),
+      groups: [['first', 'second']],
+      signal: new AbortController().signal,
+    })
+
+    expect(result).toMatchObject({ model: 'voyage-context-3', dim: 2 })
+    expect('groups' in result ? result.groups[0].map((v) => Array.from(v)) : []).toEqual([
+      [1, 2],
+      [3, 4],
+    ])
+    expect(captured).toEqual({
+      url: 'https://api.voyageai.com/v1/contextualizedembeddings',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer sk-test',
+      },
+      body: {
+        inputs: [['first', 'second']],
+        model: 'voyage-context-3',
+        input_type: 'document',
+      },
+    })
+  })
+
+  it('validates Voyage contextual response shape', async () => {
+    vi.stubGlobal('fetch', async () =>
+      ok({
+        data: [
+          {
+            data: [{ embedding: [1, 2] }],
+          },
+        ],
+      }),
+    )
+
+    await expect(
+      embedTextGroups({
+        request: request({
+          provider: 'voyage-contextual',
+          model: 'voyage-context-3',
+          wireModel: 'voyage-context-3',
+        }),
+        groups: [['first', 'second']],
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      error: 'embedding response count mismatch: expected 2, got 1',
       code: 'invalid-response',
     })
   })

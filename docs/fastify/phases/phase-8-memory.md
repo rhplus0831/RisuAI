@@ -2,9 +2,8 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-5b - Embed job handler +
-vector persistence**. Next slice: **8-5c - Voyage contextual
-embeddings**.
+Status: in progress. Completed through **8-5c - Voyage contextual
+embeddings**. Next slice: **8-5d - Pure similarity ranking**.
 
 ## Goal
 
@@ -29,7 +28,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-5b:
+Completed through 8-5c:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -49,6 +48,11 @@ Completed through 8-5b:
   providers through the 8-5a contract, fetch standard embeddings, persist
   one vector row per chunk/model, preserve queue retry/cancel behavior,
   batch by chat, and apply embedding concurrency/rate settings.
+- **8-5c - Voyage contextual embeddings:** `voyageContext3` resolves
+  server-side Voyage credentials, batches ordered chunk texts into
+  contextual document groups, calls Voyage contextualized embeddings, and
+  persists vectors in `memory_embeddings` with `group_id` /
+  `group_index`.
 
 Carry-forward decisions from completed work:
 
@@ -65,13 +69,13 @@ Carry-forward decisions from completed work:
   planned order only until the first failed, cancelled, or empty result.
   Later staged successes remain uncommitted and are handed back to queue
   retry/fail primitives.
-- Embedding provider calls are supported only for API-backed OpenAI
-  embedding aliases and custom embedding endpoints. Browser-local
-  transformers / WebGPU models remain out of server scope; Voyage
-  contextual grouping remains deferred to 8-5c.
+- Embedding provider calls are supported for API-backed OpenAI embedding
+  aliases, custom embedding endpoints, and Voyage contextual document
+  embeddings. Browser-local transformers / WebGPU models remain out of
+  server scope.
 - Standard embedding writes are idempotent by `{ chatId, chunkId,
-  model }`; `group_id` and `group_index` remain empty until contextual
-  grouping lands.
+model }` with empty `group_id` / `group_index`; contextual Voyage
+  writes use the same uniqueness surface and populate group metadata.
 
 ## Scope
 
@@ -131,9 +135,6 @@ browser progress store.
     through the provider contract, persist `memory_embeddings`, mark work
     completed or failed, make reruns idempotent, and apply embedding
     request rate/concurrency limits.
-  - **8-5c - Voyage contextual embeddings.** Add optional
-    `voyage-context-3` grouping while writing through the same flat
-    `memory_embeddings` repository surface.
   - **8-5d - Pure similarity ranking.** Port deterministic summary
     ranking over supplied summaries, chunks, and vectors. No provider
     calls, DB writes, jobs, or prompt assembly.

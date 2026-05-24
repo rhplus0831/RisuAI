@@ -42,6 +42,7 @@ function payload(chunkId = 'chunk-1', model = 'custom') {
 function database(settings: Record<string, unknown> = {}) {
   return {
     hypaModel: 'custom',
+    voyageApiKey: 'voyage-key',
     hypaCustomSettings: {
       url: 'https://example.test/v1',
       model: 'custom-embed',
@@ -80,7 +81,7 @@ function seedChunkAndJob(db: ReturnType<typeof openDatabase>, jobPayload = paylo
 
 function seedBatchJob(
   db: ReturnType<typeof openDatabase>,
-  input: { id: string; chunkId: string; text: string },
+  input: { id: string; chunkId: string; text: string; model?: string },
 ) {
   createMemoryChunk(db, {
     id: input.chunkId,
@@ -94,7 +95,7 @@ function seedBatchJob(
     id: input.id,
     chatId: 'chat-1',
     kind: 'embed',
-    payload: payload(input.chunkId),
+    payload: payload(input.chunkId, input.model ?? 'custom'),
   })
 }
 
@@ -206,7 +207,11 @@ describe('embed memory job handler', () => {
         kind: 'embed',
         payload: { schemaVersion: 1, chunkId: '', model: 'custom' },
       })
-      const embed = vi.fn(async () => ({ model: 'custom', vectors: [new Float32Array([1])], dim: 1 }))
+      const embed = vi.fn(async () => ({
+        model: 'custom',
+        vectors: [new Float32Array([1])],
+        dim: 1,
+      }))
       const handler = createEmbedMemoryJobHandler({
         db,
         loadDatabase: database,
@@ -224,7 +229,11 @@ describe('embed memory job handler', () => {
     const db = openDatabase(makeDataDir())
     try {
       const job = seedChunkAndJob(db, payload('chunk-1', 'MiniLM'))
-      const embed = vi.fn(async () => ({ model: 'MiniLM', vectors: [new Float32Array([1])], dim: 1 }))
+      const embed = vi.fn(async () => ({
+        model: 'MiniLM',
+        vectors: [new Float32Array([1])],
+        dim: 1,
+      }))
       const handler = createEmbedMemoryJobHandler({
         db,
         loadDatabase: database,
@@ -303,11 +312,9 @@ describe('embed memory job handler', () => {
       expect(await worker.tick()).toBe(true)
 
       expect(maxActive).toBeLessThanOrEqual(2)
-      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((embedding) => embedding.chunkId)).toEqual([
-        'chunk-1',
-        'chunk-2',
-        'chunk-3',
-      ])
+      expect(
+        listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((embedding) => embedding.chunkId),
+      ).toEqual(['chunk-1', 'chunk-2', 'chunk-3'])
       expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', attemptCount: 1 })
     } finally {
       db.close()
@@ -362,6 +369,155 @@ describe('embed memory job handler', () => {
               const text = String(opts.input[0] ?? '')
               if (text.includes('chunk one')) cancelMemoryJob(db, 'job-1')
               return { model: 'custom', vectors: [new Float32Array([1])], dim: 1 }
+            },
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'embed job job-1 is no longer running',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('groups Voyage contextual embed jobs and persists ordered group metadata', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'second contextual chunk',
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'first contextual chunk',
+        model: 'voyageContext3',
+      })
+      const embedGroups = vi.fn(async () => ({
+        model: 'voyage-context-3',
+        groups: [[new Float32Array([1, 2]), new Float32Array([3, 4])]],
+        dim: 2,
+      }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups,
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(embedGroups).toHaveBeenCalledOnce()
+      expect(embedGroups.mock.calls[0][0]).toMatchObject({
+        request: {
+          provider: 'voyage-contextual',
+          endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
+          apiKey: 'voyage-key',
+          model: 'voyage-context-3',
+          wireModel: 'voyage-context-3',
+        },
+        groups: [['first contextual chunk', 'second contextual chunk']],
+      })
+      const embeddings = listMemoryEmbeddings(db, {
+        chatId: 'chat-1',
+        model: 'voyageContext3',
+      })
+      expect(embeddings.map((embedding) => embedding.chunkId)).toEqual(['chunk-1', 'chunk-2'])
+      expect(embeddings.map((embedding) => embedding.groupIndex)).toEqual([0, 1])
+      expect(embeddings[0].groupId).toMatch(/^hypav3-embedding-group-/)
+      expect(embeddings[1].groupId).toBe(embeddings[0].groupId)
+      expect(Array.from(embeddings[0].vector)).toEqual([1, 2])
+      expect(Array.from(embeddings[1].vector)).toEqual([3, 4])
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed' })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed' })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('retries an ordered Voyage contextual batch after provider failure', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'first contextual chunk',
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'second contextual chunk',
+        model: 'voyageContext3',
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: async () => ({ error: 'voyage exploded', code: 'upstream' }),
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({
+        status: 'pending',
+        error: 'voyage exploded',
+      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'voyage exploded',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('does not commit staged Voyage contextual vectors after a running job is cancelled', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'first contextual chunk',
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'second contextual chunk',
+        model: 'voyageContext3',
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: async () => {
+              cancelMemoryJob(db, 'job-1')
+              return {
+                model: 'voyage-context-3',
+                groups: [[new Float32Array([1]), new Float32Array([2])]],
+                dim: 1,
+              }
             },
           }),
         },

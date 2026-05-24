@@ -27,6 +27,13 @@ export interface EmbedTextsOptions {
   signal: AbortSignal
 }
 
+export interface EmbedTextGroupsOptions {
+  request: MemoryEmbeddingModelRequest
+  groups: readonly (readonly string[])[]
+  expectedDim?: number
+  signal: AbortSignal
+}
+
 interface EmbeddingResponse {
   data?: unknown
   error?: { message?: unknown }
@@ -102,6 +109,91 @@ export async function embedTexts(
   return { model: opts.request.model, vectors: normalized.vectors, dim }
 }
 
+export async function embedTextGroups(
+  opts: EmbedTextGroupsOptions,
+): Promise<
+  { model: string; groups: Float32Array[][]; dim: number } | MemoryEmbeddingProviderError
+> {
+  const groups = opts.groups.map((group) => [...group])
+  if (groups.length === 0) {
+    return { error: 'contextual embedding groups must not be empty', code: 'configuration' }
+  }
+  if (groups.some((group) => group.length === 0)) {
+    return {
+      error: 'contextual embedding groups must not contain empty groups',
+      code: 'configuration',
+    }
+  }
+  if (groups.some((group) => group.some((value) => typeof value !== 'string'))) {
+    return { error: 'contextual embedding groups must contain only strings', code: 'configuration' }
+  }
+  if (opts.request.provider !== 'voyage-contextual') {
+    return {
+      error: 'contextual embedding groups require a contextual provider',
+      code: 'configuration',
+    }
+  }
+  if (opts.signal.aborted) return { error: 'aborted', code: 'aborted' }
+
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (opts.request.apiKey) headers.authorization = `Bearer ${opts.request.apiKey}`
+
+  let response: Response
+  try {
+    response = await fetch(opts.request.endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        inputs: groups,
+        model: opts.request.wireModel ?? opts.request.model,
+        input_type: 'document',
+      }),
+      signal: opts.signal,
+    })
+  } catch (err) {
+    if (opts.signal.aborted) return { error: 'aborted', code: 'aborted' }
+    const msg = err instanceof Error ? err.message : String(err)
+    return { error: `embedding fetch failed: ${msg}`, code: 'fetch' }
+  }
+
+  let json: EmbeddingResponse
+  try {
+    json = (await response.json()) as EmbeddingResponse
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { error: `invalid embedding JSON: ${msg}`, code: 'invalid-json' }
+  }
+
+  if (!response.ok) {
+    const upstreamMsg =
+      typeof json.error?.message === 'string' ? json.error.message : `HTTP ${response.status}`
+    return { error: upstreamMsg, code: 'upstream' }
+  }
+
+  const normalized = normalizeEmbeddingGroupData(
+    json.data,
+    groups.map((group) => group.length),
+  )
+  if ('error' in normalized) return normalized
+
+  const dim = opts.expectedDim ?? normalized.groups[0]?.[0]?.length
+  if (typeof dim !== 'number' || !Number.isInteger(dim) || dim <= 0) {
+    return { error: 'embedding dimension must be a positive integer', code: 'dimension-mismatch' }
+  }
+  for (const group of normalized.groups) {
+    for (const vector of group) {
+      if (vector.length !== dim) {
+        return {
+          error: `embedding dimension mismatch: expected ${dim}, got ${vector.length}`,
+          code: 'dimension-mismatch',
+        }
+      }
+    }
+  }
+
+  return { model: opts.request.model, groups: normalized.groups, dim }
+}
+
 function normalizeEmbeddingData(
   rawData: unknown,
   expectedCount: number,
@@ -141,6 +233,34 @@ function normalizeEmbeddingData(
   }
 
   return { vectors }
+}
+
+function normalizeEmbeddingGroupData(
+  rawData: unknown,
+  expectedGroupCounts: readonly number[],
+): { groups: Float32Array[][] } | MemoryEmbeddingProviderError {
+  if (!Array.isArray(rawData)) {
+    return { error: 'embedding response data must be an array', code: 'invalid-response' }
+  }
+  if (rawData.length !== expectedGroupCounts.length) {
+    return {
+      error: `embedding response group count mismatch: expected ${expectedGroupCounts.length}, got ${rawData.length}`,
+      code: 'invalid-response',
+    }
+  }
+
+  const groups: Float32Array[][] = []
+  for (let groupIndex = 0; groupIndex < rawData.length; groupIndex += 1) {
+    const rawGroup = rawData[groupIndex] as { data?: unknown }
+    if (!Array.isArray(rawGroup?.data)) {
+      return { error: 'embedding response group data must be an array', code: 'invalid-response' }
+    }
+    const normalized = normalizeEmbeddingData(rawGroup.data, expectedGroupCounts[groupIndex])
+    if ('error' in normalized) return normalized
+    groups.push(normalized.vectors)
+  }
+
+  return { groups }
 }
 
 function normalizeVector(raw: unknown): { vector: Float32Array } | MemoryEmbeddingProviderError {
