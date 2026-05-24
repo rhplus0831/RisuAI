@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
 
 export interface MigrationStep {
   version: number
@@ -21,6 +21,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
   {
     version: 2,
     name: 'hypa-v3-memory-tables',
+    up: (db) => {
+      createMemoryTables(db)
+    },
+  },
+  {
+    version: 3,
+    name: 'memory-job-retry-scheduling',
     up: (db) => {
       createMemoryTables(db)
     },
@@ -210,6 +217,9 @@ function createMemoryTables(db: DatabaseSync): void {
       status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
       payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
       error TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      max_attempts INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts > 0),
+      next_run_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
@@ -220,12 +230,32 @@ function createMemoryTables(db: DatabaseSync): void {
       ON memory_jobs (status, created_at);
     CREATE INDEX IF NOT EXISTS idx_memory_jobs_kind_status
       ON memory_jobs (kind, status);
+    CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_next_run
+      ON memory_jobs (status, next_run_at, created_at, id);
   `)
   ensureColumn(
     db,
     'memory_summaries',
     'metadata_json',
     'ALTER TABLE memory_summaries ADD COLUMN metadata_json TEXT CHECK (metadata_json IS NULL OR json_valid(metadata_json))',
+  )
+  ensureColumn(
+    db,
+    'memory_jobs',
+    'attempt_count',
+    'ALTER TABLE memory_jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0)',
+  )
+  ensureColumn(
+    db,
+    'memory_jobs',
+    'max_attempts',
+    'ALTER TABLE memory_jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts > 0)',
+  )
+  ensureColumn(
+    db,
+    'memory_jobs',
+    'next_run_at',
+    "ALTER TABLE memory_jobs ADD COLUMN next_run_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'",
   )
 }
 

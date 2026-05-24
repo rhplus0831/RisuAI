@@ -9,8 +9,8 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-2c - Retry, backoff, cancel, and
-boot recovery**.
+Status: in progress. Next slice: **8-2d - Memory progress event
+contract**.
 
 ## Preconditions
 
@@ -145,7 +145,7 @@ the current schema and import paths directly.
     tracking, exponential backoff scheduling, max-retry failure
     persistence, cancellation for pending/running jobs, and startup
     handling for abandoned `running` jobs. Keep provider calls and real
-    memory mutations out of scope.
+    memory mutations out of scope. Closed on 2026-05-24.
   - **8-2d — Memory progress event contract.** Decide and implement the
     smallest server event surface for memory progress: `memory.job`
     events for queue state and Phase-7-compatible `hypav3_progress`

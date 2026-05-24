@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../src/db.js'
 import { buildApp } from '../src/app.js'
-import { enqueueMemoryJob, getMemoryJob, listMemoryJobs } from '../src/memoryRepository.js'
+import {
+  cancelMemoryJob,
+  createMemoryJob,
+  enqueueMemoryJob,
+  getMemoryJob,
+  listMemoryJobs,
+} from '../src/memoryRepository.js'
 import { MemoryWorker, type MemoryJobHandler } from '../src/memoryWorker.js'
 
 const dataDirs: string[] = []
@@ -134,7 +140,13 @@ describe('memory worker lifecycle and dispatch', () => {
   it('fails a claimed job when a handler throws', async () => {
     const db = openDatabase(makeDataDir())
     try {
-      enqueueMemoryJob(db, { id: 'job-fail', chatId: 'chat-1', kind: 'summarize', payload: {} })
+      enqueueMemoryJob(db, {
+        id: 'job-fail',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+        maxAttempts: 1,
+      })
       const worker = new MemoryWorker({
         db,
         handlers: {
@@ -148,6 +160,120 @@ describe('memory worker lifecycle and dispatch', () => {
       expect(getMemoryJob(db, 'job-fail')).toMatchObject({
         status: 'failed',
         error: 'summary stub exploded',
+        attemptCount: 1,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('retries handler failures with backoff before max-attempt failure', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'job-retry',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+        maxAttempts: 2,
+        nextRunAt: '2026-05-24T00:00:00.000Z',
+      })
+      const worker = new MemoryWorker({
+        db,
+        retry: {
+          now: '2026-05-24T00:00:00.000Z',
+          backoffBaseMs: 1_000,
+        },
+        handlers: {
+          summarize: () => {
+            throw new Error('summary stub exploded')
+          },
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+      expect(getMemoryJob(db, 'job-retry')).toMatchObject({
+        status: 'pending',
+        error: 'summary stub exploded',
+        attemptCount: 1,
+        nextRunAt: '2026-05-24T00:00:01.000Z',
+      })
+      expect(await worker.tick()).toBe(false)
+
+      const second = new MemoryWorker({
+        db,
+        retry: {
+          now: '2026-05-24T00:00:01.000Z',
+          backoffBaseMs: 1_000,
+        },
+        handlers: {
+          summarize: () => {
+            throw new Error('summary stub exploded again')
+          },
+        },
+      })
+      expect(await second.tick()).toBe(true)
+      expect(getMemoryJob(db, 'job-retry')).toMatchObject({
+        status: 'failed',
+        error: 'summary stub exploded again',
+        attemptCount: 2,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('leaves a running job cancelled when the handler later settles', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, { id: 'job-cancel', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      const gate = deferred()
+      const worker = new MemoryWorker({
+        db,
+        handlers: {
+          chunk: async () => {
+            await gate.promise
+          },
+        },
+      })
+
+      const tick = worker.tick()
+      await Promise.resolve()
+      expect(cancelMemoryJob(db, 'job-cancel')).toMatchObject({ status: 'cancelled' })
+      gate.resolve()
+      expect(await tick).toBe(true)
+      expect(getMemoryJob(db, 'job-cancel')).toMatchObject({ status: 'cancelled' })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('recovers abandoned running jobs before polling starts', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryJob(db, {
+        id: 'job-running',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        payload: {},
+        status: 'running',
+        attemptCount: 1,
+      })
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 10_000,
+        retry: {
+          now: '2026-05-24T00:00:00.000Z',
+          backoffBaseMs: 1_000,
+        },
+      })
+
+      worker.start()
+      await worker.stop()
+      expect(getMemoryJob(db, 'job-running')).toMatchObject({
+        status: 'pending',
+        error: 'memory job was abandoned while running',
+        nextRunAt: '2026-05-24T00:00:01.000Z',
       })
     } finally {
       db.close()

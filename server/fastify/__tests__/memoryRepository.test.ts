@@ -23,6 +23,8 @@ import {
   listMemoryJobs,
   listMemorySummaries,
   mapMemoryJobRow,
+  recoverRunningMemoryJobs,
+  retryOrFailMemoryJob,
   updateMemoryChunkStatus,
   updateMemoryJob,
 } from '../src/memoryRepository.js'
@@ -348,6 +350,8 @@ describe('memory repository jobs', () => {
         status: 'pending',
         payload: { chunkId: 'chunk-1', model: 'model-a' },
         error: null,
+        attemptCount: 0,
+        maxAttempts: 3,
       })
       expect(getMemoryJob(db, 'job-1')).toEqual(job)
       expect(listMemoryJobs(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
@@ -367,12 +371,18 @@ describe('memory repository jobs', () => {
           status: 'failed',
           payload: { chunkId: 'chunk-1', retryable: false },
           error: 'summary failed',
+          attemptCount: 2,
+          maxAttempts: 4,
+          nextRunAt: '2026-05-24T01:00:00.000Z',
         }),
       ).toMatchObject({
         id: 'job-1',
         status: 'failed',
         payload: { chunkId: 'chunk-1', retryable: false },
         error: 'summary failed',
+        attemptCount: 2,
+        maxAttempts: 4,
+        nextRunAt: '2026-05-24T01:00:00.000Z',
       })
       expect(updateMemoryJob(db, 'missing', { status: 'cancelled' })).toBeNull()
     } finally {
@@ -413,17 +423,156 @@ describe('memory repository jobs', () => {
       expect(claimNextMemoryJob(db, { kind: 'embed' })).toMatchObject({
         id: 'job-c',
         status: 'running',
+        attemptCount: 1,
       })
       expect(claimNextMemoryJob(db, { chatId: 'chat-1' })).toMatchObject({
         id: 'job-a',
         status: 'running',
+        attemptCount: 1,
       })
       expect(claimNextMemoryJob(db, { chatId: 'chat-1' })).toMatchObject({
         id: 'job-b',
         status: 'running',
+        attemptCount: 1,
       })
       expect(claimNextMemoryJob(db)).toBeNull()
       expect(listMemoryJobs(db, { status: 'pending' })).toEqual([])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('ignores pending jobs until their next run time arrives', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'job-later',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+        nextRunAt: '2026-05-24T00:01:00.000Z',
+      })
+      enqueueMemoryJob(db, {
+        id: 'job-now',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+        nextRunAt: '2026-05-24T00:00:00.000Z',
+      })
+
+      expect(claimNextMemoryJob(db, { now: '2026-05-24T00:00:30.000Z' })).toMatchObject({
+        id: 'job-now',
+        status: 'running',
+      })
+      expect(claimNextMemoryJob(db, { now: '2026-05-24T00:00:30.000Z' })).toBeNull()
+      expect(claimNextMemoryJob(db, { now: '2026-05-24T00:01:00.000Z' })).toMatchObject({
+        id: 'job-later',
+        status: 'running',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('retries running jobs with exponential backoff before max-attempt failure', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'job-retry',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+        maxAttempts: 3,
+        nextRunAt: '2026-05-24T00:00:00.000Z',
+      })
+
+      expect(claimNextMemoryJob(db, { now: '2026-05-24T00:00:00.000Z' })).toMatchObject({
+        id: 'job-retry',
+        attemptCount: 1,
+      })
+      expect(
+        retryOrFailMemoryJob(db, 'job-retry', 'first failure', {
+          now: '2026-05-24T00:00:00.000Z',
+          backoffBaseMs: 1_000,
+        }),
+      ).toMatchObject({
+        id: 'job-retry',
+        status: 'pending',
+        error: 'first failure',
+        attemptCount: 1,
+        nextRunAt: '2026-05-24T00:00:01.000Z',
+      })
+      expect(claimNextMemoryJob(db, { now: '2026-05-24T00:00:00.999Z' })).toBeNull()
+      expect(claimNextMemoryJob(db, { now: '2026-05-24T00:00:01.000Z' })).toMatchObject({
+        id: 'job-retry',
+        attemptCount: 2,
+      })
+      expect(
+        retryOrFailMemoryJob(db, 'job-retry', 'second failure', {
+          now: '2026-05-24T00:00:01.000Z',
+          backoffBaseMs: 1_000,
+        }),
+      ).toMatchObject({
+        status: 'pending',
+        attemptCount: 2,
+        nextRunAt: '2026-05-24T00:00:03.000Z',
+      })
+      expect(claimNextMemoryJob(db, { now: '2026-05-24T00:00:03.000Z' })).toMatchObject({
+        id: 'job-retry',
+        attemptCount: 3,
+      })
+      expect(
+        retryOrFailMemoryJob(db, 'job-retry', 'final failure', {
+          now: '2026-05-24T00:00:03.000Z',
+          backoffBaseMs: 1_000,
+        }),
+      ).toMatchObject({
+        status: 'failed',
+        error: 'final failure',
+        attemptCount: 3,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('recovers abandoned running jobs on boot', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryJob(db, {
+        id: 'job-recover',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        payload: {},
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+      })
+      createMemoryJob(db, {
+        id: 'job-exhausted',
+        chatId: 'chat-1',
+        kind: 'embed',
+        payload: {},
+        status: 'running',
+        attemptCount: 2,
+        maxAttempts: 2,
+      })
+
+      expect(
+        recoverRunningMemoryJobs(db, {
+          now: '2026-05-24T00:00:00.000Z',
+          backoffBaseMs: 1_000,
+        })
+          .map((job) => [job.id, job.status, job.nextRunAt])
+          .sort((left, right) => String(left[0]).localeCompare(String(right[0]))),
+      ).toEqual([
+        ['job-exhausted', 'failed', expect.any(String)],
+        ['job-recover', 'pending', '2026-05-24T00:00:01.000Z'],
+      ])
+      expect(getMemoryJob(db, 'job-exhausted')).toMatchObject({
+        status: 'failed',
+        error: 'memory job was abandoned while running',
+      })
     } finally {
       db.close()
     }
@@ -521,6 +670,11 @@ describe('memory repository jobs', () => {
         }),
       ).toThrow(ValidationError)
       expect(() => updateMemoryJob(db, 'job-1', { payload: undefined })).toThrow(ValidationError)
+      expect(() => updateMemoryJob(db, 'job-1', { attemptCount: -1 })).toThrow(ValidationError)
+      expect(() => updateMemoryJob(db, 'job-1', { maxAttempts: 0 })).toThrow(ValidationError)
+      expect(() => updateMemoryJob(db, 'job-1', { nextRunAt: 'not a date' })).toThrow(
+        ValidationError,
+      )
       expect(() =>
         enqueueMemoryJob(db, {
           id: '',
@@ -540,6 +694,9 @@ describe('memory repository jobs', () => {
           status: 'pending',
           payload_json: '{}',
           error: null,
+          attempt_count: 0,
+          max_attempts: 3,
+          next_run_at: '2026-05-24T00:00:00.000Z',
           created_at: '2026-05-24T00:00:00.000Z',
           updated_at: '2026-05-24T00:00:00.000Z',
         }),
@@ -552,6 +709,9 @@ describe('memory repository jobs', () => {
           status: 'pending',
           payload_json: '{',
           error: null,
+          attempt_count: 0,
+          max_attempts: 3,
+          next_run_at: '2026-05-24T00:00:00.000Z',
           created_at: '2026-05-24T00:00:00.000Z',
           updated_at: '2026-05-24T00:00:00.000Z',
         }),

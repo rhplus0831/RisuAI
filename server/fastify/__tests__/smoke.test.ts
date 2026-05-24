@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import { buildApp } from '../src/app.js'
+import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
@@ -48,7 +49,7 @@ describe('Fastify foundation smoke', () => {
   it('reports health', async () => {
     const res = await harness.app.inject({ method: 'GET', url: '/api/v1/health' })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ status: 'ok', revision: 0, schemaVersion: 2 })
+    expect(res.json()).toEqual({ status: 'ok', revision: 0, schemaVersion: CURRENT_SCHEMA_VERSION })
   })
 
   it('walks the no-password setup-login flow and accepts the resulting assertion', async () => {

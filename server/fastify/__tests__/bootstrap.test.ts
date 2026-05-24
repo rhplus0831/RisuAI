@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import { buildApp } from '../src/app.js'
+import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
@@ -95,7 +96,7 @@ describe('Phase 2A bootstrap + import', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({
       revision: 0,
-      schemaVersion: 2,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       database: null,
       assetBaseUrl: '/api/v1/assets',
     })
@@ -139,7 +140,7 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json()).toEqual({
       revision: 1,
-      schemaVersion: 2,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       database: sample,
       assetBaseUrl: '/api/v1/assets',
     })

@@ -10,6 +10,8 @@ export const MEMORY_JOB_STATUSES = [
   'failed',
   'cancelled',
 ] as const
+export const MEMORY_JOB_DEFAULT_MAX_ATTEMPTS = 3
+export const MEMORY_JOB_DEFAULT_RETRY_BACKOFF_MS = 1_000
 
 export type MemoryChunkStatus = (typeof MEMORY_CHUNK_STATUSES)[number]
 export type MemoryJobKind = (typeof MEMORY_JOB_KINDS)[number]
@@ -87,6 +89,9 @@ export interface MemoryJob {
   status: MemoryJobStatus
   payload: unknown
   error: string | null
+  attemptCount: number
+  maxAttempts: number
+  nextRunAt: string
   createdAt: string
   updatedAt: string
 }
@@ -98,6 +103,9 @@ export interface CreateMemoryJobInput {
   payload: unknown
   status?: MemoryJobStatus
   error?: string | null
+  attemptCount?: number
+  maxAttempts?: number
+  nextRunAt?: string
 }
 
 export interface EnqueueMemoryJobInput {
@@ -105,6 +113,13 @@ export interface EnqueueMemoryJobInput {
   chatId: string
   kind: MemoryJobKind
   payload: unknown
+  maxAttempts?: number
+  nextRunAt?: string
+}
+
+export interface MemoryJobRetryOptions {
+  now?: string | Date
+  backoffBaseMs?: number
 }
 
 type SqlValue = string | number | bigint | null | Buffer
@@ -151,6 +166,9 @@ interface MemoryJobRow {
   status: string
   payload_json: string
   error: string | null
+  attempt_count: number
+  max_attempts: number
+  next_run_at: string
   created_at: string
   updated_at: string
 }
@@ -175,6 +193,20 @@ function requireNonNegativeInteger(value: number, name: string): void {
   requireInteger(value, name)
   if (value < 0) {
     throw new ValidationError(`${name} must be >= 0`)
+  }
+}
+
+function requirePositiveInteger(value: number, name: string): void {
+  requireInteger(value, name)
+  if (value <= 0) {
+    throw new ValidationError(`${name} must be > 0`)
+  }
+}
+
+function requireTimestamp(value: string, name: string): void {
+  requireString(value, name)
+  if (Number.isNaN(Date.parse(value))) {
+    throw new ValidationError(`${name} must be a valid timestamp`)
   }
 }
 
@@ -215,6 +247,28 @@ function runStatement(statement: StatementSync, ...values: SqlValue[]): void {
     }
     throw err
   }
+}
+
+function normalizeTimestamp(value: string | Date | undefined): string {
+  if (value === undefined) return new Date().toISOString()
+  const iso = value instanceof Date ? value.toISOString() : value
+  requireTimestamp(iso, 'timestamp')
+  return iso
+}
+
+function addMilliseconds(timestamp: string, milliseconds: number): string {
+  return new Date(Date.parse(timestamp) + milliseconds).toISOString()
+}
+
+export function calculateMemoryJobRetryDelayMs(
+  attemptCount: number,
+  backoffBaseMs = MEMORY_JOB_DEFAULT_RETRY_BACKOFF_MS,
+): number {
+  requireNonNegativeInteger(attemptCount, 'attemptCount')
+  if (!Number.isFinite(backoffBaseMs) || backoffBaseMs < 0) {
+    throw new ValidationError('backoffBaseMs must be >= 0')
+  }
+  return Math.floor(backoffBaseMs) * 2 ** Math.max(0, attemptCount - 1)
 }
 
 export function encodeEmbeddingVector(vector: Float32Array | number[]): Buffer {
@@ -309,6 +363,9 @@ export function mapMemoryJobRow(row: MemoryJobRow): MemoryJob {
     status: requireJobStatus(row.status),
     payload,
     error: row.error,
+    attemptCount: row.attempt_count,
+    maxAttempts: row.max_attempts,
+    nextRunAt: row.next_run_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -593,6 +650,12 @@ export function createMemoryJob(db: DatabaseSync, input: CreateMemoryJobInput): 
   const kind = requireJobKind(input.kind)
   const status = input.status ?? 'pending'
   requireJobStatus(status)
+  const attemptCount = input.attemptCount ?? 0
+  const maxAttempts = input.maxAttempts ?? MEMORY_JOB_DEFAULT_MAX_ATTEMPTS
+  const nextRunAt = input.nextRunAt ?? normalizeTimestamp(undefined)
+  requireNonNegativeInteger(attemptCount, 'attemptCount')
+  requirePositiveInteger(maxAttempts, 'maxAttempts')
+  requireTimestamp(nextRunAt, 'nextRunAt')
   runStatement(
     db.prepare(`
       INSERT INTO memory_jobs (
@@ -601,8 +664,11 @@ export function createMemoryJob(db: DatabaseSync, input: CreateMemoryJobInput): 
         kind,
         status,
         payload_json,
-        error
-      ) VALUES (?, ?, ?, ?, ?, ?)
+        error,
+        attempt_count,
+        max_attempts,
+        next_run_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     input.id,
     input.chatId,
@@ -610,6 +676,9 @@ export function createMemoryJob(db: DatabaseSync, input: CreateMemoryJobInput): 
     status,
     stringifyPayload(input.payload),
     input.error ?? null,
+    attemptCount,
+    maxAttempts,
+    nextRunAt,
   )
   return getMemoryJob(db, input.id) as MemoryJob
 }
@@ -622,6 +691,8 @@ export function enqueueMemoryJob(db: DatabaseSync, input: EnqueueMemoryJobInput)
     payload: input.payload,
     status: 'pending',
     error: null,
+    maxAttempts: input.maxAttempts,
+    nextRunAt: input.nextRunAt,
   })
 }
 
@@ -678,10 +749,11 @@ export function listMemoryJobs(
 
 export function claimNextMemoryJob(
   db: DatabaseSync,
-  filter: { chatId?: string; kind?: MemoryJobKind } = {},
+  filter: { chatId?: string; kind?: MemoryJobKind; now?: string | Date } = {},
 ): MemoryJob | null {
-  const conditions = ['status = ?']
-  const values: SqlValue[] = ['pending']
+  const now = normalizeTimestamp(filter.now)
+  const conditions = ['status = ?', 'next_run_at <= ?']
+  const values: SqlValue[] = ['pending', now]
   if (filter.chatId !== undefined) {
     requireString(filter.chatId, 'chat id')
     conditions.push('chat_id = ?')
@@ -696,8 +768,9 @@ export function claimNextMemoryJob(
       `
         UPDATE memory_jobs
         SET status = 'running',
+            attempt_count = attempt_count + 1,
             error = NULL,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            updated_at = ?
         WHERE id = (
           SELECT id
           FROM memory_jobs
@@ -708,7 +781,7 @@ export function claimNextMemoryJob(
         RETURNING *
       `,
     )
-    .get(...values) as MemoryJobRow | undefined
+    .get(now, ...values) as MemoryJobRow | undefined
   return row ? mapMemoryJobRow(row) : null
 }
 
@@ -752,14 +825,65 @@ export function failMemoryJob(db: DatabaseSync, id: string, error: string): Memo
   return transitionMemoryJobStatus(db, id, ['running'], 'failed', { error })
 }
 
+export function retryOrFailMemoryJob(
+  db: DatabaseSync,
+  id: string,
+  error: string,
+  options: MemoryJobRetryOptions = {},
+): MemoryJob | null {
+  requireString(error, 'job error')
+  const job = getMemoryJob(db, id)
+  if (!job || job.status !== 'running') return null
+
+  const now = normalizeTimestamp(options.now)
+  if (job.attemptCount >= job.maxAttempts) {
+    return transitionMemoryJobStatus(db, id, ['running'], 'failed', { error })
+  }
+
+  const nextRunAt = addMilliseconds(
+    now,
+    calculateMemoryJobRetryDelayMs(job.attemptCount, options.backoffBaseMs),
+  )
+  return updateMemoryJob(db, id, {
+    status: 'pending',
+    error,
+    nextRunAt,
+  })
+}
+
 export function cancelMemoryJob(db: DatabaseSync, id: string): MemoryJob | null {
   return transitionMemoryJobStatus(db, id, ['pending', 'running'], 'cancelled', { error: null })
+}
+
+export function recoverRunningMemoryJobs(
+  db: DatabaseSync,
+  options: MemoryJobRetryOptions = {},
+): MemoryJob[] {
+  const runningJobs = listMemoryJobs(db, { status: 'running' })
+  const recovered: MemoryJob[] = []
+  for (const job of runningJobs) {
+    const result = retryOrFailMemoryJob(
+      db,
+      job.id,
+      'memory job was abandoned while running',
+      options,
+    )
+    if (result) recovered.push(result)
+  }
+  return recovered
 }
 
 export function updateMemoryJob(
   db: DatabaseSync,
   id: string,
-  patch: { status?: MemoryJobStatus; payload?: unknown; error?: string | null },
+  patch: {
+    status?: MemoryJobStatus
+    payload?: unknown
+    error?: string | null
+    attemptCount?: number
+    maxAttempts?: number
+    nextRunAt?: string
+  },
 ): MemoryJob | null {
   requireString(id, 'job id')
   const updates: string[] = []
@@ -775,6 +899,21 @@ export function updateMemoryJob(
   if (Object.hasOwn(patch, 'error')) {
     updates.push('error = ?')
     values.push(patch.error ?? null)
+  }
+  if (patch.attemptCount !== undefined) {
+    requireNonNegativeInteger(patch.attemptCount, 'attemptCount')
+    updates.push('attempt_count = ?')
+    values.push(patch.attemptCount)
+  }
+  if (patch.maxAttempts !== undefined) {
+    requirePositiveInteger(patch.maxAttempts, 'maxAttempts')
+    updates.push('max_attempts = ?')
+    values.push(patch.maxAttempts)
+  }
+  if (patch.nextRunAt !== undefined) {
+    requireTimestamp(patch.nextRunAt, 'nextRunAt')
+    updates.push('next_run_at = ?')
+    values.push(patch.nextRunAt)
   }
   if (updates.length === 0) {
     return getMemoryJob(db, id)
