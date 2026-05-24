@@ -11,6 +11,7 @@ import {
   getMemoryJob,
   listMemoryJobs,
 } from '../src/memoryRepository.js'
+import type { MemoryEvent } from '../src/memoryEvents.js'
 import { MemoryWorker, type MemoryJobHandler } from '../src/memoryWorker.js'
 
 const dataDirs: string[] = []
@@ -21,7 +22,11 @@ function makeDataDir(): string {
   return dataDir
 }
 
-function deferred(): { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void } {
+function deferred(): {
+  promise: Promise<void>
+  resolve: () => void
+  reject: (error: Error) => void
+} {
   let resolve!: () => void
   let reject!: (error: Error) => void
   const promise = new Promise<void>((res, rej) => {
@@ -104,6 +109,73 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
+  it('emits memory.job events for claimed and completed jobs', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'job-events',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: { chunkId: 'chunk-1' },
+      })
+      const events: MemoryEvent[] = []
+      const worker = new MemoryWorker({
+        db,
+        onEvent: (event) => events.push(event),
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(events).toEqual([
+        {
+          type: 'memory.job',
+          chatId: 'chat-1',
+          jobId: 'job-events',
+          kind: 'summarize',
+          status: 'running',
+          attemptCount: 1,
+          maxAttempts: 3,
+          nextRunAt: expect.any(String),
+          error: null,
+          sideEffect: {
+            kind: 'hypav3_progress',
+            payload: {
+              open: true,
+              miniMsg: '',
+              msg: '[Hypa V3] Summarizing...',
+              subMsg: '',
+              status: 'running',
+            },
+          },
+        },
+        {
+          type: 'memory.job',
+          chatId: 'chat-1',
+          jobId: 'job-events',
+          kind: 'summarize',
+          status: 'completed',
+          attemptCount: 1,
+          maxAttempts: 3,
+          nextRunAt: expect.any(String),
+          error: null,
+          sideEffect: {
+            kind: 'hypav3_progress',
+            payload: {
+              open: false,
+              miniMsg: '',
+              msg: '',
+              subMsg: '',
+              status: 'completed',
+            },
+          },
+        },
+      ])
+      expect(() => JSON.stringify(events)).not.toThrow()
+    } finally {
+      db.close()
+    }
+  })
+
   it('claims only one job at a time', async () => {
     const db = openDatabase(makeDataDir())
     try {
@@ -167,6 +239,53 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
+  it('emits memory.job events for terminal handler failure', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'job-fail-events',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        payload: {},
+        maxAttempts: 1,
+      })
+      const events: MemoryEvent[] = []
+      const worker = new MemoryWorker({
+        db,
+        onEvent: (event) => events.push(event),
+        handlers: {
+          chunk: () => {
+            throw new Error('chunk stub exploded')
+          },
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(events.map((event) => event.status)).toEqual(['running', 'failed'])
+      expect(events.at(-1)).toMatchObject({
+        type: 'memory.job',
+        chatId: 'chat-1',
+        jobId: 'job-fail-events',
+        kind: 'chunk',
+        status: 'failed',
+        error: 'chunk stub exploded',
+        attemptCount: 1,
+        maxAttempts: 1,
+        sideEffect: {
+          kind: 'hypav3_progress',
+          payload: {
+            open: false,
+            msg: '',
+            status: 'failed',
+          },
+        },
+      })
+    } finally {
+      db.close()
+    }
+  })
+
   it('retries handler failures with backoff before max-attempt failure', async () => {
     const db = openDatabase(makeDataDir())
     try {
@@ -223,6 +342,59 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
+  it('emits memory.job events for retry backoff transitions', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'job-retry-events',
+        chatId: 'chat-1',
+        kind: 'embed',
+        payload: {},
+        maxAttempts: 2,
+        nextRunAt: '2026-05-24T00:00:00.000Z',
+      })
+      const events: MemoryEvent[] = []
+      const worker = new MemoryWorker({
+        db,
+        retry: {
+          now: '2026-05-24T00:00:00.000Z',
+          backoffBaseMs: 1_000,
+        },
+        onEvent: (event) => events.push(event),
+        handlers: {
+          embed: () => {
+            throw new Error('embedding stub exploded')
+          },
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(events.map((event) => event.status)).toEqual(['running', 'pending'])
+      expect(events.at(-1)).toMatchObject({
+        type: 'memory.job',
+        chatId: 'chat-1',
+        jobId: 'job-retry-events',
+        kind: 'embed',
+        status: 'pending',
+        error: 'embedding stub exploded',
+        attemptCount: 1,
+        maxAttempts: 2,
+        nextRunAt: '2026-05-24T00:00:01.000Z',
+        sideEffect: {
+          kind: 'hypav3_progress',
+          payload: {
+            open: true,
+            msg: '[Hypa V3] Waiting to embed...',
+            status: 'pending',
+          },
+        },
+      })
+    } finally {
+      db.close()
+    }
+  })
+
   it('leaves a running job cancelled when the handler later settles', async () => {
     const db = openDatabase(makeDataDir())
     try {
@@ -243,6 +415,40 @@ describe('memory worker lifecycle and dispatch', () => {
       gate.resolve()
       expect(await tick).toBe(true)
       expect(getMemoryJob(db, 'job-cancel')).toMatchObject({ status: 'cancelled' })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('does not emit completed when a running job is cancelled before the handler settles', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'job-cancel-events',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        payload: {},
+      })
+      const gate = deferred()
+      const events: MemoryEvent[] = []
+      const worker = new MemoryWorker({
+        db,
+        onEvent: (event) => events.push(event),
+        handlers: {
+          chunk: async () => {
+            await gate.promise
+          },
+        },
+      })
+
+      const tick = worker.tick()
+      await Promise.resolve()
+      expect(cancelMemoryJob(db, 'job-cancel-events')).toMatchObject({ status: 'cancelled' })
+      gate.resolve()
+      expect(await tick).toBe(true)
+
+      expect(events.map((event) => event.status)).toEqual(['running'])
+      expect(getMemoryJob(db, 'job-cancel-events')).toMatchObject({ status: 'cancelled' })
     } finally {
       db.close()
     }
@@ -274,6 +480,75 @@ describe('memory worker lifecycle and dispatch', () => {
         status: 'pending',
         error: 'memory job was abandoned while running',
         nextRunAt: '2026-05-24T00:00:01.000Z',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('emits memory.job events for abandoned running job recovery', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryJob(db, {
+        id: 'job-recovered',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+      })
+      createMemoryJob(db, {
+        id: 'job-recovered-failed',
+        chatId: 'chat-2',
+        kind: 'embed',
+        payload: {},
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 1,
+      })
+      const events: MemoryEvent[] = []
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 10_000,
+        onEvent: (event) => events.push(event),
+        retry: {
+          now: '2026-05-24T00:00:00.000Z',
+          backoffBaseMs: 1_000,
+        },
+      })
+
+      worker.start()
+      await worker.stop()
+
+      expect(events.map((event) => [event.jobId, event.status])).toEqual([
+        ['job-recovered', 'pending'],
+        ['job-recovered-failed', 'failed'],
+      ])
+      expect(events[0]).toMatchObject({
+        type: 'memory.job',
+        chatId: 'chat-1',
+        jobId: 'job-recovered',
+        kind: 'summarize',
+        status: 'pending',
+        error: 'memory job was abandoned while running',
+        nextRunAt: '2026-05-24T00:00:01.000Z',
+        sideEffect: {
+          kind: 'hypav3_progress',
+          payload: {
+            open: true,
+            msg: '[Hypa V3] Waiting to summarize...',
+            status: 'pending',
+          },
+        },
+      })
+      expect(events[1]).toMatchObject({
+        type: 'memory.job',
+        chatId: 'chat-2',
+        jobId: 'job-recovered-failed',
+        kind: 'embed',
+        status: 'failed',
+        error: 'memory job was abandoned while running',
       })
     } finally {
       db.close()

@@ -9,8 +9,7 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-2d - Memory progress event
-contract**.
+Status: in progress. Next slice: **8-2e - Memory job routes**.
 
 ## Preconditions
 
@@ -150,7 +149,7 @@ the current schema and import paths directly.
     smallest server event surface for memory progress: `memory.job`
     events for queue state and Phase-7-compatible `hypav3_progress`
     side effects where chat generation needs them. Do not wire browser
-    UI listeners here; that remains 8-7.
+    UI listeners here; that remains 8-7. Closed on 2026-05-24.
   - **8-2e — Memory job routes.** Wire the auth-gated backend job API:
     `POST /api/v1/memory/jobs`, `GET /api/v1/memory/jobs`, and
     `DELETE /api/v1/memory/jobs/:id`. Route tests cover enqueue, list,

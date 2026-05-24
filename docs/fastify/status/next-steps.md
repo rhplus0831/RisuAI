@@ -11,38 +11,40 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-2c landed retry, backoff, cancellation, and boot recovery for the
-memory queue. `memory_jobs` now tracks `attempt_count`, `max_attempts`,
-and `next_run_at`; claiming skips jobs whose retry time has not arrived
-and increments attempts when a job starts. Worker handler failures retry
-with exponential backoff until max attempts, then persist `failed`.
-Pending and running jobs can be cancelled; guarded completion/failure
-transitions leave cancelled running jobs cancelled when their handler
-settles. Worker startup recovers abandoned `running` jobs from a prior
-process. Handlers are still stubs and do not mutate memory rows.
+8-2d landed the memory progress event contract. `memoryEvents.ts`
+defines the reusable `memory.job` event shape plus the
+Phase-7-compatible `hypav3_progress` side-effect payload. `MemoryWorker`
+now accepts `onEvent` and emits deterministic job events for claim,
+completion, retry, terminal failure, and boot recovery transitions.
+Cancelled running jobs do not emit a misleading completion when their
+handler later settles. Enqueue/cancel route emissions remain for 8-2e,
+where those transitions will be introduced at the route boundary.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-2d - Memory progress event contract**.
+Continue Phase 8 with **8-2e - Memory job routes**.
 
 Expected scope:
 
-- Define the smallest server event surface for memory progress.
-- Emit `memory.job` events for queue state transitions in a shape that
-  can support later routes and browser listeners.
-- Decide how Phase-7-compatible `hypav3_progress` side effects should be
-  represented while keeping real browser UI wiring out of this slice.
-- Keep the event contract deterministic and covered by focused tests.
+- Wire the auth-gated backend job API:
+  `POST /api/v1/memory/jobs`, `GET /api/v1/memory/jobs`, and
+  `DELETE /api/v1/memory/jobs/:id`.
+- Reuse the 8-2d `memory.job` event contract for enqueue and cancel
+  transitions where the route owns those state changes.
+- Route tests should cover enqueue, list, cancel, validation failures,
+  and unauthorized access.
+- Keep responses deterministic and scoped to the current repository job
+  shape.
 
-Out of scope for 8-2d:
+Out of scope for 8-2e:
 
-- Memory job routes, provider calls, real memory mutation handlers, and
-  browser UI listeners.
+- Provider calls, real memory mutation handlers, chunk/summary read
+  routes, browser UI listeners, and browser list/cancel controls.
 
-## Queue After 8-2d
+## Queue After 8-2e
 
-1. 8-2e - Memory job routes.
-2. 8-3a - Hypa V3 settings + planner contract.
+1. 8-3a - Hypa V3 settings + planner contract.
+2. 8-3b - Orphan cleanup.
 
 ## Parallel Or Deferred
 
@@ -65,14 +67,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-2c: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 926 tests, and
+Last recorded full baselines after 8-2d: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 931 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-2c verification:
+Focused 8-2d verification:
 
 ```bash
+pnpm exec vitest run server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/memoryRepository.test.ts --config server/fastify/vitest.config.ts
 pnpm exec vitest run server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/db.test.ts --config server/fastify/vitest.config.ts
 ```
 
@@ -93,6 +96,8 @@ pnpm exec vitest run server/fastify/__tests__/memoryWorker.test.ts server/fastif
   [`../phases-completed/phase-8-memory-8-2b.md`](../phases-completed/phase-8-memory-8-2b.md)
 - 8-2c closeout:
   [`../phases-completed/phase-8-memory-8-2c.md`](../phases-completed/phase-8-memory-8-2c.md)
+- 8-2d closeout:
+  [`../phases-completed/phase-8-memory-8-2d.md`](../phases-completed/phase-8-memory-8-2d.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

@@ -8,6 +8,7 @@ import {
   type MemoryJobKind,
   type MemoryJobRetryOptions,
 } from './memoryRepository.js'
+import { buildMemoryJobEvent, type MemoryEventSink } from './memoryEvents.js'
 
 export const MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS = 1_000
 
@@ -21,6 +22,7 @@ export interface MemoryWorkerOptions {
   db: DatabaseSync
   pollIntervalMs?: number
   handlers?: Partial<MemoryJobHandlers>
+  onEvent?: MemoryEventSink
   onError?: (error: unknown) => void
   retry?: MemoryJobRetryOptions
 }
@@ -29,6 +31,7 @@ export class MemoryWorker {
   private readonly db: DatabaseSync
   private readonly pollIntervalMs: number
   private readonly handlers: MemoryJobHandlers
+  private readonly onEvent: MemoryEventSink | null
   private readonly onError: (error: unknown) => void
   private readonly retry: MemoryJobRetryOptions
   private timer: NodeJS.Timeout | null = null
@@ -44,6 +47,7 @@ export class MemoryWorker {
       summarize: noopMemoryJobHandler,
       ...opts.handlers,
     }
+    this.onEvent = opts.onEvent ?? null
     this.onError = opts.onError ?? defaultMemoryWorkerErrorHandler
     this.retry = opts.retry ?? {}
   }
@@ -58,7 +62,9 @@ export class MemoryWorker {
 
   start(): void {
     if (this.active) return
-    recoverRunningMemoryJobs(this.db, this.retry)
+    for (const job of recoverRunningMemoryJobs(this.db, this.retry)) {
+      this.emitJob(job)
+    }
     this.active = true
     this.schedule(0)
   }
@@ -108,15 +114,31 @@ export class MemoryWorker {
         ? claimNextMemoryJob(this.db)
         : claimNextMemoryJob(this.db, { now: this.retry.now })
     if (!job) return false
+    this.emitJob(job)
 
     try {
       await this.handlers[job.kind](job)
-      completeMemoryJob(this.db, job.id)
+      const completed = completeMemoryJob(this.db, job.id)
+      if (completed) {
+        this.emitJob(completed)
+      }
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error)
-      retryOrFailMemoryJob(this.db, job.id, message || 'memory job handler failed', this.retry)
+      const failedOrRetried = retryOrFailMemoryJob(
+        this.db,
+        job.id,
+        message || 'memory job handler failed',
+        this.retry,
+      )
+      if (failedOrRetried) {
+        this.emitJob(failedOrRetried)
+      }
     }
     return true
+  }
+
+  private emitJob(job: MemoryJob): void {
+    this.onEvent?.(buildMemoryJobEvent(job, { includeHypaV3Progress: true }))
   }
 }
 
