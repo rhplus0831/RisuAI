@@ -29,6 +29,14 @@ import {
   runMistralStream,
 } from '../generation/mistral.js'
 import { coerceAdditionalParams } from '../generation/additionalParams.js'
+import type {
+  NanoGPTOptions,
+  OpenAICompatibleVariant,
+  OpenAICompatibleProvider,
+  OpenAIOptions,
+  OpenRouterOptions,
+} from '../generation/openaiCompatible.js'
+import { resolveOpenAICompatibleVariant } from '../generation/openaiCompatible.js'
 import {
   resolveOpenAIRequest,
   runOpenAI,
@@ -69,10 +77,6 @@ const SUPPORTED_PROVIDERS = new Set([
   'horde',
 ])
 
-const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
-const NANOGPT_SUBSCRIPTION_BASE_URL = 'https://nano-gpt.com/api/subscription/v1'
-const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
-
 interface ChatMessage {
   role: string
   content: unknown
@@ -89,44 +93,6 @@ interface CompletionRequestBody {
 interface EchoOptions {
   message?: unknown
   delayMs?: unknown
-}
-
-interface OpenAIOptions {
-  apiKey?: unknown
-  baseUrl?: unknown
-  maxTokens?: unknown
-  temperature?: unknown
-  /**
-   * Pre-parsed `[key, value][]` pairs from the SPA's xcustom `params` /
-   * reverse_proxy `additionalParams` DSL. Applied after the dispatcher
-   * builds the body + headers.
-   */
-  additionalParams?: unknown
-  /**
-   * Mirrors `db.reverseProxyOobaMode` — hoist every system message into a
-   * single trailing system row before sending. Only used by reverse_proxy.
-   */
-  oobaSystemHoist?: unknown
-  /**
-   * Headers to merge into the upstream request. Used by reverse_proxy to
-   * inject `X-Proxy-Risu: RisuAI` when the user prefixed their URL with
-   * `risu::`.
-   */
-  extraHeaders?: Record<string, string>
-}
-
-interface NanoGPTOptions {
-  apiKey?: unknown
-  providerHint?: unknown
-  useSubscription?: unknown
-  maxTokens?: unknown
-  temperature?: unknown
-}
-
-interface OpenRouterOptions {
-  apiKey?: unknown
-  maxTokens?: unknown
-  temperature?: unknown
 }
 
 interface AnthropicOptions {
@@ -277,16 +243,6 @@ interface HordeOptions {
   timeoutMs?: unknown
 }
 
-interface OpenAICompatibleVariant {
-  apiKey: string
-  baseUrl: string
-  maxTokens?: unknown
-  temperature?: unknown
-  extraHeaders?: Record<string, string>
-  additionalParams?: Array<[string, string]>
-  oobaSystemHoist?: boolean
-}
-
 interface VertexAuthCoerced {
   projectId: string
   region: string
@@ -334,69 +290,6 @@ function coerceVertexAuth(
     return { ok: false, error: 'options.gemini.vertex.privateKey is required' }
   }
   return { ok: true, value: { projectId, region, clientEmail, privateKey } }
-}
-
-function resolveOpenAIVariant(
-  o: OpenAIOptions,
-): { ok: true; variant: OpenAICompatibleVariant } | { ok: false; error: string } {
-  if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) {
-    return { ok: false, error: 'options.openai.apiKey is required' }
-  }
-  const baseUrl =
-    typeof o.baseUrl === 'string' && o.baseUrl.length > 0
-      ? o.baseUrl
-      : 'https://api.openai.com/v1'
-  const variant: OpenAICompatibleVariant = {
-    apiKey: o.apiKey,
-    baseUrl,
-    maxTokens: o.maxTokens,
-    temperature: o.temperature,
-  }
-  if (o.extraHeaders !== undefined) {
-    variant.extraHeaders = o.extraHeaders
-  }
-  if (o.additionalParams !== undefined) {
-    const coerced = coerceAdditionalParams(o.additionalParams)
-    if (coerced === null) {
-      return {
-        ok: false,
-        error: 'options.openai.additionalParams must be an array of [string, string] pairs',
-      }
-    }
-    if (coerced.length > 0) variant.additionalParams = coerced
-  }
-  if (o.oobaSystemHoist === true) variant.oobaSystemHoist = true
-  return { ok: true, variant }
-}
-
-function resolveNanoGPTVariant(o: NanoGPTOptions): OpenAICompatibleVariant | null {
-  if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) return null
-  const baseUrl = o.useSubscription === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL
-  const extraHeaders: Record<string, string> = {}
-  if (typeof o.providerHint === 'string' && o.providerHint.length > 0) {
-    extraHeaders['X-Provider'] = o.providerHint
-  }
-  return {
-    apiKey: o.apiKey,
-    baseUrl,
-    maxTokens: o.maxTokens,
-    temperature: o.temperature,
-    extraHeaders,
-  }
-}
-
-function resolveOpenRouterVariant(o: OpenRouterOptions): OpenAICompatibleVariant | null {
-  if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) return null
-  return {
-    apiKey: o.apiKey,
-    baseUrl: OPENROUTER_BASE_URL,
-    maxTokens: o.maxTokens,
-    temperature: o.temperature,
-    extraHeaders: {
-      'X-Title': 'RisuAI',
-      'HTTP-Referer': 'https://risuai.xyz',
-    },
-  }
 }
 
 function validateMessages(messages: unknown): ChatMessage[] | null {
@@ -1438,28 +1331,18 @@ export function registerGenerationRoutes(
       return
     }
 
-    let variant: OpenAICompatibleVariant | null = null
-    let variantError = ''
-    if (provider === 'openai') {
-      const r = resolveOpenAIVariant(options.openai ?? {})
-      if (r.ok) variant = r.variant
-      else variantError = r.error
-    } else if (provider === 'nanogpt') {
-      variant = resolveNanoGPTVariant(options.nanogpt ?? {})
-      variantError = 'options.nanogpt.apiKey is required'
-    } else if (provider === 'openrouter') {
-      variant = resolveOpenRouterVariant(options.openrouter ?? {})
-      variantError = 'options.openrouter.apiKey is required'
-    }
-
-    if (variant === null) {
-      return badRequest(reply, variantError)
+    const variantResult = resolveOpenAICompatibleVariant(
+      provider as OpenAICompatibleProvider,
+      options,
+    )
+    if (!variantResult.ok) {
+      return badRequest(reply, variantResult.error)
     }
 
     if (body.stream === true) {
-      await handleOpenAICompatibleStreaming(req, reply, body.model, messages, variant)
+      await handleOpenAICompatibleStreaming(req, reply, body.model, messages, variantResult.variant)
       return
     }
-    await handleOpenAICompatibleBuffered(req, reply, body.model, messages, variant)
+    await handleOpenAICompatibleBuffered(req, reply, body.model, messages, variantResult.variant)
   })
 }

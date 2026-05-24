@@ -11,42 +11,60 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-4a added the pure summary prompt builder in
-`server/fastify/src/memorySummaryPrompt.ts`. Planned chunks can now be
-turned into provider-neutral `OpenAIChat[]` rows with browser-compatible
-default summarize / re-summarize prompts, `{{slot}}` replacement, ChatML
-parsing fallback, provider options, and `<Thoughts>` / `<think>` output
-scrubbers. Planned chunk text now shares summary sanitization for inlay
-tokens, line endings, and trimming. This still does not call providers,
-wire the worker, write summaries, embed chunks, or touch browser UI.
+8-4b added the provider-backed summary adapter in
+`server/fastify/src/memorySummaryAdapter.ts`. Planned summary prompt
+messages can now be sent through non-streaming OpenAI-compatible API
+providers via `summarizeOnce(messages, opts)`, which wraps `runOpenAI`
+directly and normalizes responses into `{ text, tokens } | { error }`.
+OpenAI, NanoGPT, and OpenRouter variant resolution is shared with the
+`/completion` route through `server/fastify/src/generation/openaiCompatible.ts`.
+Aborted responses normalize to errors, and provider output is scrubbed
+with the existing `<Thoughts>` / `<think>` summary cleanup helpers.
+This still does not wire the worker, write summaries, embed chunks,
+rate-limit batches, or touch browser UI.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-4b - Provider-backed summary adapter**.
+Continue Phase 8 with **8-4c - Summarize job handler**.
 
 Expected scope:
 
-- Add a server-side non-streaming summary adapter for API-backed
-  summarization.
-- Extract a `summarizeOnce(messages, opts)` helper that wraps
-  `runOpenAI` directly.
-- Normalize `runOpenAI` responses into `{ text, tokens } | { error }`.
-- Treat aborted responses as errors.
-- Resolve the provider variant the same way the generation route does.
+- Wire the `summarize` memory job handler against the planned chunks
+  created by 8-3d.
+- Load the chunk payload and chunk row, then build the summary prompt
+  with `buildHypaV3SummaryPrompt`.
+- Call `summarizeOnce(messages, opts)` for the supported API-backed
+  summary model path.
+- Persist successful output to `memory_summaries`.
+- Mark chunks summarized and complete jobs through the 8-2 queue
+  primitives.
+- Fail jobs with useful errors for missing chunks, missing chat data,
+  prompt build errors, provider failures, and invalid summary writes.
 
-Out of scope for 8-4b:
+Out of scope for 8-4c:
 
-- Calling or refactoring `handleOpenAICompatibleBuffered`; it is
-  route-handler-shaped and writes to the reply.
-- Porting SPA `requestChatData` provider-routing logic.
+- Embedding jobs or vector persistence.
+- Similarity selection and prompt assembly reads from memory summaries.
+- Summary rate limiting and ordered batch write behavior; that remains
+  8-4d.
+- Browser progress UI, browser listeners, and browser list/cancel
+  controls.
 - Local MLC / ONNX / WebLLM summary runtimes.
-- Worker wiring, summary persistence, embedding, rate limiting, memory
-  prompt selection, browser listeners, and browser list/cancel controls.
 
-## Queue After 8-4b
+Implementation notes:
 
-1. 8-4c - Summarize job handler.
-2. 8-4d - Summary rate limiting and ordered writes.
+- `summarizeOnce` currently returns `tokens: 0` because `runOpenAI` does
+  not expose upstream usage data yet.
+- Keep 8-4c idempotent: if a summary for the target chunk/model already
+  exists, the handler should avoid duplicate writes and still converge
+  the chunk/job state.
+- Preserve the no-compatibility-migrations policy: update current
+  Fastify shapes directly if the summarize payload needs tightening.
+
+## Queue After 8-4c
+
+1. 8-4d - Summary rate limiting and ordered writes.
+2. 8-5a - Embedding provider contract.
 
 ## Parallel Or Deferred
 
@@ -69,16 +87,15 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-4a: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 962 tests, and
+Last recorded full baselines after 8-4b: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 969 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-4a verification:
+Focused 8-4b verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/memorySummaryPrompt.test.ts --config server/fastify/vitest.config.ts
-pnpm exec vitest run server/fastify/__tests__/memoryChunkPlanner.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/memorySummaryAdapter.test.ts server/fastify/__tests__/memorySummaryPrompt.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 pnpm test
 pnpm api:test
@@ -116,6 +133,8 @@ pnpm build
   [`../phases-completed/phase-8-memory-8-3d.md`](../phases-completed/phase-8-memory-8-3d.md)
 - 8-4a closeout:
   [`../phases-completed/phase-8-memory-8-4a.md`](../phases-completed/phase-8-memory-8-4a.md)
+- 8-4b closeout:
+  [`../phases-completed/phase-8-memory-8-4b.md`](../phases-completed/phase-8-memory-8-4b.md)
 - Phase 7 closeout:
   [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md)
 - Phase 7 final summary:

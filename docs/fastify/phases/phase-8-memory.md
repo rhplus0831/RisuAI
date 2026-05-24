@@ -9,7 +9,7 @@ the browser and into the server as an async job queue. Phase 7's
 prompt assembly reads summaries from server tables instead of from
 browser localForage.
 
-Status: in progress. Next slice: **8-4b - Provider-backed summary adapter**.
+Status: in progress. Next slice: **8-4c - Summarize job handler**.
 
 ## Preconditions
 
@@ -229,6 +229,7 @@ the current schema and import paths directly.
     ONNX / WebLLM summary runtimes stay out of scope** (matches the
     "no local runtimes server-side" boundary). Do not wire the memory
     worker or write summaries yet.
+    Closed on 2026-05-24.
   - **8-4c — Summarize job handler.** Wire the `summarize` memory job
     handler against the planned chunks from 8-3d: load the chunk
     payload, build the prompt, call the summary adapter, persist
