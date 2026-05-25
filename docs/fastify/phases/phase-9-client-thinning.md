@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5d-i - Settings residual command sweep**. Next pickup:
-**9-5d-ii - 9-2 resource UI tails**.
+**9-5d-ii - 9-2 resource UI tails**. Next pickup:
+**9-5d-iii - 9-3 character/chat UI tails**.
 
 ## Goal
 
@@ -232,9 +232,11 @@ surfaces.
       through existing settings command watchers and kept resource-owned
       fields on their dedicated command bridges. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-5d-i.md`](../phases-completed/phase-9-client-thinning-9-5d-i.md).
-    - **9-5d-ii - 9-2 resource UI tails.** Finish residual prompt
+    - **9-5d-ii - 9-2 resource UI tails.** Complete. Audited prompt
       template, persona, translator preset, and loadout UI/helper writes
-      with existing command helpers and rollback behavior.
+      against existing command helpers and rollback behavior, and tightened
+      persona/translator delete selection payloads. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-5d-ii.md`](../phases-completed/phase-9-client-thinning-9-5d-ii.md).
     - **9-5d-iii - 9-3 character/chat UI tails.** Finish residual
       character profile/assets, chat folders, selected chat/page state,
       playground, realm, grid, and legacy import helper writes with

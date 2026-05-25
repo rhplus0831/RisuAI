@@ -1245,7 +1245,7 @@ export async function deletePersonaCommand(
     method: 'DELETE',
     body: {
       baseRevision: input.baseRevision,
-      personaId: input.selectPersonaId,
+      selectPersonaId: input.selectPersonaId,
       mirrorLegacyProfile: input.mirrorLegacyProfile,
       saveCurrent: input.saveCurrent,
     },
@@ -1320,7 +1320,7 @@ export async function deleteTranslatorPresetCommand(
     method: 'DELETE',
     body: {
       baseRevision: input.baseRevision,
-      presetId: input.selectPresetId,
+      selectPresetId: input.selectPresetId,
     },
     signal,
   })

@@ -15,13 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-5d-i settings residual command sweep. Manual
-  settings pages/components now watch remaining scalar/object settings
-  through the existing settings command bridge.
+- Last landed work: 9-5d-ii 9-2 resource UI tails. Prompt/persona/
+  translator/loadout residual writes now stay on existing resource
+  command bridges, with explicit delete selection payload fields.
 - Current gap: 9-5d has been decomposed into smaller residual
   command-replacement sub-slices before enabling the read-only
   `DBState.db` guard.
-- Next default pickup: 9-5d-ii, 9-2 resource UI tails.
+- Next default pickup: 9-5d-iii, 9-3 character/chat UI tails.
 - Last recorded full baselines after the 9-5d first pass: `pnpm check`
   clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
   tests, and `pnpm build` passing with existing CSS `::highlight`,
@@ -52,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-5d-i landed; continue with 9-5d-ii resource tails.            |
+| Client thinning                             | Active; 9-5d-ii landed; continue with 9-5d-iii character/chat tails.    |
 
 ## Maintenance Rules
 

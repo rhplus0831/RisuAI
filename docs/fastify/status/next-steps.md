@@ -37,6 +37,19 @@ existing settings command bridge:
   import/storage paths.
 - Focused regression coverage landed in `src/ts/server/commands.test.ts`.
 
+9-5d-ii then audited the 9-2 resource UI tails:
+
+- Prompt template/item, persona, translator preset, and loadout
+  UI/helper writes remain optimistic local updates followed by existing
+  resource commands and rollback, or are documented deferred composite
+  apply behavior.
+- Persona and translator preset delete commands now use explicit
+  `selectPersonaId` and `selectPresetId` request payload fields instead
+  of overloading the path resource id names.
+- Focused browser-command and Fastify route coverage stayed green in
+  `src/ts/server/commands.test.ts` and
+  `server/fastify/__tests__/commands.test.ts`.
+
 ## Immediate Pickup
 
 9-5d was too broad as a single implementation slice. Keep the parent
@@ -62,23 +75,23 @@ uniform:
   helpers that need classification before the read-only guard can be
   enabled.
 
-Immediate pickup: **9-5d-ii - 9-2 resource UI tails**.
+Immediate pickup: **9-5d-iii - 9-3 character/chat UI tails**.
 
-- Audit residual prompt template/item, persona, translator preset, and
-  loadout UI/helper writes that still mutate `DBState.db` directly in
-  server-backed web mode.
-- Use the existing 9-2 command helpers and rollback bridges; do not add
-  new endpoints unless the command map is genuinely missing a resource
-  operation.
-- Keep settings scalar keys on the settings bridge from 9-5d-i. If a
-  field belongs to prompt/persona/translator/loadout resource state, use
-  the dedicated resource command bridge instead.
-- Keep Tauri/local-only import/export, setup, backup, storage, and asset
-  byte paths untouched unless the helper already has explicit
-  server-backed behavior.
-- Add focused tests around the highest-risk changed resource bridge,
-  usually in `src/ts/server/commands.test.ts` or the nearest UI/helper
-  test that can assert command dispatch and rollback.
+- Audit residual character/chat UI and helper writes that still mutate
+  `DBState.db` directly in server-backed web mode.
+- Focus first on character profile/assets, chat folders, selected
+  chat/page state, playground/realm/grid helpers, and legacy import
+  helpers that already have partial command dispatch.
+- Use existing character, chat, chat-folder, message, generation, and
+  scriptstate command helpers. Do not add new endpoints unless the
+  command map is genuinely missing a 9-3 operation.
+- Keep asset bytes on the Fastify asset API and patch durable references
+  through owning resource commands. Do not expand server-side `.risu`
+  import/export or bundle walking in this slice.
+- Add focused tests around the highest-risk changed 9-3 bridge, usually
+  in `src/ts/server/commands.test.ts`, `src/ts/compatibilityAdapters.test.ts`,
+  or the nearest UI/helper test that can assert command dispatch,
+  rollback, or explicit unsupported behavior.
 
 Out of scope for 9-5d: the read-only `DBState.db` guard, storage and
 provider-key gating, server-side `.risu` import/export, asset byte
@@ -123,39 +136,37 @@ Implementation notes:
 
 ## Later Queue
 
-1. 9-5d-ii - 9-2 resource UI tails: prompt templates, personas,
-   translator presets, and loadouts.
-2. 9-5d-iii - 9-3 character/chat UI tails: character profile/assets,
+1. 9-5d-iii - 9-3 character/chat UI tails: character profile/assets,
    chat folders, selected chat/page state, playground/realm/grid helpers,
    and legacy import helpers.
-3. 9-5d-iv - 9-4 extension UI/API tails: lorebooks, module UI/MCP
+2. 9-5d-iv - 9-4 extension UI/API tails: lorebooks, module UI/MCP
    helpers, plugin settings, plugin database translation, and plugin
    storage.
-4. 9-5d-v - Process/runtime durable-write classification: generation,
+3. 9-5d-v - Process/runtime durable-write classification: generation,
    scriptstate, memory, and MCP helper writes that must become commands,
    explicit unsupported behavior, or documented local/runtime-only state.
-5. 9-5e-i - Projection write gate foundation.
-6. 9-5e-ii - Command bridge guard integration.
-7. 9-5e-iii - Guard audit closeout.
-8. 9-6a - Server-backed persistence gate.
-9. 9-6b - Asset byte gate.
-10. 9-6c - Server backup/restore projection.
-11. 9-6d - Residual local cache classification.
-12. 9-6e - Provider secret masking.
-13. 9-7a - `.risu` fixture corpus and codec harness.
-14. 9-7b - Legacy envelope codec port.
-15. 9-7c - RISUSAVE block codec port.
-16. 9-7d - Decode normalization and validation.
-17. 9-7e - Repository-backed export adapter.
-18. 9-8a - Multipart `.risu` import route.
-19. 9-8b - Repository `.risu` export route.
-20. 9-8c - Asset reference walker.
-21. 9-8d - Bundle export route.
-22. 9-9a - Server-backed browser smoke harness.
-23. 9-9b - Generation and memory fixture closeout.
-24. 9-9c - Server-backed storage-write audit.
-25. 9-9d - Manual Fastify web and Tauri local verification.
-26. 9-9e - Phase 9 docs closeout.
+4. 9-5e-i - Projection write gate foundation.
+5. 9-5e-ii - Command bridge guard integration.
+6. 9-5e-iii - Guard audit closeout.
+7. 9-6a - Server-backed persistence gate.
+8. 9-6b - Asset byte gate.
+9. 9-6c - Server backup/restore projection.
+10. 9-6d - Residual local cache classification.
+11. 9-6e - Provider secret masking.
+12. 9-7a - `.risu` fixture corpus and codec harness.
+13. 9-7b - Legacy envelope codec port.
+14. 9-7c - RISUSAVE block codec port.
+15. 9-7d - Decode normalization and validation.
+16. 9-7e - Repository-backed export adapter.
+17. 9-8a - Multipart `.risu` import route.
+18. 9-8b - Repository `.risu` export route.
+19. 9-8c - Asset reference walker.
+20. 9-8d - Bundle export route.
+21. 9-9a - Server-backed browser smoke harness.
+22. 9-9b - Generation and memory fixture closeout.
+23. 9-9c - Server-backed storage-write audit.
+24. 9-9d - Manual Fastify web and Tauri local verification.
+25. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -200,6 +211,10 @@ Focused 9-5 runs:
   - 9 tests passed; check clean.
 - 9-5d-i: `pnpm exec vitest run src/ts/server/commands.test.ts`; `pnpm check`
   - 35 tests passed; check clean.
+- 9-5d-ii: `pnpm exec vitest run src/ts/server/commands.test.ts`;
+  `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts`;
+  `pnpm check`
+  - 35 tests passed; 65 Fastify command tests passed; check clean.
 - 9-5d sub-slices: run the nearest focused command/bridge tests touched
   by the sub-slice, then `pnpm check` before marking that sub-slice done.
 
@@ -212,7 +227,7 @@ Focused 9-5 runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-5d-i.md`](../phases-completed/phase-9-client-thinning-9-5d-i.md)
+  [`../phases-completed/phase-9-client-thinning-9-5d-ii.md`](../phases-completed/phase-9-client-thinning-9-5d-ii.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

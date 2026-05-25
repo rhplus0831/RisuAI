@@ -830,7 +830,7 @@ describe('server command API adapter', () => {
         method: 'DELETE',
         body: {
           baseRevision: 3,
-          personaId: 'persona-b',
+          selectPersonaId: 'persona-b',
           mirrorLegacyProfile: true,
           saveCurrent: true,
         },
@@ -1009,7 +1009,7 @@ describe('server command API adapter', () => {
         method: 'DELETE',
         body: {
           baseRevision: 3,
-          presetId: 'translator-b',
+          selectPresetId: 'translator-b',
         },
       },
       {

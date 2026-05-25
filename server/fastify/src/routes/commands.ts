@@ -206,6 +206,7 @@ interface PersonaCommandBody {
   persona?: unknown
   patch?: unknown
   personaId?: unknown
+  selectPersonaId?: unknown
   personaIds?: unknown
   mirrorLegacyProfile?: unknown
   saveCurrent?: unknown
@@ -216,6 +217,7 @@ interface TranslatorPresetCommandBody {
   preset?: unknown
   patch?: unknown
   presetId?: unknown
+  selectPresetId?: unknown
   select?: unknown
 }
 
@@ -1573,7 +1575,9 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
       const selectPersonaId =
-        body.personaId === undefined ? undefined : readPersonaId(body.personaId, 'personaId')
+        body.selectPersonaId === undefined
+          ? undefined
+          : readPersonaId(body.selectPersonaId, 'selectPersonaId')
       const mirror = readPersonaOptionalBoolean(
         body.mirrorLegacyProfile,
         'mirrorLegacyProfile',
@@ -1826,7 +1830,9 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as TranslatorPresetCommandBody
       const baseRevision = readBaseRevision(body)
       const selectPresetId =
-        body.presetId === undefined ? undefined : readTranslatorPresetId(body.presetId, 'presetId')
+        body.selectPresetId === undefined
+          ? undefined
+          : readTranslatorPresetId(body.selectPresetId, 'selectPresetId')
       const result = applyJsonCommandMutation<{
         presetId: string
         selectedPresetId: string | null

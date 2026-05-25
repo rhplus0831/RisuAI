@@ -1063,7 +1063,7 @@ describe('Phase 9-2d persona commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: reordered.json().revision,
-        personaId: 'persona-b',
+        selectPersonaId: 'persona-b',
         mirrorLegacyProfile: true,
       },
     })
@@ -1338,7 +1338,7 @@ describe('Phase 9-2e translator preset commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: selected.json().revision,
-        presetId: 'translator-a',
+        selectPresetId: 'translator-a',
       },
     })
     expect(deleted.statusCode).toBe(200)
