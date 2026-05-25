@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed slice:
-**9-5b - Bootstrap projection loader**. Next slice:
-**9-5c - Event subscription and debounced re-bootstrap**.
+**9-5c - Event subscription and debounced re-bootstrap**. Next slice:
+**9-5d - Residual command replacement sweep**.
 
 ## Goal
 
@@ -216,6 +216,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-5b.md`](../phases-completed/phase-9-client-thinning-9-5b.md).
   - **9-5c - Event subscription and debounced re-bootstrap.** Re-fetch
     bootstrap on events; do not patch state surgically.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-5c.md`](../phases-completed/phase-9-client-thinning-9-5c.md).
   - **9-5d - Residual command replacement sweep.** Replace remaining
     server-backed web writes assigned to 9-2 through 9-4.
   - **9-5e - Read-only `DBState.db` guard.** Fail loudly for direct web-mode

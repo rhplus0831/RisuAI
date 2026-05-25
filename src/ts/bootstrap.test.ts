@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const serverBootstrapState = vi.hoisted(() => ({
+  fetch: vi.fn(),
   response: {
     status: 'ok' as const,
     projection: {
@@ -14,6 +15,34 @@ const serverBootstrapState = vi.hoisted(() => ({
       },
     },
   },
+}))
+const serverEventsState = vi.hoisted(() => ({
+  subscriptions: [] as Array<{
+    onCommandEvent: (event: {
+      type: string
+      revision: number
+      resource: string
+      id?: string
+      parentId?: string
+    }) => void
+    onError?: (error: string) => void
+  }>,
+  unsubscribe: vi.fn(),
+  subscribe: vi.fn(
+    async (input: {
+      onCommandEvent: (event: {
+        type: string
+        revision: number
+        resource: string
+        id?: string
+        parentId?: string
+      }) => void
+      onError?: (error: string) => void
+    }) => {
+      serverEventsState.subscriptions.push(input)
+      return { status: 'ok' as const, unsubscribe: serverEventsState.unsubscribe }
+    },
+  ),
 }))
 const forageSpies = vi.hoisted(() => ({
   Init: vi.fn(async () => undefined),
@@ -34,7 +63,11 @@ vi.mock('./platform', async (importActual) => {
 })
 
 vi.mock('./server/bootstrap', () => ({
-  fetchServerBootstrapProjection: vi.fn(async () => serverBootstrapState.response),
+  fetchServerBootstrapProjection: serverBootstrapState.fetch,
+}))
+
+vi.mock('./server/events', () => ({
+  subscribeServerCommandEvents: serverEventsState.subscribe,
 }))
 
 vi.mock('./globalApi.svelte', () => ({
@@ -96,6 +129,7 @@ import { DBState, LoadingStatusState } from './stores.svelte'
 
 beforeEach(() => {
   platformState.isFastifyServer = true
+  serverBootstrapState.fetch.mockImplementation(async () => serverBootstrapState.response)
   serverBootstrapState.response = {
     status: 'ok',
     projection: {
@@ -108,6 +142,10 @@ beforeEach(() => {
       },
     },
   }
+  serverBootstrapState.fetch.mockClear()
+  serverEventsState.subscriptions = []
+  serverEventsState.unsubscribe.mockClear()
+  serverEventsState.subscribe.mockClear()
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
   forageSpies.setItem.mockClear()
@@ -125,5 +163,51 @@ describe('web bootstrap startup source', () => {
     expect(forageSpies.Init).not.toHaveBeenCalled()
     expect(forageSpies.getItem).not.toHaveBeenCalled()
     expect(forageSpies.setItem).not.toHaveBeenCalled()
+    expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('debounces command events into one bootstrap projection refresh', async () => {
+    vi.useFakeTimers()
+    try {
+      await loadWebInitialDatabase()
+      expect(DBState.db.language).toBe('en')
+
+      serverBootstrapState.response = {
+        status: 'ok',
+        projection: {
+          revision: 6,
+          database: {
+            characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }],
+            modules: [],
+            personas: [],
+            language: 'ko',
+          },
+        },
+      }
+
+      const subscription = serverEventsState.subscriptions[0]
+      subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
+      subscription.onCommandEvent({ type: 'chat.updated', revision: 7, resource: 'chat' })
+
+      await vi.advanceTimersByTimeAsync(99)
+      expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
+      expect(DBState.db.language).toBe('en')
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(2)
+      expect(DBState.db.language).toBe('ko')
+      expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [] }])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not subscribe to server events outside Fastify mode', async () => {
+    platformState.isFastifyServer = false
+
+    await loadWebInitialDatabase()
+
+    expect(serverEventsState.subscribe).not.toHaveBeenCalled()
+    expect(forageSpies.Init).toHaveBeenCalledTimes(1)
   })
 })

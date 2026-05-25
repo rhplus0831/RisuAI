@@ -59,8 +59,15 @@ import { registerModelDynamic } from './model/modellist'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { fetchServerBootstrapProjection } from './server/bootstrap'
+import { subscribeServerCommandEvents } from './server/events'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
+const SERVER_PROJECTION_REFRESH_DEBOUNCE_MS = 100
+
+let serverProjectionEventSubscription: { unsubscribe: () => void } | null = null
+let serverProjectionRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let serverProjectionRefreshInFlight = false
+let serverProjectionRefreshPending = false
 
 /**
  * Loads the application data.
@@ -206,6 +213,7 @@ export async function loadWebInitialDatabase() {
       )
     }
     setDatabase(bootstrap.projection.database ?? ({} as Database))
+    await startServerProjectionEvents()
     return
   }
 
@@ -252,6 +260,62 @@ export async function loadWebInitialDatabase() {
   }
   if (getDatabase().didFirstSetup) {
     characterURLImport()
+  }
+}
+
+export function stopServerProjectionEvents() {
+  serverProjectionEventSubscription?.unsubscribe()
+  serverProjectionEventSubscription = null
+  if (serverProjectionRefreshTimer) {
+    clearTimeout(serverProjectionRefreshTimer)
+    serverProjectionRefreshTimer = null
+  }
+  serverProjectionRefreshInFlight = false
+  serverProjectionRefreshPending = false
+}
+
+async function startServerProjectionEvents() {
+  stopServerProjectionEvents()
+  const subscription = await subscribeServerCommandEvents({
+    onCommandEvent: scheduleServerProjectionRefresh,
+    onError: (error) => console.warn(error),
+  })
+  if (subscription.status === 'ok') {
+    serverProjectionEventSubscription = subscription
+  } else if (subscription.status === 'error') {
+    console.warn(`Server event subscription failed: ${subscription.error}`)
+  }
+}
+
+function scheduleServerProjectionRefresh() {
+  if (serverProjectionRefreshTimer) {
+    clearTimeout(serverProjectionRefreshTimer)
+  }
+  serverProjectionRefreshTimer = setTimeout(() => {
+    serverProjectionRefreshTimer = null
+    void refreshServerProjection()
+  }, SERVER_PROJECTION_REFRESH_DEBOUNCE_MS)
+}
+
+async function refreshServerProjection() {
+  if (serverProjectionRefreshInFlight) {
+    serverProjectionRefreshPending = true
+    return
+  }
+
+  serverProjectionRefreshInFlight = true
+  try {
+    do {
+      serverProjectionRefreshPending = false
+      const bootstrap = await fetchServerBootstrapProjection()
+      if (bootstrap.status === 'ok') {
+        setDatabase(bootstrap.projection.database ?? ({} as Database))
+      } else if (bootstrap.status === 'error') {
+        console.warn(`Server projection refresh failed: ${bootstrap.error}`)
+      }
+    } while (serverProjectionRefreshPending)
+  } finally {
+    serverProjectionRefreshInFlight = false
   }
 }
 

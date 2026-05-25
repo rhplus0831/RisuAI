@@ -15,15 +15,14 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-5b, Bootstrap projection loader.
-- Current gap: 9-5c should subscribe the browser to `/api/v1/events` and
-  debounce a `/api/v1/bootstrap` re-fetch on command events, followed by
-  the residual direct-write sweep before enabling the read-only
-  `DBState.db` guard.
-- Next default pickup: 9-5c, Event subscription and debounced
+- Last landed slice: 9-5c, Event subscription and debounced
   re-bootstrap.
-- Last recorded full baselines after 9-5b: `pnpm check` clean,
-  `pnpm test` 702 tests plus 4 skipped, `pnpm api:test` 1119 tests, and
+- Current gap: 9-5d should sweep remaining server-backed web direct
+  writes for 9-2 through 9-4 resource families before enabling the
+  read-only `DBState.db` guard.
+- Next default pickup: 9-5d, Residual command replacement sweep.
+- Last recorded full baselines after 9-5c: `pnpm check` clean,
+  `pnpm test` 708 tests plus 4 skipped, `pnpm api:test` 1119 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -52,7 +51,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.          |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                                 |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                                 |
-| Client thinning                             | Active; 9-5b bootstrap projection landed; next slice is 9-5c event re-bootstrap. |
+| Client thinning                             | Active; 9-5c event re-bootstrap landed; next slice is 9-5d residual sweep.       |
 
 ## Maintenance Rules
 
