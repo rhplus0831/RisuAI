@@ -17,11 +17,20 @@ import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from './pluginSafeClas
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import { pluginCodeTranspiler } from './apiV3/transpiler'
 import {
+  currentPluginStorageSnapshot,
   currentPluginStateSnapshot,
+  dispatchBulkPluginStorage,
   dispatchCreatePlugin,
+  dispatchDeletePlugin,
+  dispatchDeletePluginStorage,
+  dispatchPluginSettingsPatch,
+  dispatchPutPluginStorage,
+  dispatchReorderPlugins,
+  dispatchSelectPluginProvider,
   dispatchUpdatePlugin,
   toPluginSnapshot,
 } from '../pluginCommands'
+import { canUseServerCommands } from '../server/commands'
 
 export const customProviderStore = writable([] as string[])
 
@@ -534,6 +543,118 @@ export const allowedDbKeys = [
   'characterOrder',
 ]
 
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function pluginCustomStorage(): Record<string, unknown> {
+  DBState.db.pluginCustomStorage ??= {}
+  return DBState.db.pluginCustomStorage as Record<string, unknown>
+}
+
+function setPluginStorageValue(key: string, value: unknown): void {
+  const previous = currentPluginStorageSnapshot()
+  pluginCustomStorage()[key] = cloneJsonValue(value)
+  if (canUseServerCommands()) {
+    dispatchPutPluginStorage(key, value, previous)
+  }
+}
+
+function deletePluginStorageValue(key: string): void {
+  const previous = currentPluginStorageSnapshot()
+  delete pluginCustomStorage()[key]
+  if (canUseServerCommands()) {
+    dispatchDeletePluginStorage(key, previous)
+  }
+}
+
+function replacePluginStorage(values: Record<string, unknown>): void {
+  const previous = currentPluginStorageSnapshot()
+  DBState.db.pluginCustomStorage = cloneJsonValue(values)
+  if (canUseServerCommands()) {
+    dispatchBulkPluginStorage({ values, clear: true }, previous)
+  }
+}
+
+function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { full: boolean }): void {
+  const previous = currentPluginStateSnapshot()
+  const settingsPatch: Record<string, unknown> = {}
+  const storageValues: Record<string, unknown> = {}
+  let replacedStorage: Record<string, unknown> | null = null
+
+  for (const [key, value] of Object.entries(newDb)) {
+    if (key === 'pluginCustomStorage') {
+      replacedStorage =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? cloneJsonValue(value as Record<string, unknown>)
+          : {}
+      DBState.db.pluginCustomStorage = cloneJsonValue(replacedStorage)
+      continue
+    }
+
+    if (allowedDbKeys.includes(key)) {
+      ;(DBState.db as any)[key] = cloneJsonValue(value)
+      if (key === 'currentPluginProvider' && typeof value === 'string') {
+        dispatchSelectPluginProvider(value, previous)
+      } else if (key === 'plugins' && Array.isArray(value)) {
+        dispatchPluginCollectionPatch(value as RisuPlugin[], previous)
+      } else {
+        settingsPatch[key] = value
+      }
+      continue
+    }
+
+    storageValues[key] = cloneJsonValue(value)
+    pluginCustomStorage()[key] = cloneJsonValue(value)
+  }
+
+  if (replacedStorage) {
+    const storagePrevious = previous.pluginCustomStorage
+    dispatchBulkPluginStorage({ values: replacedStorage, clear: true }, storagePrevious)
+  } else if (Object.keys(storageValues).length > 0) {
+    dispatchBulkPluginStorage({ values: storageValues }, previous.pluginCustomStorage)
+  }
+
+  if (Object.keys(settingsPatch).length > 0) {
+    dispatchPluginSettingsPatch(settingsPatch, previous)
+  }
+
+  if (!canUseServerCommands() && options.full) {
+    setDatabase(DBState.db)
+  }
+}
+
+function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: ReturnType<typeof currentPluginStateSnapshot>): void {
+  if (!canUseServerCommands()) return
+
+  const beforePlugins = new Map(previous.plugins.map((plugin) => [plugin.name, plugin]))
+  const nextPlugins = new Map(plugins.map((plugin) => [plugin.name, plugin]))
+
+  for (const plugin of plugins) {
+    const before = beforePlugins.get(plugin.name)
+    if (!before) {
+      dispatchCreatePlugin(plugin, previous)
+      continue
+    }
+    if (JSON.stringify(before) !== JSON.stringify(plugin)) {
+      dispatchUpdatePlugin(plugin.name, toPluginSnapshot(plugin), previous)
+    }
+  }
+
+  for (const plugin of previous.plugins) {
+    if (!nextPlugins.has(plugin.name)) {
+      dispatchDeletePlugin(plugin.name, previous)
+    }
+  }
+
+  const beforeOrder = previous.plugins.map((plugin) => plugin.name).join('\n')
+  const nextOrder = plugins.map((plugin) => plugin.name).join('\n')
+  if (beforeOrder !== nextOrder && plugins.every((plugin) => beforePlugins.has(plugin.name))) {
+    dispatchReorderPlugins(previous)
+  }
+}
+
 export const getV2PluginAPIs = () => {
   return {
     risuFetch: globalFetch,
@@ -707,12 +828,15 @@ export const getV2PluginAPIs = () => {
         },
         set(target, prop, value) {
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
-            ;(target as any)[prop] = value
+            if (canUseServerCommands()) {
+              applyPluginDatabasePatch({ [prop]: value }, { full: false })
+            } else {
+              ;(target as any)[prop] = value
+            }
             return true
           } else {
             console.log('Setting custom db property', prop.toString(), value)
-            target.pluginCustomStorage ??= {}
-            target.pluginCustomStorage[prop.toString()] = value
+            setPluginStorageValue(prop.toString(), value)
             return true
           }
         },
@@ -741,18 +865,13 @@ export const getV2PluginAPIs = () => {
         return db.pluginCustomStorage[key] || null
       },
       setItem: (key: string, value: string) => {
-        const db = getDatabase()
-        db.pluginCustomStorage ??= {}
-        db.pluginCustomStorage[key] = value
+        setPluginStorageValue(key, value)
       },
       removeItem: (key: string) => {
-        const db = getDatabase()
-        db.pluginCustomStorage ??= {}
-        delete db.pluginCustomStorage[key]
+        deletePluginStorageValue(key)
       },
       clear: () => {
-        const db = getDatabase()
-        db.pluginCustomStorage = {}
+        replacePluginStorage({})
       },
       key: (index: number) => {
         const db = getDatabase()
@@ -772,20 +891,9 @@ export const getV2PluginAPIs = () => {
       },
     },
     setDatabaseLite: (newDb: any) => {
-      const db = getDatabase()
-      db.pluginCustomStorage ??= {}
-      for (const key of Object.keys(newDb)) {
-        if (allowedDbKeys.includes(key)) {
-          ;(db as any)[key] = newDb[key]
-        } else {
-          db.pluginCustomStorage[key] = newDb[key]
-        }
-      }
-      DBState.db = db
+      applyPluginDatabasePatch(newDb, { full: false })
     },
     setDatabase: async (newDb: any) => {
-      const db = getDatabase()
-      db.pluginCustomStorage ??= {}
       for (const key of Object.keys(newDb)) {
         if (key === 'plugins') {
           console.warn(
@@ -793,14 +901,8 @@ export const getV2PluginAPIs = () => {
           )
           newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins)
         }
-
-        if (allowedDbKeys.includes(key)) {
-          ;(db as any)[key] = newDb[key]
-        } else {
-          db.pluginCustomStorage[key] = newDb[key]
-        }
       }
-      setDatabase(db)
+      applyPluginDatabasePatch(newDb, { full: true })
     },
     SafeFunction: new Proxy(Function, {
       construct(target, args) {

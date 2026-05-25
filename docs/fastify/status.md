@@ -15,13 +15,14 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-4e, Plugin records and configuration.
-- Current gap: 9-4f should add plugin-storage kv and plugin database
-  setter translation; 9-5 should still do the residual direct-write sweep
-  before enabling the read-only `DBState.db` guard.
-- Next default pickup: 9-4f, Plugin-storage kv and plugin database adapters.
-- Last recorded full baselines after 9-4e: `pnpm check` clean,
-  `pnpm test` 693 tests plus 4 skipped, `pnpm api:test` 1112 tests, and
+- Last landed slice: 9-4f, Plugin-storage kv and plugin database adapters.
+- Current gap: 9-4g should sweep 9-4 families for residual direct
+  server-backed web writes and add focused compatibility coverage; 9-5
+  should still do the residual direct-write sweep before enabling the
+  read-only `DBState.db` guard.
+- Next default pickup: 9-4g, Compatibility sweep and focused tests.
+- Last recorded full baselines after 9-4f: `pnpm check` clean,
+  `pnpm test` 694 tests plus 4 skipped, `pnpm api:test` 1115 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -50,7 +51,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-4e plugin commands landed; next slice is 9-4f plugin storage. |
+| Client thinning                             | Active; 9-4f plugin storage landed; next slice is 9-4g compatibility sweep. |
 
 ## Maintenance Rules
 

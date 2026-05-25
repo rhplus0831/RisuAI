@@ -19,6 +19,7 @@ vi.mock('../storage/nodeStorage', () => ({
 import {
   canUseServerCommands,
   appendMessageCommand,
+  bulkPluginStorageCommand,
   createChatCommand,
   createChatFolderCommand,
   createCharacterCommand,
@@ -40,6 +41,7 @@ import {
   deleteModuleCommand,
   deletePersonaCommand,
   deletePluginCommand,
+  deletePluginStorageCommand,
   deletePromptItemCommand,
   deleteTranslatorPresetCommand,
   favoriteLoadoutCommand,
@@ -53,6 +55,7 @@ import {
   patchRuntimeSettings,
   patchSettingsGroup,
   persistGenerationResultCommand,
+  putPluginStorageCommand,
   reorderCharactersCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
@@ -2200,6 +2203,53 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/plugins/reorder',
         method: 'POST',
         body: { baseRevision: 6, pluginIds: ['plugin-b', 'plugin-a'] },
+      },
+    ])
+  })
+
+  it('dispatches plugin-storage commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.includes('/plugin-storage')) {
+        return {
+          revision: 10,
+          event: {
+            type: 'pluginStorage.updated',
+            revision: 10,
+            resource: 'pluginStorage',
+          },
+          key: 'theme',
+        }
+      }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await putPluginStorageCommand({ baseRevision: 1, key: 'theme', value: { mode: 'dark' } })
+    await deletePluginStorageCommand({ baseRevision: 2, key: 'theme' })
+    await bulkPluginStorageCommand({
+      baseRevision: 3,
+      values: { score: 42 },
+      deleteKeys: ['old'],
+      clear: false,
+    })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/plugin-storage/theme',
+        method: 'PUT',
+        body: { baseRevision: 1, value: { mode: 'dark' } },
+      },
+      {
+        url: '/api/v1/commands/plugin-storage/theme',
+        method: 'DELETE',
+        body: { baseRevision: 2 },
+      },
+      {
+        url: '/api/v1/commands/plugin-storage/bulk',
+        method: 'POST',
+        body: { baseRevision: 3, values: { score: 42 }, deleteKeys: ['old'], clear: false },
       },
     ])
   })

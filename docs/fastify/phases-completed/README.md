@@ -79,6 +79,7 @@ track the next piece of work.
 | 9-4c - Modules                          | [`phase-9-client-thinning-9-4c.md`](phase-9-client-thinning-9-4c.md)                   | Module records, enablement, reorder/link commands, helpers, and UI/MCP routing.  |
 | 9-4d - Asset references                 | [`phase-9-client-thinning-9-4d.md`](phase-9-client-thinning-9-4d.md)                   | Asset-reference validation, upload helper routing, and owning command coverage.  |
 | 9-4e - Plugins                          | [`phase-9-client-thinning-9-4e.md`](phase-9-client-thinning-9-4e.md)                   | Plugin record/config commands, helpers, provider selection, and UI/API routing.  |
+| 9-4f - Plugin storage                   | [`phase-9-client-thinning-9-4f.md`](phase-9-client-thinning-9-4f.md)                   | Plugin-storage commands, helpers, and plugin database adapter routing.           |
 
 ## Historical Status Logs
 

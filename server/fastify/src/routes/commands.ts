@@ -167,6 +167,13 @@ import {
   requirePluginIndex,
   validateFullPluginOrder,
 } from '../commands/plugins.js'
+import {
+  ensurePluginCustomStorage,
+  ensurePluginStorageDatabase,
+  readPluginStorageBulkPatch,
+  readPluginStorageKey,
+  readPluginStorageValue,
+} from '../commands/pluginStorage.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
@@ -283,6 +290,14 @@ interface PluginCommandBody {
   pluginIds?: unknown
   provider?: unknown
   enabled?: unknown
+}
+
+interface PluginStorageCommandBody {
+  baseRevision?: unknown
+  value?: unknown
+  values?: unknown
+  deleteKeys?: unknown
+  clear?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -3705,6 +3720,111 @@ export function registerCommandRoutes(
           target.plugins = pluginIds.map((id) => byId.get(id))
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginReordered },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/plugin-storage/:key', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const key = readPluginStorageKey((req.params as { key?: unknown }).key)
+      const body = (req.body ?? {}) as PluginStorageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const value = readPluginStorageValue(body.value)
+      const result = applyJsonCommandMutation<{ key: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginStorageDatabase(database)
+          const storage = ensurePluginCustomStorage(target)
+          storage[key] = value
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginStorageUpdated, id: key },
+            extra: { key },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/plugin-storage/:key', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const key = readPluginStorageKey((req.params as { key?: unknown }).key)
+      const body = (req.body ?? {}) as PluginStorageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ key: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginStorageDatabase(database)
+          const storage = ensurePluginCustomStorage(target)
+          delete storage[key]
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginStorageDeleted, id: key },
+            extra: { key },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/plugin-storage/bulk', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PluginStorageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readPluginStorageBulkPatch(body)
+      const result = applyJsonCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginStorageDatabase(database)
+          const storage = patch.clear ? {} : ensurePluginCustomStorage(target)
+          for (const key of patch.deleteKeys) {
+            delete storage[key]
+          }
+          for (const [key, value] of Object.entries(patch.values)) {
+            storage[key] = value
+          }
+          target.pluginCustomStorage = storage
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginStorageBulkUpdated },
           }
         },
       })

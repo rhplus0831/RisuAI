@@ -235,21 +235,17 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-4e plugin record/configuration commands are complete.
-Continue with **9-4f - Plugin-storage kv and plugin database adapters**:
+9-4f plugin-storage kv and plugin database adapters are complete.
+Continue with **9-4g - Compatibility sweep and focused tests**:
 
-- Build on `server/fastify/src/commands/`,
-  `server/fastify/src/routes/commands.ts`, `src/ts/server/commands.ts`,
-  and `src/ts/pluginCommands.ts`.
-- Implement plugin-storage kv commands for `pluginCustomStorage`.
-- Route plugin `pluginStorage.*` calls through command helpers in
-  server-backed web mode.
-- Implement the plugin database setter translation bridge for
-  `getDatabase`, `setDatabaseLite`, and `setDatabase`.
-- Diff recognized top-level plugin keys to their owning command families
-  and route unknown keys to plugin custom storage.
-- Keep plugin code execution browser-side; commands own durable plugin DB
-  state only.
+- Sweep 9-4 families for residual direct server-backed web writes:
+  lorebooks, scripts/triggers, modules, asset references, plugins,
+  plugin storage, and plugin database adapters.
+- Add focused compatibility tests for any remaining adapter paths found by
+  the sweep.
+- Confirm plugin database setter translation still uses typed command
+  helpers or plugin-storage entries and does not reintroduce whole-DB
+  replacement.
 - Keep projection enforcement, provider-key masking, server `.risu`
   import/export, and storage gating in their later slices.
 - Preserve the 9-1 command response and conflict contract through the

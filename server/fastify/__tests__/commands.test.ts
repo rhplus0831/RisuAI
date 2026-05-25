@@ -3985,6 +3985,131 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
   })
 })
 
+describe('Phase 9-4f plugin-storage commands', () => {
+  it('puts, deletes, and bulk updates plugin custom storage', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      pluginCustomStorage: {
+        old: 'value',
+        keep: true,
+      },
+    })
+
+    const put = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/plugin-storage/theme',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, value: { mode: 'dark' } },
+    })
+    expect(put.statusCode).toBe(200)
+    expect(put.json()).toMatchObject({
+      revision: 2,
+      key: 'theme',
+      event: { type: 'pluginStorage.updated', resource: 'pluginStorage', id: 'theme' },
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/plugin-storage/old',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2 },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: 3,
+      key: 'old',
+      event: { type: 'pluginStorage.deleted', id: 'old' },
+    })
+
+    const bulk = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugin-storage/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 3,
+        values: { score: 42, nested: { ok: true } },
+        deleteKeys: ['keep'],
+      },
+    })
+    expect(bulk.statusCode).toBe(200)
+    expect(bulk.json()).toMatchObject({
+      revision: 4,
+      event: { type: 'pluginStorage.bulkUpdated', resource: 'pluginStorage' },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(4)
+    expect(bootstrap.json().database.pluginCustomStorage).toEqual({
+      theme: { mode: 'dark' },
+      score: 42,
+      nested: { ok: true },
+    })
+    expect(
+      harness.commandEvents
+        .list()
+        .slice(-3)
+        .map((event) => event.type),
+    ).toEqual([
+      'pluginStorage.updated',
+      'pluginStorage.deleted',
+      'pluginStorage.bulkUpdated',
+    ])
+  })
+
+  it('rejects malformed plugin-storage commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      pluginCustomStorage: { existing: 'value' },
+    })
+
+    const badKey = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/plugin-storage/%20',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, value: 'x' },
+    })
+    expect(badKey.statusCode).toBe(400)
+    expect(badKey.json().error).toBe('key must be a non-empty string')
+
+    const badBulk = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugin-storage/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, values: {}, deleteKeys: [] },
+    })
+    expect(badBulk.statusCode).toBe(400)
+    expect(badBulk.json().error).toBe('bulk plugin storage command must change at least one key')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.pluginCustomStorage).toEqual({ existing: 'value' })
+  })
+
+  it('returns 409 for stale plugin-storage revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDatabase(harness.app, assertion, {
+      pluginCustomStorage: {},
+    })
+
+    const stale = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/plugin-storage/key',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, value: 'x' },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})
+
 describe('Phase 9-4d asset reference commands', () => {
   it('persists uploaded asset ids through owning character, module, persona, settings, and folder commands', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

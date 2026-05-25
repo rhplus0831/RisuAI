@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed slice:
-**9-4e - Plugin records and configuration**. Next slice:
-**9-4f - Plugin-storage kv and plugin database adapters**.
+**9-4f - Plugin-storage kv and plugin database adapters**. Next slice:
+**9-4g - Compatibility sweep and focused tests**.
 
 ## Goal
 
@@ -197,6 +197,8 @@ surfaces.
   - **9-4f - Plugin-storage kv and plugin database adapters.** Implement
     the 9-0 translation bridge and composite mixed-resource command, then
     wire plugin API callers and tests.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-4f.md`](../phases-completed/phase-9-client-thinning-9-4f.md).
   - **9-4g - Compatibility sweep and focused tests.** Prove no remaining
     direct server-backed web writes for 9-4 families before projection
     enforcement.

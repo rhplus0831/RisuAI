@@ -283,6 +283,18 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'plugin.reordered',
     resource: 'plugin',
   },
+  pluginStorageUpdated: {
+    type: 'pluginStorage.updated',
+    resource: 'pluginStorage',
+  },
+  pluginStorageDeleted: {
+    type: 'pluginStorage.deleted',
+    resource: 'pluginStorage',
+  },
+  pluginStorageBulkUpdated: {
+    type: 'pluginStorage.bulkUpdated',
+    resource: 'pluginStorage',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

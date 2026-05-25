@@ -862,6 +862,21 @@ export interface ReorderPluginsCommandInput extends PluginCommandInput {
   pluginIds: string[]
 }
 
+export interface PutPluginStorageCommandInput extends PluginCommandInput {
+  key: string
+  value: unknown
+}
+
+export interface DeletePluginStorageCommandInput extends PluginCommandInput {
+  key: string
+}
+
+export interface BulkPluginStorageCommandInput extends PluginCommandInput {
+  values?: Record<string, unknown>
+  deleteKeys?: string[]
+  clear?: boolean
+}
+
 export interface AppendMessageCommandInput extends ChatCommandInput {
   chatId: string
   message: MessageSnapshot
@@ -1948,6 +1963,49 @@ export async function reorderPluginsCommand(
     body: {
       baseRevision: input.baseRevision,
       pluginIds: input.pluginIds,
+    },
+    signal,
+  })
+}
+
+export async function putPluginStorageCommand(
+  input: PutPluginStorageCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ key: string }>> {
+  return requestCommandJson(`/plugin-storage/${encodeURIComponent(input.key)}`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      value: input.value,
+    },
+    signal,
+  })
+}
+
+export async function deletePluginStorageCommand(
+  input: DeletePluginStorageCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ key: string }>> {
+  return requestCommandJson(`/plugin-storage/${encodeURIComponent(input.key)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function bulkPluginStorageCommand(
+  input: BulkPluginStorageCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson('/plugin-storage/bulk', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      values: input.values ?? {},
+      deleteKeys: input.deleteKeys ?? [],
+      clear: input.clear ?? false,
     },
     signal,
   })
