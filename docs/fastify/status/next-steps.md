@@ -10,43 +10,42 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-2a-ii landed the manual scalar settings page bridge. The slice added a
-shared browser helper for grouped server-backed settings patches with
-revision lookup, conflict retry, and rollback; registered Fastify-only
-watchers for the named manual settings surfaces; extended the client and
-server scalar maps for manual provider/runtime/media/account fields; and
-covered representative command dispatch, rollback, conflict retry, and
-local/Tauri no-dispatch behavior.
+9-2b landed the bot preset lifecycle command bridge. The slice added
+stable preset ids, Fastify preset create/update/delete/copy/select/import/
+reorder routes, typed browser preset command helpers with revision lookup
+and one conflict retry, and routed the preset list plus helper import/copy/
+apply flows through commands in Fastify mode while keeping local/Tauri
+mutation behavior intact.
 
 ## Immediate Pickup
 
 Continue Phase 9 implementation with
-**9-2b - Bot presets**.
+**9-2c - Prompt templates/items**.
 
 Expected scope:
 
-- Add bot preset create/copy/update/delete/reorder/select/apply command
-  coverage according to `phase-9-command-map.md`.
-- Replace server-backed web preset helper flows in
-  `src/lib/Setting/botpreset.svelte` and
-  `src/ts/storage/database.svelte.ts` with typed commands while keeping
-  Tauri/local mode on the existing mutation path.
-- Preserve selected-preset behavior and explicit preset apply semantics;
-  preset apply may touch scalar settings groups but should not reopen
-  provider-key masking or prompt-template item work.
+- Add prompt template/settings and prompt-item create/update/delete/reorder
+  command coverage according to `phase-9-command-map.md`.
+- Replace server-backed web prompt template/item mutation paths in
+  `src/lib/Setting/Pages/PromptSettings.svelte`,
+  `src/lib/UI/PromptDataItem.svelte`, and related prompt helpers with typed
+  commands while keeping Tauri/local mode on the existing mutation path.
+- Preserve prompt assembly behavior and current template enablement
+  semantics; do not reopen bot preset lifecycle, personas, translator
+  presets, or loadouts in this slice.
 - Tauri/local mode keeps existing local mutation paths.
 - Preserve the 9-1 command contract: every command takes
   `baseRevision`, returns `{ revision, event }`, emits
-  the mapped preset event, and returns 409
+  the mapped prompt/template event, and returns 409
   `{ error: "revision_conflict", currentRevision }` on stale input.
-- Cover representative create/update/delete/reorder/select/apply flows,
-  rollback/no-revision-bump on validation failure, conflict retry where
-  applicable, and no command dispatch outside Fastify mode.
+- Cover representative prompt item create/update/delete/reorder flows,
+  template/settings updates, rollback/no-revision-bump on validation
+  failure, conflict retry where applicable, and no command dispatch outside
+  Fastify mode.
 
-Out of scope for 9-2b:
+Out of scope for 9-2c:
 
-- Prompt template/items and prompt-setting fields tied to template
-  behavior.
+- Bot preset lifecycle, selection, copy/import, and apply behavior.
 - Personas, translator presets, and loadouts.
 - Enforcing a read-only `DBState.db` guard.
 - Bootstrap/event projection implementation.
@@ -70,19 +69,18 @@ Implementation notes:
 - Tauri keeps its local storage path. Phase 9 gates server-backed web
   behavior without changing local desktop storage mode.
 
-## Queue After 9-2b
+## Queue After 9-2c
 
-1. 9-2c - Prompt templates/items.
-2. 9-2d - Personas.
-3. 9-2e - Translator presets.
-4. 9-2f - Loadouts.
-5. 9-3 - Characters, chats, messages.
-6. 9-4 - Lorebooks, modules, plugins, assets.
-7. 9-5 - Browser projection.
-8. 9-6 - Storage and provider-key gating.
-9. 9-7 - Server `.risu` codec core.
-10. 9-8 - Import/export routes and bundle assets.
-11. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-2d - Personas.
+2. 9-2e - Translator presets.
+3. 9-2f - Loadouts.
+4. 9-3 - Characters, chats, messages.
+5. 9-4 - Lorebooks, modules, plugins, assets.
+6. 9-5 - Browser projection.
+7. 9-6 - Storage and provider-key gating.
+8. 9-7 - Server `.risu` codec core.
+9. 9-8 - Import/export routes and bundle assets.
+10. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -95,7 +93,7 @@ Implementation notes:
 
 ## Verification
 
-Run focused command/preset tests while building 9-2b, then before
+Run focused command/prompt-template tests while building 9-2c, then before
 closing the slice run the full matrix:
 
 ```bash
@@ -105,8 +103,8 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-2a-ii: `pnpm check` clean,
-`pnpm test` 663 tests plus 4 skipped, `pnpm api:test` 1061 tests, and
+Last recorded full baselines after 9-2b: `pnpm check` clean,
+`pnpm test` 667 tests plus 4 skipped, `pnpm api:test` 1066 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
@@ -119,7 +117,7 @@ externalization, plugin-timing, and chunk-size warnings.
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-2a-ii.md`](../phases-completed/phase-9-client-thinning-9-2a-ii.md)
+  [`../phases-completed/phase-9-client-thinning-9-2b.md`](../phases-completed/phase-9-client-thinning-9-2b.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

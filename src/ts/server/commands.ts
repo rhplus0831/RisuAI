@@ -353,6 +353,57 @@ export interface PatchServerBackedSettingsInput {
   signal?: AbortSignal | null
 }
 
+export type PresetSnapshot = Record<string, unknown> & {
+  id?: string
+  name?: string
+}
+
+export interface PresetCommandInput {
+  baseRevision: number
+}
+
+export interface CreatePresetCommandInput extends PresetCommandInput {
+  preset: PresetSnapshot
+}
+
+export interface UpdatePresetCommandInput extends PresetCommandInput {
+  presetId: string
+  patch: PresetSnapshot
+}
+
+export interface DeletePresetCommandInput extends PresetCommandInput {
+  presetId: string
+  selectPresetId?: string
+  apply?: boolean
+  saveCurrent?: boolean
+}
+
+export interface CopyPresetCommandInput extends PresetCommandInput {
+  presetId: string
+  name?: string
+  saveCurrent?: boolean
+}
+
+export interface SelectPresetCommandInput extends PresetCommandInput {
+  presetId: string
+  apply?: boolean
+  saveCurrent?: boolean
+}
+
+export interface ImportPresetCommandInput extends PresetCommandInput {
+  preset: PresetSnapshot
+}
+
+export interface ReorderPresetsCommandInput extends PresetCommandInput {
+  presetIds: string[]
+}
+
+export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>
+  rollback?: () => void
+  signal?: AbortSignal | null
+}
+
 let cachedServerCommandRevision: number | null = null
 
 export function canUseServerCommands(): boolean {
@@ -469,6 +520,131 @@ export async function patchServerBackedSettings(
   }
 
   return lastResult
+}
+
+export async function createPresetCommand(
+  input: CreatePresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson('/presets', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preset: input.preset,
+    },
+    signal,
+  })
+}
+
+export async function updatePresetCommand(
+  input: UpdatePresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson(`/presets/${encodeURIComponent(input.presetId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deletePresetCommand(
+  input: DeletePresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; selectedPresetId: string | null }>> {
+  return requestCommandJson(`/presets/${encodeURIComponent(input.presetId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+      presetId: input.selectPresetId,
+      apply: input.apply,
+      saveCurrent: input.saveCurrent,
+    },
+    signal,
+  })
+}
+
+export async function copyPresetCommand(
+  input: CopyPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; sourcePresetId: string }>> {
+  return requestCommandJson(`/presets/${encodeURIComponent(input.presetId)}/copy`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      name: input.name,
+      saveCurrent: input.saveCurrent,
+    },
+    signal,
+  })
+}
+
+export async function selectPresetCommand(
+  input: SelectPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson('/presets/select', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      presetId: input.presetId,
+      apply: input.apply,
+      saveCurrent: input.saveCurrent,
+    },
+    signal,
+  })
+}
+
+export async function importPresetCommand(
+  input: ImportPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson('/presets/import', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preset: input.preset,
+    },
+    signal,
+  })
+}
+
+export async function reorderPresetsCommand(
+  input: ReorderPresetsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedPresetId: string | null }>> {
+  return requestCommandJson('/presets/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      presetIds: input.presetIds,
+    },
+    signal,
+  })
+}
+
+export async function runServerPresetCommand<T extends Record<string, unknown> = {}>(
+  input: RunServerPresetCommandInput<T>,
+): Promise<ServerCommandResult<T>> {
+  if (!canUseServerCommands()) return { status: 'unavailable' }
+
+  const baseRevision = await getServerCommandBaseRevision(input.signal)
+  if (baseRevision === null) {
+    input.rollback?.()
+    return { status: 'error', error: 'Unable to read server command revision' }
+  }
+
+  let result = await input.command(baseRevision)
+  if (result.status === 'conflict') {
+    result = await input.command(result.currentRevision)
+  }
+
+  if (result.status !== 'ok') {
+    input.rollback?.()
+  }
+  return result
 }
 
 function groupSettingsPatch(patch: SettingsPatch): Array<[SettingsGroup, SettingsPatch]> {

@@ -19,10 +19,61 @@ import {
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { isTauri, isNodeServer } from 'src/ts/platform'
 import { safeStructuredClone } from '../polyfill'
+import {
+  canUseServerCommands,
+  copyPresetCommand,
+  createPresetCommand,
+  deletePresetCommand,
+  importPresetCommand,
+  reorderPresetsCommand,
+  runServerPresetCommand,
+  selectPresetCommand,
+  updatePresetCommand,
+  type PresetSnapshot,
+  type ServerCommandResult,
+} from '../server/commands'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = '2026.4.181' //<APP_VERSION_POINT>
 export let webAppSubVer = ''
+
+function createClientPresetId() {
+  return crypto.randomUUID()
+}
+
+function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId'>) {
+  if (!Array.isArray(data.botPresets)) {
+    data.botPresets = []
+  }
+
+  const seen = new Set<string>()
+  for (const preset of data.botPresets) {
+    if (!preset) continue
+    const id = typeof preset.id === 'string' && preset.id.trim() ? preset.id : createClientPresetId()
+    preset.id = seen.has(id) ? createClientPresetId() : id
+    seen.add(preset.id)
+  }
+
+  if (!Number.isInteger(data.botPresetsId)) {
+    data.botPresetsId = data.botPresets.length > 0 ? 0 : -1
+  } else if (data.botPresetsId >= data.botPresets.length) {
+    data.botPresetsId = data.botPresets.length > 0 ? data.botPresets.length - 1 : -1
+  } else if (data.botPresetsId < -1) {
+    data.botPresetsId = data.botPresets.length > 0 ? 0 : -1
+  }
+}
+
+function presetIdAt(index: number): string | null {
+  normalizeBotPresetIds(DBState.db)
+  return DBState.db.botPresets[index]?.id ?? null
+}
+
+function runPresetCommand<T extends Record<string, unknown>>(
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
+) {
+  if (!canUseServerCommands()) return
+  void runServerPresetCommand({ command })
+}
 
 export function setDatabase(data: Database) {
   if (checkNullish(data.characters)) {
@@ -163,10 +214,11 @@ export function setDatabase(data: Database) {
     data.proxyKey = ''
   }
   if (checkNullish(data.botPresets)) {
-    let defaultPreset = presetTemplate
+    let defaultPreset = safeStructuredClone(presetTemplate)
     defaultPreset.name = 'Default'
     data.botPresets = [defaultPreset]
   }
+  normalizeBotPresetIds(data)
   if (checkNullish(data.botPresetsId)) {
     data.botPresetsId = 0
   }
@@ -1493,6 +1545,7 @@ export interface loreSettings {
 }
 
 export interface botPreset {
+  id?: string
   name?: string
   apiType?: string
   openAIKey?: string
@@ -1957,14 +2010,17 @@ export const defaultSdDataFunc = () => {
   return safeStructuredClone(defaultSdData)
 }
 
-export function saveCurrentPreset() {
+function saveCurrentPresetLocal() {
   let db = DBState.db
+  normalizeBotPresetIds(db)
   let pres = db.botPresets
 
   if (db.botPresetsId === -1) {
-    return
+    return null
   }
+  pres[db.botPresetsId].id ??= createClientPresetId()
   const savedPreset: botPreset = {
+    id: pres[db.botPresetsId].id,
     name: pres[db.botPresetsId].name,
     apiType: db.apiType,
     openAIKey: db.openAIKey,
@@ -2055,26 +2111,180 @@ export function saveCurrentPreset() {
     pres[db.botPresetsId] = savedPreset
   }
   db.botPresets = pres
+  return savedPreset
+}
+
+export function saveCurrentPreset() {
+  const savedPreset = saveCurrentPresetLocal()
+  if (!savedPreset?.id) return
+  runPresetCommand((baseRevision) =>
+    updatePresetCommand({
+      baseRevision,
+      presetId: savedPreset.id!,
+      patch: safeStructuredClone(savedPreset) as unknown as PresetSnapshot,
+    }),
+  )
 }
 
 export function copyPreset(id: number) {
-  saveCurrentPreset()
+  saveCurrentPresetLocal()
   let db = DBState.db
+  normalizeBotPresetIds(db)
   let pres = db.botPresets
   const newPres = safeStructuredClone(pres[id])
+  if (!newPres?.id) return
+  const sourcePresetId = newPres.id
+  newPres.id = createClientPresetId()
   newPres.name += ' Copy'
   db.botPresets.push(newPres)
+  runPresetCommand((baseRevision) =>
+    copyPresetCommand({
+      baseRevision,
+      presetId: sourcePresetId,
+      name: newPres.name,
+      saveCurrent: true,
+    }),
+  )
 }
 
 export function changeToPreset(id = 0, savecurrent = true) {
   if (savecurrent) {
-    saveCurrentPreset()
+    saveCurrentPresetLocal()
   }
   let db = DBState.db
+  normalizeBotPresetIds(db)
   let pres = db.botPresets
   const newPres = pres[id]
+  const targetPresetId = newPres?.id
   db.botPresetsId = id
-  setPreset(db, newPres)
+  if (newPres) {
+    setPreset(db, newPres)
+  }
+  if (targetPresetId) {
+    runPresetCommand((baseRevision) =>
+      selectPresetCommand({
+        baseRevision,
+        presetId: targetPresetId,
+        apply: true,
+        saveCurrent: savecurrent,
+      }),
+    )
+  }
+}
+
+export function createPreset(preset: botPreset) {
+  let db = DBState.db
+  normalizeBotPresetIds(db)
+  const newPreset = safeStructuredClone(preset)
+  newPreset.id ??= createClientPresetId()
+  db.botPresets.push(newPreset)
+  db.botPresets = db.botPresets
+  runPresetCommand((baseRevision) =>
+    createPresetCommand({
+      baseRevision,
+      preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
+    }),
+  )
+}
+
+function addImportedPreset(preset: botPreset) {
+  let db = DBState.db
+  normalizeBotPresetIds(db)
+  const newPreset = safeStructuredClone(preset)
+  newPreset.id ??= createClientPresetId()
+  db.botPresets.push(newPreset)
+  db.botPresets = db.botPresets
+  runPresetCommand((baseRevision) =>
+    importPresetCommand({
+      baseRevision,
+      preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
+    }),
+  )
+}
+
+export function updatePreset(id: number, patch: Partial<botPreset>) {
+  let db = DBState.db
+  normalizeBotPresetIds(db)
+  const presetId = db.botPresets[id]?.id
+  if (!presetId) return
+  Object.assign(db.botPresets[id], patch)
+  runPresetCommand((baseRevision) =>
+    updatePresetCommand({
+      baseRevision,
+      presetId,
+      patch: safeStructuredClone({ ...patch, id: presetId }) as PresetSnapshot,
+    }),
+  )
+}
+
+export function deletePreset(id: number, selectIndex = 0, apply = true) {
+  let db = DBState.db
+  normalizeBotPresetIds(db)
+  if (db.botPresets.length <= 1) return
+  const presetId = db.botPresets[id]?.id
+  const nextSelectedPreset =
+    db.botPresets[selectIndex]?.id === presetId
+      ? db.botPresets.find((preset) => preset.id !== presetId)
+      : db.botPresets[selectIndex]
+  const selectPresetId = nextSelectedPreset?.id
+  if (!presetId) return
+  let botPresets = db.botPresets
+  botPresets.splice(id, 1)
+  db.botPresets = botPresets
+  const selectedIndex = selectPresetId
+    ? db.botPresets.findIndex((preset) => preset.id === selectPresetId)
+    : -1
+  if (selectedIndex >= 0) {
+    db.botPresetsId = selectedIndex
+    if (apply) {
+      setPreset(db, db.botPresets[selectedIndex])
+    }
+  } else if (db.botPresetsId >= db.botPresets.length) {
+    db.botPresetsId = db.botPresets.length - 1
+  }
+  runPresetCommand((baseRevision) =>
+    deletePresetCommand({
+      baseRevision,
+      presetId,
+      selectPresetId,
+      apply,
+      saveCurrent: false,
+    }),
+  )
+}
+
+export function reorderPresets(fromIndex: number, toIndex: number) {
+  let db = DBState.db
+  normalizeBotPresetIds(db)
+  if (fromIndex === toIndex) return
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.botPresets.length || toIndex > db.botPresets.length) {
+    return
+  }
+
+  let botPresets = [...db.botPresets]
+  const movedItem = botPresets.splice(fromIndex, 1)[0]
+  if (!movedItem) return
+
+  const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
+  botPresets.splice(adjustedToIndex, 0, movedItem)
+
+  const currentId = db.botPresetsId
+  if (currentId === fromIndex) {
+    db.botPresetsId = adjustedToIndex
+  } else if (fromIndex < currentId && adjustedToIndex >= currentId) {
+    db.botPresetsId = currentId - 1
+  } else if (fromIndex > currentId && adjustedToIndex <= currentId) {
+    db.botPresetsId = currentId + 1
+  }
+
+  db.botPresets = botPresets
+  const presetIds = db.botPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+  runPresetCommand((baseRevision) =>
+    reorderPresetsCommand({
+      baseRevision,
+      presetIds,
+    }),
+  )
 }
 
 export function setPreset(db: Database, newPres: botPreset) {
@@ -2305,7 +2515,7 @@ export async function importPreset(
     pr.NAISettings.mirostat_lr = pre.parameters.mirostat_lr
     pr.NAISettings.mirostat_tau = pre.parameters.mirostat_tau
     pr.name = pre.name ?? 'Imported'
-    db.botPresets.push(pr)
+    addImportedPreset(pr)
     return
   }
 
@@ -2408,12 +2618,12 @@ export async function importPreset(
       })
     }
     pr.name = 'Imported ST Preset'
-    db.botPresets.push(pr)
+    addImportedPreset(pr)
     return
   }
   pre.name ??= 'Imported'
   if (!Array.isArray(db.botPresets)) {
     db.botPresets = []
   }
-  db.botPresets.push(pre)
+  addImportedPreset(pre)
 }

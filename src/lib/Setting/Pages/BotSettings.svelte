@@ -44,6 +44,7 @@
   import PromptSettings from './PromptSettings.svelte'
   import { openPresetList } from 'src/ts/stores.svelte'
   import { selectSingleFile } from 'src/ts/util'
+  import { updatePreset } from 'src/ts/storage/database.svelte'
   import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from 'src/ts/model/modellist'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
@@ -1284,7 +1285,7 @@
         canvas.height = 48
         ctx.drawImage(img, 0, 0, 48, 48)
         const data = canvas.toDataURL('image/jpeg', 0.7)
-        DBState.db.botPresets[DBState.db.botPresetsId].image = data //Since its small (max 2304 pixels), its okay to store it directly
+        updatePreset(DBState.db.botPresetsId, { image: data }) //Since its small (max 2304 pixels), its okay to store it directly
       }}
     >
       <UploadIcon />

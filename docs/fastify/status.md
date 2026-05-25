@@ -15,14 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-2a-ii, Manual scalar settings page command
-  bridge.
-- Current gap: 9-2b begins bot preset lifecycle commands; 9-5 should
+- Last landed slice: 9-2b, Bot preset lifecycle command bridge.
+- Current gap: 9-2c begins prompt template/item commands; 9-5 should
   still do the residual direct-write sweep before enabling the read-only
   `DBState.db` guard.
-- Next default pickup: 9-2b, Bot presets.
-- Last recorded full baselines after 9-2a-ii: `pnpm check` clean,
-  `pnpm test` 663 tests plus 4 skipped, `pnpm api:test` 1061 tests, and
+- Next default pickup: 9-2c, Prompt templates/items.
+- Last recorded full baselines after 9-2b: `pnpm check` clean,
+  `pnpm test` 667 tests plus 4 skipped, `pnpm api:test` 1066 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -51,7 +50,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.    |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                           |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                           |
-| Client thinning                             | Active; 9-2a-ii manual scalar settings bridge landed; next slice is 9-2b bot presets. |
+| Client thinning                             | Active; 9-2b bot preset command bridge landed; next slice is 9-2c prompt templates/items. |
 
 ## Maintenance Rules
 

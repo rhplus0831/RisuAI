@@ -4,8 +4,12 @@
   import {
     changeToPreset,
     copyPreset,
+    createPreset,
+    deletePreset,
     downloadPreset,
     importPreset,
+    reorderPresets,
+    updatePreset,
   } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import {
@@ -39,32 +43,7 @@
   let secondPresetId = $state<number | null>(null)
 
   function movePreset(fromIndex: number, toIndex: number) {
-    if (fromIndex === toIndex) return
-    if (
-      fromIndex < 0 ||
-      toIndex < 0 ||
-      fromIndex >= DBState.db.botPresets.length ||
-      toIndex > DBState.db.botPresets.length
-    )
-      return
-
-    let botPresets = [...DBState.db.botPresets]
-    const movedItem = botPresets.splice(fromIndex, 1)[0]
-    if (!movedItem) return
-
-    const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
-    botPresets.splice(adjustedToIndex, 0, movedItem)
-
-    const currentId = DBState.db.botPresetsId
-    if (currentId === fromIndex) {
-      DBState.db.botPresetsId = adjustedToIndex
-    } else if (fromIndex < currentId && adjustedToIndex >= currentId) {
-      DBState.db.botPresetsId = currentId - 1
-    } else if (fromIndex > currentId && adjustedToIndex <= currentId) {
-      DBState.db.botPresetsId = currentId + 1
-    }
-
-    DBState.db.botPresets = botPresets
+    reorderPresets(fromIndex, toIndex)
   }
 
   function handlePresetDrop(targetIndex: number, e) {
@@ -200,6 +179,9 @@
             bind:value={DBState.db.botPresets[i].name}
             placeholder="string"
             padding={false}
+            onchange={() => {
+              updatePreset(i, { name: DBState.db.botPresets[i].name })
+            }}
           />
         {:else}
           {#if i < 9}
@@ -287,11 +269,7 @@
               }
               const d = await alertConfirm(`${language.removeConfirm}${preset.name}`)
               if (d) {
-                changeToPreset(0)
-                let botPresets = DBState.db.botPresets
-                botPresets.splice(i, 1)
-                DBState.db.botPresets = botPresets
-                changeToPreset(0, false)
+                deletePreset(i, 0, true)
               }
             }}
             onkeydown={(e) => {
@@ -331,12 +309,9 @@
       <button
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
-          let botPresets = DBState.db.botPresets
           let newPreset = safeStructuredClone(prebuiltPresets.OAI2)
           newPreset.name = `New Preset`
-          botPresets.push(newPreset)
-
-          DBState.db.botPresets = botPresets
+          createPreset(newPreset)
         }}
       >
         <PlusIcon />

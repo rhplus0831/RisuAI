@@ -63,6 +63,7 @@ track the next piece of work.
 | 9-1 - Command foundation                | [`phase-9-client-thinning-9-1.md`](phase-9-client-thinning-9-1.md)                     | Command route plumbing, JSON mutation helper, event sink, and harness command. |
 | 9-2a-i - Scalar settings commands       | [`phase-9-client-thinning-9-2a-i.md`](phase-9-client-thinning-9-2a-i.md)               | Grouped scalar settings commands, browser helper, and data-driven bridge.      |
 | 9-2a-ii - Manual scalar settings pages  | [`phase-9-client-thinning-9-2a-ii.md`](phase-9-client-thinning-9-2a-ii.md)             | Fastify-only manual settings bridge, scalar map extensions, and rollback tests. |
+| 9-2b - Bot presets                      | [`phase-9-client-thinning-9-2b.md`](phase-9-client-thinning-9-2b.md)                   | Preset lifecycle/select/apply commands, browser helpers, and UI/storage bridge. |
 
 ## Historical Status Logs
 

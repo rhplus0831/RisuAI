@@ -3,12 +3,38 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { applyJsonCommandMutation, readBaseRevision } from '../commands/mutations.js'
+import {
+  applyPreset,
+  createPresetRecord,
+  ensureDatabaseObject,
+  ensurePresetCollection,
+  findPresetIndex,
+  readJsonObject,
+  readOptionalBoolean,
+  readOptionalString,
+  readPresetId,
+  requirePresetIndex,
+  saveCurrentPresetSnapshot,
+  selectedPresetId,
+  validateFullPresetIdList,
+} from '../commands/presets.js'
 import { requireAuth } from '../http.js'
-import { RevisionMismatchError, ValidationError } from '../repository.js'
+import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
 interface RuntimeSettingsCommandBody {
   baseRevision?: unknown
   patch?: unknown
+}
+
+interface PresetCommandBody {
+  baseRevision?: unknown
+  preset?: unknown
+  patch?: unknown
+  presetId?: unknown
+  presetIds?: unknown
+  apply?: unknown
+  saveCurrent?: unknown
+  name?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -687,6 +713,314 @@ export function registerCommandRoutes(
       return sendCommandError(reply, err)
     }
   })
+
+  app.post('/api/v1/commands/presets', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const preset = createPresetRecord(readJsonObject(body.preset, 'preset'))
+      const result = applyJsonCommandMutation<{ presetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const presets = ensurePresetCollection(target)
+          if (findPresetIndex(presets, preset.id) !== -1) {
+            throw new ValidationError(`Duplicate preset id: ${preset.id}`)
+          }
+          presets.push(preset)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.presetCreated, id: preset.id },
+            extra: { presetId: preset.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/presets/:presetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const presetId = readPresetId((req.params as { presetId?: unknown }).presetId)
+      const body = (req.body ?? {}) as PresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readJsonObject(body.patch, 'patch')
+      if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
+        throw new ValidationError('patch.id must match presetId')
+      }
+      const result = applyJsonCommandMutation<{ presetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const presets = ensurePresetCollection(target)
+          const index = requirePresetIndex(presets, presetId)
+          presets[index] = {
+            ...presets[index],
+            ...patch,
+            id: presetId,
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.presetUpdated, id: presetId },
+            extra: { presetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/presets/:presetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const presetId = readPresetId((req.params as { presetId?: unknown }).presetId)
+      const body = (req.body ?? {}) as PresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const selectPresetId =
+        body.presetId === undefined ? undefined : readPresetId(body.presetId, 'presetId')
+      const apply = readOptionalBoolean(body.apply, 'apply', false)
+      const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
+      const result = applyJsonCommandMutation<{ presetId: string; selectedPresetId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const presets = ensurePresetCollection(target)
+          if (presets.length <= 1) {
+            throw new ValidationError('Cannot delete the only preset')
+          }
+          if (saveCurrent) {
+            saveCurrentPresetSnapshot(target, presets)
+          }
+          const deletedIndex = requirePresetIndex(presets, presetId)
+          const currentSelectedId = selectedPresetId(target, presets)
+          const deletedWasSelected = currentSelectedId === presetId
+          presets.splice(deletedIndex, 1)
+
+          let nextSelectedId = selectPresetId
+          if (!nextSelectedId && deletedWasSelected) {
+            nextSelectedId = presets[0]?.id
+          } else if (!nextSelectedId) {
+            nextSelectedId = currentSelectedId ?? presets[0]?.id
+          }
+
+          const selectedIndex = nextSelectedId ? requirePresetIndex(presets, nextSelectedId) : -1
+          target.botPresetsId = selectedIndex
+          if (apply && selectedIndex >= 0) {
+            applyPreset(target, presets[selectedIndex])
+          }
+
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.presetDeleted, id: presetId },
+            extra: {
+              presetId,
+              selectedPresetId: selectedIndex >= 0 ? presets[selectedIndex].id : null,
+            },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/presets/:presetId/copy', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const presetId = readPresetId((req.params as { presetId?: unknown }).presetId)
+      const body = (req.body ?? {}) as PresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const name = readOptionalString(body.name, 'name')
+      const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
+      const result = applyJsonCommandMutation<{ presetId: string; sourcePresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const presets = ensurePresetCollection(target)
+          if (saveCurrent) {
+            saveCurrentPresetSnapshot(target, presets)
+          }
+          const index = requirePresetIndex(presets, presetId)
+          const copy = createPresetRecord({
+            ...presets[index],
+            id: undefined,
+            name: name ?? `${presets[index].name ?? 'Preset'} Copy`,
+          })
+          presets.push(copy)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.presetCopied, id: copy.id },
+            extra: { presetId: copy.id, sourcePresetId: presetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/presets/select', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const presetId = readPresetId(body.presetId, 'presetId')
+      const apply = readOptionalBoolean(body.apply, 'apply', true)
+      const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
+      const result = applyJsonCommandMutation<{ presetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const presets = ensurePresetCollection(target)
+          if (saveCurrent) {
+            saveCurrentPresetSnapshot(target, presets)
+          }
+          const index = requirePresetIndex(presets, presetId)
+          target.botPresetsId = index
+          if (apply) {
+            applyPreset(target, presets[index])
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.presetSelected, id: presetId },
+            extra: { presetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/presets/import', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'Imported')
+      const result = applyJsonCommandMutation<{ presetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const presets = ensurePresetCollection(target)
+          if (findPresetIndex(presets, preset.id) !== -1) {
+            throw new ValidationError(`Duplicate preset id: ${preset.id}`)
+          }
+          presets.push(preset)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.presetImported, id: preset.id },
+            extra: { presetId: preset.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/presets/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      if (!Array.isArray(body.presetIds)) {
+        throw new ValidationError('presetIds must be an array')
+      }
+      const presetIds = body.presetIds
+      const result = applyJsonCommandMutation<{ selectedPresetId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const presets = ensurePresetCollection(target)
+          const currentSelectedId = selectedPresetId(target, presets)
+          validateFullPresetIdList(presets, presetIds)
+          const byId = new Map(presets.map((preset) => [preset.id, preset]))
+          const reordered = presetIds.map((id) => byId.get(id)!)
+          target.botPresets = reordered
+          target.botPresetsId = currentSelectedId
+            ? requirePresetIndex(reordered, currentSelectedId)
+            : reordered.length > 0
+              ? 0
+              : -1
+          return {
+            event: COMMAND_EVENT_CATALOG.presetReordered,
+            extra: { selectedPresetId: selectedPresetId(target, reordered) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
 }
 
 function readSettingsGroup(group: unknown): SettingsGroup {
@@ -785,6 +1119,10 @@ function sendCommandError(
   }
   if (err instanceof ValidationError) {
     reply.code(400)
+    return { error: err.message }
+  }
+  if (err instanceof EntityNotFoundError) {
+    reply.code(404)
     return { error: err.message }
   }
   throw err

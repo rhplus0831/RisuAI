@@ -466,3 +466,256 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(res.json().error).toBe('Unsupported settings group: prompt')
   })
 })
+
+describe('Phase 9-2b bot preset commands', () => {
+  it('creates and updates presets with command events', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'A', mainPrompt: 'a prompt' }],
+      botPresetsId: 0,
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'preset-b', name: 'B', mainPrompt: 'b prompt' },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'preset.created',
+        revision: 2,
+        resource: 'preset',
+        id: 'preset-b',
+      },
+      presetId: 'preset-b',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        patch: { name: 'B renamed' },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event).toMatchObject({
+      type: 'preset.updated',
+      resource: 'preset',
+      id: 'preset-b',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.botPresets).toEqual([
+      { id: 'preset-a', name: 'A', mainPrompt: 'a prompt' },
+      { id: 'preset-b', name: 'B renamed', mainPrompt: 'b prompt' },
+    ])
+  })
+
+  it('selects and applies a preset while saving the previously selected snapshot', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A', mainPrompt: 'old saved', temperature: 50 },
+        { id: 'preset-b', name: 'B', mainPrompt: 'target prompt', temperature: 90 },
+      ],
+      botPresetsId: 0,
+      mainPrompt: 'current prompt',
+      temperature: 72,
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetId: 'preset-b',
+        saveCurrent: true,
+        apply: true,
+      },
+    })
+
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'preset.selected',
+        revision: 2,
+        resource: 'preset',
+        id: 'preset-b',
+      },
+      presetId: 'preset-b',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      botPresetsId: 1,
+      mainPrompt: 'target prompt',
+      temperature: 90,
+    })
+    expect(bootstrap.json().database.botPresets[0]).toMatchObject({
+      id: 'preset-a',
+      name: 'A',
+      mainPrompt: 'current prompt',
+      temperature: 72,
+    })
+  })
+
+  it('copies, deletes, and reorders presets by id', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A', mainPrompt: 'a prompt' },
+        { id: 'preset-b', name: 'B', mainPrompt: 'b prompt' },
+      ],
+      botPresetsId: 0,
+    })
+
+    const copied = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/preset-a/copy',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        name: 'A Copy',
+      },
+    })
+    expect(copied.statusCode).toBe(200)
+    const copiedPresetId = copied.json().presetId as string
+    expect(copiedPresetId).toBeTruthy()
+    expect(copied.json().event).toMatchObject({
+      type: 'preset.copied',
+      resource: 'preset',
+      id: copiedPresetId,
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: copied.json().revision,
+        presetIds: ['preset-b', copiedPresetId, 'preset-a'],
+      },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().event.type).toBe('preset.reordered')
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/commands/presets/${copiedPresetId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: reordered.json().revision,
+        presetId: 'preset-b',
+        apply: false,
+      },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: 4,
+      event: {
+        type: 'preset.deleted',
+        revision: 4,
+        resource: 'preset',
+        id: copiedPresetId,
+      },
+      presetId: copiedPresetId,
+      selectedPresetId: 'preset-b',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
+      'preset-b',
+      'preset-a',
+    ])
+    expect(bootstrap.json().database.botPresetsId).toBe(0)
+  })
+
+  it('rejects malformed preset reorder without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A' },
+        { id: 'preset-b', name: 'B' },
+      ],
+      botPresetsId: 0,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetIds: ['preset-a', 'preset-a'],
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('Duplicate preset id: preset-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
+      'preset-a',
+      'preset-b',
+    ])
+  })
+
+  it('returns 404 and 409 for missing presets and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'A' }],
+      botPresetsId: 0,
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/missing',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { name: 'Nope' },
+      },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Preset not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
+        patch: { name: 'stale' },
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

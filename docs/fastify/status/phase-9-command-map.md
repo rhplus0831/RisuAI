@@ -235,18 +235,18 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-2a-ii manual scalar settings pages are complete. Continue with
-**9-2b - Bot presets**:
+9-2b bot presets are complete. Continue with
+**9-2c - Prompt templates/items**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement the preset endpoints from the Settings, Presets, Personas,
-  Loadouts command-family table.
-- Replace `botPresets` and `botPresetsId` mutation paths in the preset UI
-  and storage helpers with typed server-backed commands while keeping
+- Implement prompt template/settings and prompt-item commands from the
+  Settings, Presets, Personas, Loadouts command-family table.
+- Replace prompt template and prompt item mutation paths in prompt
+  settings UI/helper code with typed server-backed commands while keeping
   local/Tauri behavior unchanged.
-- Preserve current selected-preset and preset-apply semantics; do not
-  fold prompt template/items into 9-2b.
+- Preserve current prompt assembly behavior; do not fold personas,
+  translator presets, loadouts, or plugin bridge work into 9-2c.
 - Preserve the 9-1 command response and conflict contract for every
-  preset command.
+  prompt/template command.

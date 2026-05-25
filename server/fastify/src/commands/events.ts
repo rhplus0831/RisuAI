@@ -19,6 +19,34 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'settings.updated',
     resource: 'settings',
   },
+  presetCreated: {
+    type: 'preset.created',
+    resource: 'preset',
+  },
+  presetUpdated: {
+    type: 'preset.updated',
+    resource: 'preset',
+  },
+  presetDeleted: {
+    type: 'preset.deleted',
+    resource: 'preset',
+  },
+  presetCopied: {
+    type: 'preset.copied',
+    resource: 'preset',
+  },
+  presetSelected: {
+    type: 'preset.selected',
+    resource: 'preset',
+  },
+  presetImported: {
+    type: 'preset.imported',
+    resource: 'preset',
+  },
+  presetReordered: {
+    type: 'preset.reordered',
+    resource: 'preset',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

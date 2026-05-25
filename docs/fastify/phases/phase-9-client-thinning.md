@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-2a-ii - Manual scalar settings pages**. Next slice:
-**9-2b - Bot presets**.
+**9-2b - Bot presets**. Next slice:
+**9-2c - Prompt templates/items**.
 
 ## Goal
 
@@ -123,6 +123,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-2a-ii.md`](../phases-completed/phase-9-client-thinning-9-2a-ii.md).
   - **9-2b - Bot presets.** Create/update/delete/reorder/select/copy/import
     preset flows, preserving current selected-preset behavior.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-2b.md`](../phases-completed/phase-9-client-thinning-9-2b.md).
   - **9-2c - Prompt templates/items.** Template enablement, prompt-item
     create/update/delete/reorder, and prompt-setting fields directly tied
     to template behavior.

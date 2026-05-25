@@ -19,10 +19,14 @@ vi.mock('../storage/nodeStorage', () => ({
 import {
   canUseServerCommands,
   clearCachedServerCommandRevision,
+  createPresetCommand,
   getServerCommandBaseRevision,
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  reorderPresetsCommand,
+  runServerPresetCommand,
+  selectPresetCommand,
 } from './commands'
 
 interface CapturedFetch {
@@ -295,6 +299,137 @@ describe('server command API adapter', () => {
 
     const result = await patchServerBackedSettings({
       patch: { aiModel: 'openrouter' },
+      rollback,
+    })
+
+    expect(result).toEqual({ status: 'unavailable' })
+    expect(rollback).not.toHaveBeenCalled()
+    expect(commandFetch.calls).toEqual([])
+  })
+
+  it('creates presets through the typed command helper', async () => {
+    const event = { type: 'preset.created', revision: 2, resource: 'preset', id: 'preset-a' }
+    const commandFetch = makeCommandFetch(() => ({ revision: 2, event, presetId: 'preset-a' }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await createPresetCommand({
+      baseRevision: 1,
+      preset: { id: 'preset-a', name: 'A', mainPrompt: 'hello' },
+    })
+
+    expect(result).toEqual({ status: 'ok', revision: 2, event, presetId: 'preset-a' })
+    expect(commandFetch.calls).toEqual([
+      {
+        url: '/api/v1/commands/presets',
+        method: 'POST',
+        authHeader: 'test-auth-token',
+        contentType: 'application/json',
+        body: {
+          baseRevision: 1,
+          preset: { id: 'preset-a', name: 'A', mainPrompt: 'hello' },
+        },
+      },
+    ])
+  })
+
+  it('selects and reorders presets through typed command helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/presets/select')) {
+        return {
+          revision: 3,
+          event: { type: 'preset.selected', revision: 3, resource: 'preset', id: 'preset-b' },
+          presetId: 'preset-b',
+        }
+      }
+      return {
+        revision: 4,
+        event: { type: 'preset.reordered', revision: 4, resource: 'preset' },
+        selectedPresetId: 'preset-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      selectPresetCommand({
+        baseRevision: 2,
+        presetId: 'preset-b',
+        apply: true,
+        saveCurrent: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, presetId: 'preset-b' })
+
+    await expect(
+      reorderPresetsCommand({
+        baseRevision: 3,
+        presetIds: ['preset-b', 'preset-a'],
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 4, selectedPresetId: 'preset-b' })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/presets/select',
+        body: {
+          baseRevision: 2,
+          presetId: 'preset-b',
+          apply: true,
+          saveCurrent: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/presets/reorder',
+        body: {
+          baseRevision: 3,
+          presetIds: ['preset-b', 'preset-a'],
+        },
+      },
+    ])
+  })
+
+  it('runs server preset commands with revision lookup and one conflict retry', async () => {
+    let selectAttempts = 0
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 5 }
+      selectAttempts += 1
+      if (selectAttempts === 1) {
+        return jsonResponse({ error: 'revision_conflict', currentRevision: 8 }, 409)
+      }
+      return {
+        revision: 9,
+        event: { type: 'preset.selected', revision: 9, resource: 'preset', id: 'preset-b' },
+        presetId: 'preset-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      runServerPresetCommand({
+        command: (baseRevision) =>
+          selectPresetCommand({
+            baseRevision,
+            presetId: 'preset-b',
+          }),
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 9, presetId: 'preset-b' })
+
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      null,
+      { baseRevision: 5, presetId: 'preset-b' },
+      { baseRevision: 8, presetId: 'preset-b' },
+    ])
+  })
+
+  it('does not dispatch preset commands outside Fastify mode', async () => {
+    platformState.isFastifyServer = false
+    const rollback = vi.fn()
+    const commandFetch = makeCommandFetch(() => ({ revision: 2 }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await runServerPresetCommand({
+      command: (baseRevision) =>
+        selectPresetCommand({
+          baseRevision,
+          presetId: 'preset-b',
+        }),
       rollback,
     })
 
