@@ -235,18 +235,19 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-2b bot presets are complete. Continue with
-**9-2c - Prompt templates/items**:
+9-2d personas are complete. Continue with
+**9-2e - Translator presets**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement prompt template/settings and prompt-item commands from the
-  Settings, Presets, Personas, Loadouts command-family table.
-- Replace prompt template and prompt item mutation paths in prompt
-  settings UI/helper code with typed server-backed commands while keeping
+- Implement translator preset commands from the Settings, Presets,
+  Personas, Loadouts command-family table.
+- Replace translator preset mutation paths in translator settings
+  UI/helper code with typed server-backed commands while keeping
   local/Tauri behavior unchanged.
-- Preserve current prompt assembly behavior; do not fold personas,
-  translator presets, loadouts, or plugin bridge work into 9-2c.
+- Preserve runtime translation dispatch behavior; do not fold loadouts,
+  character/chat/message resources, projection enforcement, or plugin
+  bridge work into 9-2e.
 - Preserve the 9-1 command response and conflict contract for every
-  prompt/template command.
+  translator preset command.

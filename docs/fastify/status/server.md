@@ -22,11 +22,10 @@ docs.
   enriched `done` events when `db.useServerPromptAssembly` is enabled.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
   prompt assembly.
-- Command foundation routes are live under `/api/v1/commands/*`. The
-  first harness command is
-  `PATCH /api/v1/commands/settings/runtime`, which updates the
-  allowlisted `useServerPromptAssembly` runtime setting with
-  `baseRevision` / 409 conflict handling and emits `settings.updated`.
+- Command routes are live under `/api/v1/commands/*` for scalar settings,
+  bot presets, prompt settings/items, and personas. Implemented resource
+  families all use `baseRevision` / 409 conflict handling and emit their
+  mapped command event.
 - Memory routes are auth-gated: `POST /api/v1/memory/jobs`,
   `GET /api/v1/memory/jobs`, `DELETE /api/v1/memory/jobs/:id`,
   `GET /api/v1/memory/chunks/:chatId`, and
@@ -38,7 +37,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-next concrete pickup is 9-2a scalar settings groups in
+next concrete pickup is 9-2e translator presets in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

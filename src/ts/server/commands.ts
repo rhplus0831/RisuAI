@@ -363,6 +363,15 @@ export type PromptItemSnapshot = Record<string, unknown> & {
   type?: string
 }
 
+export type PersonaSnapshot = Record<string, unknown> & {
+  id?: string
+  name?: string
+  icon?: string
+  personaPrompt?: string
+  note?: string
+  largePortrait?: boolean
+}
+
 export interface PresetCommandInput {
   baseRevision: number
 }
@@ -427,6 +436,38 @@ export interface DeletePromptItemCommandInput {
 export interface ReorderPromptItemsCommandInput {
   baseRevision: number
   itemIds: string[]
+}
+
+export interface PersonaCommandInput {
+  baseRevision: number
+}
+
+export interface CreatePersonaCommandInput extends PersonaCommandInput {
+  persona: PersonaSnapshot
+  mirrorLegacyProfile?: boolean
+}
+
+export interface UpdatePersonaCommandInput extends PersonaCommandInput {
+  personaId: string
+  patch: PersonaSnapshot
+  mirrorLegacyProfile?: boolean
+}
+
+export interface DeletePersonaCommandInput extends PersonaCommandInput {
+  personaId: string
+  selectPersonaId?: string
+  mirrorLegacyProfile?: boolean
+  saveCurrent?: boolean
+}
+
+export interface SelectPersonaCommandInput extends PersonaCommandInput {
+  personaId: string
+  mirrorLegacyProfile?: boolean
+  saveCurrent?: boolean
+}
+
+export interface ReorderPersonasCommandInput extends PersonaCommandInput {
+  personaIds: string[]
 }
 
 export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
@@ -722,6 +763,82 @@ export async function reorderPromptItemsCommand(
     body: {
       baseRevision: input.baseRevision,
       itemIds: input.itemIds,
+    },
+    signal,
+  })
+}
+
+export async function createPersonaCommand(
+  input: CreatePersonaCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ personaId: string }>> {
+  return requestCommandJson('/personas', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      persona: input.persona,
+      mirrorLegacyProfile: input.mirrorLegacyProfile,
+    },
+    signal,
+  })
+}
+
+export async function updatePersonaCommand(
+  input: UpdatePersonaCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ personaId: string }>> {
+  return requestCommandJson(`/personas/${encodeURIComponent(input.personaId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+      mirrorLegacyProfile: input.mirrorLegacyProfile,
+    },
+    signal,
+  })
+}
+
+export async function deletePersonaCommand(
+  input: DeletePersonaCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ personaId: string; selectedPersonaId: string | null }>> {
+  return requestCommandJson(`/personas/${encodeURIComponent(input.personaId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+      personaId: input.selectPersonaId,
+      mirrorLegacyProfile: input.mirrorLegacyProfile,
+      saveCurrent: input.saveCurrent,
+    },
+    signal,
+  })
+}
+
+export async function selectPersonaCommand(
+  input: SelectPersonaCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ personaId: string }>> {
+  return requestCommandJson('/personas/select', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      personaId: input.personaId,
+      mirrorLegacyProfile: input.mirrorLegacyProfile,
+      saveCurrent: input.saveCurrent,
+    },
+    signal,
+  })
+}
+
+export async function reorderPersonasCommand(
+  input: ReorderPersonasCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedPersonaId: string | null }>> {
+  return requestCommandJson('/personas/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      personaIds: input.personaIds,
     },
     signal,
   })

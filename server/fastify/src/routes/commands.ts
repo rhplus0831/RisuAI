@@ -12,6 +12,20 @@ import {
   validateFullPromptItemIdList,
 } from '../commands/prompts.js'
 import {
+  createPersonaRecord,
+  ensureDatabaseObject as ensurePersonaDatabaseObject,
+  ensurePersonaCollection,
+  findPersonaIndex,
+  mirrorLegacyProfile,
+  readOptionalBoolean as readPersonaOptionalBoolean,
+  readPersonaId,
+  readPersonaPatch,
+  requirePersonaIndex,
+  saveSelectedPersonaSnapshot,
+  selectedPersonaId,
+  validateFullPersonaIdList,
+} from '../commands/personas.js'
+import {
   applyPreset,
   createPresetRecord,
   ensureDatabaseObject,
@@ -50,6 +64,16 @@ interface PromptCommandBody {
   promptItem?: unknown
   patch?: unknown
   itemIds?: unknown
+}
+
+interface PersonaCommandBody {
+  baseRevision?: unknown
+  persona?: unknown
+  patch?: unknown
+  personaId?: unknown
+  personaIds?: unknown
+  mirrorLegacyProfile?: unknown
+  saveCurrent?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -1215,6 +1239,262 @@ export function registerCommandRoutes(
       return {
         revision: result.revision,
         event: result.event,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/personas', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PersonaCommandBody
+      const baseRevision = readBaseRevision(body)
+      const persona = createPersonaRecord(body.persona)
+      const mirror = readPersonaOptionalBoolean(
+        body.mirrorLegacyProfile,
+        'mirrorLegacyProfile',
+        false,
+      )
+      const result = applyJsonCommandMutation<{ personaId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePersonaDatabaseObject(database)
+          const personas = ensurePersonaCollection(target)
+          if (findPersonaIndex(personas, persona.id) !== -1) {
+            throw new ValidationError(`Duplicate persona id: ${persona.id}`)
+          }
+          personas.push(persona)
+          if (mirror) {
+            target.selectedPersona = personas.length - 1
+            mirrorLegacyProfile(target, persona)
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.personaCreated, id: persona.id },
+            extra: { personaId: persona.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/personas/:personaId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const personaId = readPersonaId((req.params as { personaId?: unknown }).personaId)
+      const body = (req.body ?? {}) as PersonaCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readPersonaPatch(body.patch)
+      const mirror = readPersonaOptionalBoolean(
+        body.mirrorLegacyProfile,
+        'mirrorLegacyProfile',
+        false,
+      )
+      if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== personaId) {
+        throw new ValidationError('patch.id must match personaId')
+      }
+      const result = applyJsonCommandMutation<{ personaId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePersonaDatabaseObject(database)
+          const personas = ensurePersonaCollection(target)
+          const index = requirePersonaIndex(personas, personaId)
+          personas[index] = {
+            ...personas[index],
+            ...patch,
+            id: personaId,
+          }
+          if (mirror && target.selectedPersona === index) {
+            mirrorLegacyProfile(target, personas[index])
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.personaUpdated, id: personaId },
+            extra: { personaId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/personas/:personaId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const personaId = readPersonaId((req.params as { personaId?: unknown }).personaId)
+      const body = (req.body ?? {}) as PersonaCommandBody
+      const baseRevision = readBaseRevision(body)
+      const selectPersonaId =
+        body.personaId === undefined ? undefined : readPersonaId(body.personaId, 'personaId')
+      const mirror = readPersonaOptionalBoolean(
+        body.mirrorLegacyProfile,
+        'mirrorLegacyProfile',
+        true,
+      )
+      const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
+      const result = applyJsonCommandMutation<{
+        personaId: string
+        selectedPersonaId: string | null
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePersonaDatabaseObject(database)
+          const personas = ensurePersonaCollection(target)
+          if (personas.length <= 1) {
+            throw new ValidationError('Cannot delete the only persona')
+          }
+          if (saveCurrent) {
+            saveSelectedPersonaSnapshot(target, personas)
+          }
+          const deletedIndex = requirePersonaIndex(personas, personaId)
+          const currentSelectedId = selectedPersonaId(target, personas)
+          const deletedWasSelected = currentSelectedId === personaId
+          personas.splice(deletedIndex, 1)
+
+          let nextSelectedId = selectPersonaId
+          if (!nextSelectedId && deletedWasSelected) {
+            nextSelectedId = personas[0]?.id
+          } else if (!nextSelectedId) {
+            nextSelectedId = currentSelectedId ?? personas[0]?.id
+          }
+
+          const selectedIndex = nextSelectedId ? requirePersonaIndex(personas, nextSelectedId) : -1
+          target.selectedPersona = selectedIndex
+          if (mirror && selectedIndex >= 0) {
+            mirrorLegacyProfile(target, personas[selectedIndex])
+          }
+
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.personaDeleted, id: personaId },
+            extra: {
+              personaId,
+              selectedPersonaId: selectedIndex >= 0 ? personas[selectedIndex].id : null,
+            },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/personas/select', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PersonaCommandBody
+      const baseRevision = readBaseRevision(body)
+      const personaId = readPersonaId(body.personaId, 'personaId')
+      const mirror = readPersonaOptionalBoolean(
+        body.mirrorLegacyProfile,
+        'mirrorLegacyProfile',
+        true,
+      )
+      const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
+      const result = applyJsonCommandMutation<{ personaId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePersonaDatabaseObject(database)
+          const personas = ensurePersonaCollection(target)
+          if (saveCurrent) {
+            saveSelectedPersonaSnapshot(target, personas)
+          }
+          const index = requirePersonaIndex(personas, personaId)
+          target.selectedPersona = index
+          if (mirror) {
+            mirrorLegacyProfile(target, personas[index])
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.personaSelected, id: personaId },
+            extra: { personaId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/personas/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PersonaCommandBody
+      const baseRevision = readBaseRevision(body)
+      if (!Array.isArray(body.personaIds)) {
+        throw new ValidationError('personaIds must be an array')
+      }
+      const personaIds = body.personaIds
+      const result = applyJsonCommandMutation<{ selectedPersonaId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePersonaDatabaseObject(database)
+          const personas = ensurePersonaCollection(target)
+          const currentSelectedId = selectedPersonaId(target, personas)
+          validateFullPersonaIdList(personas, personaIds)
+          const byId = new Map(personas.map((persona) => [persona.id, persona]))
+          const reordered = personaIds.map((id) => byId.get(id)!)
+          target.personas = reordered
+          target.selectedPersona = currentSelectedId
+            ? requirePersonaIndex(reordered, currentSelectedId)
+            : reordered.length > 0
+              ? 0
+              : -1
+          return {
+            event: COMMAND_EVENT_CATALOG.personaReordered,
+            extra: { selectedPersonaId: selectedPersonaId(target, reordered) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
       }
     } catch (err) {
       return sendCommandError(reply, err)

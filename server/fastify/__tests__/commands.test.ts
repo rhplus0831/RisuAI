@@ -936,3 +936,275 @@ describe('Phase 9-2c prompt template and item commands', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-2d persona commands', () => {
+  it('creates, updates, deletes, and reorders personas by stable id', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      username: 'Current',
+      userIcon: 'assets/current.png',
+      personaPrompt: 'Current prompt',
+      userNote: 'Current note',
+      personas: [
+        {
+          id: 'persona-a',
+          name: 'A',
+          icon: '',
+          personaPrompt: 'a prompt',
+          note: 'a note',
+        },
+      ],
+      selectedPersona: 0,
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        persona: {
+          id: 'persona-b',
+          name: 'B',
+          icon: 'assets/b.png',
+          personaPrompt: 'b prompt',
+          note: 'b note',
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'persona.created',
+        revision: 2,
+        resource: 'persona',
+        id: 'persona-b',
+      },
+      personaId: 'persona-b',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/personas/persona-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        patch: { name: 'B renamed', largePortrait: true },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event).toMatchObject({
+      type: 'persona.updated',
+      resource: 'persona',
+      id: 'persona-b',
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        personaIds: ['persona-b', 'persona-a'],
+      },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json()).toEqual({
+      revision: 4,
+      event: {
+        type: 'persona.reordered',
+        revision: 4,
+        resource: 'persona',
+      },
+      selectedPersonaId: 'persona-a',
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/personas/persona-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: reordered.json().revision,
+        personaId: 'persona-b',
+        mirrorLegacyProfile: true,
+      },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: 5,
+      event: {
+        type: 'persona.deleted',
+        revision: 5,
+        resource: 'persona',
+        id: 'persona-a',
+      },
+      personaId: 'persona-a',
+      selectedPersonaId: 'persona-b',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      username: 'B renamed',
+      userIcon: 'assets/b.png',
+      personaPrompt: 'b prompt',
+      userNote: 'b note',
+      selectedPersona: 0,
+    })
+    expect(bootstrap.json().database.personas).toEqual([
+      {
+        id: 'persona-b',
+        name: 'B renamed',
+        icon: 'assets/b.png',
+        personaPrompt: 'b prompt',
+        note: 'b note',
+        largePortrait: true,
+      },
+    ])
+  })
+
+  it('selects a persona while saving the previous legacy profile mirror fields', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      username: 'Edited A',
+      userIcon: 'assets/edited-a.png',
+      personaPrompt: 'edited a prompt',
+      userNote: 'edited a note',
+      personas: [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: '' },
+        {
+          id: 'persona-b',
+          name: 'B',
+          icon: 'assets/b.png',
+          personaPrompt: 'b prompt',
+          note: 'b note',
+        },
+      ],
+      selectedPersona: 0,
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        personaId: 'persona-b',
+        saveCurrent: true,
+        mirrorLegacyProfile: true,
+      },
+    })
+
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'persona.selected',
+        revision: 2,
+        resource: 'persona',
+        id: 'persona-b',
+      },
+      personaId: 'persona-b',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      selectedPersona: 1,
+      username: 'B',
+      userIcon: 'assets/b.png',
+      personaPrompt: 'b prompt',
+      userNote: 'b note',
+    })
+    expect(bootstrap.json().database.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Edited A',
+      icon: 'assets/edited-a.png',
+      personaPrompt: 'edited a prompt',
+      note: 'edited a note',
+    })
+  })
+
+  it('rejects malformed persona commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      personas: [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: '' },
+        { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'b prompt', note: '' },
+      ],
+      selectedPersona: 0,
+    })
+
+    const update = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/personas/persona-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { largePortrait: 'yes' },
+      },
+    })
+    expect(update.statusCode).toBe(400)
+    expect(update.json().error).toBe('patch.largePortrait must be a boolean')
+
+    const reorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        personaIds: ['persona-a', 'persona-a'],
+      },
+    })
+    expect(reorder.statusCode).toBe(400)
+    expect(reorder.json().error).toBe('Duplicate persona id: persona-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.personas.map((persona: { id: string }) => persona.id)).toEqual(
+      ['persona-a', 'persona-b'],
+    )
+  })
+
+  it('returns 404 and 409 for missing personas and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: '' }],
+      selectedPersona: 0,
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/personas/missing',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { name: 'Nope' },
+      },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Persona not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/personas/persona-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

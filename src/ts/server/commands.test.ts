@@ -18,19 +18,24 @@ vi.mock('../storage/nodeStorage', () => ({
 
 import {
   canUseServerCommands,
+  createPersonaCommand,
   clearCachedServerCommandRevision,
   createPromptItemCommand,
   createPresetCommand,
+  deletePersonaCommand,
   deletePromptItemCommand,
   getServerCommandBaseRevision,
   patchPromptSettingsCommand,
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  reorderPersonasCommand,
   reorderPromptItemsCommand,
   reorderPresetsCommand,
   runServerCommand,
   runServerPresetCommand,
+  selectPersonaCommand,
+  updatePersonaCommand,
   selectPresetCommand,
   updatePromptItemCommand,
 } from './commands'
@@ -587,6 +592,175 @@ describe('server command API adapter', () => {
       null,
       { baseRevision: 11, patch: { type: 'memory' } },
       { baseRevision: 14, patch: { type: 'memory' } },
+    ])
+  })
+
+  it('dispatches persona commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/personas/select')) {
+        return {
+          revision: 5,
+          event: { type: 'persona.selected', revision: 5, resource: 'persona', id: 'persona-b' },
+          personaId: 'persona-b',
+        }
+      }
+      if (url.endsWith('/personas/reorder')) {
+        return {
+          revision: 6,
+          event: { type: 'persona.reordered', revision: 6, resource: 'persona' },
+          selectedPersonaId: 'persona-b',
+        }
+      }
+      if (url.endsWith('/personas/persona-a')) {
+        return {
+          revision: 4,
+          event: { type: 'persona.deleted', revision: 4, resource: 'persona', id: 'persona-a' },
+          personaId: 'persona-a',
+          selectedPersonaId: 'persona-b',
+        }
+      }
+      if (url.endsWith('/personas/persona-b')) {
+        return {
+          revision: 3,
+          event: { type: 'persona.updated', revision: 3, resource: 'persona', id: 'persona-b' },
+          personaId: 'persona-b',
+        }
+      }
+      return {
+        revision: 2,
+        event: { type: 'persona.created', revision: 2, resource: 'persona', id: 'persona-b' },
+        personaId: 'persona-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      createPersonaCommand({
+        baseRevision: 1,
+        persona: { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'hello' },
+        mirrorLegacyProfile: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, personaId: 'persona-b' })
+
+    await expect(
+      updatePersonaCommand({
+        baseRevision: 2,
+        personaId: 'persona-b',
+        patch: { name: 'Bee', largePortrait: true },
+        mirrorLegacyProfile: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, personaId: 'persona-b' })
+
+    await expect(
+      deletePersonaCommand({
+        baseRevision: 3,
+        personaId: 'persona-a',
+        selectPersonaId: 'persona-b',
+        mirrorLegacyProfile: true,
+        saveCurrent: true,
+      }),
+    ).resolves.toMatchObject({
+      status: 'ok',
+      revision: 4,
+      personaId: 'persona-a',
+      selectedPersonaId: 'persona-b',
+    })
+
+    await expect(
+      selectPersonaCommand({
+        baseRevision: 4,
+        personaId: 'persona-b',
+        mirrorLegacyProfile: true,
+        saveCurrent: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, personaId: 'persona-b' })
+
+    await expect(
+      reorderPersonasCommand({
+        baseRevision: 5,
+        personaIds: ['persona-b'],
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 6, selectedPersonaId: 'persona-b' })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/personas',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          persona: { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'hello' },
+          mirrorLegacyProfile: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/personas/persona-b',
+        method: 'PATCH',
+        body: {
+          baseRevision: 2,
+          patch: { name: 'Bee', largePortrait: true },
+          mirrorLegacyProfile: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/personas/persona-a',
+        method: 'DELETE',
+        body: {
+          baseRevision: 3,
+          personaId: 'persona-b',
+          mirrorLegacyProfile: true,
+          saveCurrent: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/personas/select',
+        method: 'POST',
+        body: {
+          baseRevision: 4,
+          personaId: 'persona-b',
+          mirrorLegacyProfile: true,
+          saveCurrent: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/personas/reorder',
+        method: 'POST',
+        body: { baseRevision: 5, personaIds: ['persona-b'] },
+      },
+    ])
+  })
+
+  it('runs persona commands with revision lookup and one conflict retry', async () => {
+    let attempts = 0
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 20 }
+      attempts += 1
+      if (attempts === 1) {
+        return jsonResponse({ error: 'revision_conflict', currentRevision: 23 }, 409)
+      }
+      return {
+        revision: 24,
+        event: { type: 'persona.selected', revision: 24, resource: 'persona', id: 'persona-b' },
+        personaId: 'persona-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      runServerCommand({
+        command: (baseRevision) =>
+          selectPersonaCommand({
+            baseRevision,
+            personaId: 'persona-b',
+          }),
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 24, personaId: 'persona-b' })
+
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      null,
+      { baseRevision: 20, personaId: 'persona-b' },
+      { baseRevision: 23, personaId: 'persona-b' },
     ])
   })
 })

@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-2c - Prompt templates/items**. Next slice:
-**9-2d - Personas**.
+**9-2d - Personas**. Next slice:
+**9-2e - Translator presets**.
 
 ## Goal
 
@@ -132,6 +132,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-2c.md`](../phases-completed/phase-9-client-thinning-9-2c.md).
   - **9-2d - Personas.** Persona create/update/delete/reorder/select plus
     mirror fields and import/export behavior.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-2d.md`](../phases-completed/phase-9-client-thinning-9-2d.md).
   - **9-2e - Translator presets.** Preset create/rename/delete/select and
     legacy-field sync. Runtime translation calls stay out of scope.
   - **9-2f - Loadouts.** Save/delete/favorite/list/last-used bookkeeping;

@@ -15,13 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-2c, Prompt templates/items command bridge.
-- Current gap: 9-2d begins persona commands; 9-5 should
+- Last landed slice: 9-2d, Personas command bridge.
+- Current gap: 9-2e begins translator preset commands; 9-5 should
   still do the residual direct-write sweep before enabling the read-only
   `DBState.db` guard.
-- Next default pickup: 9-2d, Personas.
-- Last recorded full baselines after 9-2c: `pnpm check` clean,
-  `pnpm test` 669 tests plus 4 skipped, `pnpm api:test` 1070 tests, and
+- Next default pickup: 9-2e, Translator presets.
+- Last recorded full baselines after 9-2d: `pnpm check` clean,
+  `pnpm test` 671 tests plus 4 skipped, `pnpm api:test` 1074 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -43,14 +43,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                                   |
-| ------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                                     |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                              |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.                 |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                                        |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                                        |
-| Client thinning                             | Active; 9-2c prompt templates/items command bridge landed; next slice is 9-2d personas. |
+| Workstream                                  | State                                                                               |
+| ------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                                 |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                          |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.             |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                                    |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                                    |
+| Client thinning                             | Active; 9-2d personas command bridge landed; next slice is 9-2e translator presets. |
 
 ## Maintenance Rules
 
