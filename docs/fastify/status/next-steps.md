@@ -10,19 +10,27 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-5c landed the browser event subscription and debounced re-bootstrap
-projection refresh. Fastify-served web startup now subscribes to
-authenticated `GET /api/v1/events` after the initial bootstrap load,
-treats command events as projection invalidations, debounces a
-`GET /api/v1/bootstrap` re-fetch, replaces the browser database
-projection, and caches the refreshed revision through the bootstrap
-helper. Tauri/local web startup continues to use the existing local
-storage path and does not subscribe.
+9-5d has a first residual helper pass landed:
+
+- Character asset helper writes in `src/ts/characters.ts`
+  (`selectCharImg`, `dumpCharImage`, `changeCharImage`, `addCharEmotion`,
+  and `rmCharEmotion`) now snapshot previous character state and dispatch
+  through `dispatchCompatibleCharacterUpdate`, so Fastify mode persists
+  owned asset-reference fields through the existing character command.
+- Legacy v1 chat JSON imports now dispatch `createChat` commands after
+  optimistic local insertion, matching the v2 and HTML import paths.
+- Drag-and-drop `.risum` module import now returns explicit unsupported
+  behavior in Fastify server-backed web mode instead of pushing directly
+  into `DBState.db.modules`. Local/Tauri behavior is unchanged.
+- Focused coverage was added to
+  `src/ts/compatibilityAdapters.test.ts` for character asset helper
+  command dispatch.
 
 ## Immediate Pickup
 
 Continue Phase 9 implementation with **9-5d - Residual command
-replacement sweep**.
+replacement sweep**. Do not start 9-5e yet; the read-only guard still
+needs more residual write replacement.
 
 Expected scope:
 
@@ -123,6 +131,9 @@ Implementation notes:
   re-fetch and replace the browser projection. The helper uses `fetch`
   rather than native `EventSource` because the route requires the
   `risu-auth` header.
+- 9-5d first pass routed character asset helper writes and legacy chat v1
+  imports through existing commands, and made `.risum` drag import
+  explicitly unsupported in Fastify mode.
 - MCP module import is explicitly unsupported in server-backed web mode
   until a later slice defines a dedicated server-owned path.
 
@@ -156,10 +167,10 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-5c:
+Last recorded full baselines after the 9-5d first pass:
 
 - `pnpm check` - clean, with 0 Svelte errors and 0 warnings.
-- `pnpm test` - 708 tests passed, 4 skipped.
+- `pnpm test` - 709 tests passed, 4 skipped.
 - `pnpm api:test` - 1119 tests passed.
 - `pnpm build` - passed with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
@@ -178,6 +189,13 @@ Focused 9-5c run:
 
 - `pnpm exec vitest run src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts`
   - 11 tests passed.
+
+Focused 9-5d first-pass run:
+
+- `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
+  - 8 tests passed.
+- `pnpm check`
+  - clean, with 0 Svelte errors and 0 warnings.
 
 ## References
 

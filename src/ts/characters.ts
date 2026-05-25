@@ -51,6 +51,7 @@ import {
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
   currentCharacterStateSnapshot,
+  dispatchCompatibleCharacterUpdate,
   dispatchCreateCharacter,
   dispatchDeleteCharacter,
   dispatchSelectCharacter,
@@ -64,6 +65,11 @@ export function createNewCharacter() {
   checkCharOrder()
   dispatchCreateCharacter(character, previous)
   return DBState.db.characters.length - 1
+}
+
+function cloneCharacterSnapshot(char: character | undefined): character | undefined {
+  if (!char) return undefined
+  return JSON.parse(JSON.stringify(char)) as character
 }
 
 export async function getCharImage(loc: string, type: 'plain' | 'css' | 'contain' | 'lgcss') {
@@ -100,6 +106,8 @@ export async function selectCharImg(charIndex: number) {
   if (!selected) {
     return
   }
+  const previous = currentCharacterStateSnapshot()
+  const previousCharacter = cloneCharacterSnapshot(DBState.db.characters[charIndex])
   const img = selected.data
   let db = DBState.db
 
@@ -144,11 +152,17 @@ export async function selectCharImg(charIndex: number) {
   }
 
   const imgp = await saveImage(img)
-  dumpCharImage(charIndex)
+  dumpCharImage(charIndex, { dispatch: false })
   DBState.db.characters[charIndex].image = imgp
+  dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[charIndex], previous)
 }
 
-export function dumpCharImage(charIndex: number) {
+export function dumpCharImage(charIndex: number, options: { dispatch?: boolean } = {}) {
+  const dispatch = options.dispatch ?? true
+  const previous = dispatch ? currentCharacterStateSnapshot() : null
+  const previousCharacter = dispatch
+    ? cloneCharacterSnapshot(DBState.db.characters[charIndex])
+    : null
   const char = DBState.db.characters[charIndex] as character
   if (!char.image || char.image === '') {
     return
@@ -162,15 +176,21 @@ export function dumpCharImage(charIndex: number) {
   })
   char.image = ''
   DBState.db.characters[charIndex] = char
+  if (previous && previousCharacter) {
+    dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
+  }
 }
 
 export function changeCharImage(charIndex: number, changeIndex: number) {
+  const previous = currentCharacterStateSnapshot()
+  const previousCharacter = cloneCharacterSnapshot(DBState.db.characters[charIndex])
   const char = DBState.db.characters[charIndex] as character
   const image = char.ccAssets[changeIndex].uri
   char.ccAssets.splice(changeIndex, 1)
-  dumpCharImage(charIndex)
+  dumpCharImage(charIndex, { dispatch: false })
   char.image = image
   DBState.db.characters[charIndex] = char
+  dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
 }
 
 export const addingEmotion = writable(false)
@@ -182,6 +202,8 @@ export async function addCharEmotion(charId: number) {
     addingEmotion.set(false)
     return
   }
+  const previous = currentCharacterStateSnapshot()
+  const previousCharacter = cloneCharacterSnapshot(DBState.db.characters[charId])
   let db = DBState.db
   for (const f of selected) {
     const img = f.data
@@ -192,12 +214,16 @@ export async function addCharEmotion(charId: number) {
     DBState.db.characters[charId] = dbChar
   }
   addingEmotion.set(false)
+  dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[charId], previous)
 }
 
 export function rmCharEmotion(charId: number, emotionId: number) {
+  const previous = currentCharacterStateSnapshot()
+  const previousCharacter = cloneCharacterSnapshot(DBState.db.characters[charId])
   let dbChar = DBState.db.characters[charId]
   dbChar.emotionImages.splice(emotionId, 1)
   DBState.db.characters[charId] = dbChar
+  dispatchCompatibleCharacterUpdate(previousCharacter, dbChar, previous)
 }
 
 export async function exportChat(page: number) {
@@ -504,18 +530,22 @@ export async function importChat() {
       if (json.type === 'risuAllChats' && json.ver === 1) {
         const chats = json.data
         if (Array.isArray(chats) && chats.length > 0) {
-          DBState.db.characters[selectedID].chats.unshift(
-            ...chats.map((v) => {
-              if (!v.id) {
-                v.id = uuidv4()
-              }
-              if (!v.localLore) {
-                v.localLore = []
-              }
-              v.fmIndex ??= -1
-              return v
-            }),
-          )
+          const normalizedChats = chats.map((v) => {
+            if (!v.id) {
+              v.id = uuidv4()
+            }
+            if (!v.localLore) {
+              v.localLore = []
+            }
+            v.fmIndex ??= -1
+            return v
+          })
+          DBState.db.characters[selectedID].chats.unshift(...normalizedChats)
+          if (characterId) {
+            for (const chat of normalizedChats) {
+              dispatchCreateChat(characterId, chat, previous, false)
+            }
+          }
           alertNormal(language.successImport)
           return
         } else {
@@ -536,6 +566,9 @@ export async function importChat() {
           das.fmIndex ??= -1
           das.id = v4()
           DBState.db.characters[selectedID].chats.unshift(das)
+          if (characterId) {
+            dispatchCreateChat(characterId, das, previous, false)
+          }
           alertNormal(language.successImport)
           return
         } else {

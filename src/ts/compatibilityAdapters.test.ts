@@ -31,6 +31,7 @@ import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { Chat, character } from './storage/database.svelte'
+import { changeCharImage, rmCharEmotion } from './characters'
 
 interface CapturedFetch {
   url: string
@@ -85,6 +86,16 @@ function seedCharacter(): character {
     ],
     chatFolders: [],
     chatPage: 0,
+    image: '',
+    ccAssets: [
+      {
+        type: 'icon',
+        name: 'iconx',
+        uri: 'asset-old',
+        ext: 'png',
+      },
+    ],
+    emotionImages: [['happy', 'asset-happy']],
   } as unknown as character
 }
 
@@ -198,6 +209,42 @@ describe('Phase 9-3f compatibility adapters', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(calls).toEqual([])
     expect(get(selectedCharID)).toBe(0)
+  })
+
+  it('routes character asset helper writes through character commands', async () => {
+    const calls = stubCommandFetch()
+
+    changeCharImage(0, 0)
+    rmCharEmotion(0, 0)
+
+    await vi.waitFor(() => {
+      expect(
+        calls.filter((call) => call.url === '/api/v1/commands/characters/char-a'),
+      ).toHaveLength(2)
+    })
+    expect(calls.filter((call) => call.url === '/api/v1/bootstrap')).toHaveLength(2)
+    const characterUpdates = calls.filter(
+      (call) => call.url === '/api/v1/commands/characters/char-a',
+    )
+    expect(characterUpdates[0]).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          image: 'asset-old',
+          ccAssets: [],
+        },
+      },
+    })
+    expect(characterUpdates[1]).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          emotionImages: [],
+        },
+      },
+    })
   })
 
   it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {

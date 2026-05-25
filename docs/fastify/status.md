@@ -15,16 +15,17 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-5c, Event subscription and debounced
-  re-bootstrap.
-- Current gap: 9-5d should sweep remaining server-backed web direct
+- Last landed work: 9-5d residual helper pass for character asset
+  helpers, legacy chat import commands, and unsupported server-backed
+  `.risum` drag import.
+- Current gap: continue 9-5d sweeping remaining server-backed web direct
   writes for 9-2 through 9-4 resource families before enabling the
   read-only `DBState.db` guard.
-- Next default pickup: 9-5d, Residual command replacement sweep.
-- Last recorded full baselines after 9-5c: `pnpm check` clean,
-  `pnpm test` 708 tests plus 4 skipped, `pnpm api:test` 1119 tests, and
-  `pnpm build` passing with existing CSS `::highlight`, browser
-  externalization, plugin-timing, and chunk-size warnings.
+- Next default pickup: continue 9-5d, Residual command replacement sweep.
+- Last recorded full baselines after the 9-5d first pass: `pnpm check`
+  clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
+  tests, and `pnpm build` passing with existing CSS `::highlight`,
+  browser externalization, plugin-timing, and chunk-size warnings.
 
 ## Start Here
 
@@ -44,14 +45,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                            |
-| ------------------------------------------- | -------------------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                              |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                       |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.          |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                                 |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                                 |
-| Client thinning                             | Active; 9-5c event re-bootstrap landed; next slice is 9-5d residual sweep.       |
+| Workstream                                  | State                                                                   |
+| ------------------------------------------- | ----------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                     |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                              |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                        |
+| Client thinning                             | Active; 9-5d residual helper pass landed; continue the 9-5d sweep.      |
 
 ## Maintenance Rules
 
