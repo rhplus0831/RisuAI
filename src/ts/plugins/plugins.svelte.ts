@@ -12,6 +12,7 @@ import type { OpenAIChat } from '../process/index.svelte'
 import { fetchNative, globalFetch, readImage, saveAsset, toGetter } from '../globalApi.svelte'
 import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from '../stores.svelte'
 import type { ScriptMode } from '../process/scripts'
+import type { RisuModule } from '../process/modules'
 import { checkCodeSafety } from './pluginSafety'
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
@@ -30,6 +31,15 @@ import {
   dispatchUpdatePlugin,
   toPluginSnapshot,
 } from '../pluginCommands'
+import {
+  currentModuleStateSnapshot,
+  dispatchCreateModule,
+  dispatchDeleteModule,
+  dispatchEnableModule,
+  dispatchReorderModules,
+  dispatchUpdateModule,
+  toModuleSnapshot,
+} from '../moduleCommands'
 import { canUseServerCommands } from '../server/commands'
 
 export const customProviderStore = writable([] as string[])
@@ -525,6 +535,7 @@ export const allowedDbKeys = [
   'personas',
   'plugins',
   'pluginCustomStorage',
+  'currentPluginProvider',
   'temperature',
   'askRemoval',
   'maxContext',
@@ -579,6 +590,8 @@ function replacePluginStorage(values: Record<string, unknown>): void {
 
 function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { full: boolean }): void {
   const previous = currentPluginStateSnapshot()
+  const previousModules =
+    'modules' in newDb || 'enabledModules' in newDb ? currentModuleStateSnapshot() : null
   const settingsPatch: Record<string, unknown> = {}
   const storageValues: Record<string, unknown> = {}
   let replacedStorage: Record<string, unknown> | null = null
@@ -599,6 +612,11 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
         dispatchSelectPluginProvider(value, previous)
       } else if (key === 'plugins' && Array.isArray(value)) {
         dispatchPluginCollectionPatch(value as RisuPlugin[], previous)
+      } else if (key === 'modules' && Array.isArray(value) && previousModules) {
+        dispatchModuleCollectionPatch(value as RisuModule[], previousModules)
+      } else if (key === 'enabledModules' && Array.isArray(value) && previousModules) {
+        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : DBState.db.modules
+        dispatchEnabledModulesPatch(value, previousModules, moduleSource ?? [])
       } else {
         settingsPatch[key] = value
       }
@@ -625,7 +643,10 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
   }
 }
 
-function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: ReturnType<typeof currentPluginStateSnapshot>): void {
+function dispatchPluginCollectionPatch(
+  plugins: RisuPlugin[],
+  previous: ReturnType<typeof currentPluginStateSnapshot>,
+): void {
   if (!canUseServerCommands()) return
 
   const beforePlugins = new Map(previous.plugins.map((plugin) => [plugin.name, plugin]))
@@ -652,6 +673,63 @@ function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: ReturnTy
   const nextOrder = plugins.map((plugin) => plugin.name).join('\n')
   if (beforeOrder !== nextOrder && plugins.every((plugin) => beforePlugins.has(plugin.name))) {
     dispatchReorderPlugins(previous)
+  }
+}
+
+function dispatchModuleCollectionPatch(
+  modules: RisuModule[],
+  previous: ReturnType<typeof currentModuleStateSnapshot>,
+): void {
+  if (!canUseServerCommands()) return
+
+  const beforeModules = new Map(previous.modules.map((module) => [module.id, module]))
+  const nextModules = new Map(modules.map((module) => [module.id, module]))
+
+  for (const module of modules) {
+    if (typeof module.id !== 'string' || module.id.trim() === '') continue
+    const before = beforeModules.get(module.id)
+    if (!before) {
+      dispatchCreateModule(module, previous)
+      continue
+    }
+    if (JSON.stringify(before) !== JSON.stringify(module)) {
+      dispatchUpdateModule(module.id, toModuleSnapshot(module), previous)
+    }
+  }
+
+  for (const module of previous.modules) {
+    if (typeof module.id === 'string' && module.id.trim() && !nextModules.has(module.id)) {
+      dispatchDeleteModule(module.id, previous)
+    }
+  }
+
+  const beforeOrder = previous.modules.map((module) => module.id).join('\n')
+  const nextOrder = modules.map((module) => module.id).join('\n')
+  if (beforeOrder !== nextOrder && modules.every((module) => beforeModules.has(module.id))) {
+    dispatchReorderModules(previous)
+  }
+}
+
+function dispatchEnabledModulesPatch(
+  enabledModules: unknown[],
+  previous: ReturnType<typeof currentModuleStateSnapshot>,
+  modules: RisuModule[],
+): void {
+  if (!canUseServerCommands()) return
+
+  const before = new Set(previous.enabledModules)
+  const next = new Set(enabledModules.filter((id): id is string => typeof id === 'string'))
+  const knownModules = new Set(modules.map((module) => module.id))
+
+  for (const moduleId of next) {
+    if (!before.has(moduleId) && knownModules.has(moduleId)) {
+      dispatchEnableModule(moduleId, true, previous)
+    }
+  }
+  for (const moduleId of before) {
+    if (!next.has(moduleId) && knownModules.has(moduleId)) {
+      dispatchEnableModule(moduleId, false, previous)
+    }
   }
 }
 

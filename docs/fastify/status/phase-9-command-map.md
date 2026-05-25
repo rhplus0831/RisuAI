@@ -235,18 +235,16 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-4f plugin-storage kv and plugin database adapters are complete.
-Continue with **9-4g - Compatibility sweep and focused tests**:
+9-4g compatibility sweep is complete. Continue with
+**9-5a - Events endpoint**:
 
-- Sweep 9-4 families for residual direct server-backed web writes:
-  lorebooks, scripts/triggers, modules, asset references, plugins,
-  plugin storage, and plugin database adapters.
-- Add focused compatibility tests for any remaining adapter paths found by
-  the sweep.
-- Confirm plugin database setter translation still uses typed command
-  helpers or plugin-storage entries and does not reintroduce whole-DB
-  replacement.
-- Keep projection enforcement, provider-key masking, server `.risu`
-  import/export, and storage gating in their later slices.
-- Preserve the 9-1 command response and conflict contract through the
-  existing command helpers.
+- Build `GET /api/v1/events` as the persistent server event stream for
+  command events.
+- Fan out existing command events with the locked
+  `{ type, revision, resource, id?, parentId? }` shape.
+- Add focused route/event tests for auth rejection, stream setup, command
+  event delivery, and cleanup.
+- Keep browser bootstrap loading, debounced re-bootstrap subscription,
+  residual direct-write sweep, read-only `DBState.db` guard, provider-key
+  masking, server `.risu` import/export, and storage gating in their later
+  slices.

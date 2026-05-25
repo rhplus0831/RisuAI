@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed slice:
-**9-4f - Plugin-storage kv and plugin database adapters**. Next slice:
-**9-4g - Compatibility sweep and focused tests**.
+**9-4g - Compatibility sweep and focused tests**. Next slice:
+**9-5a - Events endpoint**.
 
 ## Goal
 
@@ -202,6 +202,8 @@ surfaces.
   - **9-4g - Compatibility sweep and focused tests.** Prove no remaining
     direct server-backed web writes for 9-4 families before projection
     enforcement.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-4g.md`](../phases-completed/phase-9-client-thinning-9-4g.md).
 - **9-5 - Browser projection.** Turn the web client into a projection.
   - **9-5a - Events endpoint.** Build persistent SSE transport, then
     command event fan-out and the per-resource event catalog.

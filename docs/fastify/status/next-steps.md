@@ -10,48 +10,42 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-4f landed plugin-storage kv and plugin database adapter coverage. It
-added Fastify commands for plugin custom storage put/delete/bulk updates,
-typed browser helpers, plugin-storage rollback helpers in
-`src/ts/pluginCommands.ts`, and routed Fastify-mode `pluginStorage.*`,
-plugin database proxy writes, `setDatabaseLite`, and `setDatabase`
-through command-backed translation. Plugin code execution remains
-browser-side.
+9-4g landed the compatibility sweep for the 9-4 families. It tightened
+the plugin database bridge so Fastify-mode plugin writes to
+`currentPluginProvider`, `modules`, and `enabledModules` dispatch the
+existing plugin-provider and module commands instead of falling through to
+browser-only projection writes or plugin custom storage. Unknown
+top-level plugin database keys still route to plugin custom storage.
 
 ## Immediate Pickup
 
-Continue Phase 9 implementation with
-**9-4g - Compatibility sweep and focused tests**.
+Continue Phase 9 implementation with **9-5a - Events endpoint**.
 
 Expected scope:
 
-- Sweep the 9-4 resource families for residual direct server-backed web
-  writes: lorebooks, scripts/triggers, modules, asset references, plugins,
-  plugin storage, and plugin database adapters.
-- Add focused compatibility tests for any remaining adapter paths found by
-  the sweep.
-- Confirm plugin database setter translation does not reintroduce
-  whole-DB replacement in Fastify mode.
-- Keep fixes narrowly within already-commanded 9-4 families; do not start
-  9-5 projection/event/bootstrap enforcement.
-- Update the command-map or active phase docs only if the sweep finds an
-  implementation boundary that future slices must know about.
+- Build `GET /api/v1/events` as the persistent command-event stream for
+  server-backed web projection.
+- Fan out existing command events emitted by command mutations; do not
+  design surgical client-side patches.
+- Keep the event shape aligned with the Phase 9 command map:
+  `{ type, revision, resource, id?, parentId? }`.
+- Add focused route/event tests for auth rejection, stream setup, command
+  event delivery, and connection cleanup.
+- Leave browser bootstrap loading and debounced re-bootstrap subscription
+  wiring to 9-5b/9-5c unless the smallest server API contract requires a
+  tiny shared helper.
 
-Out of scope for 9-4g:
+Out of scope for 9-5a:
 
-- Settings groups, bot presets, prompt templates/items, personas,
-  translator presets, loadouts, character catalog/profile commands, chat
-  record/folder metadata commands, message commands, generation
-  persistence, scriptstate, lorebook commands, script/trigger definition
-  commands, module record/enablement commands, asset reference commands,
-  plugin record/configuration commands, and compatibility setters already
-  covered by prior slices.
+- Enforcing a read-only `DBState.db` guard.
+- Browser bootstrap projection loading.
+- Debounced browser re-bootstrap subscription wiring, unless kept to a
+  minimal helper needed to prove the event route.
+- Residual command replacement sweep.
+- Storage/provider-key gating.
+- Server-side `.risu` import/export implementation.
 - Asset byte upload/storage changes beyond existing Fastify asset APIs.
 - Plugin code execution server-side.
-- Enforcing a read-only `DBState.db` guard.
-- Bootstrap/event projection implementation.
-- Server-side `.risu` import/export implementation.
-- Provider-key masking or storage backend removal.
 
 Implementation notes:
 
@@ -110,19 +104,25 @@ Implementation notes:
 - 9-4f added plugin-storage put/delete/bulk commands and extended
   `src/ts/pluginCommands.ts` for plugin custom storage rollback. Fastify
   mode `pluginStorage.*`, plugin database proxy writes, `setDatabaseLite`,
-  and `setDatabase` now dispatch command-backed translation for plugin
+  and `setDatabase` dispatch command-backed translation for plugin
   storage, plugin records/provider, and scalar settings; unknown top-level
   plugin DB keys are stored in `pluginCustomStorage`.
+- 9-4g tightened the plugin database bridge so `currentPluginProvider`,
+  `modules`, and `enabledModules` translate through existing provider and
+  module commands in Fastify mode. This did not add new command endpoints.
 - MCP module import is explicitly unsupported in server-backed web mode
   until a later slice defines a dedicated server-owned path.
 
 ## Later Queue
 
-1. 9-5 - Browser projection.
-2. 9-6 - Storage and provider-key gating.
-3. 9-7 - Server `.risu` codec core.
-4. 9-8 - Import/export routes and bundle assets.
-5. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-5b - Bootstrap projection loader.
+2. 9-5c - Event subscription and debounced re-bootstrap.
+3. 9-5d - Residual command replacement sweep.
+4. 9-5e - Read-only `DBState.db` guard.
+5. 9-6 - Storage and provider-key gating.
+6. 9-7 - Server `.risu` codec core.
+7. 9-8 - Import/export routes and bundle assets.
+8. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -135,7 +135,7 @@ Implementation notes:
 
 ## Verification
 
-Run focused command/adapter tests while building 9-4g, then
+Run focused route/event tests while building 9-5a, then
 before closing the slice run the full matrix:
 
 ```bash
@@ -145,19 +145,20 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-4f:
+Last recorded full baselines after 9-4g:
 
 - `pnpm check` - clean, with 0 Svelte errors and 0 warnings.
-- `pnpm test` - 694 tests passed, 4 skipped.
+- `pnpm test` - 697 tests passed, 4 skipped.
 - `pnpm api:test` - 1115 tests passed.
 - `pnpm build` - passed with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
-Focused 9-4f runs:
+Focused 9-4g runs:
 
-- `pnpm api:test -- commands.test.ts` - 1115 tests passed.
-- `pnpm test -- src/ts/server/commands.test.ts` - 694 tests passed, 4 skipped.
-- `pnpm check` - clean, with 0 Svelte errors and 0 warnings.
+- `pnpm test -- src/ts/plugins/plugins.test.ts` - 697 tests passed, 4
+  skipped.
+- `pnpm test -- src/ts/plugins/plugins.test.ts src/ts/compatibilityAdapters.test.ts src/ts/server/commands.test.ts`
+  - 697 tests passed, 4 skipped.
 
 ## References
 
@@ -168,7 +169,7 @@ Focused 9-4f runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-4f.md`](../phases-completed/phase-9-client-thinning-9-4f.md)
+  [`../phases-completed/phase-9-client-thinning-9-4g.md`](../phases-completed/phase-9-client-thinning-9-4g.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)
