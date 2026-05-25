@@ -17,8 +17,8 @@ Concise snapshot of each migration workstream. Historical detail is in
 | 5 - sendChat extraction                 | Complete    | Closed 2026-05-22.                                           |
 | 6 - Server-side generation              | Complete    | Closed 2026-05-22 for `/completion`.                         |
 | 7 - Server-side prompt assembly         | Complete    | Closed 2026-05-24 after closeout verification.               |
-| 8 - Hypa V3 memory server-side          | In progress | Next slice: 8-8 live chunk-planning hook.                    |
-| 9 - Client thinning                     | Not started | Waits for server-owned prompt, generation, and memory paths. |
+| 8 - Hypa V3 memory server-side          | Complete    | Closed 2026-05-25 after full closeout verification.          |
+| 9 - Client thinning                     | In progress | 9-0 command map locked; next slice is 9-1 command foundation. |
 
 ## Workstreams
 
@@ -27,5 +27,7 @@ Concise snapshot of each migration workstream. Historical detail is in
   `db.useServerPromptAssembly`. See [`sendchat.md`](sendchat.md).
 - Provider coverage: the current routed matrix lives in
   [`../coverage/providers.md`](../coverage/providers.md).
+- Phase 9 command map:
+  [`phase-9-command-map.md`](phase-9-command-map.md).
 - Historical logs: old removals, server, and sendChat slice records are
   archived in [`../phases-completed/`](../phases-completed/).

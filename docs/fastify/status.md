@@ -15,20 +15,21 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 8-9, Phase 8 closeout.
-- Current gap: Phase 9 needs a mutation inventory and command map before
-  implementation slices start.
-- Next default pickup: 9-0, Mutation inventory and command map.
-- Last recorded full baselines after 8-9: `pnpm check` clean,
+- Last landed slice: 9-0, Mutation inventory and command map.
+- Current gap: Phase 9 needs the shared command plumbing and one harness
+  command before resource migration slices start.
+- Next default pickup: 9-1, Command foundation.
+- Last recorded full baselines after 9-0: `pnpm check` clean,
   `pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1050 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Phase 8 closeout verification passed the full matrix on 2026-05-25.
 
 ## Start Here
 
 - [`status/next-steps.md`](status/next-steps.md) - exact next slice and
   verification commands.
+- [`status/phase-9-command-map.md`](status/phase-9-command-map.md) -
+  locked Phase 9 mutation inventory and command map.
 - [`phases/phase-9-client-thinning.md`](phases/phase-9-client-thinning.md) -
   active Phase 9 scope, boundaries, and slice plan.
 - [`phases/phase-8-memory.md`](phases/phase-8-memory.md) - closed Phase
@@ -48,7 +49,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                             |
-| Client thinning                             | Active; next slice is 9-0 mutation inventory and command map.                |
+| Client thinning                             | Active; 9-0 command map locked; next slice is 9-1 command foundation.        |
 
 ## Maintenance Rules
 

@@ -2,7 +2,8 @@
 
 Date: 2026-05-25
 
-Status: active. Next slice: **9-0 - Mutation inventory and command map**.
+Status: active. Last landed slice: **9-0 - Mutation inventory and
+command map**. Next slice: **9-1 - Command foundation**.
 
 ## Goal
 
@@ -96,6 +97,8 @@ surfaces.
     API, parse allowed top-level keys, dispatch typed commands, and route
     unknown keys to `pluginCustomStorage`. 9-0 records the mapping table;
     implementation lands in 9-4f.
+  - Status: complete. Locked command map:
+    [`../status/phase-9-command-map.md`](../status/phase-9-command-map.md).
 - **9-1 - Command foundation.** Add command route plumbing,
   `baseRevision` / 409 handling, transactions, revision increments, event
   emission, and the typed browser command helper. Ship one small settings

@@ -123,6 +123,10 @@ putting provider calls in route handlers.
 
 ## Phase 9: Commands
 
+The command names, payload rules, id-vs-index policy, event names, and
+test expectations were locked by 9-0 in
+[`../status/phase-9-command-map.md`](../status/phase-9-command-map.md).
+
 | Resource family   | Endpoints                                            | Status      |
 | ----------------- | ---------------------------------------------------- | ----------- |
 | character         | create / patch / delete / reorder + child replaces    | not started |

@@ -10,64 +10,65 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-8-9 closed Phase 8. The final pass verified the full matrix, confirmed
-the Hypa V3 memory exit criteria, archived the closeout notes, and moved
-the live handoff to Phase 9 client thinning.
+9-0 locked the Phase 9 mutation inventory and command map. The slice
+classified the durable browser write surfaces, command families,
+id-vs-index policy, child replacement semantics, reorder behavior,
+revision conflict contract, event naming rules, plugin database bridge,
+and implementation slice ownership.
 
 ## Immediate Pickup
 
-Start Phase 9 with **9-0 - Mutation inventory and command map**.
+Start Phase 9 implementation with **9-1 - Command foundation**.
 
 Expected scope:
 
-- Inventory direct durable mutation sites in `src/lib/` and `src/ts/`,
-  including `DBState.db` writes, `setDatabase` / `setDatabaseLite`,
-  plugin database setters, storage helpers, and helper APIs that mutate
-  through indirection.
-- Classify each write site by resource family, server-backed web scope,
-  local/Tauri-only scope, rollback risk, and owning Phase 9 slice.
-- Lock command endpoint names, payload shapes, id-vs-index behavior,
-  child replacement behavior, reorder semantics, revision conflict
-  behavior, event names, and test expectations before implementation.
-- Record the plugin-write translation bridge: keep the plugin-facing API,
-  map allowed top-level keys to typed commands, and route unknown plugin
-  keys to `pluginCustomStorage` when implementation lands later.
-- Update the live Phase 9 docs with the command map and the next concrete
-  implementation pickup.
+- Add shared Fastify command route plumbing under `/api/v1/commands/*`.
+- Add a repository mutation helper that loads the current `db.json`
+  blob, validates `baseRevision`, applies exactly one JSON mutation,
+  bumps the schema revision once on success, and rolls back on
+  validation or thrown errors.
+- Add the initial command event catalog/sink used by command responses;
+  exposing it over SSE waits for 9-5.
+- Add a typed browser helper under `src/ts/server/commands.ts`.
+- Ship one small allowlisted settings command,
+  `PATCH /api/v1/commands/settings/runtime`, as the harness command.
+- Cover auth, missing/invalid `baseRevision`, 409 conflict,
+  success/bootstrap visibility, rollback, event shape, and browser helper
+  behavior.
 
-Out of scope for 9-0:
+Out of scope for 9-1:
 
-- Adding command routes or browser command helpers.
+- Broad resource command families beyond the one settings harness.
+- Replacing existing UI mutation call sites.
 - Enforcing a read-only `DBState.db` guard.
-- Replacing mutation call sites.
 - Bootstrap/event projection implementation.
 - Server-side `.risu` import/export implementation.
 - Provider-key masking or storage backend removal.
 
 Implementation notes:
 
-- Phase 9 is not a single "add commands" task. Treat command design,
+- Phase 9 is not a single "add commands" task. Treat command foundation,
   browser projection, storage gating, provider-key masking, and the
   server `.risu` codec as separate rollback surfaces.
-- Include mutation paths that bypass property-level grep, especially
-  `setDatabase`, `setDatabaseLite`, plugin database setters, import /
-  restore flows, and helper functions that receive mutable references.
+- Use the locked command map in
+  [`phase-9-command-map.md`](phase-9-command-map.md) as the source of
+  truth for command names, payload behavior, event names, and plugin
+  bridge policy.
 - Debounced re-bootstrap is the Phase 9 projection target. Per-event
   surgical patches are future work.
 - Tauri keeps its local storage path. Phase 9 gates server-backed web
   behavior without changing local desktop storage mode.
 
-## Queue After 9-0
+## Queue After 9-1
 
-1. 9-1 - Command foundation.
-2. 9-2 - Settings, presets, personas, loadouts.
-3. 9-3 - Characters, chats, messages.
-4. 9-4 - Lorebooks, modules, plugins, assets.
-5. 9-5 - Browser projection.
-6. 9-6 - Storage and provider-key gating.
-7. 9-7 - Server `.risu` codec core.
-8. 9-8 - Import/export routes and bundle assets.
-9. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-2 - Settings, presets, personas, loadouts.
+2. 9-3 - Characters, chats, messages.
+3. 9-4 - Lorebooks, modules, plugins, assets.
+4. 9-5 - Browser projection.
+5. 9-6 - Storage and provider-key gating.
+6. 9-7 - Server `.risu` codec core.
+7. 9-8 - Import/export routes and bundle assets.
+8. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -80,8 +81,8 @@ Implementation notes:
 
 ## Verification
 
-Run relevant grep/audit commands while building the inventory, then
-before closing the slice run the full matrix:
+Run focused command foundation tests while building 9-1, then before
+closing the slice run the full matrix:
 
 ```bash
 pnpm check
@@ -90,21 +91,21 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-9: `pnpm check` clean,
+Last recorded full baselines after 9-0: `pnpm check` clean,
 `pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1050 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
-
-Latest Phase 8 closeout verification passed on 2026-05-25.
 
 ## References
 
 - Active phase:
   [`../phases/phase-9-client-thinning.md`](../phases/phase-9-client-thinning.md)
+- Command map:
+  [`phase-9-command-map.md`](phase-9-command-map.md)
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-9.md`](../phases-completed/phase-8-memory-8-9.md)
+  [`../phases-completed/phase-9-client-thinning-9-0.md`](../phases-completed/phase-9-client-thinning-9-0.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)
