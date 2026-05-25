@@ -10,6 +10,12 @@ import { DBState } from '../stores.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { ChatTokenizer } from '../tokenizer'
 import { parseToggleSyntax } from '../util'
+import {
+  currentCharacterStateSnapshot,
+  dispatchUpdateCharacter,
+} from '../characterCommands'
+import { currentChatStateSnapshot, dispatchReplaceMessages } from '../chatCommands'
+import { canUseServerCommands } from '../server/commands'
 import { getModuleToggles } from './modules'
 
 export interface SendChatContextResult {
@@ -55,17 +61,32 @@ export function setupSendChatContext(args: {
     }
   }
 
-  DBState.db.statics.messages += 1
+  const serverBacked = canUseServerCommands()
+  if (!serverBacked) {
+    DBState.db.statics.messages += 1
+  }
   const selectedChar = get(selectedCharID)
   const nowChatroom = DBState.db.characters[selectedChar]
-  nowChatroom.lastInteraction = Date.now()
+  const lastInteraction = Date.now()
+  if (serverBacked && nowChatroom.chaId) {
+    const previous = currentCharacterStateSnapshot()
+    nowChatroom.lastInteraction = lastInteraction
+    dispatchUpdateCharacter(nowChatroom.chaId, { lastInteraction }, previous)
+  } else {
+    nowChatroom.lastInteraction = lastInteraction
+  }
   const selectedChat = nowChatroom.chatPage
-  nowChatroom.chats[nowChatroom.chatPage].message = nowChatroom.chats[
-    nowChatroom.chatPage
-  ].message.map((v) => {
+  const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
+  const needsMessageIdBackfill = selectedChatRecord.message.some((v) => v.chatId === undefined)
+  const previousChatState =
+    serverBacked && needsMessageIdBackfill ? currentChatStateSnapshot() : null
+  selectedChatRecord.message = selectedChatRecord.message.map((v) => {
     v.chatId = v.chatId ?? v4()
     return v
   })
+  if (previousChatState && selectedChatRecord.id) {
+    dispatchReplaceMessages(selectedChatRecord.id, selectedChatRecord.message, previousChatState)
+  }
 
   let promptInfo: MessagePresetInfo = {}
   if (DBState.db.promptInfoInsideChat) {

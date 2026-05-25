@@ -88,6 +88,7 @@ track the next piece of work.
 | 9-5d-ii - 9-2 resource UI tails         | [`phase-9-client-thinning-9-5d-ii.md`](phase-9-client-thinning-9-5d-ii.md)             | Prompt/persona/translator/loadout residual audit and delete payload cleanup.     |
 | 9-5d-iii - 9-3 character/chat UI tails  | [`phase-9-client-thinning-9-5d-iii.md`](phase-9-client-thinning-9-5d-iii.md)           | Character/chat residual audit, compact chat selection, and cold-storage guard.   |
 | 9-5d-iv - 9-4 extension UI/API tails    | [`phase-9-client-thinning-9-5d-iv.md`](phase-9-client-thinning-9-5d-iv.md)             | Extension residual audit, plugin theme commands, and module-integration bridge.  |
+| 9-5d-v - Process/runtime writes         | [`phase-9-client-thinning-9-5d-v.md`](phase-9-client-thinning-9-5d-v.md)               | Generation/scriptstate classification, memory gating, and MCP refresh bridge.    |
 
 ## Historical Status Logs
 

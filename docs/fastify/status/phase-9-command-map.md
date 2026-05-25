@@ -237,8 +237,8 @@ command; they must never replace the whole DB blob.
 
 ## Current Implementation Pickup
 
-9-5a, 9-5b, and 9-5c are complete. 9-5d remains active, but it is split
-into smaller residual command-replacement sub-slices:
+9-5a, 9-5b, 9-5c, and 9-5d are complete. 9-5d was split into smaller
+residual command-replacement sub-slices:
 
 - **9-5d-i - Settings residual command sweep.** Route remaining
   server-backed web writes to existing settings groups through the
@@ -253,14 +253,15 @@ into smaller residual command-replacement sub-slices:
   module UI/MCP helper, plugin settings, plugin database translation, and
   plugin-storage residuals stay on existing 9-4/settings bridges or
   explicit unsupported behavior.
-- **9-5d-v - Process/runtime durable-write classification.** Generation,
-  scriptstate, memory, and MCP helper writes.
+- **9-5d-v - Process/runtime durable-write classification.** Complete.
+  Generation/scriptstate classification, sendChat entry-context command
+  routing, legacy memory writeback gating, and MCP refresh settings bridge.
 
 Later Phase 9 slices are pre-split by rollback surface:
 
-- **9-5e-i through 9-5e-iii.** Add the read-only `DBState.db` guard
-  foundation, integrate command bridge optimistic/rollback writes, then audit
-  guard failures.
+- **9-5e-i through 9-5e-iii.** Next pickup: 9-5e-i. Add the read-only
+  `DBState.db` guard foundation, integrate command bridge
+  optimistic/rollback writes, then audit guard failures.
 - **9-6a through 9-6e.** Gate server-backed persistence, asset bytes,
   backup/restore projection, residual local caches, and finally provider
   secret masking.

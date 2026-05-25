@@ -1,4 +1,5 @@
 import { language } from '../../../lang'
+import { canUseServerCommands } from '../../server/commands'
 import { DBState } from '../../stores.svelte'
 import type { Chat, character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
@@ -103,19 +104,19 @@ export async function buildMemoryWindow(
     )
     if (sp.error) {
       if (sp.memory) {
-        currentChat.hypaV3Data = sp.memory
-        DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data =
-          currentChat.hypaV3Data
+        writeLegacyHypaV3Memory(currentChat, selectedChar, selectedChat, sp.memory)
       }
       throwError(sp.error)
       return { stopSending: true }
     }
     chats = sp.chats
     currentTokens = sp.currentTokens
-    currentChat.hypaV3Data = sp.memory ?? currentChat.hypaV3Data
-    DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data =
-      currentChat.hypaV3Data
-    currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+    if (sp.memory) {
+      writeLegacyHypaV3Memory(currentChat, selectedChar, selectedChat, sp.memory)
+    }
+    if (!canUseServerCommands()) {
+      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+    }
     stageTimings.stage2Duration = Date.now() - stageTimings.stage2Start
     setProcessStage(1)
   } else {
@@ -161,4 +162,15 @@ export async function buildMemoryWindow(
     })
 
   return { stopSending: false, chats, currentTokens, currentChat, memories }
+}
+
+function writeLegacyHypaV3Memory(
+  currentChat: Chat,
+  selectedChar: number,
+  selectedChat: number,
+  memory: Chat['hypaV3Data'],
+): void {
+  if (canUseServerCommands()) return
+  currentChat.hypaV3Data = memory
+  DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = memory
 }

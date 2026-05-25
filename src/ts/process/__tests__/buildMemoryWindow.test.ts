@@ -1,5 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const platformState = vi.hoisted(() => ({ isFastifyServer: false }))
+
+vi.mock('../../platform', async (importActual) => {
+  const actual = await importActual<typeof import('../../platform')>()
+  return {
+    ...actual,
+    get isFastifyServer() {
+      return platformState.isFastifyServer
+    },
+  }
+})
+
 vi.mock('../modules', async (importActual) => {
   const actual = await importActual<typeof import('../modules')>()
   return { ...actual, moduleUpdate: () => {}, getModuleAssets: () => [] }
@@ -127,6 +139,7 @@ function fakeTokenizer(): ChatTokenizer {
 }
 
 beforeEach(() => {
+  platformState.isFastifyServer = false
   hypaState.next = null
   hypaState.throws = null
   hypaState.calls = 0
@@ -244,6 +257,44 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     expect(result.stopSending).toBe(true)
     expect(rec.errors).toEqual(['cold start failure'])
     expect(currentChat.hypaV3Data).toBeUndefined()
+  })
+
+  it('does not write legacy hypaV3Data into DBState in server-backed web mode', async () => {
+    platformState.isFastifyServer = true
+    seedDb({ hypaV3: true })
+    const rec = makeRecorder()
+    const memory = { summaries: ['server-owned'] } as unknown
+    hypaState.next = {
+      chats: [{ role: 'user', content: 'server memory rows' }],
+      currentTokens: 9,
+      memory,
+    }
+
+    const currentChat = makeChat()
+    DBState.db.characters[0].chats[0] = currentChat
+
+    const result = await buildMemoryWindow({
+      chats: [{ role: 'user', content: 'hi' }],
+      currentTokens: 50,
+      maxContextTokens: 1000,
+      currentChat,
+      nowChatroom: makeChar({ supaMemory: true }),
+      tokenizer: fakeTokenizer(),
+      selectedChar: 0,
+      selectedChat: 0,
+      memoryCardUsed: false,
+      promptTemplate: [{ type: 'description' }] as PromptItem[],
+      unformated: makeUnformated(),
+      stageTimings: makeStageTimings(),
+      throwError: rec.throwError,
+      setProcessStage: rec.setProcessStage,
+    })
+
+    assertNotStopped(result)
+    expect(result.currentTokens).toBe(9)
+    expect(currentChat.hypaV3Data).toBeUndefined()
+    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
+    expect(rec.stages).toEqual([2, 1])
   })
 
   it('skips hypa branch when chatroom.supaMemory is false', async () => {

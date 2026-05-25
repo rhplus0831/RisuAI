@@ -2,7 +2,7 @@ import { getDatabase } from 'src/ts/storage/database.svelte'
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { DBState } from 'src/ts/stores.svelte'
 import { getModuleMcps } from '../modules'
-import { canUseServerCommands } from '../../server/commands'
+import { canUseServerCommands, patchServerBackedSettings } from '../../server/commands'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
 import type { MCPClientLike } from './internalmcp'
@@ -18,6 +18,17 @@ export type MCPToolWithURL = MCPTool & {
 export const MCPs: Record<string, MCPClient | MCPClientLike> = {}
 export const callOnlyMCPs: Record<string, MCPClient | MCPClientLike> = {}
 const callOnlyMCPUrls = ['internal:risuai']
+
+type MCPRefreshToken = {
+  clientId: string
+  clientSecret: string
+  refreshToken: string
+  tokenUrl: string
+}
+
+type StoredMCPRefreshToken = MCPRefreshToken & {
+  url: string
+}
 
 export async function initializeMCPs(additionalMCPs?: string[]) {
   const db = getDatabase()
@@ -180,10 +191,7 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
       }
 
       const registerRefresh: typeof MCPClient.prototype.registerRefreshToken = (arg) => {
-        DBState.db.authRefreshes.push({
-          url: mcp,
-          ...arg,
-        })
+        persistMCPRefreshToken(mcp, arg)
       }
 
       const getRefresh: typeof MCPClient.prototype.getRefreshToken = async () => {
@@ -219,6 +227,30 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
       delete MCPs[mcp]
     }
   }
+}
+
+export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void {
+  const previous = cloneJsonValue(DBState.db.authRefreshes ?? [])
+  DBState.db.authRefreshes ??= []
+  DBState.db.authRefreshes.push({
+    url: mcp,
+    ...arg,
+  })
+
+  if (!canUseServerCommands()) return
+
+  const next = cloneJsonValue(DBState.db.authRefreshes as StoredMCPRefreshToken[])
+  void patchServerBackedSettings({
+    patch: { authRefreshes: next },
+    rollback: () => {
+      DBState.db.authRefreshes = previous
+    },
+  })
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 export async function getMCPTools(additionalMCPs?: string[]) {

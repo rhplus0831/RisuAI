@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5d-iv - 9-4 extension UI/API tails**. Next pickup:
-**9-5d-v - Process/runtime durable-write classification**.
+**9-5d-v - Process/runtime durable-write classification**. Next pickup:
+**9-5e-i - Projection write gate foundation**.
 
 ## Goal
 
@@ -254,6 +254,8 @@ surfaces.
       generation, scriptstate, memory, and MCP helper writes, then replace
       durable server-backed writes with message/generation/scriptstate or
       settings commands while leaving local/runtime-only state documented.
+      - Status: complete. Closeout:
+        [`../phases-completed/phase-9-client-thinning-9-5d-v.md`](../phases-completed/phase-9-client-thinning-9-5d-v.md).
   - **9-5e - Read-only `DBState.db` guard.** Fail loudly for direct web-mode
     mutation attempts while leaving Tauri/local mode untouched. Keep the
     guard work split so guard failures do not become an unbounded residual

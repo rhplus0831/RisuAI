@@ -1,5 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const platformState = vi.hoisted(() => ({ isFastifyServer: false }))
+
+vi.mock('../../platform', async (importActual) => {
+  const actual = await importActual<typeof import('../../platform')>()
+  return {
+    ...actual,
+    get isFastifyServer() {
+      return platformState.isFastifyServer
+    },
+  }
+})
+
+vi.mock('../../storage/nodeStorage', () => ({
+  getNodeServerProxyAuth: async () => 'context-auth-token',
+}))
+
 vi.mock('../modules', async (importActual) => {
   const actual = await importActual<typeof import('../modules')>()
   return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '' }
@@ -13,6 +29,10 @@ vi.mock('../../alert', () => ({
   alertError: () => {},
 }))
 
+import {
+  clearCachedServerCommandRevision,
+  type CommandEvent,
+} from '../../server/commands'
 import {
   setDatabase,
   type Database,
@@ -65,7 +85,45 @@ function seedDb(extra: Partial<Database> = {}) {
   selectedCharID.set(0)
 }
 
+interface CapturedFetch {
+  url: string
+  method: string
+  body: unknown
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function stubCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      calls.push({ url, method: init.method ?? 'GET', body })
+      if (url === '/api/v1/bootstrap') {
+        return jsonResponse({ revision: 21 })
+      }
+      const event: CommandEvent = {
+        type: 'context.updated',
+        revision: 22,
+        resource: 'context',
+      }
+      return jsonResponse({ revision: 22, event })
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
 beforeEach(() => {
+  platformState.isFastifyServer = false
+  clearCachedServerCommandRevision()
+  vi.unstubAllGlobals()
   toastCalls.calls = []
 })
 
@@ -153,6 +211,61 @@ describe('setupSendChatContext - DB side effects', () => {
     // Empty string `''` is falsy through `??` (returns the empty string) so it
     // is intentionally NOT backfilled. Preserved verbatim.
     expect(msgs[2].chatId).toBe('')
+  })
+
+  it('routes server-backed entry-context durable writes through commands', async () => {
+    platformState.isFastifyServer = true
+    const calls = stubCommandFetch()
+    seedDb({
+      statics: { messages: 4 } as unknown as Database['statics'],
+      characters: [
+        makeChar({
+          chats: [
+            {
+              id: 'chat-1',
+              name: 'main',
+              note: '',
+              localLore: [],
+              scriptstate: {},
+              fmIndex: -1,
+              message: [
+                { role: 'user', data: 'a', chatId: 'kept-1', time: 0 },
+                { role: 'char', data: 'b', chatId: undefined as unknown as string, time: 0 },
+              ],
+            } as character['chats'][number],
+          ],
+        }),
+      ],
+    })
+
+    setupSendChatContext({ chatProcessIndex: -1 })
+
+    expect(DBState.db.statics.messages).toBe(4)
+    const messages = DBState.db.characters[0].chats[0].message
+    expect(messages[0].chatId).toBe('kept-1')
+    expect(messages[1].chatId).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/cha-1')).toBe(
+        true,
+      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-1/messages')).toBe(
+        true,
+      )
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/cha-1')).toMatchObject({
+      method: 'PATCH',
+      body: {
+        patch: {
+          lastInteraction: expect.any(Number),
+        },
+      },
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages')).toMatchObject({
+      method: 'PUT',
+      body: {
+        messages,
+      },
+    })
   })
 })
 

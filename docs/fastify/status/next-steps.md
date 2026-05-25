@@ -84,49 +84,42 @@ existing settings command bridge:
   `src/ts/process/modules.test.ts`, and
   `server/fastify/__tests__/commands.test.ts`.
 
+9-5d-v then audited process/runtime durable writes:
+
+- Terminal server-backed generation persistence already dispatches the
+  existing generation-result command; transient streaming display state
+  stays browser-local for the guard integration slice.
+- SendChat entry-context `lastInteraction` updates now dispatch the
+  existing character patch command, missing message id backfill dispatches
+  message replacement, and the local `statics.messages` counter is skipped
+  in Fastify projection mode.
+- Scriptstate writes in triggers, slash/STScript commands, parser chat
+  vars, and server message patch replay remain on the existing chat
+  scriptstate command bridge.
+- Legacy Hypa V3 `hypaV3Data` writeback no longer mutates DB state in
+  server-backed web mode; Phase 8 server memory remains authoritative.
+- MCP OAuth refresh token writes now dispatch grouped providers settings
+  commands after optimistic local updates, with rollback coverage.
+- Focused process/runtime and compatibility coverage stayed green in
+  `src/ts/process/__tests__/sendChatContext.test.ts`,
+  `src/ts/process/__tests__/buildMemoryWindow.test.ts`,
+  `src/ts/process/mcp/mcp.test.ts`,
+  `src/ts/compatibilityAdapters.test.ts`, and
+  `src/ts/server/commands.test.ts`.
+
 ## Immediate Pickup
 
-9-5d was too broad as a single implementation slice. Keep the parent
-goal, but implement it through the smaller 9-5d sub-slices below. Do not
-start 9-5e yet; the read-only guard still needs these residual write
-replacements first.
+Immediate pickup: **9-5e-i - Projection write gate foundation**.
 
-Current code audit found the remaining direct-write clusters are not
-uniform:
-
-- Settings-style scalar writes under `src/lib/Setting/Pages/`,
-  `src/ts/setting/utils.ts`, `src/ts/gui/colorscheme.ts`,
-  `src/lib/Others/WelcomeRisu.svelte`, and small provider/runtime/media
-  helper paths.
-- 9-2 low-churn resource tails around prompt templates, personas,
-  translator presets, and loadouts.
-- 9-3 character/chat UI tails, especially character profile/assets,
-  chat folders, selected chat/page state, playground/realm/grid helpers,
-  and import helpers that already have partial command dispatch.
-- Process/runtime writes in generation, scriptstate, memory, and MCP
-  helpers that need classification before the read-only guard can be
-  enabled.
-
-Immediate pickup: **9-5d-v - Process/runtime durable-write
-classification**.
-
-- Audit residual process/runtime helper writes that still mutate
-  `DBState.db` directly in server-backed web mode.
-- Focus first on generation, scriptstate, memory, and MCP helper writes.
-- Classify each hit as an existing message/generation/scriptstate/settings
-  command, explicit unsupported behavior, or documented local/runtime-only
-  state. Do not enable the read-only guard in this slice.
-- Keep transient streaming display state and browser-only script execution
-  out of durable command payloads.
-- Add focused tests around the highest-risk changed bridge, usually in
-  `src/ts/server/commands.test.ts`, `src/ts/compatibilityAdapters.test.ts`,
-  or the nearest process/runtime helper test that can assert command
-  dispatch, rollback, or explicit unsupported behavior.
-
-Out of scope for 9-5d: the read-only `DBState.db` guard, storage and
-provider-key gating, server-side `.risu` import/export, asset byte
-storage changes beyond existing Fastify asset APIs, server-side plugin
-execution, and per-event surgical browser projection patching.
+- Add the server-backed read-only `DBState.db` guard primitive.
+- Add trusted projection replacement helpers for bootstrap and
+  event-triggered re-bootstrap writes.
+- Keep Tauri/local mode untouched.
+- Do not broaden this slice into residual write fixes, storage/provider
+  gating, server-side `.risu` import/export, asset byte changes,
+  server-side plugin execution, or per-event surgical browser patches.
+- If the guard reveals missed durable writes, split them into follow-up
+  residual slices instead of folding them into the guard foundation.
 
 Implementation notes:
 
@@ -158,38 +151,35 @@ Implementation notes:
 - MCP module import, MCP asset import, and server-backed `.risum` module
   import remain explicitly unsupported until later slices define
   dedicated server-owned paths.
-- Several direct-write search hits are expected rollback helpers or
-  optimistic local updates followed by command dispatch. Each 9-5d
-  sub-slice should prove the server-backed behavior, not mechanically
-  delete every local assignment.
+- Several direct-write search hits are expected rollback helpers,
+  optimistic command updates, projection replacement writes, or
+  runtime-only state. The guard foundation should distinguish those
+  classes instead of mechanically deleting every local assignment.
 
 ## Later Queue
 
-1. 9-5d-v - Process/runtime durable-write classification: generation,
-   scriptstate, memory, and MCP helper writes that must become commands,
-   explicit unsupported behavior, or documented local/runtime-only state.
-2. 9-5e-i - Projection write gate foundation.
-3. 9-5e-ii - Command bridge guard integration.
-4. 9-5e-iii - Guard audit closeout.
-5. 9-6a - Server-backed persistence gate.
-6. 9-6b - Asset byte gate.
-7. 9-6c - Server backup/restore projection.
-8. 9-6d - Residual local cache classification.
-9. 9-6e - Provider secret masking.
-10. 9-7a - `.risu` fixture corpus and codec harness.
-11. 9-7b - Legacy envelope codec port.
-12. 9-7c - RISUSAVE block codec port.
-13. 9-7d - Decode normalization and validation.
-14. 9-7e - Repository-backed export adapter.
-15. 9-8a - Multipart `.risu` import route.
-16. 9-8b - Repository `.risu` export route.
-17. 9-8c - Asset reference walker.
-18. 9-8d - Bundle export route.
-19. 9-9a - Server-backed browser smoke harness.
-20. 9-9b - Generation and memory fixture closeout.
-21. 9-9c - Server-backed storage-write audit.
-22. 9-9d - Manual Fastify web and Tauri local verification.
-23. 9-9e - Phase 9 docs closeout.
+1. 9-5e-i - Projection write gate foundation.
+2. 9-5e-ii - Command bridge guard integration.
+3. 9-5e-iii - Guard audit closeout.
+4. 9-6a - Server-backed persistence gate.
+5. 9-6b - Asset byte gate.
+6. 9-6c - Server backup/restore projection.
+7. 9-6d - Residual local cache classification.
+8. 9-6e - Provider secret masking.
+9. 9-7a - `.risu` fixture corpus and codec harness.
+10. 9-7b - Legacy envelope codec port.
+11. 9-7c - RISUSAVE block codec port.
+12. 9-7d - Decode normalization and validation.
+13. 9-7e - Repository-backed export adapter.
+14. 9-8a - Multipart `.risu` import route.
+15. 9-8b - Repository `.risu` export route.
+16. 9-8c - Asset reference walker.
+17. 9-8d - Bundle export route.
+18. 9-9a - Server-backed browser smoke harness.
+19. 9-9b - Generation and memory fixture closeout.
+20. 9-9c - Server-backed storage-write audit.
+21. 9-9d - Manual Fastify web and Tauri local verification.
+22. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -247,7 +237,12 @@ Focused 9-5 runs:
   `pnpm check`
   - 39 browser command/plugin tests passed; 65 Fastify command tests
     passed; 10 compatibility/module tests passed; check clean.
-- 9-5d sub-slices: run the nearest focused command/bridge tests touched
+- 9-5d-v: `pnpm exec vitest run src/ts/process/__tests__/sendChatContext.test.ts src/ts/process/__tests__/buildMemoryWindow.test.ts src/ts/process/mcp/mcp.test.ts`;
+  `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts src/ts/server/commands.test.ts`;
+  `pnpm check`
+  - 30 process/runtime tests passed; 44 compatibility/command tests
+    passed; check clean.
+- 9-5e sub-slices: run the nearest focused guard/projection tests touched
   by the sub-slice, then `pnpm check` before marking that sub-slice done.
 
 ## References
@@ -259,7 +254,7 @@ Focused 9-5 runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-5d-iv.md`](../phases-completed/phase-9-client-thinning-9-5d-iv.md)
+  [`../phases-completed/phase-9-client-thinning-9-5d-v.md`](../phases-completed/phase-9-client-thinning-9-5d-v.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)
