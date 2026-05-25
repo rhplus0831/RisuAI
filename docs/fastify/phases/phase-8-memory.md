@@ -2,9 +2,8 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through
-**8-8 - live chunk-planning hook**.
-Next slice: **8-9 - Phase 8 closeout**.
+Status: closed. Completed through **8-9 - Phase 8 closeout**.
+Next phase: **Phase 9 - Client thinning**.
 
 ## Goal
 
@@ -27,7 +26,7 @@ the current schema and import paths directly.
 ## Current State
 
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
-This active file keeps only the pickup-relevant summary.
+This file keeps only the closed-phase summary and boundaries.
 
 Completed highlights:
 
@@ -150,8 +149,8 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   failures non-blocking. The default `chunk` job handler remains a no-op
   by design; live chunk planning uses the prompt assembly context rather
   than a queued chunk snapshot.
-- Current open gap: Phase 8 closeout needs full verification and handoff
-  cleanup before Phase 9 client thinning starts.
+- The 8-9 closeout verified the full matrix and moved the live handoff to
+  Phase 9 client thinning.
 
 ## Scope
 
@@ -214,9 +213,7 @@ existing browser progress store.
 
 ## Remaining Slice Plan
 
-- **8-9 - Phase 8 closeout.** Run the full verification matrix, confirm
-  the supported/unsupported memory provider paths below, and flip handoff
-  docs to Phase 9 once exit criteria are satisfied.
+None. Phase 8 is closed.
 
 ## Supported Memory Provider Paths
 
@@ -245,14 +242,16 @@ existing browser progress store.
 
 ## Exit Criteria
 
-- Phase 4 fixtures that exercise Hypa V3 (`hypav3-memory`) run through
-  the server-side adapter.
-- `pnpm api:test` covers chunk creation, embedding fetch, summary
-  generation, retry, and cancel.
-- A chat with no memory rows boots, chats, and accumulates summaries over
-  time as messages cross the chunk window.
-- Imported Hypa V3 data loads into `memory_summaries` on import.
-- `pnpm test`, `pnpm check`, `pnpm build`, and `pnpm api:test` are green.
+- Satisfied: Phase 4 fixtures that exercise Hypa V3 (`hypav3-memory`)
+  run through the server-side adapter.
+- Satisfied: `pnpm api:test` covers chunk creation, embedding fetch,
+  summary generation, retry, and cancel.
+- Satisfied: a chat with no memory rows can boot, chat, create chunks,
+  and enqueue summary work as messages cross the chunk window.
+- Satisfied: imported Hypa V3 data loads into `memory_summaries` on
+  import.
+- Satisfied: `pnpm test`, `pnpm check`, `pnpm build`, and
+  `pnpm api:test` are green.
 
 ## Reference
 

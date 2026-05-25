@@ -28,7 +28,7 @@ End state:
 ## Current Baseline
 
 The live pickup snapshot belongs in [`status.md`](status.md). As of
-2026-05-25, Phases 0-7 are closed and Phase 8 is active.
+2026-05-25, Phases 0-8 are closed and Phase 9 is active.
 
 Stable baseline facts:
 
@@ -36,11 +36,11 @@ Stable baseline facts:
   `runserver` script are gone.
 - Fastify owns auth, bootstrap, JSON import, assets, backups, proxy /
   stream-job / hub routes, legacy storage compatibility, completion
-  generation, chat generation, preview-prompt, and Phase 8 memory queue
-  surfaces landed so far.
-- Phase 8 has server memory tables, read/job routes, and summarize/embed
-  handlers; fresh server-backed chats still need the live chunk-planning
-  hook before memory can accumulate automatically.
+  generation, chat generation, preview-prompt, and Hypa V3 memory queue
+  surfaces.
+- Phase 8 closed with server memory tables, read/job routes,
+  summarize/embed handlers, prompt-memory selection, and live
+  chunk-planning for fresh server-backed chats.
 - Domain state still uses the migration-window `data/db.json` blob for
   resources not yet extracted to SQL. Memory uses dedicated SQL tables
   added in Phase 8.
@@ -95,10 +95,10 @@ rules. The headline order:
    `promptTemplate`, lorebook activation, persona, memory, and
    triggers. Closed 2026-05-24.
 8. **Memory** - Hypa V3 chunking, embeddings, summarization as an
-   async job queue on the server.
+   async job queue on the server. Closed 2026-05-25.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation
    with commands; cut the whole-state save bridge; client becomes a
-   projection of server events.
+   projection of server events. Active.
 
 ## Non-goals
 

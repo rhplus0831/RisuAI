@@ -36,7 +36,8 @@ failure.
 
 Phase 7 closeout detail lives in
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md);
-current pickup work is Phase 8 memory in [`next-steps.md`](next-steps.md).
+Phase 8 memory is closed, and current pickup work is Phase 9 client
+thinning in [`next-steps.md`](next-steps.md).
 
 ## Guardrails
 

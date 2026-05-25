@@ -14,25 +14,25 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Snapshot
 
-- Active phase: Phase 8, Hypa V3 memory.
-- Last landed slice: 8-8, live chunk-planning hook.
-- Current gap: Phase 8 needs closeout verification and handoff cleanup
-  before Phase 9 client thinning starts.
-- Next default pickup: 8-9, Phase 8 closeout.
-- Last recorded full baselines after 8-8: `pnpm check` clean,
+- Active phase: Phase 9, Client thinning.
+- Last landed slice: 8-9, Phase 8 closeout.
+- Current gap: Phase 9 needs a mutation inventory and command map before
+  implementation slices start.
+- Next default pickup: 9-0, Mutation inventory and command map.
+- Last recorded full baselines after 8-9: `pnpm check` clean,
   `pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1050 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Focused verification after 8-8:
-  `pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/memoryChunkPlanner.test.ts --config server/fastify/vitest.config.ts`
-  passed with 50 tests. Full verification also passed.
+- Phase 8 closeout verification passed the full matrix on 2026-05-25.
 
 ## Start Here
 
 - [`status/next-steps.md`](status/next-steps.md) - exact next slice and
   verification commands.
-- [`phases/phase-8-memory.md`](phases/phase-8-memory.md) - active Phase
-  8 scope, boundaries, and slice plan.
+- [`phases/phase-9-client-thinning.md`](phases/phase-9-client-thinning.md) -
+  active Phase 9 scope, boundaries, and slice plan.
+- [`phases/phase-8-memory.md`](phases/phase-8-memory.md) - closed Phase
+  8 summary and exit criteria.
 - [`status/server.md`](status/server.md) - current Fastify route surface.
 - [`status/sendchat.md`](status/sendchat.md) - current `sendChat`
   boundary and fixture guardrails.
@@ -47,8 +47,8 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-9 Phase 8 closeout.                                  |
-| Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                             |
+| Client thinning                             | Active; next slice is 9-0 mutation inventory and command map.                |
 
 ## Maintenance Rules
 

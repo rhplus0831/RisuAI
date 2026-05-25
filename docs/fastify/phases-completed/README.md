@@ -58,6 +58,7 @@ track the next piece of work.
 | 8-7d - Memory job list/cancel UI        | [`phase-8-memory-8-7d.md`](phase-8-memory-8-7d.md)                                     | Fastify-gated Hypa V3 modal job list, refresh, and cancellation.        |
 | 8-7e - `hypav3-memory` fixture parity   | [`phase-8-memory-8-7e.md`](phase-8-memory-8-7e.md)                                     | Server-backed memory fixture, progress, list/cancel, and diagnostics.   |
 | 8-8 - Live chunk-planning hook          | [`phase-8-memory-8-8.md`](phase-8-memory-8-8.md)                                       | Prompt-assembly chunk planning and idempotent summarize job enqueue.    |
+| 8-9 - Phase 8 closeout                  | [`phase-8-memory-8-9.md`](phase-8-memory-8-9.md)                                       | Final verification, exit-criteria confirmation, and Phase 9 handoff.    |
 
 ## Historical Status Logs
 

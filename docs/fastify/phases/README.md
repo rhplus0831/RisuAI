@@ -28,8 +28,8 @@ the phase file.
 | 5 - sendChat extraction                 | Closed 2026-05-22 | [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md)   |
 | 6 - Server-side generation              | Closed 2026-05-22 | [`phase-6-server-generation.md`](phase-6-server-generation.md) |
 | 7 - Server-side prompt assembly         | Closed 2026-05-24 | [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md)     |
-| 8 - Hypa V3 memory server-side          | In progress       | [`phase-8-memory.md`](phase-8-memory.md)                       |
-| 9 - Client thinning                     | Not started       | [`phase-9-client-thinning.md`](phase-9-client-thinning.md)     |
+| 8 - Hypa V3 memory server-side          | Closed 2026-05-25 | [`phase-8-memory.md`](phase-8-memory.md)                       |
+| 9 - Client thinning                     | Active            | [`phase-9-client-thinning.md`](phase-9-client-thinning.md)     |
 
 ## Dependency Order
 
@@ -39,11 +39,10 @@ the phase file.
 0 -> 4 -> 5 -> 6 -> 7
 ```
 
-Phase 8 is the active phase. Phase 7 is closed, and Phase 8 has landed
-through 8-7e. The next pickup is 8-8, the live chunk-planning hook that
-connects the existing planner to the production server path before Phase
-8 closeout. Phase 9 waits for server-owned generation, prompt assembly,
-and memory surfaces to settle.
+Phase 9 is the active phase. Phase 8 is closed, so server-owned
+generation, prompt assembly, and memory surfaces are ready for the client
+thinning workstream. The next pickup is 9-0, the mutation inventory and
+command map planning gate.
 
 ## Completed Detail
 

@@ -2,8 +2,7 @@
 
 Date: 2026-05-25
 
-Status: not started. Waits for server-owned generation, prompt assembly,
-and memory surfaces to settle.
+Status: active. Next slice: **9-0 - Mutation inventory and command map**.
 
 ## Goal
 
