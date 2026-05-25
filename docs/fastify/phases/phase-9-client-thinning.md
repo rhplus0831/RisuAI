@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-2e - Translator presets**. Next slice:
-**9-2f - Loadouts**.
+**9-2f - Loadouts**. Next slice:
+**9-3a - Character catalog and scalar profile**.
 
 ## Goal
 
@@ -141,6 +141,8 @@ surfaces.
   - **9-2f - Loadouts.** Save/delete/favorite/list/last-used bookkeeping;
     apply is composite or deferred until every touched resource command
     exists.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-2f.md`](../phases-completed/phase-9-client-thinning-9-2f.md).
 - **9-3 - Characters, chats, messages.** Move high-churn chat resources
   behind commands.
   - **9-3a - Character catalog and scalar profile.** Character lifecycle,

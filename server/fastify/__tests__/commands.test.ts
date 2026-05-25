@@ -1418,18 +1418,14 @@ describe('Phase 9-2e translator preset commands', () => {
     })
     expect(bootstrap.json().revision).toBe(1)
     expect(
-      bootstrap
-        .json()
-        .database.translatorPresets.map((preset: { id: string }) => preset.id),
+      bootstrap.json().database.translatorPresets.map((preset: { id: string }) => preset.id),
     ).toEqual(['translator-a', 'translator-b'])
   })
 
   it('returns 404 and 409 for missing translator presets and stale revisions', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      translatorPresets: [
-        { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
-      ],
+      translatorPresets: [{ id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 }],
       translatorPresetId: 0,
     })
 
@@ -1452,6 +1448,274 @@ describe('Phase 9-2e translator preset commands', () => {
       payload: {
         baseRevision: 0,
         presetId: 'translator-a',
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})
+
+describe('Phase 9-2f loadout commands', () => {
+  it('creates, updates, favorites, touches, and deletes loadouts by stable id', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: ['char-a'],
+          modules: ['module-a'],
+          globalVariables: { mood: 'calm' },
+          presetName: 'Preset A',
+          personaId: 'persona-a',
+        },
+      ],
+      lastLoadedLoadoutName: '',
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        loadout: {
+          id: 'loadout-b',
+          name: 'B',
+          lastUsed: 200,
+          favorite: false,
+          characterIds: [],
+          modules: ['module-b'],
+          globalVariables: { tone: 'warm' },
+          presetName: 'Preset B',
+          personaId: 'persona-b',
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'loadout.created',
+        revision: 2,
+        resource: 'loadout',
+        id: 'loadout-b',
+      },
+      loadoutId: 'loadout-b',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/loadouts/loadout-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        patch: {
+          name: 'B renamed',
+          globalVariables: { tone: 'bright' },
+        },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event).toMatchObject({
+      type: 'loadout.updated',
+      resource: 'loadout',
+      id: 'loadout-b',
+    })
+
+    const favorited = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-b/favorite',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        favorite: true,
+      },
+    })
+    expect(favorited.statusCode).toBe(200)
+    expect(favorited.json().event).toMatchObject({
+      type: 'loadout.favorited',
+      resource: 'loadout',
+      id: 'loadout-b',
+    })
+
+    const touched = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-b/touch',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: favorited.json().revision,
+        lastUsed: 300,
+        characterId: 'char-c',
+      },
+    })
+    expect(touched.statusCode).toBe(200)
+    expect(touched.json()).toEqual({
+      revision: 5,
+      event: {
+        type: 'loadout.touched',
+        revision: 5,
+        resource: 'loadout',
+        id: 'loadout-b',
+      },
+      loadoutId: 'loadout-b',
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/loadouts/loadout-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: touched.json().revision,
+      },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toEqual({
+      revision: 6,
+      event: {
+        type: 'loadout.deleted',
+        revision: 6,
+        resource: 'loadout',
+        id: 'loadout-a',
+      },
+      loadoutId: 'loadout-a',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      lastLoadedLoadoutName: 'B renamed',
+    })
+    expect(bootstrap.json().database.loadouts).toEqual([
+      {
+        id: 'loadout-b',
+        name: 'B renamed',
+        lastUsed: 300,
+        favorite: true,
+        characterIds: ['char-c'],
+        modules: ['module-b'],
+        globalVariables: { tone: 'bright' },
+        presetName: 'Preset B',
+        personaId: 'persona-b',
+      },
+    ])
+  })
+
+  it('rejects malformed loadout commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+      ],
+    })
+
+    const update = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/loadouts/loadout-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { lastUsed: 'recently' },
+      },
+    })
+    expect(update.statusCode).toBe(400)
+    expect(update.json().error).toBe('patch.lastUsed must be a finite number')
+
+    const create = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        loadout: {
+          id: 'loadout-a',
+          name: 'Duplicate',
+          lastUsed: 200,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+      },
+    })
+    expect(create.statusCode).toBe(400)
+    expect(create.json().error).toBe('Duplicate loadout id: loadout-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.loadouts).toEqual([
+      {
+        id: 'loadout-a',
+        name: 'A',
+        lastUsed: 100,
+        favorite: false,
+        characterIds: [],
+        modules: [],
+        globalVariables: {},
+        presetName: '',
+        personaId: '',
+      },
+    ])
+  })
+
+  it('returns 404 and 409 for missing loadouts and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+      ],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/missing/favorite',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        favorite: true,
+      },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Loadout not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-a/touch',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
+        lastUsed: 200,
       },
     })
     expect(stale.statusCode).toBe(409)

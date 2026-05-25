@@ -67,6 +67,7 @@ track the next piece of work.
 | 9-2c - Prompt templates/items           | [`phase-9-client-thinning-9-2c.md`](phase-9-client-thinning-9-2c.md)                   | Prompt settings/items commands, browser helpers, and prompt UI bridge.          |
 | 9-2d - Personas                         | [`phase-9-client-thinning-9-2d.md`](phase-9-client-thinning-9-2d.md)                   | Persona lifecycle/select commands, browser helpers, and mirror-field bridge.    |
 | 9-2e - Translator presets               | [`phase-9-client-thinning-9-2e.md`](phase-9-client-thinning-9-2e.md)                   | Translator preset lifecycle/select commands, browser helpers, and sync bridge.  |
+| 9-2f - Loadouts                         | [`phase-9-client-thinning-9-2f.md`](phase-9-client-thinning-9-2f.md)                   | Loadout save/delete/favorite/touch commands, browser helpers, and UI bridge.    |
 
 ## Historical Status Logs
 

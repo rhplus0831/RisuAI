@@ -52,6 +52,18 @@ import {
   selectedTranslatorPresetId,
   syncSelectedTranslatorPresetToLegacyFields,
 } from '../commands/translatorPresets.js'
+import {
+  createLoadoutRecord,
+  ensureDatabaseObject as ensureLoadoutDatabaseObject,
+  ensureLoadoutCollection,
+  findLoadoutIndex,
+  readLoadoutId,
+  readLoadoutPatch,
+  readOptionalBoolean as readLoadoutOptionalBoolean,
+  readOptionalCharacterId,
+  readOptionalTimestamp,
+  requireLoadoutIndex,
+} from '../commands/loadouts.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -94,6 +106,15 @@ interface TranslatorPresetCommandBody {
   patch?: unknown
   presetId?: unknown
   select?: unknown
+}
+
+interface LoadoutCommandBody {
+  baseRevision?: unknown
+  loadout?: unknown
+  patch?: unknown
+  favorite?: unknown
+  lastUsed?: unknown
+  characterId?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -1621,9 +1642,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as TranslatorPresetCommandBody
       const baseRevision = readBaseRevision(body)
       const selectPresetId =
-        body.presetId === undefined
-          ? undefined
-          : readTranslatorPresetId(body.presetId, 'presetId')
+        body.presetId === undefined ? undefined : readTranslatorPresetId(body.presetId, 'presetId')
       const result = applyJsonCommandMutation<{
         presetId: string
         selectedPresetId: string | null
@@ -1697,6 +1716,194 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetSelected, id: presetId },
             extra: { presetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/loadouts', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as LoadoutCommandBody
+      const baseRevision = readBaseRevision(body)
+      const loadout = createLoadoutRecord(body.loadout)
+      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLoadoutDatabaseObject(database)
+          const loadouts = ensureLoadoutCollection(target)
+          if (findLoadoutIndex(loadouts, loadout.id) !== -1) {
+            throw new ValidationError(`Duplicate loadout id: ${loadout.id}`)
+          }
+          loadouts.push(loadout)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.loadoutCreated, id: loadout.id },
+            extra: { loadoutId: loadout.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/loadouts/:loadoutId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const loadoutId = readLoadoutId((req.params as { loadoutId?: unknown }).loadoutId)
+      const body = (req.body ?? {}) as LoadoutCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readLoadoutPatch(body.patch)
+      if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== loadoutId) {
+        throw new ValidationError('patch.id must match loadoutId')
+      }
+      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLoadoutDatabaseObject(database)
+          const loadouts = ensureLoadoutCollection(target)
+          const index = requireLoadoutIndex(loadouts, loadoutId)
+          loadouts[index] = {
+            ...loadouts[index],
+            ...patch,
+            id: loadoutId,
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.loadoutUpdated, id: loadoutId },
+            extra: { loadoutId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/loadouts/:loadoutId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const loadoutId = readLoadoutId((req.params as { loadoutId?: unknown }).loadoutId)
+      const body = (req.body ?? {}) as LoadoutCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLoadoutDatabaseObject(database)
+          const loadouts = ensureLoadoutCollection(target)
+          const index = requireLoadoutIndex(loadouts, loadoutId)
+          loadouts.splice(index, 1)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.loadoutDeleted, id: loadoutId },
+            extra: { loadoutId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/loadouts/:loadoutId/favorite', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const loadoutId = readLoadoutId((req.params as { loadoutId?: unknown }).loadoutId)
+      const body = (req.body ?? {}) as LoadoutCommandBody
+      const baseRevision = readBaseRevision(body)
+      const favorite = readLoadoutOptionalBoolean(body.favorite, 'favorite', true)
+      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLoadoutDatabaseObject(database)
+          const loadouts = ensureLoadoutCollection(target)
+          const index = requireLoadoutIndex(loadouts, loadoutId)
+          loadouts[index].favorite = favorite
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.loadoutFavorited, id: loadoutId },
+            extra: { loadoutId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/loadouts/:loadoutId/touch', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const loadoutId = readLoadoutId((req.params as { loadoutId?: unknown }).loadoutId)
+      const body = (req.body ?? {}) as LoadoutCommandBody
+      const baseRevision = readBaseRevision(body)
+      const lastUsed = readOptionalTimestamp(body.lastUsed, 'lastUsed')
+      const characterId = readOptionalCharacterId(body.characterId)
+      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLoadoutDatabaseObject(database)
+          const loadouts = ensureLoadoutCollection(target)
+          const index = requireLoadoutIndex(loadouts, loadoutId)
+          const loadout = loadouts[index]
+          loadout.lastUsed = lastUsed
+          if (characterId) {
+            loadout.characterIds.push(characterId)
+          }
+          target.lastLoadedLoadoutName = loadout.name
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.loadoutTouched, id: loadoutId },
+            extra: { loadoutId },
           }
         },
       })

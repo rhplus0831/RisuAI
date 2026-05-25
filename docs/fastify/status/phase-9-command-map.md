@@ -235,20 +235,19 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-2e translator presets are complete. Continue with
-**9-2f - Loadouts**:
+9-2f loadouts are complete. Continue with
+**9-3a - Character catalog and scalar profile**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement loadout commands from the Settings, Presets,
-  Personas, Loadouts command-family table.
-- Replace loadout save/delete/favorite/list/last-used mutation paths in
-  loadout UI/helper code with typed server-backed commands while keeping
-  local/Tauri behavior unchanged.
-- Keep loadout apply composite/deferred until every touched resource has a
-  command; do not fold translator presets,
-  character/chat/message resources, projection enforcement, or plugin
-  bridge work into 9-2f.
+- Implement character commands from the Characters, Chats, Messages
+  command-family table.
+- Replace character catalog/order/trash/folder/selection and scalar profile
+  mutation paths in server-backed web mode with typed commands while
+  keeping local/Tauri behavior unchanged.
+- Keep chat records, message history, generation persistence,
+  scriptstate, lorebook/script/trigger child collections, projection
+  enforcement, and plugin bridge work in their later slices.
 - Preserve the 9-1 command response and conflict contract for every
-  loadout command.
+  character command.

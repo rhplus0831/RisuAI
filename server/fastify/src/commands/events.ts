@@ -103,6 +103,26 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'translatorPreset.selected',
     resource: 'translatorPreset',
   },
+  loadoutCreated: {
+    type: 'loadout.created',
+    resource: 'loadout',
+  },
+  loadoutUpdated: {
+    type: 'loadout.updated',
+    resource: 'loadout',
+  },
+  loadoutDeleted: {
+    type: 'loadout.deleted',
+    resource: 'loadout',
+  },
+  loadoutFavorited: {
+    type: 'loadout.favorited',
+    resource: 'loadout',
+  },
+  loadoutTouched: {
+    type: 'loadout.touched',
+    resource: 'loadout',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

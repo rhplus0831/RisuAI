@@ -379,6 +379,18 @@ export type TranslatorPresetSnapshot = Record<string, unknown> & {
   maxResponse?: number
 }
 
+export type LoadoutSnapshot = Record<string, unknown> & {
+  id?: string
+  name?: string
+  lastUsed?: number
+  favorite?: boolean
+  characterIds?: string[]
+  modules?: string[]
+  globalVariables?: Record<string, string>
+  presetName?: string
+  personaId?: string
+}
+
 export interface PresetCommandInput {
   baseRevision: number
 }
@@ -498,6 +510,34 @@ export interface DeleteTranslatorPresetCommandInput extends TranslatorPresetComm
 
 export interface SelectTranslatorPresetCommandInput extends TranslatorPresetCommandInput {
   presetId: string
+}
+
+export interface LoadoutCommandInput {
+  baseRevision: number
+}
+
+export interface CreateLoadoutCommandInput extends LoadoutCommandInput {
+  loadout: LoadoutSnapshot
+}
+
+export interface UpdateLoadoutCommandInput extends LoadoutCommandInput {
+  loadoutId: string
+  patch: LoadoutSnapshot
+}
+
+export interface DeleteLoadoutCommandInput extends LoadoutCommandInput {
+  loadoutId: string
+}
+
+export interface FavoriteLoadoutCommandInput extends LoadoutCommandInput {
+  loadoutId: string
+  favorite: boolean
+}
+
+export interface TouchLoadoutCommandInput extends LoadoutCommandInput {
+  loadoutId: string
+  lastUsed?: number
+  characterId?: string
 }
 
 export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
@@ -926,6 +966,76 @@ export async function selectTranslatorPresetCommand(
     body: {
       baseRevision: input.baseRevision,
       presetId: input.presetId,
+    },
+    signal,
+  })
+}
+
+export async function createLoadoutCommand(
+  input: CreateLoadoutCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ loadoutId: string }>> {
+  return requestCommandJson('/loadouts', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      loadout: input.loadout,
+    },
+    signal,
+  })
+}
+
+export async function updateLoadoutCommand(
+  input: UpdateLoadoutCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ loadoutId: string }>> {
+  return requestCommandJson(`/loadouts/${encodeURIComponent(input.loadoutId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deleteLoadoutCommand(
+  input: DeleteLoadoutCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ loadoutId: string }>> {
+  return requestCommandJson(`/loadouts/${encodeURIComponent(input.loadoutId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function favoriteLoadoutCommand(
+  input: FavoriteLoadoutCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ loadoutId: string }>> {
+  return requestCommandJson(`/loadouts/${encodeURIComponent(input.loadoutId)}/favorite`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      favorite: input.favorite,
+    },
+    signal,
+  })
+}
+
+export async function touchLoadoutCommand(
+  input: TouchLoadoutCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ loadoutId: string }>> {
+  return requestCommandJson(`/loadouts/${encodeURIComponent(input.loadoutId)}/touch`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      lastUsed: input.lastUsed,
+      characterId: input.characterId,
     },
     signal,
   })

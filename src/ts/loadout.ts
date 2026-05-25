@@ -1,4 +1,14 @@
 import { changeUserPersona } from './persona'
+import {
+  canUseServerCommands,
+  createLoadoutCommand,
+  deleteLoadoutCommand,
+  favoriteLoadoutCommand,
+  runServerCommand,
+  touchLoadoutCommand,
+  type LoadoutSnapshot,
+  type ServerCommandResult,
+} from './server/commands'
 import { changeToPreset, getCurrentCharacter } from './storage/database.svelte'
 import { DBState } from './stores.svelte'
 
@@ -33,12 +43,104 @@ export function makeLoadout(options: { name: string }): Loadout {
 
 type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
+export interface LoadoutStateSnapshot {
+  loadouts: Loadout[]
+  lastLoadedLoadoutName: string
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+export function currentLoadoutStateSnapshot(): LoadoutStateSnapshot {
+  return {
+    loadouts: cloneJsonValue(DBState.db.loadouts ?? []),
+    lastLoadedLoadoutName: DBState.db.lastLoadedLoadoutName,
+  }
+}
+
+export function restoreLoadoutState(snapshot: LoadoutStateSnapshot): void {
+  DBState.db.loadouts = cloneJsonValue(snapshot.loadouts)
+  DBState.db.lastLoadedLoadoutName = snapshot.lastLoadedLoadoutName
+}
+
+function runLoadoutCommand<T extends Record<string, unknown>>(
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
+  rollback: () => void,
+): void {
+  if (!canUseServerCommands()) return
+  void runServerCommand({ command, rollback })
+}
+
+function toLoadoutSnapshot(loadout: Loadout): LoadoutSnapshot {
+  return cloneJsonValue(loadout) as LoadoutSnapshot
+}
+
+function dispatchCreateLoadout(loadout: Loadout, previous: LoadoutStateSnapshot): void {
+  runLoadoutCommand(
+    (baseRevision) =>
+      createLoadoutCommand({
+        baseRevision,
+        loadout: toLoadoutSnapshot(loadout),
+      }),
+    () => restoreLoadoutState(previous),
+  )
+}
+
+export function dispatchDeleteLoadout(loadoutId: string, previous: LoadoutStateSnapshot): void {
+  runLoadoutCommand(
+    (baseRevision) =>
+      deleteLoadoutCommand({
+        baseRevision,
+        loadoutId,
+      }),
+    () => restoreLoadoutState(previous),
+  )
+}
+
+export function dispatchFavoriteLoadout(
+  loadoutId: string,
+  favorite: boolean,
+  previous: LoadoutStateSnapshot,
+): void {
+  runLoadoutCommand(
+    (baseRevision) =>
+      favoriteLoadoutCommand({
+        baseRevision,
+        loadoutId,
+        favorite,
+      }),
+    () => restoreLoadoutState(previous),
+  )
+}
+
+function dispatchTouchLoadout(
+  loadoutId: string,
+  lastUsed: number,
+  characterId: string | undefined,
+  previous: LoadoutStateSnapshot,
+): void {
+  runLoadoutCommand(
+    (baseRevision) =>
+      touchLoadoutCommand({
+        baseRevision,
+        loadoutId,
+        lastUsed,
+        characterId,
+      }),
+    () => restoreLoadoutState(previous),
+  )
+}
+
 export function applyLoadout(
   loadout: Loadout,
   apply: LoadoutApplyOption[] = ['modules', 'globalVariables', 'preset', 'persona'],
 ) {
+  const previous = currentLoadoutStateSnapshot()
+  const currentCharacterId = getCurrentCharacter()?.chaId
   loadout.lastUsed = Date.now()
-  loadout.characterIds.push(getCurrentCharacter()?.chaId)
+  loadout.characterIds.push(currentCharacterId as string)
   if (apply.includes('persona')) {
     let personaIndex = DBState.db.personas?.findIndex((p) => p.id === loadout.personaId)
     if (personaIndex !== -1) {
@@ -58,10 +160,13 @@ export function applyLoadout(
     DBState.db.globalChatVariables = loadout.globalVariables
   }
   DBState.db.lastLoadedLoadoutName = loadout.name
+  dispatchTouchLoadout(loadout.id, loadout.lastUsed, currentCharacterId, previous)
 }
 
 export function saveCurrentLoadout(name: string) {
+  const previous = currentLoadoutStateSnapshot()
   const loadout = makeLoadout({ name })
   DBState.db.loadouts.push(loadout)
+  dispatchCreateLoadout(loadout, previous)
   return loadout
 }

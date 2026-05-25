@@ -18,14 +18,17 @@ vi.mock('../storage/nodeStorage', () => ({
 
 import {
   canUseServerCommands,
+  createLoadoutCommand,
   createPersonaCommand,
   clearCachedServerCommandRevision,
   createPromptItemCommand,
   createPresetCommand,
   createTranslatorPresetCommand,
+  deleteLoadoutCommand,
   deletePersonaCommand,
   deletePromptItemCommand,
   deleteTranslatorPresetCommand,
+  favoriteLoadoutCommand,
   getServerCommandBaseRevision,
   patchPromptSettingsCommand,
   patchServerBackedSettings,
@@ -38,6 +41,8 @@ import {
   runServerPresetCommand,
   selectPersonaCommand,
   selectTranslatorPresetCommand,
+  touchLoadoutCommand,
+  updateLoadoutCommand,
   updatePersonaCommand,
   updateTranslatorPresetCommand,
   selectPresetCommand,
@@ -940,6 +945,183 @@ describe('server command API adapter', () => {
       null,
       { baseRevision: 30, presetId: 'translator-b' },
       { baseRevision: 33, presetId: 'translator-b' },
+    ])
+  })
+
+  it('dispatches loadout commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/loadouts/loadout-a/touch')) {
+        return {
+          revision: 6,
+          event: { type: 'loadout.touched', revision: 6, resource: 'loadout', id: 'loadout-a' },
+          loadoutId: 'loadout-a',
+        }
+      }
+      if (url.endsWith('/loadouts/loadout-a/favorite')) {
+        return {
+          revision: 5,
+          event: { type: 'loadout.favorited', revision: 5, resource: 'loadout', id: 'loadout-a' },
+          loadoutId: 'loadout-a',
+        }
+      }
+      if (url.endsWith('/loadouts/loadout-b')) {
+        return {
+          revision: 4,
+          event: { type: 'loadout.deleted', revision: 4, resource: 'loadout', id: 'loadout-b' },
+          loadoutId: 'loadout-b',
+        }
+      }
+      if (url.endsWith('/loadouts/loadout-a')) {
+        return {
+          revision: 3,
+          event: { type: 'loadout.updated', revision: 3, resource: 'loadout', id: 'loadout-a' },
+          loadoutId: 'loadout-a',
+        }
+      }
+      return {
+        revision: 2,
+        event: { type: 'loadout.created', revision: 2, resource: 'loadout', id: 'loadout-a' },
+        loadoutId: 'loadout-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      createLoadoutCommand({
+        baseRevision: 1,
+        loadout: {
+          id: 'loadout-a',
+          name: 'A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: ['char-a'],
+          modules: ['module-a'],
+          globalVariables: { mood: 'bright' },
+          presetName: 'Preset A',
+          personaId: 'persona-a',
+        },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, loadoutId: 'loadout-a' })
+
+    await expect(
+      updateLoadoutCommand({
+        baseRevision: 2,
+        loadoutId: 'loadout-a',
+        patch: { name: 'A updated' },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, loadoutId: 'loadout-a' })
+
+    await expect(
+      deleteLoadoutCommand({
+        baseRevision: 3,
+        loadoutId: 'loadout-b',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 4, loadoutId: 'loadout-b' })
+
+    await expect(
+      favoriteLoadoutCommand({
+        baseRevision: 4,
+        loadoutId: 'loadout-a',
+        favorite: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, loadoutId: 'loadout-a' })
+
+    await expect(
+      touchLoadoutCommand({
+        baseRevision: 5,
+        loadoutId: 'loadout-a',
+        lastUsed: 1234,
+        characterId: 'char-b',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 6, loadoutId: 'loadout-a' })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/loadouts',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          loadout: {
+            id: 'loadout-a',
+            name: 'A',
+            lastUsed: 100,
+            favorite: false,
+            characterIds: ['char-a'],
+            modules: ['module-a'],
+            globalVariables: { mood: 'bright' },
+            presetName: 'Preset A',
+            personaId: 'persona-a',
+          },
+        },
+      },
+      {
+        url: '/api/v1/commands/loadouts/loadout-a',
+        method: 'PATCH',
+        body: {
+          baseRevision: 2,
+          patch: { name: 'A updated' },
+        },
+      },
+      {
+        url: '/api/v1/commands/loadouts/loadout-b',
+        method: 'DELETE',
+        body: {
+          baseRevision: 3,
+        },
+      },
+      {
+        url: '/api/v1/commands/loadouts/loadout-a/favorite',
+        method: 'POST',
+        body: {
+          baseRevision: 4,
+          favorite: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/loadouts/loadout-a/touch',
+        method: 'POST',
+        body: {
+          baseRevision: 5,
+          lastUsed: 1234,
+          characterId: 'char-b',
+        },
+      },
+    ])
+  })
+
+  it('runs loadout commands with revision lookup and one conflict retry', async () => {
+    let attempts = 0
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 40 }
+      attempts += 1
+      if (attempts === 1) {
+        return jsonResponse({ error: 'revision_conflict', currentRevision: 43 }, 409)
+      }
+      return {
+        revision: 44,
+        event: { type: 'loadout.favorited', revision: 44, resource: 'loadout', id: 'loadout-a' },
+        loadoutId: 'loadout-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      runServerCommand({
+        command: (baseRevision) =>
+          favoriteLoadoutCommand({
+            baseRevision,
+            loadoutId: 'loadout-a',
+            favorite: false,
+          }),
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 44, loadoutId: 'loadout-a' })
+
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      null,
+      { baseRevision: 40, favorite: false },
+      { baseRevision: 43, favorite: false },
     ])
   })
 })

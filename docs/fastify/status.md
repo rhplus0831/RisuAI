@@ -15,13 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-2e, Translator presets command bridge.
-- Current gap: 9-2f begins loadout commands; 9-5 should
+- Last landed slice: 9-2f, Loadouts command bridge.
+- Current gap: 9-3 begins character/chat/message commands; 9-5 should
   still do the residual direct-write sweep before enabling the read-only
   `DBState.db` guard.
-- Next default pickup: 9-2f, Loadouts.
-- Last recorded full baselines after 9-2e: `pnpm check` clean,
-  `pnpm test` 674 tests plus 4 skipped, `pnpm api:test` 1078 tests, and
+- Next default pickup: 9-3a, Character catalog and scalar profile.
+- Last recorded full baselines after 9-2f: `pnpm check` clean,
+  `pnpm test` 676 tests plus 4 skipped, `pnpm api:test` 1081 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -43,14 +43,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                               |
-| ------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                                 |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                          |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.             |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                                    |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                                    |
-| Client thinning                             | Active; 9-2e translator presets command bridge landed; next slice is 9-2f loadouts. |
+| Workstream                                  | State                                                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                                               |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                                        |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.                           |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                                                  |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                                                  |
+| Client thinning                             | Active; 9-2f loadouts command bridge landed; next slice is 9-3a character catalog/scalar profile. |
 
 ## Maintenance Rules
 

@@ -4,6 +4,7 @@ import type { AuthState } from '../auth.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
 import { normalizePresetCollection } from '../commands/presets.js'
 import { normalizeTranslatorPresetCollection } from '../commands/translatorPresets.js'
+import { normalizeLoadoutCollection } from '../commands/loadouts.js'
 import { requireAuth } from '../http.js'
 import { ValidationError, applyImport } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRows } from '../memoryLegacyImport.js'
@@ -40,6 +41,14 @@ export function registerSaveRoutes(
           'translatorMaxResponse' in body.database)
       ) {
         normalizeTranslatorPresetCollection(body.database)
+      }
+      if (
+        body.database &&
+        typeof body.database === 'object' &&
+        !Array.isArray(body.database) &&
+        ('loadouts' in body.database || 'lastLoadedLoadoutName' in body.database)
+      ) {
+        normalizeLoadoutCollection(body.database)
       }
       normalizePromptTemplateCollection(body.database)
       const { revision } = applyImport(db, dataDir, body.database)

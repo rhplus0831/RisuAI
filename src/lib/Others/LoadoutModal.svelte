@@ -10,7 +10,14 @@
   } from '@lucide/svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { loadoutModalStore } from 'src/ts/stores.svelte'
-  import { applyLoadout, saveCurrentLoadout, type Loadout } from 'src/ts/loadout'
+  import {
+    applyLoadout,
+    currentLoadoutStateSnapshot,
+    dispatchDeleteLoadout,
+    dispatchFavoriteLoadout,
+    saveCurrentLoadout,
+    type Loadout,
+  } from 'src/ts/loadout'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
 
   type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
@@ -69,7 +76,9 @@
 
   function toggleFavorite(loadout: Loadout, e: MouseEvent) {
     e.stopPropagation()
+    const previous = currentLoadoutStateSnapshot()
     loadout.favorite = !loadout.favorite
+    dispatchFavoriteLoadout(loadout.id, loadout.favorite, previous)
   }
 
   function formatDate(ts: number): string {
@@ -85,7 +94,9 @@
   function removeLoadout(loadout: Loadout) {
     const index = DBState.db.loadouts.findIndex((l) => l.id === loadout.id)
     if (index !== -1) {
+      const previous = currentLoadoutStateSnapshot()
       DBState.db.loadouts.splice(index, 1)
+      dispatchDeleteLoadout(loadout.id, previous)
     }
   }
 </script>
