@@ -226,8 +226,8 @@ function normalizeCharacterOrder(
     }
 
     if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) continue
-    const folder = readCharacterOrderEntry(rawEntry, normalized.length)
-    folder.data = folder.data.filter((id) => {
+    const folder = readCharacterOrderEntry(rawEntry, normalized.length) as CharacterFolderRecord
+    folder.data = folder.data.filter((id: string) => {
       if (!activeIds.has(id) || seen.has(id)) return false
       seen.add(id)
       return true

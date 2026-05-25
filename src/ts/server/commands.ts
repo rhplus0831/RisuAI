@@ -408,6 +408,25 @@ export type CharacterOrderEntry =
       img?: string
     })
 
+export type ChatSnapshot = Record<string, unknown> & {
+  id?: string
+  message?: unknown[]
+  note?: string
+  name?: string
+  localLore?: unknown[]
+  folderId?: string | null
+  bindedPersona?: string
+  bookmarks?: string[]
+  bookmarkNames?: Record<string, string>
+}
+
+export type ChatFolderSnapshot = Record<string, unknown> & {
+  id?: string
+  name?: string
+  color?: string
+  folded?: boolean
+}
+
 export interface PresetCommandInput {
   baseRevision: number
 }
@@ -580,6 +599,61 @@ export interface SelectCharacterCommandInput extends CharacterCommandInput {
 
 export interface ReorderCharactersCommandInput extends CharacterCommandInput {
   characterOrder: CharacterOrderEntry[]
+}
+
+export interface ChatCommandInput {
+  baseRevision: number
+}
+
+export interface CreateChatCommandInput extends ChatCommandInput {
+  characterId: string
+  chat: ChatSnapshot
+  select?: boolean
+}
+
+export interface UpdateChatCommandInput extends ChatCommandInput {
+  chatId: string
+  patch: ChatSnapshot
+  select?: boolean
+}
+
+export interface DeleteChatCommandInput extends ChatCommandInput {
+  chatId: string
+}
+
+export interface ForkChatCommandInput extends ChatCommandInput {
+  chatId: string
+  chat?: ChatSnapshot
+  sourcePatch?: ChatSnapshot
+  folder?: ChatFolderSnapshot
+  select?: boolean
+}
+
+export interface ReorderChatsCommandInput extends ChatCommandInput {
+  characterId: string
+  chatIds: string[]
+  folderByChatId?: Record<string, string | null>
+  selectedChatId?: string
+}
+
+export interface CreateChatFolderCommandInput extends ChatCommandInput {
+  characterId: string
+  folder: ChatFolderSnapshot
+}
+
+export interface UpdateChatFolderCommandInput extends ChatCommandInput {
+  folderId: string
+  patch: ChatFolderSnapshot
+}
+
+export interface DeleteChatFolderCommandInput extends ChatCommandInput {
+  folderId: string
+}
+
+export interface ReorderChatFoldersCommandInput extends ChatCommandInput {
+  characterId: string
+  folderIds: string[]
+  selectedChatId?: string
 }
 
 export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
@@ -1150,6 +1224,143 @@ export async function reorderCharactersCommand(
     },
     signal,
   })
+}
+
+export async function createChatCommand(
+  input: CreateChatCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; selectedChatId: string | null }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/chats`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      chat: input.chat,
+      select: input.select,
+    },
+    signal,
+  })
+}
+
+export async function updateChatCommand(
+  input: UpdateChatCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; selectedChatId: string | null }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+      select: input.select,
+    },
+    signal,
+  })
+}
+
+export async function deleteChatCommand(
+  input: DeleteChatCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; selectedChatId: string | null }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function forkChatCommand(
+  input: ForkChatCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{ chatId: string; sourceChatId: string; selectedChatId: string | null }>
+> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/fork`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      chat: input.chat,
+      sourcePatch: input.sourcePatch,
+      folder: input.folder,
+      select: input.select,
+    },
+    signal,
+  })
+}
+
+export async function reorderChatsCommand(
+  input: ReorderChatsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedChatId: string | null }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/chats/reorder`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      chatIds: input.chatIds,
+      folderByChatId: input.folderByChatId,
+      selectedChatId: input.selectedChatId,
+    },
+    signal,
+  })
+}
+
+export async function createChatFolderCommand(
+  input: CreateChatFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/chat-folders`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      folder: input.folder,
+    },
+    signal,
+  })
+}
+
+export async function updateChatFolderCommand(
+  input: UpdateChatFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson(`/chat-folders/${encodeURIComponent(input.folderId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deleteChatFolderCommand(
+  input: DeleteChatFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson(`/chat-folders/${encodeURIComponent(input.folderId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function reorderChatFoldersCommand(
+  input: ReorderChatFoldersCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedChatId: string | null }>> {
+  return requestCommandJson(
+    `/characters/${encodeURIComponent(input.characterId)}/chat-folders/reorder`,
+    {
+      method: 'POST',
+      body: {
+        baseRevision: input.baseRevision,
+        folderIds: input.folderIds,
+        selectedChatId: input.selectedChatId,
+      },
+      signal,
+    },
+  )
 }
 
 export async function runServerPresetCommand<T extends Record<string, unknown> = {}>(

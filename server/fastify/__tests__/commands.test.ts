@@ -2025,3 +2025,347 @@ describe('Phase 9-3a character commands', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-3b chat record and folder commands', () => {
+  it('creates, updates, forks, reorders, and deletes chats and chat folders by id', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            { id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] },
+            {
+              id: 'chat-b',
+              name: 'B chat',
+              note: '',
+              message: [],
+              localLore: [],
+              folderId: 'folder-a',
+            },
+          ],
+          chatFolders: [{ id: 'folder-a', name: 'Folder A', folded: false }],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-c',
+          name: 'C chat',
+          note: '',
+          message: [],
+          localLore: [],
+        },
+        select: true,
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'chat.created',
+        revision: 2,
+        resource: 'chat',
+        id: 'chat-c',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-c',
+      selectedChatId: 'chat-c',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-c',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        patch: {
+          name: 'C renamed',
+          note: 'Author note',
+          bookmarks: ['msg-a'],
+          bookmarkNames: { 'msg-a': 'Pinned' },
+        },
+        select: true,
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toMatchObject({
+      revision: 3,
+      event: {
+        type: 'chat.updated',
+        resource: 'chat',
+        id: 'chat-c',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-c',
+      selectedChatId: 'chat-c',
+    })
+
+    const forked = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        sourcePatch: { folderId: 'folder-a' },
+        chat: {
+          id: 'chat-fork',
+          name: 'A branch',
+          note: '',
+          message: [{ role: 'char', data: 'branch marker', chatId: 'msg-branch' }],
+          localLore: [],
+          folderId: 'folder-a',
+        },
+      },
+    })
+    expect(forked.statusCode).toBe(200)
+    expect(forked.json()).toMatchObject({
+      revision: 4,
+      event: {
+        type: 'chat.forked',
+        resource: 'chat',
+        id: 'chat-fork',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-fork',
+      sourceChatId: 'chat-a',
+      selectedChatId: 'chat-fork',
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: forked.json().revision,
+        chatIds: ['chat-a', 'chat-fork', 'chat-c', 'chat-b'],
+        folderByChatId: {
+          'chat-a': 'folder-a',
+          'chat-fork': 'folder-a',
+          'chat-c': null,
+          'chat-b': 'folder-a',
+        },
+        selectedChatId: 'chat-c',
+      },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json()).toMatchObject({
+      revision: 5,
+      event: {
+        type: 'chat.reordered',
+        resource: 'chat',
+        parentId: 'char-a',
+      },
+      selectedChatId: 'chat-c',
+    })
+
+    const folderCreated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chat-folders',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: reordered.json().revision,
+        folder: { id: 'folder-b', name: 'Folder B', color: 'blue', folded: false },
+      },
+    })
+    expect(folderCreated.statusCode).toBe(200)
+    expect(folderCreated.json().event).toMatchObject({
+      type: 'chatFolder.created',
+      resource: 'chatFolder',
+      id: 'folder-b',
+      parentId: 'char-a',
+    })
+
+    const folderUpdated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chat-folders/folder-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: folderCreated.json().revision,
+        patch: { name: 'Folder B renamed', folded: true },
+      },
+    })
+    expect(folderUpdated.statusCode).toBe(200)
+
+    const foldersReordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chat-folders/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: folderUpdated.json().revision,
+        folderIds: ['folder-a', 'folder-b'],
+        selectedChatId: 'chat-c',
+      },
+    })
+    expect(foldersReordered.statusCode).toBe(200)
+
+    const folderDeleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/chat-folders/folder-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: foldersReordered.json().revision },
+    })
+    expect(folderDeleted.statusCode).toBe(200)
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/chats/chat-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: folderDeleted.json().revision },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: 10,
+      event: {
+        type: 'chat.deleted',
+        resource: 'chat',
+        id: 'chat-b',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-b',
+      selectedChatId: 'chat-c',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const character = bootstrap.json().database.characters[0]
+    expect(character.chatPage).toBe(2)
+    expect(character.chats.map((chat: { id: string }) => chat.id)).toEqual([
+      'chat-a',
+      'chat-fork',
+      'chat-c',
+    ])
+    expect(
+      character.chats.map((chat: { folderId?: string | null }) => chat.folderId ?? null),
+    ).toEqual([null, null, null])
+    expect(character.chatFolders).toEqual([
+      { id: 'folder-b', name: 'Folder B renamed', color: 'blue', folded: true },
+    ])
+    expect(character.chats[2]).toMatchObject({
+      id: 'chat-c',
+      name: 'C renamed',
+      note: 'Author note',
+      bookmarks: ['msg-a'],
+      bookmarkNames: { 'msg-a': 'Pinned' },
+    })
+  })
+
+  it('rejects malformed chat commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            { id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] },
+            { id: 'chat-b', name: 'B chat', note: '', message: [], localLore: [] },
+          ],
+          chatFolders: [{ id: 'folder-a', name: 'Folder A', folded: false }],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const patch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { message: [] },
+      },
+    })
+    expect(patch.statusCode).toBe(400)
+    expect(patch.json().error).toBe('patch.message is owned by a later command slice')
+
+    const reorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chatIds: ['chat-a', 'chat-a'],
+      },
+    })
+    expect(reorder.statusCode).toBe(400)
+    expect(reorder.json().error).toBe('Duplicate chat id in chatIds: chat-a')
+
+    const folder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chatIds: ['chat-a', 'chat-b'],
+        folderByChatId: { 'chat-a': 'missing-folder' },
+      },
+    })
+    expect(folder.statusCode).toBe(400)
+    expect(folder.json().error).toBe('Unknown chat folder id in folderByChatId: missing-folder')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(
+      bootstrap.json().database.characters[0].chats.map((chat: { id: string }) => chat.id),
+    ).toEqual(['chat-a', 'chat-b'])
+  })
+
+  it('returns 404 and 409 for missing chats and stale chat revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/missing',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { name: 'Nope' },
+      },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Chat not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
+        patch: { name: 'Stale' },
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

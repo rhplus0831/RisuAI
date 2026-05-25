@@ -75,6 +75,7 @@
   import SliderInput from '../UI/GUI/SliderInput.svelte'
   import Toggles from './Toggles.svelte'
   import { watchServerBackedCharacterProfile } from 'src/ts/server/characterBridge.svelte'
+  import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -88,8 +89,12 @@
   })
 
   $effect(() => {
-    const stop = watchServerBackedCharacterProfile()
-    return stop
+    const stopCharacter = watchServerBackedCharacterProfile()
+    const stopChat = watchServerBackedChatMetadata()
+    return () => {
+      stopCharacter()
+      stopChat()
+    }
   })
 
   let lasttokens = {

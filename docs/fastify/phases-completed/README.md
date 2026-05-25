@@ -69,6 +69,7 @@ track the next piece of work.
 | 9-2e - Translator presets               | [`phase-9-client-thinning-9-2e.md`](phase-9-client-thinning-9-2e.md)                   | Translator preset lifecycle/select commands, browser helpers, and sync bridge.  |
 | 9-2f - Loadouts                         | [`phase-9-client-thinning-9-2f.md`](phase-9-client-thinning-9-2f.md)                   | Loadout save/delete/favorite/touch commands, browser helpers, and UI bridge.    |
 | 9-3a - Characters                       | [`phase-9-client-thinning-9-3a.md`](phase-9-client-thinning-9-3a.md)                   | Character catalog/profile commands, browser helpers, and UI bridge.             |
+| 9-3b - Chats                            | [`phase-9-client-thinning-9-3b.md`](phase-9-client-thinning-9-3b.md)                   | Chat/folder lifecycle, metadata commands, browser helpers, and UI bridge.       |
 
 ## Historical Status Logs
 

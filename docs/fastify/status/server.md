@@ -23,7 +23,8 @@ docs.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
   prompt assembly.
 - Command routes are live under `/api/v1/commands/*` for scalar settings,
-  bot presets, prompt settings/items, and personas. Implemented resource
+  bot presets, prompt settings/items, personas, translator presets,
+  loadouts, characters, chats, and chat folders. Implemented resource
   families all use `baseRevision` / 409 conflict handling and emit their
   mapped command event.
 - Memory routes are auth-gated: `POST /api/v1/memory/jobs`,

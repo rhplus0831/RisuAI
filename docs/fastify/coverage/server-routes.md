@@ -127,16 +127,18 @@ The command names, payload rules, id-vs-index policy, event names, and
 test expectations were locked by 9-0 in
 [`../status/phase-9-command-map.md`](../status/phase-9-command-map.md).
 
-| Resource family   | Endpoints                                            | Status      |
-| ----------------- | ---------------------------------------------------- | ----------- |
-| character         | create / patch / delete / reorder + child replaces    | not started |
-| chat              | create / patch / delete / reorder                     | not started |
-| message           | append / edit / delete / reroll-placeholder          | not started |
-| preset            | create / patch / delete / per-row prompt-item        | not started |
-| persona / loadout | create / patch / delete                              | not started |
-| plugin / module   | create / patch / delete                              | not started |
-| settings          | patch per group                                       | not started |
-| plugin-storage    | patch kv                                              | not started |
+| Resource family           | Endpoints                                         | Status      |
+| ------------------------- | ------------------------------------------------- | ----------- |
+| settings                  | patch per group                                    | landed      |
+| preset                    | create / patch / delete / copy / import / reorder | landed      |
+| prompt settings/items     | patch settings + prompt-item CRUD/reorder          | landed      |
+| persona / translator      | create / patch / delete / select / reorder         | landed      |
+| loadout                   | create / patch / delete / favorite / touch         | landed      |
+| character                 | create / patch / delete / select / reorder         | landed      |
+| chat / chat folder        | create / patch / delete / fork / reorder           | landed      |
+| message                   | append / edit / delete / truncate / replace        | not started |
+| plugin / module           | create / patch / delete                            | not started |
+| plugin-storage            | patch kv                                           | not started |
 
 Plus: revision conflict (409 + currentRevision), SSE event per
 command.

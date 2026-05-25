@@ -70,6 +70,11 @@
   import PopupButton from '../UI/PopupButton.svelte'
   import PartialEditController from './PartialEditController.svelte'
   import { getLLMCache, setLLMCache } from '../../ts/translator/translator'
+  import {
+    currentChatStateSnapshot,
+    dispatchForkChat,
+    dispatchUpdateChat,
+  } from 'src/ts/chatCommands'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -332,6 +337,7 @@
   )
 
   async function toggleBookmark() {
+    const previous = currentChatStateSnapshot()
     const chat =
       DBState.db.characters[selIdState.selId].chats[
         DBState.db.characters[selIdState.selId].chatPage
@@ -417,6 +423,16 @@
     }
 
     chat.bookmarks = [...chat.bookmarks]
+    if (chat.id) {
+      dispatchUpdateChat(
+        chat.id,
+        {
+          bookmarks: chat.bookmarks,
+          bookmarkNames: chat.bookmarkNames,
+        },
+        previous,
+      )
+    }
   }
 </script>
 
@@ -1027,6 +1043,7 @@
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={async () => {
       await sleep(1)
+      const previous = currentChatStateSnapshot()
       const currentChat =
         DBState.db.characters[selIdState.selId].chats[
           DBState.db.characters[selIdState.selId].chatPage
@@ -1035,11 +1052,12 @@
       if (DBState.db.createFolderOnBranch && !currentChat.folderId) {
         const folderId = v4()
         DBState.db.characters[selIdState.selId].chatFolders ??= []
-        DBState.db.characters[selIdState.selId].chatFolders.unshift({
+        const folder = {
           id: folderId,
           name: `Branches of ${currentChat.name}`,
           folded: false,
-        })
+        }
+        DBState.db.characters[selIdState.selId].chatFolders.unshift(folder)
         currentChat.folderId = folderId
       }
 
@@ -1065,6 +1083,17 @@
 
       DBState.db.characters[selIdState.selId].chats.unshift(newChat)
       changeChatTo(0)
+      if (currentChat.id) {
+        const folder = DBState.db.characters[selIdState.selId].chatFolders?.find(
+          (item) =>
+            item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
+        )
+        dispatchForkChat(currentChat.id, previous, {
+          chat: newChat,
+          sourcePatch: { folderId: currentChat.folderId ?? null },
+          folder,
+        })
+      }
     }}
   >
     <SplitIcon size={20} />

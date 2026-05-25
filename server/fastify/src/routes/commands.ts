@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
@@ -76,6 +77,27 @@ import {
   selectedCharacterId,
   validateFullCharacterOrder,
 } from '../commands/characters.js'
+import {
+  createChatFolderRecord,
+  createChatRecord,
+  ensureCharacterChatFolders,
+  ensureCharacterChats,
+  normalizeAllCharacterChats,
+  readChatFolderId,
+  readChatFolderIdList,
+  readChatFolderPatch,
+  readChatId,
+  readChatIdList,
+  readChatPatch,
+  readOptionalBoolean as readChatOptionalBoolean,
+  readOptionalFolderByChatId,
+  requireChatFolderIndex,
+  requireChatLocation,
+  selectChat,
+  selectedChatId,
+  validateFullChatFolderOrder,
+  validateFullChatOrder,
+} from '../commands/chats.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -136,6 +158,26 @@ interface CharacterCommandBody {
   characterId?: unknown
   characterIds?: unknown
   characterOrder?: unknown
+}
+
+interface ChatCommandBody {
+  baseRevision?: unknown
+  chat?: unknown
+  patch?: unknown
+  chatIds?: unknown
+  folderByChatId?: unknown
+  selectedChatId?: unknown
+  select?: unknown
+  folder?: unknown
+  sourcePatch?: unknown
+}
+
+interface ChatFolderCommandBody {
+  baseRevision?: unknown
+  folder?: unknown
+  patch?: unknown
+  folderIds?: unknown
+  selectedChatId?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -2127,6 +2169,478 @@ export function registerCommandRoutes(
       return sendCommandError(reply, err)
     }
   })
+
+  app.post('/api/v1/commands/characters/:characterId/chats', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const chat = createChatRecord(body.chat)
+      const selectCreated = readChatOptionalBoolean(body.select, 'select') ?? true
+      const result = applyJsonCommandMutation<{ chatId: string; selectedChatId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const character = characters[requireCharacterIndex(characters, characterId)]
+          const previousSelectedChatId = selectedChatId(character)
+          const chats = ensureCharacterChats(character)
+          if (chats.some((existing) => existing.id === chat.id)) {
+            throw new ValidationError(`Duplicate chat id: ${chat.id}`)
+          }
+          if (chat.folderId) {
+            const folders = ensureCharacterChatFolders(character)
+            if (!folders.some((folder) => folder.id === chat.folderId)) {
+              throw new ValidationError(`Unknown chat folder id: ${chat.folderId}`)
+            }
+          }
+          chats.unshift(chat)
+          if (selectCreated) {
+            character.chatPage = 0
+          } else if (previousSelectedChatId) {
+            selectChat(character, previousSelectedChatId)
+          } else {
+            ensureCharacterChats(character)
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.chatCreated, id: chat.id, parentId: characterId },
+            extra: { chatId: chat.id, selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/chats/:chatId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const selectUpdated = readChatOptionalBoolean(body.select, 'select') ?? false
+      const patch = readChatPatch(body.patch, { allowEmpty: selectUpdated })
+      const result = applyJsonCommandMutation<{ chatId: string; selectedChatId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const { character, chatIndex } = requireChatLocation(characters, chatId)
+          if (patch.folderId) {
+            const folders = ensureCharacterChatFolders(character)
+            if (!folders.some((folder) => folder.id === patch.folderId)) {
+              throw new ValidationError(`Unknown chat folder id: ${patch.folderId}`)
+            }
+          }
+          const chats = ensureCharacterChats(character)
+          chats[chatIndex] = {
+            ...chats[chatIndex],
+            ...patch,
+            id: chatId,
+          }
+          if (selectUpdated) {
+            character.chatPage = chatIndex
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
+            extra: { chatId, selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/chats/:chatId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ chatId: string; selectedChatId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const { character, chatIndex } = requireChatLocation(characters, chatId)
+          const chats = ensureCharacterChats(character)
+          if (chats.length <= 1) {
+            throw new ValidationError('Cannot delete the only chat for a character')
+          }
+          chats.splice(chatIndex, 1)
+          ensureCharacterChats(character)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.chatDeleted, id: chatId, parentId: character.chaId },
+            extra: { chatId, selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/chats/:chatId/fork', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const sourceChatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const forkedChat = body.chat === undefined ? null : createChatRecord(body.chat)
+      const sourcePatch =
+        body.sourcePatch === undefined ? {} : readChatPatch(body.sourcePatch, { allowEmpty: true })
+      const folder = body.folder === undefined ? null : createChatFolderRecord(body.folder)
+      const selectFork = readChatOptionalBoolean(body.select, 'select') ?? true
+      const result = applyJsonCommandMutation<{
+        chatId: string
+        sourceChatId: string
+        selectedChatId: string | null
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const {
+            character,
+            chat: sourceChat,
+            chatIndex,
+          } = requireChatLocation(characters, sourceChatId)
+          const previousSelectedChatId = selectedChatId(character)
+          const chats = ensureCharacterChats(character)
+          const folders = ensureCharacterChatFolders(character)
+          if (folder) {
+            if (folders.some((existing) => existing.id === folder.id)) {
+              throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
+            }
+            folders.unshift(folder)
+          }
+          if (sourcePatch.folderId) {
+            if (!folders.some((existing) => existing.id === sourcePatch.folderId)) {
+              throw new ValidationError(`Unknown chat folder id: ${sourcePatch.folderId}`)
+            }
+          }
+          chats[chatIndex] = {
+            ...chats[chatIndex],
+            ...sourcePatch,
+            id: sourceChatId,
+          }
+
+          const nextChat =
+            forkedChat ??
+            createChatRecord({
+              ...JSON.parse(JSON.stringify(sourceChat)),
+              id: randomChatId(chats),
+              name: `${sourceChat.name} (Branch)`,
+            })
+          if (chats.some((existing) => existing.id === nextChat.id)) {
+            throw new ValidationError(`Duplicate chat id: ${nextChat.id}`)
+          }
+          if (nextChat.folderId && !folders.some((existing) => existing.id === nextChat.folderId)) {
+            throw new ValidationError(`Unknown chat folder id: ${nextChat.folderId}`)
+          }
+          chats.unshift(nextChat)
+          if (selectFork) {
+            character.chatPage = 0
+          } else if (previousSelectedChatId) {
+            selectChat(character, previousSelectedChatId)
+          } else {
+            ensureCharacterChats(character)
+          }
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.chatForked,
+              id: nextChat.id,
+              parentId: character.chaId,
+            },
+            extra: {
+              chatId: nextChat.id,
+              sourceChatId,
+              selectedChatId: selectedChatId(character),
+            },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/:characterId/chats/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const chatIds = readChatIdList(body.chatIds)
+      const folderByChatId = readOptionalFolderByChatId(body.folderByChatId)
+      const selectedId =
+        body.selectedChatId === undefined
+          ? undefined
+          : readChatId(body.selectedChatId, 'selectedChatId')
+      const result = applyJsonCommandMutation<{ selectedChatId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const character = characters[requireCharacterIndex(characters, characterId)]
+          validateFullChatOrder(character, chatIds, folderByChatId)
+          const chats = ensureCharacterChats(character)
+          const chatById = new Map(chats.map((chat) => [chat.id, chat]))
+          character.chats = chatIds.map((chatId) => {
+            const chat = chatById.get(chatId)!
+            if (Object.prototype.hasOwnProperty.call(folderByChatId, chatId)) {
+              chat.folderId = folderByChatId[chatId]
+            }
+            return chat
+          })
+          if (selectedId) {
+            selectChat(character, selectedId)
+          } else {
+            ensureCharacterChats(character)
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.chatReordered, parentId: characterId },
+            extra: { selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/:characterId/chat-folders', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ChatFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const folder = createChatFolderRecord(body.folder)
+      const result = applyJsonCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const character = characters[requireCharacterIndex(characters, characterId)]
+          const folders = ensureCharacterChatFolders(character)
+          if (folders.some((existing) => existing.id === folder.id)) {
+            throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
+          }
+          folders.unshift(folder)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.chatFolderCreated,
+              id: folder.id,
+              parentId: characterId,
+            },
+            extra: { folderId: folder.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/chat-folders/:folderId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const folderId = readChatFolderId((req.params as { folderId?: unknown }).folderId)
+      const body = (req.body ?? {}) as ChatFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readChatFolderPatch(body.patch)
+      const result = applyJsonCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
+          const folders = ensureCharacterChatFolders(character)
+          folders[folderIndex] = {
+            ...folders[folderIndex],
+            ...patch,
+            id: folderId,
+          }
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.chatFolderUpdated,
+              id: folderId,
+              parentId: character.chaId,
+            },
+            extra: { folderId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/chat-folders/:folderId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const folderId = readChatFolderId((req.params as { folderId?: unknown }).folderId)
+      const body = (req.body ?? {}) as ChatFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
+          const folders = ensureCharacterChatFolders(character)
+          folders.splice(folderIndex, 1)
+          for (const chat of ensureCharacterChats(character)) {
+            if (chat.folderId === folderId) {
+              chat.folderId = null
+            }
+          }
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.chatFolderDeleted,
+              id: folderId,
+              parentId: character.chaId,
+            },
+            extra: { folderId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/:characterId/chat-folders/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ChatFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const folderIds = readChatFolderIdList(body.folderIds)
+      const selectedId =
+        body.selectedChatId === undefined
+          ? undefined
+          : readChatId(body.selectedChatId, 'selectedChatId')
+      const result = applyJsonCommandMutation<{ selectedChatId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const character = characters[requireCharacterIndex(characters, characterId)]
+          validateFullChatFolderOrder(character, folderIds)
+          const folders = ensureCharacterChatFolders(character)
+          const folderById = new Map(folders.map((folder) => [folder.id, folder]))
+          character.chatFolders = folderIds.map((folderId) => folderById.get(folderId)!)
+          if (selectedId) {
+            selectChat(character, selectedId)
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.chatFolderReordered, parentId: characterId },
+            extra: { selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+}
+
+function randomChatId(chats: readonly { id: string }[]): string {
+  let id = cryptoRandomId()
+  const existing = new Set(chats.map((chat) => chat.id))
+  while (existing.has(id)) {
+    id = cryptoRandomId()
+  }
+  return id
+}
+
+function cryptoRandomId(): string {
+  return randomUUID()
 }
 
 function readSettingsGroup(group: unknown): SettingsGroup {

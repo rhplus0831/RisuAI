@@ -20,6 +20,7 @@
   } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import { alertInput } from 'src/ts/alert'
+  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(DBState.db.characters[$selectedCharID])
@@ -99,6 +100,7 @@
   }
 
   async function editName(chatId: string) {
+    const previous = currentChatStateSnapshot()
     const chat = chara.chats[chara.chatPage]
     const newName = await alertInput(
       language.bookmarkAskNameOrCancel,
@@ -107,15 +109,26 @@
     )
     if (newName && newName.trim() !== '') {
       chat.bookmarkNames[chatId] = newName
+      if (chat.id) {
+        dispatchUpdateChat(chat.id, { bookmarkNames: chat.bookmarkNames }, previous)
+      }
     }
   }
 
   function removeBookmark(chatId: string) {
+    const previous = currentChatStateSnapshot()
     const chat = chara.chats[chara.chatPage]
     const index = chat.bookmarks.indexOf(chatId)
     if (index > -1) {
       chat.bookmarks.splice(index, 1)
       delete chat.bookmarkNames[chatId]
+      if (chat.id) {
+        dispatchUpdateChat(
+          chat.id,
+          { bookmarks: chat.bookmarks, bookmarkNames: chat.bookmarkNames },
+          previous,
+        )
+      }
     }
   }
 

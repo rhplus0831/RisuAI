@@ -43,6 +43,11 @@ import { translateHTML } from './translator/translator'
 import { doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
+import {
+  currentChatStateSnapshot,
+  dispatchCreateChat,
+  dispatchCreateChatFolder,
+} from './chatCommands'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
   currentCharacterStateSnapshot,
@@ -407,6 +412,8 @@ export async function importChat() {
   }
   try {
     const selectedID = get(selectedCharID)
+    const previous = currentChatStateSnapshot()
+    const characterId = DBState.db.characters[selectedID]?.chaId
 
     if (dat.name.endsWith('jsonl')) {
       const lines = Buffer.from(dat.data).toString('utf-8').split('\n')
@@ -449,6 +456,9 @@ export async function importChat() {
 
       DBState.db.characters[selectedID].chats.unshift(newChat)
       changeChatTo(0)
+      if (characterId) {
+        dispatchCreateChat(characterId, newChat, previous)
+      }
       alertNormal(language.successImport)
     } else if (dat.name.endsWith('json')) {
       const json = JSON.parse(Buffer.from(dat.data).toString('utf-8'))
@@ -471,6 +481,11 @@ export async function importChat() {
           db.characters[selectedID].chatFolders = []
         }
         db.characters[selectedID].chatFolders.push(...folders)
+        if (characterId) {
+          for (const folder of folders) {
+            dispatchCreateChatFolder(characterId, folder, previous)
+          }
+        }
         chats.forEach((chat) => {
           if (chat.folderId && folderIdMap[chat.folderId]) {
             chat.folderId = folderIdMap[chat.folderId]
@@ -478,6 +493,11 @@ export async function importChat() {
           chat.id = v4()
         })
         DBState.db.characters[selectedID].chats.unshift(...chats)
+        if (characterId) {
+          for (const chat of chats) {
+            dispatchCreateChat(characterId, chat, previous, false)
+          }
+        }
         alertNormal(language.successImport)
         return
       }
@@ -534,7 +554,11 @@ export async function importChat() {
       const chat = doc.querySelector('.idat').textContent
       const json = JSON.parse(chat)
       if (json.message && json.note && json.name && json.localLore) {
+        json.id = typeof json.id === 'string' && json.id ? json.id : v4()
         DBState.db.characters[selectedID].chats.unshift(json)
+        if (characterId) {
+          dispatchCreateChat(characterId, json, previous, false)
+        }
         alertNormal(language.successImport)
       } else {
         alertError(language.errors.noData)

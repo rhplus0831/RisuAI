@@ -12,14 +12,26 @@
     TrashIcon,
     XIcon,
   } from '@lucide/svelte'
+  import { v4 } from 'uuid'
   import { exportChat, importChat } from '../../ts/characters'
   import { findCharacterbyId } from '../../ts/util'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { changeChatTo } from 'src/ts/globalApi.svelte'
+  import {
+    currentChatStateSnapshot,
+    dispatchCreateChat,
+    dispatchDeleteChat,
+  } from 'src/ts/chatCommands'
+  import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
 
   let editMode = $state(false)
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
+
+  $effect(() => {
+    const stop = watchServerBackedChatMetadata()
+    return stop
+  })
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -81,10 +93,12 @@
               }
               const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
               if (d) {
+                const previous = currentChatStateSnapshot()
                 changeChatTo(0)
                 let chats = DBState.db.characters[$selectedCharID].chats
                 chats.splice(i, 1)
                 DBState.db.characters[$selectedCharID].chats = chats
+                dispatchDeleteChat(chat.id, previous)
               }
             }}
             onkeydown={() => {}}
@@ -98,16 +112,19 @@
       <button
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
+          const previous = currentChatStateSnapshot()
           const cha = DBState.db.characters[$selectedCharID]
           const len = DBState.db.characters[$selectedCharID].chats.length
           let chats = DBState.db.characters[$selectedCharID].chats
-          chats.unshift({
+          const chat = {
             message: [],
             note: '',
             name: `New Chat ${len + 1}`,
             localLore: [],
             fmIndex: -1,
-          })
+            id: v4(),
+          }
+          chats.unshift(chat)
           if (cha.type === 'group') {
             cha.characters.map((c) => {
               chats[len].message.push({
@@ -119,6 +136,7 @@
           }
           DBState.db.characters[$selectedCharID].chats = chats
           changeChatTo(len)
+          dispatchCreateChat(cha.chaId, chat, previous)
           close()
         }}
       >

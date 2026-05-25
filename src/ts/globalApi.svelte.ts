@@ -81,6 +81,7 @@ import {
   parseProxyJobWsEvent,
 } from './network/proxyJobWs'
 import { getNodeServerProxyAuth } from './storage/nodeStorage'
+import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
 
 export const forageStorage = new AutoStorage()
 
@@ -485,10 +486,7 @@ export async function saveDb() {
         })
       } else {
         await forageStorage.setItem('database/database.bin', dbData)
-        await forageStorage.setItem(
-          `database/dbbackup-${(Date.now() / 100).toFixed()}.bin`,
-          dbData,
-        )
+        await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
       }
       await getDbBackups()
       savetrys = 0
@@ -589,9 +587,7 @@ function getProxyStreamJobDeleteUrl(jobId: string) {
 
 function getProxyStreamJobWsPath(jobId: string) {
   const enc = encodeURIComponent(jobId)
-  return isFastifyServer
-    ? `/api/v1/proxy/stream-jobs/${enc}/ws`
-    : `/proxy-stream-jobs/${enc}/ws`
+  return isFastifyServer ? `/api/v1/proxy/stream-jobs/${enc}/ws` : `/proxy-stream-jobs/${enc}/ws`
 }
 
 function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
@@ -2453,13 +2449,14 @@ export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
 }
 
 export function changeChatTo(IdOrIndex: string | number) {
+  const previous = currentChatStateSnapshot()
+  const currentCharacter = getCurrentCharacter()
   let index = -1
   if (typeof IdOrIndex === 'number') {
     index = IdOrIndex
   }
 
   if (typeof IdOrIndex === 'string') {
-    const currentCharacter = getCurrentCharacter()
     index = currentCharacter.chats.findIndex((v) => {
       return v.id === IdOrIndex
     })
@@ -2470,6 +2467,10 @@ export function changeChatTo(IdOrIndex: string | number) {
   }
 
   DBState.db.characters[selIdState.selId].chatPage = index
+  const chatId = currentCharacter.chats[index]?.id
+  if (chatId) {
+    dispatchUpdateChat(chatId, {}, previous, true)
+  }
   ReloadGUIPointer.set(Math.random())
 }
 

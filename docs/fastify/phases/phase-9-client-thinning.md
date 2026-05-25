@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-3a - Character catalog and scalar profile**. Next slice:
-**9-3b - Chat records, folders, and metadata**.
+**9-3b - Chat records, folders, and metadata**. Next slice:
+**9-3c - Message history commands**.
 
 ## Goal
 
@@ -151,6 +151,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-3a.md`](../phases-completed/phase-9-client-thinning-9-3a.md).
   - **9-3b - Chat records, folders, and metadata.** Chat lifecycle, folder
     operations, notes, persona binding, bookmarks, and chat-level metadata.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-3b.md`](../phases-completed/phase-9-client-thinning-9-3b.md).
   - **9-3c - Message history commands.** User-visible transcript append,
     edit, delete, truncate, disable, role, bookmark, fork, and prompt-info
     edits.

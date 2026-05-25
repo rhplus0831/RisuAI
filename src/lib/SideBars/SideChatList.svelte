@@ -35,6 +35,19 @@
   import { language } from 'src/lang'
   import Toggles from './Toggles.svelte'
   import { changeChatTo, createChatCopyName } from 'src/ts/globalApi.svelte'
+  import {
+    currentChatStateSnapshot,
+    dispatchCreateChat,
+    dispatchCreateChatFolder,
+    dispatchDeleteChat,
+    dispatchDeleteChatFolder,
+    dispatchForkChat,
+    dispatchReorderChatFolders,
+    dispatchReorderChats,
+    dispatchUpdateChat,
+    dispatchUpdateChatFolder,
+  } from 'src/ts/chatCommands'
+  import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
 
   interface Props {
     chara: character
@@ -51,12 +64,18 @@
   let sorted = $state(0)
   let opened = 0
 
+  $effect(() => {
+    const stop = watchServerBackedChatMetadata()
+    return stop
+  })
+
   const createStb = () => {
     for (let chat of listEle.querySelectorAll('.risu-chat')) {
       chatsStb.push(
         new Sortable(chat, {
           group: 'chats',
           onEnd: async (event) => {
+            const previous = currentChatStateSnapshot()
             const currentChatPage = chara.chatPage
             const newChats: Chat[] = []
 
@@ -84,6 +103,7 @@
 
             changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
             chara.chats = newChats
+            dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
 
             try {
               this.destroy()
@@ -99,6 +119,7 @@
     folderStb = Sortable.create(folderEles, {
       group: 'folders',
       onEnd: async (event) => {
+        const previous = currentChatStateSnapshot()
         const newFolders: ChatFolder[] = []
         const newChats: Chat[] = []
         const folders: HTMLElement[] = Array.from<HTMLElement>(event.to.children)
@@ -125,6 +146,8 @@
         chara.chatFolders = newFolders
         changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
         chara.chats = newChats
+        dispatchReorderChatFolders(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
+        dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
         try {
           folderStb.destroy()
         } catch (e) {}
@@ -156,18 +179,21 @@
   <Button
     className="relative bottom-2"
     onclick={() => {
+      const previous = currentChatStateSnapshot()
       const len = chara.chats.length
       let chats = chara.chats
-      chats.unshift({
+      const chat = {
         message: [],
         note: '',
         name: `New Chat ${len + 1}`,
         localLore: [],
         fmIndex: -1,
         id: v4(),
-      })
+      }
+      chats.unshift(chat)
       chara.chats = chats
       changeChatTo(0)
+      dispatchCreateChat(chara.chaId, chat, previous)
       $ReloadGUIPointer += 1
     }}>{language.newChat}</Button
   >
@@ -186,7 +212,13 @@
             <button
               onclick={() => {
                 if (!editMode) {
+                  const previous = currentChatStateSnapshot()
                   chara.chatFolders[i].folded = !folder.folded
+                  dispatchUpdateChatFolder(
+                    folder.id,
+                    { folded: chara.chatFolders[i].folded },
+                    previous,
+                  )
                   $ReloadGUIPointer += 1
                 }
               }}
@@ -236,7 +268,9 @@
                           'default',
                         ]
                         const sel = parseInt(await alertSelect(colors))
+                        const previous = currentChatStateSnapshot()
                         folder.color = colors[sel]
+                        dispatchUpdateChatFolder(folder.id, { color: folder.color }, previous)
                         break
                     }
                   }}
@@ -271,6 +305,7 @@
                     e.stopPropagation()
                     const d = await alertConfirm(`${language.removeConfirm}${folder.name}`)
                     if (d) {
+                      const previous = currentChatStateSnapshot()
                       $ReloadGUIPointer += 1
                       const folders = chara.chatFolders
                       folders.splice(i, 1)
@@ -280,6 +315,7 @@
                         }
                       })
                       chara.chatFolders = folders
+                      dispatchDeleteChatFolder(folder.id, previous)
                     }
                   }}
                 >
@@ -328,6 +364,7 @@
                           const option = await alertChatOptions()
                           switch (option) {
                             case 0: {
+                              const previous = currentChatStateSnapshot()
                               const newChat = $state.snapshot(
                                 chara.chats[chara.chats.indexOf(chat)],
                               )
@@ -336,15 +373,18 @@
                               chara.chats.unshift(newChat)
                               changeChatTo(0)
                               chara.chats = chara.chats
+                              dispatchForkChat(chat.id, previous, { chat: newChat })
                               break
                             }
                             case 1: {
+                              const previous = currentChatStateSnapshot()
                               if (chat.bindedPersona) {
                                 const confirm = await alertConfirm(
                                   language.doYouWantToUnbindCurrentPersona,
                                 )
                                 if (confirm) {
                                   chat.bindedPersona = ''
+                                  dispatchUpdateChat(chat.id, { bindedPersona: '' }, previous)
                                   alertNormal(language.personaUnbindedSuccess)
                                 }
                               } else {
@@ -357,6 +397,11 @@
                                   }
                                   chat.bindedPersona =
                                     DBState.db.personas[DBState.db.selectedPersona].id
+                                  dispatchUpdateChat(
+                                    chat.id,
+                                    { bindedPersona: chat.bindedPersona },
+                                    previous,
+                                  )
                                   console.log(DBState.db.personas[DBState.db.selectedPersona])
                                   alertNormal(language.personaBindedSuccess)
                                 }
@@ -416,11 +461,13 @@
                           }
                           const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
                           if (d) {
+                            const previous = currentChatStateSnapshot()
                             changeChatTo(0)
                             $ReloadGUIPointer += 1
                             let chats = chara.chats
                             chats.splice(chara.chats.indexOf(chat), 1)
                             chara.chats = chats
+                            dispatchDeleteChat(chat.id, previous)
                           }
                         }}
                       >
@@ -472,15 +519,18 @@
                     const option = await alertChatOptions()
                     switch (option) {
                       case 0: {
+                        const previous = currentChatStateSnapshot()
                         const newChat = $state.snapshot(chara.chats[i])
                         newChat.name = createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
                         chara.chats.unshift(newChat)
                         changeChatTo(0)
                         chara.chats = chara.chats
+                        dispatchForkChat(chat.id, previous, { chat: newChat })
                         break
                       }
                       case 1: {
+                        const previous = currentChatStateSnapshot()
                         const chat = chara.chats[i]
                         if (chat.bindedPersona) {
                           const confirm = await alertConfirm(
@@ -488,6 +538,7 @@
                           )
                           if (confirm) {
                             chat.bindedPersona = ''
+                            dispatchUpdateChat(chat.id, { bindedPersona: '' }, previous)
                             alertNormal(language.personaUnbindedSuccess)
                           }
                         } else {
@@ -497,6 +548,11 @@
                               DBState.db.personas[DBState.db.selectedPersona].id = v4()
                             }
                             chat.bindedPersona = DBState.db.personas[DBState.db.selectedPersona].id
+                            dispatchUpdateChat(
+                              chat.id,
+                              { bindedPersona: chat.bindedPersona },
+                              previous,
+                            )
                             console.log(DBState.db.personas[DBState.db.selectedPersona])
                             alertNormal(language.personaBindedSuccess)
                           }
@@ -556,11 +612,13 @@
                     }
                     const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
                     if (d) {
+                      const previous = currentChatStateSnapshot()
                       changeChatTo(0)
                       $ReloadGUIPointer += 1
                       let chats = chara.chats
                       chats.splice(i, 1)
                       chara.chats = chats
+                      dispatchDeleteChat(chat.id, previous)
                     }
                   }}
                 >
@@ -622,6 +680,7 @@
       <button
         class="ml-auto text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
+          const previous = currentChatStateSnapshot()
           if (!chara.chatFolders) {
             chara.chatFolders = []
           }
@@ -632,7 +691,9 @@
             name: `New Folder ${length + 1}`,
             folded: false,
           })
+          const folder = folders[0]
           chara.chatFolders = folders
+          dispatchCreateChatFolder(chara.chaId, folder, previous)
           $ReloadGUIPointer += 1
         }}
       >

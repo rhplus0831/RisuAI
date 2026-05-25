@@ -17,6 +17,7 @@
   import SettingRenderer from '../Setting/SettingRenderer.svelte'
   import { checkPersonaBinded, getUserName } from 'src/ts/util'
   import { v4 } from 'uuid'
+  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
   let configPage: 'list' | 'add' | 'addSettingsSubmenu' = $state('list')
   let search = $state('')
 
@@ -74,15 +75,19 @@
           }}
           onclick={(e) => {
             e.stopPropagation()
+            const previous = currentChatStateSnapshot()
             const chatIndex = DBState.db.characters[$selectedCharID].chatPage
             if (!DBState.db.personas[DBState.db.selectedPersona].id) {
               DBState.db.personas[DBState.db.selectedPersona].id = v4()
             }
+            const chat = DBState.db.characters[$selectedCharID].chats[chatIndex]
             if (checkPersonaBinded()) {
-              DBState.db.characters[$selectedCharID].chats[chatIndex].bindedPersona = ''
+              chat.bindedPersona = ''
             } else {
-              DBState.db.characters[$selectedCharID].chats[chatIndex].bindedPersona =
-                DBState.db.personas[DBState.db.selectedPersona].id
+              chat.bindedPersona = DBState.db.personas[DBState.db.selectedPersona].id
+            }
+            if (chat.id) {
+              dispatchUpdateChat(chat.id, { bindedPersona: chat.bindedPersona }, previous)
             }
           }}
         >

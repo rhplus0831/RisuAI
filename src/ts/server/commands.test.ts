@@ -18,6 +18,8 @@ vi.mock('../storage/nodeStorage', () => ({
 
 import {
   canUseServerCommands,
+  createChatCommand,
+  createChatFolderCommand,
   createCharacterCommand,
   createLoadoutCommand,
   createPersonaCommand,
@@ -25,18 +27,23 @@ import {
   createPromptItemCommand,
   createPresetCommand,
   createTranslatorPresetCommand,
+  deleteChatCommand,
+  deleteChatFolderCommand,
   deleteCharacterCommand,
   deleteLoadoutCommand,
   deletePersonaCommand,
   deletePromptItemCommand,
   deleteTranslatorPresetCommand,
   favoriteLoadoutCommand,
+  forkChatCommand,
   getServerCommandBaseRevision,
   patchPromptSettingsCommand,
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
   reorderCharactersCommand,
+  reorderChatFoldersCommand,
+  reorderChatsCommand,
   reorderPersonasCommand,
   reorderPromptItemsCommand,
   reorderPresetsCommand,
@@ -47,6 +54,8 @@ import {
   selectTranslatorPresetCommand,
   touchLoadoutCommand,
   updateCharacterCommand,
+  updateChatCommand,
+  updateChatFolderCommand,
   updateLoadoutCommand,
   updatePersonaCommand,
   updateTranslatorPresetCommand,
@@ -1304,6 +1313,246 @@ describe('server command API adapter', () => {
       null,
       { baseRevision: 50, characterId: 'char-a' },
       { baseRevision: 52, characterId: 'char-a' },
+    ])
+  })
+
+  it('dispatches chat and chat-folder commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/chat-folders/reorder')) {
+        return {
+          revision: 9,
+          event: { type: 'chatFolder.reordered', revision: 9, resource: 'chatFolder' },
+          selectedChatId: 'chat-a',
+        }
+      }
+      if (url.endsWith('/chat-folders/folder-a')) {
+        const method = commandFetch.calls.at(-1)?.method
+        return method === 'DELETE'
+          ? {
+              revision: 8,
+              event: {
+                type: 'chatFolder.deleted',
+                revision: 8,
+                resource: 'chatFolder',
+                id: 'folder-a',
+              },
+              folderId: 'folder-a',
+            }
+          : {
+              revision: 7,
+              event: {
+                type: 'chatFolder.updated',
+                revision: 7,
+                resource: 'chatFolder',
+                id: 'folder-a',
+              },
+              folderId: 'folder-a',
+            }
+      }
+      if (url.endsWith('/chat-folders')) {
+        return {
+          revision: 6,
+          event: {
+            type: 'chatFolder.created',
+            revision: 6,
+            resource: 'chatFolder',
+            id: 'folder-a',
+          },
+          folderId: 'folder-a',
+        }
+      }
+      if (url.endsWith('/chats/reorder')) {
+        return {
+          revision: 5,
+          event: { type: 'chat.reordered', revision: 5, resource: 'chat' },
+          selectedChatId: 'chat-a',
+        }
+      }
+      if (url.endsWith('/chats/chat-a/fork')) {
+        return {
+          revision: 4,
+          event: { type: 'chat.forked', revision: 4, resource: 'chat', id: 'chat-b' },
+          chatId: 'chat-b',
+          sourceChatId: 'chat-a',
+          selectedChatId: 'chat-b',
+        }
+      }
+      if (url.endsWith('/chats/chat-a')) {
+        const method = commandFetch.calls.at(-1)?.method
+        return method === 'DELETE'
+          ? {
+              revision: 3,
+              event: { type: 'chat.deleted', revision: 3, resource: 'chat', id: 'chat-a' },
+              chatId: 'chat-a',
+              selectedChatId: 'chat-b',
+            }
+          : {
+              revision: 2,
+              event: { type: 'chat.updated', revision: 2, resource: 'chat', id: 'chat-a' },
+              chatId: 'chat-a',
+              selectedChatId: 'chat-a',
+            }
+      }
+      return {
+        revision: 1,
+        event: { type: 'chat.created', revision: 1, resource: 'chat', id: 'chat-a' },
+        chatId: 'chat-a',
+        selectedChatId: 'chat-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      createChatCommand({
+        baseRevision: 0,
+        characterId: 'char-a',
+        chat: { id: 'chat-a', name: 'A', note: '', message: [], localLore: [] },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 1, chatId: 'chat-a' })
+
+    await expect(
+      updateChatCommand({
+        baseRevision: 1,
+        chatId: 'chat-a',
+        patch: { name: 'A renamed' },
+        select: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, selectedChatId: 'chat-a' })
+
+    await expect(
+      deleteChatCommand({
+        baseRevision: 2,
+        chatId: 'chat-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, selectedChatId: 'chat-b' })
+
+    await expect(
+      forkChatCommand({
+        baseRevision: 3,
+        chatId: 'chat-a',
+        chat: { id: 'chat-b', name: 'B', note: '', message: [], localLore: [] },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 4, chatId: 'chat-b' })
+
+    await expect(
+      reorderChatsCommand({
+        baseRevision: 4,
+        characterId: 'char-a',
+        chatIds: ['chat-a', 'chat-b'],
+        folderByChatId: { 'chat-a': null, 'chat-b': 'folder-a' },
+        selectedChatId: 'chat-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, selectedChatId: 'chat-a' })
+
+    await expect(
+      createChatFolderCommand({
+        baseRevision: 5,
+        characterId: 'char-a',
+        folder: { id: 'folder-a', name: 'Folder', folded: false },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 6, folderId: 'folder-a' })
+
+    await expect(
+      updateChatFolderCommand({
+        baseRevision: 6,
+        folderId: 'folder-a',
+        patch: { folded: true },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 7, folderId: 'folder-a' })
+
+    await expect(
+      deleteChatFolderCommand({
+        baseRevision: 7,
+        folderId: 'folder-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 8, folderId: 'folder-a' })
+
+    await expect(
+      reorderChatFoldersCommand({
+        baseRevision: 8,
+        characterId: 'char-a',
+        folderIds: ['folder-a'],
+        selectedChatId: 'chat-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 9, selectedChatId: 'chat-a' })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/characters/char-a/chats',
+        method: 'POST',
+        body: {
+          baseRevision: 0,
+          chat: { id: 'chat-a', name: 'A', note: '', message: [], localLore: [] },
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a',
+        method: 'PATCH',
+        body: {
+          baseRevision: 1,
+          patch: { name: 'A renamed' },
+          select: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a',
+        method: 'DELETE',
+        body: {
+          baseRevision: 2,
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/fork',
+        method: 'POST',
+        body: {
+          baseRevision: 3,
+          chat: { id: 'chat-b', name: 'B', note: '', message: [], localLore: [] },
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/chats/reorder',
+        method: 'POST',
+        body: {
+          baseRevision: 4,
+          chatIds: ['chat-a', 'chat-b'],
+          folderByChatId: { 'chat-a': null, 'chat-b': 'folder-a' },
+          selectedChatId: 'chat-a',
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/chat-folders',
+        method: 'POST',
+        body: {
+          baseRevision: 5,
+          folder: { id: 'folder-a', name: 'Folder', folded: false },
+        },
+      },
+      {
+        url: '/api/v1/commands/chat-folders/folder-a',
+        method: 'PATCH',
+        body: {
+          baseRevision: 6,
+          patch: { folded: true },
+        },
+      },
+      {
+        url: '/api/v1/commands/chat-folders/folder-a',
+        method: 'DELETE',
+        body: {
+          baseRevision: 7,
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/chat-folders/reorder',
+        method: 'POST',
+        body: {
+          baseRevision: 8,
+          folderIds: ['folder-a'],
+          selectedChatId: 'chat-a',
+        },
+      },
     ])
   })
 })
