@@ -37,6 +37,7 @@ server/fastify/
       generationChat.ts   POST /api/v1/generate/chat + preview-prompt
       memoryJobs.ts       POST/GET/DELETE /api/v1/memory/jobs
       memoryReads.ts      GET /api/v1/memory/chunks + summaries
+      commands.ts         POST/PATCH/PUT/DELETE /api/v1/commands/*
     generation/
       frames.ts           shared completion result/frame types
       additionalParams.ts body/header overlay helper
@@ -92,6 +93,10 @@ server/fastify/
     memorySelectionService.ts  prompt-facing read-only selection facade
     memorySimilarityRanking.ts cosine ranking over supplied vectors
     memoryBudgetAllocator.ts   pure summary bucket allocator
+    commands/           command validation, normalization, and event helpers
+      mutations.ts      baseRevision checks, JSON transactions, events
+      events.ts         command event catalog and sink types
+      characters.ts     resource-family helpers (chats, messages, etc.)
     media/              planned helper routes, not current
       translate.ts      DeepL, DeepLX, Google
       tts.ts            OpenAI, ElevenLabs, NovelAI
@@ -128,12 +133,17 @@ level, the current Fastify API covers:
 - Auth-gated completion generation and chat / preview-prompt generation,
   including `/chat` provider dispatch behind `db.useServerPromptAssembly`.
 - Phase 8 memory job/read routes plus server summary/embed job handlers.
+- Phase 9 command routes through 9-4a: settings, presets, prompt
+  settings/items, personas, translator presets, loadouts, characters,
+  chats, chat folders, messages, generation persistence, chat
+  scriptstate, compatibility adapters, and lorebook collections.
 
 Planned later, with final shapes locked phase by phase:
 
 - `GET /api/v1/events` - persistent SSE stream of committed mutations.
-- `POST /api/v1/commands/<resource>[/...]` - typed commands per resource
-  family; no whole-state PUT.
+- Remaining `POST /api/v1/commands/<resource>[/...]` families for
+  script/trigger definitions, modules, asset references, plugins, and
+  plugin storage; no whole-state PUT.
 - Helper generation routes for translate, TTS, image, token counting, and
   encodings where the server owns the provider path.
 - `.risu` export, bundle export, and multipart `.risu` import in Phase 9,
@@ -217,8 +227,8 @@ At the target state, the server owns:
   trigger, template renderer, memory/cache card, `assemblePrompt`, and
   chat-route surfaces are server-side. Preview, preview-prompt, and
   send-like calls can use `/chat` behind `db.useServerPromptAssembly`.
-  Phase 8 still needs the live chunk-planning hook before fresh
-  server-backed chats accumulate memory automatically.
+  Phase 8 also includes live chunk planning for fresh server-backed
+  chats.
 
 Browser owns:
 

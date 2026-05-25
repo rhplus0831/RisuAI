@@ -41,6 +41,10 @@ Stable baseline facts:
 - Phase 8 closed with server memory tables, read/job routes,
   summarize/embed handlers, prompt-memory selection, and live
   chunk-planning for fresh server-backed chats.
+- Phase 9 command routes have landed through 9-4a: settings,
+  presets, prompt items, personas, translator presets, loadouts,
+  characters, chats, messages, generation persistence, scriptstate,
+  compatibility adapters, and lorebook collections.
 - Domain state still uses the migration-window `data/db.json` blob for
   resources not yet extracted to SQL. Memory uses dedicated SQL tables
   added in Phase 8.

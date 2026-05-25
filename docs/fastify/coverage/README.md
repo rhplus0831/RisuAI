@@ -14,8 +14,8 @@ tests, assembler tests, and browser `/chat` adapter + preview wiring
 tests. Phase 8 now has memory job/read route coverage, focused memory
 service tests, browser memory adapter tests, and server-backed
 `hypav3-memory` fixture parity. Phase 9 command routes are covered
-through 9-3b; message and later command families remain target rows until
-their routes land.
+through 9-4a; script/trigger definitions and later command families
+remain target rows until their routes land.
 
 ## Shards
 

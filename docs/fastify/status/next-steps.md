@@ -117,7 +117,7 @@ Implementation notes:
 
 ## Verification
 
-Run focused command/adapter tests while building 9-4a, then
+Run focused command/adapter tests while building 9-4b, then
 before closing the slice run the full matrix:
 
 ```bash

@@ -40,7 +40,7 @@ Owner (after migration): server.
 - Reads the chat + character row by id.
 - Validates the requested mode (`send` / `continue` / `preview` /
   `preview_prompt` / `regenerate`).
-- Checks the `expected_revision` cursor; rejects stale requests with
+- Checks the `expectedRevision` cursor; rejects stale requests with
   `409` + the current revision.
 - Reset, regenerate truncation, route-created user rows, and
   default say-nothing behavior all run here.

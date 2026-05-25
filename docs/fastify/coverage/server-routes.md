@@ -5,8 +5,9 @@ Date: 2026-05-25
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
 completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
 memory job/read routes have coverage under `server/fastify/__tests__/`.
-Phase 9 command routes are covered through 9-3b; unlanded helper routes,
-message commands, and later command families remain target test rows.
+Phase 9 command routes are covered through 9-4a; unlanded helper routes,
+script/trigger definitions, and later command families remain target
+test rows.
 
 ## Phase 1: Foundation
 
@@ -138,8 +139,15 @@ test expectations were locked by 9-0 in
 | loadout                   | create / patch / delete / favorite / touch         | landed; covered by command suites |
 | character                 | create / patch / delete / select / reorder         | landed; covered by command suites |
 | chat / chat folder        | create / patch / delete / fork / reorder           | landed; covered by command suites |
-| message                   | append / edit / delete / truncate / replace        | not started |
-| plugin / module           | create / patch / delete                            | not started |
+| message                   | append / edit / delete / truncate / replace        | landed; covered by command suites |
+| generation persistence    | persist assistant result and metadata              | landed; covered by command suites |
+| chat scriptstate          | patch/delete scriptstate keys                      | landed; covered by command suites |
+| compatibility adapters    | route legacy setters/MCP writes or reject          | landed; covered by adapter suites |
+| lorebook collections      | global CRUD/reorder + child replacements           | landed; covered by command suites |
+| script/trigger definitions | replace character/module child definitions        | not started |
+| module records/enablement | create / patch / delete / enable / reorder         | not started |
+| asset references          | durable references through owning commands         | not started |
+| plugin records/config     | create / patch / delete / enable / provider        | not started |
 | plugin-storage            | patch kv                                           | not started |
 
 Plus: landed command families cover revision conflict

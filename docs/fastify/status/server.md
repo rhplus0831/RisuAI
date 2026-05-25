@@ -22,10 +22,11 @@ docs.
   enriched `done` events when `db.useServerPromptAssembly` is enabled.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
   prompt assembly.
-- Command routes are live under `/api/v1/commands/*` for scalar settings,
+- Command routes are live under `/api/v1/commands/*` for settings,
   bot presets, prompt settings/items, personas, translator presets,
-  loadouts, characters, chats, and chat folders. Implemented resource
-  families all use `baseRevision` / 409 conflict handling and emit their
+  loadouts, characters, chats, chat folders, messages, generation
+  persistence, chat scriptstate, and lorebook collections. Implemented
+  families use `baseRevision` / 409 conflict handling and emit their
   mapped command event.
 - Memory routes are auth-gated: `POST /api/v1/memory/jobs`,
   `GET /api/v1/memory/jobs`, `DELETE /api/v1/memory/jobs/:id`,
@@ -38,7 +39,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-next concrete pickup is 9-3c message history commands in
+next concrete pickup is 9-4b script and trigger definition commands in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points
