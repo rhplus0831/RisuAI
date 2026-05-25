@@ -29,6 +29,7 @@ import { generateAIImage } from './stableDiff'
 import { writeInlayImage } from './files/inlays'
 import { runScripted } from './scriptings'
 import { calcString } from './infunctions'
+import { currentChatStateSnapshot, dispatchPatchChatScriptstate } from '../chatCommands'
 
 export interface triggerscript {
   comment: string
@@ -1329,12 +1330,17 @@ export async function runTrigger(
     const selectedCharId = get(selectedCharID)
     const currentCharacter = getCurrentCharacter()
     const db = getDatabase()
+    const previous = currentChatStateSnapshot()
     varChanged = true
     chat.scriptstate ??= {}
-    chat.scriptstate['$' + key] = value
+    const stateKey = '$' + key
+    chat.scriptstate[stateKey] = value
     currentChat.scriptstate = chat.scriptstate
     currentCharacter.chats[currentCharacter.chatPage].scriptstate = chat.scriptstate
     db.characters[selectedCharId].chats[currentCharacter.chatPage].scriptstate = chat.scriptstate
+    if (chat.id) {
+      dispatchPatchChatScriptstate(chat.id, { [stateKey]: value }, [], previous)
+    }
   }
 
   for (const trigger of triggers) {

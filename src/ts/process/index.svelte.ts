@@ -30,6 +30,7 @@ import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import { isFastifyServer } from '../platform'
 import {
   currentChatStateSnapshot,
+  dispatchPatchChatScriptstate,
   dispatchPersistGenerationResult,
   ensureMessageId,
 } from '../chatCommands'
@@ -291,7 +292,21 @@ export async function sendChat(
         }
 
         for (const patch of served.messagePatches) {
+          const previous =
+            patch.chatVarMutations.length > 0 ? currentChatStateSnapshot() : undefined
           applyServerMessagePatch(currentChat, patch)
+          if (previous && currentChat.id) {
+            const scriptstatePatch: Record<string, string | number | boolean> = {}
+            const deleteKeys: string[] = []
+            for (const mutation of patch.chatVarMutations) {
+              if (mutation.after === null) {
+                deleteKeys.push(mutation.key)
+              } else {
+                scriptstatePatch[mutation.key] = mutation.after
+              }
+            }
+            dispatchPatchChatScriptstate(currentChat.id, scriptstatePatch, deleteKeys, previous)
+          }
         }
         nowChatroom.chats[selectedChat] = currentChat
 

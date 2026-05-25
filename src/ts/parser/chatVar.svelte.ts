@@ -3,6 +3,7 @@ import { DBState, selectedCharID } from '../stores.svelte'
 import { parseKeyValue } from '../util'
 import { setChatVarBackend } from './chatVarBackend'
 import { setParserStateBackend } from './parserStateBackend'
+import { currentChatStateSnapshot, dispatchCurrentChatScriptstatePatch } from '../chatCommands'
 
 export function getChatVar(key: string): string {
   const selectedChar = get(selectedCharID)
@@ -11,8 +12,7 @@ export function getChatVar(key: string): string {
     return 'null'
   }
   const chat = char.chats[char.chatPage]
-  chat.scriptstate ??= {}
-  const state = chat.scriptstate['$' + key]
+  const state = chat.scriptstate?.['$' + key]
   if (state === undefined || state === null) {
     const defaultVariables = parseKeyValue(char.defaultVariables).concat(
       parseKeyValue(DBState.db.templateDefaultVariables),
@@ -30,17 +30,13 @@ export function getChatVar(key: string): string {
 
 export function setChatVar(key: string, value: string): void {
   const selectedChar = get(selectedCharID)
-  if (
-    !DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
-      .scriptstate
-  ) {
-    DBState.db.characters[selectedChar].chats[
-      DBState.db.characters[selectedChar].chatPage
-    ].scriptstate = {}
-  }
-  DBState.db.characters[selectedChar].chats[
-    DBState.db.characters[selectedChar].chatPage
-  ].scriptstate['$' + key] = value
+  const chat =
+    DBState.db.characters[selectedChar]?.chats?.[DBState.db.characters[selectedChar].chatPage]
+  if (!chat) return
+  const previous = currentChatStateSnapshot()
+  chat.scriptstate ??= {}
+  chat.scriptstate['$' + key] = value
+  dispatchCurrentChatScriptstatePatch({ ['$' + key]: value }, [], previous)
 }
 
 export function getGlobalChatVar(key: string): string {

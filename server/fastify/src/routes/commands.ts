@@ -89,12 +89,15 @@ import {
   readChatId,
   readChatIdList,
   readChatPatch,
+  readChatScriptstateDeleteKeys,
+  readChatScriptstatePatch,
   readOptionalBoolean as readChatOptionalBoolean,
   readOptionalFolderByChatId,
   requireChatFolderIndex,
   requireChatLocation,
   selectChat,
   selectedChatId,
+  validateChatScriptstateCommand,
   validateFullChatFolderOrder,
   validateFullChatOrder,
 } from '../commands/chats.js'
@@ -176,6 +179,7 @@ interface ChatCommandBody {
   baseRevision?: unknown
   chat?: unknown
   patch?: unknown
+  deleteKeys?: unknown
   chatIds?: unknown
   folderByChatId?: unknown
   selectedChatId?: unknown
@@ -2636,6 +2640,53 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatFolderReordered, parentId: characterId },
             extra: { selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/chats/:chatId/scriptstate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readChatScriptstatePatch(body.patch)
+      const deleteKeys = readChatScriptstateDeleteKeys(body.deleteKeys)
+      validateChatScriptstateCommand(patch, deleteKeys)
+      const result = applyJsonCommandMutation<{ chatId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllCharacterChats(database)
+          const { character, chat } = requireChatLocation(characters, chatId)
+          chat.scriptstate ??= {}
+          for (const key of deleteKeys) {
+            delete chat.scriptstate[key]
+          }
+          Object.assign(chat.scriptstate, patch)
+          if (Object.keys(chat.scriptstate).length === 0) {
+            delete chat.scriptstate
+          }
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.chatScriptstateUpdated,
+              id: chatId,
+              parentId: character.chaId,
+            },
+            extra: { chatId },
           }
         },
       })

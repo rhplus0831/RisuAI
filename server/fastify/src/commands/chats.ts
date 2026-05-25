@@ -15,6 +15,7 @@ export interface ChatRecord extends JsonRecord {
   note: string
   name: string
   localLore: unknown[]
+  scriptstate?: Record<string, string | number | boolean>
   folderId?: string | null
 }
 
@@ -206,6 +207,47 @@ export function readOptionalFolderByChatId(value: unknown): Record<string, strin
     normalized[chatId] = folderId as string | null
   }
   return normalized
+}
+
+export function readChatScriptstatePatch(
+  input: unknown,
+): Record<string, string | number | boolean> {
+  const patch = readJsonObject(input ?? {}, 'patch')
+  for (const [key, value] of Object.entries(patch)) {
+    validateScriptstateKey(key, `patch key`)
+    validateScriptstateValue(value, `patch.${key}`)
+  }
+  return patch as Record<string, string | number | boolean>
+}
+
+export function readChatScriptstateDeleteKeys(input: unknown): string[] {
+  if (input === undefined) return []
+  if (!Array.isArray(input)) {
+    throw new ValidationError('deleteKeys must be an array')
+  }
+  return input.map((key, index) => {
+    if (typeof key !== 'string') {
+      throw new ValidationError(`deleteKeys[${index}] must be a string`)
+    }
+    validateScriptstateKey(key, `deleteKeys[${index}]`)
+    return key
+  })
+}
+
+export function validateChatScriptstateCommand(
+  patch: Record<string, string | number | boolean>,
+  deleteKeys: readonly string[],
+): void {
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0) {
+    throw new ValidationError('scriptstate command must include patch fields or deleteKeys')
+  }
+  const seenDeleteKeys = new Set<string>()
+  for (const key of deleteKeys) {
+    if (seenDeleteKeys.has(key)) {
+      throw new ValidationError(`Duplicate delete key: ${key}`)
+    }
+    seenDeleteKeys.add(key)
+  }
 }
 
 export function requireChatLocation(
@@ -442,5 +484,20 @@ function validateStringRecord(value: unknown, label: string): void {
     if (typeof recordValue !== 'string') {
       throw new ValidationError(`${label}.${key} must be a string`)
     }
+  }
+}
+
+function validateScriptstateKey(key: string, label: string): void {
+  if (key.trim() === '') {
+    throw new ValidationError(`${label} must be a non-empty string`)
+  }
+}
+
+function validateScriptstateValue(value: unknown, label: string): void {
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+    throw new ValidationError(`${label} must be a string, number, or boolean`)
+  }
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    throw new ValidationError(`${label} must be a finite number`)
   }
 }

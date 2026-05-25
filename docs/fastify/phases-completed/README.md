@@ -72,6 +72,7 @@ track the next piece of work.
 | 9-3b - Chats                            | [`phase-9-client-thinning-9-3b.md`](phase-9-client-thinning-9-3b.md)                   | Chat/folder lifecycle, metadata commands, browser helpers, and UI bridge.       |
 | 9-3c - Messages                         | [`phase-9-client-thinning-9-3c.md`](phase-9-client-thinning-9-3c.md)                   | Message append/update/delete/truncate/replace commands, helpers, and UI bridge. |
 | 9-3d - Generation persistence           | [`phase-9-client-thinning-9-3d.md`](phase-9-client-thinning-9-3d.md)                   | Generation result command, helper, and server-backed sendChat handoff.          |
+| 9-3e - Chat scriptstate                 | [`phase-9-client-thinning-9-3e.md`](phase-9-client-thinning-9-3e.md)                   | Chat scriptstate command, browser helper, and scripting side-effect bridge.     |
 
 ## Historical Status Logs
 

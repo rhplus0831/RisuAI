@@ -316,7 +316,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(typeof (info.data.timings as Record<string, number>).prompt).toBe('number')
   })
 
-  it('persists varChanged chat variables for send-mode assembly', async () => {
+  it('emits varChanged chat variables for command-backed send-mode persistence', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
@@ -352,8 +352,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate.$score).toBe('9')
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
   it('keeps preview-mode assembly read-only even when triggers set variables', async () => {

@@ -13,6 +13,7 @@ import { risuChatParser } from '../parser/parser.svelte'
 import { sendChat } from './index.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { runTrigger } from './triggers'
+import { currentChatStateSnapshot, dispatchPatchChatScriptstate } from '../chatCommands'
 
 export async function processMultiCommand(command: string) {
   let pipe = ''
@@ -182,13 +183,18 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       const selectedChar = get(selectedCharID)
       const char = db.characters[selectedChar]
       const chat = char.chats[char.chatPage]
+      const previous = currentChatStateSnapshot()
       chat.scriptstate = chat.scriptstate ?? {}
-      chat.scriptstate['$' + namedArg['key']] = arg
+      const stateKey = '$' + namedArg['key']
+      chat.scriptstate[stateKey] = arg
       console.log(chat.scriptstate)
 
       char.chats[char.chatPage] = chat
       db.characters[selectedChar] = char
       setDatabase(db)
+      if (chat.id) {
+        dispatchPatchChatScriptstate(chat.id, { [stateKey]: arg }, [], previous)
+      }
       return ''
     }
     case 'addvar': {
@@ -196,14 +202,22 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       const selectedChar = get(selectedCharID)
       const char = db.characters[selectedChar]
       const chat = char.chats[char.chatPage]
+      const previous = currentChatStateSnapshot()
       chat.scriptstate = chat.scriptstate ?? {}
-      chat.scriptstate['$' + namedArg['key']] = (
-        Number(chat.scriptstate['$' + namedArg['key']]) + Number(arg)
-      ).toString()
+      const stateKey = '$' + namedArg['key']
+      chat.scriptstate[stateKey] = (Number(chat.scriptstate[stateKey]) + Number(arg)).toString()
 
       char.chats[char.chatPage] = chat
       db.characters[selectedChar] = char
       setDatabase(db)
+      if (chat.id) {
+        dispatchPatchChatScriptstate(
+          chat.id,
+          { [stateKey]: chat.scriptstate[stateKey] },
+          [],
+          previous,
+        )
+      }
       return ''
     }
     case 'getvar': {
@@ -211,8 +225,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       const selectedChar = get(selectedCharID)
       const char = db.characters[selectedChar]
       const chat = char.chats[char.chatPage]
-      chat.scriptstate = chat.scriptstate ?? {}
-      pipe = chat.scriptstate['$' + namedArg['key']].toString() ?? 'null'
+      pipe = chat.scriptstate?.['$' + namedArg['key']]?.toString() ?? 'null'
       return pipe
     }
     case 'test_lorebook': {

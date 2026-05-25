@@ -2914,3 +2914,182 @@ describe('Phase 9-3d generation persistence command', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-3e chat scriptstate command', () => {
+  it('applies partial scriptstate patches and delete keys with a command event', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              scriptstate: { $old: '1', $keep: true },
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a/scriptstate',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { $score: '9', $count: 2 },
+        deleteKeys: ['$old'],
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'chat.scriptstate.updated',
+        revision: 2,
+        resource: 'chat',
+        id: 'chat-a',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-a',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({
+      $keep: true,
+      $score: '9',
+      $count: 2,
+    })
+    expect(harness.commandEvents.list().at(-1)).toEqual(res.json().event)
+  })
+
+  it('removes empty scriptstate after deleting the last key', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              scriptstate: { $old: '1' },
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a/scriptstate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: {}, deleteKeys: ['$old'] },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+  })
+
+  it('rejects malformed scriptstate payloads without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const unsupportedValue = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a/scriptstate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { $bad: { nested: true } } },
+    })
+    expect(unsupportedValue.statusCode).toBe(400)
+    expect(unsupportedValue.json().error).toBe('patch.$bad must be a string, number, or boolean')
+
+    const empty = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a/scriptstate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: {}, deleteKeys: [] },
+    })
+    expect(empty.statusCode).toBe(400)
+    expect(empty.json().error).toBe('scriptstate command must include patch fields or deleteKeys')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+  })
+
+  it('returns 404 and 409 for missing chats and stale scriptstate revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/missing/scriptstate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { $x: '1' } },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Chat not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a/scriptstate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, patch: { $x: '1' } },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

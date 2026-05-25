@@ -40,6 +40,7 @@ import {
   forkChatCommand,
   getServerCommandBaseRevision,
   patchPromptSettingsCommand,
+  patchChatScriptstateCommand,
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
@@ -1752,5 +1753,62 @@ describe('server command API adapter', () => {
         },
       },
     ])
+  })
+
+  it('dispatches chat scriptstate commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/chats/chat-a/scriptstate')) {
+        return {
+          revision: 7,
+          event: {
+            type: 'chat.scriptstate.updated',
+            revision: 7,
+            resource: 'chat',
+            id: 'chat-a',
+          },
+          chatId: 'chat-a',
+        }
+      }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      patchChatScriptstateCommand({
+        baseRevision: 6,
+        chatId: 'chat-a',
+        patch: { $score: '9', $count: 2 },
+        deleteKeys: ['$old'],
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 7, chatId: 'chat-a' })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/chats/chat-a/scriptstate',
+        method: 'PATCH',
+        body: {
+          baseRevision: 6,
+          patch: { $score: '9', $count: 2 },
+          deleteKeys: ['$old'],
+        },
+      },
+    ])
+  })
+
+  it('does not dispatch chat scriptstate commands outside Fastify mode', async () => {
+    platformState.isFastifyServer = false
+    const commandFetch = makeCommandFetch(() => ({ revision: 7 }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await patchChatScriptstateCommand({
+      baseRevision: 6,
+      chatId: 'chat-a',
+      patch: { $score: '9' },
+    })
+
+    expect(result).toEqual({ status: 'unavailable' })
+    expect(commandFetch.calls).toEqual([])
   })
 })

@@ -235,18 +235,25 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-3d generation persistence handoff is complete. Continue with
-**9-3e - Chat `scriptstate` and scripting side effects**:
+9-3e chat `scriptstate` and scripting side effects is complete.
+Continue with **9-3f - Compatibility setters and access adapters**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement `PATCH /api/v1/commands/chats/:chatId/scriptstate`.
-- Persist runtime script variable and chat-state writes through the
-  scriptstate command in server-backed web mode.
+- Replace compatibility setters and mutable access adapters with already
+  landed commands or explicit unsupported behavior in server-backed web
+  mode.
+- Cover `setCurrentCharacter`, `setCurrentChat`, mutable
+  `getDatabase()`-style character/chat write helpers, CBS/MCP access
+  surfaces, and plugin/MCP character/chat writes.
+- Do not add new endpoint families for 9-3f; use existing character,
+  chat, message, generation, and scriptstate commands.
 - Keep generation result persistence on
   `POST /api/v1/commands/chats/:chatId/generation-result`.
+- Keep scriptstate persistence on
+  `PATCH /api/v1/commands/chats/:chatId/scriptstate`.
 - Keep lorebook/script/trigger child collections, projection enforcement,
   and plugin bridge work in their later slices.
-- Preserve the 9-1 command response and conflict contract for the
-  scriptstate command.
+- Preserve the 9-1 command response and conflict contract through the
+  existing command helpers.

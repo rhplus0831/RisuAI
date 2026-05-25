@@ -179,6 +179,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'chatFolder.reordered',
     resource: 'chatFolder',
   },
+  chatScriptstateUpdated: {
+    type: 'chat.scriptstate.updated',
+    resource: 'chat',
+  },
   messageAppended: {
     type: 'message.appended',
     resource: 'message',

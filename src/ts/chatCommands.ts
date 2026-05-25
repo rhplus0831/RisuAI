@@ -8,6 +8,7 @@ import {
   deleteChatFolderCommand,
   deleteMessageCommand,
   forkChatCommand,
+  patchChatScriptstateCommand,
   persistGenerationResultCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
@@ -18,6 +19,8 @@ import {
   updateChatFolderCommand,
   updateMessageCommand,
   type ChatFolderSnapshot,
+  type ChatScriptstatePatch,
+  type ChatScriptstateValue,
   type ChatSnapshot,
   type MessageSnapshot,
   type ServerCommandResult,
@@ -360,6 +363,44 @@ export function dispatchPersistGenerationResult(
   )
 }
 
+export function dispatchPatchChatScriptstate(
+  chatId: string,
+  patch: ChatScriptstatePatch,
+  deleteKeys: string[],
+  previous: ChatStateSnapshot,
+): void {
+  const commandPatch = sanitizeScriptstatePatch(patch)
+  const commandDeleteKeys = deleteKeys.filter((key) => key.length > 0)
+  if (Object.keys(commandPatch).length === 0 && commandDeleteKeys.length === 0) return
+  runChatCommand(
+    (baseRevision) =>
+      patchChatScriptstateCommand({
+        baseRevision,
+        chatId,
+        patch: commandPatch,
+        deleteKeys: commandDeleteKeys,
+      }),
+    () => restoreChatState(previous),
+  )
+}
+
+export function dispatchCurrentChatScriptstatePatch(
+  patch: ChatScriptstatePatch,
+  deleteKeys: string[] = [],
+  previous: ChatStateSnapshot = currentChatStateSnapshot(),
+): void {
+  const chatId = currentSelectedChatId()
+  if (!chatId) return
+  dispatchPatchChatScriptstate(chatId, patch, deleteKeys, previous)
+}
+
+export function currentSelectedChatId(): string | undefined {
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  const chat = character?.chats?.[character.chatPage]
+  return chat?.id
+}
+
 export function ensureMessageId(message: Message): string {
   if (!message.chatId) {
     message.chatId = v4()
@@ -387,4 +428,22 @@ export function sanitizeMessagePatch(patch: MessageSnapshot): MessageSnapshot {
     sanitized[key] = cloneJsonValue(value)
   }
   return sanitized
+}
+
+export function sanitizeScriptstatePatch(patch: ChatScriptstatePatch): ChatScriptstatePatch {
+  const sanitized: ChatScriptstatePatch = {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (key.length === 0 || value === undefined) continue
+    if (!isScriptstateValue(value)) continue
+    sanitized[key] = cloneJsonValue(value)
+  }
+  return sanitized
+}
+
+function isScriptstateValue(value: unknown): value is ChatScriptstateValue {
+  return (
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  )
 }

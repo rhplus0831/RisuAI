@@ -5,7 +5,7 @@ import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
-import { EntityNotFoundError, applyImport, loadPersisted } from '../repository.js'
+import { EntityNotFoundError, loadPersisted } from '../repository.js'
 import {
   assemblePrompt,
   type AssembleDeps,
@@ -167,8 +167,9 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
 /**
  * The assembler dependency surface bound to the persisted store. The
  * route owns the storage import so `assemble.ts` stays
- * storage-global-free. The loaded database reference is kept so
- * 7-12d-i can persist chat-var writes after assembly.
+ * storage-global-free. The loaded database reference is kept for provider
+ * dispatch and mutation event payloads; durable chat-var persistence is now
+ * owned by the Phase 9 scriptstate command.
  */
 interface RouteAssembleDeps extends AssembleDeps {
   getDatabase(): Database | null
@@ -185,10 +186,6 @@ function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps 
     loadPromptMemoryQueryVectors: () => [],
     getDatabase: () => database,
   }
-}
-
-function shouldPersistVarChanges(input: AssembleInput): boolean {
-  return input.mode === 'send' || input.mode === 'continue' || input.mode === 'regenerate'
 }
 
 function shouldDispatchProvider(
@@ -231,26 +228,14 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
-function persistVarChanges(
-  db: DatabaseSync,
-  dataDir: string,
-  deps: RouteAssembleDeps,
-  input: AssembleInput,
-  result: Awaited<ReturnType<typeof assemblePrompt>>,
-): void {
-  if (!shouldPersistVarChanges(input) || !result.mutations?.varChanged) return
-  const database = deps.getDatabase()
-  if (!database) return
-  applyImport(db, dataDir, database)
-}
-
 /**
  * Phase 7-11g: stream the assembled prompt. The SSE head is written
  * up front, so every assembly failure (bad IDs, missing database, a
  * trigger/overflow `stopSending`) is a terminal `error` event rather
  * than an HTTP status — body validation already returned 400 before we
  * committed to streaming. Provider dispatch lands with later 7-12d
- * slices; 7-12d-i persists chat-var writes for send-like modes.
+ * slices. Phase 9 persists chat-var writes through the scriptstate command
+ * after the browser replays the streamed mutation payload.
  */
 async function streamAssembly(
   req: FastifyRequest,
@@ -278,7 +263,6 @@ async function streamAssembly(
       const startedAt = Date.now()
       const deps = loadDatabaseDeps(dataDir, db)
       const result = await assemblePrompt(input, deps)
-      persistVarChanges(db, dataDir, deps, input, result)
       const database = deps.getDatabase()
       const promptMs = Date.now() - startedAt
       if (!result.stopSending && result.prompt) {

@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-3d - Generation persistence handoff**. Next slice:
-**9-3e - Chat `scriptstate` and scripting side effects**.
+**9-3e - Chat `scriptstate` and scripting side effects**. Next slice:
+**9-3f - Compatibility setters and access adapters**.
 
 ## Goal
 
@@ -165,6 +165,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-3d.md`](../phases-completed/phase-9-client-thinning-9-3d.md).
   - **9-3e - Chat `scriptstate` and scripting side effects.** Runtime
     script variable and chat-state writes; trigger definitions stay in 9-4.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-3e.md`](../phases-completed/phase-9-client-thinning-9-3e.md).
   - **9-3f - Compatibility setters and access adapters.** Replace helper,
     plugin, and MCP character/chat mutation bypasses with commands or
     explicit unsupported behavior.

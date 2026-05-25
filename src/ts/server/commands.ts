@@ -420,6 +420,9 @@ export type ChatSnapshot = Record<string, unknown> & {
   bookmarkNames?: Record<string, string>
 }
 
+export type ChatScriptstateValue = string | number | boolean
+export type ChatScriptstatePatch = Record<string, ChatScriptstateValue>
+
 export type ChatFolderSnapshot = Record<string, unknown> & {
   id?: string
   name?: string
@@ -660,6 +663,12 @@ export interface ReorderChatFoldersCommandInput extends ChatCommandInput {
   characterId: string
   folderIds: string[]
   selectedChatId?: string
+}
+
+export interface PatchChatScriptstateCommandInput extends ChatCommandInput {
+  chatId: string
+  patch: ChatScriptstatePatch
+  deleteKeys?: string[]
 }
 
 export interface AppendMessageCommandInput extends ChatCommandInput {
@@ -1399,6 +1408,21 @@ export async function reorderChatFoldersCommand(
       signal,
     },
   )
+}
+
+export async function patchChatScriptstateCommand(
+  input: PatchChatScriptstateCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/scriptstate`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+      deleteKeys: input.deleteKeys,
+    },
+    signal,
+  })
 }
 
 export async function appendMessageCommand(
