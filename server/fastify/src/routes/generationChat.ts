@@ -174,13 +174,15 @@ interface RouteAssembleDeps extends AssembleDeps {
   getDatabase(): Database | null
 }
 
-function loadDatabaseDeps(dataDir: string): RouteAssembleDeps {
+function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps {
   let database: Database | null = null
   return {
     loadDatabase: () => {
       database = loadPersisted(dataDir).database as Database | null
       return database
     },
+    loadMemoryDatabase: () => db,
+    loadPromptMemoryQueryVectors: () => [],
     getDatabase: () => database,
   }
 }
@@ -274,7 +276,7 @@ async function streamAssembly(
 
     try {
       const startedAt = Date.now()
-      const deps = loadDatabaseDeps(dataDir)
+      const deps = loadDatabaseDeps(dataDir, db)
       const result = await assemblePrompt(input, deps)
       persistVarChanges(db, dataDir, deps, input, result)
       const database = deps.getDatabase()
@@ -420,7 +422,7 @@ export function registerGenerationChatRoutes(
 
     const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
     try {
-      const result = await assemblePrompt(input, loadDatabaseDeps(dataDir))
+      const result = await assemblePrompt(input, loadDatabaseDeps(dataDir, db))
       if (result.stopSending) {
         return { stopSending: true, abortReason: result.abortReason }
       }

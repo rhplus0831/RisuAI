@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { EntityNotFoundError } from '../repository.js'
+import { normalizeHypaV3Settings } from '../memoryPlanner.js'
 import {
   buildFormatOrder,
   normalizeTemplate,
@@ -26,10 +28,17 @@ import {
 import { preflightTemplateTokens } from './preflight.js'
 import { applyDepthPrompts, buildHistoryWindow, NO_ASSETS } from './history.js'
 import { buildMemoryWindow } from './memory.js'
+import {
+  assemblePromptMemoryRows,
+  selectPromptMemory,
+  type PromptMemoryAdapterDiagnostics,
+  type PromptMemoryRowAssemblyDiagnostics,
+} from './memoryAdapter.js'
 import { finalizeRequestBudget } from './budgetFinalize.js'
 import type { TriggerRunResult } from './triggers.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
+import type { MemorySelectionInput } from '../memorySelectionService.js'
 
 /**
  * Phase 7 Tier 3 root assembly entry point.
@@ -99,6 +108,8 @@ import type { PromptEvent } from './sseEvents.js'
  */
 export interface AssembleDeps {
   loadDatabase(): Database | null
+  loadMemoryDatabase?(): DatabaseSync | null
+  loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
 }
 
 export interface AssembleInput {
@@ -272,6 +283,9 @@ export interface AssemblyState {
    * since no current server history row carries a memory memo.
    */
   memories?: OpenAIChat[]
+  promptMemorySelectionDiagnostics?: PromptMemoryAdapterDiagnostics
+  promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
+  promptMemoryRows?: OpenAIChat[]
   // --- 7-11f: final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
   formated?: OpenAIChat[]
@@ -289,6 +303,8 @@ export interface AssemblyState {
   initialScriptstate?: Record<string, string | number | boolean>
   messageMutations?: AssembleMessageMutation[]
   additionalSystemPromptMutations?: AssembleAdditionalSystemPromptMutation[]
+  memoryDatabase?: DatabaseSync | null
+  promptMemoryQueryVectors?: MemorySelectionInput['queryVectors']
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -377,6 +393,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
     messageMutations: [],
     additionalSystemPromptMutations: [],
+    memoryDatabase: deps.loadMemoryDatabase?.() ?? null,
+    promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
   }
 }
 
@@ -691,9 +709,10 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
 
   const { ctx, currentChar, unformated } = state
   const db = state.database
+  const promptMemoryRows = buildPromptMemoryRowsForAssembly(state)
 
   const mem = buildMemoryWindow({
-    chats: state.historyMessages ?? [],
+    chats: [...promptMemoryRows, ...(state.historyMessages ?? [])],
     currentTokens: state.currentTokens ?? 0,
     maxContextTokens: db.maxContext ?? 0,
     currentChat: state.currentChat,
@@ -764,6 +783,60 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
       })
     }
   }
+}
+
+function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
+  const memoryDb = state.memoryDatabase
+  if (!memoryDb) {
+    state.promptMemoryRows = []
+    return []
+  }
+  const enabled = shouldSelectPromptMemory(state)
+  const { settings } = normalizeHypaV3Settings(resolveHypaV3PresetSettings(state.database))
+  const selection = selectPromptMemory({
+    db: memoryDb,
+    enabled,
+    chatId: state.currentChat.id ?? state.input.chatId,
+    summaryModel: settings.summarizationModel,
+    embeddingModel: resolvePromptMemoryEmbeddingModel(state.database),
+    queryVectors: state.promptMemoryQueryVectors ?? [],
+    availableTokens: Math.floor((state.database.maxContext ?? 0) * settings.memoryTokensRatio),
+    settings: {
+      recentMemoryRatio: settings.recentMemoryRatio,
+      similarMemoryRatio: settings.similarMemoryRatio,
+    },
+  })
+  state.promptMemorySelectionDiagnostics = selection.diagnostics
+
+  const assembled = assemblePromptMemoryRows(selection)
+  state.promptMemoryRowAssemblyDiagnostics = assembled.diagnostics
+  state.promptMemoryRows = assembled.rows
+  return assembled.rows
+}
+
+function shouldSelectPromptMemory(state: AssemblyState): boolean {
+  return (
+    state.memoryDatabase !== null &&
+    state.database.hypaV3 === true &&
+    state.currentChar.supaMemory === true
+  )
+}
+
+function resolveHypaV3PresetSettings(database: Database): unknown {
+  const presetId = typeof database.hypaV3PresetId === 'number' ? database.hypaV3PresetId : 0
+  const preset = database.hypaV3Presets?.[presetId]
+  if (preset && typeof preset === 'object' && 'settings' in preset) {
+    return preset.settings
+  }
+  return database.hypaV3Settings
+}
+
+function resolvePromptMemoryEmbeddingModel(database: Database): string {
+  if (database.hypaModel === 'custom') {
+    const customModel = database.hypaCustomSettings?.model?.trim()
+    return customModel && customModel.length > 0 ? customModel : 'custom'
+  }
+  return database.hypaModel || 'MiniLM'
 }
 
 /**

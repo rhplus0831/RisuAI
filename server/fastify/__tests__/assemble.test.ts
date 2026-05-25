@@ -1,5 +1,14 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import { openDatabase } from '../src/db.js'
+import {
+  createMemoryChunk,
+  createMemoryEmbedding,
+  createMemorySummary,
+} from '../src/memoryRepository.js'
 import { EntityNotFoundError } from '../src/repository.js'
 import {
   assemblePrompt,
@@ -17,6 +26,20 @@ import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 
 beforeAll(() => {
   bootPromptVariables()
+})
+
+const dataDirs: string[] = []
+
+function makeDataDir(): string {
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-assemble-'))
+  dataDirs.push(dataDir)
+  return dataDir
+}
+
+afterEach(() => {
+  for (const dataDir of dataDirs.splice(0)) {
+    rmSync(dataDir, { recursive: true, force: true })
+  }
 })
 
 function makeChat(overrides: Partial<Chat> = {}): Chat {
@@ -58,8 +81,11 @@ function makeDatabase(overrides: Partial<Database> = {}): Database {
   } as unknown as Database
 }
 
-function depsFor(db: Database | null): AssembleDeps {
-  return { loadDatabase: () => db }
+function depsFor(
+  db: Database | null,
+  overrides: Partial<Omit<AssembleDeps, 'loadDatabase'>> = {},
+): AssembleDeps {
+  return { loadDatabase: () => db, ...overrides }
 }
 
 const baseInput = (overrides: Partial<AssembleInput> = {}): AssembleInput => ({
@@ -72,6 +98,39 @@ const baseInput = (overrides: Partial<AssembleInput> = {}): AssembleInput => ({
 
 const startTrigger = (effect: unknown[]): never =>
   ({ comment: '', type: 'start', conditions: [], effect }) as never
+
+function memoryEnabledDatabase(overrides: Partial<Database> = {}): Database {
+  const message = [
+    { role: 'user', data: 'hello', chatId: 'chat-1' },
+    { role: 'char', data: 'hi there', chatId: 'chat-1' },
+  ] as never
+  return makeDatabase({
+    maxResponse: 10,
+    maxContext: 100_000,
+    hypaV3: true,
+    hypaModel: 'embedding-model' as never,
+    hypaV3Presets: [
+      {
+        name: 'Test',
+        settings: {
+          summarizationModel: 'summary-model',
+          memoryTokensRatio: 0.2,
+          recentMemoryRatio: 0,
+          similarMemoryRatio: 1,
+        },
+      },
+    ] as never,
+    hypaV3PresetId: 0,
+    characters: [
+      makeCharacter({
+        supaMemory: true,
+        firstMessage: 'Greetings.',
+        chats: [makeChat({ id: 'chat-1', message })],
+      } as Partial<character>),
+    ],
+    ...overrides,
+  } as Partial<Database>)
+}
 
 describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
   it('throws EntityNotFoundError when the database is missing', () => {
@@ -131,6 +190,35 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(state.chatPage).toBe(state.currentChar.chatPage)
   })
 })
+
+function seedPromptMemory(
+  db: ReturnType<typeof openDatabase>,
+  input: { summaryId: string; chunkId: string; text: string },
+): void {
+  createMemoryChunk(db, {
+    id: input.chunkId,
+    chatId: 'chat-1',
+    rangeStartSeq: 0,
+    rangeEndSeq: 1,
+    text: input.text,
+    status: 'summarized',
+  })
+  createMemorySummary(db, {
+    id: input.summaryId,
+    chatId: 'chat-1',
+    chunkId: input.chunkId,
+    model: 'summary-model',
+    text: input.text,
+    tokens: 5,
+  })
+  createMemoryEmbedding(db, {
+    id: `embedding-${input.chunkId}`,
+    chatId: 'chat-1',
+    chunkId: input.chunkId,
+    model: 'embedding-model',
+    vector: [1, 0],
+  })
+}
 
 describe('Phase 7-11a createEmptyUnformatedSlots', () => {
   it('returns all ten slot keys as empty arrays', () => {
@@ -474,6 +562,91 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     expect(state.unformated.chats.every((r) => r.removable === true)).toBe(true)
     // No Hypa on the server yet, so no memory cards are split out.
     expect(state.memories).toEqual([])
+  })
+
+  it('captures assembled Hypa memory rows into template memory cards', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      seedPromptMemory(memoryDb, {
+        summaryId: 'summary-a',
+        chunkId: 'chunk-a',
+        text: 'selected summary',
+      })
+      const db = memoryEnabledDatabase({
+        promptTemplate: [{ type: 'memory', innerFormat: 'Mem: {{slot}}' }],
+      } as Partial<Database>)
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.stopSending).toBe(false)
+      expect(state.promptMemoryRows).toEqual([
+        { role: 'system', content: 'selected summary', memo: 'hypaMemory' },
+      ])
+      expect(state.memories?.map((row) => row.content)).toEqual(['selected summary'])
+      expect(state.unformated.chats.some((row) => row.memo === 'hypaMemory')).toBe(false)
+      expect(state.unformated.main).toEqual([])
+      expect(state.promptMemorySelectionDiagnostics?.hotPathWork).toEqual({
+        generatedQueryEmbeddings: false,
+        calledProviders: false,
+        generatedSummaries: false,
+        enqueuedJobs: false,
+        assembledPromptRows: false,
+      })
+      expect(state.promptMemoryRowAssemblyDiagnostics?.hotPathWork).toEqual({
+        generatedQueryEmbeddings: false,
+        calledProviders: false,
+        generatedSummaries: false,
+        enqueuedJobs: false,
+        assembledPromptRows: true,
+      })
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('wraps assembled Hypa memory rows inline when no memory card consumes them', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      seedPromptMemory(memoryDb, {
+        summaryId: 'summary-a',
+        chunkId: 'chunk-a',
+        text: 'selected summary',
+      })
+      const db = memoryEnabledDatabase()
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.stopSending).toBe(false)
+      expect(state.memories).toEqual([])
+      expect(state.unformated.chats[0]).toMatchObject({
+        role: 'system',
+        memo: 'hypaMemory',
+        content: '<Previous Conversation>selected summary</Previous Conversation>',
+      })
+      expect(state.unformated.lastChat.at(-1)?.content).toBe('hi there')
+    } finally {
+      memoryDb.close()
+    }
   })
 
   it('does not promote lastChat when a prompt template is in use', async () => {

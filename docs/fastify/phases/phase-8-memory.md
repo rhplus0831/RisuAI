@@ -2,8 +2,8 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-6b - Summary prompt-row
-assembly**. Next slice: **8-6c - Assemble integration**.
+Status: in progress. Completed through **8-6c - Assemble integration**.
+Next slice: **8-6d - Missing-memory follow-up enqueue**.
 
 ## Goal
 
@@ -28,7 +28,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-6b:
+Completed through 8-6c:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -100,7 +100,14 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   preserves selected-summary order, trims summary text, skips empty
   summaries, emits canonical `role: "system"` / `memo: "hypaMemory"`
   rows, and reports separate row-assembly diagnostics while preserving
-  selection diagnostics. Root assembler integration remains pending.
+  selection diagnostics.
+- The 8-6c assembler integration resolves active Hypa V3 settings,
+  selects ready summaries through the prompt-memory adapter, assembles
+  canonical `hypaMemory` rows, and feeds them into the existing
+  memory-card split. Template memory cards consume rows through
+  `memories`; no-memory-card paths wrap them inline as previous
+  conversation. Query vectors are supplied by the assembler dependency
+  boundary, and the integration remains read-only.
 
 ## Scope
 
@@ -156,8 +163,6 @@ browser progress store.
 - **8-6 - Prompt memory integration.** Add the server prompt-memory
   adapter, assemble canonical memory prompt rows, replace the Phase 7
   browser bridge, and queue missing-memory follow-up work.
-  - **8-6c - Assemble integration.** Replace the Phase 7/browser Hypa V3
-    bridge inside the root prompt assembler.
   - **8-6d - Missing-memory follow-up enqueue.** Enqueue idempotent
     `chunk`, `summarize`, and `embed` follow-up jobs best-effort.
 - **8-7 - Browser memory surfaces.** Expose read routes, the browser

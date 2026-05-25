@@ -36,6 +36,7 @@ track the next piece of work.
 | 8-5f - Memory selection service facade  | [`phase-8-memory-8-5f.md`](phase-8-memory-8-5f.md)                                     | Read-only repository/ranking/allocation facade for prompt integration.  |
 | 8-6a - Prompt memory adapter contract   | [`phase-8-memory-8-6a.md`](phase-8-memory-8-6a.md)                                     | Prompt-facing contract, diagnostics, and no-hot-path-work guardrails.   |
 | 8-6b - Summary prompt-row assembly      | [`phase-8-memory-8-6b.md`](phase-8-memory-8-6b.md)                                     | Canonical `hypaMemory` prompt rows from selected memory summaries.      |
+| 8-6c - Assemble integration             | [`phase-8-memory-8-6c.md`](phase-8-memory-8-6c.md)                                     | Root assembler integration for selected canonical Hypa memory rows.     |
 
 ## Historical Status Logs
 

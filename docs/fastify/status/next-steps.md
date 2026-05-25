@@ -11,65 +11,62 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-6b added summary prompt-row assembly under
-`server/fastify/src/prompt/memoryAdapter.ts`. The new
-`assemblePromptMemoryRows` helper consumes the existing
-`selectPromptMemory` result, preserves selected-summary order, trims
-summary text, skips whitespace-only summaries, and emits canonical
-`OpenAIChat` rows with `role: "system"` and `memo: "hypaMemory"`.
-It returns separate row-assembly diagnostics while preserving the
-selection diagnostics object from 8-6a. Provider calls, query embedding
-generation, summary generation, queue writes, and root assembler
-integration remain out of scope.
+8-6c wired the root server prompt assembler to the prompt-memory adapter.
+`AssembleDeps` can now supply the SQLite memory database and already
+computed query vectors. The route passes the live SQLite handle and an
+empty vector list; tests inject seeded vectors. The assembler resolves the
+active Hypa V3 preset, calls `selectPromptMemory`, converts the selection
+through `assemblePromptMemoryRows`, prepends canonical
+`memo: "hypaMemory"` rows into the existing `buildMemoryWindow` split,
+and preserves the current memory-card contract. This remains read-only:
+no provider-backed query embedding generation, summary generation, embed
+work, or queue writes landed.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-6c - Assemble integration**.
+Continue Phase 8 with **8-6d - Missing-memory follow-up enqueue**.
 
 Expected scope:
 
-- Wire the root server prompt assembler to select prompt memory and pass
-  assembled `memo: "hypaMemory"` rows into the existing memory-card split.
-- Keep query vectors supplied by the integration boundary; do not add
-  provider-backed query embedding generation in this slice.
-- Preserve 8-6a/8-6b read-only behavior: integration may read selected
-  summaries and assemble rows, but it must not summarize, embed, or
-  enqueue follow-up jobs.
-- Respect the existing `prompt/memory.ts` contract: memory template cards
-  consume Hypa memory rows via `memories`; non-template/no-memory-card
-  paths wrap them inline as previous conversation.
-- Add focused tests that prove canonical rows reach the prompt assembly
-  memory path without changing unrelated prompt sections.
+- Consume the passive missing-memory diagnostics now surfaced by the
+  prompt-memory adapter integration.
+- Enqueue idempotent `chunk`, `summarize`, and `embed` follow-up jobs
+  best-effort after prompt assembly detects missing memory.
+- Keep prompt assembly non-blocking: enqueue failures should not abort
+  chat unless an existing route-level invariant requires it.
+- Preserve the hot-path boundary: do not generate summaries, embeddings,
+  or query vectors synchronously during prompt assembly.
+- Add focused tests for idempotent enqueue behavior, no-op behavior when
+  diagnostics show no missing memory, and failure isolation.
 
-Out of scope for 8-6c:
+Out of scope for 8-6d:
 
 - Embedding provider dispatch and query embedding generation.
-- Summary generation, chunk planning, queue writes, and follow-up job
-  enqueueing.
-- Missing-memory follow-up enqueueing; that starts in 8-6d.
+- Summary generation and embedding provider work in the prompt request
+  hot path.
 - Browser progress UI, browser listeners, and browser list/cancel
   controls.
 - Browser-local embedding runtimes.
 
 Implementation notes:
 
-- Build on `selectPromptMemory` and `assemblePromptMemoryRows`; do not
-  call repositories, ranking, allocation, or row-shaping helpers directly
-  from the root assembler.
-- `prompt/memory.ts` already recognizes `memo: "supaMemory"` and
-  `memo: "hypaMemory"` rows. Newly assembled rows use `hypaMemory`.
-- 8-6b row assembly diagnostics set
-  `hotPathWork.assembledPromptRows: true`; the selection diagnostics
-  still preserve the 8-6a no-assembly signal.
-- Missing-memory follow-up hints are present but should remain passive
-  until 8-6d.
+- 8-6c stores selection diagnostics on `AssemblyState` as
+  `promptMemorySelectionDiagnostics` and row diagnostics as
+  `promptMemoryRowAssemblyDiagnostics`.
+- Missing-memory hints are still passive after 8-6c. 8-6d should convert
+  them into best-effort queue writes without making selection call lower
+  repository/ranking/allocation helpers directly.
+- The route-bound assembler dependency now passes the live SQLite handle
+  through `loadMemoryDatabase`; tests can inject seeded memory databases.
+- Query vectors remain supplied by `loadPromptMemoryQueryVectors`. Do not
+  add provider-backed query embedding generation in 8-6d.
 - Preserve the no-compatibility-migrations policy: update current
   Fastify shapes directly if the contract needs a tighter shape.
 
-## Queue After 8-6b
+## Queue After 8-6c
 
-1. 8-6c - Assemble integration.
-2. 8-6d - Missing-memory follow-up enqueue.
+1. 8-6d - Missing-memory follow-up enqueue.
+2. 8-7a - Chunk + summary read routes.
 
 ## Parallel Or Deferred
 
@@ -92,26 +89,26 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-6a: `pnpm check` clean,
-`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 1033 tests, and
+Last recorded full baselines after 8-6c: `pnpm check` clean,
+`pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 1039 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-6b verification:
+Focused 8-6c verification:
 
 ```bash
-pnpm exec vitest run server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 ```
 
-8-6b passed the focused adapter file with 9 tests, and `pnpm check` was
-clean.
+8-6c passed the focused assembler/adapter files with 49 tests, and
+`pnpm check` was clean.
 
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-6b.md`](../phases-completed/phase-8-memory-8-6b.md)
+  [`../phases-completed/phase-8-memory-8-6c.md`](../phases-completed/phase-8-memory-8-6c.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Phase 7 final summary:
