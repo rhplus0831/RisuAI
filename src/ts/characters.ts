@@ -57,6 +57,7 @@ import {
   dispatchSelectCharacter,
   dispatchUpdateCharacter,
 } from './characterCommands'
+import { isFastifyServer } from './platform'
 
 export function createNewCharacter() {
   const previous = currentCharacterStateSnapshot()
@@ -906,6 +907,10 @@ export async function changeChar(
   }
   reseter()
   if (DBState.db.characters?.[index]?.coldstorage) {
+    if (isFastifyServer) {
+      alertError('Cold-storage character hydration is not supported in server-backed web mode yet')
+      return
+    }
     const coldData = await getColdStorageItem(DBState.db.characters[index].coldstorage!)
     if (coldData.character && coldData.character.chaId === DBState.db.characters[index].chaId) {
       DBState.db.characters[index] = coldData.character

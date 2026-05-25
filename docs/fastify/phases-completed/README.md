@@ -86,6 +86,7 @@ track the next piece of work.
 | 9-5c - Event re-bootstrap               | [`phase-9-client-thinning-9-5c.md`](phase-9-client-thinning-9-5c.md)                   | Browser event subscription and debounced bootstrap projection refresh.           |
 | 9-5d-i - Settings residual sweep        | [`phase-9-client-thinning-9-5d-i.md`](phase-9-client-thinning-9-5d-i.md)               | Residual manual settings writes routed through existing settings command bridge. |
 | 9-5d-ii - 9-2 resource UI tails         | [`phase-9-client-thinning-9-5d-ii.md`](phase-9-client-thinning-9-5d-ii.md)             | Prompt/persona/translator/loadout residual audit and delete payload cleanup.     |
+| 9-5d-iii - 9-3 character/chat UI tails  | [`phase-9-client-thinning-9-5d-iii.md`](phase-9-client-thinning-9-5d-iii.md)           | Character/chat residual audit, compact chat selection, and cold-storage guard.   |
 
 ## Historical Status Logs
 

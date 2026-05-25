@@ -245,9 +245,10 @@ into smaller residual command-replacement sub-slices:
   settings command bridge.
 - **9-5d-ii - 9-2 resource UI tails.** Prompt templates, personas,
   translator presets, and loadouts.
-- **9-5d-iii - 9-3 character/chat UI tails.** Character profile/assets,
-  chat folders, selected chat/page state, playground/realm/grid helpers,
-  and legacy import helpers.
+- **9-5d-iii - 9-3 character/chat UI tails.** Complete. Character
+  profile/assets, chat folders, selected chat/page state, playground/
+  realm/grid helpers, and legacy import helpers now stay on existing 9-3
+  commands or explicit unsupported behavior.
 - **9-5d-iv - 9-4 extension UI/API tails.** Lorebooks, module UI/MCP
   helpers, plugin settings, plugin database translation, and plugin
   storage.

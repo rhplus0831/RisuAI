@@ -19,6 +19,11 @@ vi.mock('./storage/nodeStorage', () => ({
 
 vi.mock('./alert', () => ({
   alertConfirm: vi.fn(async () => true),
+  alertError: vi.fn(),
+}))
+
+vi.mock('./process/coldstorage.svelte', () => ({
+  getColdStorageItem: vi.fn(),
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from './server/commands'
@@ -31,7 +36,9 @@ import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { Chat, character } from './storage/database.svelte'
-import { changeCharImage, rmCharEmotion } from './characters'
+import { changeChar, changeCharImage, rmCharEmotion } from './characters'
+import { alertError } from './alert'
+import { getColdStorageItem } from './process/coldstorage.svelte'
 
 interface CapturedFetch {
   url: string
@@ -245,6 +252,21 @@ describe('Phase 9-3f compatibility adapters', () => {
         },
       },
     })
+  })
+
+  it('rejects cold-storage character hydration in server-backed web mode', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.characters[0].coldstorage = 'cold-char-a'
+    selectedCharID.set(-1)
+
+    await changeChar(0)
+
+    expect(getColdStorageItem).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith(
+      'Cold-storage character hydration is not supported in server-backed web mode yet',
+    )
+    expect(get(selectedCharID)).toBe(-1)
+    expect(calls).toEqual([])
   })
 
   it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {

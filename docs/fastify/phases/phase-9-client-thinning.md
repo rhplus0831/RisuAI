@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5d-ii - 9-2 resource UI tails**. Next pickup:
-**9-5d-iii - 9-3 character/chat UI tails**.
+**9-5d-iii - 9-3 character/chat UI tails**. Next pickup:
+**9-5d-iv - 9-4 extension UI/API tails**.
 
 ## Goal
 
@@ -237,11 +237,13 @@ surfaces.
       against existing command helpers and rollback behavior, and tightened
       persona/translator delete selection payloads. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-5d-ii.md`](../phases-completed/phase-9-client-thinning-9-5d-ii.md).
-    - **9-5d-iii - 9-3 character/chat UI tails.** Finish residual
+    - **9-5d-iii - 9-3 character/chat UI tails.** Complete. Audited
       character profile/assets, chat folders, selected chat/page state,
-      playground, realm, grid, and legacy import helper writes with
-      character/chat commands or explicit server-backed unsupported
-      behavior.
+      playground, realm/grid helpers, and legacy import helpers against
+      existing 9-3 command bridges, fixed compact chat-list selection, and
+      made cold-storage character hydration explicitly unsupported in
+      server-backed web mode. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-5d-iii.md`](../phases-completed/phase-9-client-thinning-9-5d-iii.md).
     - **9-5d-iv - 9-4 extension UI/API tails.** Finish residual
       lorebook, module UI/MCP helper, plugin settings, plugin database
       translation, and plugin-storage writes with the 9-4 bridges and

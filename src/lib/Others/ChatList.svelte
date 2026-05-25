@@ -127,7 +127,7 @@
           chats.unshift(chat)
           if (cha.type === 'group') {
             cha.characters.map((c) => {
-              chats[len].message.push({
+              chat.message.push({
                 saying: c,
                 role: 'char',
                 data: findCharacterbyId(c).firstMessage,
@@ -135,7 +135,7 @@
             })
           }
           DBState.db.characters[$selectedCharID].chats = chats
-          changeChatTo(len)
+          changeChatTo(0)
           dispatchCreateChat(cha.chaId, chat, previous)
           close()
         }}
