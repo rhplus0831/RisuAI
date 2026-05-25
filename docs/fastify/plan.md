@@ -38,6 +38,9 @@ Stable baseline facts:
   stream-job / hub routes, legacy storage compatibility, completion
   generation, chat generation, preview-prompt, and Phase 8 memory queue
   surfaces landed so far.
+- Phase 8 has server memory tables, read/job routes, and summarize/embed
+  handlers; fresh server-backed chats still need the live chunk-planning
+  hook before memory can accumulate automatically.
 - Domain state still uses the migration-window `data/db.json` blob for
   resources not yet extracted to SQL. Memory uses dedicated SQL tables
   added in Phase 8.

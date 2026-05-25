@@ -66,10 +66,11 @@ shards under [`coverage/`](coverage/).
   browser adapter / preview wiring coverage in `serverChat.test.ts`,
   `sseParse.test.ts`, and `sendChat.serverPreview.test.ts`.
 - Phase 8 memory coverage has landed for schema/repository primitives,
-  legacy import, job queue routes, worker lifecycle/retry/progress,
-  planner/chunk bridge, summary prompt building, summary adapter, and the
-  8-4c summarize job handler in the focused
-  `server/fastify/__tests__/memory*.test.ts` files.
+  legacy import, job routes, worker lifecycle/retry/progress,
+  planner/chunk bridge, summary and embedding adapters/handlers,
+  similarity ranking, budget allocation, prompt-memory selection,
+  read routes, browser memory adapter/progress/list-cancel behavior, and
+  server-backed `hypav3-memory` fixture parity.
 
 ## Where to look
 

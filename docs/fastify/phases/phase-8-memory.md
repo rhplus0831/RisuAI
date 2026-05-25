@@ -4,7 +4,7 @@ Date: 2026-05-25
 
 Status: in progress. Completed through
 **8-7e - `hypav3-memory` fixture parity**.
-Next slice: **8-8 - Phase 8 closeout**.
+Next slice: **8-8 - live chunk-planning hook**.
 
 ## Goal
 
@@ -143,6 +143,10 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
 - The 8-7e fixture parity slice pins the server-backed `hypav3-memory`
   prompt path, Fastify `hypav3_progress` browser side effect, memory
   job list/cancel envelopes, and missing-memory follow-up diagnostics.
+- Current open gap: `planHypaV3ChunkJobs` exists and is tested, but the
+  live server-backed chat path does not yet call it. The default `chunk`
+  job handler remains a no-op; `summarize` and `embed` have real default
+  handlers.
 
 ## Scope
 
@@ -152,24 +156,27 @@ Current schema includes:
 
 - `memory_chunks(id, chat_id, message_id, range_start_seq,
 range_end_seq, text, status, created_at, updated_at)`
-- `memory_summaries(id, chat_id, chunk_id, model, text, tokens,
-created_at)`
+- `memory_summaries(id, chat_id, chunk_id, model, text,
+metadata_json, tokens, created_at)`
 - `memory_embeddings(id, chat_id, chunk_id, model, vector_blob, dim,
 group_id, group_index, created_at)`
 - `memory_jobs(id, chat_id, kind, status, payload_json, error,
-created_at, updated_at)`
+attempt_count, max_attempts, next_run_at, created_at, updated_at)`
 
 `memory_chunks.text` and `memory_summaries.text` are large and do not
 belong in `extension_fields`.
 
 ### Job Queue
 
-- Jobs are kinds: `chunk`, `embed`, `summarize`.
+- Jobs are kinds: `chunk`, `embed`, `summarize`; `chunk` is reserved
+  until 8-8 wires the live chunk-planning hook.
 - The server runs a single in-process worker over `memory_jobs`.
 - Queue transitions emit memory progress events on the existing event
   stream.
 - Failures retry up to the queue's max retry count, then mark failed
   without blocking chat.
+- Default worker wiring in `server/fastify/src/app.ts` provides real
+  batch handlers for `summarize` and `embed`.
 
 ### Routes
 
@@ -185,38 +192,41 @@ belong in `extension_fields`.
 `prompt/memory.ts` from Phase 7 stops calling the browser's
 `hypaMemoryV3` and reads selected `memory_summaries` rows for the active
 chat. Summarization and embedding remain out of the prompt request hot
-path; missing memory queues follow-up work best-effort.
+path; missing summaries and embeddings for existing chunks queue
+follow-up work best-effort. Creating new chunks from fresh chat history
+is the remaining 8-8 hook.
 
 ### Browser Changes
 
-The browser stops importing `src/ts/process/memory/hypav3.ts` in
-server-backed mode once the server adapter is in place. Hypa V3 progress
-is surfaced through server events and dispatched into the existing
-browser progress store.
+The server-backed send path bypasses local `hypaMemoryV3` prompt
+assembly. The legacy browser module remains for local/Tauri mode and
+local Hypa V3 editing outside server-backed mode. Server Hypa V3
+progress is surfaced through terminal side effects and mapped into the
+existing browser progress store.
 
 ## Remaining Slice Plan
 
-- **8-6 - Prompt memory integration.** Add the server prompt-memory
-  adapter, assemble canonical memory prompt rows, replace the Phase 7
-  browser bridge, and queue missing-memory follow-up work.
-- **8-7 - Browser memory surfaces.** Expose read routes, the browser
-  adapter, progress UI wiring, job list/cancel controls, and fixture
-  parity.
-  - **8-7a - Chunk + summary read routes.** Done; auth-gated
-    `GET /api/v1/memory/chunks/:chatId` and
-    `GET /api/v1/memory/summaries/:chatId?model=...`.
-  - **8-7b - Browser memory API adapter.** Thin server-backed client for
-    chunks, summaries, job listing, and cancellation. Done.
-  - **8-7c - Browser progress listener.** Wire server memory progress
-    into the existing `hypaV3ProgressStore` shape. Done.
-  - **8-7d - Memory job list/cancel UI path.** Add minimal pending /
-    running job list and cancel controls. Bulk re-summary and per-summary
-    metadata edits stay disabled in server-backed mode. Done.
-  - **8-7e - `hypav3-memory` fixture parity.** Pin canonical memory prompt
-    rows, missing-memory diagnostics, and browser-visible progress /
-    list-cancel effects. Done.
-- **8-8 - Phase 8 closeout.** Run the full verification matrix, document
-  supported model/provider memory paths, and flip handoff docs to Phase 9.
+- **8-8 - Live chunk-planning hook.** Connect
+  `planHypaV3ChunkJobs` to production so a server-backed chat with no
+  memory rows can create chunks and enqueue summarize work after crossing
+  the configured Hypa V3 window. Keep prompt assembly non-blocking.
+- **8-9 - Phase 8 closeout.** Run the full verification matrix, confirm
+  the supported/unsupported memory provider paths below, and flip handoff
+  docs to Phase 9 once exit criteria are satisfied.
+
+## Supported Memory Provider Paths
+
+- Summary generation: `subModel` only, when it resolves to an
+  API-backed OpenAI-compatible provider (`openai`, `nanogpt`, or
+  `openrouter`).
+- Standard embeddings: `ada`, `openai3small`, `openai3large`, and
+  `custom` endpoints that expose an OpenAI-compatible `/embeddings`
+  route.
+- Contextual embeddings: `voyageContext3` through Voyage contextualized
+  embeddings.
+- Unsupported server-side: MiniLM, Nomic, BGE, transformers.js/WebGPU,
+  MLC, ONNX, WebLLM, browser-local summary runtimes, bulk re-summary,
+  and per-summary metadata edits in server-backed mode.
 
 ## Boundaries
 

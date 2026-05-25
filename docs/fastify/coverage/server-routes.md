@@ -3,10 +3,9 @@
 Date: 2026-05-25
 
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
-completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and landed
-Phase 8 memory slices have coverage under `server/fastify/__tests__/`.
-Unlanded helper routes, remaining Phase 8 routes, and Phase 9 commands
-remain target test rows.
+completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
+memory job/read routes have coverage under `server/fastify/__tests__/`.
+Unlanded helper routes and Phase 9 commands remain target test rows.
 
 ## Phase 1: Foundation
 
@@ -108,13 +107,19 @@ on now that `assemblePrompt` is real.
 | `GET /api/v1/memory/summaries/:chatId`      | Auth-gated list by chat, optional model filter, empty results, and current row shape. | covered by `server/fastify/__tests__/memoryReadRoutes.test.ts` |
 | `POST /api/v1/memory/jobs`                  | Auth-gated enqueue for `chunk`, `embed`, and `summarize`; emits `memory.job`. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
 | `GET /api/v1/memory/jobs`                   | Lists active jobs with chat/kind/status filters and validation. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
-| `DELETE /api/v1/memory/jobs/:id`            | Cancels pending/running jobs, is idempotent for terminal states, and emits progress. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
+| `DELETE /api/v1/memory/jobs/:id`            | Cancels pending/running jobs, emits progress, and returns 404 once the job is missing or already terminal. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
 
 Plus: repository primitives, job lifecycle (`pending -> running ->
 completed`), retry/backoff, boot recovery, progress events, memory
-planning, summary prompt building, summary adapter, and the 8-4c
-summarize job handler are covered by the focused memory tests under
-`server/fastify/__tests__/memory*.test.ts`.
+planning/chunk creation helpers, summary and embedding adapters/job
+handlers, similarity ranking, budget allocation, prompt-memory
+selection, and prompt follow-up enqueueing are covered by focused memory
+tests under `server/fastify/__tests__/memory*.test.ts` plus
+`promptMemoryAdapter.test.ts` and `assemble.test.ts`.
+
+The public route surface does not yet include a live chunk-planning
+endpoint; 8-8 must connect the existing planner to production without
+putting provider calls in route handlers.
 
 ## Phase 9: Commands
 

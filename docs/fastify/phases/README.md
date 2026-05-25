@@ -34,15 +34,16 @@ the phase file.
 ## Dependency Order
 
 ```text
-0 -> 1 -> 2 -> 8
-0 -> 1 -> 3 -> 6 -> 7 -> 9
-0 -> 4 -> 5 -> 6
+0 -> 1 -> 2 -> 8 -> 9
+0 -> 1 -> 3 -> 6 -> 7 -> 8
+0 -> 4 -> 5 -> 6 -> 7
 ```
 
 Phase 8 is the active phase. Phase 7 is closed, and Phase 8 has landed
-through 8-4c, so the next pickup is 8-4d summary rate limiting and
-ordered writes. Phase 9 waits for server-owned generation, prompt
-assembly, and memory surfaces to settle.
+through 8-7e. The next pickup is 8-8, the live chunk-planning hook that
+connects the existing planner to the production server path before Phase
+8 closeout. Phase 9 waits for server-owned generation, prompt assembly,
+and memory surfaces to settle.
 
 ## Completed Detail
 

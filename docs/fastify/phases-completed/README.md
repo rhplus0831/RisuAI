@@ -1,6 +1,6 @@
 # Completed Phase Archive
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 This directory holds completed phase plans, landed slice tables, and
 historical status logs that used to make the active docs noisy. Treat it
@@ -27,6 +27,20 @@ track the next piece of work.
 | 7 - Prompt assembly closeout            | [`phase-7-prompt-assembly-closeout.md`](phase-7-prompt-assembly-closeout.md)           | Final exit-criteria check and Phase 8 handoff.                          |
 | 8-1a-i - Migration runner               | [`phase-8-memory-8-1a-i.md`](phase-8-memory-8-1a-i.md)                                 | `risu.db` migration runner and schema version 1 bump.                   |
 | 8-1a-ii - Memory tables                 | [`phase-8-memory-8-1a-ii.md`](phase-8-memory-8-1a-ii.md)                               | Hypa V3 memory tables and schema version 2 bump.                        |
+| 8-1b - Memory repositories              | [`phase-8-memory-8-1b.md`](phase-8-memory-8-1b.md)                                     | Typed row mappers and repository primitives.                            |
+| 8-1c - Legacy memory import             | [`phase-8-memory-8-1c.md`](phase-8-memory-8-1c.md)                                     | Legacy `hypaV3Data` import/backfill into memory rows.                   |
+| 8-2a - Queue state machine              | [`phase-8-memory-8-2a.md`](phase-8-memory-8-2a.md)                                     | Enqueue, claim, complete, fail, cancel, and list primitives.            |
+| 8-2b - Worker lifecycle                 | [`phase-8-memory-8-2b.md`](phase-8-memory-8-2b.md)                                     | In-process worker start/stop/tick behavior.                             |
+| 8-2c - Retry recovery                   | [`phase-8-memory-8-2c.md`](phase-8-memory-8-2c.md)                                     | Attempt counts, retry backoff, and boot recovery.                       |
+| 8-2d - Progress event contract          | [`phase-8-memory-8-2d.md`](phase-8-memory-8-2d.md)                                     | Memory job events and Hypa V3 progress side effects.                    |
+| 8-2e - Memory job routes                | [`phase-8-memory-8-2e.md`](phase-8-memory-8-2e.md)                                     | Auth-gated enqueue/list/cancel routes.                                  |
+| 8-3a - Planner contract                 | [`phase-8-memory-8-3a.md`](phase-8-memory-8-3a.md)                                     | Standard Hypa V3 settings and pure planner contract.                    |
+| 8-3b - Orphan cleanup                   | [`phase-8-memory-8-3b.md`](phase-8-memory-8-3b.md)                                     | Summary/chunk cleanup with embedding cascade behavior.                  |
+| 8-3c - Planner closeout                 | [`phase-8-memory-8-3c.md`](phase-8-memory-8-3c.md)                                     | Deterministic planner output and diagnostics.                           |
+| 8-3d - Chunk job bridge                 | [`phase-8-memory-8-3d.md`](phase-8-memory-8-3d.md)                                     | Deterministic chunks plus planned summarize jobs.                       |
+| 8-4a - Summary prompt builder           | [`phase-8-memory-8-4a.md`](phase-8-memory-8-4a.md)                                     | Hypa V3 summary prompt and scrub helpers.                               |
+| 8-4b - Summary provider adapter         | [`phase-8-memory-8-4b.md`](phase-8-memory-8-4b.md)                                     | API-backed summary adapter over OpenAI-compatible dispatch.             |
+| 8-4c - Summarize job handler            | [`phase-8-memory-8-4c.md`](phase-8-memory-8-4c.md)                                     | Executable summarize jobs against planned chunks.                       |
 | 8-4d - Summary ordered writes           | [`phase-8-memory-8-4d.md`](phase-8-memory-8-4d.md)                                     | Summarize batch rate limiting and consecutive-success commits.          |
 | 8-5a - Embedding provider contract      | [`phase-8-memory-8-5a.md`](phase-8-memory-8-5a.md)                                     | API-backed/custom embedding resolver, adapter, and validation.          |
 | 8-5b - Embed job handler                | [`phase-8-memory-8-5b.md`](phase-8-memory-8-5b.md)                                     | Embed job handler, vector persistence, idempotence, and batch limits.   |

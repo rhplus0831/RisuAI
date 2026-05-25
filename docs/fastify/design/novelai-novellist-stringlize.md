@@ -31,7 +31,8 @@ There are two viable future shapes:
   for Ooba, because their upstream wires are not OpenAI-message-shaped.
 
 The migration currently chooses deferral so Phase 6 does not invent
-provider-specific context plumbing that Phase 7/9 would later replace.
+provider-specific context plumbing that Phase 9 or a dedicated
+provider-flattening follow-up would later replace.
 
 ## Revisit Triggers
 

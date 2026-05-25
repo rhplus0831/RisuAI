@@ -1,6 +1,6 @@
 # sendChat Fixtures
 
-Date: 2026-05-22 (38 snapshots; Phase 6 completion closed)
+Date: 2026-05-25 (38 snapshots; Phase 8 memory parity through 8-7e)
 
 Status: the 17 initial Phase 4 fixtures landed, Phase 5 added nine
 narrow gate fixtures, and Phase 6 added twelve provider parity
@@ -15,7 +15,9 @@ Hypa V3 memory, trigger transformations, prompt-template gates,
 lorebook placement, history-media fallback, start-trigger mutation
 or stop, prompt-info text capture, preview-prompt early return,
 pre-aborted-signal exit, and the server-backed provider adapters
-represented by fixtures.
+represented by fixtures. The server-backed suite also pins `/chat`
+dispatch parity, rollback/TTS side effects, and the `hypav3-memory`
+server prompt/progress/list-cancel path.
 The historical gate list lives in
 [`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
 
@@ -114,12 +116,17 @@ snapshot.
 ## Server-backed sweep
 
 `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-runs the twelve Phase 6 provider fixtures with
-`platform.isFastifyServer === true` and
-`db.useServerGeneration === true`. It compares the same expected
-snapshots as the local sweep after dropping `providerCalls`, then
-asserts the recorded fetch call to `/api/v1/generate/completion`
-separately.
+has two provider sweeps. The Phase 6 sweep runs the twelve provider
+fixtures through `/api/v1/generate/completion` with
+`platform.isFastifyServer === true` and `db.useServerGeneration === true`.
+The Phase 7 sweep runs the same dual-mode fixtures through
+`/api/v1/generate/chat` with `db.useServerPromptAssembly === true` and
+asserts that they do not escape to `/completion`.
+
+The same file covers server-dispatched rollback, TTS side effects, and
+the Phase 8 `hypav3-memory` server-backed memory path, including
+`hypaMemory` rows, `hypav3_progress`, memory job list/cancel envelopes,
+and missing-memory follow-up diagnostics.
 
 ## Side-effect mocks
 

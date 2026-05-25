@@ -11,7 +11,7 @@ Date: 2026-05-25
   call `embedTexts`, and persist successful vectors through
   `createMemoryEmbedding`.
 - Standard embedding reruns are idempotent by `{ chatId, chunkId,
-  model }` and use deterministic `hypav3-embedding-*` ids.
+model }` and use deterministic `hypav3-embedding-*` ids.
 - The worker batch handler surface now supports any memory job kind;
   embed batches claim same-chat pending jobs, preserve retry/cancel
   transitions, and complete only still-running jobs.

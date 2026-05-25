@@ -1,6 +1,6 @@
 # sendChat Status
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 This file tracks the current `sendChat` boundary. Historical extraction
 and fixture inventories are archived or covered by the coverage docs.
@@ -34,8 +34,9 @@ and terminal provider errors can restore the pre-dispatch chat
 message/scriptstate snapshot before the existing error path reports the
 failure.
 
-Track that work in [`next-steps.md`](next-steps.md) and
-[`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md).
+Phase 7 closeout detail lives in
+[`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md);
+current pickup work is Phase 8 memory in [`next-steps.md`](next-steps.md).
 
 ## Guardrails
 

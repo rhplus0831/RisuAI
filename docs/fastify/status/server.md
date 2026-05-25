@@ -22,11 +22,19 @@ docs.
   enriched `done` events when `db.useServerPromptAssembly` is enabled.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
   prompt assembly.
+- Memory routes are auth-gated: `POST /api/v1/memory/jobs`,
+  `GET /api/v1/memory/jobs`, `DELETE /api/v1/memory/jobs/:id`,
+  `GET /api/v1/memory/chunks/:chatId`, and
+  `GET /api/v1/memory/summaries/:chatId?model=...`.
+- The memory worker has real default handlers for `summarize` and
+  `embed`; the reserved `chunk` job kind still uses the default no-op
+  handler until the live chunk-planning hook lands.
 
 ## Current Server Work
 
 Phase 7 prompt assembly is closed. Phase 8 Hypa V3 memory is active; the
-next concrete pickup is in [`next-steps.md`](next-steps.md).
+next concrete pickup is the 8-8 live chunk-planning hook in
+[`next-steps.md`](next-steps.md).
 
 ## Watch Points
 
@@ -34,8 +42,8 @@ next concrete pickup is in [`next-steps.md`](next-steps.md).
   cannot send `risu-auth` may need session-cookie support later.
 - Ooba OAI-compatible, NovelAI text, and NovelList remain deferred until
   server-side prompt string flattening is available.
-- Hypa V3 memory is in Phase 8; the next pickup is the 8-7b browser
-  memory API adapter.
+- Hypa V3 memory is in Phase 8; the live path still needs to call the
+  chunk planner before Phase 8 can close.
 - Browser plugin / Lua execution and image generation side effects remain
   outside the prompt assembly closeout.
 

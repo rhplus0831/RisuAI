@@ -2,41 +2,40 @@
 
 Date: 2026-05-25
 
-Use this file as the day-to-day pickup runbook. Completed slice tables
-were moved to [`../phases-completed/`](../phases-completed/).
+Use this file as the day-to-day pickup runbook. Completed slice details
+live in [`../phases-completed/`](../phases-completed/).
 
-Policy note: there are no actual Fastify users yet, so this process does
-not need compatibility migrations. Update the current schema and import
-paths directly instead of preserving old intermediate Fastify shapes.
+Policy note: no actual Fastify users exist yet; update current schemas and
+import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-8-7e added `hypav3-memory` fixture parity coverage for the server-backed
-path. The server-backed `/chat` fixture now pins the rendered
-`hypaMemory` row, applies a Fastify `hypav3_progress` terminal side
-effect into `hypaV3ProgressStore`, preserves memory job list/cancel
-envelopes through the browser adapter, and explicitly asserts the
-missing-memory diagnostics that drive best-effort summarize/embed
+8-7e added server-backed `hypav3-memory` fixture parity. The `/chat`
+fixture pins the rendered `hypaMemory` row, applies a Fastify
+`hypav3_progress` terminal side effect into `hypaV3ProgressStore`,
+preserves memory job list/cancel envelopes through the browser adapter,
+and asserts missing-memory diagnostics for best-effort summarize/embed
 follow-up enqueueing.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-8 - Phase 8 closeout**.
+Continue Phase 8 with **8-8 - live chunk-planning hook**.
 
 Expected scope:
 
-- Confirm the full verification matrix remains green.
-- Document the supported Hypa V3 memory model/provider paths and the
-  intentionally unsupported browser-local paths.
-- Update the live handoff to Phase 9 client thinning once Phase 8 exit
-  criteria are satisfied.
-- Keep the closeout concise; historical detail belongs in
-  `../phases-completed/`.
+- Wire the existing server chunk planner into a production path so a
+  server-backed chat with no memory rows can create `memory_chunks` and
+  enqueue `summarize` jobs after crossing the Hypa V3 window.
+- Decide whether the hook is a concrete `chunk` job handler or a
+  post-chat/post-assembly server task, then document the chosen boundary.
+- Keep prompt assembly non-blocking; missing summaries and embeddings
+  should continue to enqueue follow-up work best-effort.
+- Preserve the current memory API envelopes and browser adapter shapes.
 
 Out of scope for 8-8:
 
-- Embedding provider dispatch and query embedding generation.
-- Summary generation and embedding provider work in route handlers.
+- Query embedding generation.
+- Summary or embedding provider work inside route handlers.
 - Browser-local embedding runtimes.
 - Removing the legacy browser-local Hypa V3 runtime.
 - Bulk re-summary and per-summary metadata edits in server-backed mode.
@@ -44,28 +43,37 @@ Out of scope for 8-8:
 
 Implementation notes:
 
-- The browser adapter from 8-7b lives in
-  `src/ts/process/request/serverMemory.ts`.
-- It now contains both read/list/cancel helpers and the 8-7c
-  `applyServerHypaV3Progress` mapper.
-- The 8-7d UI lives in
+- `server/fastify/src/memoryChunkPlanner.ts` already exposes
+  `planHypaV3ChunkJobs`, which creates deterministic chunks and
+  idempotent `summarize` jobs from a standard Hypa V3 plan.
+- `server/fastify/src/memoryWorker.ts` still defaults `chunk` to
+  `noopMemoryJobHandler`; `embed` and `summarize` have real default
+  handlers wired from `server/fastify/src/app.ts`.
+- `server/fastify/src/prompt/memoryFollowups.ts` only enqueues
+  `summarize`/`embed` follow-ups for chunks that already exist; it cannot
+  recreate missing chunk windows safely.
+- The browser memory adapter lives in
+  `src/ts/process/request/serverMemory.ts` and preserves `{ chunks }`,
+  `{ summaries }`, `{ jobs }`, and `{ job }` envelopes.
+- The 8-7d memory job UI lives in
   `src/lib/Others/HypaV3Modal/server-memory-jobs.svelte` and is mounted
   by `src/lib/Others/HypaV3Modal.svelte` only when Fastify plus
   `DBState.db.useServerPromptAssembly` are active.
 - Local Hypa V3 editing remains available outside server-backed mode;
   server-backed mode treats the legacy modal summary list as read-only.
-- The 8-7e fixture parity assertions live in
-  `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`,
-  `src/ts/process/request/tests/serverMemory.test.ts`, and
-  `server/fastify/__tests__/assemble.test.ts`.
-- Preserve the no-compatibility-migrations policy: update current
-  Fastify/browser adapter shapes directly if the contract needs a tighter
-  shape.
+- Supported server summary path: `subModel` when it resolves to an
+  API-backed OpenAI-compatible provider (`openai`, `nanogpt`, or
+  `openrouter`).
+- Supported server embedding paths: `custom`, `ada`, `openai3small`,
+  `openai3large`, and `voyageContext3`. Browser-local models such as
+  MiniLM, Nomic, BGE, transformers.js, WebGPU, MLC, ONNX, and WebLLM
+  remain unsupported server-side.
 
 ## Queue After 8-7e
 
-1. 8-8 - Phase 8 closeout.
-2. Phase 9 - Client thinning.
+1. 8-8 - live chunk-planning hook.
+2. 8-9 - Phase 8 closeout.
+3. Phase 9 - Client thinning.
 
 ## Parallel Or Deferred
 
@@ -79,7 +87,7 @@ Implementation notes:
 ## Verification
 
 Run the relevant focused tests while implementing, then before closing a
-slice run:
+slice run the full matrix:
 
 ```bash
 pnpm check
@@ -93,58 +101,7 @@ Last recorded full baselines after 8-7e: `pnpm check` clean,
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-6d verification:
-
-```bash
-pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts
-pnpm check
-```
-
-8-6d passed the focused assembler/adapter files with 52 tests, and
-`pnpm check` was clean.
-
-Focused 8-7a verification:
-
-```bash
-pnpm exec vitest run server/fastify/__tests__/memoryReadRoutes.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts --config server/fastify/vitest.config.ts
-```
-
-8-7a passed the focused route files with 12 tests.
-
-Focused 8-7b verification:
-
-```bash
-pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts
-```
-
-8-7b passed the focused browser adapter file with 9 tests.
-
-Focused 8-7c verification:
-
-```bash
-pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts
-pnpm check
-```
-
-8-7c passed the focused browser adapter file with 11 tests, and
-`pnpm check` was clean.
-
-Focused/full 8-7d verification:
-
-```bash
-pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts
-pnpm check
-pnpm test
-pnpm api:test
-pnpm build
-```
-
-8-7d passed the focused browser adapter file with 11 tests, `pnpm check`
-was clean, `pnpm test` passed with 650 tests plus 4 skipped,
-`pnpm api:test` passed with 1048 tests, and `pnpm build` passed with the
-existing warning set.
-
-Focused/full 8-7e verification:
+Latest focused/full 8-7e verification:
 
 ```bash
 pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
@@ -169,7 +126,5 @@ existing warning set.
   [`../phases-completed/phase-8-memory-8-7e.md`](../phases-completed/phase-8-memory-8-7e.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
-- Phase 7 final summary:
-  [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md)
 - Server status: [`server.md`](server.md)
 - sendChat status: [`sendchat.md`](sendchat.md)

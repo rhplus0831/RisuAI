@@ -1,6 +1,6 @@
 # Test Coverage Shards
 
-Date: 2026-05-24
+Date: 2026-05-25
 
 Each shard is a list of what is pinned + a brief explanation of
 how to read or extend the tests. Phase 1, Phase 2, and Phase 3
@@ -11,13 +11,15 @@ tests cover the current `/api/v1/generate/completion` slices.
 Phase 7 now has `/chat` and `/preview-prompt` route tests, prompt
 leaf tests, token/preflight/budget/trigger tests, template renderer
 tests, assembler tests, and browser `/chat` adapter + preview wiring
-tests. Later helper routes and Phases 8-9 remain planning artifacts
-until their routes land.
+tests. Phase 8 now has memory job/read route coverage, focused memory
+service tests, browser memory adapter tests, and server-backed
+`hypav3-memory` fixture parity. Later helper routes and Phase 9 commands
+remain planning artifacts until their routes land.
 
 ## Shards
 
-- [`sendchat-fixtures.md`](sendchat-fixtures.md) - Phase 4 + 5
-  characterization fixtures.
+- [`sendchat-fixtures.md`](sendchat-fixtures.md) - local and
+  server-backed `sendChat` characterization fixtures.
 - [`server-routes.md`](server-routes.md) - Phase 1-3 + 6-9 route
   tests.
 - [`providers.md`](providers.md) - per-provider tests for

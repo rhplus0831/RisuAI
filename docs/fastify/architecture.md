@@ -35,6 +35,8 @@ server/fastify/
       legacyStorage.ts
       generation.ts       POST /api/v1/generate/completion
       generationChat.ts   POST /api/v1/generate/chat + preview-prompt
+      memoryJobs.ts       POST/GET/DELETE /api/v1/memory/jobs
+      memoryReads.ts      GET /api/v1/memory/chunks + summaries
     generation/
       frames.ts           shared completion result/frame types
       additionalParams.ts body/header overlay helper
@@ -53,9 +55,8 @@ server/fastify/
       openaiResponses.ts
       sigv4.ts            Bedrock signing helper
       vertexAuth.ts       Vertex AI service-account JWT exchange
-    events.ts           SSE event bus (planned Phase 9)
     tokenizer.ts        tiktoken + web-tokenizers encoders (planned helper)
-    generate/
+    generate/           target helper-route split, not current
       router.ts         POST /api/v1/generate/* routes
       providers/        one file per provider family
       streaming.ts      SSE forwarder + abort propagation
@@ -80,16 +81,24 @@ server/fastify/
       triggerVars.ts      trigger variable engine
       triggerDataEffects.ts  V2 safe data helpers
       triggers.ts         Phase 7-safe trigger runner
-    memory/
-      hypav3.ts         server-side Hypa V3 adapter
-      jobs.ts           async embedding + summary queue
-    media/
+    memoryRepository.ts        memory chunks, summaries, embeddings, jobs
+    memoryLegacyImport.ts      legacy hypaV3Data import/backfill
+    memoryPlanner.ts           Hypa V3 settings + standard planning
+    memoryChunkPlanner.ts      deterministic chunks + summarize jobs
+    memoryWorker.ts            in-process memory job worker
+    memoryEvents.ts            memory job/progress event contract
+    memorySummary*.ts          summary prompt/model/adapter/job handler
+    memoryEmbedding*.ts        embedding model/adapter/job handler
+    memorySelectionService.ts  prompt-facing read-only selection facade
+    memorySimilarityRanking.ts cosine ranking over supplied vectors
+    memoryBudgetAllocator.ts   pure summary bucket allocator
+    media/              planned helper routes, not current
       translate.ts      DeepL, DeepLX, Google
       tts.ts            OpenAI, ElevenLabs, NovelAI
       image.ts          DALL-E, Stability, etc.
-    plugins/
+    plugins/            planned trust helpers, no server execution
       mcp.ts            MCP trust gate (no execution yet)
-    util/
+    util/               planned shared helpers
       http.ts           shared fetch helpers
       errors.ts         typed errors with HTTP mapping
 ```
@@ -116,8 +125,9 @@ level, the current Fastify API covers:
 - Health, auth, bootstrap, JSON save import, assets, backups, optional
   static SPA serving, and legacy storage compatibility.
 - Proxy fetch, stream-job WebSocket, and Risu hub passthrough.
-- Auth-gated completion generation and chat / preview-prompt generation.
-- Phase 8 memory job surfaces as they land.
+- Auth-gated completion generation and chat / preview-prompt generation,
+  including `/chat` provider dispatch behind `db.useServerPromptAssembly`.
+- Phase 8 memory job/read routes plus server summary/embed job handlers.
 
 Planned later, with final shapes locked phase by phase:
 
@@ -201,14 +211,14 @@ At the target state, the server owns:
 - Outbound HTTP for generation providers covered by the
   server-backed adapter. Uncovered providers continue through the
   local browser dispatch path until a routed server slice lands.
-- Prompt assembly, tokenization, lorebook activation, and Hypa V3
-  memory after Phases 7-8 close. Today the Phase 7 variable,
-  static-section, plain-section, history, script, module, lorebook,
-  token/budget, trigger, template renderer, memory/cache card,
-  `assemblePrompt`, and chat-route surfaces are server-side. Preview
-  and preview-prompt can already use `/chat` behind
-  `db.useServerPromptAssembly`; live send/continue/regenerate remain
-  local until 7-12d adds mutation patches and provider dispatch.
+- Prompt assembly, tokenization, lorebook activation, and the routed
+  Hypa V3 memory surfaces. Today the Phase 7 variable, static-section,
+  plain-section, history, script, module, lorebook, token/budget,
+  trigger, template renderer, memory/cache card, `assemblePrompt`, and
+  chat-route surfaces are server-side. Preview, preview-prompt, and
+  send-like calls can use `/chat` behind `db.useServerPromptAssembly`.
+  Phase 8 still needs the live chunk-planning hook before fresh
+  server-backed chats accumulate memory automatically.
 
 Browser owns:
 

@@ -54,7 +54,7 @@ Results:
 
 ## Next Pickup
 
-Continue with 8-8 - Phase 8 closeout. Run or confirm the full verification
-matrix, document supported model/provider memory paths, and update the
-live handoff to Phase 9 client thinning once the closeout criteria are
-satisfied.
+Continue with 8-8 - live chunk-planning hook. A follow-up docs/code
+audit found that `planHypaV3ChunkJobs` is not wired into the live
+server-backed chat path yet, so Phase 8 closeout moves to 8-9 after that
+hook lands and the full verification matrix is confirmed.

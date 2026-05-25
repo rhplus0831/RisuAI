@@ -2,9 +2,8 @@
 
 Date: 2026-05-25
 
-This is the live Fastify migration handoff. It replaces the former root
-handoff and roadmap files, which were removed so this status tree is the
-single place for current pickup state.
+This is the live Fastify migration handoff: current pickup state,
+blockers, and links to the detailed runbook.
 
 Policy note: there are no actual Fastify users yet, so this process does
 not need compatibility migrations. Update the current schema and import
@@ -17,35 +16,14 @@ Completed phase detail and old landed-slice logs live in
 
 - Active phase: Phase 8, Hypa V3 memory.
 - Last landed slice: 8-7e, `hypav3-memory` fixture parity.
-- Current blocker: none recorded.
-- Next default pickup: 8-8, Phase 8 closeout.
+- Current gap: the live server path has summarize/embed handlers and
+  memory read/job/browser surfaces, but it does not yet call the
+  chunk-planning helper; the default `chunk` job handler is still a no-op.
+- Next default pickup: 8-8, live chunk-planning hook.
 - Last recorded full baselines after 8-7e: `pnpm check` clean,
   `pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1048 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Last recorded full baselines after 8-7d: `pnpm check` clean,
-  `pnpm test` 650 tests plus 4 skipped, `pnpm api:test` 1048 tests, and
-  `pnpm build` passing with existing CSS `::highlight`, browser
-  externalization, plugin-timing, and chunk-size warnings.
-- Last recorded full baselines after 8-6c: `pnpm check` clean,
-  `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 1039 tests, and
-  `pnpm build` passing with existing CSS `::highlight`, browser
-  externalization, plugin-timing, and chunk-size warnings.
-- Focused verification after 8-6d:
-  `pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts`
-  passed with 52 tests; `pnpm check` was clean.
-- Focused verification after 8-7a:
-  `pnpm exec vitest run server/fastify/__tests__/memoryReadRoutes.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts --config server/fastify/vitest.config.ts`
-  passed with 12 tests.
-- Focused verification after 8-7b:
-  `pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts`
-  passed with 9 tests.
-- Focused verification after 8-7c:
-  `pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts`
-  passed with 11 tests; `pnpm check` was clean.
-- Focused verification after 8-7d:
-  `pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts`
-  passed with 11 tests; full verification also passed.
 - Focused verification after 8-7e:
   `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
   passed with 27 tests;
@@ -74,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-8 Phase 8 closeout.                                  |
+| Hypa V3 memory                              | Active; next slice is 8-8 live chunk-planning hook.                          |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules

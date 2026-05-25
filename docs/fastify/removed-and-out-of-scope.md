@@ -1,6 +1,6 @@
 # Removed and Out-of-Scope Behavior
 
-Date: 2026-05-22
+Date: 2026-05-25
 
 This is the canonical registry of what the migration deletes and
 what it intentionally does not touch. When a question comes up
@@ -65,13 +65,12 @@ does not extend or replace them.
 These behaviors stay browser-only by design. The server does not
 host them and never will under this roadmap.
 
-- **TTS playback.** `sayTTS` audio playback. The server can call a
-  TTS provider (Phase 6 `/api/v1/generate/tts`) and return the
-  audio blob; playback happens in the browser's tab.
+- **TTS playback.** `sayTTS` audio playback. A future server helper may
+  call a TTS provider and return audio bytes; playback still happens in
+  the browser's tab.
 - **Image preview / inlay rendering.** `runInlayScreen`,
-  `stableDiff` user-facing display. The server can call image
-  generation providers (Phase 6 `/api/v1/generate/image`); the
-  browser renders the result.
+  `stableDiff` user-facing display. A future server helper may call image
+  generation providers; the browser renders the result.
 - **Browser image embedding.** `runImageEmbedding` from
   `@huggingface/transformers`. This is a `transformers.js` model
   loaded in the browser. The server does not run it.

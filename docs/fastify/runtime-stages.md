@@ -15,8 +15,10 @@ the future server modules; they are trace anchors.
 Phases 5, 6, and 7 are closed: `sendChat` has visible helper seams,
 completion dispatch is server-routed for the covered provider matrix, and
 prompt assembly / chat dispatch can run through Fastify behind the
-server-backed gate. Phase 8 is moving Hypa V3 memory into server tables
-and jobs. The ownership described below is the migration target.
+server-backed gate. Phase 8 has moved ready-memory reads, summarize/embed
+jobs, and browser memory surfaces server-side; the live chunk-planning
+hook is still open. The ownership described below is the migration
+target.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -58,7 +60,7 @@ Owner (after migration): server.
   `{{user}}` / `{{char}}` / variables; resolves persona, description,
   author note, example messages, scenario, jailbreak.
 - Activates lorebook entries (constant + keyword + recursion budget).
-- Pulls Hypa V3 memory summaries for the budget window.
+- Pulls ready Hypa V3 memory summaries for the budget window.
 - Computes the final OpenAI-shaped `messages[]` payload.
 - Runs prompt/request-state triggers through the server-safe trigger
   runner.
@@ -133,7 +135,8 @@ the delegated post-generation helpers under
 - Phase 7 (`phases/phase-7-prompt-assembly.md`) moved Stage 2
   (prompt assembly) server-side and closed the `/chat` dispatch path.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
-  server-side resource that Stage 2 reads from.
+  server-side resource that Stage 2 reads from; its remaining work is the
+  live chunk-planning hook for fresh server-backed chats.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1
   (validate + persist) server-side and reduces Stage 0 to a thin
   bridge.
