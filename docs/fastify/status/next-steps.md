@@ -107,19 +107,34 @@ existing settings command bridge:
   `src/ts/compatibilityAdapters.test.ts`, and
   `src/ts/server/commands.test.ts`.
 
+9-5e-i then added the projection write gate foundation:
+
+- `src/ts/storage/database.svelte.ts` now exposes an opt-in Fastify
+  projection write guard and `applyServerProjectionDatabase()` trusted
+  replacement helper.
+- Initial server bootstrap and event-triggered re-bootstrap writes now use
+  the trusted projection helper instead of calling `setDatabase` directly.
+- Focused bootstrap coverage proves trusted projection replacement still
+  works, direct guarded Fastify projection writes fail loudly when enabled,
+  and local web writes remain unguarded.
+- The guard is not yet integrated with command optimistic/rollback paths;
+  that remains the next sub-slice.
+
 ## Immediate Pickup
 
-Immediate pickup: **9-5e-i - Projection write gate foundation**.
+Immediate pickup: **9-5e-ii - Command bridge guard integration**.
 
-- Add the server-backed read-only `DBState.db` guard primitive.
-- Add trusted projection replacement helpers for bootstrap and
-  event-triggered re-bootstrap writes.
+- Route command-owned optimistic updates and rollback paths through
+  trusted guard-compatible write scopes, or remove local writes where the
+  bootstrap projection refresh is authoritative.
 - Keep Tauri/local mode untouched.
+- Do not add new command endpoints.
 - Do not broaden this slice into residual write fixes, storage/provider
   gating, server-side `.risu` import/export, asset byte changes,
-  server-side plugin execution, or per-event surgical browser patches.
-- If the guard reveals missed durable writes, split them into follow-up
-  residual slices instead of folding them into the guard foundation.
+  server-side plugin execution, per-event surgical browser patches, or
+  full fixture-path guard enablement.
+- If command-bridge guard work reveals missed durable writes, split them
+  into follow-up residual slices instead of folding them into 9-5e-ii.
 
 Implementation notes:
 
@@ -153,33 +168,32 @@ Implementation notes:
   dedicated server-owned paths.
 - Several direct-write search hits are expected rollback helpers,
   optimistic command updates, projection replacement writes, or
-  runtime-only state. The guard foundation should distinguish those
-  classes instead of mechanically deleting every local assignment.
+  runtime-only state. 9-5e-ii should distinguish those classes instead of
+  mechanically deleting every local assignment.
 
 ## Later Queue
 
-1. 9-5e-i - Projection write gate foundation.
-2. 9-5e-ii - Command bridge guard integration.
-3. 9-5e-iii - Guard audit closeout.
-4. 9-6a - Server-backed persistence gate.
-5. 9-6b - Asset byte gate.
-6. 9-6c - Server backup/restore projection.
-7. 9-6d - Residual local cache classification.
-8. 9-6e - Provider secret masking.
-9. 9-7a - `.risu` fixture corpus and codec harness.
-10. 9-7b - Legacy envelope codec port.
-11. 9-7c - RISUSAVE block codec port.
-12. 9-7d - Decode normalization and validation.
-13. 9-7e - Repository-backed export adapter.
-14. 9-8a - Multipart `.risu` import route.
-15. 9-8b - Repository `.risu` export route.
-16. 9-8c - Asset reference walker.
-17. 9-8d - Bundle export route.
-18. 9-9a - Server-backed browser smoke harness.
-19. 9-9b - Generation and memory fixture closeout.
-20. 9-9c - Server-backed storage-write audit.
-21. 9-9d - Manual Fastify web and Tauri local verification.
-22. 9-9e - Phase 9 docs closeout.
+1. 9-5e-ii - Command bridge guard integration.
+2. 9-5e-iii - Guard audit closeout.
+3. 9-6a - Server-backed persistence gate.
+4. 9-6b - Asset byte gate.
+5. 9-6c - Server backup/restore projection.
+6. 9-6d - Residual local cache classification.
+7. 9-6e - Provider secret masking.
+8. 9-7a - `.risu` fixture corpus and codec harness.
+9. 9-7b - Legacy envelope codec port.
+10. 9-7c - RISUSAVE block codec port.
+11. 9-7d - Decode normalization and validation.
+12. 9-7e - Repository-backed export adapter.
+13. 9-8a - Multipart `.risu` import route.
+14. 9-8b - Repository `.risu` export route.
+15. 9-8c - Asset reference walker.
+16. 9-8d - Bundle export route.
+17. 9-9a - Server-backed browser smoke harness.
+18. 9-9b - Generation and memory fixture closeout.
+19. 9-9c - Server-backed storage-write audit.
+20. 9-9d - Manual Fastify web and Tauri local verification.
+21. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -242,6 +256,9 @@ Focused 9-5 runs:
   `pnpm check`
   - 30 process/runtime tests passed; 44 compatibility/command tests
     passed; check clean.
+- 9-5e-i: `pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts`;
+  `pnpm check`
+  - 9 bootstrap/projection tests passed; check clean.
 - 9-5e sub-slices: run the nearest focused guard/projection tests touched
   by the sub-slice, then `pnpm check` before marking that sub-slice done.
 
@@ -254,7 +271,7 @@ Focused 9-5 runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-5d-v.md`](../phases-completed/phase-9-client-thinning-9-5d-v.md)
+  [`../phases-completed/phase-9-client-thinning-9-5e-i.md`](../phases-completed/phase-9-client-thinning-9-5e-i.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

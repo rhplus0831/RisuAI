@@ -11,6 +11,7 @@ import { changeFullscreen, checkNullish, sleep } from './util'
 import { v4 as uuidv4 } from 'uuid'
 import { get } from 'svelte/store'
 import {
+  applyServerProjectionDatabase,
   setDatabase,
   defaultSdDataFunc,
   getDatabase,
@@ -212,7 +213,7 @@ export async function loadWebInitialDatabase() {
         bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
       )
     }
-    setDatabase(bootstrap.projection.database ?? ({} as Database))
+    applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
     await startServerProjectionEvents()
     return
   }
@@ -309,7 +310,7 @@ async function refreshServerProjection() {
       serverProjectionRefreshPending = false
       const bootstrap = await fetchServerBootstrapProjection()
       if (bootstrap.status === 'ok') {
-        setDatabase(bootstrap.projection.database ?? ({} as Database))
+        applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
       } else if (bootstrap.status === 'error') {
         console.warn(`Server projection refresh failed: ${bootstrap.error}`)
       }

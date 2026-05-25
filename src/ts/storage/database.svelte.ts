@@ -17,7 +17,7 @@ import {
   createHypaV3Preset,
 } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
-import { isTauri, isNodeServer } from 'src/ts/platform'
+import { isTauri, isNodeServer, isFastifyServer } from 'src/ts/platform'
 import { safeStructuredClone } from '../polyfill'
 import {
   canUseServerCommands,
@@ -41,6 +41,9 @@ import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from '../chatC
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = '2026.4.181' //<APP_VERSION_POINT>
 export let webAppSubVer = ''
+
+let serverProjectionWriteGuardEnabled = false
+const frozenServerProjectionTargets = new WeakSet<object>()
 
 function createClientPresetId() {
   return crypto.randomUUID()
@@ -785,8 +788,48 @@ export function setDatabase(data: Database) {
   setDatabaseLite(data)
 }
 
+export function applyServerProjectionDatabase(data: Database) {
+  return withTrustedServerProjectionWrite(() => setDatabase(data))
+}
+
+export function setServerProjectionWriteGuardEnabled(enabled: boolean) {
+  serverProjectionWriteGuardEnabled = enabled
+  if (enabled && isFastifyServer && DBState.db && typeof DBState.db === 'object') {
+    DBState.db = createReadOnlyServerProjection($state.snapshot(DBState.db) as Database)
+  }
+}
+
+export function isServerProjectionWriteGuardEnabled() {
+  return serverProjectionWriteGuardEnabled && isFastifyServer
+}
+
+function withTrustedServerProjectionWrite<T>(callback: () => T): T {
+  return callback()
+}
+
+function createReadOnlyServerProjection<T extends object>(target: T): T {
+  freezeServerProjectionTarget(target)
+  return target
+}
+
+function freezeServerProjectionTarget(target: object) {
+  if (frozenServerProjectionTargets.has(target)) return
+  frozenServerProjectionTargets.add(target)
+
+  for (const key of Reflect.ownKeys(target)) {
+    const value = Reflect.get(target, key)
+    if (value && typeof value === 'object') {
+      freezeServerProjectionTarget(value)
+    }
+  }
+  Object.freeze(target)
+}
+
 export function setDatabaseLite(data: Database) {
-  DBState.db = data
+  DBState.db =
+    serverProjectionWriteGuardEnabled && isFastifyServer
+      ? createReadOnlyServerProjection(data)
+      : data
 }
 
 interface getDatabaseOptions {

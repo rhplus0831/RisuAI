@@ -89,6 +89,7 @@ track the next piece of work.
 | 9-5d-iii - 9-3 character/chat UI tails  | [`phase-9-client-thinning-9-5d-iii.md`](phase-9-client-thinning-9-5d-iii.md)           | Character/chat residual audit, compact chat selection, and cold-storage guard.   |
 | 9-5d-iv - 9-4 extension UI/API tails    | [`phase-9-client-thinning-9-5d-iv.md`](phase-9-client-thinning-9-5d-iv.md)             | Extension residual audit, plugin theme commands, and module-integration bridge.  |
 | 9-5d-v - Process/runtime writes         | [`phase-9-client-thinning-9-5d-v.md`](phase-9-client-thinning-9-5d-v.md)               | Generation/scriptstate classification, memory gating, and MCP refresh bridge.    |
+| 9-5e-i - Projection write gate           | [`phase-9-client-thinning-9-5e-i.md`](phase-9-client-thinning-9-5e-i.md)               | Opt-in read-only projection guard and trusted bootstrap/event refresh writes.    |
 
 ## Historical Status Logs
 

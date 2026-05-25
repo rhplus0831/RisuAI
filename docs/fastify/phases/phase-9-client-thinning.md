@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5d-v - Process/runtime durable-write classification**. Next pickup:
-**9-5e-i - Projection write gate foundation**.
+**9-5e-i - Projection write gate foundation**. Next pickup:
+**9-5e-ii - Command bridge guard integration**.
 
 ## Goal
 
@@ -222,11 +222,10 @@ surfaces.
     server-backed web writes assigned to 9-2 through 9-4, but keep the
     work split by mutation family instead of treating the whole residual
     audit as one implementation change.
-    - Status: active. Residual passes routed character asset helper
-      writes, legacy chat v1 imports, and lorebook local activation
-      through existing commands, and made server-backed `.risum` module
-      import paths explicitly unsupported. Continue with the smaller
-      sub-slices before 9-5e.
+    - Status: complete. Residual passes routed character asset helper
+      writes, legacy chat v1 imports, lorebook local activation, process/
+      runtime durable writes, and MCP refresh-token persistence through
+      existing commands or explicit server-backed gates.
     - **9-5d-i - Settings residual command sweep.** Complete. Routed
       residual settings-style writes in manual settings pages/components
       through existing settings command watchers and kept resource-owned
@@ -264,6 +263,8 @@ surfaces.
       read-only guard primitive and trusted projection replacement helpers for
       bootstrap/event refresh writes. No residual write fixes, storage gating,
       or Tauri/local behavior changes.
+      - Status: complete. Closeout:
+        [`../phases-completed/phase-9-client-thinning-9-5e-i.md`](../phases-completed/phase-9-client-thinning-9-5e-i.md).
     - **9-5e-ii - Command bridge guard integration.** Route command-owned
       optimistic updates and rollback paths through trusted write scopes, or
       remove local writes where projection refresh is authoritative. No new

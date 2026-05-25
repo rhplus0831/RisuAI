@@ -125,6 +125,10 @@ vi.mock('./model/modellist', async (importActual) => {
 })
 
 import { loadWebInitialDatabase } from './bootstrap'
+import {
+  isServerProjectionWriteGuardEnabled,
+  setServerProjectionWriteGuardEnabled,
+} from './storage/database.svelte'
 import { DBState, LoadingStatusState } from './stores.svelte'
 
 beforeEach(() => {
@@ -149,6 +153,7 @@ beforeEach(() => {
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
   forageSpies.setItem.mockClear()
+  setServerProjectionWriteGuardEnabled(false)
   DBState.db = {} as any
   LoadingStatusState.text = ''
 })
@@ -200,6 +205,55 @@ describe('web bootstrap startup source', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('blocks direct Fastify projection writes after the guard is enabled', async () => {
+    vi.useFakeTimers()
+    try {
+      await loadWebInitialDatabase()
+      setServerProjectionWriteGuardEnabled(true)
+
+      expect(isServerProjectionWriteGuardEnabled()).toBe(true)
+      expect(() => {
+        DBState.db.language = 'ja'
+      }).toThrow()
+
+      serverBootstrapState.response = {
+        status: 'ok',
+        projection: {
+          revision: 6,
+          database: {
+            characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }],
+            modules: [],
+            personas: [],
+            language: 'ko',
+          },
+        },
+      }
+
+      const subscription = serverEventsState.subscriptions[0]
+      subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
+
+      await vi.advanceTimersByTimeAsync(100)
+      expect(DBState.db.language).toBe('ko')
+      expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [] }])
+      expect(() => {
+        DBState.db.characters.push({ chaId: 'char-b', name: 'Babbage', chats: [] } as any)
+      }).toThrow()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves local web database writes unguarded', async () => {
+    platformState.isFastifyServer = false
+
+    await loadWebInitialDatabase()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(isServerProjectionWriteGuardEnabled()).toBe(false)
+    DBState.db.language = 'ja'
+    expect(DBState.db.language).toBe('ja')
   })
 
   it('does not subscribe to server events outside Fastify mode', async () => {

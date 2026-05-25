@@ -15,12 +15,12 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-5d-v process/runtime durable-write
-  classification. Server-backed sendChat entry-context writes now use
-  existing commands, legacy Hypa V3 DB writeback is gated, and MCP
-  refresh tokens dispatch settings commands.
-- Current gap: the read-only `DBState.db` guard is not enabled yet.
-- Next default pickup: 9-5e-i, projection write gate foundation.
+- Last landed work: 9-5e-i projection write gate foundation. Fastify
+  projection replacement now uses trusted bootstrap/event-refresh helpers,
+  and an opt-in read-only `DBState.db` guard primitive is available.
+- Current gap: command optimistic/rollback writes are not integrated with
+  trusted guard scopes yet.
+- Next default pickup: 9-5e-ii, command bridge guard integration.
 - Last recorded full baselines after the 9-5d first pass: `pnpm check`
   clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
   tests, and `pnpm build` passing with existing CSS `::highlight`,
@@ -51,7 +51,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-5d-v landed; continue with 9-5e-i projection guard foundation. |
+| Client thinning                             | Active; 9-5e-i landed; continue with 9-5e-ii command bridge guard integration. |
 
 ## Maintenance Rules
 
