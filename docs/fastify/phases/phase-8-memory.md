@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: in progress. Completed through
-**8-7a - Chunk + summary read routes**.
-Next slice: **8-7b - Browser memory API adapter**.
+**8-7b - Browser memory API adapter**.
+Next slice: **8-7c - Browser progress listener**.
 
 ## Goal
 
@@ -124,6 +124,11 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   current repository row shapes in `{ chunks }` / `{ summaries }`
   envelopes, preserve repository ordering, and validate empty model
   filters.
+- The 8-7b browser adapter slice exposes a gated Fastify memory client
+  from `src/ts/process/request/serverMemory.ts`. It authenticates with
+  `getNodeServerProxyAuth`, preserves `{ chunks }`, `{ summaries }`,
+  `{ jobs }`, and `{ job }` envelopes directly, and hides route details
+  from later browser progress/list UI slices.
 
 ## Scope
 
@@ -187,7 +192,7 @@ browser progress store.
     `GET /api/v1/memory/chunks/:chatId` and
     `GET /api/v1/memory/summaries/:chatId?model=...`.
   - **8-7b - Browser memory API adapter.** Thin server-backed client for
-    chunks, summaries, job listing, and cancellation.
+    chunks, summaries, job listing, and cancellation. Done.
   - **8-7c - Browser progress listener.** Wire server memory progress
     into the existing `hypaV3ProgressStore` shape.
   - **8-7d - Memory job list/cancel UI path.** Add minimal pending /
