@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: in progress. Completed through
-**8-7e - `hypav3-memory` fixture parity**.
-Next slice: **8-8 - live chunk-planning hook**.
+**8-8 - live chunk-planning hook**.
+Next slice: **8-9 - Phase 8 closeout**.
 
 ## Goal
 
@@ -143,10 +143,15 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
 - The 8-7e fixture parity slice pins the server-backed `hypav3-memory`
   prompt path, Fastify `hypav3_progress` browser side effect, memory
   job list/cancel envelopes, and missing-memory follow-up diagnostics.
-- Current open gap: `planHypaV3ChunkJobs` exists and is tested, but the
-  live server-backed chat path does not yet call it. The default `chunk`
-  job handler remains a no-op; `summarize` and `embed` have real default
-  handlers.
+- The 8-8 live chunk-planning hook runs the standard Hypa V3 planner from
+  prompt assembly before prompt-memory selection. It creates deterministic
+  chunks, enqueues idempotent `summarize` jobs, records
+  `promptMemoryChunkPlanningDiagnostics`, and keeps planner validation
+  failures non-blocking. The default `chunk` job handler remains a no-op
+  by design; live chunk planning uses the prompt assembly context rather
+  than a queued chunk snapshot.
+- Current open gap: Phase 8 closeout needs full verification and handoff
+  cleanup before Phase 9 client thinning starts.
 
 ## Scope
 
@@ -168,8 +173,9 @@ belong in `extension_fields`.
 
 ### Job Queue
 
-- Jobs are kinds: `chunk`, `embed`, `summarize`; `chunk` is reserved
-  until 8-8 wires the live chunk-planning hook.
+- Jobs are kinds: `chunk`, `embed`, `summarize`; `chunk` remains
+  reserved/no-op after 8-8 because live chunk planning is prompt-assembly
+  driven.
 - The server runs a single in-process worker over `memory_jobs`.
 - Queue transitions emit memory progress events on the existing event
   stream.
@@ -191,10 +197,12 @@ belong in `extension_fields`.
 
 `prompt/memory.ts` from Phase 7 stops calling the browser's
 `hypaMemoryV3` and reads selected `memory_summaries` rows for the active
-chat. Summarization and embedding remain out of the prompt request hot
-path; missing summaries and embeddings for existing chunks queue
-follow-up work best-effort. Creating new chunks from fresh chat history
-is the remaining 8-8 hook.
+chat. `prompt/assemble.ts` now runs the live chunk-planning hook before
+prompt-memory selection, so fresh chat history can create
+`memory_chunks` and enqueue `summarize` jobs after crossing the Hypa V3
+window. Summarization and embedding provider calls remain out of the
+prompt request hot path; missing summaries and embeddings for existing
+chunks queue follow-up work best-effort.
 
 ### Browser Changes
 
@@ -206,10 +214,6 @@ existing browser progress store.
 
 ## Remaining Slice Plan
 
-- **8-8 - Live chunk-planning hook.** Connect
-  `planHypaV3ChunkJobs` to production so a server-backed chat with no
-  memory rows can create chunks and enqueue summarize work after crossing
-  the configured Hypa V3 window. Keep prompt assembly non-blocking.
 - **8-9 - Phase 8 closeout.** Run the full verification matrix, confirm
   the supported/unsupported memory provider paths below, and flip handoff
   docs to Phase 9 once exit criteria are satisfied.

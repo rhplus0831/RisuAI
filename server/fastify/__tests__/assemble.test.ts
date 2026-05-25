@@ -3,11 +3,13 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { openDatabase } from '../src/db.js'
 import {
   createMemoryChunk,
   createMemoryEmbedding,
   createMemorySummary,
+  listMemoryChunks,
   listMemoryJobs,
 } from '../src/memoryRepository.js'
 import { EntityNotFoundError } from '../src/repository.js'
@@ -219,6 +221,26 @@ function seedPromptMemory(
     model: 'embedding-model',
     vector: [1, 0],
   })
+}
+
+function chunkPlanningHistory(): OpenAIChat[] {
+  return [
+    {
+      role: 'user',
+      content: 'alpha '.repeat(80),
+      memo: 'memo-a',
+    },
+    {
+      role: 'assistant',
+      content: 'bravo '.repeat(80),
+      memo: 'memo-b',
+    },
+    {
+      role: 'user',
+      content: 'charlie '.repeat(80),
+      memo: 'memo-c',
+    },
+  ]
 }
 
 describe('Phase 7-11a createEmptyUnformatedSlots', () => {
@@ -645,6 +667,152 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         content: '<Previous Conversation>selected summary</Previous Conversation>',
       })
       expect(state.unformated.lastChat.at(-1)?.content).toBe('hi there')
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('plans missing Hypa chunks and summarize jobs before prompt memory selection', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      const db = memoryEnabledDatabase({
+        maxContext: 100,
+        maxResponse: 0,
+        hypaV3Presets: [
+          {
+            name: 'Test',
+            settings: {
+              summarizationModel: 'summary-model',
+              memoryTokensRatio: 0.2,
+              recentMemoryRatio: 0,
+              similarMemoryRatio: 1,
+              maxChatsPerSummary: 2,
+              queryChatCount: 1,
+            },
+          },
+        ] as never,
+      })
+      const history = chunkPlanningHistory()
+
+      const first = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [],
+        }),
+      )
+      first.historyMessages = structuredClone(history)
+      first.currentTokens = 99
+      fillMemoryAndPostHistory(first)
+
+      expect(first.stopSending).not.toBe(true)
+      expect(first.promptMemoryChunkPlanningDiagnostics).toMatchObject({
+        attempted: true,
+        chunksCreated: 1,
+        jobsCreated: 1,
+        plannedWindows: 1,
+        plannerErrors: [],
+        errors: [],
+      })
+      const chunks = listMemoryChunks(memoryDb, { chatId: 'chat-1' })
+      expect(chunks).toHaveLength(1)
+      expect(chunks[0]).toMatchObject({
+        chatId: 'chat-1',
+        messageId: 'memo-b',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        status: 'pending',
+      })
+      expect(chunks[0].text).toContain('user: alpha')
+      expect(chunks[0].text).toContain('assistant: bravo')
+
+      const jobs = listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'summarize' })
+      expect(jobs).toHaveLength(1)
+      expect(jobs[0]).toMatchObject({
+        chatId: 'chat-1',
+        kind: 'summarize',
+        status: 'pending',
+        payload: {
+          chunkId: chunks[0].id,
+          model: 'summary-model',
+          rangeStartSeq: 0,
+          rangeEndSeq: 1,
+          messageIndexes: [0, 1],
+          chatMemos: ['memo-a', 'memo-b'],
+        },
+      })
+
+      const second = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [],
+        }),
+      )
+      second.historyMessages = structuredClone(history)
+      second.currentTokens = 99
+      fillMemoryAndPostHistory(second)
+
+      expect(second.promptMemoryChunkPlanningDiagnostics).toMatchObject({
+        attempted: true,
+        chunksCreated: 0,
+        jobsCreated: 0,
+        plannedWindows: 1,
+        errors: [],
+      })
+      expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' })).toHaveLength(1)
+      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'summarize' })).toHaveLength(1)
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('keeps prompt assembly running when chunk planning reports validation errors', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      const db = memoryEnabledDatabase({
+        maxContext: 100,
+        maxResponse: 0,
+        hypaV3Presets: [
+          {
+            name: 'Invalid',
+            settings: {
+              summarizationModel: 'summary-model',
+              memoryTokensRatio: 0.2,
+              recentMemoryRatio: 0,
+              similarMemoryRatio: 1,
+              maxChatsPerSummary: 0,
+              queryChatCount: 1,
+            },
+          },
+        ] as never,
+      })
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [],
+        }),
+      )
+      state.historyMessages = chunkPlanningHistory()
+      state.currentTokens = 99
+
+      fillMemoryAndPostHistory(state)
+
+      expect(state.stopSending).not.toBe(true)
+      expect(state.promptMemoryChunkPlanningDiagnostics).toMatchObject({
+        attempted: true,
+        chunksCreated: 0,
+        jobsCreated: 0,
+        plannedWindows: 0,
+        errors: [],
+      })
+      expect(state.promptMemoryChunkPlanningDiagnostics?.plannerErrors).toEqual([
+        'maxChatsPerSummary must be a positive integer.',
+      ])
+      expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' })).toEqual([])
+      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' })).toEqual([])
+      expect(state.unformated.lastChat.at(-1)?.content).toBe('charlie '.repeat(80))
     } finally {
       memoryDb.close()
     }

@@ -10,29 +10,27 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-8-7e added server-backed `hypav3-memory` fixture parity. The `/chat`
-fixture pins the rendered `hypaMemory` row, applies a Fastify
-`hypav3_progress` terminal side effect into `hypaV3ProgressStore`,
-preserves memory job list/cancel envelopes through the browser adapter,
-and asserts missing-memory diagnostics for best-effort summarize/embed
-follow-up enqueueing.
+8-8 wired the live chunk-planning hook into server prompt assembly. The
+assembler now runs the standard Hypa V3 planner before prompt-memory
+selection, creates deterministic `memory_chunks`, and enqueues
+idempotent `summarize` jobs when the active chat crosses the configured
+Hypa V3 window. The hook is a best-effort prompt-assembly task, not a
+concrete `chunk` worker handler; prompt rendering continues when planner
+validation reports errors.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-8 - live chunk-planning hook**.
+Continue Phase 8 with **8-9 - Phase 8 closeout**.
 
 Expected scope:
 
-- Wire the existing server chunk planner into a production path so a
-  server-backed chat with no memory rows can create `memory_chunks` and
-  enqueue `summarize` jobs after crossing the Hypa V3 window.
-- Decide whether the hook is a concrete `chunk` job handler or a
-  post-chat/post-assembly server task, then document the chosen boundary.
-- Keep prompt assembly non-blocking; missing summaries and embeddings
-  should continue to enqueue follow-up work best-effort.
-- Preserve the current memory API envelopes and browser adapter shapes.
+- Run the full verification matrix and record the 8-8 baseline.
+- Confirm the Phase 8 exit criteria in
+  [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md).
+- Update the live handoff to Phase 9 once the closeout is complete.
+- Keep completed logs in [`../phases-completed/`](../phases-completed/).
 
-Out of scope for 8-8:
+Out of scope for 8-9:
 
 - Query embedding generation.
 - Summary or embedding provider work inside route handlers.
@@ -46,8 +44,14 @@ Implementation notes:
 - `server/fastify/src/memoryChunkPlanner.ts` already exposes
   `planHypaV3ChunkJobs`, which creates deterministic chunks and
   idempotent `summarize` jobs from a standard Hypa V3 plan.
+- `server/fastify/src/prompt/assemble.ts` calls that planner as a
+  prompt-assembly hook before `selectPromptMemory`; it records
+  `promptMemoryChunkPlanningDiagnostics` and catches planner failures so
+  prompt assembly remains non-blocking.
 - `server/fastify/src/memoryWorker.ts` still defaults `chunk` to
-  `noopMemoryJobHandler`; `embed` and `summarize` have real default
+  `noopMemoryJobHandler`; this is intentional after 8-8 because live
+  chunk planning is driven from the prompt assembly context instead of a
+  queued chunk snapshot. `embed` and `summarize` have real default
   handlers wired from `server/fastify/src/app.ts`.
 - `server/fastify/src/prompt/memoryFollowups.ts` only enqueues
   `summarize`/`embed` follow-ups for chunks that already exist; it cannot
@@ -69,11 +73,10 @@ Implementation notes:
   MiniLM, Nomic, BGE, transformers.js, WebGPU, MLC, ONNX, and WebLLM
   remain unsupported server-side.
 
-## Queue After 8-7e
+## Queue After 8-8
 
-1. 8-8 - live chunk-planning hook.
-2. 8-9 - Phase 8 closeout.
-3. Phase 9 - Client thinning.
+1. 8-9 - Phase 8 closeout.
+2. Phase 9 - Client thinning.
 
 ## Parallel Or Deferred
 
@@ -96,34 +99,31 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-7e: `pnpm check` clean,
-`pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1048 tests, and
+Last recorded full baselines after 8-8: `pnpm check` clean,
+`pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1050 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Latest focused/full 8-7e verification:
+Latest focused/full 8-8 verification:
 
 ```bash
-pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
-pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts
-pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts
+pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/memoryChunkPlanner.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 pnpm test
 pnpm api:test
 pnpm build
 ```
 
-8-7e passed the server-backed fixture file with 27 tests, the browser
-memory adapter file with 12 tests, the focused Fastify assembler/adapter
-files with 52 tests, `pnpm check` clean, `pnpm test` with 652 tests plus
-4 skipped, `pnpm api:test` with 1048 tests, and `pnpm build` with the
-existing warning set.
+8-8 focused verification passed with 50 tests. `pnpm check` was clean,
+`pnpm test` passed with 652 tests plus 4 skipped, `pnpm api:test`
+passed with 1050 tests, and `pnpm build` passed with the existing
+warning set.
 
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-7e.md`](../phases-completed/phase-8-memory-8-7e.md)
+  [`../phases-completed/phase-8-memory-8-8.md`](../phases-completed/phase-8-memory-8-8.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

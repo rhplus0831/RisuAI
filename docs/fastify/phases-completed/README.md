@@ -57,6 +57,7 @@ track the next piece of work.
 | 8-7c - Browser progress listener        | [`phase-8-memory-8-7c.md`](phase-8-memory-8-7c.md)                                     | Gated `hypav3_progress` side effects into `hypaV3ProgressStore`.        |
 | 8-7d - Memory job list/cancel UI        | [`phase-8-memory-8-7d.md`](phase-8-memory-8-7d.md)                                     | Fastify-gated Hypa V3 modal job list, refresh, and cancellation.        |
 | 8-7e - `hypav3-memory` fixture parity   | [`phase-8-memory-8-7e.md`](phase-8-memory-8-7e.md)                                     | Server-backed memory fixture, progress, list/cancel, and diagnostics.   |
+| 8-8 - Live chunk-planning hook          | [`phase-8-memory-8-8.md`](phase-8-memory-8-8.md)                                       | Prompt-assembly chunk planning and idempotent summarize job enqueue.    |
 
 ## Historical Status Logs
 

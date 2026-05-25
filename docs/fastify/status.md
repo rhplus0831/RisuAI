@@ -15,22 +15,17 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 8, Hypa V3 memory.
-- Last landed slice: 8-7e, `hypav3-memory` fixture parity.
-- Current gap: the live server path has summarize/embed handlers and
-  memory read/job/browser surfaces, but it does not yet call the
-  chunk-planning helper; the default `chunk` job handler is still a no-op.
-- Next default pickup: 8-8, live chunk-planning hook.
-- Last recorded full baselines after 8-7e: `pnpm check` clean,
-  `pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1048 tests, and
+- Last landed slice: 8-8, live chunk-planning hook.
+- Current gap: Phase 8 needs closeout verification and handoff cleanup
+  before Phase 9 client thinning starts.
+- Next default pickup: 8-9, Phase 8 closeout.
+- Last recorded full baselines after 8-8: `pnpm check` clean,
+  `pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1050 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
-- Focused verification after 8-7e:
-  `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-  passed with 27 tests;
-  `pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts`
-  passed with 12 tests; and
-  `pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts`
-  passed with 52 tests. Full verification also passed.
+- Focused verification after 8-8:
+  `pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/memoryChunkPlanner.test.ts --config server/fastify/vitest.config.ts`
+  passed with 50 tests. Full verification also passed.
 
 ## Start Here
 
@@ -52,7 +47,7 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-8 live chunk-planning hook.                          |
+| Hypa V3 memory                              | Active; next slice is 8-9 Phase 8 closeout.                                  |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules

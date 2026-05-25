@@ -4,7 +4,12 @@ import type { Chat, Database, Message, character } from '../../../../src/ts/stor
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { EntityNotFoundError } from '../repository.js'
-import { normalizeHypaV3Settings } from '../memoryPlanner.js'
+import {
+  normalizeHypaV3Settings,
+  planStandardHypaV3Memory,
+  type HypaV3SummaryRef,
+} from '../memoryPlanner.js'
+import { planHypaV3ChunkJobs } from '../memoryChunkPlanner.js'
 import {
   buildFormatOrder,
   normalizeTemplate,
@@ -44,7 +49,16 @@ import type { TriggerRunResult } from './triggers.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
 import type { MemorySelectionInput } from '../memorySelectionService.js'
-import type { EnqueueMemoryJobInput, MemoryJob } from '../memoryRepository.js'
+import {
+  cleanupOrphanedMemory,
+  listMemorySummaries,
+  type CleanupOrphanedMemoryResult,
+  type EnqueueMemoryJobInput,
+  type MemoryJob,
+  type MemorySummary,
+} from '../memoryRepository.js'
+import { tokenizeChat } from './tokens.js'
+import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 /**
  * Phase 7 Tier 3 root assembly entry point.
@@ -117,6 +131,17 @@ export interface AssembleDeps {
   loadMemoryDatabase?(): DatabaseSync | null
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+}
+
+export interface PromptMemoryChunkPlanningDiagnostics {
+  attempted: boolean
+  chunksCreated: number
+  jobsCreated: number
+  plannedWindows: number
+  cleanup: CleanupOrphanedMemoryResult
+  plannerWarnings: string[]
+  plannerErrors: string[]
+  errors: string[]
 }
 
 export interface AssembleInput {
@@ -290,6 +315,7 @@ export interface AssemblyState {
    * since no current server history row carries a memory memo.
    */
   memories?: OpenAIChat[]
+  promptMemoryChunkPlanningDiagnostics?: PromptMemoryChunkPlanningDiagnostics
   promptMemorySelectionDiagnostics?: PromptMemoryAdapterDiagnostics
   promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
@@ -799,17 +825,27 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
   const memoryDb = state.memoryDatabase
   if (!memoryDb) {
     state.promptMemoryRows = []
+    state.promptMemoryChunkPlanningDiagnostics = emptyPromptMemoryChunkPlanningDiagnostics()
     state.promptMemoryFollowUpDiagnostics = emptyPromptMemoryFollowUpDiagnostics()
     return []
   }
   const enabled = shouldSelectPromptMemory(state)
   const { settings } = normalizeHypaV3Settings(resolveHypaV3PresetSettings(state.database))
+  const chatId = state.currentChat.id ?? state.input.chatId
+  const embeddingModel = resolvePromptMemoryEmbeddingModel(state.database)
+  state.promptMemoryChunkPlanningDiagnostics = planPromptMemoryChunksForAssembly({
+    state,
+    memoryDb,
+    chatId,
+    enabled,
+    settings,
+  })
   const selection = selectPromptMemory({
     db: memoryDb,
     enabled,
-    chatId: state.currentChat.id ?? state.input.chatId,
+    chatId,
     summaryModel: settings.summarizationModel,
-    embeddingModel: resolvePromptMemoryEmbeddingModel(state.database),
+    embeddingModel,
     queryVectors: state.promptMemoryQueryVectors ?? [],
     availableTokens: Math.floor((state.database.maxContext ?? 0) * settings.memoryTokensRatio),
     settings: {
@@ -823,14 +859,108 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
   state.promptMemoryRowAssemblyDiagnostics = assembled.diagnostics
   state.promptMemoryFollowUpDiagnostics = enqueuePromptMemoryFollowUps({
     db: memoryDb,
-    chatId: state.currentChat.id ?? state.input.chatId,
+    chatId,
     summaryModel: settings.summarizationModel,
-    embeddingModel: resolvePromptMemoryEmbeddingModel(state.database),
+    embeddingModel,
     diagnostics: selection.diagnostics.missingMemory,
     enqueueJob: state.enqueuePromptMemoryFollowUpJob,
   })
   state.promptMemoryRows = assembled.rows
   return assembled.rows
+}
+
+function planPromptMemoryChunksForAssembly(input: {
+  state: AssemblyState
+  memoryDb: DatabaseSync
+  chatId: string
+  enabled: boolean
+  settings: ReturnType<typeof normalizeHypaV3Settings>['settings']
+}): PromptMemoryChunkPlanningDiagnostics {
+  const diagnostics = emptyPromptMemoryChunkPlanningDiagnostics()
+  if (!input.enabled) return diagnostics
+
+  diagnostics.attempted = true
+  try {
+    const chats = input.state.historyMessages ?? []
+    const currentChatMemos = chats.map((chat) => chat.memo).filter(isNonEmptyString)
+    if (!input.settings.preserveOrphanedMemory && currentChatMemos.length > 0) {
+      diagnostics.cleanup = cleanupOrphanedMemory(input.memoryDb, {
+        chatId: input.chatId,
+        currentChatMemos,
+        preserveOrphanedMemory: input.settings.preserveOrphanedMemory,
+      })
+    }
+
+    const summaries = listMemorySummaries(input.memoryDb, {
+      chatId: input.chatId,
+      model: input.settings.summarizationModel,
+    })
+    const { encoding, options } = tokenizerOptionsFromDb(input.state.database)
+    const plan = planStandardHypaV3Memory({
+      chats,
+      currentTokens: input.state.currentTokens ?? 0,
+      maxContextTokens: input.state.database.maxContext ?? 0,
+      maxResponseTokens: input.state.database.maxResponse ?? 0,
+      settings: input.settings,
+      summaries: summaries.map(summaryToHypaV3Ref),
+      tokenizeChat: (chat) => tokenizeChat(chat, encoding, options),
+    })
+    diagnostics.plannerWarnings.push(...plan.warnings.map((warning) => warning.message))
+    diagnostics.plannerErrors.push(...plan.errors.map((error) => error.message))
+
+    const planned = planHypaV3ChunkJobs({
+      db: input.memoryDb,
+      chatId: input.chatId,
+      chats,
+      plan,
+      model: input.settings.summarizationModel,
+    })
+    diagnostics.plannedWindows = planned.planned.length
+    diagnostics.chunksCreated = planned.chunksCreated
+    diagnostics.jobsCreated = planned.jobsCreated
+  } catch (error) {
+    diagnostics.errors.push(errorMessage(error, 'failed to plan Hypa V3 memory chunks'))
+  }
+  return diagnostics
+}
+
+function emptyPromptMemoryChunkPlanningDiagnostics(): PromptMemoryChunkPlanningDiagnostics {
+  return {
+    attempted: false,
+    chunksCreated: 0,
+    jobsCreated: 0,
+    plannedWindows: 0,
+    cleanup: { summariesDeleted: 0, chunksDeleted: 0 },
+    plannerWarnings: [],
+    plannerErrors: [],
+    errors: [],
+  }
+}
+
+function summaryToHypaV3Ref(summary: MemorySummary): HypaV3SummaryRef {
+  return { chatMemos: readSummaryChatMemos(summary) ?? [] }
+}
+
+function readSummaryChatMemos(summary: MemorySummary): string[] | null {
+  if (!isRecord(summary.metadata)) return null
+  const chatMemos = summary.metadata.chatMemos
+  if (!Array.isArray(chatMemos)) return null
+  if (!chatMemos.every((memo): memo is string => typeof memo === 'string')) return null
+  return chatMemos
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.length > 0) return error.message
+  if (typeof error === 'string' && error.length > 0) return error
+  return fallback
 }
 
 function shouldSelectPromptMemory(state: AssemblyState): boolean {
