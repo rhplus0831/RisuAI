@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: in progress. Completed through
-**8-6d - Missing-memory follow-up enqueue**.
-Next slice: **8-7a - Chunk + summary read routes**.
+**8-7a - Chunk + summary read routes**.
+Next slice: **8-7b - Browser memory API adapter**.
 
 ## Goal
 
@@ -29,7 +29,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-6c:
+Completed highlights:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -118,6 +118,12 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   are skipped because current diagnostics do not contain enough source
   window data to recreate missing chunks safely; `chunk` is still a queue
   kind without a concrete production handler.
+- The 8-7a read-route slice exposes auth-gated chunk and summary reads
+  through `GET /api/v1/memory/chunks/:chatId` and
+  `GET /api/v1/memory/summaries/:chatId?model=...`. The routes return
+  current repository row shapes in `{ chunks }` / `{ summaries }`
+  envelopes, preserve repository ordering, and validate empty model
+  filters.
 
 ## Scope
 
@@ -151,8 +157,9 @@ belong in `extension_fields`.
 - `POST /api/v1/memory/jobs` - enqueue a job.
 - `GET /api/v1/memory/jobs` - list pending / running jobs.
 - `DELETE /api/v1/memory/jobs/:id` - cancel a job.
-- `GET /api/v1/memory/chunks/:chatId` - planned in 8-7a.
-- `GET /api/v1/memory/summaries/:chatId?model=...` - planned in 8-7a.
+- `GET /api/v1/memory/chunks/:chatId` - list chunks for a chat.
+- `GET /api/v1/memory/summaries/:chatId?model=...` - list summaries for
+  a chat, optionally filtered by model.
 
 ### Prompt-Assembly Hook
 
@@ -176,7 +183,7 @@ browser progress store.
 - **8-7 - Browser memory surfaces.** Expose read routes, the browser
   adapter, progress UI wiring, job list/cancel controls, and fixture
   parity.
-  - **8-7a - Chunk + summary read routes.** Auth-gated
+  - **8-7a - Chunk + summary read routes.** Done; auth-gated
     `GET /api/v1/memory/chunks/:chatId` and
     `GET /api/v1/memory/summaries/:chatId?model=...`.
   - **8-7b - Browser memory API adapter.** Thin server-backed client for

@@ -21,6 +21,7 @@ import { registerHealthRoutes } from './routes/health.js'
 import { registerHubRoutes } from './routes/hub.js'
 import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
 import { registerMemoryJobRoutes } from './routes/memoryJobs.js'
+import { registerMemoryReadRoutes } from './routes/memoryReads.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
@@ -137,6 +138,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerGenerationRoutes(app, authState)
   registerGenerationChatRoutes(app, db, authState, config.dataDir, opts.generationChat)
   registerMemoryJobRoutes(app, db, authState, { onEvent: opts.memoryEvents })
+  registerMemoryReadRoutes(app, db, authState)
   bootPromptVariables()
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {

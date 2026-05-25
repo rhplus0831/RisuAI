@@ -104,8 +104,8 @@ on now that `assemblePrompt` is real.
 
 | Route                                       | Pinned behavior                           | Status      |
 | ------------------------------------------- | ----------------------------------------- | ----------- |
-| `GET /api/v1/memory/chunks/:chatId`         | Lists chunks with statuses.               | not started |
-| `GET /api/v1/memory/summaries/:chatId`      | Returns summaries for a model.            | not started |
+| `GET /api/v1/memory/chunks/:chatId`         | Auth-gated list by chat, repository ordering, empty results, and current row shape. | covered by `server/fastify/__tests__/memoryReadRoutes.test.ts` |
+| `GET /api/v1/memory/summaries/:chatId`      | Auth-gated list by chat, optional model filter, empty results, and current row shape. | covered by `server/fastify/__tests__/memoryReadRoutes.test.ts` |
 | `POST /api/v1/memory/jobs`                  | Auth-gated enqueue for `chunk`, `embed`, and `summarize`; emits `memory.job`. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
 | `GET /api/v1/memory/jobs`                   | Lists active jobs with chat/kind/status filters and validation. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
 | `DELETE /api/v1/memory/jobs/:id`            | Cancels pending/running jobs, is idempotent for terminal states, and emits progress. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |

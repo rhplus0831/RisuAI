@@ -11,35 +11,31 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-6d converted prompt-memory missing-memory diagnostics into
-best-effort follow-up queue writes. The assembler now records
-`promptMemoryFollowUpDiagnostics` after row assembly, enqueues
-idempotent `summarize` jobs for chunks missing summaries, and enqueues
-idempotent `embed` jobs for chunks missing embeddings. Failures are
-captured in diagnostics and do not abort prompt assembly. Provider-backed
-query embedding generation, synchronous summary/embedding work, and
-browser UI work remain out of scope.
-
-Important caveat: `summaryIdsMissingChunks` is recorded as skipped follow
-up because the current diagnostics identify orphan summaries but do not
-contain enough source-window data to recreate missing chunks safely.
-`chunk` remains a queue kind with no concrete production handler; do not
-enqueue decorative no-op chunk jobs.
+8-7a added auth-gated memory read routes:
+`GET /api/v1/memory/chunks/:chatId` and
+`GET /api/v1/memory/summaries/:chatId?model=...`. The routes use the
+current repository readers directly, return `{ chunks }` and
+`{ summaries }` JSON envelopes, validate empty model filters, preserve
+repository ordering, and keep old intermediate Fastify/browser memory
+shapes out of the contract.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-7a - Chunk + summary read routes**.
+Continue Phase 8 with **8-7b - Browser memory API adapter**.
 
 Expected scope:
 
-- Add auth-gated `GET /api/v1/memory/chunks/:chatId`.
-- Add auth-gated `GET /api/v1/memory/summaries/:chatId?model=...`.
-- Return current schema rows through a browser-friendly JSON shape without
-  compatibility adapters for old intermediate Fastify shapes.
-- Keep route tests focused on auth, chat filtering, model filtering,
-  ordering, and empty-result behavior.
+- Add a thin browser-side server-backed memory client for the 8-7a read
+  routes.
+- Include server-backed calls for memory job listing and cancellation so
+  the later UI path does not need to know route details.
+- Keep the adapter behind existing server-backed/Fastify gates; do not
+  remove the legacy browser-local Hypa V3 runtime until the browser
+  progress/list UI slices have landed.
+- Preserve the current Fastify JSON contract directly:
+  `{ chunks }`, `{ summaries }`, and `{ jobs }`.
 
-Out of scope for 8-7a:
+Out of scope for 8-7b:
 
 - Embedding provider dispatch and query embedding generation.
 - Summary generation and embedding provider work in route handlers.
@@ -49,20 +45,23 @@ Out of scope for 8-7a:
 
 Implementation notes:
 
-- Use existing repository readers (`listMemoryChunks`,
-  `listMemorySummaries`) and route auth patterns from memory job routes.
-- Preserve current schema/import paths directly; there are still no
-  actual Fastify users requiring compatibility migrations.
-- 8-6d added `prompt/memoryFollowups.ts` and exported
-  `buildSummarizeJobId`; if read-route tests need seeded jobs/chunks,
-  prefer repository helpers over raw SQL.
+- Read-route tests live in
+  `server/fastify/__tests__/memoryReadRoutes.test.ts`.
+- The route module is `server/fastify/src/routes/memoryReads.ts` and is
+  registered next to `registerMemoryJobRoutes` in `app.ts`.
+- Route auth behavior follows `memoryJobs.ts`; browser calls should pass
+  the same `risu-auth` assertion plumbing used by other server-backed
+  APIs.
 - Preserve the no-compatibility-migrations policy: update current
-  Fastify shapes directly if the contract needs a tighter shape.
+  Fastify/browser adapter shapes directly if the contract needs a tighter
+  shape.
 
-## Queue After 8-6d
+## Queue After 8-7a
 
-1. 8-7a - Chunk + summary read routes.
-2. 8-7b - Browser memory API adapter.
+1. 8-7b - Browser memory API adapter.
+2. 8-7c - Browser progress listener.
+3. 8-7d - Memory job list/cancel UI path.
+4. 8-7e - `hypav3-memory` fixture parity.
 
 ## Parallel Or Deferred
 
@@ -100,11 +99,19 @@ pnpm check
 8-6d passed the focused assembler/adapter files with 52 tests, and
 `pnpm check` was clean.
 
+Focused 8-7a verification:
+
+```bash
+pnpm exec vitest run server/fastify/__tests__/memoryReadRoutes.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts --config server/fastify/vitest.config.ts
+```
+
+8-7a passed the focused route files with 12 tests.
+
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-6d.md`](../phases-completed/phase-8-memory-8-6d.md)
+  [`../phases-completed/phase-8-memory-8-7a.md`](../phases-completed/phase-8-memory-8-7a.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Phase 7 final summary:
