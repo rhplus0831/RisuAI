@@ -50,6 +50,7 @@
     categories: Category[]
     bulkEditState?: BulkEditState
     uiState?: UIState
+    readOnly?: boolean
     onToggleSummarySelection?: (index: number) => void
     onOpenTagManager?: (index: number) => void
     onToggleCollapse?: (index: number) => void
@@ -65,6 +66,7 @@
     categories,
     bulkEditState,
     uiState,
+    readOnly = false,
     onToggleSummarySelection,
     onOpenTagManager,
     onToggleCollapse,
@@ -347,7 +349,7 @@
     <!-- Summary Number / Metrics Container -->
     <div class="flex items-center gap-2">
       <!-- Bulk Edit Checkbox -->
-      {#if bulkEditState?.isEnabled}
+      {#if bulkEditState?.isEnabled && !readOnly}
         <input
           type="checkbox"
           class="w-4 h-4 text-blue-600 bg-zinc-900 border-zinc-600 rounded-sm focus:ring-blue-500"
@@ -373,7 +375,10 @@
       {#if summary.tags && summary.tags.length > 0}
         {#each summary.tags as tag}
           <button
-            class="px-2 py-1 text-xs rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+            class="px-2 py-1 text-xs rounded-full bg-blue-600 text-white transition-colors {readOnly
+              ? 'cursor-default'
+              : 'hover:bg-blue-500'}"
+            disabled={readOnly}
             onclick={() => onOpenTagManager?.(summaryIndex)}
           >
             #{tag}
@@ -382,13 +387,15 @@
       {/if}
 
       <!-- Add Tag Button -->
-      <button
-        class="px-2 py-1 text-xs rounded-full bg-zinc-600 hover:bg-zinc-500 text-zinc-300 transition-colors"
-        onclick={() => onOpenTagManager?.(summaryIndex)}
-        title={language.hypaV3Modal.tagManager}
-      >
-        + {language.hypaV3Modal.tag}
-      </button>
+      {#if !readOnly}
+        <button
+          class="px-2 py-1 text-xs rounded-full bg-zinc-600 hover:bg-zinc-500 text-zinc-300 transition-colors"
+          onclick={() => onOpenTagManager?.(summaryIndex)}
+          title={language.hypaV3Modal.tagManager}
+        >
+          + {language.hypaV3Modal.tag}
+        </button>
+      {/if}
 
       {#if filterSelected && hypaV3Data.metrics}
         <div class="flex flex-wrap gap-1">
@@ -438,44 +445,46 @@
         <LanguagesIcon class="w-4 h-4" />
       </button>
 
-      <!-- Important Button -->
-      <button
-        class="p-2 transition-colors {summary.isImportant
-          ? 'text-yellow-400 hover:text-yellow-300'
-          : 'text-zinc-400 hover:text-zinc-200'}"
-        tabindex="-1"
-        onclick={toggleImportant}
-      >
-        <StarIcon class="w-4 h-4" />
-      </button>
+      {#if !readOnly}
+        <!-- Important Button -->
+        <button
+          class="p-2 transition-colors {summary.isImportant
+            ? 'text-yellow-400 hover:text-yellow-300'
+            : 'text-zinc-400 hover:text-zinc-200'}"
+          tabindex="-1"
+          onclick={toggleImportant}
+        >
+          <StarIcon class="w-4 h-4" />
+        </button>
 
-      <!-- Reroll Button -->
-      <button
-        class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-        tabindex="-1"
-        disabled={isOrphan()}
-        onclick={async () => await toggleReroll()}
-      >
-        <RefreshCw class="w-4 h-4" />
-      </button>
+        <!-- Reroll Button -->
+        <button
+          class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
+          tabindex="-1"
+          disabled={isOrphan()}
+          onclick={async () => await toggleReroll()}
+        >
+          <RefreshCw class="w-4 h-4" />
+        </button>
 
-      <!-- Delete This Button -->
-      <button
-        class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-        tabindex="-1"
-        onclick={async () => await deleteThis()}
-      >
-        <Trash2Icon class="w-4 h-4" />
-      </button>
+        <!-- Delete This Button -->
+        <button
+          class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
+          tabindex="-1"
+          onclick={async () => await deleteThis()}
+        >
+          <Trash2Icon class="w-4 h-4" />
+        </button>
 
-      <!-- Delete After Button -->
-      <button
-        class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-        tabindex="-1"
-        onclick={async () => await deleteAfter()}
-      >
-        <ScissorsLineDashed class="w-4 h-4" />
-      </button>
+        <!-- Delete After Button -->
+        <button
+          class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
+          tabindex="-1"
+          onclick={async () => await deleteAfter()}
+        >
+          <ScissorsLineDashed class="w-4 h-4" />
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -485,6 +494,7 @@
       class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 text-zinc-200 bg-zinc-900"
       bind:this={summaryItemState.originalRef}
       bind:value={summary.text}
+      readonly={readOnly}
       onfocus={() => {
         if (searchState && !searchState.isNavigating) {
           searchState.requestedSearchFromIndex = summaryIndex

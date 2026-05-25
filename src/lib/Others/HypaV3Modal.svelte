@@ -14,6 +14,8 @@
   import TagManagerModal from './HypaV3Modal/tag-manager-modal.svelte'
   import BulkEditActions from './HypaV3Modal/bulk-edit-actions.svelte'
   import BulkResummaryResult from './HypaV3Modal/bulk-resummary-result.svelte'
+  import ServerMemoryJobs from './HypaV3Modal/server-memory-jobs.svelte'
+  import { canUseServerMemoryApi } from 'src/ts/process/request/serverMemory'
 
   import type {
     SummaryItemState,
@@ -35,6 +37,13 @@
     DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
       .hypaV3Data,
   )
+  const currentChat = $derived(
+    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage],
+  )
+  const serverBackedMemoryMode = $derived(
+    canUseServerMemoryApi() && DBState.db.useServerPromptAssembly,
+  )
+  const currentChatId = $derived(currentChat.id ?? '')
 
   let categories = $derived(
     (() => {
@@ -612,6 +621,7 @@
         {filterState}
         {uiState}
         {hypaV3Data}
+        readOnly={serverBackedMemoryMode}
         onResetData={handleResetData}
         onToggleBulkEditMode={handleToggleBulkEditMode}
         onOpenCategoryManager={handleOpenCategoryManager}
@@ -619,6 +629,10 @@
 
       <!-- Scrollable Container -->
       <div class="flex flex-col gap-2 overflow-y-auto sm:gap-4" tabindex="-1">
+        {#if serverBackedMemoryMode}
+          <ServerMemoryJobs chatId={currentChatId} />
+        {/if}
+
         {#if hypaV3Data.summaries.length === 0}
           <div class="p-4 text-center sm:p-3 md:p-4 text-zinc-400">
             {language.hypaV3Modal.noSummariesLabel}
@@ -699,6 +713,7 @@
               {categories}
               {bulkEditState}
               {uiState}
+              readOnly={serverBackedMemoryMode}
               onToggleSummarySelection={handleToggleSummarySelection}
               onOpenTagManager={handleOpenTagManager}
               onToggleCollapse={handleToggleCollapse}
@@ -711,38 +726,44 @@
       </div>
 
       <!-- Bulk Resummary Result -->
-      <BulkResummaryResult
-        {bulkResummaryState}
-        onToggleTranslation={toggleBulkResummaryTranslation}
-        onReroll={rerollBulkResummary}
-        onApply={applyBulkResummary}
-        onCancel={cancelBulkResummary}
-      />
+      {#if !serverBackedMemoryMode}
+        <BulkResummaryResult
+          {bulkResummaryState}
+          onToggleTranslation={toggleBulkResummaryTranslation}
+          onReroll={rerollBulkResummary}
+          onApply={applyBulkResummary}
+          onCancel={cancelBulkResummary}
+        />
+      {/if}
 
       <!-- Bulk Edit Actions -->
-      <BulkEditActions
-        {bulkEditState}
-        {categories}
-        showImportantOnly={filterState.showImportantOnly}
-        selectedCategoryFilter={filterState.selectedCategoryFilter}
-        onResummarize={resummarizeBulkSelected}
-        onClearSelection={handleBulkEditClearSelection}
-        onUpdateSelectedCategory={handleBulkEditUpdateSelectedCategory}
-        onUpdateBulkSelectInput={handleBulkEditUpdateBulkSelectInput}
-        onApplyCategory={handleBulkEditApplyCategory}
-        onToggleImportant={handleBulkEditToggleImportant}
-        onParseAndSelectSummaries={handleBulkEditParseAndSelectSummaries}
-      />
+      {#if !serverBackedMemoryMode}
+        <BulkEditActions
+          {bulkEditState}
+          {categories}
+          showImportantOnly={filterState.showImportantOnly}
+          selectedCategoryFilter={filterState.selectedCategoryFilter}
+          onResummarize={resummarizeBulkSelected}
+          onClearSelection={handleBulkEditClearSelection}
+          onUpdateSelectedCategory={handleBulkEditUpdateSelectedCategory}
+          onUpdateBulkSelectInput={handleBulkEditUpdateBulkSelectInput}
+          onApplyCategory={handleBulkEditApplyCategory}
+          onToggleImportant={handleBulkEditToggleImportant}
+          onParseAndSelectSummaries={handleBulkEditParseAndSelectSummaries}
+        />
+      {/if}
     </div>
   </div>
 </div>
 
 <!-- Component Modals -->
-<CategoryManagerModal
-  bind:categoryManagerState
-  bind:searchState
-  {filterState}
-  onCategoryFilter={handleCategoryFilter}
-/>
+{#if !serverBackedMemoryMode}
+  <CategoryManagerModal
+    bind:categoryManagerState
+    bind:searchState
+    {filterState}
+    onCategoryFilter={handleCategoryFilter}
+  />
 
-<TagManagerModal bind:tagManagerState />
+  <TagManagerModal bind:tagManagerState />
+{/if}

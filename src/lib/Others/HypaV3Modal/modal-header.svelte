@@ -31,6 +31,7 @@
     filterState?: FilterState
     uiState?: UIState
     hypaV3Data: any
+    readOnly?: boolean
     onResetData?: () => Promise<void>
     onToggleBulkEditMode?: () => void
     onOpenCategoryManager?: () => void
@@ -46,6 +47,7 @@
     filterState,
     uiState,
     hypaV3Data,
+    readOnly = false,
     onResetData,
     onToggleBulkEditMode,
     onOpenCategoryManager,
@@ -144,7 +146,7 @@
     </button>
 
     <!-- Bulk Edit Mode Button -->
-    {#if bulkEditState}
+    {#if bulkEditState && !readOnly}
       <button
         class="p-2 transition-colors {bulkEditState.isEnabled
           ? 'text-blue-400 hover:text-blue-300'
@@ -157,7 +159,7 @@
     {/if}
 
     <!-- Category Manager Button -->
-    {#if categoryManagerState}
+    {#if categoryManagerState && !readOnly}
       <button
         class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
         tabindex="-1"
@@ -204,13 +206,15 @@
             </button>
 
             <!-- Reset Data Button -->
-            <button
-              class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-              tabindex="-1"
-              onclick={async () => await resetData()}
-            >
-              <Trash2Icon class="w-6 h-6" />
-            </button>
+            {#if !readOnly}
+              <button
+                class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
+                tabindex="-1"
+                onclick={async () => await resetData()}
+              >
+                <Trash2Icon class="w-6 h-6" />
+              </button>
+            {/if}
           </div>
         </div>
       {/if}

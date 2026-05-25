@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: in progress. Completed through
-**8-7c - Browser progress listener**.
-Next slice: **8-7d - Memory job list/cancel UI path**.
+**8-7d - Memory job list/cancel UI path**.
+Next slice: **8-7e - `hypav3-memory` fixture parity**.
 
 ## Goal
 
@@ -134,6 +134,12 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   chat terminal side effects with `kind: 'hypav3_progress'` now update
   `hypaV3ProgressStore` using only the existing browser progress fields:
   `open`, `miniMsg`, `msg`, and `subMsg`.
+- The 8-7d memory job list/cancel UI slice adds a Fastify plus
+  server-prompt-assembly gated job panel to the Hypa V3 modal. It lists
+  pending/running jobs through the browser adapter, cancels jobs through
+  `cancelServerMemoryJob`, refreshes on open/chat changes and
+  periodically, and disables legacy local bulk/per-summary edit controls
+  while server-backed memory mode is active.
 
 ## Scope
 
@@ -202,7 +208,7 @@ browser progress store.
     into the existing `hypaV3ProgressStore` shape. Done.
   - **8-7d - Memory job list/cancel UI path.** Add minimal pending /
     running job list and cancel controls. Bulk re-summary and per-summary
-    metadata edits stay disabled in server-backed mode.
+    metadata edits stay disabled in server-backed mode. Done.
   - **8-7e - `hypav3-memory` fixture parity.** Pin canonical memory prompt
     rows, missing-memory diagnostics, and browser-visible progress /
     list-cancel effects.
