@@ -15,12 +15,12 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-0, Mutation inventory and command map.
-- Current gap: Phase 9 needs the shared command plumbing and one harness
-  command before resource migration slices start.
-- Next default pickup: 9-1, Command foundation.
-- Last recorded full baselines after 9-0: `pnpm check` clean,
-  `pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1050 tests, and
+- Last landed slice: 9-1, Command foundation.
+- Current gap: Phase 9 needs the settings, preset, persona, and loadout
+  resource families moved onto the command foundation.
+- Next default pickup: 9-2a, Scalar settings groups.
+- Last recorded full baselines after 9-1: `pnpm check` clean,
+  `pnpm test` 657 tests plus 4 skipped, `pnpm api:test` 1056 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -42,14 +42,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                        |
-| ------------------------------------------- | ---------------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                          |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                             |
-| Client thinning                             | Active; 9-0 command map locked; next slice is 9-1 command foundation.        |
+| Workstream                                  | State                                                                      |
+| ------------------------------------------- | -------------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                        |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                 |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.    |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                           |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                           |
+| Client thinning                             | Active; 9-1 command foundation landed; next slice is 9-2a scalar settings. |
 
 ## Maintenance Rules
 

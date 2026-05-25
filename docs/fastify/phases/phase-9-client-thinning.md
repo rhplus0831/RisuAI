@@ -2,8 +2,8 @@
 
 Date: 2026-05-25
 
-Status: active. Last landed slice: **9-0 - Mutation inventory and
-command map**. Next slice: **9-1 - Command foundation**.
+Status: active. Last landed slice: **9-1 - Command foundation**. Next
+slice: **9-2a - Scalar settings groups**.
 
 ## Goal
 
@@ -103,6 +103,8 @@ surfaces.
   `baseRevision` / 409 handling, transactions, revision increments, event
   emission, and the typed browser command helper. Ship one small settings
   command as the harness test.
+  - Status: complete. Closeout:
+    [`../phases-completed/phase-9-client-thinning-9-1.md`](../phases-completed/phase-9-client-thinning-9-1.md).
 - **9-2 - Settings, presets, personas, loadouts.** Move lower-churn global
   configuration families behind commands.
   - **9-2a - Scalar settings groups.** Split into secrets/providers,

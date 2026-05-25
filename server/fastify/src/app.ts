@@ -6,11 +6,13 @@ import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import { type AppConfig, loadConfig } from './config.js'
 import { createAuthState } from './auth.js'
+import { createCommandEventSink, type CommandEventSink } from './commands/events.js'
 import { openDatabase } from './db.js'
 import { registerAssetsRoutes } from './routes/assets.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
+import { registerCommandRoutes } from './routes/commands.js'
 import { registerGenerationRoutes } from './routes/generation.js'
 import {
   registerGenerationChatRoutes,
@@ -44,6 +46,7 @@ export interface BuildAppOptions {
   generationChat?: GenerationChatRouteOptions
   memoryWorker?: false | Omit<MemoryWorkerOptions, 'db'>
   memoryEvents?: MemoryEventSink
+  commandEvents?: CommandEventSink
 }
 
 export interface BuiltApp {
@@ -110,6 +113,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
         })
   memoryWorker?.start()
   const authState = createAuthState(config.dataDir)
+  const commandEventSink = opts.commandEvents ?? createCommandEventSink()
   const streamJobRegistry = new JobRegistry()
   const gcTimer = setInterval(() => {
     streamJobRegistry.tickGc()
@@ -129,6 +133,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerAuthRoutes(app, authState)
   registerBootstrapRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir)
+  registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerAssetsRoutes(app, db, authState, config.dataDir)
   registerBackupRoutes(app, db, authState, config.dataDir)
   registerProxyRoutes(app, authState)
@@ -150,8 +155,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
       // __NODE__ activates every self-host gate in the SPA (NodeStorage,
       // save flow, prefer-remote saves); __FASTIFY__ disambiguates the
       // server family so URL builders can prefer /api/v1/* routes.
-      const tag =
-        '<script>globalThis.__NODE__ = true; globalThis.__FASTIFY__ = true;</script>'
+      const tag = '<script>globalThis.__NODE__ = true; globalThis.__FASTIFY__ = true;</script>'
       const headMatch = /<head(?:\s[^>]*)?>/i.exec(raw)
       cachedIndex = headMatch
         ? `${raw.slice(0, headMatch.index + headMatch[0].length)}\n${tag}${raw.slice(headMatch.index + headMatch[0].length)}`
