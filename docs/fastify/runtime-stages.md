@@ -15,10 +15,9 @@ the future server modules; they are trace anchors.
 Phases 5, 6, and 7 are closed: `sendChat` has visible helper seams,
 completion dispatch is server-routed for the covered provider matrix, and
 prompt assembly / chat dispatch can run through Fastify behind the
-server-backed gate. Phase 8 has moved ready-memory reads, summarize/embed
-jobs, and browser memory surfaces server-side; the live chunk-planning
-hook is still open. The ownership described below is the migration
-target.
+server-backed gate. Phase 8 closed ready-memory reads, summarize/embed
+jobs, browser memory surfaces, and live chunk planning on the server. The
+ownership described below is the migration target.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -135,8 +134,8 @@ the delegated post-generation helpers under
 - Phase 7 (`phases/phase-7-prompt-assembly.md`) moved Stage 2
   (prompt assembly) server-side and closed the `/chat` dispatch path.
 - Phase 8 (`phases/phase-8-memory.md`) makes Hypa V3 memory a
-  server-side resource that Stage 2 reads from; its remaining work is the
-  live chunk-planning hook for fresh server-backed chats.
+  server-side resource that Stage 2 reads from, including live
+  chunk-planning for fresh server-backed chats.
 - Phase 9 (`phases/phase-9-client-thinning.md`) moves Stage 1
   (validate + persist) server-side and reduces Stage 0 to a thin
   bridge.

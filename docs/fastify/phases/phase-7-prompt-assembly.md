@@ -56,7 +56,8 @@ restoration errors, and enriched terminal `done` metadata.
 
 ## Boundaries
 
-- Hypa V3 memory belongs to Phase 8, now active.
+- Hypa V3 memory belongs to Phase 8, which is closed; remaining
+  client-state ownership work belongs to Phase 9.
 - Browser plugin / Lua execution, low-level LLM or image effects, and
   persistent character / persona / lorebook mutations stay out of Phase 7.
 - Ooba OAI-compatible, NovelAI text, and NovelList remain deferred until

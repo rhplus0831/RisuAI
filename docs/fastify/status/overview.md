@@ -7,18 +7,18 @@ Concise snapshot of each migration workstream. Historical detail is in
 
 ## Phase Progress
 
-| Phase                                   | Status      | Notes                                                        |
-| --------------------------------------- | ----------- | ------------------------------------------------------------ |
-| 0 - Removals                            | Complete    | Closed 2026-05-20.                                           |
-| 1 - Foundation                          | Complete    | Closed 2026-05-20.                                           |
-| 2 - Storage / import / assets / backups | Complete    | Closed 2026-05-20.                                           |
-| 3 - Proxy migration                     | Complete    | Closed 2026-05-21; Express deleted.                          |
-| 4 - sendChat tests                      | Complete    | Closed 2026-05-20.                                           |
-| 5 - sendChat extraction                 | Complete    | Closed 2026-05-22.                                           |
-| 6 - Server-side generation              | Complete    | Closed 2026-05-22 for `/completion`.                         |
-| 7 - Server-side prompt assembly         | Complete    | Closed 2026-05-24 after closeout verification.               |
-| 8 - Hypa V3 memory server-side          | Complete    | Closed 2026-05-25 after full closeout verification.          |
-| 9 - Client thinning                     | In progress | 9-0 command map locked; next slice is 9-1 command foundation. |
+| Phase                                   | Status      | Notes                                                                                       |
+| --------------------------------------- | ----------- | ------------------------------------------------------------------------------------------- |
+| 0 - Removals                            | Complete    | Closed 2026-05-20.                                                                          |
+| 1 - Foundation                          | Complete    | Closed 2026-05-20.                                                                          |
+| 2 - Storage / import / assets / backups | Complete    | Closed 2026-05-20.                                                                          |
+| 3 - Proxy migration                     | Complete    | Closed 2026-05-21; Express deleted.                                                         |
+| 4 - sendChat tests                      | Complete    | Closed 2026-05-20.                                                                          |
+| 5 - sendChat extraction                 | Complete    | Closed 2026-05-22.                                                                          |
+| 6 - Server-side generation              | Complete    | Closed 2026-05-22 for `/completion`.                                                        |
+| 7 - Server-side prompt assembly         | Complete    | Closed 2026-05-24 after closeout verification.                                              |
+| 8 - Hypa V3 memory server-side          | Complete    | Closed 2026-05-25 after full closeout verification.                                         |
+| 9 - Client thinning                     | In progress | Commands have landed through 9-3b chat records/folders; next slice is 9-3c message history. |
 
 ## Workstreams
 

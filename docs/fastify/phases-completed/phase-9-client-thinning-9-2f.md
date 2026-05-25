@@ -32,9 +32,9 @@ leaving local/Tauri mutation behavior intact.
 
 - Loadout touch commands update `lastUsed`, append the optional current
   `characterId`, and set `lastLoadedLoadoutName`.
-- `loadout.applied` remains only a mapped future event; no apply command
-  landed in 9-2f because apply crosses resources owned by 9-2b, 9-2d,
-  9-4c, and later projection/storage slices.
+- No loadout apply endpoint or `loadout.applied` event landed in 9-2f
+  because apply crosses resources owned by 9-2b, 9-2d, 9-4c, and later
+  projection/storage slices.
 - Import normalization only touches loadout shape when incoming data
   already contains `loadouts` or `lastLoadedLoadoutName`; unrelated
   imported databases keep their exact shape.

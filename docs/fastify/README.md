@@ -17,10 +17,11 @@ paths directly instead of preserving old intermediate Fastify shapes.
 ## Scope
 
 Current status lives in [`status.md`](status.md). As of 2026-05-25,
-Phases 0-7 are closed and Phase 8, server-side Hypa V3 memory, is
-active. Fastify is the live server path; Express has been deleted. The
-Dockerfile and compose file target Fastify on port 6002 with `/app/data`
-persisted.
+Phases 0-8 are closed and Phase 9, client thinning, is active. The last
+landed slice is 9-3b chat records/folders; the next pickup is 9-3c
+message history commands. Fastify is the live server path; Express has
+been deleted. The Dockerfile and compose file target Fastify on port
+6002 with `/app/data` persisted.
 
 Historical phase logs live in [`phases-completed/`](phases-completed/).
 Route and test inventories live under [`coverage/`](coverage/).

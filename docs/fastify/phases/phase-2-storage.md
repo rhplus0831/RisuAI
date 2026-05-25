@@ -9,7 +9,8 @@ database import, raw asset upload / read / head / exists checks, backup
 create / list / restore / delete, optional static SPA serving, and route
 tests for those surfaces.
 
-Current work: none in Phase 2. Phase 8 builds on this foundation for
-server-side Hypa V3 memory storage and jobs.
+Current work: none in Phase 2. Phase 8 built on this foundation for
+server-side Hypa V3 memory storage and jobs, and Phase 9 continues using
+the same repository/bootstrap base for commands and projection.
 
 Completed detail: [`../phases-completed/phase-2-storage.md`](../phases-completed/phase-2-storage.md).

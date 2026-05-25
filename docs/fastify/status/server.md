@@ -38,7 +38,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-next concrete pickup is 9-2e translator presets in
+next concrete pickup is 9-3c message history commands in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

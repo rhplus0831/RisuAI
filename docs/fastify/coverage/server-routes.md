@@ -5,7 +5,8 @@ Date: 2026-05-25
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
 completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
 memory job/read routes have coverage under `server/fastify/__tests__/`.
-Unlanded helper routes and Phase 9 commands remain target test rows.
+Phase 9 command routes are covered through 9-3b; unlanded helper routes,
+message commands, and later command families remain target test rows.
 
 ## Phase 1: Foundation
 
@@ -117,9 +118,10 @@ selection, and prompt follow-up enqueueing are covered by focused memory
 tests under `server/fastify/__tests__/memory*.test.ts` plus
 `promptMemoryAdapter.test.ts` and `assemble.test.ts`.
 
-The public route surface does not yet include a live chunk-planning
-endpoint; 8-8 must connect the existing planner to production without
-putting provider calls in route handlers.
+The public route surface intentionally does not include a chunk-planning
+endpoint. Live chunk planning runs from prompt assembly context and
+enqueues follow-up summarize/embed work without putting provider calls in
+route handlers.
 
 ## Phase 9: Commands
 
@@ -129,16 +131,18 @@ test expectations were locked by 9-0 in
 
 | Resource family           | Endpoints                                         | Status      |
 | ------------------------- | ------------------------------------------------- | ----------- |
-| settings                  | patch per group                                    | landed      |
-| preset                    | create / patch / delete / copy / import / reorder | landed      |
-| prompt settings/items     | patch settings + prompt-item CRUD/reorder          | landed      |
-| persona / translator      | create / patch / delete / select / reorder         | landed      |
-| loadout                   | create / patch / delete / favorite / touch         | landed      |
-| character                 | create / patch / delete / select / reorder         | landed      |
-| chat / chat folder        | create / patch / delete / fork / reorder           | landed      |
+| settings                  | patch per group                                    | landed; covered by command suites |
+| preset                    | create / patch / delete / copy / import / reorder | landed; covered by command suites |
+| prompt settings/items     | patch settings + prompt-item CRUD/reorder          | landed; covered by command suites |
+| persona / translator      | create / patch / delete / select / reorder         | landed; covered by command suites |
+| loadout                   | create / patch / delete / favorite / touch         | landed; covered by command suites |
+| character                 | create / patch / delete / select / reorder         | landed; covered by command suites |
+| chat / chat folder        | create / patch / delete / fork / reorder           | landed; covered by command suites |
 | message                   | append / edit / delete / truncate / replace        | not started |
 | plugin / module           | create / patch / delete                            | not started |
 | plugin-storage            | patch kv                                           | not started |
 
-Plus: revision conflict (409 + currentRevision), SSE event per
-command.
+Plus: landed command families cover revision conflict
+(`409 + currentRevision`), rollback/no-revision-bump failure behavior,
+bootstrap visibility, mapped command events, and browser helper request
+shapes.

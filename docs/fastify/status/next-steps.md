@@ -10,12 +10,11 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-3b landed chat record, chat-folder, and chat-level metadata command
-coverage. The slice added Fastify chat create/update/delete/fork/reorder
-routes, chat-folder create/update/delete/reorder routes, typed browser
-helpers, and Fastify-mode client dispatch for chat selection, lifecycle,
-forking, folder metadata, imports, author notes, persona binding, and
-bookmarks while keeping local/Tauri mutation behavior intact.
+9-3b landed chat record, chat-folder, and chat-level metadata commands.
+It added Fastify chat and chat-folder routes, typed browser helpers, and
+Fastify-mode dispatch for selection, lifecycle, forking, folder metadata,
+imports, author notes, persona binding, and bookmarks while keeping
+local/Tauri mutation behavior intact.
 
 ## Immediate Pickup
 
@@ -45,7 +44,6 @@ Expected scope:
 - Do not reopen settings groups, bot presets, prompt templates/items,
   personas, translator presets, loadouts, or character scalar/catalog
   commands in this slice.
-- Tauri/local mode keeps existing local mutation paths.
 - Preserve the 9-1 command contract: every command takes
   `baseRevision`, returns `{ revision, event }`, emits the mapped message
   event, and returns 409
@@ -92,7 +90,7 @@ Implementation notes:
   child collections. Do not loosen that in 9-3c; use message commands
   instead.
 
-## Queue After 9-3b
+## Later Queue
 
 1. 9-3d - Generation persistence handoff.
 2. 9-3e - Chat `scriptstate` and scripting side effects.

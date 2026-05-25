@@ -41,8 +41,8 @@ the phase file.
 
 Phase 9 is the active phase. Phase 8 is closed, so server-owned
 generation, prompt assembly, and memory surfaces are ready for the client
-thinning workstream. The next pickup is 9-0, the mutation inventory and
-command map planning gate.
+thinning workstream. Phase 9 has landed the command map through chat and
+chat-folder commands; the next pickup is 9-3c message history commands.
 
 ## Completed Detail
 

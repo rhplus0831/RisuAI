@@ -13,8 +13,9 @@ leaf tests, token/preflight/budget/trigger tests, template renderer
 tests, assembler tests, and browser `/chat` adapter + preview wiring
 tests. Phase 8 now has memory job/read route coverage, focused memory
 service tests, browser memory adapter tests, and server-backed
-`hypav3-memory` fixture parity. Later helper routes and Phase 9 commands
-remain planning artifacts until their routes land.
+`hypav3-memory` fixture parity. Phase 9 command routes are covered
+through 9-3b; message and later command families remain target rows until
+their routes land.
 
 ## Shards
 

@@ -71,6 +71,11 @@ shards under [`coverage/`](coverage/).
   similarity ranking, budget allocation, prompt-memory selection,
   read routes, browser memory adapter/progress/list-cancel behavior, and
   server-backed `hypav3-memory` fixture parity.
+- Phase 9 command coverage has landed for the command foundation,
+  settings, presets, prompt settings/items, personas, translator presets,
+  loadouts, characters, chats, and chat folders. Server route behavior is
+  covered in `server/fastify/__tests__/commands.test.ts`; browser helper
+  behavior is covered in `src/ts/server/commands.test.ts`.
 
 ## Where to look
 

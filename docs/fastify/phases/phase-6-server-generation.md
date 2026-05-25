@@ -9,8 +9,8 @@ Phase 6 moved provider dispatch behind the auth-gated
 SSE envelope, the routed provider matrix, and the current server-side
 request shaping tests.
 
-Current work: none in Phase 6. Provider paths still waiting on server-side
-prompt flattening or fixture demand are tracked by Phase 7 and the
+Current work: none in Phase 6. Provider paths still waiting on
+server-side prompt flattening or fixture demand are tracked in the
 provider coverage matrix.
 
 Completed detail: [`../phases-completed/phase-6-server-generation.md`](../phases-completed/phase-6-server-generation.md).
