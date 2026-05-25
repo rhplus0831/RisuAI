@@ -1,6 +1,6 @@
 # Removed and Out-of-Scope Behavior
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 This is the canonical registry of what the migration deletes and
 what it intentionally does not touch. When a question comes up
@@ -38,10 +38,12 @@ is not actively maintained.
   stripped. The replacement for cloud backup snapshots is the
   Fastify server's own `/api/v1/backups` (Phase 2); bundle export
   is deferred to Phase 9.
-- **Supa memory, Hypa V2, Hanurai.** Legacy memory engines.
-  Deleted: `process/memory/{supaMemory, hypav2, hanuraiMemory}.ts`
-  and the selection branches in `process/index.svelte.ts`. Only
-  Hypa V3 survives.
+- **Supa memory, Hypa V2, Hanurai.** Legacy memory engines are no
+  longer selectable live modes. The dedicated Supa / Hypa V2 / Hanurai
+  entry points and selection branches are gone; Hypa V3 is the only
+  maintained memory engine. Some legacy names remain as compatibility
+  fields, prompt memo tags, and shared Hypa V3 embedding helpers
+  (`supaMemory`, `memo: 'supaMemory'`, `hypamemory*.ts`).
 
 ## Out of migration scope
 

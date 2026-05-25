@@ -26,9 +26,10 @@ docs.
   bot presets, prompt settings/items, personas, translator presets,
   loadouts, characters, chats, chat folders, messages, generation
   persistence, chat scriptstate, lorebook collections, script/trigger
-  definitions, module records/enablement, and asset references through
-  owning resources. Implemented families use `baseRevision` / 409
-  conflict handling and emit their mapped command event.
+  definitions, module records/enablement, asset references through owning
+  resources, plugin records/configuration, and plugin storage.
+  Implemented families use `baseRevision` / 409 conflict handling and
+  emit their mapped command event.
 - `GET /api/v1/events` is the auth-gated Phase 9 command-event SSE
   stream. It sends committed command events as `event: command` frames
   with `{ type, revision, resource, id?, parentId? }` payloads for later

@@ -1,6 +1,6 @@
 # Migration Plan
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 ## Goal
 
@@ -28,7 +28,7 @@ End state:
 ## Current Baseline
 
 The live pickup snapshot belongs in [`status.md`](status.md). As of
-2026-05-25, Phases 0-8 are closed and Phase 9 is active.
+2026-05-26, Phases 0-8 are closed and Phase 9 is active.
 
 Stable baseline facts:
 
@@ -41,10 +41,12 @@ Stable baseline facts:
 - Phase 8 closed with server memory tables, read/job routes,
   summarize/embed handlers, prompt-memory selection, and live
   chunk-planning for fresh server-backed chats.
-- Phase 9 command routes have landed through 9-4a: settings,
-  presets, prompt items, personas, translator presets, loadouts,
-  characters, chats, messages, generation persistence, scriptstate,
-  compatibility adapters, and lorebook collections.
+- Phase 9 has landed command coverage through 9-4g plus the 9-5a event
+  stream: settings, presets, prompt items, personas, translator presets,
+  loadouts, characters, chats, messages, generation persistence,
+  scriptstate, lorebooks, scripts/triggers, modules, asset references,
+  plugins, plugin storage, compatibility adapters, and SSE invalidation
+  transport.
 - Domain state still uses the migration-window `data/db.json` blob for
   resources not yet extracted to SQL. Memory uses dedicated SQL tables
   added in Phase 8.

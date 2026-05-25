@@ -1,6 +1,6 @@
 # Architecture
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Current route coverage
@@ -38,6 +38,7 @@ server/fastify/
       memoryJobs.ts       POST/GET/DELETE /api/v1/memory/jobs
       memoryReads.ts      GET /api/v1/memory/chunks + summaries
       commands.ts         POST/PATCH/PUT/DELETE /api/v1/commands/*
+      events.ts           GET /api/v1/events
     generation/
       frames.ts           shared completion result/frame types
       additionalParams.ts body/header overlay helper
@@ -96,7 +97,7 @@ server/fastify/
     commands/           command validation, normalization, and event helpers
       mutations.ts      baseRevision checks, JSON transactions, events
       events.ts         command event catalog and sink types
-      characters.ts     resource-family helpers (chats, messages, etc.)
+      <family>.ts       resource-family helpers
     media/              planned helper routes, not current
       translate.ts      DeepL, DeepLX, Google
       tts.ts            OpenAI, ElevenLabs, NovelAI

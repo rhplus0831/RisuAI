@@ -1,6 +1,6 @@
 # Phase 8 - Hypa V3 Memory Server-Side
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 Status: closed. Completed through **8-9 - Phase 8 closeout**.
 Next phase: **Phase 9 - Client thinning**.
@@ -18,7 +18,7 @@ the current schema and import paths directly.
 
 ## Preconditions
 
-- Phase 0 closed: Supa, Hypa V2, and Hanurai are gone.
+- Phase 0 closed: Supa, Hypa V2, and Hanurai entry points are gone.
 - Phase 2 closed: server has the data-dir / repository foundation.
 - Phase 7 closed: prompt assembly is server-side and needs ready memory
   summaries to read.
@@ -231,7 +231,8 @@ None. Phase 8 is closed.
 
 ## Boundaries
 
-- **Do not bring back Supa / Hypa V2 / Hanurai.** Only Hypa V3 survives.
+- **Do not bring back Supa / Hypa V2 / Hanurai.** Only Hypa V3 survives
+  as a live memory engine.
 - **Do not introduce a second memory model.** One engine, one schema, one
   set of jobs.
 - **Do not run summarization or embedding in the prompt request hot

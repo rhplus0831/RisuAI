@@ -1,6 +1,6 @@
 # Test Coverage
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 This is the coverage router. Detail per area lives in the
 shards under [`coverage/`](coverage/).
@@ -71,14 +71,16 @@ shards under [`coverage/`](coverage/).
   similarity ranking, budget allocation, prompt-memory selection,
   read routes, browser memory adapter/progress/list-cancel behavior, and
   server-backed `hypav3-memory` fixture parity.
-- Phase 9 command coverage has landed through 9-4a: foundation,
-  settings, presets, prompt settings/items, personas, translator presets,
-  loadouts, characters, chats, chat folders, messages, generation
-  persistence, chat scriptstate, compatibility adapters, and lorebook
-  collections. Server command routes are covered in
+- Phase 9 command coverage has landed through 9-4g plus the 9-5a event
+  stream: foundation, settings, presets, prompt settings/items, personas,
+  translator presets, loadouts, characters, chats, chat folders,
+  messages, generation persistence, chat scriptstate, lorebooks,
+  scripts/triggers, modules, asset references, plugins, plugin storage,
+  and compatibility adapters. Server command routes are covered in
   `server/fastify/__tests__/commands.test.ts`, browser command helpers in
-  `src/ts/server/commands.test.ts`, and adapter routing in
-  `src/ts/compatibilityAdapters.test.ts`.
+  `src/ts/server/commands.test.ts`, adapter routing in
+  `src/ts/compatibilityAdapters.test.ts`, and the SSE stream in
+  `server/fastify/__tests__/events.test.ts`.
 
 ## Where to look
 

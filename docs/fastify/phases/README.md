@@ -1,6 +1,6 @@
 # Migration Phases
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 These files track current or remaining migration work. Completed
 details, landed slice tables, and old status logs live in
@@ -41,9 +41,8 @@ the phase file.
 
 Phase 9 is the active phase. Phase 8 is closed, so server-owned
 generation, prompt assembly, and memory surfaces are ready for the client
-thinning workstream. Phase 9 has landed commands through 9-4a lorebook
-collections; the next pickup is 9-4b script and trigger definition
-commands.
+thinning workstream. Phase 9 has landed through the 9-5a command-event
+stream; the next pickup is 9-5b bootstrap projection loading.
 
 ## Completed Detail
 

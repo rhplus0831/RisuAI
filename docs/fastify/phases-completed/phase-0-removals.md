@@ -9,8 +9,8 @@ Express server describe Phase 0 scope only; Phase 3 later deleted
 ## Goal
 
 Delete Group chat, peer-to-peer multi-user chat, Risu Account Sync,
-Google Drive sync, and the Supa / Hypa V2 / Hanurai memory engines
-from the tree, so later phases port a smaller surface.
+Google Drive sync, and the Supa / Hypa V2 / Hanurai memory-engine entry
+points from the live surface, so later phases port a smaller surface.
 
 Status: complete as of 2026-05-20. The as-landed inventory lives in
 [`../status/removals.md`](../status/removals.md).
@@ -151,7 +151,9 @@ Delete:
   terms/privacy links, plugin blacklist entries, or MCP OAuth helper
   placeholders.
 - `src/ts/drive/` no longer exists.
-- `src/ts/process/memory/` contains only Hypa V3 code.
+- `src/ts/process/memory/` contains only Hypa V3 live-engine code plus
+  shared embedding helpers that Hypa V3 imports, including legacy-named
+  `hypamemory*.ts` modules.
 - `peerjs` is removed from `package.json`; `openid-client` is
   removed if no consumer remains.
 - `pnpm check`, `pnpm test`, `pnpm build` are green.

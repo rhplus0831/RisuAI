@@ -1,6 +1,6 @@
 # Fastify Migration Roadmap
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 This directory is the working roadmap for moving Risuai from a thick
 browser app to a Fastify backend with a display-only client. The
@@ -16,12 +16,12 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Scope
 
-Current status lives in [`status.md`](status.md). As of 2026-05-25,
-Phases 0-8 are closed and Phase 9, client thinning, is active. The last
-landed slice is 9-4a lorebook collection commands; the next pickup is
-9-4b script and trigger definition commands. Fastify is the live server
-path; Express has been deleted. The Dockerfile and compose file target
-Fastify on port 6002 with `/app/data` persisted.
+Current status lives in [`status.md`](status.md). As of 2026-05-26,
+Phases 0-8 are closed and Phase 9, client thinning, is active. The 9-5a
+events endpoint has landed; the next pickup is 9-5b bootstrap projection
+loading. Fastify is the live server path, Express has been deleted, and
+the Dockerfile / compose file target port 6002 with `/app/data`
+persisted.
 
 Historical phase logs live in [`phases-completed/`](phases-completed/).
 Route and test inventories live under [`coverage/`](coverage/).
@@ -35,10 +35,8 @@ In scope:
   Hanurai memory engines have been removed from the client surface.
 - Moving the extracted generation seams server-side. Phase 6 closed
   the completion route and Phase 7 closed server-side prompt assembly,
-  including `/chat` dispatch and preview-prompt paths. The current
-  provider matrix lives in
-  [`coverage/providers.md`](coverage/providers.md), and the next pickup
-  lives in [`status/next-steps.md`](status/next-steps.md).
+  including `/chat` dispatch and preview-prompt paths. The provider
+  matrix lives in [`coverage/providers.md`](coverage/providers.md).
 - A display-only browser client in server-backed mode.
 
 Out of scope (see [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md)):
@@ -74,8 +72,9 @@ short form.
 - **Hub.** Fastify proxies hub traffic through `/api/v1/hub/*`.
   The route is intentionally still auth-gated; session-cookie or
   public element-load support is tracked as a follow-up.
-- **Memory.** Only Hypa V3 survives. Supa, Hypa V2, Hanurai are
-  removed in Phase 0.
+- **Memory.** Only Hypa V3 survives as a live engine. Supa, Hypa V2,
+  and Hanurai entry points are removed; legacy field/helper names may
+  remain where Hypa V3 still consumes them.
 - **Drive.** Google Drive sync is removed in Phase 0 with the rest of
   the client-owned cloud storage.
 

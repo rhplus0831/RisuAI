@@ -46,7 +46,8 @@ state family identified by 9-0. Group chat remains removed.
 
 - Load `/api/v1/bootstrap` on web startup through
   `src/ts/server/bootstrap.ts`.
-- Subscribe to `/api/v1/events` through `src/ts/server/events.ts`.
+- In 9-5c, subscribe to `/api/v1/events` through
+  `src/ts/server/events.ts`.
 - On server events, debounce a bootstrap re-fetch. Surgical event patches
   are a future optimization.
 - Turn on a read-only `DBState.db` guard in server-backed web mode after

@@ -1,6 +1,6 @@
 # Phase 9 Command Map
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 Status: locked by slice **9-0 - Mutation inventory and command map**.
 
@@ -178,11 +178,11 @@ move.
 
 | Family               | Endpoint / helper                                                                                 | Payload notes                                                                                                                                     | Event names                                                                     | Slice      |
 | -------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------- |
-| Events               | `GET /api/v1/events`                                                                              | Persistent SSE of command events. Client debounces bootstrap re-fetch.                                                                            | All command events                                                              | 9-5a, 9-5c |
+| Events               | `GET /api/v1/events`                                                                              | Persistent SSE of command events. Client subscription and debounced bootstrap re-fetch land in 9-5c.                                              | All command events                                                              | 9-5a, 9-5c |
 | Bootstrap projection | `GET /api/v1/bootstrap`, `src/ts/server/bootstrap.ts`                                             | Web startup uses server bootstrap in server-backed mode. `DBState.db` guard turns on after replacement sweep.                                     | N/A                                                                             | 9-5b, 9-5e |
 | Storage gating       | Browser helpers, not a command route                                                              | Prevent server-backed web startup/save/backup/asset/import paths from reaching localForage, OPFS, AutoStorage, or NodeStorage.                    | N/A                                                                             | 9-6        |
 | Server `.risu` codec | Server modules plus `/api/v1/import/risusave`, `/api/v1/export/risusave`, `/api/v1/export/bundle` | Existing JSON import route becomes the server codec route. Import decodes into command/import resource shape. Export walks real asset references. | `state.imported`, `state.exported` for event stream visibility where applicable | 9-7, 9-8   |
-| Backup restore       | Existing `/api/v1/backups/:id/restore`                                                            | Keep backup routes administrative, but restore emits `state.restored` once events exist.                                                          | `state.restored`                                                                | 9-5a, 9-6  |
+| Backup restore       | Existing `/api/v1/backups/:id/restore`                                                            | Keep backup routes administrative. Restore-event emission remains deferred until storage/projection gating.                                       | `state.restored` (planned)                                                      | 9-6        |
 
 ## Plugin Database Bridge
 

@@ -1,6 +1,6 @@
 # Test Coverage Shards
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 Each shard is a list of what is pinned + a brief explanation of
 how to read or extend the tests. Phase 1, Phase 2, and Phase 3
@@ -14,8 +14,8 @@ tests, assembler tests, and browser `/chat` adapter + preview wiring
 tests. Phase 8 now has memory job/read route coverage, focused memory
 service tests, browser memory adapter tests, and server-backed
 `hypav3-memory` fixture parity. Phase 9 command routes are covered
-through 9-4a; script/trigger definitions and later command families
-remain target rows until their routes land.
+through 9-4g, and the 9-5a command-event SSE stream has focused route
+coverage.
 
 ## Shards
 
