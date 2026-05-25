@@ -235,17 +235,18 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-3c message history commands are complete. Continue with
-**9-3d - Generation persistence handoff**:
+9-3d generation persistence handoff is complete. Continue with
+**9-3e - Chat `scriptstate` and scripting side effects**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement `POST /api/v1/commands/chats/:chatId/generation-result`.
-- Persist assistant row writes, reroll data, prompt info, generation info,
-  and terminal post-generation metadata after server-backed generation.
-- Keep transient streaming display state browser-local.
-- Keep scriptstate, lorebook/script/trigger child collections, projection
-  enforcement, and plugin bridge work in their later slices.
+- Implement `PATCH /api/v1/commands/chats/:chatId/scriptstate`.
+- Persist runtime script variable and chat-state writes through the
+  scriptstate command in server-backed web mode.
+- Keep generation result persistence on
+  `POST /api/v1/commands/chats/:chatId/generation-result`.
+- Keep lorebook/script/trigger child collections, projection enforcement,
+  and plugin bridge work in their later slices.
 - Preserve the 9-1 command response and conflict contract for the
-  generation persistence command.
+  scriptstate command.

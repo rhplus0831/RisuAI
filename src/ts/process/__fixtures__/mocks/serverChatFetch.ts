@@ -233,6 +233,30 @@ export async function serverChatFetch(
   const url =
     typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
   if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
+  if (url.endsWith('/api/v1/bootstrap')) {
+    return new Response(JSON.stringify({ revision: 1, database: {} }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+  if (url.endsWith('/generation-result')) {
+    return new Response(
+      JSON.stringify({
+        revision: 2,
+        event: {
+          type: 'generation.persisted',
+          revision: 2,
+          resource: 'generation',
+        },
+        chatId: 'chat-1',
+        messageId: state.generationId,
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    )
+  }
   if (!url.endsWith('/api/v1/generate/chat')) {
     throw new Error(`unexpected fetch in dual-mode assembly fixture: ${url}`)
   }

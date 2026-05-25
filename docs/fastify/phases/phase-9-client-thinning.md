@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-3c - Message history commands**. Next slice:
-**9-3d - Generation persistence handoff**.
+**9-3d - Generation persistence handoff**. Next slice:
+**9-3e - Chat `scriptstate` and scripting side effects**.
 
 ## Goal
 
@@ -161,6 +161,8 @@ surfaces.
   - **9-3d - Generation persistence handoff.** Split message-row writes,
     streaming state, and reroll/post-generation metadata. Preserve the
     sendChat fixture guardrails across the full group.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-3d.md`](../phases-completed/phase-9-client-thinning-9-3d.md).
   - **9-3e - Chat `scriptstate` and scripting side effects.** Runtime
     script variable and chat-state writes; trigger definitions stay in 9-4.
   - **9-3f - Compatibility setters and access adapters.** Replace helper,

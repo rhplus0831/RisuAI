@@ -2582,9 +2582,7 @@ describe('Phase 9-3c message history commands', () => {
       },
     })
     expect(badPatch.statusCode).toBe(400)
-    expect(badPatch.json().error).toBe(
-      'patch.generationInfo is not supported for message commands',
-    )
+    expect(badPatch.json().error).toBe('patch.generationInfo is not supported for message commands')
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -2642,6 +2640,274 @@ describe('Phase 9-3c message history commands', () => {
       payload: {
         baseRevision: 0,
         patch: { data: 'Stale' },
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})
+
+describe('Phase 9-3d generation persistence command', () => {
+  it('persists generated assistant rows by appending or replacing the target message', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [
+                { role: 'user', data: 'hello', chatId: 'msg-a' },
+                { role: 'char', data: 'old tail', chatId: 'msg-old' },
+              ],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const appended = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'fresh answer',
+            chatId: 'gen-1',
+            promptInfo: { promptName: 'Preset' },
+            generationInfo: { generationId: 'gen-1', model: 'echo_model' },
+          },
+        },
+      },
+    })
+    expect(appended.statusCode).toBe(200)
+    expect(appended.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'generation.persisted',
+        revision: 2,
+        resource: 'generation',
+        id: 'gen-1',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+      messageId: 'gen-1',
+    })
+
+    const replaced = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: appended.json().revision,
+        generationResult: {
+          targetMessageId: 'msg-old',
+          message: {
+            role: 'char',
+            data: 'continued answer',
+            chatId: 'gen-2',
+            promptInfo: { promptName: 'Preset' },
+            generationInfo: {
+              generationId: 'gen-2',
+              model: 'echo_model',
+              stageTiming: { stage4: 3 },
+            },
+          },
+        },
+      },
+    })
+    expect(replaced.statusCode).toBe(200)
+    expect(replaced.json()).toMatchObject({
+      revision: 3,
+      event: {
+        type: 'generation.persisted',
+        resource: 'generation',
+        id: 'gen-2',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+      messageId: 'gen-2',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'hello', chatId: 'msg-a' },
+      {
+        role: 'char',
+        data: 'continued answer',
+        chatId: 'gen-2',
+        promptInfo: { promptName: 'Preset' },
+        generationInfo: {
+          generationId: 'gen-2',
+          model: 'echo_model',
+          stageTiming: { stage4: 3 },
+        },
+      },
+      {
+        role: 'char',
+        data: 'fresh answer',
+        chatId: 'gen-1',
+        promptInfo: { promptName: 'Preset' },
+        generationInfo: { generationId: 'gen-1', model: 'echo_model' },
+      },
+    ])
+    expect(harness.commandEvents.list().at(-1)).toMatchObject({
+      type: 'generation.persisted',
+      revision: 3,
+      resource: 'generation',
+      id: 'gen-2',
+      parentId: 'chat-a',
+    })
+  })
+
+  it('rejects malformed generation results without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const badRole = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          message: {
+            role: 'user',
+            data: 'not an assistant',
+            chatId: 'gen-1',
+            generationInfo: { generationId: 'gen-1' },
+          },
+        },
+      },
+    })
+    expect(badRole.statusCode).toBe(400)
+    expect(badRole.json().error).toBe('generationResult.message.role must be char')
+
+    const missingInfo = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          message: { role: 'char', data: 'missing metadata', chatId: 'gen-1' },
+        },
+      },
+    })
+    expect(missingInfo.statusCode).toBe(400)
+    expect(missingInfo.json().error).toBe('generationResult.message.generationInfo is required')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].chats[0].message).toEqual([])
+  })
+
+  it('returns 404 and 409 for missing generation targets and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'hello', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const missingChat = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/missing/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'answer',
+            chatId: 'gen-1',
+            generationInfo: { generationId: 'gen-1' },
+          },
+        },
+      },
+    })
+    expect(missingChat.statusCode).toBe(404)
+    expect(missingChat.json().error).toBe('Chat not found: missing')
+
+    const missingMessage = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          targetMessageId: 'missing-message',
+          message: {
+            role: 'char',
+            data: 'answer',
+            chatId: 'gen-1',
+            generationInfo: { generationId: 'gen-1' },
+          },
+        },
+      },
+    })
+    expect(missingMessage.statusCode).toBe(404)
+    expect(missingMessage.json().error).toBe('Message not found for chat chat-a: missing-message')
+
+    const stale = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'answer',
+            chatId: 'gen-1',
+            generationInfo: { generationId: 'gen-1' },
+          },
+        },
       },
     })
     expect(stale.statusCode).toBe(409)

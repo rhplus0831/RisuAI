@@ -29,6 +29,11 @@ import { dispatchRequest } from './dispatch/dispatchRequest'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import { isFastifyServer } from '../platform'
 import {
+  currentChatStateSnapshot,
+  dispatchPersistGenerationResult,
+  ensureMessageId,
+} from '../chatCommands'
+import {
   requestServerChat,
   requestServerChatGeneration,
   type ServerChatInput,
@@ -81,6 +86,16 @@ function isServerChatGenerationOk(
   served: ServerChatAnyResult,
 ): served is Extract<Awaited<ReturnType<typeof requestServerChatGeneration>>, { status: 'ok' }> {
   return served.status === 'ok' && 'req' in served
+}
+
+function findGeneratedAssistantMessage(chat: Chat, generationId: string) {
+  const byId = chat.message.find((message) => message.chatId === generationId)
+  if (byId?.role === 'char') return byId
+  return [...chat.message]
+    .reverse()
+    .find(
+      (message) => message.role === 'char' && message.generationInfo?.generationId === generationId,
+    )
 }
 
 export async function sendChat(
@@ -493,6 +508,8 @@ export async function sendChat(
     let req: DispatchSuccessReq
     let generationId: string
     let serverTerminal: Promise<ServerChatTerminal> | undefined
+    const serverGenerationTargetMessageId =
+      serverDispatch && arg.continue ? currentChat.message.at(-1)?.chatId : undefined
     if (serverDispatch) {
       setProcessStage(3)
       stageTimings.stage3Start = Date.now()
@@ -611,6 +628,19 @@ export async function sendChat(
       return await sendChat(chatProcessIndex, {
         signal: abortSignal,
       })
+    }
+    if (serverDispatch && currentChat.id) {
+      const assistantMessage = findGeneratedAssistantMessage(currentChat, generationId)
+      if (assistantMessage) {
+        const previous = currentChatStateSnapshot()
+        ensureMessageId(assistantMessage)
+        dispatchPersistGenerationResult(
+          currentChat.id,
+          assistantMessage,
+          previous,
+          serverGenerationTargetMessageId,
+        )
+      }
     }
     return true
   } finally {

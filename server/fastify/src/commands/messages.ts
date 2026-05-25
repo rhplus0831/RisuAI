@@ -20,6 +20,11 @@ export interface MessageLocation {
   messageIndex: number
 }
 
+export interface GenerationResultRecord extends JsonRecord {
+  message: MessageRecord
+  targetMessageId?: string
+}
+
 const ALLOWED_MESSAGE_PATCH_KEYS = new Set([
   'role',
   'data',
@@ -96,6 +101,24 @@ export function readReplacementMessages(input: unknown): MessageRecord[] {
   const messages = input.map((message, index) => createMessageRecord(message, `messages[${index}]`))
   validateUniqueMessageIds(messages)
   return messages
+}
+
+export function readGenerationResult(input: unknown): GenerationResultRecord {
+  const result = readJsonObject(input, 'generationResult')
+  const message = createMessageRecord(result.message, 'generationResult.message')
+  if (message.role !== 'char') {
+    throw new ValidationError('generationResult.message.role must be char')
+  }
+  validateJsonRecord(message.promptInfo, 'generationResult.message.promptInfo')
+  if (message.generationInfo === undefined) {
+    throw new ValidationError('generationResult.message.generationInfo is required')
+  }
+  validateJsonRecord(message.generationInfo, 'generationResult.message.generationInfo')
+  const targetMessageId =
+    result.targetMessageId === undefined || result.targetMessageId === null
+      ? undefined
+      : readMessageId(result.targetMessageId, 'generationResult.targetMessageId')
+  return { ...result, message, targetMessageId }
 }
 
 export function readTruncateAfterMessageId(value: unknown): string | null {

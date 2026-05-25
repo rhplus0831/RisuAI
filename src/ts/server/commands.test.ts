@@ -43,6 +43,7 @@ import {
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  persistGenerationResultCommand,
   reorderCharactersCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
@@ -1618,6 +1619,19 @@ describe('server command API adapter', () => {
               messageId: 'msg-a',
             }
       }
+      if (url.endsWith('/chats/chat-a/generation-result')) {
+        return {
+          revision: 6,
+          event: {
+            type: 'generation.persisted',
+            revision: 6,
+            resource: 'generation',
+            id: 'gen-a',
+          },
+          chatId: 'chat-a',
+          messageId: 'gen-a',
+        }
+      }
       return jsonResponse({ error: 'unexpected' }, 500)
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
@@ -1661,6 +1675,23 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 5, chatId: 'chat-a' })
 
+    await expect(
+      persistGenerationResultCommand({
+        baseRevision: 5,
+        chatId: 'chat-a',
+        generationResult: {
+          targetMessageId: 'msg-b',
+          message: {
+            role: 'char',
+            data: 'generated',
+            chatId: 'gen-a',
+            generationInfo: { generationId: 'gen-a' },
+            promptInfo: { promptName: 'Preset' },
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 6, messageId: 'gen-a' })
+
     expect(
       commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
     ).toEqual([
@@ -1701,6 +1732,23 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 4,
           messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-result',
+        method: 'POST',
+        body: {
+          baseRevision: 5,
+          generationResult: {
+            targetMessageId: 'msg-b',
+            message: {
+              role: 'char',
+              data: 'generated',
+              chatId: 'gen-a',
+              generationInfo: { generationId: 'gen-a' },
+              promptInfo: { promptName: 'Preset' },
+            },
+          },
         },
       },
     ])

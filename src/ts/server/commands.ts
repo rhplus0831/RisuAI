@@ -686,6 +686,14 @@ export interface ReplaceMessagesCommandInput extends ChatCommandInput {
   messages: MessageSnapshot[]
 }
 
+export interface PersistGenerationResultCommandInput extends ChatCommandInput {
+  chatId: string
+  generationResult: {
+    message: MessageSnapshot
+    targetMessageId?: string
+  }
+}
+
 export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>
   rollback?: () => void
@@ -1459,6 +1467,20 @@ export async function replaceMessagesCommand(
     body: {
       baseRevision: input.baseRevision,
       messages: input.messages,
+    },
+    signal,
+  })
+}
+
+export async function persistGenerationResultCommand(
+  input: PersistGenerationResultCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; messageId: string }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/generation-result`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      generationResult: input.generationResult,
     },
     signal,
   })

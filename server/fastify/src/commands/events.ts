@@ -199,6 +199,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'messages.replaced',
     resource: 'message',
   },
+  generationPersisted: {
+    type: 'generation.persisted',
+    resource: 'generation',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

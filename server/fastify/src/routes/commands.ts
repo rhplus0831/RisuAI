@@ -101,6 +101,7 @@ import {
 import {
   createMessageRecord,
   normalizeAllChatMessages,
+  readGenerationResult,
   readMessageId,
   readMessagePatch,
   readReplacementMessages,
@@ -197,6 +198,7 @@ interface MessageCommandBody {
   patch?: unknown
   messages?: unknown
   afterMessageId?: unknown
+  generationResult?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -2669,7 +2671,11 @@ export function registerCommandRoutes(
           }
           messages.push(message)
           return {
-            event: { ...COMMAND_EVENT_CATALOG.messageAppended, id: message.chatId, parentId: chatId },
+            event: {
+              ...COMMAND_EVENT_CATALOG.messageAppended,
+              id: message.chatId,
+              parentId: chatId,
+            },
             extra: { chatId, messageId: message.chatId },
           }
         },
@@ -2824,6 +2830,57 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.messagesReplaced, parentId: chatId },
             extra: { chatId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/chats/:chatId/generation-result', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as MessageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const generationResult = readGenerationResult(body.generationResult)
+      const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllChatMessages(database)
+          const { messages } = requireChatMessages(characters, chatId)
+          const messageId = generationResult.message.chatId
+          const lookupMessageId = generationResult.targetMessageId ?? messageId
+          const existingIndex = messages.findIndex((message) => message.chatId === lookupMessageId)
+          if (existingIndex === -1) {
+            if (generationResult.targetMessageId) {
+              throw new EntityNotFoundError(
+                `Message not found for chat ${chatId}: ${generationResult.targetMessageId}`,
+              )
+            }
+            messages.push(generationResult.message)
+          } else {
+            messages[existingIndex] = generationResult.message
+          }
+          validateUniqueMessageIds(messages)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.generationPersisted,
+              id: messageId,
+              parentId: chatId,
+            },
+            extra: { chatId, messageId },
           }
         },
       })
