@@ -2,8 +2,8 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-5f - Memory selection service
-facade**. Next slice: **8-6a - Prompt memory adapter contract**.
+Status: in progress. Completed through **8-6a - Prompt memory adapter
+contract**. Next slice: **8-6b - Summary prompt-row assembly**.
 
 ## Goal
 
@@ -28,7 +28,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-5d:
+Completed through 8-6a:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -91,6 +91,11 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   ranking, and budget allocation. It accepts supplied query vectors and
   budget inputs, returns selected summaries plus repository/ranking/
   allocation diagnostics, and remains read-only.
+- The 8-6a prompt memory adapter contract wraps that facade for prompt
+  assembly with explicit enable/disable rules, selected-summary bucket
+  passthrough, selection diagnostics, missing-memory hints for future
+  follow-up jobs, and no-hot-path-work diagnostics. It remains read-only
+  and does not assemble prompt rows.
 
 ## Scope
 
@@ -146,9 +151,6 @@ browser progress store.
 - **8-6 - Prompt memory integration.** Add the server prompt-memory
   adapter, assemble canonical memory prompt rows, replace the Phase 7
   browser bridge, and queue missing-memory follow-up work.
-  - **8-6a - Prompt memory adapter contract.** Define enable/disable
-    rules, input context, selected-summary output, diagnostics, and the
-    no-hot-path-work guarantee.
   - **8-6b - Summary prompt-row assembly.** Convert selected summaries
     into canonical `memo: "hypaMemory"` prompt rows.
   - **8-6c - Assemble integration.** Replace the Phase 7/browser Hypa V3

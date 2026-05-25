@@ -85,7 +85,14 @@ function seedChunkAndJob(db: ReturnType<typeof openDatabase>, jobPayload = paylo
 
 function seedBatchJob(
   db: ReturnType<typeof openDatabase>,
-  input: { id: string; chunkId: string; rangeStartSeq: number; rangeEndSeq: number; text: string },
+  input: {
+    id: string
+    chunkId: string
+    rangeStartSeq: number
+    rangeEndSeq: number
+    text: string
+    nextRunAt?: string
+  },
 ) {
   createMemoryChunk(db, {
     id: input.chunkId,
@@ -100,6 +107,7 @@ function seedBatchJob(
     chatId: 'chat-1',
     kind: 'summarize',
     payload: payload(input.chunkId, input.rangeStartSeq, input.rangeEndSeq),
+    nextRunAt: input.nextRunAt,
   })
 }
 
@@ -301,6 +309,7 @@ describe('summarize memory job handler', () => {
         rangeStartSeq: 0,
         rangeEndSeq: 1,
         text: 'chunk one',
+        nextRunAt: '2026-05-25T00:00:00.000Z',
       })
       seedBatchJob(db, {
         id: 'job-2',
@@ -308,6 +317,7 @@ describe('summarize memory job handler', () => {
         rangeStartSeq: 2,
         rangeEndSeq: 3,
         text: 'chunk two',
+        nextRunAt: '2026-05-25T00:00:00.000Z',
       })
       seedBatchJob(db, {
         id: 'job-3',
@@ -315,6 +325,7 @@ describe('summarize memory job handler', () => {
         rangeStartSeq: 4,
         rangeEndSeq: 5,
         text: 'chunk three',
+        nextRunAt: '2026-05-25T00:00:00.000Z',
       })
       const worker = new MemoryWorker({
         db,

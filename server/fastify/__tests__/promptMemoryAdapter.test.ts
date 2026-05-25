@@ -1,0 +1,394 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { openDatabase } from '../src/db.js'
+import {
+  createMemoryChunk,
+  createMemoryEmbedding,
+  createMemorySummary,
+  type MemorySummary,
+} from '../src/memoryRepository.js'
+import { selectPromptMemory, type PromptMemorySelector } from '../src/prompt/memoryAdapter.js'
+
+const dataDirs: string[] = []
+
+function makeDataDir(): string {
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-prompt-memory-adapter-'))
+  dataDirs.push(dataDir)
+  return dataDir
+}
+
+afterEach(() => {
+  for (const dataDir of dataDirs.splice(0)) {
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+describe('prompt memory adapter', () => {
+  it('returns disabled memory without invoking selection work', () => {
+    const db = openDatabase(makeDataDir())
+    const selectMemory = vi.fn<PromptMemorySelector>()
+    try {
+      const result = selectPromptMemory({
+        db,
+        enabled: false,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 100,
+        settings: { recentMemoryRatio: 0.4, similarMemoryRatio: 0.4 },
+        selectMemory,
+      })
+
+      expect(selectMemory).not.toHaveBeenCalled()
+      expect(result).toMatchObject({
+        enabled: false,
+        disabledReason: 'feature-disabled',
+        selectedSummaries: [],
+        rankedSimilarSummaries: [],
+        diagnostics: {
+          enabled: false,
+          disabledReason: 'feature-disabled',
+          selectionAttempted: false,
+          selection: null,
+          hotPathWork: {
+            generatedQueryEmbeddings: false,
+            calledProviders: false,
+            generatedSummaries: false,
+            enqueuedJobs: false,
+            assembledPromptRows: false,
+          },
+        },
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('reports empty ready memory with selection diagnostics and no hot-path work', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const result = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: 'chat-empty',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 100,
+        settings: { recentMemoryRatio: 0.4, similarMemoryRatio: 0.4 },
+      })
+
+      expect(result.enabled).toBe(true)
+      expect(result.disabledReason).toBeNull()
+      expect(result.selectedSummaries).toEqual([])
+      expect(result.diagnostics.selectionAttempted).toBe(true)
+      expect(result.diagnostics.selection?.repository).toEqual({
+        summaries: 0,
+        chunks: 0,
+        embeddings: 0,
+        summaryIdsMissingChunks: [],
+        summaryIdsMissingEmbeddings: [],
+        chunkIdsMissingEmbeddings: [],
+        chunkIdsMissingSummaries: [],
+      })
+      expect(result.diagnostics.missingMemory).toEqual({
+        emptySelection: true,
+        hasMissingMemory: false,
+        summaryIdsMissingChunks: [],
+        summaryIdsMissingEmbeddings: [],
+        chunkIdsMissingEmbeddings: [],
+        chunkIdsMissingSummaries: [],
+        followUpEligible: false,
+      })
+      expect(result.diagnostics.hotPathWork).toEqual({
+        generatedQueryEmbeddings: false,
+        calledProviders: false,
+        generatedSummaries: false,
+        enqueuedJobs: false,
+        assembledPromptRows: false,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('passes selected summaries and buckets through from the memory selection facade', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedMemory(db, {
+        chunkId: 'chunk-a',
+        summaryId: 'summary-a',
+        embeddingId: 'embedding-a',
+        vector: [1, 0],
+        tokens: 5,
+      })
+      seedMemory(db, {
+        chunkId: 'chunk-b',
+        summaryId: 'summary-b',
+        embeddingId: 'embedding-b',
+        vector: [0, 1],
+        tokens: 5,
+      })
+
+      const result = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 10,
+        settings: { recentMemoryRatio: 0, similarMemoryRatio: 1 },
+      })
+
+      expect(result.selectedSummaries.map((summary) => summary.id)).toEqual([
+        'summary-a',
+        'summary-b',
+      ])
+      expect(result.similarSummaries.map((summary) => summary.id)).toEqual([
+        'summary-a',
+        'summary-b',
+      ])
+      expect(result.rankedSimilarSummaries.map((row) => row.summary.id)).toEqual([
+        'summary-a',
+        'summary-b',
+      ])
+      expect(result.importantSummaries).toEqual([])
+      expect(result.recentSummaries).toEqual([])
+      expect(result.randomSummaries).toEqual([])
+      expect(result.diagnostics.missingMemory).toMatchObject({
+        emptySelection: false,
+        hasMissingMemory: false,
+        followUpEligible: false,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('passes repository, ranking, and allocation diagnostics through', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-with-summary',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk with summary',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-without-embedding',
+        chatId: 'chat-1',
+        chunkId: 'chunk-with-summary',
+        model: 'summary-model',
+        text: 'summary without embedding',
+        tokens: 5,
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-with-embedding',
+        chatId: 'chat-1',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'chunk with embedding',
+        status: 'summarized',
+      })
+      createMemoryEmbedding(db, {
+        id: 'embedding-without-summary',
+        chatId: 'chat-1',
+        chunkId: 'chunk-with-embedding',
+        model: 'embedding-model',
+        vector: [1, 0],
+      })
+
+      const result = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 100,
+        settings: { recentMemoryRatio: 0, similarMemoryRatio: 1 },
+      })
+
+      expect(result.diagnostics.selection?.repository).toMatchObject({
+        summaryIdsMissingEmbeddings: ['summary-without-embedding'],
+        chunkIdsMissingEmbeddings: ['chunk-with-summary'],
+        chunkIdsMissingSummaries: ['chunk-with-embedding'],
+      })
+      expect(result.diagnostics.selection?.ranking.missingSummaries).toEqual([
+        'chunk-with-embedding',
+      ])
+      expect(result.diagnostics.selection?.allocation.missingCategories).toContainEqual({
+        category: 'similar',
+        reason: 'no-candidates',
+      })
+      expect(result.diagnostics.missingMemory).toEqual({
+        emptySelection: true,
+        hasMissingMemory: true,
+        summaryIdsMissingChunks: [],
+        summaryIdsMissingEmbeddings: ['summary-without-embedding'],
+        chunkIdsMissingEmbeddings: ['chunk-with-summary'],
+        chunkIdsMissingSummaries: ['chunk-with-embedding'],
+        followUpEligible: true,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('keeps hot-path work outside the adapter contract', () => {
+    const db = openDatabase(makeDataDir())
+    const selected = makeSummary('summary-a')
+    const selectMemory = vi.fn<PromptMemorySelector>(() => ({
+      selectedSummaries: [selected],
+      importantSummaries: [],
+      recentSummaries: [selected],
+      similarSummaries: [],
+      randomSummaries: [],
+      rankedSimilarSummaries: [],
+      diagnostics: {
+        repository: {
+          summaries: 1,
+          chunks: 1,
+          embeddings: 1,
+          summaryIdsMissingChunks: [],
+          summaryIdsMissingEmbeddings: [],
+          chunkIdsMissingEmbeddings: [],
+          chunkIdsMissingSummaries: [],
+        },
+        ranking: {
+          queryVectors: 1,
+          validQueryVectors: 1,
+          skippedQueryVectors: 0,
+          embeddings: 1,
+          scoredEmbeddings: 1,
+          skippedEmbeddings: [],
+          missingChunks: [],
+          missingSummaries: [],
+        },
+        allocation: {
+          inputSummaries: 1,
+          uniqueSummaries: 1,
+          duplicateSummaryIds: [],
+          availableTokens: 20,
+          consumedTokens: 5,
+          remainingTokens: 15,
+          recentMemoryRatio: 1,
+          similarMemoryRatio: 0,
+          randomMemoryRatio: 0,
+          unknownRankedSimilarSummaryIds: [],
+          categories: {
+            important: categoryDiagnostics('important'),
+            recent: categoryDiagnostics('recent', 5, 1, 1),
+            similar: categoryDiagnostics('similar'),
+            random: categoryDiagnostics('random'),
+          },
+          missingCategories: [],
+        },
+      },
+    }))
+
+    try {
+      const result = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: ' chat-1 ',
+        summaryModel: ' summary-model ',
+        embeddingModel: ' embedding-model ',
+        queryVectors: [[1, 0]],
+        availableTokens: 20,
+        settings: { recentMemoryRatio: 1, similarMemoryRatio: 0 },
+        selectMemory,
+      })
+
+      expect(selectMemory).toHaveBeenCalledOnce()
+      expect(selectMemory.mock.calls[0]?.[0]).toMatchObject({
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 20,
+        settings: { recentMemoryRatio: 1, similarMemoryRatio: 0 },
+      })
+      expect(result.selectedSummaries).toEqual([selected])
+      expect(result.diagnostics.hotPathWork).toEqual({
+        generatedQueryEmbeddings: false,
+        calledProviders: false,
+        generatedSummaries: false,
+        enqueuedJobs: false,
+        assembledPromptRows: false,
+      })
+    } finally {
+      db.close()
+    }
+  })
+})
+
+function seedMemory(
+  db: ReturnType<typeof openDatabase>,
+  input: {
+    chunkId: string
+    summaryId: string
+    embeddingId: string
+    vector: readonly number[]
+    tokens: number
+  },
+): void {
+  createMemoryChunk(db, {
+    id: input.chunkId,
+    chatId: 'chat-1',
+    rangeStartSeq: input.chunkId === 'chunk-a' ? 0 : 2,
+    rangeEndSeq: input.chunkId === 'chunk-a' ? 1 : 3,
+    text: input.chunkId,
+    status: 'summarized',
+  })
+  createMemorySummary(db, {
+    id: input.summaryId,
+    chatId: 'chat-1',
+    chunkId: input.chunkId,
+    model: 'summary-model',
+    text: input.summaryId,
+    tokens: input.tokens,
+  })
+  createMemoryEmbedding(db, {
+    id: input.embeddingId,
+    chatId: 'chat-1',
+    chunkId: input.chunkId,
+    model: 'embedding-model',
+    vector: [...input.vector],
+  })
+}
+
+function makeSummary(id: string): MemorySummary {
+  return {
+    id,
+    chatId: 'chat-1',
+    chunkId: 'chunk-a',
+    model: 'summary-model',
+    text: id,
+    metadata: null,
+    tokens: 5,
+    createdAt: '2026-05-25T00:00:00.000Z',
+  }
+}
+
+function categoryDiagnostics(
+  category: 'important' | 'recent' | 'similar' | 'random',
+  consumedTokens = 0,
+  candidateCount = 0,
+  selectedCount = 0,
+) {
+  return {
+    category,
+    reservedTokens: consumedTokens,
+    consumedTokens,
+    candidateCount,
+    selectedCount,
+    skippedForBudget: [],
+  }
+}

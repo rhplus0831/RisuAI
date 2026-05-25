@@ -34,6 +34,7 @@ track the next piece of work.
 | 8-5d - Pure similarity ranking          | [`phase-8-memory-8-5d.md`](phase-8-memory-8-5d.md)                                     | Pure cosine ranking over summaries, chunks, and embedding rows.         |
 | 8-5e - Pure memory budget allocator     | [`phase-8-memory-8-5e.md`](phase-8-memory-8-5e.md)                                     | Pure important/recent/similar/random summary budget selection.          |
 | 8-5f - Memory selection service facade  | [`phase-8-memory-8-5f.md`](phase-8-memory-8-5f.md)                                     | Read-only repository/ranking/allocation facade for prompt integration.  |
+| 8-6a - Prompt memory adapter contract   | [`phase-8-memory-8-6a.md`](phase-8-memory-8-6a.md)                                     | Prompt-facing contract, diagnostics, and no-hot-path-work guardrails.   |
 
 ## Historical Status Logs
 
