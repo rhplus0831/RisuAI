@@ -24,6 +24,7 @@ export type PromptSettings = {
 }
 
 export interface PromptItemPlain {
+  id?: string
   type: 'plain' | 'jailbreak' | 'cot'
   type2: 'normal' | 'globalNote' | 'main'
   text: string
@@ -32,18 +33,21 @@ export interface PromptItemPlain {
 }
 
 export interface PromptItemChatML {
+  id?: string
   type: 'chatML'
   text: string
   name?: string
 }
 
 export interface PromptItemTyped {
+  id?: string
   type: 'persona' | 'description' | 'lorebook' | 'postEverything' | 'memory'
   innerFormat?: string
   name?: string
 }
 
 export interface PromptItemAuthorNote {
+  id?: string
   type: 'authornote'
   innerFormat?: string
   defaultText?: string
@@ -51,6 +55,7 @@ export interface PromptItemAuthorNote {
 }
 
 export interface PromptItemChat {
+  id?: string
   type: 'chat'
   rangeStart: number
   rangeEnd: number | 'end'
@@ -59,6 +64,7 @@ export interface PromptItemChat {
 }
 
 export interface PromptItemCache {
+  id?: string
   type: 'cache'
   name: string
   depth: number

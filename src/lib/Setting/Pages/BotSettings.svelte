@@ -53,6 +53,11 @@
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
   import { onDestroy } from 'svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import {
+    canUseServerCommands,
+    patchPromptSettingsCommand,
+    runServerCommand,
+  } from 'src/ts/server/commands'
 
   const stopServerSettingsWatch = watchServerBackedSettings([
     'aiModel',
@@ -1172,6 +1177,23 @@
         name={language.usePromptTemplate}
         onChange={() => {
           DBState.db.promptTemplate = []
+          if (canUseServerCommands()) {
+            void runServerCommand({
+              command: (baseRevision) =>
+                patchPromptSettingsCommand({
+                  baseRevision,
+                  patch: { promptTemplate: [] },
+                }),
+              rollback: () => {
+                if (
+                  Array.isArray(DBState.db.promptTemplate) &&
+                  DBState.db.promptTemplate.length === 0
+                ) {
+                  DBState.db.promptTemplate = undefined
+                }
+              },
+            })
+          }
         }}
       />
     {/if}

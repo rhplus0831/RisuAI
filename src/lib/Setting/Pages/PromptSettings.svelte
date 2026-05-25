@@ -15,9 +15,21 @@
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import ModelList from 'src/lib/UI/ModelList.svelte'
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
   import { defaultAutoSuggestPrompt } from '../../../ts/storage/defaultPrompts'
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
+  import { normalizePromptTemplateIds } from 'src/ts/storage/database.svelte'
+  import {
+    canUseServerCommands,
+    createPromptItemCommand,
+    deletePromptItemCommand,
+    patchPromptSettingsCommand,
+    reorderPromptItemsCommand,
+    runServerCommand,
+    updatePromptItemCommand,
+    type PromptItemSnapshot,
+    type SettingsPatch,
+  } from 'src/ts/server/commands'
 
   let sorted = 0
   let warns: string[] = $state([])
@@ -26,6 +38,17 @@
   let draggedIndex = $state(-1)
   let dragOverIndex = $state(-1)
   let openedItemIndices = $state(new Set<number>())
+  const pendingPromptItemUpdates = new Map<string, ReturnType<typeof setTimeout>>()
+  const pendingPromptSettingsPatch = {
+    patch: {} as SettingsPatch,
+    previous: {} as SettingsPatch,
+    attempted: {} as SettingsPatch,
+    timer: null as ReturnType<typeof setTimeout> | null,
+  }
+  const promptSettingsPreviousSnapshots = new Map<string, string>()
+  const promptSettingsPreviousValues = new Map<string, unknown>()
+  let promptSettingsWatcherInitialized = false
+  let suppressPromptSettingsRollback = false
   executeTokenize(DBState.db.promptTemplate)
   interface Props {
     onGoBack?: () => void
@@ -40,11 +63,224 @@
     extokens = await tokenizePreset(prest, false)
   }
 
+  function promptItemId(item: PromptItem): string {
+    normalizePromptTemplateIds(DBState.db)
+    item.id ??= crypto.randomUUID()
+    return item.id
+  }
+
+  function cloneJsonValue<T>(value: T): T {
+    if (value === undefined) return value
+    return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  function snapshotJson(value: unknown): string {
+    const snapshot = JSON.stringify(value)
+    return snapshot === undefined ? '__undefined__' : snapshot
+  }
+
+  function currentPromptTemplateSnapshot(): PromptItem[] {
+    return cloneJsonValue(DBState.db.promptTemplate ?? [])
+  }
+
+  function rollbackPromptTemplate(previous: PromptItem[], attempted: PromptItem[]): void {
+    if (snapshotJson(DBState.db.promptTemplate ?? []) === snapshotJson(attempted)) {
+      DBState.db.promptTemplate = cloneJsonValue(previous)
+    }
+  }
+
+  function createPromptItem(): PromptItem {
+    return {
+      id: crypto.randomUUID(),
+      type: 'plain',
+      text: '',
+      role: 'system',
+      type2: 'normal',
+    }
+  }
+
+  function dispatchCreatePromptItem(promptItem: PromptItem, previous: PromptItem[]): void {
+    if (!canUseServerCommands()) return
+    const attempted = currentPromptTemplateSnapshot()
+    void runServerCommand({
+      command: (baseRevision) =>
+        createPromptItemCommand({
+          baseRevision,
+          promptItem: cloneJsonValue(promptItem) as PromptItemSnapshot,
+        }),
+      rollback: () => rollbackPromptTemplate(previous, attempted),
+    })
+  }
+
+  function dispatchDeletePromptItem(promptItem: PromptItem, previous: PromptItem[]): void {
+    if (!canUseServerCommands()) return
+    const itemId = promptItemId(promptItem)
+    const attempted = currentPromptTemplateSnapshot()
+    void runServerCommand({
+      command: (baseRevision) =>
+        deletePromptItemCommand({
+          baseRevision,
+          itemId,
+        }),
+      rollback: () => rollbackPromptTemplate(previous, attempted),
+    })
+  }
+
+  function dispatchReorderPromptItems(previous: PromptItem[]): void {
+    if (!canUseServerCommands()) return
+    normalizePromptTemplateIds(DBState.db)
+    const attempted = currentPromptTemplateSnapshot()
+    void runServerCommand({
+      command: (baseRevision) =>
+        reorderPromptItemsCommand({
+          baseRevision,
+          itemIds: DBState.db.promptTemplate.map((item) => promptItemId(item)),
+        }),
+      rollback: () => rollbackPromptTemplate(previous, attempted),
+    })
+  }
+
+  function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem): void {
+    if (!canUseServerCommands()) return
+    const itemId = promptItemId(promptItem)
+    if (pendingPromptItemUpdates.has(itemId)) {
+      clearTimeout(pendingPromptItemUpdates.get(itemId))
+    }
+    const attemptedItem = cloneJsonValue(promptItem)
+    pendingPromptItemUpdates.set(
+      itemId,
+      setTimeout(() => {
+        pendingPromptItemUpdates.delete(itemId)
+        void runServerCommand({
+          command: (baseRevision) =>
+            updatePromptItemCommand({
+              baseRevision,
+              itemId,
+              patch: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
+            }),
+          rollback: () => {
+            const index = DBState.db.promptTemplate.findIndex((item) => item.id === itemId)
+            if (index === -1) return
+            if (snapshotJson(DBState.db.promptTemplate[index]) === snapshotJson(attemptedItem)) {
+              DBState.db.promptTemplate[index] = cloneJsonValue(previousItem)
+              DBState.db.promptTemplate = [...DBState.db.promptTemplate]
+            }
+          },
+        })
+      }, 250),
+    )
+  }
+
+  function movePromptItem(originalIndex: number, nextIndex: number): void {
+    if (nextIndex < 0 || nextIndex >= DBState.db.promptTemplate.length) return
+    const previous = currentPromptTemplateSnapshot()
+    const templates = [...DBState.db.promptTemplate]
+    const temp = templates[originalIndex]
+    templates[originalIndex] = templates[nextIndex]
+    templates[nextIndex] = temp
+    DBState.db.promptTemplate = templates
+    dispatchReorderPromptItems(previous)
+  }
+
+  const promptSettingsKeys = [
+    'promptSettings',
+    'jsonSchemaEnabled',
+    'jsonSchema',
+    'strictJsonSchema',
+    'extractJson',
+    'customPromptTemplateToggle',
+    'templateDefaultVariables',
+    'OAIPrediction',
+    'autoSuggestPrompt',
+    'systemContentReplacement',
+    'systemRoleReplacement',
+    'outputImageModal',
+    'fallbackModels',
+    'fallbackWhenBlankResponse',
+    'doNotChangeFallbackModels',
+  ] as const
+
+  function queuePromptSettingsPatch(patch: SettingsPatch, previous: SettingsPatch): void {
+    if (!canUseServerCommands()) return
+    for (const [key, value] of Object.entries(patch)) {
+      if (!(key in pendingPromptSettingsPatch.previous)) {
+        pendingPromptSettingsPatch.previous[key] = previous[key]
+      }
+      pendingPromptSettingsPatch.patch[key] = value
+      pendingPromptSettingsPatch.attempted[key] = value
+    }
+
+    if (pendingPromptSettingsPatch.timer) clearTimeout(pendingPromptSettingsPatch.timer)
+    pendingPromptSettingsPatch.timer = setTimeout(() => {
+      pendingPromptSettingsPatch.timer = null
+      const commandPatch = pendingPromptSettingsPatch.patch
+      const commandPrevious = pendingPromptSettingsPatch.previous
+      const commandAttempted = pendingPromptSettingsPatch.attempted
+      pendingPromptSettingsPatch.patch = {}
+      pendingPromptSettingsPatch.previous = {}
+      pendingPromptSettingsPatch.attempted = {}
+
+      void runServerCommand({
+        command: (baseRevision) =>
+          patchPromptSettingsCommand({
+            baseRevision,
+            patch: commandPatch,
+          }),
+        rollback: () => {
+          suppressPromptSettingsRollback = true
+          try {
+            const target = DBState.db as unknown as Record<string, unknown>
+            for (const [key, previousValue] of Object.entries(commandPrevious)) {
+              if (snapshotJson(target[key]) === snapshotJson(commandAttempted[key])) {
+                target[key] = cloneJsonValue(previousValue)
+              }
+            }
+          } finally {
+            queueMicrotask(() => {
+              suppressPromptSettingsRollback = false
+            })
+          }
+        },
+      })
+    }, 250)
+  }
+
   $effect.pre(() => {
     warns = templateCheck(DBState.db)
   })
   $effect.pre(() => {
     executeTokenize(DBState.db.promptTemplate)
+  })
+  $effect(() => {
+    normalizePromptTemplateIds(DBState.db)
+  })
+  $effect(() => {
+    if (!canUseServerCommands()) return
+    const changed: SettingsPatch = {}
+    const before: SettingsPatch = {}
+    const target = DBState.db as unknown as Record<string, unknown>
+
+    for (const key of promptSettingsKeys) {
+      const value = target[key]
+      const snapshot = snapshotJson(value)
+      const previousSnapshot = promptSettingsPreviousSnapshots.get(key)
+
+      if (promptSettingsWatcherInitialized && snapshot !== previousSnapshot) {
+        changed[key] = cloneJsonValue(value)
+        before[key] = cloneJsonValue(promptSettingsPreviousValues.get(key))
+      }
+
+      promptSettingsPreviousSnapshots.set(key, snapshot)
+      promptSettingsPreviousValues.set(key, cloneJsonValue(value))
+    }
+
+    if (!promptSettingsWatcherInitialized) {
+      promptSettingsWatcherInitialized = true
+      return
+    }
+    if (suppressPromptSettingsRollback || Object.keys(changed).length === 0) return
+
+    untrack(() => queuePromptSettingsPatch(changed, before))
   })
 
   function getDisplayTemplate() {
@@ -78,6 +314,7 @@
     }
 
     const templates = [...DBState.db.promptTemplate]
+    const previous = currentPromptTemplateSnapshot()
     const [movedItem] = templates.splice(draggedIndex, 1)
 
     const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
@@ -104,6 +341,7 @@
     openedItemIndices = newOpenedIndices
 
     DBState.db.promptTemplate = templates
+    dispatchReorderPromptItems(previous)
     draggedIndex = -1
     dragOverIndex = -1
   }
@@ -124,6 +362,12 @@
 
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown)
+    for (const timer of pendingPromptItemUpdates.values()) {
+      clearTimeout(timer)
+    }
+    if (pendingPromptSettingsPatch.timer) {
+      clearTimeout(pendingPromptSettingsPatch.timer)
+    }
   })
 </script>
 
@@ -182,9 +426,12 @@
           bind:openedItemIndices
           currentIndex={originalIndex}
           {displayIndex}
+          onUpdate={queuePromptItemUpdate}
           onDrop={handlePromptDrop}
           onRemove={() => {
-            let templates = DBState.db.promptTemplate
+            const previous = currentPromptTemplateSnapshot()
+            const removed = DBState.db.promptTemplate[originalIndex]
+            let templates = [...DBState.db.promptTemplate]
             templates.splice(originalIndex, 1)
             DBState.db.promptTemplate = templates
 
@@ -202,16 +449,13 @@
 
             draggedIndex = -1
             dragOverIndex = -1
+            dispatchDeletePromptItem(removed, previous)
           }}
           moveDown={() => {
             if (originalIndex === DBState.db.promptTemplate.length - 1) {
               return
             }
-            let templates = DBState.db.promptTemplate
-            let temp = templates[originalIndex]
-            templates[originalIndex] = templates[originalIndex + 1]
-            templates[originalIndex + 1] = temp
-            DBState.db.promptTemplate = templates
+            movePromptItem(originalIndex, originalIndex + 1)
 
             const newOpenedIndices = new Set<number>()
             openedItemIndices.forEach((index) => {
@@ -229,11 +473,7 @@
             if (originalIndex === 0) {
               return
             }
-            let templates = DBState.db.promptTemplate
-            let temp = templates[originalIndex]
-            templates[originalIndex] = templates[originalIndex - 1]
-            templates[originalIndex - 1] = temp
-            DBState.db.promptTemplate = templates
+            movePromptItem(originalIndex, originalIndex - 1)
 
             const newOpenedIndices = new Set<number>()
             openedItemIndices.forEach((index) => {
@@ -255,14 +495,10 @@
   <button
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={() => {
-      let value = DBState.db.promptTemplate ?? []
-      value.push({
-        type: 'plain',
-        text: '',
-        role: 'system',
-        type2: 'normal',
-      })
-      DBState.db.promptTemplate = value
+      const previous = currentPromptTemplateSnapshot()
+      const promptItem = createPromptItem()
+      DBState.db.promptTemplate = [...(DBState.db.promptTemplate ?? []), promptItem]
+      dispatchCreatePromptItem(promptItem, previous)
     }}><PlusIcon /></button
   >
 

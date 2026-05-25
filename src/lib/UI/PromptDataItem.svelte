@@ -13,6 +13,7 @@
   interface Props {
     promptItem: PromptItem
     onRemove?: () => void
+    onUpdate?: (promptItem: PromptItem, previousItem: PromptItem) => void
     moveUp?: () => void
     moveDown?: () => void
     onDrop?: () => void
@@ -28,6 +29,7 @@
   let {
     promptItem = $bindable(),
     onRemove = () => {},
+    onUpdate = () => {},
     moveUp = () => {},
     moveDown = () => {},
     onDrop = () => {},
@@ -39,6 +41,25 @@
     currentIndex = -1,
     displayIndex = -1,
   }: Props = $props()
+
+  let initializedPromptSnapshot = false
+  let previousPromptSnapshot = ''
+  let previousPromptItem = clonePromptItem(promptItem)
+
+  $effect(() => {
+    const snapshot = JSON.stringify(promptItem)
+    if (!initializedPromptSnapshot) {
+      initializedPromptSnapshot = true
+      previousPromptSnapshot = snapshot
+      previousPromptItem = clonePromptItem(promptItem)
+      return
+    }
+    if (snapshot === previousPromptSnapshot) return
+    const before = previousPromptItem
+    previousPromptSnapshot = snapshot
+    previousPromptItem = clonePromptItem(promptItem)
+    onUpdate(clonePromptItem(promptItem), before)
+  })
 
   const chatPromptChange = () => {
     const currentprompt = promptItem as PromptItemChat
@@ -93,22 +114,8 @@
     return ''
   }
 
-  function replacePrompt(prompt: PromptItem) {
-    if (JSON.stringify(promptItem) === JSON.stringify(prompt)) {
-      return
-    }
-
-    const ind = DBState.db.promptTemplate.findIndex((item, index) => {
-      return JSON.stringify(item) === JSON.stringify(prompt)
-    })
-
-    if (ind !== -1) {
-      DBState.db.promptTemplate.splice(ind, 1)
-    }
-    const myInd = DBState.db.promptTemplate.findIndex((item, index) => {
-      return JSON.stringify(item) === JSON.stringify(promptItem)
-    })
-    DBState.db.promptTemplate.splice(myInd, 0, prompt)
+  function clonePromptItem(item: PromptItem): PromptItem {
+    return JSON.parse(JSON.stringify(item)) as PromptItem
   }
 </script>
 

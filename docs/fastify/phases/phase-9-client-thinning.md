@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-2b - Bot presets**. Next slice:
-**9-2c - Prompt templates/items**.
+**9-2c - Prompt templates/items**. Next slice:
+**9-2d - Personas**.
 
 ## Goal
 
@@ -128,6 +128,8 @@ surfaces.
   - **9-2c - Prompt templates/items.** Template enablement, prompt-item
     create/update/delete/reorder, and prompt-setting fields directly tied
     to template behavior.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-2c.md`](../phases-completed/phase-9-client-thinning-9-2c.md).
   - **9-2d - Personas.** Persona create/update/delete/reorder/select plus
     mirror fields and import/export behavior.
   - **9-2e - Translator presets.** Preset create/rename/delete/select and

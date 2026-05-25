@@ -41,6 +41,22 @@ function createClientPresetId() {
   return crypto.randomUUID()
 }
 
+function createClientPromptItemId() {
+  return crypto.randomUUID()
+}
+
+export function normalizePromptTemplateIds(data: Pick<Database, 'promptTemplate'>) {
+  if (!Array.isArray(data.promptTemplate)) return
+
+  const seen = new Set<string>()
+  for (const item of data.promptTemplate) {
+    if (!item || typeof item !== 'object') continue
+    const id = typeof item.id === 'string' && item.id.trim() ? item.id : createClientPromptItemId()
+    item.id = seen.has(id) ? createClientPromptItemId() : id
+    seen.add(item.id)
+  }
+}
+
 function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId'>) {
   if (!Array.isArray(data.botPresets)) {
     data.botPresets = []
@@ -49,7 +65,8 @@ function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId
   const seen = new Set<string>()
   for (const preset of data.botPresets) {
     if (!preset) continue
-    const id = typeof preset.id === 'string' && preset.id.trim() ? preset.id : createClientPresetId()
+    const id =
+      typeof preset.id === 'string' && preset.id.trim() ? preset.id : createClientPresetId()
     preset.id = seen.has(id) ? createClientPresetId() : id
     seen.add(preset.id)
   }
@@ -2257,7 +2274,12 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
   let db = DBState.db
   normalizeBotPresetIds(db)
   if (fromIndex === toIndex) return
-  if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.botPresets.length || toIndex > db.botPresets.length) {
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= db.botPresets.length ||
+    toIndex > db.botPresets.length
+  ) {
     return
   }
 

@@ -645,10 +645,9 @@ describe('Phase 9-2b bot preset commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
-      'preset-b',
-      'preset-a',
-    ])
+    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual(
+      ['preset-b', 'preset-a'],
+    )
     expect(bootstrap.json().database.botPresetsId).toBe(0)
   })
 
@@ -681,10 +680,9 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
-      'preset-a',
-      'preset-b',
-    ])
+    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual(
+      ['preset-a', 'preset-b'],
+    )
   })
 
   it('returns 404 and 409 for missing presets and stale revisions', async () => {
@@ -713,6 +711,225 @@ describe('Phase 9-2b bot preset commands', () => {
       payload: {
         baseRevision: 0,
         patch: { name: 'stale' },
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})
+
+describe('Phase 9-2c prompt template and item commands', () => {
+  it('patches prompt settings and emits the prompt settings event', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      promptSettings: { sendName: false, maxThoughtTagDepth: -1 },
+      jsonSchemaEnabled: false,
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          promptSettings: { sendName: true, maxThoughtTagDepth: 4 },
+          jsonSchemaEnabled: true,
+          jsonSchema: '{"type":"object"}',
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'prompt.settings.updated',
+        revision: 2,
+        resource: 'prompt',
+      },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      promptSettings: { sendName: true, maxThoughtTagDepth: 4 },
+      jsonSchemaEnabled: true,
+      jsonSchema: '{"type":"object"}',
+    })
+  })
+
+  it('creates, updates, deletes, and reorders prompt items by stable id', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      promptTemplate: [{ id: 'item-a', type: 'description' }],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        promptItem: {
+          id: 'item-b',
+          type: 'plain',
+          type2: 'normal',
+          text: 'hello',
+          role: 'system',
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'prompt.item.created',
+        revision: 2,
+        resource: 'promptItem',
+        id: 'item-b',
+      },
+      itemId: 'item-b',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-items/item-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        patch: {
+          type: 'plain',
+          type2: 'normal',
+          text: 'updated',
+          role: 'user',
+        },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event).toMatchObject({
+      type: 'prompt.item.updated',
+      resource: 'promptItem',
+      id: 'item-b',
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        itemIds: ['item-b', 'item-a'],
+      },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().event).toMatchObject({
+      type: 'prompt.item.reordered',
+      resource: 'promptItem',
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/prompt-items/item-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: reordered.json().revision,
+      },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json().event).toMatchObject({
+      type: 'prompt.item.deleted',
+      resource: 'promptItem',
+      id: 'item-a',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.promptTemplate).toEqual([
+      {
+        id: 'item-b',
+        type: 'plain',
+        type2: 'normal',
+        text: 'updated',
+        role: 'user',
+      },
+    ])
+  })
+
+  it('rejects malformed prompt commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      promptTemplate: [
+        { id: 'item-a', type: 'description' },
+        { id: 'item-b', type: 'memory' },
+      ],
+    })
+
+    const settings = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { jsonSchemaEnabled: 'yes' },
+      },
+    })
+    expect(settings.statusCode).toBe(400)
+    expect(settings.json().error).toBe('jsonSchemaEnabled must be a boolean')
+
+    const reorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        itemIds: ['item-a', 'item-a'],
+      },
+    })
+    expect(reorder.statusCode).toBe(400)
+    expect(reorder.json().error).toBe('Duplicate prompt item id: item-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.promptTemplate.map((item: { id: string }) => item.id)).toEqual(
+      ['item-a', 'item-b'],
+    )
+  })
+
+  it('returns 404 and 409 for missing prompt items and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      promptTemplate: [{ id: 'item-a', type: 'description' }],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-items/missing',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { type: 'memory' },
+      },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Prompt item not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/prompt-items/item-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
       },
     })
     expect(stale.statusCode).toBe(409)

@@ -19,14 +19,20 @@ vi.mock('../storage/nodeStorage', () => ({
 import {
   canUseServerCommands,
   clearCachedServerCommandRevision,
+  createPromptItemCommand,
   createPresetCommand,
+  deletePromptItemCommand,
   getServerCommandBaseRevision,
+  patchPromptSettingsCommand,
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  reorderPromptItemsCommand,
   reorderPresetsCommand,
+  runServerCommand,
   runServerPresetCommand,
   selectPresetCommand,
+  updatePromptItemCommand,
 } from './commands'
 
 interface CapturedFetch {
@@ -188,9 +194,15 @@ describe('server command API adapter', () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 10 }
       if (url.endsWith('/settings/providers')) {
-        return { revision: 11, event: { type: 'settings.updated', revision: 11, resource: 'settings' } }
+        return {
+          revision: 11,
+          event: { type: 'settings.updated', revision: 11, resource: 'settings' },
+        }
       }
-      return { revision: 12, event: { type: 'settings.updated', revision: 12, resource: 'settings' } }
+      return {
+        revision: 12,
+        event: { type: 'settings.updated', revision: 12, resource: 'settings' },
+      }
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
 
@@ -237,7 +249,10 @@ describe('server command API adapter', () => {
         if (providerAttempts === 1) {
           return jsonResponse({ error: 'revision_conflict', currentRevision: 8 }, 409)
         }
-        return { revision: 9, event: { type: 'settings.updated', revision: 9, resource: 'settings' } }
+        return {
+          revision: 9,
+          event: { type: 'settings.updated', revision: 9, resource: 'settings' },
+        }
       }
       return { revision: 10 }
     })
@@ -436,5 +451,142 @@ describe('server command API adapter', () => {
     expect(result).toEqual({ status: 'unavailable' })
     expect(rollback).not.toHaveBeenCalled()
     expect(commandFetch.calls).toEqual([])
+  })
+
+  it('dispatches prompt settings and prompt item commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/prompt-settings')) {
+        return {
+          revision: 2,
+          event: { type: 'prompt.settings.updated', revision: 2, resource: 'prompt' },
+        }
+      }
+      if (url.endsWith('/prompt-items/reorder')) {
+        return {
+          revision: 6,
+          event: { type: 'prompt.item.reordered', revision: 6, resource: 'promptItem' },
+        }
+      }
+      if (url.endsWith('/prompt-items/item-a')) {
+        return {
+          revision: 5,
+          event: { type: 'prompt.item.deleted', revision: 5, resource: 'promptItem', id: 'item-a' },
+          itemId: 'item-a',
+        }
+      }
+      if (url.endsWith('/prompt-items/item-b')) {
+        return {
+          revision: 4,
+          event: { type: 'prompt.item.updated', revision: 4, resource: 'promptItem', id: 'item-b' },
+          itemId: 'item-b',
+        }
+      }
+      return {
+        revision: 3,
+        event: { type: 'prompt.item.created', revision: 3, resource: 'promptItem', id: 'item-b' },
+        itemId: 'item-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      patchPromptSettingsCommand({
+        baseRevision: 1,
+        patch: { promptSettings: { sendName: true } },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2 })
+
+    await expect(
+      createPromptItemCommand({
+        baseRevision: 2,
+        promptItem: { id: 'item-b', type: 'memory' },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, itemId: 'item-b' })
+
+    await expect(
+      updatePromptItemCommand({
+        baseRevision: 3,
+        itemId: 'item-b',
+        patch: { type: 'description' },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 4, itemId: 'item-b' })
+
+    await expect(
+      deletePromptItemCommand({
+        baseRevision: 4,
+        itemId: 'item-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, itemId: 'item-a' })
+
+    await expect(
+      reorderPromptItemsCommand({
+        baseRevision: 5,
+        itemIds: ['item-b'],
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 6 })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/prompt-settings',
+        method: 'PATCH',
+        body: { baseRevision: 1, patch: { promptSettings: { sendName: true } } },
+      },
+      {
+        url: '/api/v1/commands/prompt-items',
+        method: 'POST',
+        body: { baseRevision: 2, promptItem: { id: 'item-b', type: 'memory' } },
+      },
+      {
+        url: '/api/v1/commands/prompt-items/item-b',
+        method: 'PATCH',
+        body: { baseRevision: 3, patch: { type: 'description' } },
+      },
+      {
+        url: '/api/v1/commands/prompt-items/item-a',
+        method: 'DELETE',
+        body: { baseRevision: 4 },
+      },
+      {
+        url: '/api/v1/commands/prompt-items/reorder',
+        method: 'POST',
+        body: { baseRevision: 5, itemIds: ['item-b'] },
+      },
+    ])
+  })
+
+  it('runs prompt commands with revision lookup and one conflict retry', async () => {
+    let attempts = 0
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 11 }
+      attempts += 1
+      if (attempts === 1) {
+        return jsonResponse({ error: 'revision_conflict', currentRevision: 14 }, 409)
+      }
+      return {
+        revision: 15,
+        event: { type: 'prompt.item.updated', revision: 15, resource: 'promptItem', id: 'item-a' },
+        itemId: 'item-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      runServerCommand({
+        command: (baseRevision) =>
+          updatePromptItemCommand({
+            baseRevision,
+            itemId: 'item-a',
+            patch: { type: 'memory' },
+          }),
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 15, itemId: 'item-a' })
+
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      null,
+      { baseRevision: 11, patch: { type: 'memory' } },
+      { baseRevision: 14, patch: { type: 'memory' } },
+    ])
   })
 })

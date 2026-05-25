@@ -358,6 +358,11 @@ export type PresetSnapshot = Record<string, unknown> & {
   name?: string
 }
 
+export type PromptItemSnapshot = Record<string, unknown> & {
+  id?: string
+  type?: string
+}
+
 export interface PresetCommandInput {
   baseRevision: number
 }
@@ -398,6 +403,32 @@ export interface ReorderPresetsCommandInput extends PresetCommandInput {
   presetIds: string[]
 }
 
+export interface PatchPromptSettingsCommandInput {
+  baseRevision: number
+  patch: SettingsPatch
+}
+
+export interface CreatePromptItemCommandInput {
+  baseRevision: number
+  promptItem: PromptItemSnapshot
+}
+
+export interface UpdatePromptItemCommandInput {
+  baseRevision: number
+  itemId: string
+  patch: PromptItemSnapshot
+}
+
+export interface DeletePromptItemCommandInput {
+  baseRevision: number
+  itemId: string
+}
+
+export interface ReorderPromptItemsCommandInput {
+  baseRevision: number
+  itemIds: string[]
+}
+
 export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>
   rollback?: () => void
@@ -424,7 +455,9 @@ export function clearCachedServerCommandRevision(): void {
   cachedServerCommandRevision = null
 }
 
-export async function getServerCommandBaseRevision(signal?: AbortSignal | null): Promise<number | null> {
+export async function getServerCommandBaseRevision(
+  signal?: AbortSignal | null,
+): Promise<number | null> {
   if (!canUseServerCommands()) return null
   if (cachedServerCommandRevision !== null) return cachedServerCommandRevision
 
@@ -625,7 +658,82 @@ export async function reorderPresetsCommand(
   })
 }
 
+export async function patchPromptSettingsCommand(
+  input: PatchPromptSettingsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson('/prompt-settings', {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function createPromptItemCommand(
+  input: CreatePromptItemCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ itemId: string }>> {
+  return requestCommandJson('/prompt-items', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      promptItem: input.promptItem,
+    },
+    signal,
+  })
+}
+
+export async function updatePromptItemCommand(
+  input: UpdatePromptItemCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ itemId: string }>> {
+  return requestCommandJson(`/prompt-items/${encodeURIComponent(input.itemId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deletePromptItemCommand(
+  input: DeletePromptItemCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ itemId: string }>> {
+  return requestCommandJson(`/prompt-items/${encodeURIComponent(input.itemId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function reorderPromptItemsCommand(
+  input: ReorderPromptItemsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson('/prompt-items/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      itemIds: input.itemIds,
+    },
+    signal,
+  })
+}
+
 export async function runServerPresetCommand<T extends Record<string, unknown> = {}>(
+  input: RunServerPresetCommandInput<T>,
+): Promise<ServerCommandResult<T>> {
+  return runServerCommand(input)
+}
+
+export async function runServerCommand<T extends Record<string, unknown> = {}>(
   input: RunServerPresetCommandInput<T>,
 ): Promise<ServerCommandResult<T>> {
   if (!canUseServerCommands()) return { status: 'unavailable' }

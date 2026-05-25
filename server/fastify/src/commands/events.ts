@@ -47,6 +47,26 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'preset.reordered',
     resource: 'preset',
   },
+  promptSettingsUpdated: {
+    type: 'prompt.settings.updated',
+    resource: 'prompt',
+  },
+  promptItemCreated: {
+    type: 'prompt.item.created',
+    resource: 'promptItem',
+  },
+  promptItemUpdated: {
+    type: 'prompt.item.updated',
+    resource: 'promptItem',
+  },
+  promptItemDeleted: {
+    type: 'prompt.item.deleted',
+    resource: 'promptItem',
+  },
+  promptItemReordered: {
+    type: 'prompt.item.reordered',
+    resource: 'promptItem',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

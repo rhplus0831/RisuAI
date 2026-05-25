@@ -4,6 +4,14 @@ import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { applyJsonCommandMutation, readBaseRevision } from '../commands/mutations.js'
 import {
+  createPromptItemRecord,
+  ensurePromptTemplateCollection,
+  readPromptItemId,
+  readPromptSettingsPatch,
+  requirePromptItemIndex,
+  validateFullPromptItemIdList,
+} from '../commands/prompts.js'
+import {
   applyPreset,
   createPresetRecord,
   ensureDatabaseObject,
@@ -37,6 +45,13 @@ interface PresetCommandBody {
   name?: unknown
 }
 
+interface PromptCommandBody {
+  baseRevision?: unknown
+  promptItem?: unknown
+  patch?: unknown
+  itemIds?: unknown
+}
+
 const SETTINGS_GROUPS = [
   'providers',
   'runtime',
@@ -50,7 +65,14 @@ const SETTINGS_GROUPS = [
 ] as const
 
 type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
-type SettingValueKind = 'boolean' | 'number' | 'string' | 'object' | 'array' | 'arrayOrNull' | 'json'
+type SettingValueKind =
+  | 'boolean'
+  | 'number'
+  | 'string'
+  | 'object'
+  | 'array'
+  | 'arrayOrNull'
+  | 'json'
 
 const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
   providers: [
@@ -803,7 +825,10 @@ export function registerCommandRoutes(
         body.presetId === undefined ? undefined : readPresetId(body.presetId, 'presetId')
       const apply = readOptionalBoolean(body.apply, 'apply', false)
       const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyJsonCommandMutation<{ presetId: string; selectedPresetId: string | null }>({
+      const result = applyJsonCommandMutation<{
+        presetId: string
+        selectedPresetId: string | null
+      }>({
         db,
         dataDir,
         baseRevision,
@@ -1016,6 +1041,180 @@ export function registerCommandRoutes(
         revision: result.revision,
         event: result.event,
         ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/prompt-settings', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PromptCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readPromptSettingsPatch(body.patch)
+      const result = applyJsonCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          applySettingsPatch(database, patch)
+          return {
+            event: COMMAND_EVENT_CATALOG.promptSettingsUpdated,
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/prompt-items', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PromptCommandBody
+      const baseRevision = readBaseRevision(body)
+      const promptItem = createPromptItemRecord(body.promptItem)
+      const result = applyJsonCommandMutation<{ itemId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const items = ensurePromptTemplateCollection(target)
+          if (items.some((item) => item.id === promptItem.id)) {
+            throw new ValidationError(`Duplicate prompt item id: ${promptItem.id}`)
+          }
+          items.push(promptItem)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.promptItemCreated, id: promptItem.id },
+            extra: { itemId: promptItem.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/prompt-items/:itemId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const itemId = readPromptItemId((req.params as { itemId?: unknown }).itemId)
+      const body = (req.body ?? {}) as PromptCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = createPromptItemRecord({ ...readJsonObject(body.patch, 'patch'), id: itemId })
+      const result = applyJsonCommandMutation<{ itemId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const items = ensurePromptTemplateCollection(target)
+          const index = requirePromptItemIndex(items, itemId)
+          items[index] = {
+            ...items[index],
+            ...patch,
+            id: itemId,
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.promptItemUpdated, id: itemId },
+            extra: { itemId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/prompt-items/:itemId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const itemId = readPromptItemId((req.params as { itemId?: unknown }).itemId)
+      const body = (req.body ?? {}) as PromptCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ itemId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const items = ensurePromptTemplateCollection(target)
+          const index = requirePromptItemIndex(items, itemId)
+          items.splice(index, 1)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.promptItemDeleted, id: itemId },
+            extra: { itemId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/prompt-items/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PromptCommandBody
+      const baseRevision = readBaseRevision(body)
+      if (!Array.isArray(body.itemIds)) {
+        throw new ValidationError('itemIds must be an array')
+      }
+      const itemIds = body.itemIds
+      const result = applyJsonCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          const items = ensurePromptTemplateCollection(target)
+          validateFullPromptItemIdList(items, itemIds)
+          const byId = new Map(items.map((item) => [item.id, item]))
+          target.promptTemplate = itemIds.map((id) => byId.get(id)!)
+          return {
+            event: COMMAND_EVENT_CATALOG.promptItemReordered,
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
       }
     } catch (err) {
       return sendCommandError(reply, err)
