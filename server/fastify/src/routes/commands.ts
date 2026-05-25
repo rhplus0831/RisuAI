@@ -40,6 +40,18 @@ import {
   selectedPresetId,
   validateFullPresetIdList,
 } from '../commands/presets.js'
+import {
+  createTranslatorPresetRecord,
+  ensureDatabaseObject as ensureTranslatorPresetDatabaseObject,
+  ensureTranslatorPresetCollection,
+  findTranslatorPresetIndex,
+  readOptionalBoolean as readTranslatorPresetOptionalBoolean,
+  readTranslatorPresetId,
+  readTranslatorPresetPatch,
+  requireTranslatorPresetIndex,
+  selectedTranslatorPresetId,
+  syncSelectedTranslatorPresetToLegacyFields,
+} from '../commands/translatorPresets.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -74,6 +86,14 @@ interface PersonaCommandBody {
   personaIds?: unknown
   mirrorLegacyProfile?: unknown
   saveCurrent?: unknown
+}
+
+interface TranslatorPresetCommandBody {
+  baseRevision?: unknown
+  preset?: unknown
+  patch?: unknown
+  presetId?: unknown
+  select?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -1487,6 +1507,196 @@ export function registerCommandRoutes(
           return {
             event: COMMAND_EVENT_CATALOG.personaReordered,
             extra: { selectedPersonaId: selectedPersonaId(target, reordered) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/translator-presets', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as TranslatorPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const preset = createTranslatorPresetRecord(body.preset)
+      const select = readTranslatorPresetOptionalBoolean(body.select, 'select', false)
+      const result = applyJsonCommandMutation<{ presetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureTranslatorPresetDatabaseObject(database)
+          const presets = ensureTranslatorPresetCollection(target)
+          if (findTranslatorPresetIndex(presets, preset.id) !== -1) {
+            throw new ValidationError(`Duplicate translator preset id: ${preset.id}`)
+          }
+          presets.push(preset)
+          if (select) {
+            target.translatorPresetId = presets.length - 1
+            syncSelectedTranslatorPresetToLegacyFields(target, presets)
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.translatorPresetCreated, id: preset.id },
+            extra: { presetId: preset.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/translator-presets/:presetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const presetId = readTranslatorPresetId(
+        (req.params as { presetId?: unknown }).presetId,
+        'presetId',
+      )
+      const body = (req.body ?? {}) as TranslatorPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readTranslatorPresetPatch(body.patch)
+      if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
+        throw new ValidationError('patch.id must match presetId')
+      }
+      const result = applyJsonCommandMutation<{ presetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureTranslatorPresetDatabaseObject(database)
+          const presets = ensureTranslatorPresetCollection(target)
+          const index = requireTranslatorPresetIndex(presets, presetId)
+          presets[index] = {
+            ...presets[index],
+            ...patch,
+            id: presetId,
+          }
+          if (target.translatorPresetId === index) {
+            syncSelectedTranslatorPresetToLegacyFields(target, presets)
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.translatorPresetUpdated, id: presetId },
+            extra: { presetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/translator-presets/:presetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const presetId = readTranslatorPresetId(
+        (req.params as { presetId?: unknown }).presetId,
+        'presetId',
+      )
+      const body = (req.body ?? {}) as TranslatorPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const selectPresetId =
+        body.presetId === undefined
+          ? undefined
+          : readTranslatorPresetId(body.presetId, 'presetId')
+      const result = applyJsonCommandMutation<{
+        presetId: string
+        selectedPresetId: string | null
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureTranslatorPresetDatabaseObject(database)
+          const presets = ensureTranslatorPresetCollection(target)
+          if (presets.length <= 1) {
+            throw new ValidationError('Cannot delete the only translator preset')
+          }
+          const deletedIndex = requireTranslatorPresetIndex(presets, presetId)
+          const currentSelectedId = selectedTranslatorPresetId(target, presets)
+          const deletedWasSelected = currentSelectedId === presetId
+          presets.splice(deletedIndex, 1)
+
+          let nextSelectedId = selectPresetId
+          if (!nextSelectedId && deletedWasSelected) {
+            nextSelectedId = presets[0]?.id
+          } else if (!nextSelectedId) {
+            nextSelectedId = currentSelectedId ?? presets[0]?.id
+          }
+
+          const selectedIndex = nextSelectedId
+            ? requireTranslatorPresetIndex(presets, nextSelectedId)
+            : 0
+          target.translatorPresetId = selectedIndex
+          syncSelectedTranslatorPresetToLegacyFields(target, presets)
+
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, id: presetId },
+            extra: {
+              presetId,
+              selectedPresetId: selectedTranslatorPresetId(target, presets),
+            },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/translator-presets/select', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as TranslatorPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const presetId = readTranslatorPresetId(body.presetId, 'presetId')
+      const result = applyJsonCommandMutation<{ presetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureTranslatorPresetDatabaseObject(database)
+          const presets = ensureTranslatorPresetCollection(target)
+          const index = requireTranslatorPresetIndex(presets, presetId)
+          target.translatorPresetId = index
+          syncSelectedTranslatorPresetToLegacyFields(target, presets)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.translatorPresetSelected, id: presetId },
+            extra: { presetId },
           }
         },
       })

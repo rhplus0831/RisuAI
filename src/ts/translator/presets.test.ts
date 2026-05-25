@@ -34,6 +34,7 @@ describe('normalizeTranslatorPresetState', () => {
 
     expect(state.translatorPresets).toEqual([
       {
+        id: expect.any(String),
         name: 'Default',
         prompt: 'Translate to {{slot}}.',
         maxResponse: 321,
@@ -60,8 +61,30 @@ describe('normalizeTranslatorPresetState', () => {
     normalizeTranslatorPresetState(state)
 
     expect(state.translatorPresetId).toBe(0)
+    expect(state.translatorPresets?.[0]).toMatchObject({ id: expect.any(String) })
     expect(state.translatorPrompt).toBe('Fast preset')
     expect(state.translatorMaxResponse).toBe(128)
+  })
+
+  it('normalizes missing and duplicate translator preset ids', () => {
+    const state: TranslatorPresetStateLike = {
+      translatorPresets: [
+        { id: 'preset-a', name: 'A', prompt: 'A prompt', maxResponse: 100 },
+        { id: 'preset-a', name: 'B', prompt: 'B prompt', maxResponse: 200 },
+        { name: 'C', prompt: 'C prompt', maxResponse: 300 },
+      ],
+      translatorPresetId: 1,
+    }
+
+    normalizeTranslatorPresetState(state)
+
+    const ids = state.translatorPresets?.map((preset) =>
+      typeof preset === 'object' && preset ? (preset as { id?: unknown }).id : null,
+    )
+    expect(ids?.[0]).toBe('preset-a')
+    expect(ids?.[1]).toEqual(expect.any(String))
+    expect(ids?.[1]).not.toBe('preset-a')
+    expect(ids?.[2]).toEqual(expect.any(String))
   })
 })
 

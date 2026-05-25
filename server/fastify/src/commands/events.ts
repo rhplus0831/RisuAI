@@ -87,6 +87,22 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'persona.reordered',
     resource: 'persona',
   },
+  translatorPresetCreated: {
+    type: 'translatorPreset.created',
+    resource: 'translatorPreset',
+  },
+  translatorPresetUpdated: {
+    type: 'translatorPreset.updated',
+    resource: 'translatorPreset',
+  },
+  translatorPresetDeleted: {
+    type: 'translatorPreset.deleted',
+    resource: 'translatorPreset',
+  },
+  translatorPresetSelected: {
+    type: 'translatorPreset.selected',
+    resource: 'translatorPreset',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

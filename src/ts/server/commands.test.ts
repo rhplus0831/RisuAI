@@ -22,8 +22,10 @@ import {
   clearCachedServerCommandRevision,
   createPromptItemCommand,
   createPresetCommand,
+  createTranslatorPresetCommand,
   deletePersonaCommand,
   deletePromptItemCommand,
+  deleteTranslatorPresetCommand,
   getServerCommandBaseRevision,
   patchPromptSettingsCommand,
   patchServerBackedSettings,
@@ -35,7 +37,9 @@ import {
   runServerCommand,
   runServerPresetCommand,
   selectPersonaCommand,
+  selectTranslatorPresetCommand,
   updatePersonaCommand,
+  updateTranslatorPresetCommand,
   selectPresetCommand,
   updatePromptItemCommand,
 } from './commands'
@@ -761,6 +765,181 @@ describe('server command API adapter', () => {
       null,
       { baseRevision: 20, personaId: 'persona-b' },
       { baseRevision: 23, personaId: 'persona-b' },
+    ])
+  })
+
+  it('dispatches translator preset commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/translator-presets/select')) {
+        return {
+          revision: 5,
+          event: {
+            type: 'translatorPreset.selected',
+            revision: 5,
+            resource: 'translatorPreset',
+            id: 'translator-b',
+          },
+          presetId: 'translator-b',
+        }
+      }
+      if (url.endsWith('/translator-presets/translator-a')) {
+        return {
+          revision: 4,
+          event: {
+            type: 'translatorPreset.deleted',
+            revision: 4,
+            resource: 'translatorPreset',
+            id: 'translator-a',
+          },
+          presetId: 'translator-a',
+          selectedPresetId: 'translator-b',
+        }
+      }
+      if (url.endsWith('/translator-presets/translator-b')) {
+        return {
+          revision: 3,
+          event: {
+            type: 'translatorPreset.updated',
+            revision: 3,
+            resource: 'translatorPreset',
+            id: 'translator-b',
+          },
+          presetId: 'translator-b',
+        }
+      }
+      return {
+        revision: 2,
+        event: {
+          type: 'translatorPreset.created',
+          revision: 2,
+          resource: 'translatorPreset',
+          id: 'translator-b',
+        },
+        presetId: 'translator-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      createTranslatorPresetCommand({
+        baseRevision: 1,
+        preset: {
+          id: 'translator-b',
+          name: 'B',
+          prompt: 'translate to B',
+          maxResponse: 200,
+        },
+        select: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, presetId: 'translator-b' })
+
+    await expect(
+      updateTranslatorPresetCommand({
+        baseRevision: 2,
+        presetId: 'translator-b',
+        patch: { prompt: 'updated', maxResponse: 300 },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, presetId: 'translator-b' })
+
+    await expect(
+      deleteTranslatorPresetCommand({
+        baseRevision: 3,
+        presetId: 'translator-a',
+        selectPresetId: 'translator-b',
+      }),
+    ).resolves.toMatchObject({
+      status: 'ok',
+      revision: 4,
+      presetId: 'translator-a',
+      selectedPresetId: 'translator-b',
+    })
+
+    await expect(
+      selectTranslatorPresetCommand({
+        baseRevision: 4,
+        presetId: 'translator-b',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, presetId: 'translator-b' })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/translator-presets',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          preset: {
+            id: 'translator-b',
+            name: 'B',
+            prompt: 'translate to B',
+            maxResponse: 200,
+          },
+          select: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/translator-presets/translator-b',
+        method: 'PATCH',
+        body: {
+          baseRevision: 2,
+          patch: { prompt: 'updated', maxResponse: 300 },
+        },
+      },
+      {
+        url: '/api/v1/commands/translator-presets/translator-a',
+        method: 'DELETE',
+        body: {
+          baseRevision: 3,
+          presetId: 'translator-b',
+        },
+      },
+      {
+        url: '/api/v1/commands/translator-presets/select',
+        method: 'POST',
+        body: {
+          baseRevision: 4,
+          presetId: 'translator-b',
+        },
+      },
+    ])
+  })
+
+  it('runs translator preset commands with revision lookup and one conflict retry', async () => {
+    let attempts = 0
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 30 }
+      attempts += 1
+      if (attempts === 1) {
+        return jsonResponse({ error: 'revision_conflict', currentRevision: 33 }, 409)
+      }
+      return {
+        revision: 34,
+        event: {
+          type: 'translatorPreset.selected',
+          revision: 34,
+          resource: 'translatorPreset',
+          id: 'translator-b',
+        },
+        presetId: 'translator-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      runServerCommand({
+        command: (baseRevision) =>
+          selectTranslatorPresetCommand({
+            baseRevision,
+            presetId: 'translator-b',
+          }),
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 34, presetId: 'translator-b' })
+
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      null,
+      { baseRevision: 30, presetId: 'translator-b' },
+      { baseRevision: 33, presetId: 'translator-b' },
     ])
   })
 })

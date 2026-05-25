@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
 import { normalizePresetCollection } from '../commands/presets.js'
+import { normalizeTranslatorPresetCollection } from '../commands/translatorPresets.js'
 import { requireAuth } from '../http.js'
 import { ValidationError, applyImport } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRows } from '../memoryLegacyImport.js'
@@ -28,6 +29,17 @@ export function registerSaveRoutes(
         ('botPresets' in body.database || 'botPresetsId' in body.database)
       ) {
         normalizePresetCollection(body.database)
+      }
+      if (
+        body.database &&
+        typeof body.database === 'object' &&
+        !Array.isArray(body.database) &&
+        ('translatorPresets' in body.database ||
+          'translatorPresetId' in body.database ||
+          'translatorPrompt' in body.database ||
+          'translatorMaxResponse' in body.database)
+      ) {
+        normalizeTranslatorPresetCollection(body.database)
       }
       normalizePromptTemplateCollection(body.database)
       const { revision } = applyImport(db, dataDir, body.database)

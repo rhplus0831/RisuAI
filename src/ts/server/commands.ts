@@ -372,6 +372,13 @@ export type PersonaSnapshot = Record<string, unknown> & {
   largePortrait?: boolean
 }
 
+export type TranslatorPresetSnapshot = Record<string, unknown> & {
+  id?: string
+  name?: string
+  prompt?: string
+  maxResponse?: number
+}
+
 export interface PresetCommandInput {
   baseRevision: number
 }
@@ -468,6 +475,29 @@ export interface SelectPersonaCommandInput extends PersonaCommandInput {
 
 export interface ReorderPersonasCommandInput extends PersonaCommandInput {
   personaIds: string[]
+}
+
+export interface TranslatorPresetCommandInput {
+  baseRevision: number
+}
+
+export interface CreateTranslatorPresetCommandInput extends TranslatorPresetCommandInput {
+  preset: TranslatorPresetSnapshot
+  select?: boolean
+}
+
+export interface UpdateTranslatorPresetCommandInput extends TranslatorPresetCommandInput {
+  presetId: string
+  patch: TranslatorPresetSnapshot
+}
+
+export interface DeleteTranslatorPresetCommandInput extends TranslatorPresetCommandInput {
+  presetId: string
+  selectPresetId?: string
+}
+
+export interface SelectTranslatorPresetCommandInput extends TranslatorPresetCommandInput {
+  presetId: string
 }
 
 export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
@@ -839,6 +869,63 @@ export async function reorderPersonasCommand(
     body: {
       baseRevision: input.baseRevision,
       personaIds: input.personaIds,
+    },
+    signal,
+  })
+}
+
+export async function createTranslatorPresetCommand(
+  input: CreateTranslatorPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson('/translator-presets', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preset: input.preset,
+      select: input.select,
+    },
+    signal,
+  })
+}
+
+export async function updateTranslatorPresetCommand(
+  input: UpdateTranslatorPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson(`/translator-presets/${encodeURIComponent(input.presetId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deleteTranslatorPresetCommand(
+  input: DeleteTranslatorPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; selectedPresetId: string | null }>> {
+  return requestCommandJson(`/translator-presets/${encodeURIComponent(input.presetId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+      presetId: input.selectPresetId,
+    },
+    signal,
+  })
+}
+
+export async function selectTranslatorPresetCommand(
+  input: SelectTranslatorPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson('/translator-presets/select', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      presetId: input.presetId,
     },
     signal,
   })

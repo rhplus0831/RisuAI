@@ -1208,3 +1208,253 @@ describe('Phase 9-2d persona commands', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-2e translator preset commands', () => {
+  it('creates, updates, deletes, and selects translator presets by stable id', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translatorPresets: [
+        {
+          id: 'translator-a',
+          name: 'A',
+          prompt: 'translate to A',
+          maxResponse: 100,
+        },
+      ],
+      translatorPresetId: 0,
+      translatorPrompt: 'translate to A',
+      translatorMaxResponse: 100,
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/translator-presets',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: {
+          id: 'translator-b',
+          name: 'B',
+          prompt: 'translate to B',
+          maxResponse: 200,
+        },
+        select: true,
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'translatorPreset.created',
+        revision: 2,
+        resource: 'translatorPreset',
+        id: 'translator-b',
+      },
+      presetId: 'translator-b',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/translator-presets/translator-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        patch: {
+          name: 'B renamed',
+          prompt: 'translate to B updated',
+          maxResponse: 250,
+        },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event).toMatchObject({
+      type: 'translatorPreset.updated',
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/translator-presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        presetId: 'translator-a',
+      },
+    })
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json()).toEqual({
+      revision: 4,
+      event: {
+        type: 'translatorPreset.selected',
+        revision: 4,
+        resource: 'translatorPreset',
+        id: 'translator-a',
+      },
+      presetId: 'translator-a',
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/translator-presets/translator-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: selected.json().revision,
+        presetId: 'translator-a',
+      },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: 5,
+      event: {
+        type: 'translatorPreset.deleted',
+        revision: 5,
+        resource: 'translatorPreset',
+        id: 'translator-b',
+      },
+      presetId: 'translator-b',
+      selectedPresetId: 'translator-a',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      translatorPresetId: 0,
+      translatorPrompt: 'translate to A',
+      translatorMaxResponse: 100,
+    })
+    expect(bootstrap.json().database.translatorPresets).toEqual([
+      {
+        id: 'translator-a',
+        name: 'A',
+        prompt: 'translate to A',
+        maxResponse: 100,
+      },
+    ])
+  })
+
+  it('syncs legacy translator fields when updating the selected preset', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translatorPresets: [
+        { id: 'translator-a', name: 'A', prompt: 'old prompt', maxResponse: 100 },
+      ],
+      translatorPresetId: 0,
+      translatorPrompt: 'old prompt',
+      translatorMaxResponse: 100,
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/translator-presets/translator-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          prompt: 'new prompt',
+          maxResponse: 321,
+        },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      translatorPrompt: 'new prompt',
+      translatorMaxResponse: 321,
+    })
+  })
+
+  it('rejects malformed translator preset commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translatorPresets: [
+        { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
+        { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
+      ],
+      translatorPresetId: 0,
+    })
+
+    const update = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/translator-presets/translator-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { maxResponse: 'large' },
+      },
+    })
+    expect(update.statusCode).toBe(400)
+    expect(update.json().error).toBe('patch.maxResponse must be a finite number')
+
+    const create = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/translator-presets',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: {
+          id: 'translator-a',
+          name: 'Duplicate',
+          prompt: '',
+          maxResponse: 100,
+        },
+      },
+    })
+    expect(create.statusCode).toBe(400)
+    expect(create.json().error).toBe('Duplicate translator preset id: translator-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(
+      bootstrap
+        .json()
+        .database.translatorPresets.map((preset: { id: string }) => preset.id),
+    ).toEqual(['translator-a', 'translator-b'])
+  })
+
+  it('returns 404 and 409 for missing translator presets and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translatorPresets: [
+        { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
+      ],
+      translatorPresetId: 0,
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/translator-presets/missing',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { name: 'Nope' },
+      },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Translator preset not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/translator-presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
+        presetId: 'translator-a',
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

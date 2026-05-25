@@ -235,19 +235,20 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-2d personas are complete. Continue with
-**9-2e - Translator presets**:
+9-2e translator presets are complete. Continue with
+**9-2f - Loadouts**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement translator preset commands from the Settings, Presets,
+- Implement loadout commands from the Settings, Presets,
   Personas, Loadouts command-family table.
-- Replace translator preset mutation paths in translator settings
-  UI/helper code with typed server-backed commands while keeping
+- Replace loadout save/delete/favorite/list/last-used mutation paths in
+  loadout UI/helper code with typed server-backed commands while keeping
   local/Tauri behavior unchanged.
-- Preserve runtime translation dispatch behavior; do not fold loadouts,
+- Keep loadout apply composite/deferred until every touched resource has a
+  command; do not fold translator presets,
   character/chat/message resources, projection enforcement, or plugin
-  bridge work into 9-2e.
+  bridge work into 9-2f.
 - Preserve the 9-1 command response and conflict contract for every
-  translator preset command.
+  loadout command.

@@ -10,46 +10,44 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-2d landed the personas command bridge. The slice added persona command
-validation and id normalization, Fastify persona create/update/delete/
-select/reorder routes, typed browser persona command helpers with
-revision lookup and one conflict retry, and routed server-backed persona
-selection, settings-page create/delete/reorder, import create, image/profile
-mirror updates, and selected profile-field edits through commands in
-Fastify mode while keeping local/Tauri mutation behavior intact.
+9-2e landed the translator presets command bridge. The slice added stable
+translator preset id normalization, Fastify translator preset
+create/update/delete/select routes, typed browser translator preset command
+helpers with revision lookup and one conflict retry, and routed
+server-backed translator preset create/import, rename, delete, select, and
+prompt/max-response edits through commands in Fastify mode while keeping
+local/Tauri mutation behavior intact.
 
 ## Immediate Pickup
 
 Continue Phase 9 implementation with
-**9-2e - Translator presets**.
+**9-2f - Loadouts**.
 
 Expected scope:
 
-- Add translator preset create/update/delete/select command coverage
+- Add loadout save/delete/favorite/list/last-used command coverage
   according to `phase-9-command-map.md`.
-- Replace server-backed web translator preset list, selected translator
-  preset, and any current legacy-field sync paths in translator preset UI
-  and helpers with typed commands while keeping Tauri/local mode on the
+- Replace server-backed web loadout list bookkeeping and last-used/favorite
+  mutation paths with typed commands while keeping Tauri/local mode on the
   existing mutation path.
-- Preserve current translator preset selection behavior and runtime-field
-  sync where the product already performs it.
+- Preserve current loadout save/delete/favorite/list/last-used behavior.
 - Do not reopen bot preset lifecycle, prompt templates/items, personas, or
-  loadouts in this slice.
+  translator presets in this slice.
 - Tauri/local mode keeps existing local mutation paths.
 - Preserve the 9-1 command contract: every command takes
   `baseRevision`, returns `{ revision, event }`, emits
-  the mapped translator preset event, and returns 409
+  the mapped loadout event, and returns 409
   `{ error: "revision_conflict", currentRevision }` on stale input.
-- Cover representative translator preset create/update/delete/select
-  flows, legacy-field sync behavior, rollback/no-revision-bump on
-  validation failure, conflict retry where applicable, and no command
-  dispatch outside Fastify mode.
+- Cover representative loadout save/delete/favorite/touch flows,
+  rollback/no-revision-bump on validation failure, conflict retry where
+  applicable, and no command dispatch outside Fastify mode.
 
-Out of scope for 9-2e:
+Out of scope for 9-2f:
 
 - Bot preset lifecycle, selection, copy/import, and apply behavior.
-- Prompt templates/items, personas, and loadouts.
-- Runtime translation request dispatch.
+- Prompt templates/items, personas, and translator presets.
+- Loadout apply behavior that crosses resources without commands; keep it
+  composite/deferred until every touched resource command exists.
 - Enforcing a read-only `DBState.db` guard.
 - Bootstrap/event projection implementation.
 - Server-side `.risu` import/export implementation.
@@ -72,16 +70,15 @@ Implementation notes:
 - Tauri keeps its local storage path. Phase 9 gates server-backed web
   behavior without changing local desktop storage mode.
 
-## Queue After 9-2e
+## Queue After 9-2f
 
-1. 9-2f - Loadouts.
-2. 9-3 - Characters, chats, messages.
-3. 9-4 - Lorebooks, modules, plugins, assets.
-4. 9-5 - Browser projection.
-5. 9-6 - Storage and provider-key gating.
-6. 9-7 - Server `.risu` codec core.
-7. 9-8 - Import/export routes and bundle assets.
-8. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-3 - Characters, chats, messages.
+2. 9-4 - Lorebooks, modules, plugins, assets.
+3. 9-5 - Browser projection.
+4. 9-6 - Storage and provider-key gating.
+5. 9-7 - Server `.risu` codec core.
+6. 9-8 - Import/export routes and bundle assets.
+7. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -94,7 +91,7 @@ Implementation notes:
 
 ## Verification
 
-Run focused command/translator preset tests while building 9-2e, then
+Run focused command/loadout tests while building 9-2f, then
 before closing the slice run the full matrix:
 
 ```bash
@@ -104,8 +101,8 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-2d: `pnpm check` clean,
-`pnpm test` 671 tests plus 4 skipped, `pnpm api:test` 1074 tests, and
+Last recorded full baselines after 9-2e: `pnpm check` clean,
+`pnpm test` 674 tests plus 4 skipped, `pnpm api:test` 1078 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
@@ -118,7 +115,7 @@ externalization, plugin-timing, and chunk-size warnings.
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-2d.md`](../phases-completed/phase-9-client-thinning-9-2d.md)
+  [`../phases-completed/phase-9-client-thinning-9-2e.md`](../phases-completed/phase-9-client-thinning-9-2e.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

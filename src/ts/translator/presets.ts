@@ -4,6 +4,7 @@ import { decryptBuffer, encryptBuffer } from 'src/ts/util'
 import { decodeRPack, encodeRPack } from 'src/ts/rpack/rpack_js.js'
 
 export interface TranslatorPreset {
+  id?: string
   name: string
   prompt: string
   maxResponse: number
@@ -35,6 +36,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isTranslatorPresetValue(value: unknown): value is TranslatorPreset {
   return (
     isRecord(value) &&
+    (value.id === undefined || typeof value.id === 'string') &&
     typeof value.name === 'string' &&
     typeof value.prompt === 'string' &&
     typeof value.maxResponse === 'number' &&
@@ -91,7 +93,7 @@ export function createTranslatorPreset(
   name = 'New Preset',
   existing: Partial<TranslatorPreset> = {},
 ): TranslatorPreset {
-  return {
+  const preset: TranslatorPreset = {
     name,
     prompt: typeof existing.prompt === 'string' ? existing.prompt : '',
     maxResponse:
@@ -99,6 +101,10 @@ export function createTranslatorPreset(
         ? existing.maxResponse
         : 1000,
   }
+  if (typeof existing.id === 'string' && existing.id.trim().length > 0) {
+    preset.id = existing.id
+  }
+  return preset
 }
 
 export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLike>(state: T): T {
@@ -107,13 +113,21 @@ export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLi
     Array.isArray(state.translatorPresets) && state.translatorPresets.length > 0
       ? state.translatorPresets
       : [defaultPreset]
+  const seen = new Set<string>()
 
   state.translatorPresets = sourcePresets.map((preset, index) => {
     const normalizedPreset = isRecord(preset) ? preset : {}
-    return createTranslatorPreset(
+    const normalized = createTranslatorPreset(
       getNormalizedTranslatorPresetName(normalizedPreset.name, index),
       normalizedPreset,
     )
+    const id =
+      typeof normalized.id === 'string' && normalized.id.trim().length > 0
+        ? normalized.id
+        : crypto.randomUUID()
+    normalized.id = seen.has(id) ? crypto.randomUUID() : id
+    seen.add(normalized.id)
+    return normalized
   })
 
   const requestedId =

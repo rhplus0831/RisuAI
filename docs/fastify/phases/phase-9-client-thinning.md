@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-2d - Personas**. Next slice:
-**9-2e - Translator presets**.
+**9-2e - Translator presets**. Next slice:
+**9-2f - Loadouts**.
 
 ## Goal
 
@@ -136,6 +136,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-2d.md`](../phases-completed/phase-9-client-thinning-9-2d.md).
   - **9-2e - Translator presets.** Preset create/rename/delete/select and
     legacy-field sync. Runtime translation calls stay out of scope.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-2e.md`](../phases-completed/phase-9-client-thinning-9-2e.md).
   - **9-2f - Loadouts.** Save/delete/favorite/list/last-used bookkeeping;
     apply is composite or deferred until every touched resource command
     exists.
