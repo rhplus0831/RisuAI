@@ -28,6 +28,7 @@ import {
 } from './characterCommands'
 import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from './chatCommands'
 import { CharacterHandler } from './process/mcp/risuaccess/characters'
+import { ModuleHandler } from './process/mcp/risuaccess/modules'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { Chat, character } from './storage/database.svelte'
 
@@ -225,6 +226,154 @@ describe('Phase 9-3f compatibility adapters', () => {
             key: 'key',
             content: 'content',
             comment: 'Lore',
+          }),
+        ],
+      },
+    })
+  })
+
+  it('routes MCP character regex and Lua writes through script definition commands', async () => {
+    const calls = stubCommandFetch()
+    const handler = new CharacterHandler()
+
+    const regexResult = await handler.setCharacterRegexScripts(
+      'char-a',
+      'Regex',
+      undefined,
+      'in',
+      'out',
+      'editdisplay',
+    )
+    expect(regexResult[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('Successfully added regex script'),
+    })
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/scripts')).toBe(
+        true,
+      )
+    })
+    expect(
+      calls.find((call) => call.url === '/api/v1/commands/characters/char-a/scripts'),
+    ).toMatchObject({
+      method: 'PUT',
+      body: {
+        baseRevision: 10,
+        scripts: [
+          expect.objectContaining({
+            comment: 'Regex',
+            in: 'in',
+            out: 'out',
+            type: 'editdisplay',
+          }),
+        ],
+      },
+    })
+
+    DBState.db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [{ type: 'triggerlua', code: '' }],
+      },
+    ]
+    const luaResult = await handler.setCharacterLuaScript('char-a', 'print("hi")')
+    expect(luaResult[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('Successfully updated Lua script'),
+    })
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/triggers')).toBe(
+        true,
+      )
+    })
+    expect(
+      calls.find((call) => call.url === '/api/v1/commands/characters/char-a/triggers'),
+    ).toMatchObject({
+      method: 'PUT',
+      body: {
+        baseRevision: 11,
+        triggers: [
+          expect.objectContaining({
+            effect: [expect.objectContaining({ type: 'triggerlua', code: 'print("hi")' })],
+          }),
+        ],
+      },
+    })
+  })
+
+  it('routes MCP module regex and Lua writes through script definition commands', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.modules = [
+      {
+        id: 'mod-a',
+        name: 'Module',
+        description: '',
+        regex: [],
+        trigger: [
+          {
+            comment: '',
+            type: 'start',
+            conditions: [],
+            effect: [{ type: 'triggerlua', code: '' }],
+          },
+        ],
+      },
+    ]
+    const handler = new ModuleHandler()
+
+    const regexResult = await handler.setModuleRegexScript(
+      'mod-a',
+      'Regex',
+      undefined,
+      'in',
+      'out',
+      'editdisplay',
+    )
+    expect(regexResult[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('Successfully added regex script'),
+    })
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a/scripts')).toBe(true)
+    })
+    expect(
+      calls.find((call) => call.url === '/api/v1/commands/modules/mod-a/scripts'),
+    ).toMatchObject({
+      method: 'PUT',
+      body: {
+        baseRevision: 10,
+        scripts: [
+          expect.objectContaining({
+            comment: 'Regex',
+            in: 'in',
+            out: 'out',
+            type: 'editdisplay',
+          }),
+        ],
+      },
+    })
+
+    const luaResult = await handler.setModuleLuaScript('mod-a', 'print("module")')
+    expect(luaResult[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('Successfully updated Lua script'),
+    })
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a/triggers')).toBe(
+        true,
+      )
+    })
+    expect(
+      calls.find((call) => call.url === '/api/v1/commands/modules/mod-a/triggers'),
+    ).toMatchObject({
+      method: 'PUT',
+      body: {
+        baseRevision: 11,
+        triggers: [
+          expect.objectContaining({
+            effect: [expect.objectContaining({ type: 'triggerlua', code: 'print("module")' })],
           }),
         ],
       },

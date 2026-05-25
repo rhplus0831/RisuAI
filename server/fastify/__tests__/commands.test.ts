@@ -3317,3 +3317,183 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-4b script and trigger definition commands', () => {
+  it('replaces character and module script and trigger definition collections', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          customscript: [],
+          triggerscript: [],
+          chats: [],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+      modules: [{ id: 'mod-a', name: 'Mod', regex: [], trigger: [] }],
+    })
+
+    const script = {
+      id: 'script-a',
+      comment: 'Regex',
+      in: 'a',
+      out: 'b',
+      type: 'editinput',
+      flag: 'g',
+      ableFlag: true,
+    }
+    const trigger = {
+      id: 'trigger-a',
+      comment: 'Start',
+      type: 'start',
+      conditions: [],
+      effect: [],
+    }
+
+    const characterScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, scripts: [script] },
+    })
+    expect(characterScripts.statusCode).toBe(200)
+    expect(characterScripts.json().event).toMatchObject({
+      type: 'scriptDefinitions.replaced',
+      resource: 'scriptDefinition',
+      id: 'char-a',
+    })
+
+    const characterTriggers = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2, triggers: [trigger] },
+    })
+    expect(characterTriggers.statusCode).toBe(200)
+    expect(characterTriggers.json()).toMatchObject({ revision: 3, characterId: 'char-a' })
+
+    const moduleScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 3, scripts: [{ ...script, id: 'module-script' }] },
+    })
+    expect(moduleScripts.statusCode).toBe(200)
+    expect(moduleScripts.json()).toMatchObject({ revision: 4, moduleId: 'mod-a' })
+
+    const moduleTriggers = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4, triggers: [{ ...trigger, id: 'module-trigger' }] },
+    })
+    expect(moduleTriggers.statusCode).toBe(200)
+    expect(moduleTriggers.json().event).toMatchObject({
+      type: 'triggerDefinitions.replaced',
+      resource: 'triggerDefinition',
+      id: 'mod-a',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const database = bootstrap.json().database
+    expect(database.characters[0].customscript[0].id).toBe('script-a')
+    expect(database.characters[0].triggerscript[0].id).toBe('trigger-a')
+    expect(database.modules[0].regex[0].id).toBe('module-script')
+    expect(database.modules[0].trigger[0].id).toBe('module-trigger')
+    expect(
+      harness.commandEvents
+        .list()
+        .slice(-4)
+        .map((event) => event.type),
+    ).toEqual([
+      'scriptDefinitions.replaced',
+      'triggerDefinitions.replaced',
+      'scriptDefinitions.replaced',
+      'triggerDefinitions.replaced',
+    ])
+  })
+
+  it('rejects malformed script and trigger definitions without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A', customscript: [], triggerscript: [] }],
+      characterOrder: ['char-a'],
+    })
+
+    const badScript = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        scripts: [{ id: 'script-a', comment: 'Bad', in: 1, out: '', type: 'editinput' }],
+      },
+    })
+    expect(badScript.statusCode).toBe(400)
+    expect(badScript.json().error).toBe('scripts[0].in must be a string')
+
+    const badTrigger = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        triggers: [{ id: 'trigger-a', comment: 'Bad', type: 'start', conditions: {}, effect: [] }],
+      },
+    })
+    expect(badTrigger.statusCode).toBe(400)
+    expect(badTrigger.json().error).toBe('triggers[0].conditions must be an array')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].customscript).toEqual([])
+    expect(bootstrap.json().database.characters[0].triggerscript).toEqual([])
+  })
+
+  it('returns 404 and 409 for missing parents and stale script revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [],
+      modules: [{ id: 'mod-a', name: 'Mod', mcp: { url: 'https://example.invalid' } }],
+    })
+
+    const missingCharacter = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/missing/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, scripts: [] },
+    })
+    expect(missingCharacter.statusCode).toBe(404)
+    expect(missingCharacter.json().error).toBe('Character not found: missing')
+
+    const mcpModule = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, scripts: [] },
+    })
+    expect(mcpModule.statusCode).toBe(404)
+    expect(mcpModule.json().error).toBe('Module not found: mod-a')
+
+    const stale = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/missing/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, scripts: [] },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

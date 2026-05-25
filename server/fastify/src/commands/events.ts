@@ -227,6 +227,14 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'lorebook.entries.replaced',
     resource: 'lorebook',
   },
+  scriptDefinitionsReplaced: {
+    type: 'scriptDefinitions.replaced',
+    resource: 'scriptDefinition',
+  },
+  triggerDefinitionsReplaced: {
+    type: 'triggerDefinitions.replaced',
+    resource: 'triggerDefinition',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

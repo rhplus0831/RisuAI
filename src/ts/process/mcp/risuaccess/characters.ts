@@ -10,6 +10,13 @@ import {
   dispatchReplaceCharacterLorebooks,
   ensureClientLorebookEntryIds,
 } from 'src/ts/server/lorebookBridge.svelte'
+import {
+  currentScriptDefinitionStateSnapshot,
+  dispatchReplaceCharacterScripts,
+  dispatchReplaceCharacterTriggers,
+  ensureClientScriptDefinitionIds,
+  ensureClientTriggerDefinitionIds,
+} from 'src/ts/server/scriptDefinitionBridge.svelte'
 import { type character, type loreBook } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
@@ -783,7 +790,6 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
-    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('regex script edits')
 
     if (
       !(await this.promptAccess(
@@ -802,6 +808,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (!char.customscript) {
       char.customscript = []
     }
+    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
 
     const scriptIndex = char.customscript.findIndex((script) => {
       const displayName = script.comment || 'Unnamed ' + pickHashRand(5515, script.in + script.out)
@@ -818,6 +825,10 @@ export class CharacterHandler extends MCPToolHandler {
       }
 
       char.customscript.push(newScript)
+      if (previous) {
+        ensureClientScriptDefinitionIds(char.customscript)
+        dispatchReplaceCharacterScripts(char.chaId, char.customscript, previous, 0)
+      }
       return [
         {
           type: 'text',
@@ -834,6 +845,10 @@ export class CharacterHandler extends MCPToolHandler {
     if (type !== undefined) script.type = type
     if (flag !== undefined) script.flag = flag
     if (ableFlag !== undefined) script.ableFlag = ableFlag
+    if (previous) {
+      ensureClientScriptDefinitionIds(char.customscript)
+      dispatchReplaceCharacterScripts(char.chaId, char.customscript, previous, 0)
+    }
 
     return [
       {
@@ -853,7 +868,6 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
-    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('regex script edits')
 
     if (
       !(await this.promptAccess(
@@ -872,6 +886,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (!char.customscript) {
       char.customscript = []
     }
+    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
 
     const scriptIndex = char.customscript.findIndex((script) => {
       const displayName = script.comment || 'Unnamed ' + pickHashRand(5515, script.in + script.out)
@@ -887,6 +902,10 @@ export class CharacterHandler extends MCPToolHandler {
     }
 
     char.customscript.splice(scriptIndex, 1)
+    if (previous) {
+      ensureClientScriptDefinitionIds(char.customscript)
+      dispatchReplaceCharacterScripts(char.chaId, char.customscript, previous, 0)
+    }
 
     return [
       {
@@ -1020,7 +1039,6 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
-    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('Lua trigger edits')
 
     if (
       !(await this.promptAccess(
@@ -1036,9 +1054,14 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
+    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
     const firstTrigger = char.triggerscript?.[0]
     if (firstTrigger?.effect?.[0]?.type === 'triggerlua') {
       firstTrigger.effect[0].code = code
+      if (previous) {
+        ensureClientTriggerDefinitionIds(char.triggerscript)
+        dispatchReplaceCharacterTriggers(char.chaId, char.triggerscript, previous, 0)
+      }
       return [
         {
           type: 'text',

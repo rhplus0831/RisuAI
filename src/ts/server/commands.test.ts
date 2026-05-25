@@ -57,10 +57,14 @@ import {
   runServerCommand,
   runServerPresetCommand,
   replaceMessagesCommand,
+  replaceCharacterScriptsCommand,
+  replaceCharacterTriggersCommand,
   replaceCharacterLorebooksCommand,
   replaceChatLorebooksCommand,
   replaceGlobalLorebookEntriesCommand,
   replaceModuleLorebooksCommand,
+  replaceModuleScriptsCommand,
+  replaceModuleTriggersCommand,
   selectCharacterCommand,
   selectPersonaCommand,
   selectTranslatorPresetCommand,
@@ -1923,6 +1927,98 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/modules/mod-a/lorebooks',
         method: 'PUT',
         body: { baseRevision: 8, entries: [entry] },
+      },
+    ])
+  })
+
+  it('dispatches script and trigger definition commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.includes('/scripts')) {
+        return {
+          revision: 9,
+          event: {
+            type: 'scriptDefinitions.replaced',
+            revision: 9,
+            resource: 'scriptDefinition',
+          },
+          characterId: 'char-a',
+          moduleId: 'mod-a',
+        }
+      }
+      if (url.includes('/triggers')) {
+        return {
+          revision: 10,
+          event: {
+            type: 'triggerDefinitions.replaced',
+            revision: 10,
+            resource: 'triggerDefinition',
+          },
+          characterId: 'char-a',
+          moduleId: 'mod-a',
+        }
+      }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const script = {
+      id: 'script-a',
+      comment: 'Regex',
+      in: 'a',
+      out: 'b',
+      type: 'editinput',
+    }
+    const trigger = {
+      id: 'trigger-a',
+      comment: 'Start',
+      type: 'start',
+      conditions: [],
+      effect: [],
+    }
+
+    await replaceCharacterScriptsCommand({
+      baseRevision: 1,
+      characterId: 'char-a',
+      scripts: [script],
+    })
+    await replaceCharacterTriggersCommand({
+      baseRevision: 2,
+      characterId: 'char-a',
+      triggers: [trigger],
+    })
+    await replaceModuleScriptsCommand({
+      baseRevision: 3,
+      moduleId: 'mod-a',
+      scripts: [script],
+    })
+    await replaceModuleTriggersCommand({
+      baseRevision: 4,
+      moduleId: 'mod-a',
+      triggers: [trigger],
+    })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/characters/char-a/scripts',
+        method: 'PUT',
+        body: { baseRevision: 1, scripts: [script] },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/triggers',
+        method: 'PUT',
+        body: { baseRevision: 2, triggers: [trigger] },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/scripts',
+        method: 'PUT',
+        body: { baseRevision: 3, scripts: [script] },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/triggers',
+        method: 'PUT',
+        body: { baseRevision: 4, triggers: [trigger] },
       },
     ])
   })

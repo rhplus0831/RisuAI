@@ -25,6 +25,7 @@
   import { DBState } from 'src/ts/stores.svelte'
   import { v4 } from 'uuid'
   import { watchServerBackedLorebooks } from 'src/ts/server/lorebookBridge.svelte'
+  import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
   let submenu = $state(0)
   interface Props {
@@ -37,7 +38,11 @@
 
   $effect(() => {
     const stopLorebooks = watchServerBackedLorebooks()
-    return () => stopLorebooks()
+    const stopScripts = watchServerBackedScriptDefinitions()
+    return () => {
+      stopLorebooks()
+      stopScripts()
+    }
   })
 
   $effect.pre(() => {

@@ -76,6 +76,7 @@
   import Toggles from './Toggles.svelte'
   import { watchServerBackedCharacterProfile } from 'src/ts/server/characterBridge.svelte'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -91,9 +92,11 @@
   $effect(() => {
     const stopCharacter = watchServerBackedCharacterProfile()
     const stopChat = watchServerBackedChatMetadata()
+    const stopScripts = watchServerBackedScriptDefinitions()
     return () => {
       stopCharacter()
       stopChat()
+      stopScripts()
     }
   })
 

@@ -235,21 +235,19 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-4a lorebook collection commands is complete.
-Continue with **9-4b - Script and trigger definition commands**:
+9-4b script and trigger definition commands are complete.
+Continue with **9-4c - Module records and enablement**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement the script/trigger endpoints listed above for character and
-  module definition collections.
-- Use whole-child replacement for definition arrays and keep runtime
-  trigger side effects on the existing 9-3e scriptstate command.
-- Replace server-backed web script and trigger definition mutations with
+- Implement the module endpoints listed above for module lifecycle,
+  enablement, global module reorder, and character module-link reorder.
+- Replace server-backed web module lifecycle and enablement mutations with
   typed command helpers and browser dispatch plumbing.
-- Re-enable MCP character/module regex and Lua script writes in Fastify
-  mode by routing them through the new script/trigger commands; keep asset
-  writes explicitly unsupported until 9-4d.
+- Keep module lorebook edits on 9-4a commands and module script/trigger
+  edits on 9-4b commands.
+- Keep asset writes explicitly unsupported until 9-4d.
 - Keep projection enforcement, plugin database bridge work, and storage
   gating in their later slices.
 - Preserve the 9-1 command response and conflict contract through the

@@ -6,6 +6,13 @@ import {
   dispatchReplaceModuleLorebooks,
   ensureClientLorebookEntryIds,
 } from 'src/ts/server/lorebookBridge.svelte'
+import {
+  currentScriptDefinitionStateSnapshot,
+  dispatchReplaceModuleScripts,
+  dispatchReplaceModuleTriggers,
+  ensureClientScriptDefinitionIds,
+  ensureClientTriggerDefinitionIds,
+} from 'src/ts/server/scriptDefinitionBridge.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
@@ -756,6 +763,7 @@ export class ModuleHandler extends MCPToolHandler {
     if (!module.regex) {
       module.regex = []
     }
+    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
 
     const index = module.regex.findIndex((r) => {
       const displayName = r.comment || 'Unnamed ' + pickHashRand(5515, r.in + r.out)
@@ -772,6 +780,10 @@ export class ModuleHandler extends MCPToolHandler {
         ableFlag: ableFlag !== undefined ? ableFlag : true,
       }
       module.regex.push(newScript)
+      if (previous) {
+        ensureClientScriptDefinitionIds(module.regex)
+        dispatchReplaceModuleScripts(module.id, module.regex, previous, 0)
+      }
       return [
         {
           type: 'text',
@@ -788,6 +800,10 @@ export class ModuleHandler extends MCPToolHandler {
     if (type !== undefined) script.type = type
     if (flag !== undefined) script.flag = flag
     if (ableFlag !== undefined) script.ableFlag = ableFlag
+    if (previous) {
+      ensureClientScriptDefinitionIds(module.regex)
+      dispatchReplaceModuleScripts(module.id, module.regex, previous, 0)
+    }
 
     return [
       {
@@ -820,6 +836,7 @@ export class ModuleHandler extends MCPToolHandler {
     if (!module.regex) {
       module.regex = []
     }
+    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
 
     const index = module.regex.findIndex((r) => {
       const displayName = r.comment || 'Unnamed ' + pickHashRand(5515, r.in + r.out)
@@ -836,6 +853,10 @@ export class ModuleHandler extends MCPToolHandler {
     }
 
     module.regex.splice(index, 1)
+    if (previous) {
+      ensureClientScriptDefinitionIds(module.regex)
+      dispatchReplaceModuleScripts(module.id, module.regex, previous, 0)
+    }
 
     return [
       {
@@ -892,10 +913,15 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
+    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
     const firstTrigger = module.trigger?.[0]
     if (firstTrigger?.effect?.[0]?.type === 'triggerlua') {
       // @ts-ignore
       firstTrigger.effect[0].code = code
+      if (previous) {
+        ensureClientTriggerDefinitionIds(module.trigger)
+        dispatchReplaceModuleTriggers(module.id, module.trigger, previous, 0)
+      }
       return [
         {
           type: 'text',

@@ -131,6 +131,13 @@ import {
   requireModule,
   validateFullLorebookOrder,
 } from '../commands/lorebooks.js'
+import {
+  normalizeScriptDefinitionDatabase,
+  readCharacterScriptParent,
+  readModuleScriptParent,
+  readScriptDefinitions,
+  readTriggerDefinitions,
+} from '../commands/scriptDefinitions.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -221,6 +228,12 @@ interface MessageCommandBody {
   messages?: unknown
   afterMessageId?: unknown
   generationResult?: unknown
+}
+
+interface ScriptDefinitionCommandBody {
+  baseRevision?: unknown
+  scripts?: unknown
+  triggers?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -3244,6 +3257,142 @@ export function registerCommandRoutes(
           module.lorebook = entries
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: moduleId },
+            extra: { moduleId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/characters/:characterId/scripts', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ScriptDefinitionCommandBody
+      const baseRevision = readBaseRevision(body)
+      const scripts = readScriptDefinitions(body.scripts)
+      const result = applyJsonCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = normalizeScriptDefinitionDatabase(database)
+          const character = readCharacterScriptParent(target, characterId)
+          character.customscript = scripts
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced, id: characterId },
+            extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/characters/:characterId/triggers', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ScriptDefinitionCommandBody
+      const baseRevision = readBaseRevision(body)
+      const triggers = readTriggerDefinitions(body.triggers)
+      const result = applyJsonCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = normalizeScriptDefinitionDatabase(database)
+          const character = readCharacterScriptParent(target, characterId)
+          character.triggerscript = triggers
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced, id: characterId },
+            extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/modules/:moduleId/scripts', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const moduleId = readModuleId((req.params as { moduleId?: unknown }).moduleId)
+      const body = (req.body ?? {}) as ScriptDefinitionCommandBody
+      const baseRevision = readBaseRevision(body)
+      const scripts = readScriptDefinitions(body.scripts)
+      const result = applyJsonCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = normalizeScriptDefinitionDatabase(database)
+          const module = readModuleScriptParent(target, moduleId)
+          module.regex = scripts
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced, id: moduleId },
+            extra: { moduleId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/modules/:moduleId/triggers', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const moduleId = readModuleId((req.params as { moduleId?: unknown }).moduleId)
+      const body = (req.body ?? {}) as ScriptDefinitionCommandBody
+      const baseRevision = readBaseRevision(body)
+      const triggers = readTriggerDefinitions(body.triggers)
+      const result = applyJsonCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = normalizeScriptDefinitionDatabase(database)
+          const module = readModuleScriptParent(target, moduleId)
+          module.trigger = triggers
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced, id: moduleId },
             extra: { moduleId },
           }
         },

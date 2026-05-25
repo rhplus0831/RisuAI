@@ -32,6 +32,7 @@ import { calcString } from './infunctions'
 import { currentChatStateSnapshot, dispatchPatchChatScriptstate } from '../chatCommands'
 
 export interface triggerscript {
+  id?: string
   comment: string
   type: 'start' | 'manual' | 'output' | 'input' | 'display' | 'request'
   conditions: triggerCondition[]

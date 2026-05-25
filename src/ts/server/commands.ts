@@ -439,6 +439,24 @@ export type GlobalLorebookSnapshot = Record<string, unknown> & {
   data?: LorebookEntrySnapshot[]
 }
 
+export type ScriptDefinitionSnapshot = Record<string, unknown> & {
+  id?: string
+  comment?: string
+  in?: string
+  out?: string
+  type?: string
+  flag?: string
+  ableFlag?: boolean
+}
+
+export type TriggerDefinitionSnapshot = Record<string, unknown> & {
+  id?: string
+  comment?: string
+  type?: string
+  conditions?: unknown[]
+  effect?: unknown[]
+}
+
 export type ChatScriptstateValue = string | number | boolean
 export type ChatScriptstatePatch = Record<string, ChatScriptstateValue>
 
@@ -729,6 +747,30 @@ export interface ReplaceChatLorebooksCommandInput extends LorebookCommandInput {
 export interface ReplaceModuleLorebooksCommandInput extends LorebookCommandInput {
   moduleId: string
   entries: LorebookEntrySnapshot[]
+}
+
+export interface ScriptDefinitionCommandInput {
+  baseRevision: number
+}
+
+export interface ReplaceCharacterScriptsCommandInput extends ScriptDefinitionCommandInput {
+  characterId: string
+  scripts: ScriptDefinitionSnapshot[]
+}
+
+export interface ReplaceCharacterTriggersCommandInput extends ScriptDefinitionCommandInput {
+  characterId: string
+  triggers: TriggerDefinitionSnapshot[]
+}
+
+export interface ReplaceModuleScriptsCommandInput extends ScriptDefinitionCommandInput {
+  moduleId: string
+  scripts: ScriptDefinitionSnapshot[]
+}
+
+export interface ReplaceModuleTriggersCommandInput extends ScriptDefinitionCommandInput {
+  moduleId: string
+  triggers: TriggerDefinitionSnapshot[]
 }
 
 export interface AppendMessageCommandInput extends ChatCommandInput {
@@ -1591,6 +1633,62 @@ export async function replaceModuleLorebooksCommand(
     body: {
       baseRevision: input.baseRevision,
       entries: input.entries,
+    },
+    signal,
+  })
+}
+
+export async function replaceCharacterScriptsCommand(
+  input: ReplaceCharacterScriptsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/scripts`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      scripts: input.scripts,
+    },
+    signal,
+  })
+}
+
+export async function replaceCharacterTriggersCommand(
+  input: ReplaceCharacterTriggersCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/triggers`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      triggers: input.triggers,
+    },
+    signal,
+  })
+}
+
+export async function replaceModuleScriptsCommand(
+  input: ReplaceModuleScriptsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/scripts`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      scripts: input.scripts,
+    },
+    signal,
+  })
+}
+
+export async function replaceModuleTriggersCommand(
+  input: ReplaceModuleTriggersCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/triggers`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      triggers: input.triggers,
     },
     signal,
   })

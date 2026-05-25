@@ -1378,6 +1378,7 @@ export interface SeparateParameters {
 type OutputModal = 'image' | 'audio' | 'video'
 
 export interface customscript {
+  id?: string
   comment: string
   in: string
   out: string
