@@ -81,6 +81,7 @@ track the next piece of work.
 | 9-4e - Plugins                          | [`phase-9-client-thinning-9-4e.md`](phase-9-client-thinning-9-4e.md)                   | Plugin record/config commands, helpers, provider selection, and UI/API routing.  |
 | 9-4f - Plugin storage                   | [`phase-9-client-thinning-9-4f.md`](phase-9-client-thinning-9-4f.md)                   | Plugin-storage commands, helpers, and plugin database adapter routing.           |
 | 9-4g - Compatibility sweep              | [`phase-9-client-thinning-9-4g.md`](phase-9-client-thinning-9-4g.md)                   | Plugin database provider/module bridge sweep and focused compatibility coverage. |
+| 9-5a - Events endpoint                  | [`phase-9-client-thinning-9-5a.md`](phase-9-client-thinning-9-5a.md)                   | Command-event SSE stream, sink subscriptions, and route lifecycle coverage.      |
 
 ## Historical Status Logs
 

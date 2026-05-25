@@ -133,17 +133,16 @@ level, the current Fastify API covers:
 - Auth-gated completion generation and chat / preview-prompt generation,
   including `/chat` provider dispatch behind `db.useServerPromptAssembly`.
 - Phase 8 memory job/read routes plus server summary/embed job handlers.
-- Phase 9 command routes through 9-4a: settings, presets, prompt
+- Phase 9 command routes through 9-4g: settings, presets, prompt
   settings/items, personas, translator presets, loadouts, characters,
   chats, chat folders, messages, generation persistence, chat
-  scriptstate, compatibility adapters, and lorebook collections.
+  scriptstate, compatibility adapters, lorebook collections,
+  script/trigger definitions, modules, asset references, plugins, and
+  plugin storage.
+- `GET /api/v1/events` as the 9-5a command-event SSE stream.
 
 Planned later, with final shapes locked phase by phase:
 
-- `GET /api/v1/events` - persistent SSE stream of committed mutations.
-- Remaining `POST /api/v1/commands/<resource>[/...]` families for
-  script/trigger definitions, modules, asset references, plugins, and
-  plugin storage; no whole-state PUT.
 - Helper generation routes for translate, TTS, image, token counting, and
   encodings where the server owns the provider path.
 - `.risu` export, bundle export, and multipart `.risu` import in Phase 9,
@@ -200,10 +199,11 @@ not redesign auth in this migration unless a concrete need surfaces.
 
 ## Events
 
-Planned for Phase 9. `GET /api/v1/events` will be a persistent
-Server-Sent Events stream of committed mutations. The client subscribes
-once on startup and uses events to invalidate its in-memory projection.
-Transport details live in
+`GET /api/v1/events` is the Phase 9 persistent Server-Sent Events stream
+of committed command mutations. It emits `event: command` frames with the
+locked `{ type, revision, resource, id?, parentId? }` payload shape. The
+client-side subscription and debounced bootstrap re-fetch wiring land in
+later 9-5 slices. Transport details live in
 [`phases/phase-9-client-thinning.md`](phases/phase-9-client-thinning.md).
 
 ## Boundary rules

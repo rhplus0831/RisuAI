@@ -1,6 +1,6 @@
 # Server Status
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 This file tracks the current Fastify server surface. Historical server
 logs and landed provider lists are archived or covered by the coverage
@@ -29,6 +29,10 @@ docs.
   definitions, module records/enablement, and asset references through
   owning resources. Implemented families use `baseRevision` / 409
   conflict handling and emit their mapped command event.
+- `GET /api/v1/events` is the auth-gated Phase 9 command-event SSE
+  stream. It sends committed command events as `event: command` frames
+  with `{ type, revision, resource, id?, parentId? }` payloads for later
+  browser projection invalidation.
 - Memory routes are auth-gated: `POST /api/v1/memory/jobs`,
   `GET /api/v1/memory/jobs`, `DELETE /api/v1/memory/jobs/:id`,
   `GET /api/v1/memory/chunks/:chatId`, and
@@ -40,7 +44,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-next concrete pickup is 9-4e plugin records and configuration in
+next concrete pickup is 9-5b bootstrap projection loading in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed slice:
-**9-4g - Compatibility sweep and focused tests**. Next slice:
-**9-5a - Events endpoint**.
+**9-5a - Events endpoint**. Next slice:
+**9-5b - Bootstrap projection loader**.
 
 ## Goal
 
@@ -207,6 +207,8 @@ surfaces.
 - **9-5 - Browser projection.** Turn the web client into a projection.
   - **9-5a - Events endpoint.** Build persistent SSE transport, then
     command event fan-out and the per-resource event catalog.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-5a.md`](../phases-completed/phase-9-client-thinning-9-5a.md).
   - **9-5b - Bootstrap projection loader.** Load `/api/v1/bootstrap` on
     startup through a server helper.
   - **9-5c - Event subscription and debounced re-bootstrap.** Re-fetch

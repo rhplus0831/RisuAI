@@ -10,37 +10,37 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-4g landed the compatibility sweep for the 9-4 families. It tightened
-the plugin database bridge so Fastify-mode plugin writes to
-`currentPluginProvider`, `modules`, and `enabledModules` dispatch the
-existing plugin-provider and module commands instead of falling through to
-browser-only projection writes or plugin custom storage. Unknown
-top-level plugin database keys still route to plugin custom storage.
+9-5a landed the persistent `GET /api/v1/events` command-event stream for
+server-backed web projection. Existing command mutations now fan out
+their committed command events over SSE using the locked
+`{ type, revision, resource, id?, parentId? }` shape. The route is
+auth-gated, sends a connected comment and heartbeat comments, and
+unsubscribes from the command sink when clients disconnect.
 
 ## Immediate Pickup
 
-Continue Phase 9 implementation with **9-5a - Events endpoint**.
+Continue Phase 9 implementation with **9-5b - Bootstrap projection
+loader**.
 
 Expected scope:
 
-- Build `GET /api/v1/events` as the persistent command-event stream for
-  server-backed web projection.
-- Fan out existing command events emitted by command mutations; do not
-  design surgical client-side patches.
-- Keep the event shape aligned with the Phase 9 command map:
-  `{ type, revision, resource, id?, parentId? }`.
-- Add focused route/event tests for auth rejection, stream setup, command
-  event delivery, and connection cleanup.
-- Leave browser bootstrap loading and debounced re-bootstrap subscription
-  wiring to 9-5b/9-5c unless the smallest server API contract requires a
-  tiny shared helper.
+- Add a browser-side bootstrap helper, likely under
+  `src/ts/server/bootstrap.ts`, for authenticated `GET /api/v1/bootstrap`
+  reads in Fastify server-backed web mode.
+- Wire web startup in `src/ts/bootstrap.ts` so Fastify-served browser mode
+  loads the server bootstrap projection instead of localForage / local
+  `.risu` decode.
+- Set `DBState.db` from the returned projection and cache the returned
+  revision for command helpers via `setCachedServerCommandRevision`.
+- Preserve Tauri/local web storage behavior outside Fastify mode.
+- Add focused browser helper/startup tests that prove Fastify mode reads
+  `/api/v1/bootstrap`, applies the returned database, and does not enter
+  the localForage load path.
 
-Out of scope for 9-5a:
+Out of scope for 9-5b:
 
 - Enforcing a read-only `DBState.db` guard.
-- Browser bootstrap projection loading.
-- Debounced browser re-bootstrap subscription wiring, unless kept to a
-  minimal helper needed to prove the event route.
+- Debounced event subscription / re-bootstrap wiring.
 - Residual command replacement sweep.
 - Storage/provider-key gating.
 - Server-side `.risu` import/export implementation.
@@ -110,19 +110,21 @@ Implementation notes:
 - 9-4g tightened the plugin database bridge so `currentPluginProvider`,
   `modules`, and `enabledModules` translate through existing provider and
   module commands in Fastify mode. This did not add new command endpoints.
+- 9-5a added `GET /api/v1/events` as an auth-gated SSE route over the
+  command event sink. It intentionally does not add browser subscription
+  code; 9-5c owns debounced re-bootstrap on events.
 - MCP module import is explicitly unsupported in server-backed web mode
   until a later slice defines a dedicated server-owned path.
 
 ## Later Queue
 
-1. 9-5b - Bootstrap projection loader.
-2. 9-5c - Event subscription and debounced re-bootstrap.
-3. 9-5d - Residual command replacement sweep.
-4. 9-5e - Read-only `DBState.db` guard.
-5. 9-6 - Storage and provider-key gating.
-6. 9-7 - Server `.risu` codec core.
-7. 9-8 - Import/export routes and bundle assets.
-8. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-5c - Event subscription and debounced re-bootstrap.
+2. 9-5d - Residual command replacement sweep.
+3. 9-5e - Read-only `DBState.db` guard.
+4. 9-6 - Storage and provider-key gating.
+5. 9-7 - Server `.risu` codec core.
+6. 9-8 - Import/export routes and bundle assets.
+7. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -135,8 +137,8 @@ Implementation notes:
 
 ## Verification
 
-Run focused route/event tests while building 9-5a, then
-before closing the slice run the full matrix:
+Run focused browser bootstrap tests while building 9-5b, then before
+closing the slice run the full matrix:
 
 ```bash
 pnpm check
@@ -145,20 +147,18 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-4g:
+Last recorded full baselines after 9-5a:
 
 - `pnpm check` - clean, with 0 Svelte errors and 0 warnings.
 - `pnpm test` - 697 tests passed, 4 skipped.
-- `pnpm api:test` - 1115 tests passed.
+- `pnpm api:test` - 1119 tests passed.
 - `pnpm build` - passed with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
-Focused 9-4g runs:
+Focused 9-5a run:
 
-- `pnpm test -- src/ts/plugins/plugins.test.ts` - 697 tests passed, 4
-  skipped.
-- `pnpm test -- src/ts/plugins/plugins.test.ts src/ts/compatibilityAdapters.test.ts src/ts/server/commands.test.ts`
-  - 697 tests passed, 4 skipped.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts
+  server/fastify/__tests__/events.test.ts` - 4 tests passed.
 
 ## References
 
@@ -169,7 +169,7 @@ Focused 9-4g runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-4g.md`](../phases-completed/phase-9-client-thinning-9-4g.md)
+  [`../phases-completed/phase-9-client-thinning-9-5a.md`](../phases-completed/phase-9-client-thinning-9-5a.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

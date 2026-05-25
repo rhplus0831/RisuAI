@@ -13,6 +13,7 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerCommandRoutes } from './routes/commands.js'
+import { registerEventsRoutes } from './routes/events.js'
 import { registerGenerationRoutes } from './routes/generation.js'
 import {
   registerGenerationChatRoutes,
@@ -134,6 +135,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerBootstrapRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir)
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
+  registerEventsRoutes(app, authState, commandEventSink)
   registerAssetsRoutes(app, db, authState, config.dataDir)
   registerBackupRoutes(app, db, authState, config.dataDir)
   registerProxyRoutes(app, authState)

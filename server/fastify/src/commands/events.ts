@@ -8,10 +8,13 @@ export interface CommandEvent {
 
 export type CommandEventDraft = Omit<CommandEvent, 'revision'>
 
+export type CommandEventListener = (event: CommandEvent) => void
+
 export interface CommandEventSink {
   emit(event: CommandEvent): void
   list(): readonly CommandEvent[]
   clear(): void
+  subscribe(listener: CommandEventListener): () => void
 }
 
 export const COMMAND_EVENT_CATALOG = {
@@ -299,9 +302,18 @@ export const COMMAND_EVENT_CATALOG = {
 
 export class InMemoryCommandEventSink implements CommandEventSink {
   private readonly events: CommandEvent[] = []
+  private readonly listeners = new Set<CommandEventListener>()
 
   emit(event: CommandEvent): void {
     this.events.push(event)
+    for (const listener of this.listeners) {
+      try {
+        listener(event)
+      } catch {
+        // Event subscribers are best-effort projection invalidators; a
+        // broken stream must not turn a committed command into a failure.
+      }
+    }
   }
 
   list(): readonly CommandEvent[] {
@@ -310,6 +322,13 @@ export class InMemoryCommandEventSink implements CommandEventSink {
 
   clear(): void {
     this.events.length = 0
+  }
+
+  subscribe(listener: CommandEventListener): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 }
 

@@ -1,12 +1,12 @@
 # Server Route Tests
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
 completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
 memory job/read routes have coverage under `server/fastify/__tests__/`.
-Phase 9 command routes are covered through 9-4d; unlanded plugin command
-families remain target test rows.
+Phase 9 command routes are covered through 9-4g, and the 9-5a command
+event stream is covered by focused route tests.
 
 ## Phase 1: Foundation
 
@@ -146,8 +146,9 @@ test expectations were locked by 9-0 in
 | script/trigger definitions | replace character/module child definitions        | landed; covered by command suites |
 | module records/enablement | create / patch / delete / enable / reorder         | landed; covered by command suites |
 | asset references          | durable references through owning commands         | landed; covered by command suites |
-| plugin records/config     | create / patch / delete / enable / provider        | not started |
-| plugin-storage            | patch kv                                           | not started |
+| plugin records/config     | create / patch / delete / enable / provider        | landed; covered by command suites |
+| plugin-storage            | put/delete/bulk kv                                 | landed; covered by command suites |
+| events                    | command-event SSE stream                           | landed; covered by `server/fastify/__tests__/events.test.ts` |
 
 Plus: landed command families cover revision conflict
 (`409 + currentRevision`), rollback/no-revision-bump failure behavior,

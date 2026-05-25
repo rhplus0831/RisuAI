@@ -235,16 +235,14 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-4g compatibility sweep is complete. Continue with
-**9-5a - Events endpoint**:
+9-5a events endpoint is complete. Continue with
+**9-5b - Bootstrap projection loader**:
 
-- Build `GET /api/v1/events` as the persistent server event stream for
-  command events.
-- Fan out existing command events with the locked
-  `{ type, revision, resource, id?, parentId? }` shape.
-- Add focused route/event tests for auth rejection, stream setup, command
-  event delivery, and cleanup.
-- Keep browser bootstrap loading, debounced re-bootstrap subscription,
-  residual direct-write sweep, read-only `DBState.db` guard, provider-key
-  masking, server `.risu` import/export, and storage gating in their later
-  slices.
+- Add the browser-side bootstrap helper for authenticated
+  `GET /api/v1/bootstrap` reads in Fastify server-backed web mode.
+- Wire Fastify-served browser startup to load the returned projection into
+  `DBState.db` and cache the returned revision for command helpers.
+- Keep Tauri/local browser startup on the existing local storage path.
+- Keep event subscription, debounced re-bootstrap, residual direct-write
+  sweep, read-only `DBState.db` guard, provider-key masking, server
+  `.risu` import/export, and storage gating in their later slices.
