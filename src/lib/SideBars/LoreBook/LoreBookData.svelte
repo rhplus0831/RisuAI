@@ -24,6 +24,10 @@
   import { tokenizeAccurate } from 'src/ts/tokenizer'
   import { DBState } from 'src/ts/stores.svelte'
   import LoreBookList from './LoreBookList.svelte'
+  import {
+    currentLorebookStateSnapshot,
+    dispatchReplaceChatLorebooks,
+  } from 'src/ts/server/lorebookBridge.svelte'
 
   interface Props {
     value: loreBook
@@ -91,10 +95,15 @@
     }
   }
   function toggleLocalActive(check: boolean, book: loreBook) {
+    const previous = currentLorebookStateSnapshot()
     if (check) {
       activateLocally(book)
     } else {
       deactivateLocally(book)
+    }
+    const chat = getCurrentChat()
+    if (chat?.id) {
+      dispatchReplaceChatLorebooks(chat.id, chat.localLore ?? [], previous)
     }
   }
   function getParentLoreName(book: loreBook) {

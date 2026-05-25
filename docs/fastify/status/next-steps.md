@@ -10,7 +10,7 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-5d has a first residual helper pass landed:
+9-5d has two residual sweep passes landed:
 
 - Character asset helper writes in `src/ts/characters.ts`
   (`selectCharImg`, `dumpCharImage`, `changeCharImage`, `addCharEmotion`,
@@ -22,9 +22,17 @@ import paths directly instead of preserving intermediate Fastify shapes.
 - Drag-and-drop `.risum` module import now returns explicit unsupported
   behavior in Fastify server-backed web mode instead of pushing directly
   into `DBState.db.modules`. Local/Tauri behavior is unchanged.
+- Manual module `.risum` import in `src/ts/process/modules.ts`, service
+  worker shared `.risum` module import, and browser file-handler `.risum`
+  import in `src/ts/characterCards.ts` now return the same explicit
+  unsupported behavior in Fastify mode before local asset decoding.
+- Lorebook local activation in `src/lib/SideBars/LoreBook/LoreBookData.svelte`
+  now dispatches the existing chat lorebook replacement command after the
+  optimistic `chat.localLore` change.
 - Focused coverage was added to
   `src/ts/compatibilityAdapters.test.ts` for character asset helper
-  command dispatch.
+  command dispatch, and to `src/ts/process/modules.test.ts` for Fastify
+  `.risum` import rejection before local asset writes.
 
 ## Immediate Pickup
 
@@ -134,6 +142,10 @@ Implementation notes:
 - 9-5d first pass routed character asset helper writes and legacy chat v1
   imports through existing commands, and made `.risum` drag import
   explicitly unsupported in Fastify mode.
+- 9-5d second pass extended explicit unsupported behavior to manual,
+  shared, and browser file-handler `.risum` module imports in Fastify
+  mode, and routed lorebook local-activation `chat.localLore` writes
+  through the existing chat lorebook replacement command.
 - MCP module import is explicitly unsupported in server-backed web mode
   until a later slice defines a dedicated server-owned path.
 
@@ -194,6 +206,15 @@ Focused 9-5d first-pass run:
 
 - `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   - 8 tests passed.
+- `pnpm check`
+  - clean, with 0 Svelte errors and 0 warnings.
+
+Focused 9-5d second-pass runs:
+
+- `pnpm exec vitest run src/ts/process/modules.test.ts`
+  - 1 test passed.
+- `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts src/ts/process/modules.test.ts`
+  - 9 tests passed.
 - `pnpm check`
   - clean, with 0 Svelte errors and 0 warnings.
 

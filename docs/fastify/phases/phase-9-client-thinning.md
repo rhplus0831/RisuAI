@@ -220,10 +220,10 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-5c.md`](../phases-completed/phase-9-client-thinning-9-5c.md).
   - **9-5d - Residual command replacement sweep.** Replace remaining
     server-backed web writes assigned to 9-2 through 9-4.
-    - Status: active. First pass routed character asset helper writes and
-      legacy chat v1 imports through existing commands, and made
-      server-backed `.risum` drag import explicitly unsupported. Continue
-      the sweep before 9-5e.
+    - Status: active. Residual passes routed character asset helper
+      writes, legacy chat v1 imports, and lorebook local activation
+      through existing commands, and made server-backed `.risum` module
+      import paths explicitly unsupported. Continue the sweep before 9-5e.
   - **9-5e - Read-only `DBState.db` guard.** Fail loudly for direct web-mode
     mutation attempts while leaving Tauri/local mode untouched.
 - **9-6 - Storage and provider-key gating.** Audit and gate remaining

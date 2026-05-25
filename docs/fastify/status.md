@@ -15,9 +15,9 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-5d residual helper pass for character asset
-  helpers, legacy chat import commands, and unsupported server-backed
-  `.risum` drag import.
+- Last landed work: 9-5d residual sweep pass for character asset helpers,
+  legacy chat import commands, unsupported server-backed `.risum` module
+  import paths, and lorebook local-activation command dispatch.
 - Current gap: continue 9-5d sweeping remaining server-backed web direct
   writes for 9-2 through 9-4 resource families before enabling the
   read-only `DBState.db` guard.
@@ -52,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-5d residual helper pass landed; continue the 9-5d sweep.      |
+| Client thinning                             | Active; 9-5d residual sweep passes landed; continue the 9-5d sweep.     |
 
 ## Maintenance Rules
 

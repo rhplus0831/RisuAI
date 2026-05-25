@@ -455,6 +455,10 @@ export async function characterURLImport() {
     })
   }
   if (hash.startsWith('#share_module')) {
+    if (isFastifyServer) {
+      alertError('Module file import is not supported in server-backed web mode yet')
+      return
+    }
     const data = await fetch('/sw/share/module')
     if (data.status !== 200) {
       return
@@ -549,6 +553,10 @@ export async function characterURLImport() {
       return
     }
     if (name.endsWith('risum')) {
+      if (isFastifyServer) {
+        alertError('Module file import is not supported in server-backed web mode yet')
+        return
+      }
       const md = await readModule(Buffer.from(data))
       md.id = v4()
       const previous = currentModuleStateSnapshot()
