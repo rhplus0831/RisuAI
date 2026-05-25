@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 // Server-backed dual-mode sweep (Phase 6-3). Unlike sendChat.fixtures.test.ts,
 // this file does NOT vi.mock('../request/request') — the real request module
@@ -98,11 +99,12 @@ import {
   setServerChatInfo,
   setServerChatMessagePatch,
   setServerChatPrompt,
+  setServerChatSideEffects,
 } from '../__fixtures__/mocks/serverChatFetch'
 import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { loadProviderScript, resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
-import { DBState } from '../../stores.svelte'
+import { DBState, hypaV3ProgressStore } from '../../stores.svelte'
 import type { Chat } from '../../storage/database.svelte'
 import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelte'
 
@@ -320,6 +322,12 @@ describe('sendChat fixtures (server-backed)', () => {
     resetProviderState()
     resetSideEffectCalls()
     resetServerCompletionCalls()
+    hypaV3ProgressStore.set({
+      open: false,
+      miniMsg: '',
+      msg: '',
+      subMsg: '',
+    })
     doingChat.set(false)
     abortChat.set(false)
     chatProcessStage.set(0)
@@ -466,6 +474,86 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
       method: 'POST',
       authHeader: 'fixture-auth-token',
       mode: loaded.fixture.sendChatArgs?.continue ? 'continue' : 'send',
+    })
+    expect(getServerCompletionCalls()).toEqual([])
+  })
+
+  it('pins hypav3-memory server-backed prompt rows and progress side effects', async () => {
+    const loaded = await loadFixture('hypav3-memory')
+    cleanups.push(loaded.cleanup)
+    DBState.db.useServerPromptAssembly = true
+
+    const expected = await loadExpected('hypav3-memory')
+    const providerCall = expected.providerCalls[0]
+    expect(providerCall).toBeDefined()
+    const formated = providerCall.formated as Array<Record<string, unknown>>
+    const memoryRows = formated.filter((row) => row.memo === 'hypaMemory')
+    expect(memoryRows).toEqual([
+      {
+        role: 'system',
+        content:
+          '<Previous Conversation>Summary: in a previous turn the user discussed gardening tips.</Previous Conversation>',
+        memo: 'hypaMemory',
+      },
+    ])
+    setServerChatPrompt(
+      formated.map((row) => ({ role: String(row.role), content: row.content })),
+      {},
+      { formated },
+    )
+
+    const expectedGenerationInfo = expected.generationInfo as {
+      generationId?: string
+      inputTokens?: number
+      outputTokens?: number
+    }
+    setServerChatInfo(
+      expectedGenerationInfo.inputTokens ?? 0,
+      expectedGenerationInfo.outputTokens ?? DBState.db.maxResponse,
+    )
+    const assistant = [...expected.messages].reverse().find((m) => m.role === 'char')
+    expect(assistant).toBeDefined()
+    setServerChatDispatchResult(
+      assistant?.data ?? '',
+      expected.generationInfo as Record<string, unknown>,
+      expectedGenerationInfo.generationId ?? 'uuid-0',
+    )
+    setServerChatSideEffects([
+      {
+        kind: 'hypav3_progress',
+        payload: {
+          open: true,
+          miniMsg: '2',
+          msg: '[Hypa V3] Summarizing...',
+          subMsg: '2 queued',
+          status: 'running',
+          queuedCount: 2,
+        },
+      },
+    ])
+
+    const stageRecorder = recordStages()
+    await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+    const stages = stageRecorder.stop()
+    const captured = captureSnapshot(stages)
+
+    expect(captured.messages).toEqual(expected.messages)
+    expect(captured.generationInfo).toEqual(expected.generationInfo)
+    expect(captured.stages).toEqual([1, 3, 4])
+    expect(captured.doingChat).toBe(false)
+    expect(captured.providerCalls).toEqual([])
+    expect(get(hypaV3ProgressStore)).toEqual({
+      open: true,
+      miniMsg: '2',
+      msg: '[Hypa V3] Summarizing...',
+      subMsg: '2 queued',
+    })
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({
+      url: '/api/v1/generate/chat',
+      method: 'POST',
+      authHeader: 'fixture-auth-token',
+      mode: 'send',
     })
     expect(getServerCompletionCalls()).toEqual([])
   })

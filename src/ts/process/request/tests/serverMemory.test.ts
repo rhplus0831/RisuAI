@@ -193,6 +193,67 @@ describe('server memory API adapter', () => {
     })
   })
 
+  it('preserves browser-visible list/cancel job state envelopes', async () => {
+    const memoryFetch = makeMemoryFetch((url, init) => {
+      if (url === '/api/v1/memory/jobs?chatId=chat+1&status=running') {
+        return {
+          jobs: [
+            {
+              ...baseJob,
+              status: 'running',
+              payload: { chunkId: 'chunk-1', model: 'summary-model' },
+            },
+          ],
+        }
+      }
+      if (url === '/api/v1/memory/jobs/job%2F1' && init.method === 'DELETE') {
+        return {
+          job: {
+            ...baseJob,
+            status: 'cancelled',
+            payload: { chunkId: 'chunk-1', model: 'summary-model' },
+          },
+        }
+      }
+      return jsonResponse({ error: 'unexpected memory fixture call' }, 500)
+    })
+    vi.stubGlobal('fetch', memoryFetch.fetch)
+
+    const listed = await listServerMemoryJobs({ chatId: 'chat 1', status: 'running' })
+    const cancelled = await cancelServerMemoryJob('job/1')
+
+    expect(listed).toEqual({
+      status: 'ok',
+      jobs: [
+        {
+          ...baseJob,
+          status: 'running',
+          payload: { chunkId: 'chunk-1', model: 'summary-model' },
+        },
+      ],
+    })
+    expect(cancelled).toEqual({
+      status: 'ok',
+      job: {
+        ...baseJob,
+        status: 'cancelled',
+        payload: { chunkId: 'chunk-1', model: 'summary-model' },
+      },
+    })
+    expect(memoryFetch.calls).toEqual([
+      {
+        url: '/api/v1/memory/jobs?chatId=chat+1&status=running',
+        method: 'GET',
+        authHeader: 'test-auth-token',
+      },
+      {
+        url: '/api/v1/memory/jobs/job%2F1',
+        method: 'DELETE',
+        authHeader: 'test-auth-token',
+      },
+    ])
+  })
+
   it('returns unavailable without fetching when the Fastify gate is closed', async () => {
     platformState.isFastifyServer = false
     const memoryFetch = makeMemoryFetch(() => ({ chunks: [baseChunk] }))

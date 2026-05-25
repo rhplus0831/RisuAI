@@ -42,6 +42,7 @@ track the next piece of work.
 | 8-7b - Browser memory API adapter       | [`phase-8-memory-8-7b.md`](phase-8-memory-8-7b.md)                                     | Gated browser client for memory reads, jobs, and cancellation.          |
 | 8-7c - Browser progress listener        | [`phase-8-memory-8-7c.md`](phase-8-memory-8-7c.md)                                     | Gated `hypav3_progress` side effects into `hypaV3ProgressStore`.        |
 | 8-7d - Memory job list/cancel UI        | [`phase-8-memory-8-7d.md`](phase-8-memory-8-7d.md)                                     | Fastify-gated Hypa V3 modal job list, refresh, and cancellation.        |
+| 8-7e - `hypav3-memory` fixture parity   | [`phase-8-memory-8-7e.md`](phase-8-memory-8-7e.md)                                     | Server-backed memory fixture, progress, list/cancel, and diagnostics.   |
 
 ## Historical Status Logs
 

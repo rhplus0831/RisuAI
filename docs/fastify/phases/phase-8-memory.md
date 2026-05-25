@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: in progress. Completed through
-**8-7d - Memory job list/cancel UI path**.
-Next slice: **8-7e - `hypav3-memory` fixture parity**.
+**8-7e - `hypav3-memory` fixture parity**.
+Next slice: **8-8 - Phase 8 closeout**.
 
 ## Goal
 
@@ -140,6 +140,9 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   `cancelServerMemoryJob`, refreshes on open/chat changes and
   periodically, and disables legacy local bulk/per-summary edit controls
   while server-backed memory mode is active.
+- The 8-7e fixture parity slice pins the server-backed `hypav3-memory`
+  prompt path, Fastify `hypav3_progress` browser side effect, memory
+  job list/cancel envelopes, and missing-memory follow-up diagnostics.
 
 ## Scope
 
@@ -211,7 +214,7 @@ browser progress store.
     metadata edits stay disabled in server-backed mode. Done.
   - **8-7e - `hypav3-memory` fixture parity.** Pin canonical memory prompt
     rows, missing-memory diagnostics, and browser-visible progress /
-    list-cancel effects.
+    list-cancel effects. Done.
 - **8-8 - Phase 8 closeout.** Run the full verification matrix, document
   supported model/provider memory paths, and flip handoff docs to Phase 9.
 

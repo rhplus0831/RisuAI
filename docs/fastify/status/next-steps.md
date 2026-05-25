@@ -11,37 +11,36 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-7d added the minimal server-backed memory job UI path. The Hypa V3
-modal now shows a Fastify/server-prompt-assembly gated pending/running job
-panel using `listServerMemoryJobs`, supports per-job cancellation through
-`cancelServerMemoryJob`, refreshes on open/chat changes and periodically,
-and keeps local bulk/per-summary edit controls disabled while
-server-backed memory mode is active.
+8-7e added `hypav3-memory` fixture parity coverage for the server-backed
+path. The server-backed `/chat` fixture now pins the rendered
+`hypaMemory` row, applies a Fastify `hypav3_progress` terminal side
+effect into `hypaV3ProgressStore`, preserves memory job list/cancel
+envelopes through the browser adapter, and explicitly asserts the
+missing-memory diagnostics that drive best-effort summarize/embed
+follow-up enqueueing.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-7e - `hypav3-memory` fixture parity**.
+Continue Phase 8 with **8-8 - Phase 8 closeout**.
 
 Expected scope:
 
-- Pin canonical memory prompt rows for the server-backed
-  `hypav3-memory` fixture path.
-- Cover missing-memory diagnostics that drive the best-effort follow-up
-  job enqueue path.
-- Cover browser-visible memory side effects that are now wired through
-  progress and list/cancel surfaces where the existing fixture harness can
-  observe them.
-- Keep any fixture updates narrowly tied to current Fastify/server-backed
-  behavior; do not preserve old intermediate Fastify shapes.
+- Confirm the full verification matrix remains green.
+- Document the supported Hypa V3 memory model/provider paths and the
+  intentionally unsupported browser-local paths.
+- Update the live handoff to Phase 9 client thinning once Phase 8 exit
+  criteria are satisfied.
+- Keep the closeout concise; historical detail belongs in
+  `../phases-completed/`.
 
-Out of scope for 8-7e:
+Out of scope for 8-8:
 
 - Embedding provider dispatch and query embedding generation.
 - Summary generation and embedding provider work in route handlers.
 - Browser-local embedding runtimes.
 - Removing the legacy browser-local Hypa V3 runtime.
 - Bulk re-summary and per-summary metadata edits in server-backed mode.
-- New browser UI beyond fixture-observable parity.
+- New browser UI.
 
 Implementation notes:
 
@@ -55,16 +54,18 @@ Implementation notes:
   `DBState.db.useServerPromptAssembly` are active.
 - Local Hypa V3 editing remains available outside server-backed mode;
   server-backed mode treats the legacy modal summary list as read-only.
-- Fixture files live under `src/ts/process/__fixtures__/`; the current
-  `hypav3-memory` expected output is the main target.
+- The 8-7e fixture parity assertions live in
+  `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`,
+  `src/ts/process/request/tests/serverMemory.test.ts`, and
+  `server/fastify/__tests__/assemble.test.ts`.
 - Preserve the no-compatibility-migrations policy: update current
   Fastify/browser adapter shapes directly if the contract needs a tighter
   shape.
 
-## Queue After 8-7d
+## Queue After 8-7e
 
-1. 8-7e - `hypav3-memory` fixture parity.
-2. 8-8 - Phase 8 closeout.
+1. 8-8 - Phase 8 closeout.
+2. Phase 9 - Client thinning.
 
 ## Parallel Or Deferred
 
@@ -87,8 +88,8 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 8-7d: `pnpm check` clean,
-`pnpm test` 650 tests plus 4 skipped, `pnpm api:test` 1048 tests, and
+Last recorded full baselines after 8-7e: `pnpm check` clean,
+`pnpm test` 652 tests plus 4 skipped, `pnpm api:test` 1048 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
@@ -143,11 +144,29 @@ was clean, `pnpm test` passed with 650 tests plus 4 skipped,
 `pnpm api:test` passed with 1048 tests, and `pnpm build` passed with the
 existing warning set.
 
+Focused/full 8-7e verification:
+
+```bash
+pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
+pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts
+pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts
+pnpm check
+pnpm test
+pnpm api:test
+pnpm build
+```
+
+8-7e passed the server-backed fixture file with 27 tests, the browser
+memory adapter file with 12 tests, the focused Fastify assembler/adapter
+files with 52 tests, `pnpm check` clean, `pnpm test` with 652 tests plus
+4 skipped, `pnpm api:test` with 1048 tests, and `pnpm build` with the
+existing warning set.
+
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-7d.md`](../phases-completed/phase-8-memory-8-7d.md)
+  [`../phases-completed/phase-8-memory-8-7e.md`](../phases-completed/phase-8-memory-8-7e.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Phase 7 final summary:

@@ -699,6 +699,15 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       await fillHistoryAndBias(first)
       fillMemoryAndPostHistory(first)
 
+      expect(first.promptMemorySelectionDiagnostics?.missingMemory).toEqual({
+        emptySelection: true,
+        hasMissingMemory: true,
+        summaryIdsMissingChunks: [],
+        summaryIdsMissingEmbeddings: ['summary-needs-embed'],
+        chunkIdsMissingEmbeddings: ['chunk-needs-embed'],
+        chunkIdsMissingSummaries: ['chunk-needs-summary'],
+        followUpEligible: true,
+      })
       expect(first.promptMemoryFollowUpDiagnostics).toMatchObject({
         attempted: true,
         jobsCreated: 2,

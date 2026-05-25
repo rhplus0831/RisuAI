@@ -7,7 +7,11 @@
  */
 
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
-import type { ServerChatMessagePatch, ServerChatRestoration } from '../../request/serverChatEvents'
+import type {
+  ServerChatMessagePatch,
+  ServerChatRestoration,
+  ServerChatSideEffect,
+} from '../../request/serverChatEvents'
 
 export interface ServerChatCall {
   url: string
@@ -45,6 +49,7 @@ interface State {
   dispatchResult: string | null
   dispatchError: string | null
   emitTtsSideEffect: boolean
+  sideEffects: ServerChatSideEffect[]
   restoration: ServerChatRestoration | null
   generationId: string
   generationInfo: Record<string, unknown> | null
@@ -69,6 +74,7 @@ function defaultState(): Omit<State, 'calls'> {
     dispatchResult: null,
     dispatchError: null,
     emitTtsSideEffect: false,
+    sideEffects: [],
     restoration: null,
     generationId: 'uuid-0',
     generationInfo: null,
@@ -137,6 +143,10 @@ export function setServerChatDispatchError(
   state.restoration = restoration
 }
 
+export function setServerChatSideEffects(sideEffects: ServerChatSideEffect[]): void {
+  state.sideEffects = sideEffects
+}
+
 function frame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
@@ -188,6 +198,9 @@ function sseChatResponse(): Response {
             kind: 'tts',
             payload: { text: state.dispatchResult, characterId: 'char-1' },
           })
+        }
+        for (const sideEffect of state.sideEffects) {
+          push('side_effect', sideEffect)
         }
         push('done', {
           result: state.dispatchResult,
