@@ -27,20 +27,43 @@ Two 9-5d residual sweep passes then landed:
 
 ## Immediate Pickup
 
-Continue **9-5d - Residual command replacement sweep**. Do not start
-9-5e yet; the read-only guard still needs more residual write
-replacement.
+9-5d was too broad as a single implementation slice. Keep the parent
+goal, but implement it through the smaller 9-5d sub-slices below. Do not
+start 9-5e yet; the read-only guard still needs these residual write
+replacements first.
 
-- Sweep remaining direct `DBState.db` writes and mutable `getDatabase()`
-  references in server-backed web paths for resource families already
-  owned by 9-2 through 9-4.
-- Replace remaining server-backed web writes with existing typed command
-  helpers, compatibility bridges, or explicit unsupported behavior where
-  a later slice has not defined a server path.
-- Keep Tauri/local-only import, storage, backup, and file paths untouched.
-- Treat bootstrap projection replacement and event-driven re-bootstrap as
-  projection boundaries, not ordinary UI mutation exceptions.
-- Add focused regression tests around the highest-risk write sites found.
+Current code audit found the remaining direct-write clusters are not
+uniform:
+
+- Settings-style scalar writes under `src/lib/Setting/Pages/`,
+  `src/ts/setting/utils.ts`, `src/ts/gui/colorscheme.ts`,
+  `src/lib/Others/WelcomeRisu.svelte`, and small provider/runtime/media
+  helper paths.
+- 9-2 low-churn resource tails around prompt templates, personas,
+  translator presets, and loadouts.
+- 9-3 character/chat UI tails, especially character profile/assets,
+  chat folders, selected chat/page state, playground/realm/grid helpers,
+  and import helpers that already have partial command dispatch.
+- 9-4 extension tails around lorebooks, module UI/MCP helpers, plugin
+  settings, plugin database translation, and plugin storage.
+- Process/runtime writes in generation, scriptstate, memory, and MCP
+  helpers that need classification before the read-only guard can be
+  enabled.
+
+Immediate pickup: **9-5d-i - Settings residual command sweep**.
+
+- Audit remaining server-backed web writes to settings keys that already
+  map through `SERVER_SETTINGS_GROUP_BY_KEY`.
+- Route them through `setSettingValue`, `watchServerBackedSettings`, or
+  `patchServerBackedSettings` instead of adding new command endpoints.
+- Keep dedicated resource commands authoritative when a field belongs to
+  a resource family, for example plugin provider selection, module
+  enablement, personas, prompt items, or loadouts.
+- Keep Tauri/local-only setup, import, backup, storage, and asset byte
+  paths untouched.
+- Add focused tests for the highest-risk settings path changed, usually
+  in `src/ts/server/commands.test.ts` or the nearest component/helper
+  test that can assert command dispatch and rollback.
 
 Out of scope for 9-5d: the read-only `DBState.db` guard, storage and
 provider-key gating, server-side `.risu` import/export, asset byte
@@ -78,15 +101,47 @@ Implementation notes:
 - MCP module import, MCP asset import, and server-backed `.risum` module
   import remain explicitly unsupported until later slices define
   dedicated server-owned paths.
+- Several direct-write search hits are expected rollback helpers or
+  optimistic local updates followed by command dispatch. Each 9-5d
+  sub-slice should prove the server-backed behavior, not mechanically
+  delete every local assignment.
 
 ## Later Queue
 
-1. 9-5d - Residual command replacement sweep.
-2. 9-5e - Read-only `DBState.db` guard.
-3. 9-6 - Storage and provider-key gating.
-4. 9-7 - Server `.risu` codec core.
-5. 9-8 - Import/export routes and bundle assets.
-6. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-5d-i - Settings residual command sweep.
+2. 9-5d-ii - 9-2 resource UI tails: prompt templates, personas,
+   translator presets, and loadouts.
+3. 9-5d-iii - 9-3 character/chat UI tails: character profile/assets,
+   chat folders, selected chat/page state, playground/realm/grid helpers,
+   and legacy import helpers.
+4. 9-5d-iv - 9-4 extension UI/API tails: lorebooks, module UI/MCP
+   helpers, plugin settings, plugin database translation, and plugin
+   storage.
+5. 9-5d-v - Process/runtime durable-write classification: generation,
+   scriptstate, memory, and MCP helper writes that must become commands,
+   explicit unsupported behavior, or documented local/runtime-only state.
+6. 9-5e-i - Projection write gate foundation.
+7. 9-5e-ii - Command bridge guard integration.
+8. 9-5e-iii - Guard audit closeout.
+9. 9-6a - Server-backed persistence gate.
+10. 9-6b - Asset byte gate.
+11. 9-6c - Server backup/restore projection.
+12. 9-6d - Residual local cache classification.
+13. 9-6e - Provider secret masking.
+14. 9-7a - `.risu` fixture corpus and codec harness.
+15. 9-7b - Legacy envelope codec port.
+16. 9-7c - RISUSAVE block codec port.
+17. 9-7d - Decode normalization and validation.
+18. 9-7e - Repository-backed export adapter.
+19. 9-8a - Multipart `.risu` import route.
+20. 9-8b - Repository `.risu` export route.
+21. 9-8c - Asset reference walker.
+22. 9-8d - Bundle export route.
+23. 9-9a - Server-backed browser smoke harness.
+24. 9-9b - Generation and memory fixture closeout.
+25. 9-9c - Server-backed storage-write audit.
+26. 9-9d - Manual Fastify web and Tauri local verification.
+27. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -99,8 +154,8 @@ Implementation notes:
 
 ## Verification
 
-Run focused residual-sweep tests while building 9-5d, then before
-closing the slice run the full matrix:
+Run focused residual-sweep tests while building each 9-5d sub-slice. Run
+the full matrix before closing the parent 9-5d sweep:
 
 ```bash
 pnpm check
@@ -129,6 +184,8 @@ Focused 9-5 runs:
   - 8 tests passed; check clean.
 - 9-5d second pass: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts src/ts/process/modules.test.ts`; `pnpm check`
   - 9 tests passed; check clean.
+- 9-5d sub-slices: run the nearest focused command/bridge tests touched
+  by the sub-slice, then `pnpm check` before marking that sub-slice done.
 
 ## References
 

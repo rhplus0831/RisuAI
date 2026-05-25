@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5d residual helper pass**. Next pickup: continue
-**9-5d - Residual command replacement sweep**.
+**9-5d residual helper pass**. Next pickup:
+**9-5d-i - Settings residual command sweep**.
 
 ## Goal
 
@@ -219,31 +219,116 @@ surfaces.
     - Status: complete. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-5c.md`](../phases-completed/phase-9-client-thinning-9-5c.md).
   - **9-5d - Residual command replacement sweep.** Replace remaining
-    server-backed web writes assigned to 9-2 through 9-4.
+    server-backed web writes assigned to 9-2 through 9-4, but keep the
+    work split by mutation family instead of treating the whole residual
+    audit as one implementation change.
     - Status: active. Residual passes routed character asset helper
       writes, legacy chat v1 imports, and lorebook local activation
       through existing commands, and made server-backed `.risum` module
-      import paths explicitly unsupported. Continue the sweep before 9-5e.
+      import paths explicitly unsupported. Continue with the smaller
+      sub-slices before 9-5e.
+    - **9-5d-i - Settings residual command sweep.** Route remaining
+      server-backed web writes for existing settings groups through
+      `setSettingValue`, `watchServerBackedSettings`, or
+      `patchServerBackedSettings`. Do not use this slice for fields with
+      dedicated resource commands.
+    - **9-5d-ii - 9-2 resource UI tails.** Finish residual prompt
+      template, persona, translator preset, and loadout UI/helper writes
+      with existing command helpers and rollback behavior.
+    - **9-5d-iii - 9-3 character/chat UI tails.** Finish residual
+      character profile/assets, chat folders, selected chat/page state,
+      playground, realm, grid, and legacy import helper writes with
+      character/chat commands or explicit server-backed unsupported
+      behavior.
+    - **9-5d-iv - 9-4 extension UI/API tails.** Finish residual
+      lorebook, module UI/MCP helper, plugin settings, plugin database
+      translation, and plugin-storage writes with the 9-4 bridges and
+      commands.
+    - **9-5d-v - Process/runtime durable-write classification.** Classify
+      generation, scriptstate, memory, and MCP helper writes, then replace
+      durable server-backed writes with message/generation/scriptstate or
+      settings commands while leaving local/runtime-only state documented.
   - **9-5e - Read-only `DBState.db` guard.** Fail loudly for direct web-mode
-    mutation attempts while leaving Tauri/local mode untouched.
-- **9-6 - Storage and provider-key gating.** Audit and gate remaining
-  localForage / OPFS / AutoStorage / NodeStorage consumers, route asset and
-  import entrypoints server-side, resolve miscellaneous caches or plugin
-  storage helpers, and flip provider-key masking only after all server
-  provider paths are ready.
-- **9-7 - Server `.risu` codec core.** Build fixture corpus, legacy
-  envelope codec, RISUSAVE block codec, decode normalization, validation,
-  repository-backed export adapter, and round-trip parity tests. The
-  repository-backed export adapter is blocked on the relevant 9-2, 9-3,
-  and 9-4 resource repositories.
-- **9-8 - Import/export routes and bundle assets.** Add
-  `/api/v1/export/risusave`, `/api/v1/export/bundle`, and multipart
-  `/api/v1/import/risusave`; walk real asset references instead of
-  over-including.
-- **9-9 - Full server-backed fixture sweep and closeout.** Run the browser
-  against bootstrap/events/commands/generation/memory, verify no web-mode
-  localForage writes, manually verify Tauri local mode, and close the
-  migration docs.
+    mutation attempts while leaving Tauri/local mode untouched. Keep the
+    guard work split so guard failures do not become an unbounded residual
+    mutation sweep.
+    - **9-5e-i - Projection write gate foundation.** Add the server-backed
+      read-only guard primitive and trusted projection replacement helpers for
+      bootstrap/event refresh writes. No residual write fixes, storage gating,
+      or Tauri/local behavior changes.
+    - **9-5e-ii - Command bridge guard integration.** Route command-owned
+      optimistic updates and rollback paths through trusted write scopes, or
+      remove local writes where projection refresh is authoritative. No new
+      command endpoints.
+    - **9-5e-iii - Guard audit closeout.** Enable the guard across the
+      server-backed fixture path and classify failures as missed 9-5d residuals
+      or intentional local/runtime-only state. Large resource replacements go
+      back to follow-up residual slices.
+- **9-6 - Storage and provider-key gating.** Gate storage and key exposure in
+  smaller rollback surfaces. Keep server `.risu` codec/import/export work in
+  9-7/9-8.
+  - **9-6a - Server-backed persistence gate.** Stop Fastify-served web startup,
+    save, and backup maintenance from initializing or writing AutoStorage,
+    OPFS, NodeStorage, or localForage. Tauri/local mode stays unchanged.
+  - **9-6b - Asset byte gate.** Close remaining Fastify asset-helper gaps,
+    especially reads that can still fall through to local storage. Durable
+    asset references remain owned by 9-4d commands; bundle walking stays 9-8.
+  - **9-6c - Server backup/restore projection.** Route server-backed backup UI
+    and helper paths through `/api/v1/backups`, block local backup/restore in
+    Fastify mode, and emit/handle restore invalidation.
+  - **9-6d - Residual local cache classification.** Classify remaining
+    localForage/cache helpers, including `.risu` cache/remotes, MCP helper
+    storage, search credentials, cold-storage, and memory leftovers, as
+    server-backed unsupported, server-owned, or runtime-local.
+  - **9-6e - Provider secret masking.** Mask provider secret fields in
+    `/api/v1/bootstrap` only after server-backed provider paths no longer need
+    client-visible keys. Preserve settings-command placeholder semantics.
+- **9-7 - Server `.risu` codec core.** Move the codec to server-safe Node
+  modules before route wiring.
+  - **9-7a - `.risu` fixture corpus and codec harness.** Add server-side
+    fixtures for legacy raw/compressed/stream envelopes and RISUSAVE block
+    saves. No import/export routes or repository writes.
+  - **9-7b - Legacy envelope codec port.** Port raw and compressed legacy
+    envelope encode/decode to server-safe APIs. No RISUSAVE block support yet.
+  - **9-7c - RISUSAVE block codec port.** Implement server-safe block
+    encode/decode for root, character, preset, module, loadout, plugin,
+    plugin-storage, config, and root-component blocks. Reject or report
+    remote/cache-only blocks instead of using localForage or Tauri paths.
+  - **9-7d - Decode normalization and validation.** Convert decoded saves into
+    current Phase 9 import snapshots/resource shapes and validate malformed
+    rows and stable ids.
+  - **9-7e - Repository-backed export adapter.** Build export snapshots from
+    server persistence with server asset ids preserved as references. ZIP
+    bundle generation and multipart import stay in 9-8.
+- **9-8 - Import/export routes and bundle assets.** Wire the server codec to
+  routes and real asset walking after 9-7 lands.
+  - **9-8a - Multipart `.risu` import route.** Accept multipart uploads at
+    `/api/v1/import/risusave`, decode through the 9-7 codec, apply normalized
+    imports, and return revision plus real asset/missing reports.
+  - **9-8b - Repository `.risu` export route.** Add
+    `/api/v1/export/risusave` using the repository-backed export adapter. No
+    ZIP bundle or asset file inclusion beyond codec references.
+  - **9-8c - Asset reference walker.** Add a pure server helper that scans
+    persisted database state for real Fastify asset ids and reports referenced,
+    missing, and orphaned assets without over-including stored assets.
+  - **9-8d - Bundle export route.** Add `/api/v1/export/bundle` with the
+    `.risu` export, manifest/report, and only walked asset files.
+- **9-9 - Full server-backed fixture sweep and closeout.** Treat closeout as a
+  sequence of verification surfaces, not one implementation slice.
+  - **9-9a - Server-backed browser smoke harness.** Add or document a
+    repeatable browser-level smoke path for Fastify-served web startup,
+    bootstrap/events, and one representative command mutation.
+  - **9-9b - Generation and memory fixture closeout.** Re-run and reconcile
+    server-backed sendChat, generation persistence, rollback, and Hypa V3
+    memory fixture coverage.
+  - **9-9c - Server-backed storage-write audit.** Prove Fastify web mode does
+    not touch localForage, OPFS, AutoStorage, or legacy NodeStorage write paths
+    during startup, commands, import/export, assets, generation, or memory.
+  - **9-9d - Manual Fastify web and Tauri local verification.** Record manual
+    import, chat, regenerate, edit, character switch, settings, persist, and
+    reload checks for both modes.
+  - **9-9e - Phase 9 docs closeout.** Update status, coverage, and completed
+    phase docs after the closeout verification slices are green.
 
 ## Boundaries
 

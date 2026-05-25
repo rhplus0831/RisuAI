@@ -176,13 +176,15 @@ move.
 
 ### Projection, Storage, Imports
 
-| Family               | Endpoint / helper                                                                                 | Payload notes                                                                                                                                     | Event names                                                                     | Slice      |
-| -------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------- |
-| Events               | `GET /api/v1/events`                                                                              | Persistent SSE of command events. Client subscription and debounced bootstrap re-fetch landed in 9-5c.                                            | All command events                                                              | 9-5a, 9-5c |
-| Bootstrap projection | `GET /api/v1/bootstrap`, `src/ts/server/bootstrap.ts`                                             | Web startup uses server bootstrap in server-backed mode. `DBState.db` guard turns on after replacement sweep.                                     | N/A                                                                             | 9-5b, 9-5e |
-| Storage gating       | Browser helpers, not a command route                                                              | Prevent server-backed web startup/save/backup/asset/import paths from reaching localForage, OPFS, AutoStorage, or NodeStorage.                    | N/A                                                                             | 9-6        |
-| Server `.risu` codec | Server modules plus `/api/v1/import/risusave`, `/api/v1/export/risusave`, `/api/v1/export/bundle` | Existing JSON import route becomes the server codec route. Import decodes into command/import resource shape. Export walks real asset references. | `state.imported`, `state.exported` for event stream visibility where applicable | 9-7, 9-8   |
-| Backup restore       | Existing `/api/v1/backups/:id/restore`                                                            | Keep backup routes administrative. Restore-event emission remains deferred until storage/projection gating.                                       | `state.restored` (planned)                                                      | 9-6        |
+| Family               | Endpoint / helper                                                             | Payload notes                                                                                                                                         | Event names                                                                     | Slice            |
+| -------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------- |
+| Events               | `GET /api/v1/events`                                                          | Persistent SSE of command events. Client subscription and debounced bootstrap re-fetch landed in 9-5c.                                                | All command events                                                              | 9-5a, 9-5c       |
+| Bootstrap projection | `GET /api/v1/bootstrap`, `src/ts/server/bootstrap.ts`                         | Web startup uses server bootstrap in server-backed mode. `DBState.db` guard turns on after replacement sweep through trusted projection writes.       | N/A                                                                             | 9-5b, 9-5e-i-iii |
+| Storage gating       | Browser helpers, not a command route                                          | Prevent server-backed web startup/save/backup/asset/cache paths from reaching localForage, OPFS, AutoStorage, or NodeStorage.                         | N/A                                                                             | 9-6a-d           |
+| Provider masking     | `GET /api/v1/bootstrap`, settings command placeholders                        | Mask provider secrets only after server-backed provider paths no longer need client-visible keys. Placeholder values still mean "leave unchanged".    | N/A                                                                             | 9-6e             |
+| Server `.risu` codec | Server codec modules                                                          | Legacy and RISUSAVE decode/encode move to server-safe code; decoded saves normalize into current import snapshots; route wiring stays in 9-8.         | N/A                                                                             | 9-7a-e           |
+| Import/export routes | `/api/v1/import/risusave`, `/api/v1/export/risusave`, `/api/v1/export/bundle` | Multipart import, repository `.risu` export, asset reference walking, and bundle export. Existing JSON import is replaced when the codec route lands. | `state.imported`, `state.exported` for event stream visibility where applicable | 9-8a-d           |
+| Backup restore       | Existing `/api/v1/backups/:id/restore`                                        | Keep backup routes administrative. Restore-event emission lands with server backup/restore projection.                                                | `state.restored` (planned)                                                      | 9-6c             |
 
 ## Plugin Database Bridge
 
@@ -235,13 +237,36 @@ command; they must never replace the whole DB blob.
 
 ## Current Implementation Pickup
 
-9-5a, 9-5b, and 9-5c are complete. Continue with
-**9-5d - Residual command replacement sweep**:
+9-5a, 9-5b, and 9-5c are complete. 9-5d remains active, but it is split
+into smaller residual command-replacement sub-slices:
 
-- Sweep remaining server-backed web direct writes for resource families
-  already owned by 9-2 through 9-4.
-- Replace them with existing typed command helpers or explicit
-  unsupported behavior when the owning later slice has not defined a
-  server path.
-- Keep the read-only `DBState.db` guard, provider-key masking, storage
-  gating, and server `.risu` import/export in their later slices.
+- **9-5d-i - Settings residual command sweep.** Route remaining
+  server-backed web writes to existing settings groups through the
+  settings command bridge.
+- **9-5d-ii - 9-2 resource UI tails.** Prompt templates, personas,
+  translator presets, and loadouts.
+- **9-5d-iii - 9-3 character/chat UI tails.** Character profile/assets,
+  chat folders, selected chat/page state, playground/realm/grid helpers,
+  and legacy import helpers.
+- **9-5d-iv - 9-4 extension UI/API tails.** Lorebooks, module UI/MCP
+  helpers, plugin settings, plugin database translation, and plugin
+  storage.
+- **9-5d-v - Process/runtime durable-write classification.** Generation,
+  scriptstate, memory, and MCP helper writes.
+
+Later Phase 9 slices are pre-split by rollback surface:
+
+- **9-5e-i through 9-5e-iii.** Add the read-only `DBState.db` guard
+  foundation, integrate command bridge optimistic/rollback writes, then audit
+  guard failures.
+- **9-6a through 9-6e.** Gate server-backed persistence, asset bytes,
+  backup/restore projection, residual local caches, and finally provider
+  secret masking.
+- **9-7a through 9-7e.** Build the `.risu` fixture harness, port legacy
+  envelopes, port RISUSAVE blocks, normalize/validate decoded saves, and add
+  repository-backed export snapshots.
+- **9-8a through 9-8d.** Add multipart import, repository `.risu` export, the
+  asset reference walker, and bundle export.
+- **9-9a through 9-9e.** Close with browser smoke coverage, generation/memory
+  fixture reconciliation, storage-write audit, manual mode verification, and
+  documentation closeout.

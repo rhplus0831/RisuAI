@@ -45,7 +45,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-current pickup is the 9-5d residual command-replacement sweep in
+current pickup is 9-5d-i, the settings residual command sweep in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points
