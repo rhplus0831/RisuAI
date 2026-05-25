@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed slice:
-**9-5a - Events endpoint**. Next slice:
-**9-5b - Bootstrap projection loader**.
+**9-5b - Bootstrap projection loader**. Next slice:
+**9-5c - Event subscription and debounced re-bootstrap**.
 
 ## Goal
 
@@ -212,6 +212,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-5a.md`](../phases-completed/phase-9-client-thinning-9-5a.md).
   - **9-5b - Bootstrap projection loader.** Load `/api/v1/bootstrap` on
     startup through a server helper.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-5b.md`](../phases-completed/phase-9-client-thinning-9-5b.md).
   - **9-5c - Event subscription and debounced re-bootstrap.** Re-fetch
     bootstrap on events; do not patch state surgically.
   - **9-5d - Residual command replacement sweep.** Replace remaining

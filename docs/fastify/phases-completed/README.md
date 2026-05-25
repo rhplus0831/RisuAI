@@ -82,6 +82,7 @@ track the next piece of work.
 | 9-4f - Plugin storage                   | [`phase-9-client-thinning-9-4f.md`](phase-9-client-thinning-9-4f.md)                   | Plugin-storage commands, helpers, and plugin database adapter routing.           |
 | 9-4g - Compatibility sweep              | [`phase-9-client-thinning-9-4g.md`](phase-9-client-thinning-9-4g.md)                   | Plugin database provider/module bridge sweep and focused compatibility coverage. |
 | 9-5a - Events endpoint                  | [`phase-9-client-thinning-9-5a.md`](phase-9-client-thinning-9-5a.md)                   | Command-event SSE stream, sink subscriptions, and route lifecycle coverage.      |
+| 9-5b - Bootstrap projection             | [`phase-9-client-thinning-9-5b.md`](phase-9-client-thinning-9-5b.md)                   | Browser bootstrap helper, Fastify startup projection load, and revision caching. |
 
 ## Historical Status Logs
 

@@ -15,14 +15,15 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-5a, Events endpoint.
-- Current gap: 9-5b should load the browser projection from
-  `/api/v1/bootstrap`, followed by event subscription/re-bootstrap and
+- Last landed slice: 9-5b, Bootstrap projection loader.
+- Current gap: 9-5c should subscribe the browser to `/api/v1/events` and
+  debounce a `/api/v1/bootstrap` re-fetch on command events, followed by
   the residual direct-write sweep before enabling the read-only
   `DBState.db` guard.
-- Next default pickup: 9-5b, Bootstrap projection loader.
-- Last recorded full baselines after 9-5a: `pnpm check` clean,
-  `pnpm test` 697 tests plus 4 skipped, `pnpm api:test` 1119 tests, and
+- Next default pickup: 9-5c, Event subscription and debounced
+  re-bootstrap.
+- Last recorded full baselines after 9-5b: `pnpm check` clean,
+  `pnpm test` 702 tests plus 4 skipped, `pnpm api:test` 1119 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -44,14 +45,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                   |
-| ------------------------------------------- | ----------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                     |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                              |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-5a events endpoint landed; next slice is 9-5b bootstrap projection. |
+| Workstream                                  | State                                                                            |
+| ------------------------------------------- | -------------------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                              |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                       |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.          |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                                 |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                                 |
+| Client thinning                             | Active; 9-5b bootstrap projection landed; next slice is 9-5c event re-bootstrap. |
 
 ## Maintenance Rules
 

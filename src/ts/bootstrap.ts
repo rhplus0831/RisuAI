@@ -10,7 +10,12 @@ import {
 import { changeFullscreen, checkNullish, sleep } from './util'
 import { v4 as uuidv4 } from 'uuid'
 import { get } from 'svelte/store'
-import { setDatabase, defaultSdDataFunc, getDatabase } from './storage/database.svelte'
+import {
+  setDatabase,
+  defaultSdDataFunc,
+  getDatabase,
+  type Database,
+} from './storage/database.svelte'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { checkRisuUpdate } from './update'
 import {
@@ -49,10 +54,11 @@ import {
   setUsingSw,
   checkCharOrder,
 } from './globalApi.svelte'
-import { isTauri } from './platform'
+import { isFastifyServer, isTauri } from './platform'
 import { registerModelDynamic } from './model/modellist'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { appDataDir, join } from '@tauri-apps/api/path'
+import { fetchServerBootstrapProjection } from './server/bootstrap'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
@@ -125,50 +131,7 @@ export async function loadData() {
         await checkRisuUpdate()
         await changeFullscreen()
       } else {
-        await forageStorage.Init()
-
-        LoadingStatusState.text = 'Loading Local Save File...'
-        let gotStorage: Uint8Array = (await forageStorage.getItem(
-          'database/database.bin',
-        )) as unknown as Uint8Array
-        LoadingStatusState.text = 'Decoding Local Save File...'
-        if (checkNullish(gotStorage)) {
-          gotStorage = encodeRisuSaveLegacy({})
-          await forageStorage.setItem('database/database.bin', gotStorage)
-        }
-        try {
-          const decoded = await decodeRisuSave(gotStorage)
-          console.log(decoded)
-          setDatabase(decoded)
-        } catch (error) {
-          console.error(error)
-          const backups = await getDbBackups()
-          let backupLoaded = false
-          for (const backup of backups) {
-            try {
-              LoadingStatusState.text = `Reading Backup File ${backup}...`
-              const backupData: Uint8Array = (await forageStorage.getItem(
-                `database/dbbackup-${backup}.bin`,
-              )) as unknown as Uint8Array
-              setDatabase(await decodeRisuSave(backupData))
-              backupLoaded = true
-            } catch (error) {}
-          }
-          if (!backupLoaded) {
-            throw 'Forage: Your save file is corrupted'
-          }
-        }
-
-        LoadingStatusState.text = 'Checking Service Worker...'
-        if (navigator.serviceWorker) {
-          setUsingSw(true)
-          await registerSw()
-        } else {
-          setUsingSw(false)
-        }
-        if (getDatabase().didFirstSetup) {
-          characterURLImport()
-        }
+        await loadWebInitialDatabase()
       }
       LoadingStatusState.text = 'Loading Plugins...'
       try {
@@ -230,6 +193,65 @@ export async function loadData() {
     } catch (error) {
       alertError(error)
     }
+  }
+}
+
+export async function loadWebInitialDatabase() {
+  if (isFastifyServer) {
+    LoadingStatusState.text = 'Loading Server Projection...'
+    const bootstrap = await fetchServerBootstrapProjection()
+    if (bootstrap.status !== 'ok') {
+      throw new Error(
+        bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
+      )
+    }
+    setDatabase(bootstrap.projection.database ?? ({} as Database))
+    return
+  }
+
+  await forageStorage.Init()
+
+  LoadingStatusState.text = 'Loading Local Save File...'
+  let gotStorage: Uint8Array = (await forageStorage.getItem(
+    'database/database.bin',
+  )) as unknown as Uint8Array
+  LoadingStatusState.text = 'Decoding Local Save File...'
+  if (checkNullish(gotStorage)) {
+    gotStorage = encodeRisuSaveLegacy({})
+    await forageStorage.setItem('database/database.bin', gotStorage)
+  }
+  try {
+    const decoded = await decodeRisuSave(gotStorage)
+    console.log(decoded)
+    setDatabase(decoded)
+  } catch (error) {
+    console.error(error)
+    const backups = await getDbBackups()
+    let backupLoaded = false
+    for (const backup of backups) {
+      try {
+        LoadingStatusState.text = `Reading Backup File ${backup}...`
+        const backupData: Uint8Array = (await forageStorage.getItem(
+          `database/dbbackup-${backup}.bin`,
+        )) as unknown as Uint8Array
+        setDatabase(await decodeRisuSave(backupData))
+        backupLoaded = true
+      } catch (error) {}
+    }
+    if (!backupLoaded) {
+      throw 'Forage: Your save file is corrupted'
+    }
+  }
+
+  LoadingStatusState.text = 'Checking Service Worker...'
+  if (navigator.serviceWorker) {
+    setUsingSw(true)
+    await registerSw()
+  } else {
+    setUsingSw(false)
+  }
+  if (getDatabase().didFirstSetup) {
+    characterURLImport()
   }
 }
 
