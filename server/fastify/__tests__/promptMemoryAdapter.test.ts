@@ -9,7 +9,11 @@ import {
   createMemorySummary,
   type MemorySummary,
 } from '../src/memoryRepository.js'
-import { selectPromptMemory, type PromptMemorySelector } from '../src/prompt/memoryAdapter.js'
+import {
+  assemblePromptMemoryRows,
+  selectPromptMemory,
+  type PromptMemorySelector,
+} from '../src/prompt/memoryAdapter.js'
 
 const dataDirs: string[] = []
 
@@ -327,6 +331,166 @@ describe('prompt memory adapter', () => {
       db.close()
     }
   })
+
+  it('assembles no prompt rows for an empty selection while preserving diagnostics', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const selection = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: 'chat-empty',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 100,
+        settings: { recentMemoryRatio: 0.4, similarMemoryRatio: 0.4 },
+      })
+
+      const assembled = assemblePromptMemoryRows(selection)
+
+      expect(assembled.rows).toEqual([])
+      expect(assembled.selectionDiagnostics).toBe(selection.diagnostics)
+      expect(assembled.diagnostics).toEqual({
+        inputSummaries: 0,
+        rows: 0,
+        skippedEmptySummaryIds: [],
+        hotPathWork: {
+          generatedQueryEmbeddings: false,
+          calledProviders: false,
+          generatedSummaries: false,
+          enqueuedJobs: false,
+          assembledPromptRows: true,
+        },
+      })
+      expect(selection.diagnostics.hotPathWork.assembledPromptRows).toBe(false)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('assembles selected summaries as canonical hypa memory prompt rows', () => {
+    const db = openDatabase(makeDataDir())
+    const selected = makeSummary('summary-a', '  Summary: user likes quiet gardens.  ')
+    const selectMemory = vi.fn<PromptMemorySelector>(() =>
+      selectionResult({
+        selectedSummaries: [selected],
+        recentSummaries: [selected],
+      }),
+    )
+    try {
+      const selection = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 20,
+        settings: { recentMemoryRatio: 1, similarMemoryRatio: 0 },
+        selectMemory,
+      })
+
+      const assembled = assemblePromptMemoryRows(selection)
+
+      expect(assembled.rows).toEqual([
+        {
+          role: 'system',
+          content: 'Summary: user likes quiet gardens.',
+          memo: 'hypaMemory',
+        },
+      ])
+      expect(assembled.diagnostics).toMatchObject({
+        inputSummaries: 1,
+        rows: 1,
+        skippedEmptySummaryIds: [],
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('preserves selected summary order when assembling multiple rows', () => {
+    const db = openDatabase(makeDataDir())
+    const first = makeSummary('summary-first', 'first selected summary')
+    const second = makeSummary('summary-second', 'second selected summary')
+    const third = makeSummary('summary-third', 'third selected summary')
+    const selectMemory = vi.fn<PromptMemorySelector>(() =>
+      selectionResult({
+        selectedSummaries: [first, second, third],
+        importantSummaries: [first],
+        similarSummaries: [second],
+        randomSummaries: [third],
+      }),
+    )
+    try {
+      const selection = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 20,
+        settings: { recentMemoryRatio: 0, similarMemoryRatio: 1 },
+        selectMemory,
+      })
+
+      const assembled = assemblePromptMemoryRows(selection)
+
+      expect(assembled.rows.map((row) => row.content)).toEqual([
+        'first selected summary',
+        'second selected summary',
+        'third selected summary',
+      ])
+      expect(assembled.rows.every((row) => row.role === 'system')).toBe(true)
+      expect(assembled.rows.every((row) => row.memo === 'hypaMemory')).toBe(true)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('skips whitespace-only summaries without changing selection diagnostics', () => {
+    const db = openDatabase(makeDataDir())
+    const empty = makeSummary('summary-empty', ' \n\t ')
+    const selected = makeSummary('summary-selected', 'usable summary')
+    const selectMemory = vi.fn<PromptMemorySelector>(() =>
+      selectionResult({
+        selectedSummaries: [empty, selected],
+        recentSummaries: [empty, selected],
+      }),
+    )
+    try {
+      const selection = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 20,
+        settings: { recentMemoryRatio: 1, similarMemoryRatio: 0 },
+        selectMemory,
+      })
+
+      const assembled = assemblePromptMemoryRows(selection)
+
+      expect(selection.selectedSummaries.map((summary) => summary.id)).toEqual([
+        'summary-empty',
+        'summary-selected',
+      ])
+      expect(assembled.rows).toEqual([
+        { role: 'system', content: 'usable summary', memo: 'hypaMemory' },
+      ])
+      expect(assembled.diagnostics).toMatchObject({
+        inputSummaries: 2,
+        rows: 1,
+        skippedEmptySummaryIds: ['summary-empty'],
+      })
+      expect(assembled.selectionDiagnostics).toBe(selection.diagnostics)
+    } finally {
+      db.close()
+    }
+  })
 })
 
 function seedMemory(
@@ -364,16 +528,91 @@ function seedMemory(
   })
 }
 
-function makeSummary(id: string): MemorySummary {
+function makeSummary(id: string, text = id): MemorySummary {
   return {
     id,
     chatId: 'chat-1',
     chunkId: 'chunk-a',
     model: 'summary-model',
-    text: id,
+    text,
     metadata: null,
     tokens: 5,
     createdAt: '2026-05-25T00:00:00.000Z',
+  }
+}
+
+function selectionResult(
+  overrides: Partial<ReturnType<PromptMemorySelector>> = {},
+): ReturnType<PromptMemorySelector> {
+  const selectedCount = overrides.selectedSummaries?.length ?? 0
+  return {
+    selectedSummaries: [],
+    importantSummaries: [],
+    recentSummaries: [],
+    similarSummaries: [],
+    randomSummaries: [],
+    rankedSimilarSummaries: [],
+    diagnostics: {
+      repository: {
+        summaries: selectedCount,
+        chunks: selectedCount,
+        embeddings: selectedCount,
+        summaryIdsMissingChunks: [],
+        summaryIdsMissingEmbeddings: [],
+        chunkIdsMissingEmbeddings: [],
+        chunkIdsMissingSummaries: [],
+      },
+      ranking: {
+        queryVectors: 1,
+        validQueryVectors: 1,
+        skippedQueryVectors: 0,
+        embeddings: selectedCount,
+        scoredEmbeddings: selectedCount,
+        skippedEmbeddings: [],
+        missingChunks: [],
+        missingSummaries: [],
+      },
+      allocation: {
+        inputSummaries: selectedCount,
+        uniqueSummaries: selectedCount,
+        duplicateSummaryIds: [],
+        availableTokens: 20,
+        consumedTokens: selectedCount * 5,
+        remainingTokens: 20 - selectedCount * 5,
+        recentMemoryRatio: 1,
+        similarMemoryRatio: 0,
+        randomMemoryRatio: 0,
+        unknownRankedSimilarSummaryIds: [],
+        categories: {
+          important: categoryDiagnostics(
+            'important',
+            (overrides.importantSummaries?.length ?? 0) * 5,
+            overrides.importantSummaries?.length ?? 0,
+            overrides.importantSummaries?.length ?? 0,
+          ),
+          recent: categoryDiagnostics(
+            'recent',
+            (overrides.recentSummaries?.length ?? 0) * 5,
+            overrides.recentSummaries?.length ?? 0,
+            overrides.recentSummaries?.length ?? 0,
+          ),
+          similar: categoryDiagnostics(
+            'similar',
+            (overrides.similarSummaries?.length ?? 0) * 5,
+            overrides.similarSummaries?.length ?? 0,
+            overrides.similarSummaries?.length ?? 0,
+          ),
+          random: categoryDiagnostics(
+            'random',
+            (overrides.randomSummaries?.length ?? 0) * 5,
+            overrides.randomSummaries?.length ?? 0,
+            overrides.randomSummaries?.length ?? 0,
+          ),
+        },
+        missingCategories: [],
+      },
+    },
+    ...overrides,
   }
 }
 

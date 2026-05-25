@@ -11,59 +11,62 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-6a added the server prompt-memory adapter contract under
-`server/fastify/src/prompt/memoryAdapter.ts`. The adapter accepts an
-explicit enabled flag, chat/model context, supplied query vectors, memory
-budget settings, and an optional injected selector. It delegates to
-`selectMemorySummaries`, returns selected summaries plus category buckets,
-passes selection diagnostics through, reports missing-memory hints for
-future follow-up enqueueing, and records the no-hot-path-work guarantee.
-It does not generate query embeddings, call providers, summarize,
-enqueue jobs, or assemble prompt rows.
+8-6b added summary prompt-row assembly under
+`server/fastify/src/prompt/memoryAdapter.ts`. The new
+`assemblePromptMemoryRows` helper consumes the existing
+`selectPromptMemory` result, preserves selected-summary order, trims
+summary text, skips whitespace-only summaries, and emits canonical
+`OpenAIChat` rows with `role: "system"` and `memo: "hypaMemory"`.
+It returns separate row-assembly diagnostics while preserving the
+selection diagnostics object from 8-6a. Provider calls, query embedding
+generation, summary generation, queue writes, and root assembler
+integration remain out of scope.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-6b - Summary prompt-row assembly**.
+Continue Phase 8 with **8-6c - Assemble integration**.
 
 Expected scope:
 
-- Convert selected `MemorySummary` rows from `selectPromptMemory` into
-  canonical memory prompt rows.
-- Preserve the existing prompt memory card contract by emitting rows that
-  `prompt/memory.ts` can split as Hypa memory (`memo: "hypaMemory"`).
-- Define deterministic row ordering, content wrapping, and empty-row
-  behavior for selected summaries.
-- Keep the adapter read-only: prompt-row assembly should consume
-  selected summaries and diagnostics, not generate embeddings,
-  summarize, or enqueue follow-up jobs.
-- Add focused tests for empty summaries, single/multiple summary rows,
-  ordering, memo/role/content shape, and diagnostics preservation.
+- Wire the root server prompt assembler to select prompt memory and pass
+  assembled `memo: "hypaMemory"` rows into the existing memory-card split.
+- Keep query vectors supplied by the integration boundary; do not add
+  provider-backed query embedding generation in this slice.
+- Preserve 8-6a/8-6b read-only behavior: integration may read selected
+  summaries and assemble rows, but it must not summarize, embed, or
+  enqueue follow-up jobs.
+- Respect the existing `prompt/memory.ts` contract: memory template cards
+  consume Hypa memory rows via `memories`; non-template/no-memory-card
+  paths wrap them inline as previous conversation.
+- Add focused tests that prove canonical rows reach the prompt assembly
+  memory path without changing unrelated prompt sections.
 
-Out of scope for 8-6b:
+Out of scope for 8-6c:
 
 - Embedding provider dispatch and query embedding generation.
 - Summary generation, chunk planning, queue writes, and follow-up job
   enqueueing.
-- Root prompt assembler integration; that starts in 8-6c.
+- Missing-memory follow-up enqueueing; that starts in 8-6d.
 - Browser progress UI, browser listeners, and browser list/cancel
   controls.
 - Browser-local embedding runtimes.
 
 Implementation notes:
 
-- Build on `selectPromptMemory`; do not call repositories, ranking, or
-  allocation helpers directly from the row assembly layer.
-- `prompt/memory.ts` currently recognizes `memo: "supaMemory"` and
-  `memo: "hypaMemory"` rows. New rows should use `hypaMemory`.
-- 8-6a diagnostics include `hotPathWork.assembledPromptRows: false`;
-  8-6b may introduce a separate row-assembly result while keeping
-  provider/queue fields false.
+- Build on `selectPromptMemory` and `assemblePromptMemoryRows`; do not
+  call repositories, ranking, allocation, or row-shaping helpers directly
+  from the root assembler.
+- `prompt/memory.ts` already recognizes `memo: "supaMemory"` and
+  `memo: "hypaMemory"` rows. Newly assembled rows use `hypaMemory`.
+- 8-6b row assembly diagnostics set
+  `hotPathWork.assembledPromptRows: true`; the selection diagnostics
+  still preserve the 8-6a no-assembly signal.
 - Missing-memory follow-up hints are present but should remain passive
   until 8-6d.
 - Preserve the no-compatibility-migrations policy: update current
   Fastify shapes directly if the contract needs a tighter shape.
 
-## Queue After 8-6a
+## Queue After 8-6b
 
 1. 8-6c - Assemble integration.
 2. 8-6d - Missing-memory follow-up enqueue.
@@ -94,17 +97,21 @@ Last recorded full baselines after 8-6a: `pnpm check` clean,
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-6a verification:
+Focused 8-6b verification:
 
 ```bash
 pnpm exec vitest run server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts
+pnpm check
 ```
+
+8-6b passed the focused adapter file with 9 tests, and `pnpm check` was
+clean.
 
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-6a.md`](../phases-completed/phase-8-memory-8-6a.md)
+  [`../phases-completed/phase-8-memory-8-6b.md`](../phases-completed/phase-8-memory-8-6b.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Phase 7 final summary:

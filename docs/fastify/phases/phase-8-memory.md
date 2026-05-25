@@ -2,8 +2,8 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-6a - Prompt memory adapter
-contract**. Next slice: **8-6b - Summary prompt-row assembly**.
+Status: in progress. Completed through **8-6b - Summary prompt-row
+assembly**. Next slice: **8-6c - Assemble integration**.
 
 ## Goal
 
@@ -28,7 +28,7 @@ the current schema and import paths directly.
 Detailed closeouts live in [`../phases-completed/`](../phases-completed/).
 This active file keeps only the pickup-relevant summary.
 
-Completed through 8-6a:
+Completed through 8-6b:
 
 - **8-1 - Memory storage foundation:** migration runner, memory tables,
   typed repositories / row mappers, and legacy `hypaV3Data`
@@ -96,6 +96,11 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   passthrough, selection diagnostics, missing-memory hints for future
   follow-up jobs, and no-hot-path-work diagnostics. It remains read-only
   and does not assemble prompt rows.
+- The 8-6b row assembly helper consumes `selectPromptMemory` results,
+  preserves selected-summary order, trims summary text, skips empty
+  summaries, emits canonical `role: "system"` / `memo: "hypaMemory"`
+  rows, and reports separate row-assembly diagnostics while preserving
+  selection diagnostics. Root assembler integration remains pending.
 
 ## Scope
 
@@ -151,8 +156,6 @@ browser progress store.
 - **8-6 - Prompt memory integration.** Add the server prompt-memory
   adapter, assemble canonical memory prompt rows, replace the Phase 7
   browser bridge, and queue missing-memory follow-up work.
-  - **8-6b - Summary prompt-row assembly.** Convert selected summaries
-    into canonical `memo: "hypaMemory"` prompt rows.
   - **8-6c - Assemble integration.** Replace the Phase 7/browser Hypa V3
     bridge inside the root prompt assembler.
   - **8-6d - Missing-memory follow-up enqueue.** Enqueue idempotent

@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
+import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { MemoryBudgetAllocatorSettings } from '../memoryBudgetAllocator.js'
 import type { MemorySummary } from '../memoryRepository.js'
 import {
@@ -51,6 +52,25 @@ export interface PromptMemoryAdapterResult {
   randomSummaries: MemorySummary[]
   rankedSimilarSummaries: MemorySelectionResult['rankedSimilarSummaries']
   diagnostics: PromptMemoryAdapterDiagnostics
+}
+
+export interface PromptMemoryRowAssemblyDiagnostics {
+  inputSummaries: number
+  rows: number
+  skippedEmptySummaryIds: string[]
+  hotPathWork: {
+    generatedQueryEmbeddings: false
+    calledProviders: false
+    generatedSummaries: false
+    enqueuedJobs: false
+    assembledPromptRows: true
+  }
+}
+
+export interface PromptMemoryRowAssemblyResult {
+  rows: OpenAIChat[]
+  diagnostics: PromptMemoryRowAssemblyDiagnostics
+  selectionDiagnostics: PromptMemoryAdapterDiagnostics
 }
 
 export type PromptMemorySelector = (input: MemorySelectionInput) => MemorySelectionResult
@@ -108,6 +128,33 @@ export function selectPromptMemory(input: PromptMemoryAdapterInput): PromptMemor
   }
 }
 
+export function assemblePromptMemoryRows(
+  selection: PromptMemoryAdapterResult,
+): PromptMemoryRowAssemblyResult {
+  const rows: OpenAIChat[] = []
+  const skippedEmptySummaryIds: string[] = []
+
+  for (const summary of selection.selectedSummaries) {
+    const content = summary.text.trim()
+    if (content === '') {
+      skippedEmptySummaryIds.push(summary.id)
+      continue
+    }
+    rows.push({ role: 'system', content, memo: 'hypaMemory' })
+  }
+
+  return {
+    rows,
+    diagnostics: {
+      inputSummaries: selection.selectedSummaries.length,
+      rows: rows.length,
+      skippedEmptySummaryIds,
+      hotPathWork: promptMemoryRowAssemblyWorkDiagnostics(),
+    },
+    selectionDiagnostics: selection.diagnostics,
+  }
+}
+
 function getDisabledReason(
   input: PromptMemoryAdapterInput,
 ): PromptMemoryAdapterDisabledReason | null {
@@ -150,6 +197,16 @@ function noHotPathWorkDiagnostics(): PromptMemoryHotPathWorkDiagnostics {
     generatedSummaries: false,
     enqueuedJobs: false,
     assembledPromptRows: false,
+  }
+}
+
+function promptMemoryRowAssemblyWorkDiagnostics(): PromptMemoryRowAssemblyDiagnostics['hotPathWork'] {
+  return {
+    generatedQueryEmbeddings: false,
+    calledProviders: false,
+    generatedSummaries: false,
+    enqueuedJobs: false,
+    assembledPromptRows: true,
   }
 }
 
