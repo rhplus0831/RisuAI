@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-3f - Compatibility setters and access adapters**. Next slice:
-**9-4a - Lorebook collection commands**.
+**9-4a - Lorebook collection commands**. Next slice:
+**9-4b - Script and trigger definition commands**.
 
 ## Goal
 
@@ -176,6 +176,8 @@ surfaces.
   extension surfaces, and resource-heavy commands.
   - **9-4a - Lorebook collection commands.** Global, character, chat, and
     module lorebook edits plus import/export handoff.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-4a.md`](../phases-completed/phase-9-client-thinning-9-4a.md).
   - **9-4b - Script and trigger definition commands.** Character and module
     definition editing, import/export, reorder, and bulk replacement.
   - **9-4c - Module records and enablement.** Module lifecycle,

@@ -5,9 +5,22 @@
   import { DBState } from 'src/ts/stores.svelte'
   import { SquarePenIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
+  import {
+    currentLorebookStateSnapshot,
+    dispatchCreateGlobalLorebook,
+    dispatchDeleteGlobalLorebook,
+    ensureAllClientLorebookIds,
+    watchServerBackedLorebooks,
+  } from 'src/ts/server/lorebookBridge.svelte'
   let editMode = $state(false)
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
+
+  $effect(() => {
+    ensureAllClientLorebookIds()
+    const stopLorebooks = watchServerBackedLorebooks()
+    return () => stopLorebooks()
+  })
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -56,10 +69,15 @@
               }
               const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
               if (d) {
+                const previous = currentLorebookStateSnapshot()
+                const lorebookId = lore.id
                 DBState.db.loreBookPage = 0
                 let loreBook = DBState.db.loreBook
                 loreBook.splice(ind, 1)
                 DBState.db.loreBook = loreBook
+                if (lorebookId) {
+                  dispatchDeleteGlobalLorebook(lorebookId, previous)
+                }
               }
             }}
             onkeydown={(e) => {
@@ -77,6 +95,7 @@
       <button
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
+          const previous = currentLorebookStateSnapshot()
           let loreBooks = DBState.db.loreBook
           let newLoreBook = {
             name: `New LoreBook`,
@@ -85,6 +104,7 @@
           loreBooks.push(newLoreBook)
 
           DBState.db.loreBook = loreBooks
+          dispatchCreateGlobalLorebook(newLoreBook, previous)
         }}
       >
         <PlusIcon />

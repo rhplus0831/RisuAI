@@ -24,6 +24,7 @@
 
   import { DBState } from 'src/ts/stores.svelte'
   import { v4 } from 'uuid'
+  import { watchServerBackedLorebooks } from 'src/ts/server/lorebookBridge.svelte'
 
   let submenu = $state(0)
   interface Props {
@@ -33,6 +34,11 @@
   let { currentModule = $bindable() }: Props = $props()
   let assetFileExtensions: string[] = $state([])
   let assetFilePath: string[] = $state([])
+
+  $effect(() => {
+    const stopLorebooks = watchServerBackedLorebooks()
+    return () => stopLorebooks()
+  })
 
   $effect.pre(() => {
     if (DBState.db.useAdditionalAssetsPreview) {

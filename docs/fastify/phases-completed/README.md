@@ -74,6 +74,7 @@ track the next piece of work.
 | 9-3d - Generation persistence           | [`phase-9-client-thinning-9-3d.md`](phase-9-client-thinning-9-3d.md)                   | Generation result command, helper, and server-backed sendChat handoff.           |
 | 9-3e - Chat scriptstate                 | [`phase-9-client-thinning-9-3e.md`](phase-9-client-thinning-9-3e.md)                   | Chat scriptstate command, browser helper, and scripting side-effect bridge.      |
 | 9-3f - Compatibility adapters           | [`phase-9-client-thinning-9-3f.md`](phase-9-client-thinning-9-3f.md)                   | Legacy setters, plugin/MCP adapters, and explicit later-slice unsupported paths. |
+| 9-4a - Lorebook collections             | [`phase-9-client-thinning-9-4a.md`](phase-9-client-thinning-9-4a.md)                   | Lorebook commands, browser helpers, UI bridge, and MCP lorebook routing.         |
 
 ## Historical Status Logs
 

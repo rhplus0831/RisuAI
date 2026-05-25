@@ -420,6 +420,25 @@ export type ChatSnapshot = Record<string, unknown> & {
   bookmarkNames?: Record<string, string>
 }
 
+export type LorebookEntrySnapshot = Record<string, unknown> & {
+  id?: string
+  key?: string
+  secondkey?: string
+  insertorder?: number
+  comment?: string
+  content?: string
+  mode?: string
+  alwaysActive?: boolean
+  selective?: boolean
+  folder?: string
+}
+
+export type GlobalLorebookSnapshot = Record<string, unknown> & {
+  id?: string
+  name?: string
+  data?: LorebookEntrySnapshot[]
+}
+
 export type ChatScriptstateValue = string | number | boolean
 export type ChatScriptstatePatch = Record<string, ChatScriptstateValue>
 
@@ -669,6 +688,47 @@ export interface PatchChatScriptstateCommandInput extends ChatCommandInput {
   chatId: string
   patch: ChatScriptstatePatch
   deleteKeys?: string[]
+}
+
+export interface LorebookCommandInput {
+  baseRevision: number
+}
+
+export interface CreateGlobalLorebookCommandInput extends LorebookCommandInput {
+  lorebook: GlobalLorebookSnapshot
+}
+
+export interface UpdateGlobalLorebookCommandInput extends LorebookCommandInput {
+  lorebookId: string
+  patch: Pick<GlobalLorebookSnapshot, 'name'>
+}
+
+export interface DeleteGlobalLorebookCommandInput extends LorebookCommandInput {
+  lorebookId: string
+}
+
+export interface ReorderGlobalLorebooksCommandInput extends LorebookCommandInput {
+  lorebookIds: string[]
+}
+
+export interface ReplaceGlobalLorebookEntriesCommandInput extends LorebookCommandInput {
+  lorebookId: string
+  entries: LorebookEntrySnapshot[]
+}
+
+export interface ReplaceCharacterLorebooksCommandInput extends LorebookCommandInput {
+  characterId: string
+  entries: LorebookEntrySnapshot[]
+}
+
+export interface ReplaceChatLorebooksCommandInput extends LorebookCommandInput {
+  chatId: string
+  entries: LorebookEntrySnapshot[]
+}
+
+export interface ReplaceModuleLorebooksCommandInput extends LorebookCommandInput {
+  moduleId: string
+  entries: LorebookEntrySnapshot[]
 }
 
 export interface AppendMessageCommandInput extends ChatCommandInput {
@@ -1420,6 +1480,117 @@ export async function patchChatScriptstateCommand(
       baseRevision: input.baseRevision,
       patch: input.patch,
       deleteKeys: input.deleteKeys,
+    },
+    signal,
+  })
+}
+
+export async function createGlobalLorebookCommand(
+  input: CreateGlobalLorebookCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ lorebookId: string }>> {
+  return requestCommandJson('/lorebooks', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      lorebook: input.lorebook,
+    },
+    signal,
+  })
+}
+
+export async function updateGlobalLorebookCommand(
+  input: UpdateGlobalLorebookCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ lorebookId: string }>> {
+  return requestCommandJson(`/lorebooks/${encodeURIComponent(input.lorebookId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deleteGlobalLorebookCommand(
+  input: DeleteGlobalLorebookCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ lorebookId: string }>> {
+  return requestCommandJson(`/lorebooks/${encodeURIComponent(input.lorebookId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function reorderGlobalLorebooksCommand(
+  input: ReorderGlobalLorebooksCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedLorebookId: string | null }>> {
+  return requestCommandJson('/lorebooks/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      lorebookIds: input.lorebookIds,
+    },
+    signal,
+  })
+}
+
+export async function replaceGlobalLorebookEntriesCommand(
+  input: ReplaceGlobalLorebookEntriesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ lorebookId: string }>> {
+  return requestCommandJson(`/lorebooks/${encodeURIComponent(input.lorebookId)}/entries`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      entries: input.entries,
+    },
+    signal,
+  })
+}
+
+export async function replaceCharacterLorebooksCommand(
+  input: ReplaceCharacterLorebooksCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/lorebooks`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      entries: input.entries,
+    },
+    signal,
+  })
+}
+
+export async function replaceChatLorebooksCommand(
+  input: ReplaceChatLorebooksCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/lorebooks`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      entries: input.entries,
+    },
+    signal,
+  })
+}
+
+export async function replaceModuleLorebooksCommand(
+  input: ReplaceModuleLorebooksCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/lorebooks`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      entries: input.entries,
     },
     signal,
   })

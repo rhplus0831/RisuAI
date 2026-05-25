@@ -3093,3 +3093,227 @@ describe('Phase 9-3e chat scriptstate command', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-4a lorebook commands', () => {
+  it('creates, updates, reorders, and deletes global lorebooks with command events', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        lorebook: { id: 'book-b', name: 'B', data: [] },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({
+      revision: 2,
+      event: {
+        type: 'lorebook.created',
+        revision: 2,
+        resource: 'lorebook',
+        id: 'book-b',
+      },
+      lorebookId: 'book-b',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/lorebooks/book-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2, patch: { name: 'Renamed' } },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event.type).toBe('lorebook.updated')
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 3, lorebookIds: ['book-b', 'book-a'] },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().event.type).toBe('lorebook.reordered')
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/lorebooks/book-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4 },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json().event.type).toBe('lorebook.deleted')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(5)
+    expect(
+      bootstrap.json().database.loreBook.map((book: { id: string; name: string }) => ({
+        id: book.id,
+        name: book.name,
+      })),
+    ).toEqual([{ id: 'book-b', name: 'Renamed' }])
+    expect(
+      harness.commandEvents
+        .list()
+        .slice(-4)
+        .map((event) => event.type),
+    ).toEqual(['lorebook.created', 'lorebook.updated', 'lorebook.reordered', 'lorebook.deleted'])
+  })
+
+  it('replaces global, character, chat, and module lorebook entry collections', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          globalLore: [],
+          chats: [{ id: 'chat-a', name: 'Chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+      modules: [{ id: 'mod-a', name: 'Mod', lorebook: [] }],
+    })
+
+    const entry = (id: string, comment: string) => ({
+      id,
+      key: comment.toLowerCase(),
+      secondkey: '',
+      insertorder: 100,
+      comment,
+      content: `${comment} content`,
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    })
+
+    const global = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, entries: [entry('entry-global', 'Global')] },
+    })
+    expect(global.statusCode).toBe(200)
+    expect(global.json().event).toMatchObject({
+      type: 'lorebook.entries.replaced',
+      resource: 'lorebook',
+      id: 'book-a',
+    })
+
+    const character = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/lorebooks',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2, entries: [entry('entry-char', 'Character')] },
+    })
+    expect(character.statusCode).toBe(200)
+    expect(character.json()).toMatchObject({ revision: 3, characterId: 'char-a' })
+
+    const chat = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/lorebooks',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 3, entries: [entry('entry-chat', 'Chat')] },
+    })
+    expect(chat.statusCode).toBe(200)
+    expect(chat.json().event).toMatchObject({ id: 'chat-a', parentId: 'char-a' })
+
+    const module = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/lorebooks',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4, entries: [entry('entry-module', 'Module')] },
+    })
+    expect(module.statusCode).toBe(200)
+    expect(module.json()).toMatchObject({ revision: 5, moduleId: 'mod-a' })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const database = bootstrap.json().database
+    expect(database.loreBook[0].data[0].id).toBe('entry-global')
+    expect(database.characters[0].globalLore[0].id).toBe('entry-char')
+    expect(database.characters[0].chats[0].localLore[0].id).toBe('entry-chat')
+    expect(database.modules[0].lorebook[0].id).toBe('entry-module')
+  })
+
+  it('rejects malformed lorebook commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+    })
+
+    const malformed = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        entries: [{ id: 'entry-a', key: '', secondkey: '', insertorder: 'bad' }],
+      },
+    })
+    expect(malformed.statusCode).toBe(400)
+    expect(malformed.json().error).toBe('entries[0].insertorder must be a finite number')
+
+    const badReorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, lorebookIds: ['book-a', 'book-a'] },
+    })
+    expect(badReorder.statusCode).toBe(400)
+    expect(badReorder.json().error).toBe('Duplicate lorebook id in lorebookIds: book-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.loreBook[0].data).toEqual([])
+  })
+
+  it('returns 404 and 409 for missing lorebook parents and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+      characters: [],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/missing/lorebooks',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, entries: [] },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Character not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, entries: [] },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

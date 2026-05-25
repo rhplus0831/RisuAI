@@ -113,6 +113,24 @@ import {
   requireMessageLocation,
   validateUniqueMessageIds,
 } from '../commands/messages.js'
+import {
+  createGlobalLorebookRecord,
+  ensureGlobalLorebookCollection,
+  ensureLorebookDatabase,
+  ensureModuleCollection,
+  normalizeSelectedCharacterLorebooks,
+  normalizeSelectedChatLorebooks,
+  readCharacterId as readLorebookCharacterId,
+  readChatId as readLorebookChatId,
+  readGlobalLorebookPatch,
+  readLorebookEntries,
+  readLorebookId,
+  readLorebookIdList,
+  readModuleId,
+  requireGlobalLorebookIndex,
+  requireModule,
+  validateFullLorebookOrder,
+} from '../commands/lorebooks.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -2932,6 +2950,301 @@ export function registerCommandRoutes(
               parentId: chatId,
             },
             extra: { chatId, messageId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/lorebooks', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as { baseRevision?: unknown; lorebook?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const lorebook = createGlobalLorebookRecord(body.lorebook)
+      const result = applyJsonCommandMutation<{ lorebookId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const lorebooks = ensureGlobalLorebookCollection(target)
+          if (lorebooks.some((candidate) => candidate.id === lorebook.id)) {
+            throw new ValidationError(`Duplicate lorebook id: ${lorebook.id}`)
+          }
+          lorebooks.push(lorebook)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookCreated, id: lorebook.id },
+            extra: { lorebookId: lorebook.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/lorebooks/:lorebookId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown; patch?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const patch = readGlobalLorebookPatch(body.patch)
+      const result = applyJsonCommandMutation<{ lorebookId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const lorebooks = ensureGlobalLorebookCollection(target)
+          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          Object.assign(lorebooks[index], patch)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookUpdated, id: lorebookId },
+            extra: { lorebookId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/lorebooks/:lorebookId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ lorebookId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const lorebooks = ensureGlobalLorebookCollection(target)
+          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          lorebooks.splice(index, 1)
+          target.loreBookPage = 0
+          if (lorebooks.length === 0) {
+            lorebooks.push(createGlobalLorebookRecord({ name: 'My First LoreBook', data: [] }))
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookDeleted, id: lorebookId },
+            extra: { lorebookId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/lorebooks/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as { baseRevision?: unknown; lorebookIds?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const lorebookIds = readLorebookIdList(body.lorebookIds)
+      const result = applyJsonCommandMutation<{ selectedLorebookId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const lorebooks = ensureGlobalLorebookCollection(target)
+          validateFullLorebookOrder(lorebooks, lorebookIds)
+          const byId = new Map(lorebooks.map((lorebook) => [lorebook.id, lorebook]))
+          target.loreBook = lorebookIds.map((id) => byId.get(id))
+          const currentPage = Number.isInteger(target.loreBookPage as number)
+            ? (target.loreBookPage as number)
+            : 0
+          const selectedLorebookId = lorebooks[currentPage]?.id ?? null
+          target.loreBookPage = Math.max(
+            0,
+            lorebookIds.findIndex((id) => id === selectedLorebookId),
+          )
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookReordered },
+            extra: { selectedLorebookId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/lorebooks/:lorebookId/entries', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entries = readLorebookEntries(body.entries)
+      const result = applyJsonCommandMutation<{ lorebookId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const lorebooks = ensureGlobalLorebookCollection(target)
+          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          lorebooks[index].data = entries
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
+            extra: { lorebookId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/characters/:characterId/lorebooks', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readLorebookCharacterId(
+        (req.params as { characterId?: unknown }).characterId,
+      )
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entries = readLorebookEntries(body.entries)
+      const result = applyJsonCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const { character } = normalizeSelectedCharacterLorebooks(target, characterId)
+          character.globalLore = entries
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: characterId },
+            extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/chats/:chatId/lorebooks', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readLorebookChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entries = readLorebookEntries(body.entries)
+      const result = applyJsonCommandMutation<{ chatId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
+          chat.localLore = entries
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: chatId,
+              parentId,
+            },
+            extra: { chatId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/modules/:moduleId/lorebooks', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const moduleId = readModuleId((req.params as { moduleId?: unknown }).moduleId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entries = readLorebookEntries(body.entries)
+      const result = applyJsonCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const module = requireModule(ensureModuleCollection(target), moduleId)
+          module.lorebook = entries
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: moduleId },
+            extra: { moduleId },
           }
         },
       })

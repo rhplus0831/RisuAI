@@ -20,6 +20,7 @@
   import LoreBookList from './LoreBookList.svelte'
   import Help from 'src/lib/Others/Help.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
+  import { watchServerBackedLorebooks } from 'src/ts/server/lorebookBridge.svelte'
 
   let submenu = $state(0)
   interface Props {
@@ -27,6 +28,11 @@
   }
 
   let { globalMode = $bindable(false) }: Props = $props()
+
+  $effect(() => {
+    const stopLorebooks = watchServerBackedLorebooks()
+    return () => stopLorebooks()
+  })
 
   function isAllCharacterLoreAlwaysActive() {
     const globalLore = DBState.db.characters[$selectedCharID].globalLore

@@ -207,6 +207,26 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'generation.persisted',
     resource: 'generation',
   },
+  lorebookCreated: {
+    type: 'lorebook.created',
+    resource: 'lorebook',
+  },
+  lorebookUpdated: {
+    type: 'lorebook.updated',
+    resource: 'lorebook',
+  },
+  lorebookDeleted: {
+    type: 'lorebook.deleted',
+    resource: 'lorebook',
+  },
+  lorebookReordered: {
+    type: 'lorebook.reordered',
+    resource: 'lorebook',
+  },
+  lorebookEntriesReplaced: {
+    type: 'lorebook.entries.replaced',
+    resource: 'lorebook',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

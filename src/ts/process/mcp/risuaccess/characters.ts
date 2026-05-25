@@ -5,6 +5,11 @@ import {
   dispatchCompatibleCharacterUpdate,
 } from 'src/ts/characterCommands'
 import { canUseServerCommands } from 'src/ts/server/commands'
+import {
+  currentLorebookStateSnapshot,
+  dispatchReplaceCharacterLorebooks,
+  ensureClientLorebookEntryIds,
+} from 'src/ts/server/lorebookBridge.svelte'
 import { type character, type loreBook } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
@@ -600,8 +605,6 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
-    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('lorebook edits')
-
     if (
       !(await this.promptAccess(
         'risu-set-character-lorebook',
@@ -616,12 +619,15 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
+    char.globalLore ??= []
+    const previous = currentLorebookStateSnapshot()
     const entryIndex = char.globalLore.findIndex((entry) => {
       const displayName = entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content)
       return displayName === name
     })
     if (entryIndex === -1) {
       const newEntry: loreBook = {
+        id: crypto.randomUUID(),
         key: alwaysActive ? '' : keys?.join(',') || '',
         content: content || '',
         comment: newName || name,
@@ -632,6 +638,10 @@ export class CharacterHandler extends MCPToolHandler {
         mode: 'normal',
       }
       char.globalLore.push(newEntry)
+      if (canUseServerCommands()) {
+        ensureClientLorebookEntryIds(char.globalLore)
+        dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore, previous, 0)
+      }
       return [
         {
           type: 'text',
@@ -658,6 +668,11 @@ export class CharacterHandler extends MCPToolHandler {
       }
     }
 
+    if (canUseServerCommands()) {
+      ensureClientLorebookEntryIds(char.globalLore)
+      dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore, previous, 0)
+    }
+
     return [
       {
         type: 'text',
@@ -676,8 +691,6 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
-    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('lorebook edits')
-
     if (
       !(await this.promptAccess(
         'risu-delete-character-lorebook',
@@ -692,6 +705,8 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
+    char.globalLore ??= []
+    const previous = currentLorebookStateSnapshot()
     const entryIndex = char.globalLore.findIndex((entry) => {
       const displayName = entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content)
       return displayName === name
@@ -706,6 +721,10 @@ export class CharacterHandler extends MCPToolHandler {
     }
 
     char.globalLore.splice(entryIndex, 1)
+    if (canUseServerCommands()) {
+      ensureClientLorebookEntryIds(char.globalLore)
+      dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore, previous, 0)
+    }
 
     return [
       {

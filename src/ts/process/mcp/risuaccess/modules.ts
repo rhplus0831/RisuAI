@@ -1,5 +1,11 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
+import { canUseServerCommands } from 'src/ts/server/commands'
+import {
+  currentLorebookStateSnapshot,
+  dispatchReplaceModuleLorebooks,
+  ensureClientLorebookEntryIds,
+} from 'src/ts/server/lorebookBridge.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
@@ -577,6 +583,7 @@ export class ModuleHandler extends MCPToolHandler {
       module.lorebook = []
     }
 
+    const previous = currentLorebookStateSnapshot()
     const index = module.lorebook.findIndex((l) => {
       const displayName = l.comment || 'Unnamed ' + pickHashRand(5515, l.content)
       return displayName === name
@@ -584,6 +591,7 @@ export class ModuleHandler extends MCPToolHandler {
 
     if (index === -1) {
       const newEntry = {
+        id: crypto.randomUUID(),
         key: alwaysActive ? '' : keys?.join(',') || '',
         content: content || '',
         comment: newName || name,
@@ -594,6 +602,10 @@ export class ModuleHandler extends MCPToolHandler {
         mode: 'normal' as const,
       }
       module.lorebook.push(newEntry)
+      if (canUseServerCommands()) {
+        ensureClientLorebookEntryIds(module.lorebook)
+        dispatchReplaceModuleLorebooks(module.id, module.lorebook, previous, 0)
+      }
       return [
         {
           type: 'text',
@@ -618,6 +630,11 @@ export class ModuleHandler extends MCPToolHandler {
       if (alwaysActive) {
         entry.key = ''
       }
+    }
+
+    if (canUseServerCommands()) {
+      ensureClientLorebookEntryIds(module.lorebook)
+      dispatchReplaceModuleLorebooks(module.id, module.lorebook, previous, 0)
     }
 
     return [
@@ -652,6 +669,7 @@ export class ModuleHandler extends MCPToolHandler {
       module.lorebook = []
     }
 
+    const previous = currentLorebookStateSnapshot()
     const index = module.lorebook.findIndex((l) => {
       const displayName = l.comment || 'Unnamed ' + pickHashRand(5515, l.content)
       return displayName === name
@@ -667,6 +685,10 @@ export class ModuleHandler extends MCPToolHandler {
     }
 
     module.lorebook.splice(index, 1)
+    if (canUseServerCommands()) {
+      ensureClientLorebookEntryIds(module.lorebook)
+      dispatchReplaceModuleLorebooks(module.id, module.lorebook, previous, 0)
+    }
 
     return [
       {

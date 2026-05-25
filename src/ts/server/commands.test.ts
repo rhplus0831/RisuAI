@@ -28,9 +28,11 @@ import {
   createPromptItemCommand,
   createPresetCommand,
   createTranslatorPresetCommand,
+  createGlobalLorebookCommand,
   deleteChatCommand,
   deleteChatFolderCommand,
   deleteCharacterCommand,
+  deleteGlobalLorebookCommand,
   deleteLoadoutCommand,
   deleteMessageCommand,
   deletePersonaCommand,
@@ -49,11 +51,16 @@ import {
   reorderChatFoldersCommand,
   reorderChatsCommand,
   reorderPersonasCommand,
+  reorderGlobalLorebooksCommand,
   reorderPromptItemsCommand,
   reorderPresetsCommand,
   runServerCommand,
   runServerPresetCommand,
   replaceMessagesCommand,
+  replaceCharacterLorebooksCommand,
+  replaceChatLorebooksCommand,
+  replaceGlobalLorebookEntriesCommand,
+  replaceModuleLorebooksCommand,
   selectCharacterCommand,
   selectPersonaCommand,
   selectTranslatorPresetCommand,
@@ -62,6 +69,7 @@ import {
   updateCharacterCommand,
   updateChatCommand,
   updateChatFolderCommand,
+  updateGlobalLorebookCommand,
   updateLoadoutCommand,
   updateMessageCommand,
   updatePersonaCommand,
@@ -1810,5 +1818,112 @@ describe('server command API adapter', () => {
 
     expect(result).toEqual({ status: 'unavailable' })
     expect(commandFetch.calls).toEqual([])
+  })
+
+  it('dispatches lorebook commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (
+        url.includes('/lorebooks') ||
+        url.includes('/characters/') ||
+        url.includes('/chats/') ||
+        url.includes('/modules/')
+      ) {
+        return {
+          revision: 9,
+          event: {
+            type: 'lorebook.entries.replaced',
+            revision: 9,
+            resource: 'lorebook',
+          },
+          lorebookId: 'book-a',
+          characterId: 'char-a',
+          chatId: 'chat-a',
+          moduleId: 'mod-a',
+        }
+      }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const entry = {
+      id: 'entry-a',
+      key: 'key',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Lore',
+      content: 'body',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+
+    await createGlobalLorebookCommand({
+      baseRevision: 1,
+      lorebook: { id: 'book-a', name: 'A', data: [] },
+    })
+    await updateGlobalLorebookCommand({
+      baseRevision: 2,
+      lorebookId: 'book-a',
+      patch: { name: 'Renamed' },
+    })
+    await deleteGlobalLorebookCommand({ baseRevision: 3, lorebookId: 'book-a' })
+    await reorderGlobalLorebooksCommand({ baseRevision: 4, lorebookIds: ['book-a'] })
+    await replaceGlobalLorebookEntriesCommand({
+      baseRevision: 5,
+      lorebookId: 'book-a',
+      entries: [entry],
+    })
+    await replaceCharacterLorebooksCommand({
+      baseRevision: 6,
+      characterId: 'char-a',
+      entries: [entry],
+    })
+    await replaceChatLorebooksCommand({ baseRevision: 7, chatId: 'chat-a', entries: [entry] })
+    await replaceModuleLorebooksCommand({ baseRevision: 8, moduleId: 'mod-a', entries: [entry] })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/lorebooks',
+        method: 'POST',
+        body: { baseRevision: 1, lorebook: { id: 'book-a', name: 'A', data: [] } },
+      },
+      {
+        url: '/api/v1/commands/lorebooks/book-a',
+        method: 'PATCH',
+        body: { baseRevision: 2, patch: { name: 'Renamed' } },
+      },
+      {
+        url: '/api/v1/commands/lorebooks/book-a',
+        method: 'DELETE',
+        body: { baseRevision: 3 },
+      },
+      {
+        url: '/api/v1/commands/lorebooks/reorder',
+        method: 'POST',
+        body: { baseRevision: 4, lorebookIds: ['book-a'] },
+      },
+      {
+        url: '/api/v1/commands/lorebooks/book-a/entries',
+        method: 'PUT',
+        body: { baseRevision: 5, entries: [entry] },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/lorebooks',
+        method: 'PUT',
+        body: { baseRevision: 6, entries: [entry] },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/lorebooks',
+        method: 'PUT',
+        body: { baseRevision: 7, entries: [entry] },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/lorebooks',
+        method: 'PUT',
+        body: { baseRevision: 8, entries: [entry] },
+      },
+    ])
   })
 })

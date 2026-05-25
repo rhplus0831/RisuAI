@@ -235,21 +235,21 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-3f compatibility setters and access adapters is complete.
-Continue with **9-4a - Lorebook collection commands**:
+9-4a lorebook collection commands is complete.
+Continue with **9-4b - Script and trigger definition commands**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement the lorebook endpoints listed above for global,
-  character-scoped, chat-scoped, and module-scoped lorebook collections.
-- Add stable ids to lorebook rows in the current schema where the command
-  shape needs id-addressable children.
-- Replace server-backed web lorebook mutations with typed command helpers
-  and browser dispatch plumbing.
-- Re-enable MCP character lorebook writes in Fastify mode by routing them
-  through the new lorebook commands; keep script/trigger and asset writes
-  explicitly unsupported until their owning 9-4 slices.
+- Implement the script/trigger endpoints listed above for character and
+  module definition collections.
+- Use whole-child replacement for definition arrays and keep runtime
+  trigger side effects on the existing 9-3e scriptstate command.
+- Replace server-backed web script and trigger definition mutations with
+  typed command helpers and browser dispatch plumbing.
+- Re-enable MCP character/module regex and Lua script writes in Fastify
+  mode by routing them through the new script/trigger commands; keep asset
+  writes explicitly unsupported until 9-4d.
 - Keep projection enforcement, plugin database bridge work, and storage
   gating in their later slices.
 - Preserve the 9-1 command response and conflict contract through the

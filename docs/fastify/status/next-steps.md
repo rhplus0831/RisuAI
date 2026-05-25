@@ -10,42 +10,42 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-3f landed compatibility setters and access adapters. It added shared
-character/chat compatibility diff dispatchers, routed `setCurrentCharacter`,
-`setCharacterByIndex`, `setCurrentChat`, slash message-history commands,
-plugin V3 character/chat index setters, and MCP scalar character edits
-through existing 9-3 commands in Fastify mode, and made MCP lorebook,
-script, trigger, and asset writes explicitly unsupported until 9-4.
+9-4a landed lorebook collection commands. It added Fastify command
+endpoints and browser helpers for global lorebooks plus global,
+character, chat, and module lorebook entry replacement; normalized
+lorebook and entry ids in the current schema; routed lorebook UI and MCP
+character/module lorebook writes through command helpers in Fastify mode;
+and kept script/trigger, module lifecycle, asset, plugin, and storage
+bridge work deferred to their owning slices.
 
 ## Immediate Pickup
 
 Continue Phase 9 implementation with
-**9-4a - Lorebook collection commands**.
+**9-4b - Script and trigger definition commands**.
 
 Expected scope:
 
-- Add lorebook collection commands from the locked command map:
-  global lorebooks, character lorebooks, chat lorebooks, module lorebooks,
-  entry replacement, and reorder/delete behavior where currently exposed.
-- Give lorebook rows stable ids in the current schema as needed before
-  command addressing; this is a current-shape update, not a compatibility
-  migration.
-- Route server-backed web lorebook writes away from mutable
-  `DBState.db` paths and through typed command helpers.
-- Cover existing UI and compatibility surfaces that edit lorebooks,
-  including MCP character lorebook writes that 9-3f now rejects in
-  Fastify mode.
+- Add script and trigger definition commands from the locked command map:
+  character scripts, character triggers, module scripts, and module
+  triggers.
+- Use whole-child replacement semantics for definition arrays and keep
+  runtime trigger side effects on the existing 9-3e scriptstate command.
+- Route server-backed web script and trigger definition writes away from
+  mutable `DBState.db` paths and through typed command helpers.
+- Replace the remaining 9-3f MCP unsupported behavior for character
+  regex/Lua script writes with 9-4b commands, and add module MCP
+  script/trigger coverage where writes currently mutate modules directly.
 - Preserve existing 9-1 command contract: `baseRevision`, 409 conflict,
   single mutation/revision/event on success, no revision bump on failure,
   and rollback from browser dispatch helpers.
 
-Out of scope for 9-4a:
+Out of scope for 9-4b:
 
 - Settings groups, bot presets, prompt templates/items, personas,
   translator presets, loadouts, character catalog/profile commands, chat
   record/folder metadata commands, message commands, generation
-  persistence, scriptstate, and compatibility setters.
-- Script and trigger definition commands; keep them in 9-4b.
+  persistence, scriptstate, lorebook commands, and compatibility setters
+  already covered by prior slices.
 - Module lifecycle/enablement commands; keep them in 9-4c.
 - Asset bytes/references; keep them in 9-4d.
 - Plugin records/config/storage bridge; keep them in 9-4e/9-4f.
@@ -85,23 +85,26 @@ Implementation notes:
   The 9-3c helpers normalize missing or duplicate ids during message
   command mutations.
 - 9-3f made lorebook/script/asset MCP child writes return explicit
-  unsupported errors in Fastify mode. Replace the lorebook part of that
-  behavior in 9-4a, but keep script/trigger and asset writes unsupported
-  until their owning slices land.
+  unsupported errors in Fastify mode. 9-4a replaced lorebook writes; keep
+  asset writes unsupported until 9-4d and replace script/trigger writes in
+  9-4b.
+- 9-4a added `src/ts/server/lorebookBridge.svelte.ts` as a debounced
+  whole-collection replacement bridge for bound lorebook UI surfaces.
+  Script/trigger UI can follow the same pattern if direct Svelte binds are
+  too broad to replace surgically in one slice.
 
 ## Later Queue
 
-1. 9-4b - Script and trigger definition commands.
-2. 9-4c - Module records and enablement.
-3. 9-4d - Asset reference commands.
-4. 9-4e - Plugin records and configuration.
-5. 9-4f - Plugin-storage kv and plugin database adapters.
-6. 9-4g - Compatibility sweep and focused tests.
-7. 9-5 - Browser projection.
-8. 9-6 - Storage and provider-key gating.
-9. 9-7 - Server `.risu` codec core.
-10. 9-8 - Import/export routes and bundle assets.
-11. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-4c - Module records and enablement.
+2. 9-4d - Asset reference commands.
+3. 9-4e - Plugin records and configuration.
+4. 9-4f - Plugin-storage kv and plugin database adapters.
+5. 9-4g - Compatibility sweep and focused tests.
+6. 9-5 - Browser projection.
+7. 9-6 - Storage and provider-key gating.
+8. 9-7 - Server `.risu` codec core.
+9. 9-8 - Import/export routes and bundle assets.
+10. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -124,11 +127,11 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-3f:
+Last recorded full baselines after 9-4a:
 
 - `pnpm check` - clean, with 0 Svelte errors and 0 warnings.
-- `pnpm test` - 686 tests passed, 4 skipped.
-- `pnpm api:test` - 1097 tests passed.
+- `pnpm test` - 687 tests passed, 4 skipped.
+- `pnpm api:test` - 1101 tests passed.
 - `pnpm build` - passed with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -141,7 +144,7 @@ Last recorded full baselines after 9-3f:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-3f.md`](../phases-completed/phase-9-client-thinning-9-3f.md)
+  [`../phases-completed/phase-9-client-thinning-9-4a.md`](../phases-completed/phase-9-client-thinning-9-4a.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

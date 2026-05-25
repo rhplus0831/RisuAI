@@ -17,6 +17,10 @@ vi.mock('./storage/nodeStorage', () => ({
   getNodeServerProxyAuth: async () => 'compat-auth-token',
 }))
 
+vi.mock('./alert', () => ({
+  alertConfirm: vi.fn(async () => true),
+}))
+
 import { clearCachedServerCommandRevision, type CommandEvent } from './server/commands'
 import {
   currentCharacterStateSnapshot,
@@ -195,16 +199,36 @@ describe('Phase 9-3f compatibility adapters', () => {
     expect(get(selectedCharID)).toBe(0)
   })
 
-  it('reports unsupported MCP child writes in server-backed web mode', async () => {
+  it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {
+    const calls = stubCommandFetch()
     const handler = new CharacterHandler()
 
     const result = await handler.setCharacterLorebook('char-a', 'Lore', 'content', ['key'])
 
     expect(result[0]).toMatchObject({
       type: 'text',
-      text: expect.stringContaining('not supported in server-backed web mode'),
+      text: expect.stringContaining('Successfully added lorebook entry'),
     })
-    expect(DBState.db.characters[0].globalLore).toBeUndefined()
+    await vi.waitFor(() => {
+      expect(
+        calls.some((call) => call.url === '/api/v1/commands/characters/char-a/lorebooks'),
+      ).toBe(true)
+    })
+    expect(
+      calls.find((call) => call.url === '/api/v1/commands/characters/char-a/lorebooks'),
+    ).toMatchObject({
+      method: 'PUT',
+      body: {
+        baseRevision: 10,
+        entries: [
+          expect.objectContaining({
+            key: 'key',
+            content: 'content',
+            comment: 'Lore',
+          }),
+        ],
+      },
+    })
   })
 })
 
