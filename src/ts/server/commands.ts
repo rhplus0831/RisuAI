@@ -2,6 +2,21 @@ import { isFastifyServer } from '../platform'
 import { getNodeServerProxyAuth } from '../storage/nodeStorage'
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
+const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
+
+export const SETTINGS_GROUPS = [
+  'providers',
+  'runtime',
+  'display',
+  'language',
+  'media',
+  'memory',
+  'advanced',
+  'sidebar',
+  'account',
+] as const
+
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 
 export interface CommandEvent {
   type: string
@@ -17,7 +32,9 @@ export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
-export interface RuntimeSettingsPatch {
+export type SettingsPatch = Record<string, unknown>
+
+export interface RuntimeSettingsPatch extends SettingsPatch {
   useServerPromptAssembly?: boolean
 }
 
@@ -26,17 +43,84 @@ export interface PatchRuntimeSettingsInput {
   patch: RuntimeSettingsPatch
 }
 
+export interface PatchSettingsGroupInput {
+  group: SettingsGroup
+  baseRevision: number
+  patch: SettingsPatch
+}
+
+let cachedServerCommandRevision: number | null = null
+
 export function canUseServerCommands(): boolean {
   return isFastifyServer
+}
+
+export function setCachedServerCommandRevision(revision: number): void {
+  if (Number.isInteger(revision) && revision >= 0) {
+    cachedServerCommandRevision = revision
+  }
+}
+
+export function clearCachedServerCommandRevision(): void {
+  cachedServerCommandRevision = null
+}
+
+export async function getServerCommandBaseRevision(signal?: AbortSignal | null): Promise<number | null> {
+  if (!canUseServerCommands()) return null
+  if (cachedServerCommandRevision !== null) return cachedServerCommandRevision
+
+  const auth = await getNodeServerProxyAuth()
+  let response: Response
+  try {
+    response = await fetch(BOOTSTRAP_ENDPOINT, {
+      method: 'GET',
+      signal: signal ?? undefined,
+      headers: {
+        'risu-auth': auth,
+      },
+    })
+  } catch {
+    return null
+  }
+
+  if (!response.ok) return null
+
+  try {
+    const body = (await response.json()) as { revision?: unknown }
+    if (Number.isInteger(body.revision) && (body.revision as number) >= 0) {
+      cachedServerCommandRevision = body.revision as number
+      return cachedServerCommandRevision
+    }
+  } catch {
+    return null
+  }
+
+  return null
 }
 
 export async function patchRuntimeSettings(
   input: PatchRuntimeSettingsInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult> {
-  return requestCommandJson('/settings/runtime', {
+  return patchSettingsGroup(
+    {
+      group: 'runtime',
+      ...input,
+    },
+    signal,
+  )
+}
+
+export async function patchSettingsGroup(
+  input: PatchSettingsGroupInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson(`/settings/${encodeURIComponent(input.group)}`, {
     method: 'PATCH',
-    body: input,
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
     signal,
   })
 }
@@ -73,6 +157,7 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
 
   if (response.status === 409) {
     const currentRevision = readCurrentRevision(body)
+    if (currentRevision !== null) setCachedServerCommandRevision(currentRevision)
     return currentRevision === null
       ? { status: 'error', error: errorMessageFromBody(body, 'HTTP 409') }
       : { status: 'conflict', currentRevision }
@@ -82,6 +167,13 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     return {
       status: 'error',
       error: errorMessageFromBody(body, `HTTP ${response.status}`),
+    }
+  }
+
+  if (body && typeof body === 'object') {
+    const revision = (body as { revision?: unknown }).revision
+    if (Number.isInteger(revision) && (revision as number) >= 0) {
+      setCachedServerCommandRevision(revision as number)
     }
   }
 

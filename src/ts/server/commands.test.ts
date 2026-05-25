@@ -16,7 +16,13 @@ vi.mock('../storage/nodeStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 
-import { canUseServerCommands, patchRuntimeSettings } from './commands'
+import {
+  canUseServerCommands,
+  clearCachedServerCommandRevision,
+  getServerCommandBaseRevision,
+  patchRuntimeSettings,
+  patchSettingsGroup,
+} from './commands'
 
 interface CapturedFetch {
   url: string
@@ -59,6 +65,7 @@ function makeCommandFetch(bodyForUrl: (url: string, init: RequestInit) => unknow
 
 beforeEach(() => {
   platformState.isFastifyServer = true
+  clearCachedServerCommandRevision()
 })
 
 afterEach(() => {
@@ -93,6 +100,50 @@ describe('server command API adapter', () => {
           baseRevision: 1,
           patch: { useServerPromptAssembly: true },
         },
+      },
+    ])
+  })
+
+  it('patches grouped scalar settings with the auth header and baseRevision', async () => {
+    const event = { type: 'settings.updated', revision: 3, resource: 'settings' }
+    const commandFetch = makeCommandFetch(() => ({ revision: 3, event }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await patchSettingsGroup({
+      group: 'display',
+      baseRevision: 2,
+      patch: { theme: 'light', zoomsize: 90 },
+    })
+
+    expect(result).toEqual({ status: 'ok', revision: 3, event })
+    expect(commandFetch.calls).toEqual([
+      {
+        url: '/api/v1/commands/settings/display',
+        method: 'PATCH',
+        authHeader: 'test-auth-token',
+        contentType: 'application/json',
+        body: {
+          baseRevision: 2,
+          patch: { theme: 'light', zoomsize: 90 },
+        },
+      },
+    ])
+  })
+
+  it('reads and caches the command base revision from bootstrap', async () => {
+    const commandFetch = makeCommandFetch(() => ({ revision: 12 }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(getServerCommandBaseRevision()).resolves.toBe(12)
+    await expect(getServerCommandBaseRevision()).resolves.toBe(12)
+
+    expect(commandFetch.calls).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        authHeader: 'test-auth-token',
+        contentType: null,
+        body: null,
       },
     ])
   })

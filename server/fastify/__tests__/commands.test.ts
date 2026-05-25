@@ -265,3 +265,112 @@ describe('Phase 9-1 command foundation', () => {
     }
   })
 })
+
+describe('Phase 9-2a scalar settings groups', () => {
+  it('applies display settings through the grouped settings command', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      theme: 'dark',
+      zoomsize: 100,
+      greeting: 'hi',
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { theme: 'light', zoomsize: 88 } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'settings.updated',
+        revision: 2,
+        resource: 'settings',
+      },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(2)
+    expect(bootstrap.json().database).toEqual({
+      theme: 'light',
+      zoomsize: 88,
+      greeting: 'hi',
+    })
+  })
+
+  it('allows provider scalar updates before provider-key masking lands', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      openAIKey: 'old',
+      aiModel: 'gpt4o-chatgpt',
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { openAIKey: 'new-secret', aiModel: 'openrouter' },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toEqual({
+      openAIKey: 'new-secret',
+      aiModel: 'openrouter',
+    })
+  })
+
+  it('rejects unknown setting keys without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      theme: 'dark',
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { openAIKey: 'wrong-group' } },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('Unsupported display setting: openAIKey')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database).toEqual({ theme: 'dark' })
+  })
+
+  it('rejects unsupported settings groups', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/prompt',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, patch: { promptTemplate: [] } },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('Unsupported settings group: prompt')
+  })
+})

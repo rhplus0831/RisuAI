@@ -10,36 +10,43 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-1 landed the Phase 9 command foundation. The slice added shared
-Fastify command route plumbing, a rollback-safe `db.json` JSON mutation
-helper with `baseRevision` / 409 handling, an in-process command event
-catalog/sink, the typed browser command helper, and the harness command
-`PATCH /api/v1/commands/settings/runtime` for the allowlisted
-`useServerPromptAssembly` setting.
+9-2a-i landed scalar settings command groups and the data-driven settings
+bridge. The slice generalized `PATCH /api/v1/commands/settings/:group`
+for `providers`, `runtime`, `display`, `language`, `media`, `memory`,
+`advanced`, `sidebar`, and `account`; added grouped allowlist/type
+validation; kept provider-key masking deferred; added the generic browser
+`patchSettingsGroup` helper plus bootstrap-backed command revision cache;
+and routed data-driven settings wrappers through local draft state plus
+commands in Fastify mode.
 
 ## Immediate Pickup
 
-Continue Phase 9 implementation with **9-2a - Scalar settings groups**.
+Continue Phase 9 implementation with
+**9-2a-ii - Manual scalar settings pages**.
 
 Expected scope:
 
-- Extend `PATCH /api/v1/commands/settings/runtime` beyond the 9-1
-  harness setting and add the remaining scalar settings groups from the
-  command map: `providers`, `display`, `language`, `media`, `memory`,
-  `advanced`, `sidebar`, and `account` as appropriate for scalar fields.
+- Replace remaining manual server-backed scalar settings writes with
+  local draft state plus `src/ts/server/commands.ts` helpers. Start with
+  `BotSettings.svelte`, `OtherBotSettings.svelte`,
+  `OpenrouterSettings.svelte`, `OobaSettings.svelte`,
+  `SeparateParametersSection.svelte`, `Model/AuxModelSelectors.svelte`,
+  `Others/ProTools/EasyPanel.svelte`, first-run setup in
+  `WelcomeRisu.svelte`, and miscellaneous scalar preference panels.
+- Reuse the 9-2a-i grouped command route and extend the server/client
+  scalar maps together when a newly routed field is not already
+  allowlisted.
 - Keep provider-key masking out of scope; placeholder/secret semantics
   wait for 9-6. Until then, provider settings commands may update the
   current unmasked fields directly.
-- Replace server-backed web call sites for scalar settings with local
-  draft state plus `src/ts/server/commands.ts` helpers. Tauri/local mode
-  keeps existing local mutation paths.
+- Tauri/local mode keeps existing local mutation paths.
 - Preserve the 9-1 command contract: every command takes
   `baseRevision`, returns `{ revision, event }`, emits
   `settings.updated`, and returns 409
   `{ error: "revision_conflict", currentRevision }` on stale input.
-- Cover representative allowlist validation, unknown keys, malformed
-  payloads, auth, 409 conflict, rollback/no revision bump, bootstrap
-  visibility, and browser helper behavior.
+- Cover representative manual page command dispatch, local draft behavior,
+  command failure rollback, conflict retry where applicable, and no
+  command dispatch outside Fastify mode.
 
 Out of scope for 9-2a:
 
@@ -69,7 +76,7 @@ Implementation notes:
 - Tauri keeps its local storage path. Phase 9 gates server-backed web
   behavior without changing local desktop storage mode.
 
-## Queue After 9-2a
+## Queue After 9-2a-ii
 
 1. 9-2b - Bot presets.
 2. 9-2c - Prompt templates/items.
@@ -105,8 +112,8 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-1: `pnpm check` clean,
-`pnpm test` 657 tests plus 4 skipped, `pnpm api:test` 1056 tests, and
+Last recorded full baselines after 9-2a-i: `pnpm check` clean,
+`pnpm test` 659 tests plus 4 skipped, `pnpm api:test` 1060 tests, and
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
@@ -119,7 +126,7 @@ externalization, plugin-timing, and chunk-size warnings.
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-1.md`](../phases-completed/phase-9-client-thinning-9-1.md)
+  [`../phases-completed/phase-9-client-thinning-9-2a-i.md`](../phases-completed/phase-9-client-thinning-9-2a-i.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

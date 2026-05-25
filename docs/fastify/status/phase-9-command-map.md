@@ -235,14 +235,17 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-1 command foundation is complete. Continue with **9-2a - Scalar
-settings groups**:
+9-2a-i scalar settings command groups are complete. Continue with
+**9-2a-ii - Manual scalar settings pages**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Extend settings command allowlists by scalar group and add browser
-  helpers for the first real settings replacements.
+- Reuse the grouped `PATCH /api/v1/commands/settings/:group` route and
+  browser `patchSettingsGroup` helper.
+- Replace manual server-backed scalar settings writes with local draft
+  state plus grouped commands, extending the server/client scalar maps
+  together when needed.
 - Keep provider-key masking deferred to 9-6 and prompt-template fields
   deferred to 9-2c.
 - Preserve the 9-1 command response and conflict contract for every new

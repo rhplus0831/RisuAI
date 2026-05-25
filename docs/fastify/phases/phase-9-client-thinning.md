@@ -2,8 +2,9 @@
 
 Date: 2026-05-25
 
-Status: active. Last landed slice: **9-1 - Command foundation**. Next
-slice: **9-2a - Scalar settings groups**.
+Status: active. Last landed slice:
+**9-2a-i - Scalar settings command groups**. Next slice:
+**9-2a-ii - Manual scalar settings pages**.
 
 ## Goal
 
@@ -110,6 +111,14 @@ surfaces.
   - **9-2a - Scalar settings groups.** Split into secrets/providers,
     runtime tunables, and cosmetic / auxiliary groups. API-key placeholders
     mean "leave unchanged" once masking is active.
+    - **9-2a-i - Scalar settings command groups.** Complete. Generalized
+      `PATCH /api/v1/commands/settings/:group`, added grouped allowlists and
+      browser helper support, and routed data-driven settings wrappers through
+      commands in Fastify mode. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-2a-i.md`](../phases-completed/phase-9-client-thinning-9-2a-i.md).
+    - **9-2a-ii - Manual scalar settings pages.** Remaining. Replace manual
+      `DBState.db` binds/assignments in scalar settings pages with local draft
+      state plus `patchSettingsGroup`, while keeping Tauri/local paths intact.
   - **9-2b - Bot presets.** Create/update/delete/reorder/select/copy/import
     preset flows, preserving current selected-preset behavior.
   - **9-2c - Prompt templates/items.** Template enablement, prompt-item

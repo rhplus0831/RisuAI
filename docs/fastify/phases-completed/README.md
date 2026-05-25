@@ -61,6 +61,7 @@ track the next piece of work.
 | 8-9 - Phase 8 closeout                  | [`phase-8-memory-8-9.md`](phase-8-memory-8-9.md)                                       | Final verification, exit-criteria confirmation, and Phase 9 handoff.           |
 | 9-0 - Mutation inventory / command map  | [`phase-9-client-thinning-9-0.md`](phase-9-client-thinning-9-0.md)                     | Phase 9 mutation inventory, command contract, and implementation handoff.      |
 | 9-1 - Command foundation                | [`phase-9-client-thinning-9-1.md`](phase-9-client-thinning-9-1.md)                     | Command route plumbing, JSON mutation helper, event sink, and harness command. |
+| 9-2a-i - Scalar settings commands       | [`phase-9-client-thinning-9-2a-i.md`](phase-9-client-thinning-9-2a-i.md)               | Grouped scalar settings commands, browser helper, and data-driven bridge.      |
 
 ## Historical Status Logs
 

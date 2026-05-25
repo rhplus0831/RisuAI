@@ -15,12 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-1, Command foundation.
-- Current gap: Phase 9 needs the settings, preset, persona, and loadout
-  resource families moved onto the command foundation.
-- Next default pickup: 9-2a, Scalar settings groups.
-- Last recorded full baselines after 9-1: `pnpm check` clean,
-  `pnpm test` 657 tests plus 4 skipped, `pnpm api:test` 1056 tests, and
+- Last landed slice: 9-2a-i, Scalar settings command groups and
+  data-driven settings bridge.
+- Current gap: 9-2a still needs manual scalar settings pages moved from
+  direct `DBState.db` binds/assignments onto the grouped command helper.
+- Next default pickup: 9-2a-ii, Manual scalar settings pages.
+- Last recorded full baselines after 9-2a-i: `pnpm check` clean,
+  `pnpm test` 659 tests plus 4 skipped, `pnpm api:test` 1060 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -49,7 +50,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.    |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                           |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                           |
-| Client thinning                             | Active; 9-1 command foundation landed; next slice is 9-2a scalar settings. |
+| Client thinning                             | Active; 9-2a-i scalar command groups landed; next slice is 9-2a-ii manual scalar settings pages. |
 
 ## Maintenance Rules
 
