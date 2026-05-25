@@ -63,6 +63,12 @@
   import Chats from './Chats.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
+  import {
+    currentChatStateSnapshot,
+    dispatchReplaceMessages,
+    dispatchUpdateMessage,
+    ensureMessageId,
+  } from 'src/ts/chatCommands'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -183,9 +189,11 @@
       rerollid = -1
     }
 
-    let cha =
+    const previous = currentChatStateSnapshot()
+    const currentChatRecord =
       DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
-        .message
+    let cha = currentChatRecord.message
+    let transcriptChanged = false
 
     if (messageInput.startsWith('/')) {
       const commandProcessed = await processMultiCommand(messageInput)
@@ -210,6 +218,7 @@
             data: '*says nothing*',
             name: null,
           })
+          transcriptChanged = true
         }
       }
     } else {
@@ -218,6 +227,7 @@
         let triggerResult = await runTrigger(char, 'input', { chat: char.chats[char.chatPage] })
         if (triggerResult) {
           cha = triggerResult.chat.message
+          transcriptChanged = true
         }
 
         cha.push({
@@ -226,6 +236,7 @@
           time: Date.now(),
           name: null,
         })
+        transcriptChanged = true
       } else {
         cha.push({
           role: 'user',
@@ -233,13 +244,15 @@
           time: Date.now(),
           name: null,
         })
+        transcriptChanged = true
       }
     }
     messageInput = ''
     messageInputTranslate = ''
-    DBState.db.characters[selectedChar].chats[
-      DBState.db.characters[selectedChar].chatPage
-    ].message = cha
+    currentChatRecord.message = cha
+    if (transcriptChanged && currentChatRecord.id) {
+      dispatchReplaceMessages(currentChatRecord.id, cha, previous)
+    }
     rerolls = []
     await sleep(10)
     updateInputSizeAll()
@@ -261,13 +274,15 @@
     if (genId) {
       const r = Prereroll(genId)
       if (r) {
-        DBState.db.characters[$selectedCharID].chats[
-          DBState.db.characters[$selectedCharID].chatPage
-        ].message[
+        const previous = currentChatStateSnapshot()
+        const currentChatRecord =
           DBState.db.characters[$selectedCharID].chats[
             DBState.db.characters[$selectedCharID].chatPage
-          ].message.length - 1
-        ].data = r
+          ]
+        const message = currentChatRecord.message[currentChatRecord.message.length - 1]
+        const messageId = ensureMessageId(message)
+        message.data = r
+        dispatchUpdateMessage(messageId, { data: r }, previous)
         return
       }
     }
@@ -282,9 +297,15 @@
         for (let i = 0; i < rerollData.length; i++) {
           msgs[msgs.length - rerollData.length + i] = rerollData[i]
         }
-        DBState.db.characters[$selectedCharID].chats[
-          DBState.db.characters[$selectedCharID].chatPage
-        ].message = msgs
+        const previous = currentChatStateSnapshot()
+        const currentChatRecord =
+          DBState.db.characters[$selectedCharID].chats[
+            DBState.db.characters[$selectedCharID].chatPage
+          ]
+        currentChatRecord.message = msgs
+        if (currentChatRecord.id) {
+          dispatchReplaceMessages(currentChatRecord.id, msgs, previous)
+        }
       }
       return
     }
@@ -320,9 +341,15 @@
         return
       }
     }
-    DBState.db.characters[$selectedCharID].chats[
-      DBState.db.characters[$selectedCharID].chatPage
-    ].message = cha
+    const previous = currentChatStateSnapshot()
+    const currentChatRecord =
+      DBState.db.characters[$selectedCharID].chats[
+        DBState.db.characters[$selectedCharID].chatPage
+      ]
+    currentChatRecord.message = cha
+    if (currentChatRecord.id) {
+      dispatchReplaceMessages(currentChatRecord.id, cha, previous)
+    }
     await sendChatMain()
   }
 
@@ -341,13 +368,15 @@
     if (genId) {
       const r = PreUnreroll(genId)
       if (r) {
-        DBState.db.characters[$selectedCharID].chats[
-          DBState.db.characters[$selectedCharID].chatPage
-        ].message[
+        const previous = currentChatStateSnapshot()
+        const currentChatRecord =
           DBState.db.characters[$selectedCharID].chats[
             DBState.db.characters[$selectedCharID].chatPage
-          ].message.length - 1
-        ].data = r
+          ]
+        const message = currentChatRecord.message[currentChatRecord.message.length - 1]
+        const messageId = ensureMessageId(message)
+        message.data = r
+        dispatchUpdateMessage(messageId, { data: r }, previous)
         return
       }
     }
@@ -364,9 +393,15 @@
       for (let i = 0; i < rerollData.length; i++) {
         msgs[msgs.length - rerollData.length + i] = rerollData[i]
       }
-      DBState.db.characters[$selectedCharID].chats[
-        DBState.db.characters[$selectedCharID].chatPage
-      ].message = msgs
+      const previous = currentChatStateSnapshot()
+      const currentChatRecord =
+        DBState.db.characters[$selectedCharID].chats[
+          DBState.db.characters[$selectedCharID].chatPage
+        ]
+      currentChatRecord.message = msgs
+      if (currentChatRecord.id) {
+        dispatchReplaceMessages(currentChatRecord.id, msgs, previous)
+      }
     }
   }
 
@@ -800,18 +835,21 @@
         {:else}
           <div
             onclick={(e) => {
-              DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].message.push({
+              const previous = currentChatStateSnapshot()
+              const currentChatRecord =
+                DBState.db.characters[$selectedCharID].chats[
+                  DBState.db.characters[$selectedCharID].chatPage
+                ]
+              currentChatRecord.message.push({
                 role: 'char',
                 data: '',
               })
               DBState.db.characters[$selectedCharID].chats[
                 DBState.db.characters[$selectedCharID].chatPage
-              ] =
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ]
+              ] = currentChatRecord
+              if (currentChatRecord.id) {
+                dispatchReplaceMessages(currentChatRecord.id, currentChatRecord.message, previous)
+              }
             }}
             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
             style:height={inputHeight}

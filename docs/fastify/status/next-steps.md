@@ -10,34 +10,30 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-3b landed chat record, chat-folder, and chat-level metadata commands.
-It added Fastify chat and chat-folder routes, typed browser helpers, and
-Fastify-mode dispatch for selection, lifecycle, forking, folder metadata,
-imports, author notes, persona binding, and bookmarks while keeping
-local/Tauri mutation behavior intact.
+9-3c landed message history commands. It added Fastify message append,
+update, delete, truncate, and replace routes, typed browser helpers, and
+Fastify-mode dispatch for visible transcript append/edit/delete/truncate,
+disable toggles, playground role changes, bookmark id setup, and whole
+transcript replacement while keeping local/Tauri mutation behavior intact.
 
 ## Immediate Pickup
 
 Continue Phase 9 implementation with
-**9-3c - Message history commands**.
+**9-3d - Generation persistence handoff**.
 
 Expected scope:
 
-- Add message history command coverage according to
+- Add generation persistence command coverage according to
   `phase-9-command-map.md`:
-  `POST /api/v1/commands/chats/:chatId/messages`,
-  `PATCH /api/v1/commands/messages/:messageId`,
-  `DELETE /api/v1/commands/messages/:messageId`,
-  `POST /api/v1/commands/chats/:chatId/messages/truncate`, and
-  `PUT /api/v1/commands/chats/:chatId/messages`.
-- Add stable message-row ids in the current schema where needed. Existing
-  rows already often use `message.chatId`; decide whether to preserve that
-  field as the public message id or introduce/normalize a separate `id`
-  before wiring commands.
-- Replace server-backed web transcript append, edit, delete, truncate,
-  disable, role/name, per-message bookmark-id setup, prompt-info edits,
-  and whole-transcript replacement paths with typed commands while keeping
-  Tauri/local mode on the existing mutation path.
+  `POST /api/v1/commands/chats/:chatId/generation-result`.
+- Persist assistant row writes, reroll data, prompt info, generation info,
+  and terminal post-generation metadata after server-backed generation.
+- Split transient streaming display state from durable message updates.
+- Replace the server-backed generation message patch/restoration paths
+  with the generation persistence command where the mutation is durable.
+- Keep generic message append/update/delete/truncate/replace on the 9-3c
+  commands. Do not widen message patch commands to accept generation
+  persistence fields as ad hoc updates.
 - Keep chat record/folder metadata on the 9-3b commands. Do not widen
   `PATCH /api/v1/commands/chats/:chatId` to accept `message`,
   `localLore`, `scriptstate`, or generation persistence.
@@ -45,21 +41,21 @@ Expected scope:
   personas, translator presets, loadouts, or character scalar/catalog
   commands in this slice.
 - Preserve the 9-1 command contract: every command takes
-  `baseRevision`, returns `{ revision, event }`, emits the mapped message
-  event, and returns 409
+  `baseRevision`, returns `{ revision, event }`, emits the mapped
+  generation event, and returns 409
   `{ error: "revision_conflict", currentRevision }` on stale input.
-- Cover representative append/update/delete/truncate/replace flows,
-  rollback/no-revision-bump on validation failure, 404 missing chat/message
-  behavior, conflict retry where applicable, and no command dispatch
-  outside Fastify mode.
+- Cover representative successful generation persistence, rollback/no
+  revision bump on validation failure, 404 missing chat/message behavior,
+  conflict retry where applicable, and no command dispatch outside
+  Fastify mode.
 
-Out of scope for 9-3c:
+Out of scope for 9-3d:
 
 - Settings groups, bot presets, prompt templates/items, personas,
   translator presets, loadouts, character catalog/profile commands, and
   chat record/folder metadata commands.
-- Generation-persistence and scriptstate commands; keep them in 9-3d and
-  9-3e.
+- Generic message history commands; they landed in 9-3c.
+- Scriptstate commands; keep them in 9-3e.
 - Lorebook/script/trigger child collections and asset bytes/references;
   keep them in 9-4.
 - Enforcing a read-only `DBState.db` guard.
@@ -84,23 +80,27 @@ Implementation notes:
 - Tauri keeps its local storage path. Phase 9 gates server-backed web
   behavior without changing local desktop storage mode.
 - Character scalar profile patches now reject child collections and asset
-  reference fields owned by later slices. Do not loosen that in 9-3c.
+  reference fields owned by later slices. Do not loosen that in 9-3d.
 - Chat metadata patches now reject fields owned by later slices:
   `message`, `localLore`, `scriptstate`, generation/runtime fields, and
-  child collections. Do not loosen that in 9-3c; use message commands
-  instead.
+  child collections. Do not loosen that in 9-3d; use message or
+  generation commands instead.
+- Message patch commands now reject `generationInfo`; keep durable
+  generation metadata on the 9-3d generation persistence command.
+- Message rows preserve existing `message.chatId` as the public message id.
+  The 9-3c helpers normalize missing or duplicate ids during message
+  command mutations.
 
 ## Later Queue
 
-1. 9-3d - Generation persistence handoff.
-2. 9-3e - Chat `scriptstate` and scripting side effects.
-3. 9-3f - Compatibility setters and access adapters.
-4. 9-4 - Lorebooks, modules, plugins, assets.
-5. 9-5 - Browser projection.
-6. 9-6 - Storage and provider-key gating.
-7. 9-7 - Server `.risu` codec core.
-8. 9-8 - Import/export routes and bundle assets.
-9. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-3e - Chat `scriptstate` and scripting side effects.
+2. 9-3f - Compatibility setters and access adapters.
+3. 9-4 - Lorebooks, modules, plugins, assets.
+4. 9-5 - Browser projection.
+5. 9-6 - Storage and provider-key gating.
+6. 9-7 - Server `.risu` codec core.
+7. 9-8 - Import/export routes and bundle assets.
+8. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -113,7 +113,7 @@ Implementation notes:
 
 ## Verification
 
-Run focused command/message tests while building 9-3c, then
+Run focused command/generation tests while building 9-3d, then
 before closing the slice run the full matrix:
 
 ```bash
@@ -123,11 +123,11 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-3b:
+Last recorded full baselines after 9-3c:
 
 - `pnpm check` - clean, with 0 Svelte errors and 0 warnings.
-- `pnpm test` - 679 tests passed, 4 skipped.
-- `pnpm api:test` - 1087 tests passed.
+- `pnpm test` - 680 tests passed, 4 skipped.
+- `pnpm api:test` - 1090 tests passed.
 - `pnpm build` - passed with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -140,7 +140,7 @@ Last recorded full baselines after 9-3b:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-3b.md`](../phases-completed/phase-9-client-thinning-9-3b.md)
+  [`../phases-completed/phase-9-client-thinning-9-3c.md`](../phases-completed/phase-9-client-thinning-9-3c.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

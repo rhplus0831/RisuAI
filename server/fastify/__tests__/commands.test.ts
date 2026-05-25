@@ -2369,3 +2369,282 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-3c message history commands', () => {
+  it('appends, updates, deletes, truncates, and replaces messages by id', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'hello', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const appended = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        message: { role: 'char', data: 'hi', chatId: 'msg-b' },
+      },
+    })
+    expect(appended.statusCode).toBe(200)
+    expect(appended.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'message.appended',
+        revision: 2,
+        resource: 'message',
+        id: 'msg-b',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+      messageId: 'msg-b',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: appended.json().revision,
+        patch: {
+          data: 'hi there',
+          disabled: true,
+          name: 'Assistant',
+          promptInfo: { promptName: 'Preset' },
+        },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toMatchObject({
+      revision: 3,
+      event: {
+        type: 'message.updated',
+        resource: 'message',
+        id: 'msg-b',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+      messageId: 'msg-b',
+    })
+
+    const replaced = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        messages: [
+          { role: 'user', data: 'one', chatId: 'msg-1' },
+          { role: 'char', data: 'two', chatId: 'msg-2', generationInfo: { model: 'm' } },
+          { role: 'user', data: 'three', chatId: 'msg-3' },
+        ],
+      },
+    })
+    expect(replaced.statusCode).toBe(200)
+    expect(replaced.json()).toMatchObject({
+      revision: 4,
+      event: {
+        type: 'messages.replaced',
+        resource: 'message',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+    })
+
+    const truncated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/truncate',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: replaced.json().revision,
+        afterMessageId: 'msg-1',
+      },
+    })
+    expect(truncated.statusCode).toBe(200)
+    expect(truncated.json()).toMatchObject({
+      revision: 5,
+      event: {
+        type: 'message.truncated',
+        resource: 'message',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+      afterMessageId: 'msg-1',
+      removedCount: 2,
+    })
+
+    const appendedAgain = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: truncated.json().revision,
+        message: { role: 'char', data: 'tail', chatId: 'msg-tail' },
+      },
+    })
+    expect(appendedAgain.statusCode).toBe(200)
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/messages/msg-tail',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: appendedAgain.json().revision },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: 7,
+      event: {
+        type: 'message.deleted',
+        resource: 'message',
+        id: 'msg-tail',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+      messageId: 'msg-tail',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'one', chatId: 'msg-1' },
+    ])
+  })
+
+  it('normalizes missing message ids and rejects malformed message commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [
+                { role: 'user', data: 'missing id' },
+                { role: 'char', data: 'duplicate a', chatId: 'dup' },
+                { role: 'user', data: 'duplicate b', chatId: 'dup' },
+              ],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const duplicateReplacement = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        messages: [
+          { role: 'user', data: 'a', chatId: 'same' },
+          { role: 'char', data: 'b', chatId: 'same' },
+        ],
+      },
+    })
+    expect(duplicateReplacement.statusCode).toBe(400)
+    expect(duplicateReplacement.json().error).toBe('Duplicate message id: same')
+
+    const badPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/dup',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { generationInfo: { model: 'later-slice' } },
+      },
+    })
+    expect(badPatch.statusCode).toBe(400)
+    expect(badPatch.json().error).toBe(
+      'patch.generationInfo is not supported for message commands',
+    )
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    const messages = bootstrap.json().database.characters[0].chats[0].message
+    expect(messages).toEqual([
+      { role: 'user', data: 'missing id' },
+      { role: 'char', data: 'duplicate a', chatId: 'dup' },
+      { role: 'user', data: 'duplicate b', chatId: 'dup' },
+    ])
+  })
+
+  it('returns 404 and 409 for missing messages and stale message revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'hello', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/missing',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { data: 'Nope' },
+      },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Message not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
+        patch: { data: 'Stale' },
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

@@ -235,21 +235,17 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-3b chat records/folders/metadata is complete. Continue with
-**9-3c - Message history commands**:
+9-3c message history commands are complete. Continue with
+**9-3d - Generation persistence handoff**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement message append/update/delete/truncate/replace commands from
-  the Characters, Chats, Messages command-family table.
-- Normalize or preserve stable message ids before public commands address
-  individual rows.
-- Replace transcript append/edit/delete/truncate/disable/role/name,
-  prompt-info, and full-message replacement paths in server-backed web
-  mode with typed commands while keeping local/Tauri behavior unchanged.
-- Keep generation persistence, scriptstate, lorebook/script/trigger child
-  collections, projection enforcement, and plugin bridge work in their
-  later slices.
-- Preserve the 9-1 command response and conflict contract for every
-  message command.
+- Implement `POST /api/v1/commands/chats/:chatId/generation-result`.
+- Persist assistant row writes, reroll data, prompt info, generation info,
+  and terminal post-generation metadata after server-backed generation.
+- Keep transient streaming display state browser-local.
+- Keep scriptstate, lorebook/script/trigger child collections, projection
+  enforcement, and plugin bridge work in their later slices.
+- Preserve the 9-1 command response and conflict contract for the
+  generation persistence command.

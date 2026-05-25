@@ -98,6 +98,17 @@ import {
   validateFullChatFolderOrder,
   validateFullChatOrder,
 } from '../commands/chats.js'
+import {
+  createMessageRecord,
+  normalizeAllChatMessages,
+  readMessageId,
+  readMessagePatch,
+  readReplacementMessages,
+  readTruncateAfterMessageId,
+  requireChatMessages,
+  requireMessageLocation,
+  validateUniqueMessageIds,
+} from '../commands/messages.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -178,6 +189,14 @@ interface ChatFolderCommandBody {
   patch?: unknown
   folderIds?: unknown
   selectedChatId?: unknown
+}
+
+interface MessageCommandBody {
+  baseRevision?: unknown
+  message?: unknown
+  patch?: unknown
+  messages?: unknown
+  afterMessageId?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -2615,6 +2634,196 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatFolderReordered, parentId: characterId },
             extra: { selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/chats/:chatId/messages', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as MessageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const message = createMessageRecord(body.message)
+      const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllChatMessages(database)
+          const { messages } = requireChatMessages(characters, chatId)
+          if (messages.some((existing) => existing.chatId === message.chatId)) {
+            throw new ValidationError(`Duplicate message id: ${message.chatId}`)
+          }
+          messages.push(message)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.messageAppended, id: message.chatId, parentId: chatId },
+            extra: { chatId, messageId: message.chatId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/messages/:messageId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const messageId = readMessageId((req.params as { messageId?: unknown }).messageId)
+      const body = (req.body ?? {}) as MessageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readMessagePatch(body.patch)
+      const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllChatMessages(database)
+          const { chat, messageIndex } = requireMessageLocation(characters, messageId)
+          const messages = chat.message as Record<string, unknown>[]
+          messages[messageIndex] = {
+            ...messages[messageIndex],
+            ...patch,
+            chatId: messageId,
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.messageUpdated, id: messageId, parentId: chat.id },
+            extra: { chatId: chat.id, messageId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/messages/:messageId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const messageId = readMessageId((req.params as { messageId?: unknown }).messageId)
+      const body = (req.body ?? {}) as MessageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllChatMessages(database)
+          const { chat, messageIndex } = requireMessageLocation(characters, messageId)
+          chat.message.splice(messageIndex, 1)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.messageDeleted, id: messageId, parentId: chat.id },
+            extra: { chatId: chat.id, messageId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/chats/:chatId/messages/truncate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as MessageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const afterMessageId = readTruncateAfterMessageId(body.afterMessageId)
+      const result = applyJsonCommandMutation<{
+        chatId: string
+        afterMessageId: string | null
+        removedCount: number
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllChatMessages(database)
+          const { messages } = requireChatMessages(characters, chatId)
+          const keepCount =
+            afterMessageId === null
+              ? 0
+              : messages.findIndex((message) => message.chatId === afterMessageId) + 1
+          if (afterMessageId !== null && keepCount === 0) {
+            throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
+          }
+          const removedCount = messages.length - keepCount
+          messages.splice(keepCount)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.messageTruncated, parentId: chatId },
+            extra: { chatId, afterMessageId, removedCount },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/chats/:chatId/messages', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as MessageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const replacement = readReplacementMessages(body.messages)
+      const result = applyJsonCommandMutation<{ chatId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const characters = normalizeAllChatMessages(database)
+          const { chat } = requireChatMessages(characters, chatId)
+          validateUniqueMessageIds(replacement)
+          chat.message = replacement
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.messagesReplaced, parentId: chatId },
+            extra: { chatId },
           }
         },
       })

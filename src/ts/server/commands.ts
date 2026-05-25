@@ -427,6 +427,12 @@ export type ChatFolderSnapshot = Record<string, unknown> & {
   folded?: boolean
 }
 
+export type MessageSnapshot = Record<string, unknown> & {
+  role?: 'user' | 'char'
+  data?: string
+  chatId?: string
+}
+
 export interface PresetCommandInput {
   baseRevision: number
 }
@@ -654,6 +660,30 @@ export interface ReorderChatFoldersCommandInput extends ChatCommandInput {
   characterId: string
   folderIds: string[]
   selectedChatId?: string
+}
+
+export interface AppendMessageCommandInput extends ChatCommandInput {
+  chatId: string
+  message: MessageSnapshot
+}
+
+export interface UpdateMessageCommandInput extends ChatCommandInput {
+  messageId: string
+  patch: MessageSnapshot
+}
+
+export interface DeleteMessageCommandInput extends ChatCommandInput {
+  messageId: string
+}
+
+export interface TruncateMessagesCommandInput extends ChatCommandInput {
+  chatId: string
+  afterMessageId?: string | null
+}
+
+export interface ReplaceMessagesCommandInput extends ChatCommandInput {
+  chatId: string
+  messages: MessageSnapshot[]
 }
 
 export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
@@ -1361,6 +1391,77 @@ export async function reorderChatFoldersCommand(
       signal,
     },
   )
+}
+
+export async function appendMessageCommand(
+  input: AppendMessageCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; messageId: string }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/messages`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      message: input.message,
+    },
+    signal,
+  })
+}
+
+export async function updateMessageCommand(
+  input: UpdateMessageCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; messageId: string }>> {
+  return requestCommandJson(`/messages/${encodeURIComponent(input.messageId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deleteMessageCommand(
+  input: DeleteMessageCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; messageId: string }>> {
+  return requestCommandJson(`/messages/${encodeURIComponent(input.messageId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function truncateMessagesCommand(
+  input: TruncateMessagesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{ chatId: string; afterMessageId: string | null; removedCount: number }>
+> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/messages/truncate`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      afterMessageId: input.afterMessageId ?? null,
+    },
+    signal,
+  })
+}
+
+export async function replaceMessagesCommand(
+  input: ReplaceMessagesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/messages`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      messages: input.messages,
+    },
+    signal,
+  })
 }
 
 export async function runServerPresetCommand<T extends Record<string, unknown> = {}>(

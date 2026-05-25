@@ -179,6 +179,26 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'chatFolder.reordered',
     resource: 'chatFolder',
   },
+  messageAppended: {
+    type: 'message.appended',
+    resource: 'message',
+  },
+  messageUpdated: {
+    type: 'message.updated',
+    resource: 'message',
+  },
+  messageDeleted: {
+    type: 'message.deleted',
+    resource: 'message',
+  },
+  messageTruncated: {
+    type: 'message.truncated',
+    resource: 'message',
+  },
+  messagesReplaced: {
+    type: 'messages.replaced',
+    resource: 'message',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

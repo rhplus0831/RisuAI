@@ -72,8 +72,13 @@
   import { getLLMCache, setLLMCache } from '../../ts/translator/translator'
   import {
     currentChatStateSnapshot,
+    dispatchDeleteMessage,
     dispatchForkChat,
+    dispatchReplaceMessages,
+    dispatchTruncateMessages,
     dispatchUpdateChat,
+    dispatchUpdateMessage,
+    ensureMessageId,
   } from 'src/ts/chatCommands'
 
   let translating = $state(false)
@@ -132,15 +137,19 @@
   let partialEditEnabled = $state(true)
 
   async function rm(e: MouseEvent, rec?: boolean) {
-    if (e.shiftKey) {
-      let msg =
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ].message
-      msg = msg.slice(0, idx)
+    const previous = currentChatStateSnapshot()
+    const chat =
       DBState.db.characters[selIdState.selId].chats[
         DBState.db.characters[selIdState.selId].chatPage
-      ].message = msg
+      ]
+    if (e.shiftKey) {
+      let msg = chat.message
+      const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
+      msg = msg.slice(0, idx)
+      chat.message = msg
+      if (chat.id) {
+        dispatchTruncateMessages(chat.id, afterMessageId, previous)
+      }
       return
     }
 
@@ -148,43 +157,52 @@
     if (rm) {
       if (DBState.db.instantRemove || rec) {
         const r = await alertConfirm(language.instantRemoveConfirm)
-        let msg =
-          DBState.db.characters[selIdState.selId].chats[
-            DBState.db.characters[selIdState.selId].chatPage
-          ].message
+        let msg = chat.message
         if (!r) {
+          const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
           msg = msg.slice(0, idx)
+          chat.message = msg
+          if (chat.id) {
+            dispatchTruncateMessages(chat.id, afterMessageId, previous)
+          }
         } else {
+          const messageId = ensureMessageId(msg[idx])
           msg.splice(idx, 1)
+          chat.message = msg
+          dispatchDeleteMessage(messageId, previous)
         }
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ].message = msg
       } else {
-        let msg =
-          DBState.db.characters[selIdState.selId].chats[
-            DBState.db.characters[selIdState.selId].chatPage
-          ].message
+        let msg = chat.message
+        const messageId = ensureMessageId(msg[idx])
         msg.splice(idx, 1)
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ].message = msg
+        chat.message = msg
+        dispatchDeleteMessage(messageId, previous)
       }
     }
   }
 
   async function edit() {
-    DBState.db.characters[selIdState.selId].chats[
-      DBState.db.characters[selIdState.selId].chatPage
-    ].message[idx].data = message
+    const previous = currentChatStateSnapshot()
+    const chat =
+      DBState.db.characters[selIdState.selId].chats[
+        DBState.db.characters[selIdState.selId].chatPage
+      ]
+    const messageId = ensureMessageId(chat.message[idx])
+    chat.message[idx].data = message
+    dispatchUpdateMessage(messageId, { data: message }, previous)
   }
 
   function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
     if (idx >= 0) {
+      const previous = currentChatStateSnapshot()
+      const chat =
+        DBState.db.characters[selIdState.selId].chats[
+          DBState.db.characters[selIdState.selId].chatPage
+        ]
       message = e.detail.newData
-      DBState.db.characters[selIdState.selId].chats[
-        DBState.db.characters[selIdState.selId].chatPage
-      ].message[idx].data = e.detail.newData
+      const messageId = ensureMessageId(chat.message[idx])
+      chat.message[idx].data = e.detail.newData
+      dispatchUpdateMessage(messageId, { data: e.detail.newData }, previous)
       displaya(e.detail.newData)
     }
   }
@@ -347,6 +365,7 @@
 
     let messageId = chat.message[idx]?.chatId
     const messageContent = chat.message[idx]?.data
+    const hadMessageId = Boolean(messageId)
 
     if (!messageId) {
       messageId = uuidv4()
@@ -423,6 +442,9 @@
     }
 
     chat.bookmarks = [...chat.bookmarks]
+    if (!hadMessageId && chat.id) {
+      dispatchReplaceMessages(chat.id, chat.message, previous)
+    }
     if (chat.id) {
       dispatchUpdateChat(
         chat.id,
@@ -1110,9 +1132,13 @@
         DBState.db.characters[selIdState.selId].chats[
           DBState.db.characters[selIdState.selId].chatPage
         ].message[idx]
+      const previous = currentChatStateSnapshot()
+      const messageId = ensureMessageId(currentMessage)
+      const disabled = !currentMessage.disabled
       DBState.db.characters[selIdState.selId].chats[
         DBState.db.characters[selIdState.selId].chatPage
-      ].message[idx].disabled = !currentMessage.disabled
+      ].message[idx].disabled = disabled
+      dispatchUpdateMessage(messageId, { disabled }, previous)
     }}
   >
     <PowerOff size={20} />
@@ -1129,9 +1155,13 @@
         DBState.db.characters[selIdState.selId].chats[
           DBState.db.characters[selIdState.selId].chatPage
         ].message[idx]
+      const previous = currentChatStateSnapshot()
+      const messageId = ensureMessageId(currentMessage)
+      const disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
       DBState.db.characters[selIdState.selId].chats[
         DBState.db.characters[selIdState.selId].chatPage
-      ].message[idx].disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
+      ].message[idx].disabled = disabled
+      dispatchUpdateMessage(messageId, { disabled }, previous)
     }}
   >
     <Scissors size={20} />
@@ -1436,14 +1466,15 @@
               <button
                 class="ml-2 text-textcolor2 hover:text-textcolor"
                 onclick={() => {
-                  DBState.db.characters[selIdState.selId].chats[
-                    DBState.db.characters[selIdState.selId].chatPage
-                  ].message[idx].role =
+                  const previous = currentChatStateSnapshot()
+                  const chat =
                     DBState.db.characters[selIdState.selId].chats[
                       DBState.db.characters[selIdState.selId].chatPage
-                    ].message[idx].role === 'char'
-                      ? 'user'
-                      : 'char'
+                    ]
+                  const messageId = ensureMessageId(chat.message[idx])
+                  const role = chat.message[idx].role === 'char' ? 'user' : 'char'
+                  chat.message[idx].role = role
+                  dispatchUpdateMessage(messageId, { role }, previous)
                   ReloadChatPointer.update((v) => {
                     v[idx] = (v[idx] ?? 0) + 1
                     return v

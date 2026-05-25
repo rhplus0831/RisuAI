@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-3b - Chat records, folders, and metadata**. Next slice:
-**9-3c - Message history commands**.
+**9-3c - Message history commands**. Next slice:
+**9-3d - Generation persistence handoff**.
 
 ## Goal
 
@@ -156,6 +156,8 @@ surfaces.
   - **9-3c - Message history commands.** User-visible transcript append,
     edit, delete, truncate, disable, role, bookmark, fork, and prompt-info
     edits.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-3c.md`](../phases-completed/phase-9-client-thinning-9-3c.md).
   - **9-3d - Generation persistence handoff.** Split message-row writes,
     streaming state, and reroll/post-generation metadata. Preserve the
     sendChat fixture guardrails across the full group.

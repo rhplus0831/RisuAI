@@ -18,6 +18,7 @@ vi.mock('../storage/nodeStorage', () => ({
 
 import {
   canUseServerCommands,
+  appendMessageCommand,
   createChatCommand,
   createChatFolderCommand,
   createCharacterCommand,
@@ -31,6 +32,7 @@ import {
   deleteChatFolderCommand,
   deleteCharacterCommand,
   deleteLoadoutCommand,
+  deleteMessageCommand,
   deletePersonaCommand,
   deletePromptItemCommand,
   deleteTranslatorPresetCommand,
@@ -49,14 +51,17 @@ import {
   reorderPresetsCommand,
   runServerCommand,
   runServerPresetCommand,
+  replaceMessagesCommand,
   selectCharacterCommand,
   selectPersonaCommand,
   selectTranslatorPresetCommand,
   touchLoadoutCommand,
+  truncateMessagesCommand,
   updateCharacterCommand,
   updateChatCommand,
   updateChatFolderCommand,
   updateLoadoutCommand,
+  updateMessageCommand,
   updatePersonaCommand,
   updateTranslatorPresetCommand,
   selectPresetCommand,
@@ -1551,6 +1556,151 @@ describe('server command API adapter', () => {
           baseRevision: 8,
           folderIds: ['folder-a'],
           selectedChatId: 'chat-a',
+        },
+      },
+    ])
+  })
+
+  it('dispatches message history commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/messages/truncate')) {
+        return {
+          revision: 4,
+          event: { type: 'message.truncated', revision: 4, resource: 'message' },
+          chatId: 'chat-a',
+          afterMessageId: 'msg-a',
+          removedCount: 2,
+        }
+      }
+      if (url.endsWith('/chats/chat-a/messages')) {
+        const method = commandFetch.calls.at(-1)?.method
+        return method === 'PUT'
+          ? {
+              revision: 5,
+              event: { type: 'messages.replaced', revision: 5, resource: 'message' },
+              chatId: 'chat-a',
+            }
+          : {
+              revision: 1,
+              event: {
+                type: 'message.appended',
+                revision: 1,
+                resource: 'message',
+                id: 'msg-a',
+              },
+              chatId: 'chat-a',
+              messageId: 'msg-a',
+            }
+      }
+      if (url.endsWith('/messages/msg-a')) {
+        const method = commandFetch.calls.at(-1)?.method
+        return method === 'DELETE'
+          ? {
+              revision: 3,
+              event: {
+                type: 'message.deleted',
+                revision: 3,
+                resource: 'message',
+                id: 'msg-a',
+              },
+              chatId: 'chat-a',
+              messageId: 'msg-a',
+            }
+          : {
+              revision: 2,
+              event: {
+                type: 'message.updated',
+                revision: 2,
+                resource: 'message',
+                id: 'msg-a',
+              },
+              chatId: 'chat-a',
+              messageId: 'msg-a',
+            }
+      }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      appendMessageCommand({
+        baseRevision: 0,
+        chatId: 'chat-a',
+        message: { role: 'user', data: 'hello', chatId: 'msg-a' },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 1, messageId: 'msg-a' })
+
+    await expect(
+      updateMessageCommand({
+        baseRevision: 1,
+        messageId: 'msg-a',
+        patch: { data: 'edited', disabled: true },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, messageId: 'msg-a' })
+
+    await expect(
+      deleteMessageCommand({
+        baseRevision: 2,
+        messageId: 'msg-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, messageId: 'msg-a' })
+
+    await expect(
+      truncateMessagesCommand({
+        baseRevision: 3,
+        chatId: 'chat-a',
+        afterMessageId: 'msg-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 4, removedCount: 2 })
+
+    await expect(
+      replaceMessagesCommand({
+        baseRevision: 4,
+        chatId: 'chat-a',
+        messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, chatId: 'chat-a' })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/chats/chat-a/messages',
+        method: 'POST',
+        body: {
+          baseRevision: 0,
+          message: { role: 'user', data: 'hello', chatId: 'msg-a' },
+        },
+      },
+      {
+        url: '/api/v1/commands/messages/msg-a',
+        method: 'PATCH',
+        body: {
+          baseRevision: 1,
+          patch: { data: 'edited', disabled: true },
+        },
+      },
+      {
+        url: '/api/v1/commands/messages/msg-a',
+        method: 'DELETE',
+        body: {
+          baseRevision: 2,
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/messages/truncate',
+        method: 'POST',
+        body: {
+          baseRevision: 3,
+          afterMessageId: 'msg-a',
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/messages',
+        method: 'PUT',
+        body: {
+          baseRevision: 4,
+          messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
         },
       },
     ])

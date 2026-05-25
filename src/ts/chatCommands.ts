@@ -1,22 +1,29 @@
 import { get } from 'svelte/store'
 import {
   canUseServerCommands,
+  appendMessageCommand,
   createChatCommand,
   createChatFolderCommand,
   deleteChatCommand,
   deleteChatFolderCommand,
+  deleteMessageCommand,
   forkChatCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
+  replaceMessagesCommand,
   runServerCommand,
+  truncateMessagesCommand,
   updateChatCommand,
   updateChatFolderCommand,
+  updateMessageCommand,
   type ChatFolderSnapshot,
   type ChatSnapshot,
+  type MessageSnapshot,
   type ServerCommandResult,
 } from './server/commands'
 import { DBState, ReloadGUIPointer, selectedCharID } from './stores.svelte'
-import type { Chat, ChatFolder, character } from './storage/database.svelte'
+import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
+import { v4 } from 'uuid'
 
 export interface ChatStateSnapshot {
   characters: character[]
@@ -35,6 +42,18 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'lastDate',
   'bookmarks',
   'bookmarkNames',
+])
+
+export const MESSAGE_PATCH_ALLOWED_KEYS = new Set([
+  'role',
+  'data',
+  'saying',
+  'time',
+  'promptInfo',
+  'name',
+  'otherUser',
+  'disabled',
+  'isComment',
 ])
 
 export function cloneJsonValue<T>(value: T): T {
@@ -61,6 +80,13 @@ export function runChatCommand<T extends Record<string, unknown>>(
 ): void {
   if (!canUseServerCommands()) return
   void runServerCommand({ command, rollback })
+}
+
+export function runMessageCommand<T extends Record<string, unknown>>(
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
+  rollback: () => void,
+): void {
+  runChatCommand(command, rollback)
 }
 
 export function dispatchCreateChat(
@@ -231,10 +257,111 @@ export function toChatFolderSnapshot(folder: ChatFolder): ChatFolderSnapshot {
   return cloneJsonValue(folder) as unknown as ChatFolderSnapshot
 }
 
+export function dispatchAppendMessage(
+  chatId: string,
+  message: Message,
+  previous: ChatStateSnapshot,
+): void {
+  ensureMessageId(message)
+  runMessageCommand(
+    (baseRevision) =>
+      appendMessageCommand({
+        baseRevision,
+        chatId,
+        message: toMessageSnapshot(message),
+      }),
+    () => restoreChatState(previous),
+  )
+}
+
+export function dispatchUpdateMessage(
+  messageId: string,
+  patch: MessageSnapshot,
+  previous: ChatStateSnapshot,
+): void {
+  const commandPatch = sanitizeMessagePatch(patch)
+  if (Object.keys(commandPatch).length === 0) return
+  runMessageCommand(
+    (baseRevision) =>
+      updateMessageCommand({
+        baseRevision,
+        messageId,
+        patch: commandPatch,
+      }),
+    () => restoreChatState(previous),
+  )
+}
+
+export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnapshot): void {
+  runMessageCommand(
+    (baseRevision) =>
+      deleteMessageCommand({
+        baseRevision,
+        messageId,
+      }),
+    () => restoreChatState(previous),
+  )
+}
+
+export function dispatchTruncateMessages(
+  chatId: string,
+  afterMessageId: string | null,
+  previous: ChatStateSnapshot,
+): void {
+  runMessageCommand(
+    (baseRevision) =>
+      truncateMessagesCommand({
+        baseRevision,
+        chatId,
+        afterMessageId,
+      }),
+    () => restoreChatState(previous),
+  )
+}
+
+export function dispatchReplaceMessages(
+  chatId: string,
+  messages: Message[],
+  previous: ChatStateSnapshot,
+): void {
+  for (const message of messages) {
+    ensureMessageId(message)
+  }
+  runMessageCommand(
+    (baseRevision) =>
+      replaceMessagesCommand({
+        baseRevision,
+        chatId,
+        messages: messages.map(toMessageSnapshot),
+      }),
+    () => restoreChatState(previous),
+  )
+}
+
+export function ensureMessageId(message: Message): string {
+  if (!message.chatId) {
+    message.chatId = v4()
+  }
+  return message.chatId
+}
+
+export function toMessageSnapshot(message: Message): MessageSnapshot {
+  return cloneJsonValue(message) as unknown as MessageSnapshot
+}
+
 export function sanitizeChatPatch(patch: ChatSnapshot): ChatSnapshot {
   const sanitized: ChatSnapshot = {}
   for (const [key, value] of Object.entries(patch)) {
     if (!CHAT_PATCH_ALLOWED_KEYS.has(key) || value === undefined) continue
+    sanitized[key] = cloneJsonValue(value)
+  }
+  return sanitized
+}
+
+export function sanitizeMessagePatch(patch: MessageSnapshot): MessageSnapshot {
+  const sanitized: MessageSnapshot = {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (!MESSAGE_PATCH_ALLOWED_KEYS.has(key) || value === undefined) continue
     sanitized[key] = cloneJsonValue(value)
   }
   return sanitized
