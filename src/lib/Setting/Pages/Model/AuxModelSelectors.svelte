@@ -4,6 +4,15 @@
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import { language } from 'src/lang'
   import ModelList from 'src/lib/UI/ModelList.svelte'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings([
+    'seperateModelsForAxModels',
+    'doNotChangeSeperateModels',
+    'seperateModels',
+  ])
+  onDestroy(stopServerSettingsWatch)
 </script>
 
 <div class="flex items-center mt-4">

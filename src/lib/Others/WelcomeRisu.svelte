@@ -8,6 +8,29 @@
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
   import { alertError } from 'src/ts/alert'
   import Airisu from '../../etc/Airisu.webp'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings([
+    'language',
+    'username',
+    'openAIKey',
+    'openrouterKey',
+    'claudeAPIKey',
+    'textTheme',
+    'maxContext',
+    'maxResponse',
+    'aiModel',
+    'subModel',
+    'openrouterRequestModel',
+    'translator',
+    'autoTranslate',
+    'translatorType',
+    'useAutoTranslateInput',
+    'didFirstSetup',
+    'claudeCachingExperimental',
+  ])
+  onDestroy(stopServerSettingsWatch)
 
   const airisuStyle = `background: url("${Airisu}");background-size: cover;`
   let step = $state(0)

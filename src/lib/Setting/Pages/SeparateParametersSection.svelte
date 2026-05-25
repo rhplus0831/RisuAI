@@ -4,6 +4,14 @@
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import AllSeperateParameters from 'src/lib/Others/AllSeperateParameters.svelte'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings([
+    'seperateParametersEnabled',
+    'seperateParameters',
+  ])
+  onDestroy(stopServerSettingsWatch)
 
   const paramLabels: Record<string, string> = {
     memory: 'longTermMemory',

@@ -20,6 +20,7 @@ import {
   canUseServerCommands,
   clearCachedServerCommandRevision,
   getServerCommandBaseRevision,
+  patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
 } from './commands'
@@ -179,6 +180,99 @@ describe('server command API adapter', () => {
     })
   })
 
+  it('patches mixed server-backed settings by group with the latest revision', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 10 }
+      if (url.endsWith('/settings/providers')) {
+        return { revision: 11, event: { type: 'settings.updated', revision: 11, resource: 'settings' } }
+      }
+      return { revision: 12, event: { type: 'settings.updated', revision: 12, resource: 'settings' } }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await patchServerBackedSettings({
+      patch: {
+        aiModel: 'openrouter',
+        maxContext: 12000,
+      },
+    })
+
+    expect(result).toEqual({
+      status: 'ok',
+      revision: 12,
+      event: { type: 'settings.updated', revision: 12, resource: 'settings' },
+    })
+    expect(commandFetch.calls.map((call) => ({ url: call.url, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/settings/providers',
+        body: {
+          baseRevision: 10,
+          patch: { aiModel: 'openrouter' },
+        },
+      },
+      {
+        url: '/api/v1/commands/settings/runtime',
+        body: {
+          baseRevision: 11,
+          patch: { maxContext: 12000 },
+        },
+      },
+    ])
+  })
+
+  it('retries a server-backed settings patch on conflict', async () => {
+    let providerAttempts = 0
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 4 }
+      if (url.endsWith('/settings/providers')) {
+        providerAttempts += 1
+        if (providerAttempts === 1) {
+          return jsonResponse({ error: 'revision_conflict', currentRevision: 8 }, 409)
+        }
+        return { revision: 9, event: { type: 'settings.updated', revision: 9, resource: 'settings' } }
+      }
+      return { revision: 10 }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      patchServerBackedSettings({
+        patch: { openrouterKey: 'secret' },
+      }),
+    ).resolves.toEqual({
+      status: 'ok',
+      revision: 9,
+      event: { type: 'settings.updated', revision: 9, resource: 'settings' },
+    })
+
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      null,
+      { baseRevision: 4, patch: { openrouterKey: 'secret' } },
+      { baseRevision: 8, patch: { openrouterKey: 'secret' } },
+    ])
+  })
+
+  it('rolls back optimistic settings when a server-backed patch fails', async () => {
+    const rollback = vi.fn()
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 1 }
+      return jsonResponse({ error: 'aiModel must be a string' }, 400)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await patchServerBackedSettings({
+      patch: { aiModel: 1 },
+      rollback,
+    })
+
+    expect(result).toEqual({ status: 'error', error: 'aiModel must be a string' })
+    expect(rollback).toHaveBeenCalledTimes(1)
+  })
+
   it('does not fetch when server commands are unavailable', async () => {
     platformState.isFastifyServer = false
     const commandFetch = makeCommandFetch(() => ({ revision: 2 }))
@@ -190,6 +284,22 @@ describe('server command API adapter', () => {
     })
 
     expect(result).toEqual({ status: 'unavailable' })
+    expect(commandFetch.calls).toEqual([])
+  })
+
+  it('does not dispatch server-backed settings patches outside Fastify mode', async () => {
+    platformState.isFastifyServer = false
+    const rollback = vi.fn()
+    const commandFetch = makeCommandFetch(() => ({ revision: 2 }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await patchServerBackedSettings({
+      patch: { aiModel: 'openrouter' },
+      rollback,
+    })
+
+    expect(result).toEqual({ status: 'unavailable' })
+    expect(rollback).not.toHaveBeenCalled()
     expect(commandFetch.calls).toEqual([])
   })
 })

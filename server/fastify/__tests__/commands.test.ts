@@ -335,6 +335,98 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('applies manual settings page scalar roots through grouped commands', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      aiModel: 'gpt4o-chatgpt',
+      maxContext: 8000,
+      sdProvider: 'webui',
+      username: 'User',
+    })
+
+    const provider = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          aiModel: 'openrouter',
+          forceReplaceUrl: 'https://proxy.example.test',
+          customTokenizer: 'tik',
+          echoMessage: 'pong',
+          echoDelay: 2,
+        },
+      },
+    })
+    expect(provider.statusCode).toBe(200)
+
+    const runtime = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: provider.json().revision,
+        patch: {
+          maxContext: 12000,
+          epEnabled: true,
+          seperateModels: { memory: 'mem', translate: '', emotion: '', otherAx: '' },
+        },
+      },
+    })
+    expect(runtime.statusCode).toBe(200)
+
+    const media = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/media',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: runtime.json().revision,
+        patch: {
+          sdProvider: 'wavespeed',
+          emotionProcesser: 'llm',
+          wavespeedImage: { key: 'wave-key', model: 'flux' },
+        },
+      },
+    })
+    expect(media.statusCode).toBe(200)
+
+    const account = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/account',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: media.json().revision,
+        patch: {
+          username: 'Fastify User',
+          didFirstSetup: true,
+        },
+      },
+    })
+    expect(account.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      aiModel: 'openrouter',
+      forceReplaceUrl: 'https://proxy.example.test',
+      customTokenizer: 'tik',
+      echoMessage: 'pong',
+      echoDelay: 2,
+      maxContext: 12000,
+      epEnabled: true,
+      seperateModels: { memory: 'mem', translate: '', emotion: '', otherAx: '' },
+      sdProvider: 'wavespeed',
+      emotionProcesser: 'llm',
+      wavespeedImage: { key: 'wave-key', model: 'flux' },
+      username: 'Fastify User',
+      didFirstSetup: true,
+    })
+  })
+
   it('rejects unknown setting keys without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

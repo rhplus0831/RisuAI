@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-2a-i - Scalar settings command groups**. Next slice:
-**9-2a-ii - Manual scalar settings pages**.
+**9-2a-ii - Manual scalar settings pages**. Next slice:
+**9-2b - Bot presets**.
 
 ## Goal
 
@@ -116,9 +116,11 @@ surfaces.
       browser helper support, and routed data-driven settings wrappers through
       commands in Fastify mode. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-2a-i.md`](../phases-completed/phase-9-client-thinning-9-2a-i.md).
-    - **9-2a-ii - Manual scalar settings pages.** Remaining. Replace manual
-      `DBState.db` binds/assignments in scalar settings pages with local draft
-      state plus `patchSettingsGroup`, while keeping Tauri/local paths intact.
+    - **9-2a-ii - Manual scalar settings pages.** Complete. Added the shared
+      manual settings bridge, extended scalar maps for manual provider/runtime/
+      media/account fields, and registered Fastify-only command watchers for
+      the named manual settings surfaces. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-2a-ii.md`](../phases-completed/phase-9-client-thinning-9-2a-ii.md).
   - **9-2b - Bot presets.** Create/update/delete/reorder/select/copy/import
     preset flows, preserving current selected-preset behavior.
   - **9-2c - Prompt templates/items.** Template enablement, prompt-item

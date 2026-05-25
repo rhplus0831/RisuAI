@@ -10,6 +10,15 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import ChatFormatSettings from './ChatFormatSettings.svelte'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings([
+    'reverseProxyOobaArgs',
+    'localStopStrings',
+  ])
+  onDestroy(stopServerSettingsWatch)
+
   interface Props {
     instructionMode?: boolean
   }

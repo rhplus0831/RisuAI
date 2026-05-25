@@ -15,13 +15,14 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-2a-i, Scalar settings command groups and
-  data-driven settings bridge.
-- Current gap: 9-2a still needs manual scalar settings pages moved from
-  direct `DBState.db` binds/assignments onto the grouped command helper.
-- Next default pickup: 9-2a-ii, Manual scalar settings pages.
-- Last recorded full baselines after 9-2a-i: `pnpm check` clean,
-  `pnpm test` 659 tests plus 4 skipped, `pnpm api:test` 1060 tests, and
+- Last landed slice: 9-2a-ii, Manual scalar settings page command
+  bridge.
+- Current gap: 9-2b begins bot preset lifecycle commands; 9-5 should
+  still do the residual direct-write sweep before enabling the read-only
+  `DBState.db` guard.
+- Next default pickup: 9-2b, Bot presets.
+- Last recorded full baselines after 9-2a-ii: `pnpm check` clean,
+  `pnpm test` 663 tests plus 4 skipped, `pnpm api:test` 1061 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -50,7 +51,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.    |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                           |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                           |
-| Client thinning                             | Active; 9-2a-i scalar command groups landed; next slice is 9-2a-ii manual scalar settings pages. |
+| Client thinning                             | Active; 9-2a-ii manual scalar settings bridge landed; next slice is 9-2b bot presets. |
 
 ## Maintenance Rules
 

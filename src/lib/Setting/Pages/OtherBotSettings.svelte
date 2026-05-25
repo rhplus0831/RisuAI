@@ -27,6 +27,56 @@
   } from '@lucide/svelte'
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
   import { createHypaV3Preset } from 'src/ts/process/memory/hypav3'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings([
+    'sdProvider',
+    'webUiUrl',
+    'sdSteps',
+    'sdCFG',
+    'sdConfig',
+    'NAIImgUrl',
+    'NAIApiKey',
+    'NAIImgModel',
+    'NAII2I',
+    'NAIREF',
+    'NAIImgConfig',
+    'openAIKey',
+    'dallEQuality',
+    'stabilityKey',
+    'stabilityModel',
+    'stabllityStyle',
+    'comfyConfig',
+    'comfyUiUrl',
+    'falToken',
+    'falModel',
+    'falLora',
+    'falLoraName',
+    'falLoraScale',
+    'google',
+    'ImagenModel',
+    'ImagenImageSize',
+    'ImagenAspectRatio',
+    'ImagenPersonGeneration',
+    'openaiCompatImage',
+    'wavespeedImage',
+    'ttsAutoSpeech',
+    'elevenLabKey',
+    'voicevoxUrl',
+    'huggingfaceKey',
+    'fishSpeechKey',
+    'emotionProcesser',
+    'hypaV3',
+    'hypaV3Presets',
+    'hypaV3PresetId',
+    'hypaV3Settings',
+    'hypaModel',
+    'hypaV3Key',
+    'hypaCustomSettings',
+    'voyageApiKey',
+  ])
+  onDestroy(stopServerSettingsWatch)
 
   let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
 

@@ -8,6 +8,15 @@
   import OpenrouterProviderList from 'src/lib/UI/OpenrouterProviderList.svelte'
   import { PlusIcon, TrashIcon } from '@lucide/svelte'
   import { getOpenRouterProviders } from 'src/ts/model/openrouter'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings([
+    'openrouterFallback',
+    'openrouterMiddleOut',
+    'openrouterProvider',
+  ])
+  onDestroy(stopServerSettingsWatch)
 </script>
 
 <Accordion name={`OpenRouter ${language.settings}`} styled>

@@ -89,6 +89,11 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'dynamicModelRegistry',
     'modelTools',
     'currentPluginProvider',
+    'forceReplaceUrl',
+    'novellistAPI',
+    'customTokenizer',
+    'echoMessage',
+    'echoDelay',
   ],
   runtime: [
     'useServerPromptAssembly',
@@ -123,6 +128,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'seperateParameters',
     'seperateParametersByModel',
     'disableSeperateParameterChangeOnPresetChange',
+    'epEnabled',
     'requestRetrys',
     'genTime',
     'requestLocation',
@@ -256,6 +262,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'voicevoxUrl',
     'fishSpeechKey',
     'ttsAutoSpeech',
+    'emotionProcesser',
   ],
   memory: [
     'supaMemoryKey',
@@ -332,7 +339,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'hamburgerButtonBottom',
     'enableRisuaiProTools',
   ],
-  account: ['account', 'didFirstSetup', 'localNetworkMode', 'localNetworkTimeoutSec'],
+  account: ['account', 'didFirstSetup', 'username', 'localNetworkMode', 'localNetworkTimeoutSec'],
 }
 
 const BOOLEAN_SETTING_KEYS = new Set([
@@ -367,6 +374,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'dynamicAssets',
   'dynamicAssetsEditDisplay',
   'dynamicModelRegistry',
+  'epEnabled',
   'enableBlockPartialEdit',
   'enableBookmark',
   'enableCustomFlags',
@@ -463,6 +471,7 @@ const NUMBER_SETTING_KEYS = new Set([
   'assetMaxDifference',
   'assetWidth',
   'autoContinueMinTokens',
+  'echoDelay',
   'falLoraScale',
   'frequencyPenalty',
   'genTime',
@@ -512,11 +521,13 @@ const STRING_SETTING_KEYS = new Set([
   'customFont',
   'customGUI',
   'customProxyRequestModel',
+  'customTokenizer',
   'dallEQuality',
   'deepseekReasoningEffort',
   'deepseekThinkingType',
   'descriptionPrefix',
   'echoMessage',
+  'emotionProcesser',
   'emotionPrompt2',
   'falLora',
   'falLoraName',
@@ -594,6 +605,7 @@ const STRING_SETTING_KEYS = new Set([
   'voicevoxUrl',
   'voyageApiKey',
   'webUiUrl',
+  'username',
 ])
 
 const ARRAY_SETTING_KEYS = new Set([

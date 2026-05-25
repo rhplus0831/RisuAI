@@ -62,6 +62,7 @@ track the next piece of work.
 | 9-0 - Mutation inventory / command map  | [`phase-9-client-thinning-9-0.md`](phase-9-client-thinning-9-0.md)                     | Phase 9 mutation inventory, command contract, and implementation handoff.      |
 | 9-1 - Command foundation                | [`phase-9-client-thinning-9-1.md`](phase-9-client-thinning-9-1.md)                     | Command route plumbing, JSON mutation helper, event sink, and harness command. |
 | 9-2a-i - Scalar settings commands       | [`phase-9-client-thinning-9-2a-i.md`](phase-9-client-thinning-9-2a-i.md)               | Grouped scalar settings commands, browser helper, and data-driven bridge.      |
+| 9-2a-ii - Manual scalar settings pages  | [`phase-9-client-thinning-9-2a-ii.md`](phase-9-client-thinning-9-2a-ii.md)             | Fastify-only manual settings bridge, scalar map extensions, and rollback tests. |
 
 ## Historical Status Logs
 

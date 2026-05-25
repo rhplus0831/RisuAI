@@ -18,6 +18,304 @@ export const SETTINGS_GROUPS = [
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 
+export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
+  account: 'account',
+  adaptiveThinkingEffort: 'runtime',
+  additionalPrompt: 'advanced',
+  aiModel: 'providers',
+  ainconfig: 'providers',
+  alwaysScrollToNewMessage: 'sidebar',
+  animationSpeed: 'display',
+  antiClaudeOverload: 'runtime',
+  antiServerOverloads: 'runtime',
+  apiType: 'providers',
+  askRemoval: 'sidebar',
+  assetMaxDifference: 'advanced',
+  assetWidth: 'display',
+  authRefreshes: 'providers',
+  autoContinueChat: 'runtime',
+  autoContinueMinTokens: 'runtime',
+  autoScrollToNewMessage: 'sidebar',
+  autoTranslate: 'language',
+  autoTranslateCachedOnly: 'language',
+  automaticCachePoint: 'runtime',
+  autofillRequestUrl: 'advanced',
+  banCharacterset: 'advanced',
+  betaMobileGUI: 'display',
+  blockquoteStyling: 'display',
+  botSettingAtStart: 'sidebar',
+  bulkEnabling: 'advanced',
+  chainOfThought: 'runtime',
+  checkCorruption: 'advanced',
+  claude1HourCaching: 'providers',
+  claudeAPIKey: 'providers',
+  claudeAws: 'providers',
+  claudeBatching: 'providers',
+  claudeCachingExperimental: 'providers',
+  claudeRetrivalCaching: 'providers',
+  clickToEdit: 'sidebar',
+  coldstorage: 'advanced',
+  colorScheme: 'display',
+  colorSchemeName: 'display',
+  cohereAPIKey: 'providers',
+  combineTranslation: 'language',
+  comfyConfig: 'media',
+  comfyUiUrl: 'media',
+  createFolderOnBranch: 'sidebar',
+  currentPluginProvider: 'providers',
+  customAPIFormat: 'providers',
+  customBackground: 'display',
+  customCSS: 'display',
+  customFont: 'display',
+  customGUI: 'display',
+  customModels: 'providers',
+  customProxyRequestModel: 'providers',
+  customQuotes: 'display',
+  customQuotesData: 'display',
+  customTokenizer: 'providers',
+  dallEQuality: 'media',
+  deeplOptions: 'language',
+  deeplXOptions: 'language',
+  deepseekReasoningEffort: 'runtime',
+  deepseekThinkingType: 'runtime',
+  descriptionPrefix: 'advanced',
+  didFirstSetup: 'account',
+  disableSeperateParameterChangeOnPresetChange: 'runtime',
+  doNotChangeFallbackModels: 'runtime',
+  doNotChangeSeperateModels: 'runtime',
+  dynamicAssets: 'media',
+  dynamicAssetsEditDisplay: 'media',
+  dynamicModelRegistry: 'providers',
+  elevenLabKey: 'media',
+  emotionProcesser: 'media',
+  emotionPrompt2: 'advanced',
+  enableBlockPartialEdit: 'sidebar',
+  enableBookmark: 'advanced',
+  enableCustomFlags: 'advanced',
+  enableDevTools: 'advanced',
+  enableDragPartialEdit: 'sidebar',
+  enableRemoteSaving: 'advanced',
+  enableRisuaiProTools: 'sidebar',
+  enableScrollToActiveChar: 'advanced',
+  epEnabled: 'runtime',
+  echoDelay: 'providers',
+  echoMessage: 'providers',
+  falLora: 'media',
+  falLoraName: 'media',
+  falLoraScale: 'media',
+  falModel: 'media',
+  falToken: 'media',
+  fallbackModels: 'runtime',
+  fallbackWhenBlankResponse: 'runtime',
+  fishSpeechKey: 'media',
+  fixedChatTextarea: 'sidebar',
+  font: 'display',
+  forceProxyAsOpenAI: 'advanced',
+  forceReplaceUrl: 'providers',
+  frequencyPenalty: 'runtime',
+  fullScreen: 'display',
+  genTime: 'runtime',
+  generationSeed: 'runtime',
+  goCharacterOnImport: 'sidebar',
+  google: 'providers',
+  googleClaudeTokenizing: 'runtime',
+  gptVisionQuality: 'media',
+  guiHTML: 'display',
+  hamburgerButtonBottom: 'sidebar',
+  heightMode: 'display',
+  hideAllImages: 'display',
+  hideApiKey: 'display',
+  hideRealm: 'display',
+  hordeConfig: 'providers',
+  htmlTranslation: 'language',
+  huggingfaceKey: 'providers',
+  hypaCustomSettings: 'memory',
+  hypaMemoryKey: 'memory',
+  hypaModel: 'memory',
+  hypaV3: 'memory',
+  hypaV3Key: 'memory',
+  hypaV3PresetId: 'memory',
+  hypaV3Presets: 'memory',
+  hypaV3Settings: 'memory',
+  iconsize: 'display',
+  imageCompression: 'media',
+  ImagenAspectRatio: 'media',
+  ImagenImageSize: 'media',
+  ImagenModel: 'media',
+  ImagenPersonGeneration: 'media',
+  inlayErrorResponse: 'advanced',
+  instantRemove: 'sidebar',
+  keepSessionAlive: 'advanced',
+  keiServerURL: 'advanced',
+  koboldURL: 'providers',
+  language: 'language',
+  legacyMediaFindings: 'media',
+  legacyTranslation: 'language',
+  lineHeight: 'display',
+  localActivationInGlobalLorebook: 'sidebar',
+  localNetworkMode: 'runtime',
+  localNetworkTimeoutSec: 'runtime',
+  localStopStrings: 'runtime',
+  longPressToPopupEditor: 'sidebar',
+  loreBookDepth: 'advanced',
+  loreBookToken: 'advanced',
+  mancerHeader: 'providers',
+  maxContext: 'runtime',
+  maxResponse: 'runtime',
+  memoryLimitThickness: 'display',
+  menuSideBar: 'display',
+  min_p: 'runtime',
+  mistralKey: 'providers',
+  modelTools: 'providers',
+  NAIadventure: 'providers',
+  NAIApiKey: 'media',
+  NAIappendName: 'providers',
+  NAII2I: 'media',
+  NAIImgConfig: 'media',
+  NAIImgModel: 'media',
+  NAIImgUrl: 'media',
+  NAIREF: 'media',
+  NAIsettings: 'providers',
+  nanogptKey: 'providers',
+  nanogptProvider: 'providers',
+  nanogptRequestModel: 'providers',
+  nanogptRequestModelName: 'providers',
+  nanogptSubscriptionState: 'providers',
+  nanogptUseSubscriptionEndpoint: 'providers',
+  newImageHandlingBeta: 'media',
+  newMessageButtonStyle: 'sidebar',
+  newOAIHandle: 'runtime',
+  noWaitForTranslate: 'language',
+  novelai: 'providers',
+  novellistAPI: 'providers',
+  OaiCompAPIKeys: 'providers',
+  ollamaApiKey: 'providers',
+  ollamaCloudModel: 'providers',
+  ollamaCloudModelName: 'providers',
+  ollamaInputMode: 'providers',
+  ollamaModel: 'providers',
+  ollamaModelName: 'providers',
+  ollamaModelSource: 'providers',
+  ollamaRequestFormat: 'providers',
+  ollamaThinkingMode: 'providers',
+  ollamaURL: 'providers',
+  openAIKey: 'providers',
+  openaiCompatImage: 'media',
+  openrouterFallback: 'providers',
+  openrouterKey: 'providers',
+  openrouterMiddleOut: 'providers',
+  openrouterProvider: 'providers',
+  openrouterRequestModel: 'providers',
+  outputImageModal: 'media',
+  personaNote: 'advanced',
+  playMessage: 'display',
+  playMessageOnTranslateEnd: 'display',
+  pluginDevelopMode: 'advanced',
+  PresensePenalty: 'runtime',
+  presetChain: 'advanced',
+  promptInfoInsideChat: 'advanced',
+  promptTextInfoInsideChat: 'advanced',
+  proxyKey: 'providers',
+  proxyRequestModel: 'providers',
+  realmDirectOpen: 'advanced',
+  reasoningEffort: 'runtime',
+  rememberToolUsage: 'runtime',
+  removeIncompleteResponse: 'runtime',
+  removePunctuationHypa: 'memory',
+  repetition_penalty: 'runtime',
+  requestInfoInsideChat: 'sidebar',
+  requestLocation: 'runtime',
+  requestRetrys: 'runtime',
+  returnCSSError: 'advanced',
+  reverseProxyOobaArgs: 'providers',
+  reverseProxyOobaMode: 'providers',
+  roundIcons: 'display',
+  saveSignatures: 'advanced',
+  sdCFG: 'media',
+  sdConfig: 'media',
+  sdProvider: 'media',
+  sdSteps: 'media',
+  sendWithEnter: 'sidebar',
+  seperateModels: 'runtime',
+  seperateModelsForAxModels: 'runtime',
+  seperateParameters: 'runtime',
+  seperateParametersByModel: 'runtime',
+  seperateParametersEnabled: 'runtime',
+  settingsCloseButtonSize: 'display',
+  showDeprecatedTriggerV1: 'advanced',
+  showDeprecatedTriggerV2: 'advanced',
+  showFirstMessagePages: 'display',
+  showFolderName: 'display',
+  showMemoryLimit: 'display',
+  showMenuChatList: 'sidebar',
+  showMenuHypaMemoryModal: 'memory',
+  showPromptComparison: 'display',
+  showSavingIcon: 'display',
+  showTranslationLoading: 'language',
+  showUnrecommended: 'advanced',
+  sideBarSize: 'display',
+  sideMenuRerollButton: 'sidebar',
+  simplifiedToolUse: 'runtime',
+  stabilityKey: 'media',
+  stabilityModel: 'media',
+  stabllityStyle: 'media',
+  streamGeminiThoughts: 'runtime',
+  subModel: 'providers',
+  supaMemoryKey: 'memory',
+  swipe: 'sidebar',
+  temperature: 'runtime',
+  textAreaSize: 'display',
+  textAreaTextSize: 'display',
+  textBorder: 'display',
+  textgenWebUIBlockingURL: 'providers',
+  textgenWebUIStreamURL: 'providers',
+  textScreenBorder: 'display',
+  textScreenColor: 'display',
+  textScreenRounded: 'display',
+  textTheme: 'display',
+  theme: 'display',
+  thinkingTokens: 'runtime',
+  thinkingType: 'runtime',
+  toggleConfirmRecommendedPreset: 'advanced',
+  top_a: 'runtime',
+  top_k: 'runtime',
+  top_p: 'runtime',
+  translateBeforeHTMLFormatting: 'language',
+  translator: 'language',
+  translatorInputLanguage: 'language',
+  translatorMaxResponse: 'language',
+  translatorPrompt: 'language',
+  translatorType: 'language',
+  ttsAutoSpeech: 'media',
+  unformatQuotes: 'display',
+  useAdditionalAssetsPreview: 'display',
+  useAutoTranslateInput: 'language',
+  useChatCopy: 'display',
+  useChatSticker: 'display',
+  useExperimental: 'advanced',
+  useExperimentalGoogleTranslator: 'language',
+  useLegacyGUI: 'display',
+  usePlainFetch: 'runtime',
+  useSayNothing: 'advanced',
+  useServerGeneration: 'runtime',
+  useServerPromptAssembly: 'runtime',
+  useStreaming: 'runtime',
+  useTokenizerCaching: 'advanced',
+  username: 'account',
+  vertexAccessToken: 'providers',
+  vertexAccessTokenExpires: 'providers',
+  vertexClientEmail: 'providers',
+  vertexPrivateKey: 'providers',
+  vertexRegion: 'providers',
+  voicevoxUrl: 'media',
+  voyageApiKey: 'memory',
+  waifuWidth: 'display',
+  waifuWidth2: 'display',
+  wavespeedImage: 'media',
+  webUiUrl: 'media',
+  zoomsize: 'display',
+}
+
 export interface CommandEvent {
   type: string
   revision: number
@@ -49,10 +347,20 @@ export interface PatchSettingsGroupInput {
   patch: SettingsPatch
 }
 
+export interface PatchServerBackedSettingsInput {
+  patch: SettingsPatch
+  rollback?: () => void
+  signal?: AbortSignal | null
+}
+
 let cachedServerCommandRevision: number | null = null
 
 export function canUseServerCommands(): boolean {
   return isFastifyServer
+}
+
+export function settingsGroupForKey(key: string): SettingsGroup | null {
+  return SERVER_SETTINGS_GROUP_BY_KEY[key] ?? null
 }
 
 export function setCachedServerCommandRevision(revision: number): void {
@@ -123,6 +431,56 @@ export async function patchSettingsGroup(
     },
     signal,
   })
+}
+
+export async function patchServerBackedSettings(
+  input: PatchServerBackedSettingsInput,
+): Promise<ServerCommandResult> {
+  if (!canUseServerCommands()) return { status: 'unavailable' }
+
+  const grouped = groupSettingsPatch(input.patch)
+  if (grouped.length === 0) return { status: 'unavailable' }
+
+  let lastResult: ServerCommandResult = { status: 'unavailable' }
+  for (const [group, patch] of grouped) {
+    const baseRevision = await getServerCommandBaseRevision(input.signal)
+    if (baseRevision === null) {
+      input.rollback?.()
+      return { status: 'error', error: 'Unable to read server command revision' }
+    }
+
+    let result = await patchSettingsGroup({ group, baseRevision, patch }, input.signal)
+    if (result.status === 'conflict') {
+      result = await patchSettingsGroup(
+        {
+          group,
+          baseRevision: result.currentRevision,
+          patch,
+        },
+        input.signal,
+      )
+    }
+
+    if (result.status !== 'ok') {
+      input.rollback?.()
+      return result
+    }
+    lastResult = result
+  }
+
+  return lastResult
+}
+
+function groupSettingsPatch(patch: SettingsPatch): Array<[SettingsGroup, SettingsPatch]> {
+  const groups = new Map<SettingsGroup, SettingsPatch>()
+  for (const [key, value] of Object.entries(patch)) {
+    const group = settingsGroupForKey(key)
+    if (!group || value === undefined) continue
+    const groupPatch = groups.get(group) ?? {}
+    groupPatch[key] = value
+    groups.set(group, groupPatch)
+  }
+  return Array.from(groups.entries())
 }
 
 async function requestCommandJson<T extends Record<string, unknown> = {}>(

@@ -9,10 +9,24 @@
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import AllSeperateParameters from '../AllSeperateParameters.svelte'
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { XIcon } from '@lucide/svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import CustomModelsSettings from 'src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings([
+    'seperateParametersEnabled',
+    'doNotChangeSeperateModels',
+    'seperateModels',
+    'epEnabled',
+    'disableSeperateParameterChangeOnPresetChange',
+    'aiModel',
+    'subModel',
+    'seperateParameters',
+    'seperateParametersByModel',
+  ])
+  onDestroy(stopServerSettingsWatch)
 
   let selectedOption = $state('models')
   let selectedParameterOption = $state('memory')
