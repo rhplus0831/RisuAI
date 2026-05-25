@@ -328,6 +328,7 @@ describe('server command API adapter', () => {
       patch: {
         colorSchemeName: 'custom',
         customModels: [{ id: 'model-a', name: 'Model A' }],
+        moduleIntergration: 'module-ns',
         banCharacterset: ['Latn'],
         showUnrecommended: true,
       },
@@ -361,7 +362,11 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/settings/advanced',
         body: {
           baseRevision: 22,
-          patch: { banCharacterset: ['Latn'], showUnrecommended: true },
+          patch: {
+            moduleIntergration: 'module-ns',
+            banCharacterset: ['Latn'],
+            showUnrecommended: true,
+          },
         },
       },
     ])

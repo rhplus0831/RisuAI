@@ -11,6 +11,7 @@ import {
 import { SandboxHost } from './factory'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginCommands'
+import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
 import {
   currentCharacterStateSnapshot,
   dispatchCompatibleCharacterUpdate,
@@ -61,6 +62,26 @@ import {
   type AfterTTSResult,
   type TTSHookFn,
 } from 'src/ts/process/ttsHooks'
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function dispatchPluginApiSettingsPatch(
+  patch: Record<string, unknown>,
+  previous: Record<string, unknown>,
+): void {
+  if (!canUseServerCommands()) return
+  void patchServerBackedSettings({
+    patch,
+    rollback: () => {
+      Object.assign(DBState.db as unknown as Record<string, unknown>, cloneJsonValue(previous))
+      updateColorScheme()
+      updateTextThemeAndCSS()
+    },
+  })
+}
 
 /*
     V3 API for RisuAI Plugins
@@ -777,7 +798,18 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
 
     // --- Color Scheme APIs ---
     changeColorScheme: (name: string) => {
+      const previous = {
+        colorScheme: cloneJsonValue(DBState.db.colorScheme),
+        colorSchemeName: DBState.db.colorSchemeName,
+      }
       changeColorScheme(name)
+      dispatchPluginApiSettingsPatch(
+        {
+          colorScheme: cloneJsonValue(DBState.db.colorScheme),
+          colorSchemeName: DBState.db.colorSchemeName,
+        },
+        previous,
+      )
     },
     setColorScheme: (scheme: ColorScheme) => {
       const requiredKeys = [
@@ -800,10 +832,21 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (scheme.type !== 'light' && scheme.type !== 'dark') {
         throw new Error('Invalid color scheme type: must be "light" or "dark"')
       }
+      const previous = {
+        colorScheme: cloneJsonValue(DBState.db.colorScheme),
+        colorSchemeName: DBState.db.colorSchemeName,
+      }
       const db = DBState.db
       db.colorSchemeName = 'custom'
       db.colorScheme = scheme
       updateColorScheme()
+      dispatchPluginApiSettingsPatch(
+        {
+          colorScheme: cloneJsonValue(db.colorScheme),
+          colorSchemeName: db.colorSchemeName,
+        },
+        previous,
+      )
     },
     getColorScheme: () => {
       const db = DBState.db
@@ -818,9 +861,13 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (!['standard', 'highcontrast'].includes(name)) {
         throw new Error(`Invalid text theme: ${name}`)
       }
+      const previous = {
+        textTheme: DBState.db.textTheme,
+      }
       const db = DBState.db
       db.textTheme = name
       updateTextThemeAndCSS()
+      dispatchPluginApiSettingsPatch({ textTheme: db.textTheme }, previous)
     },
     setCustomTextTheme: (theme: {
       FontColorStandard: string
@@ -843,10 +890,21 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
           throw new Error(`Invalid text theme: missing or invalid '${key}'`)
         }
       }
+      const previous = {
+        textTheme: DBState.db.textTheme,
+        customTextTheme: cloneJsonValue(DBState.db.customTextTheme),
+      }
       const db = DBState.db
       db.textTheme = 'custom'
       db.customTextTheme = theme
       updateTextThemeAndCSS()
+      dispatchPluginApiSettingsPatch(
+        {
+          textTheme: db.textTheme,
+          customTextTheme: cloneJsonValue(db.customTextTheme),
+        },
+        previous,
+      )
     },
     getTextTheme: () => {
       const db = DBState.db

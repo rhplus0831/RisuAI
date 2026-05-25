@@ -123,6 +123,7 @@
     'modelTools',
     'hideApiKey',
     'useLegacyGUI',
+    'moduleIntergration',
   ])
   onDestroy(stopServerSettingsWatch)
 

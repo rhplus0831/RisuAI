@@ -15,14 +15,15 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-5d-iii 9-3 character/chat UI tails. Compact chat
-  creation now selects the new chat consistently with the server command,
-  and server-backed cold-storage character hydration is explicitly
-  unsupported before local storage reads.
+- Last landed work: 9-5d-iv 9-4 extension UI/API tails. Plugin V3
+  theme APIs now dispatch settings commands, module integration writes
+  are covered by the settings bridge, and extension command coverage was
+  rechecked.
 - Current gap: 9-5d has been decomposed into smaller residual
   command-replacement sub-slices before enabling the read-only
   `DBState.db` guard.
-- Next default pickup: 9-5d-iv, 9-4 extension UI/API tails.
+- Next default pickup: 9-5d-v, process/runtime durable-write
+  classification.
 - Last recorded full baselines after the 9-5d first pass: `pnpm check`
   clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
   tests, and `pnpm build` passing with existing CSS `::highlight`,
@@ -53,7 +54,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-5d-iii landed; continue with 9-5d-iv extension tails.         |
+| Client thinning                             | Active; 9-5d-iv landed; continue with 9-5d-v process/runtime audit.     |
 
 ## Maintenance Rules
 

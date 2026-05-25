@@ -249,9 +249,10 @@ into smaller residual command-replacement sub-slices:
   profile/assets, chat folders, selected chat/page state, playground/
   realm/grid helpers, and legacy import helpers now stay on existing 9-3
   commands or explicit unsupported behavior.
-- **9-5d-iv - 9-4 extension UI/API tails.** Lorebooks, module UI/MCP
-  helpers, plugin settings, plugin database translation, and plugin
-  storage.
+- **9-5d-iv - 9-4 extension UI/API tails.** Complete. Lorebook,
+  module UI/MCP helper, plugin settings, plugin database translation, and
+  plugin-storage residuals stay on existing 9-4/settings bridges or
+  explicit unsupported behavior.
 - **9-5d-v - Process/runtime durable-write classification.** Generation,
   scriptstate, memory, and MCP helper writes.
 

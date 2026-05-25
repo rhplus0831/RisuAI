@@ -65,6 +65,25 @@ existing settings command bridge:
 - Focused regression coverage landed in
   `src/ts/compatibilityAdapters.test.ts`.
 
+9-5d-iv then audited the 9-4 extension UI/API tails:
+
+- Lorebook, module UI/MCP helper, plugin settings, plugin database
+  translation, and plugin-storage residual writes remain on existing
+  lorebook, script/trigger, module, plugin, plugin-storage, or settings
+  command helpers, or explicit unsupported behavior for server-backed
+  module import paths.
+- `moduleIntergration` is now covered by the grouped settings command
+  bridge so plugin database writes and BotSettings edits no longer leave
+  a server-backed local-only scalar update.
+- Plugin V3 color/text theme APIs now dispatch existing settings commands
+  after their optimistic local update, with rollback restoring the
+  projected display state if the command fails.
+- Focused browser-command, plugin bridge, MCP/module, and Fastify route
+  coverage stayed green in `src/ts/server/commands.test.ts`,
+  `src/ts/plugins/plugins.test.ts`, `src/ts/compatibilityAdapters.test.ts`,
+  `src/ts/process/modules.test.ts`, and
+  `server/fastify/__tests__/commands.test.ts`.
+
 ## Immediate Pickup
 
 9-5d was too broad as a single implementation slice. Keep the parent
@@ -84,28 +103,25 @@ uniform:
 - 9-3 character/chat UI tails, especially character profile/assets,
   chat folders, selected chat/page state, playground/realm/grid helpers,
   and import helpers that already have partial command dispatch.
-- 9-4 extension tails around lorebooks, module UI/MCP helpers, plugin
-  settings, plugin database translation, and plugin storage.
 - Process/runtime writes in generation, scriptstate, memory, and MCP
   helpers that need classification before the read-only guard can be
   enabled.
 
-Immediate pickup: **9-5d-iv - 9-4 extension UI/API tails**.
+Immediate pickup: **9-5d-v - Process/runtime durable-write
+classification**.
 
-- Audit residual 9-4 extension UI/API/helper writes that still mutate
+- Audit residual process/runtime helper writes that still mutate
   `DBState.db` directly in server-backed web mode.
-- Focus first on lorebooks, module UI/MCP helpers, plugin settings,
-  plugin database translation, and plugin storage.
-- Use existing lorebook, script/trigger, module, plugin, and
-  plugin-storage command helpers. Do not add new endpoints unless the
-  command map is genuinely missing a 9-4 operation.
-- Keep asset bytes on the Fastify asset API and patch durable references
-  through owning resource commands. Do not expand server-side `.risu`
-  import/export or bundle walking in this slice.
-- Add focused tests around the highest-risk changed 9-4 bridge, usually
-  in `src/ts/server/commands.test.ts`, `src/ts/compatibilityAdapters.test.ts`,
-  or the nearest UI/helper test that can assert command dispatch,
-  rollback, or explicit unsupported behavior.
+- Focus first on generation, scriptstate, memory, and MCP helper writes.
+- Classify each hit as an existing message/generation/scriptstate/settings
+  command, explicit unsupported behavior, or documented local/runtime-only
+  state. Do not enable the read-only guard in this slice.
+- Keep transient streaming display state and browser-only script execution
+  out of durable command payloads.
+- Add focused tests around the highest-risk changed bridge, usually in
+  `src/ts/server/commands.test.ts`, `src/ts/compatibilityAdapters.test.ts`,
+  or the nearest process/runtime helper test that can assert command
+  dispatch, rollback, or explicit unsupported behavior.
 
 Out of scope for 9-5d: the read-only `DBState.db` guard, storage and
 provider-key gating, server-side `.risu` import/export, asset byte
@@ -136,10 +152,9 @@ Implementation notes:
 - 9-4a/9-4b whole-collection bridges cover bound lorebook and
   script/trigger UI surfaces. 9-4c covers module records and
   active-module toggles. 9-4e/9-4f cover plugin records, provider
-  selection, plugin storage, and unknown plugin DB keys.
-- 9-4g tightened plugin database translation for
-  `currentPluginProvider`, `modules`, and `enabledModules` without adding
-  new endpoints.
+  selection, plugin storage, and unknown plugin DB keys. 9-5d-iv added
+  `moduleIntergration` settings coverage and plugin V3 theme-command
+  dispatch.
 - MCP module import, MCP asset import, and server-backed `.risum` module
   import remain explicitly unsupported until later slices define
   dedicated server-owned paths.
@@ -150,34 +165,31 @@ Implementation notes:
 
 ## Later Queue
 
-1. 9-5d-iv - 9-4 extension UI/API tails: lorebooks, module UI/MCP
-   helpers, plugin settings, plugin database translation, and plugin
-   storage.
-2. 9-5d-v - Process/runtime durable-write classification: generation,
+1. 9-5d-v - Process/runtime durable-write classification: generation,
    scriptstate, memory, and MCP helper writes that must become commands,
    explicit unsupported behavior, or documented local/runtime-only state.
-3. 9-5e-i - Projection write gate foundation.
-4. 9-5e-ii - Command bridge guard integration.
-5. 9-5e-iii - Guard audit closeout.
-6. 9-6a - Server-backed persistence gate.
-7. 9-6b - Asset byte gate.
-8. 9-6c - Server backup/restore projection.
-9. 9-6d - Residual local cache classification.
-10. 9-6e - Provider secret masking.
-11. 9-7a - `.risu` fixture corpus and codec harness.
-12. 9-7b - Legacy envelope codec port.
-13. 9-7c - RISUSAVE block codec port.
-14. 9-7d - Decode normalization and validation.
-15. 9-7e - Repository-backed export adapter.
-16. 9-8a - Multipart `.risu` import route.
-17. 9-8b - Repository `.risu` export route.
-18. 9-8c - Asset reference walker.
-19. 9-8d - Bundle export route.
-20. 9-9a - Server-backed browser smoke harness.
-21. 9-9b - Generation and memory fixture closeout.
-22. 9-9c - Server-backed storage-write audit.
-23. 9-9d - Manual Fastify web and Tauri local verification.
-24. 9-9e - Phase 9 docs closeout.
+2. 9-5e-i - Projection write gate foundation.
+3. 9-5e-ii - Command bridge guard integration.
+4. 9-5e-iii - Guard audit closeout.
+5. 9-6a - Server-backed persistence gate.
+6. 9-6b - Asset byte gate.
+7. 9-6c - Server backup/restore projection.
+8. 9-6d - Residual local cache classification.
+9. 9-6e - Provider secret masking.
+10. 9-7a - `.risu` fixture corpus and codec harness.
+11. 9-7b - Legacy envelope codec port.
+12. 9-7c - RISUSAVE block codec port.
+13. 9-7d - Decode normalization and validation.
+14. 9-7e - Repository-backed export adapter.
+15. 9-8a - Multipart `.risu` import route.
+16. 9-8b - Repository `.risu` export route.
+17. 9-8c - Asset reference walker.
+18. 9-8d - Bundle export route.
+19. 9-9a - Server-backed browser smoke harness.
+20. 9-9b - Generation and memory fixture closeout.
+21. 9-9c - Server-backed storage-write audit.
+22. 9-9d - Manual Fastify web and Tauri local verification.
+23. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -229,6 +241,12 @@ Focused 9-5 runs:
 - 9-5d-iii: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`;
   `pnpm check`
   - 9 tests passed; check clean.
+- 9-5d-iv: `pnpm exec vitest run src/ts/plugins/plugins.test.ts src/ts/server/commands.test.ts`;
+  `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts`;
+  `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts src/ts/process/modules.test.ts`;
+  `pnpm check`
+  - 39 browser command/plugin tests passed; 65 Fastify command tests
+    passed; 10 compatibility/module tests passed; check clean.
 - 9-5d sub-slices: run the nearest focused command/bridge tests touched
   by the sub-slice, then `pnpm check` before marking that sub-slice done.
 
@@ -241,7 +259,7 @@ Focused 9-5 runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-5d-iii.md`](../phases-completed/phase-9-client-thinning-9-5d-iii.md)
+  [`../phases-completed/phase-9-client-thinning-9-5d-iv.md`](../phases-completed/phase-9-client-thinning-9-5d-iv.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

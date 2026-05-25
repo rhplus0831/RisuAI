@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5d-iii - 9-3 character/chat UI tails**. Next pickup:
-**9-5d-iv - 9-4 extension UI/API tails**.
+**9-5d-iv - 9-4 extension UI/API tails**. Next pickup:
+**9-5d-v - Process/runtime durable-write classification**.
 
 ## Goal
 
@@ -244,10 +244,12 @@ surfaces.
       made cold-storage character hydration explicitly unsupported in
       server-backed web mode. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-5d-iii.md`](../phases-completed/phase-9-client-thinning-9-5d-iii.md).
-    - **9-5d-iv - 9-4 extension UI/API tails.** Finish residual
+    - **9-5d-iv - 9-4 extension UI/API tails.** Complete. Audited
       lorebook, module UI/MCP helper, plugin settings, plugin database
-      translation, and plugin-storage writes with the 9-4 bridges and
-      commands.
+      translation, and plugin-storage writes against existing 9-4 bridges,
+      routed plugin V3 theme APIs through settings commands, and covered
+      `moduleIntergration` with the settings bridge. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-5d-iv.md`](../phases-completed/phase-9-client-thinning-9-5d-iv.md).
     - **9-5d-v - Process/runtime durable-write classification.** Classify
       generation, scriptstate, memory, and MCP helper writes, then replace
       durable server-backed writes with message/generation/scriptstate or

@@ -613,6 +613,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'bulkEnabling',
     'saveSignatures',
     'inlayErrorResponse',
+    'moduleIntergration',
   ],
   sidebar: [
     'askRemoval',

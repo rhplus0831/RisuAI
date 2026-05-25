@@ -120,6 +120,27 @@ describe('plugin database command bridge', () => {
     expect(DBState.db.currentPluginProvider).toBe('provider-a')
   })
 
+  it('routes plugin module-integration database writes through settings commands', async () => {
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({ moduleIntergration: 'ns-a, ns-b' })
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/advanced')).toBe(true)
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/settings/advanced')).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          moduleIntergration: 'ns-a, ns-b',
+        },
+      },
+    })
+    expect(DBState.db.moduleIntergration).toBe('ns-a, ns-b')
+  })
+
   it('routes plugin module database writes through module commands', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()

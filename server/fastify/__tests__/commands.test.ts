@@ -441,6 +441,19 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(account.statusCode).toBe(200)
 
+    const advanced = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/advanced',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: account.json().revision,
+        patch: {
+          moduleIntergration: 'module-ns',
+        },
+      },
+    })
+    expect(advanced.statusCode).toBe(200)
+
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
@@ -460,6 +473,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       wavespeedImage: { key: 'wave-key', model: 'flux' },
       username: 'Fastify User',
       didFirstSetup: true,
+      moduleIntergration: 'module-ns',
     })
   })
 
