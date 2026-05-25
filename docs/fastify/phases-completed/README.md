@@ -37,6 +37,7 @@ track the next piece of work.
 | 8-6a - Prompt memory adapter contract   | [`phase-8-memory-8-6a.md`](phase-8-memory-8-6a.md)                                     | Prompt-facing contract, diagnostics, and no-hot-path-work guardrails.   |
 | 8-6b - Summary prompt-row assembly      | [`phase-8-memory-8-6b.md`](phase-8-memory-8-6b.md)                                     | Canonical `hypaMemory` prompt rows from selected memory summaries.      |
 | 8-6c - Assemble integration             | [`phase-8-memory-8-6c.md`](phase-8-memory-8-6c.md)                                     | Root assembler integration for selected canonical Hypa memory rows.     |
+| 8-6d - Missing-memory follow-up enqueue | [`phase-8-memory-8-6d.md`](phase-8-memory-8-6d.md)                                     | Best-effort summarize/embed enqueue from prompt-memory diagnostics.     |
 
 ## Historical Status Logs
 

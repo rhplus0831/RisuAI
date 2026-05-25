@@ -11,62 +11,58 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-6c wired the root server prompt assembler to the prompt-memory adapter.
-`AssembleDeps` can now supply the SQLite memory database and already
-computed query vectors. The route passes the live SQLite handle and an
-empty vector list; tests inject seeded vectors. The assembler resolves the
-active Hypa V3 preset, calls `selectPromptMemory`, converts the selection
-through `assemblePromptMemoryRows`, prepends canonical
-`memo: "hypaMemory"` rows into the existing `buildMemoryWindow` split,
-and preserves the current memory-card contract. This remains read-only:
-no provider-backed query embedding generation, summary generation, embed
-work, or queue writes landed.
+8-6d converted prompt-memory missing-memory diagnostics into
+best-effort follow-up queue writes. The assembler now records
+`promptMemoryFollowUpDiagnostics` after row assembly, enqueues
+idempotent `summarize` jobs for chunks missing summaries, and enqueues
+idempotent `embed` jobs for chunks missing embeddings. Failures are
+captured in diagnostics and do not abort prompt assembly. Provider-backed
+query embedding generation, synchronous summary/embedding work, and
+browser UI work remain out of scope.
+
+Important caveat: `summaryIdsMissingChunks` is recorded as skipped follow
+up because the current diagnostics identify orphan summaries but do not
+contain enough source-window data to recreate missing chunks safely.
+`chunk` remains a queue kind with no concrete production handler; do not
+enqueue decorative no-op chunk jobs.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-6d - Missing-memory follow-up enqueue**.
+Continue Phase 8 with **8-7a - Chunk + summary read routes**.
 
 Expected scope:
 
-- Consume the passive missing-memory diagnostics now surfaced by the
-  prompt-memory adapter integration.
-- Enqueue idempotent `chunk`, `summarize`, and `embed` follow-up jobs
-  best-effort after prompt assembly detects missing memory.
-- Keep prompt assembly non-blocking: enqueue failures should not abort
-  chat unless an existing route-level invariant requires it.
-- Preserve the hot-path boundary: do not generate summaries, embeddings,
-  or query vectors synchronously during prompt assembly.
-- Add focused tests for idempotent enqueue behavior, no-op behavior when
-  diagnostics show no missing memory, and failure isolation.
+- Add auth-gated `GET /api/v1/memory/chunks/:chatId`.
+- Add auth-gated `GET /api/v1/memory/summaries/:chatId?model=...`.
+- Return current schema rows through a browser-friendly JSON shape without
+  compatibility adapters for old intermediate Fastify shapes.
+- Keep route tests focused on auth, chat filtering, model filtering,
+  ordering, and empty-result behavior.
 
-Out of scope for 8-6d:
+Out of scope for 8-7a:
 
 - Embedding provider dispatch and query embedding generation.
-- Summary generation and embedding provider work in the prompt request
-  hot path.
+- Summary generation and embedding provider work in route handlers.
 - Browser progress UI, browser listeners, and browser list/cancel
   controls.
 - Browser-local embedding runtimes.
 
 Implementation notes:
 
-- 8-6c stores selection diagnostics on `AssemblyState` as
-  `promptMemorySelectionDiagnostics` and row diagnostics as
-  `promptMemoryRowAssemblyDiagnostics`.
-- Missing-memory hints are still passive after 8-6c. 8-6d should convert
-  them into best-effort queue writes without making selection call lower
-  repository/ranking/allocation helpers directly.
-- The route-bound assembler dependency now passes the live SQLite handle
-  through `loadMemoryDatabase`; tests can inject seeded memory databases.
-- Query vectors remain supplied by `loadPromptMemoryQueryVectors`. Do not
-  add provider-backed query embedding generation in 8-6d.
+- Use existing repository readers (`listMemoryChunks`,
+  `listMemorySummaries`) and route auth patterns from memory job routes.
+- Preserve current schema/import paths directly; there are still no
+  actual Fastify users requiring compatibility migrations.
+- 8-6d added `prompt/memoryFollowups.ts` and exported
+  `buildSummarizeJobId`; if read-route tests need seeded jobs/chunks,
+  prefer repository helpers over raw SQL.
 - Preserve the no-compatibility-migrations policy: update current
   Fastify shapes directly if the contract needs a tighter shape.
 
-## Queue After 8-6c
+## Queue After 8-6d
 
-1. 8-6d - Missing-memory follow-up enqueue.
-2. 8-7a - Chunk + summary read routes.
+1. 8-7a - Chunk + summary read routes.
+2. 8-7b - Browser memory API adapter.
 
 ## Parallel Or Deferred
 
@@ -94,21 +90,21 @@ Last recorded full baselines after 8-6c: `pnpm check` clean,
 `pnpm build` passing with existing CSS `::highlight`, browser
 externalization, plugin-timing, and chunk-size warnings.
 
-Focused 8-6c verification:
+Focused 8-6d verification:
 
 ```bash
 pnpm exec vitest run server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts --config server/fastify/vitest.config.ts
 pnpm check
 ```
 
-8-6c passed the focused assembler/adapter files with 49 tests, and
+8-6d passed the focused assembler/adapter files with 52 tests, and
 `pnpm check` was clean.
 
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-6c.md`](../phases-completed/phase-8-memory-8-6c.md)
+  [`../phases-completed/phase-8-memory-8-6d.md`](../phases-completed/phase-8-memory-8-6d.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Phase 7 final summary:

@@ -2,8 +2,9 @@
 
 Date: 2026-05-25
 
-Status: in progress. Completed through **8-6c - Assemble integration**.
-Next slice: **8-6d - Missing-memory follow-up enqueue**.
+Status: in progress. Completed through
+**8-6d - Missing-memory follow-up enqueue**.
+Next slice: **8-7a - Chunk + summary read routes**.
 
 ## Goal
 
@@ -108,6 +109,15 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   `memories`; no-memory-card paths wrap them inline as previous
   conversation. Query vectors are supplied by the assembler dependency
   boundary, and the integration remains read-only.
+- The 8-6d follow-up enqueue slice converts prompt-memory missing-memory
+  diagnostics into best-effort queue writes after row assembly.
+  `summarize` jobs are enqueued for chunks missing summaries and `embed`
+  jobs are enqueued for chunks missing embeddings. Prompt assembly
+  remains non-blocking, and enqueue failures are captured in
+  `promptMemoryFollowUpDiagnostics`. Orphan summaries with missing chunks
+  are skipped because current diagnostics do not contain enough source
+  window data to recreate missing chunks safely; `chunk` is still a queue
+  kind without a concrete production handler.
 
 ## Scope
 
@@ -163,8 +173,6 @@ browser progress store.
 - **8-6 - Prompt memory integration.** Add the server prompt-memory
   adapter, assemble canonical memory prompt rows, replace the Phase 7
   browser bridge, and queue missing-memory follow-up work.
-  - **8-6d - Missing-memory follow-up enqueue.** Enqueue idempotent
-    `chunk`, `summarize`, and `embed` follow-up jobs best-effort.
 - **8-7 - Browser memory surfaces.** Expose read routes, the browser
   adapter, progress UI wiring, job list/cancel controls, and fixture
   parity.

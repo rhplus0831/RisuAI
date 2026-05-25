@@ -34,11 +34,17 @@ import {
   type PromptMemoryAdapterDiagnostics,
   type PromptMemoryRowAssemblyDiagnostics,
 } from './memoryAdapter.js'
+import {
+  emptyPromptMemoryFollowUpDiagnostics,
+  enqueuePromptMemoryFollowUps,
+  type PromptMemoryFollowUpDiagnostics,
+} from './memoryFollowups.js'
 import { finalizeRequestBudget } from './budgetFinalize.js'
 import type { TriggerRunResult } from './triggers.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
 import type { MemorySelectionInput } from '../memorySelectionService.js'
+import type { EnqueueMemoryJobInput, MemoryJob } from '../memoryRepository.js'
 
 /**
  * Phase 7 Tier 3 root assembly entry point.
@@ -110,6 +116,7 @@ export interface AssembleDeps {
   loadDatabase(): Database | null
   loadMemoryDatabase?(): DatabaseSync | null
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
+  enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
 }
 
 export interface AssembleInput {
@@ -285,6 +292,7 @@ export interface AssemblyState {
   memories?: OpenAIChat[]
   promptMemorySelectionDiagnostics?: PromptMemoryAdapterDiagnostics
   promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
+  promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
   promptMemoryRows?: OpenAIChat[]
   // --- 7-11f: final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
@@ -305,6 +313,7 @@ export interface AssemblyState {
   additionalSystemPromptMutations?: AssembleAdditionalSystemPromptMutation[]
   memoryDatabase?: DatabaseSync | null
   promptMemoryQueryVectors?: MemorySelectionInput['queryVectors']
+  enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -395,6 +404,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     additionalSystemPromptMutations: [],
     memoryDatabase: deps.loadMemoryDatabase?.() ?? null,
     promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
+    enqueuePromptMemoryFollowUpJob: deps.enqueuePromptMemoryFollowUpJob,
   }
 }
 
@@ -789,6 +799,7 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
   const memoryDb = state.memoryDatabase
   if (!memoryDb) {
     state.promptMemoryRows = []
+    state.promptMemoryFollowUpDiagnostics = emptyPromptMemoryFollowUpDiagnostics()
     return []
   }
   const enabled = shouldSelectPromptMemory(state)
@@ -810,6 +821,14 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
 
   const assembled = assemblePromptMemoryRows(selection)
   state.promptMemoryRowAssemblyDiagnostics = assembled.diagnostics
+  state.promptMemoryFollowUpDiagnostics = enqueuePromptMemoryFollowUps({
+    db: memoryDb,
+    chatId: state.currentChat.id ?? state.input.chatId,
+    summaryModel: settings.summarizationModel,
+    embeddingModel: resolvePromptMemoryEmbeddingModel(state.database),
+    diagnostics: selection.diagnostics.missingMemory,
+    enqueueJob: state.enqueuePromptMemoryFollowUpJob,
+  })
   state.promptMemoryRows = assembled.rows
   return assembled.rows
 }

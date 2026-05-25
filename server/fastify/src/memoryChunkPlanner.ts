@@ -173,7 +173,7 @@ function buildPlannedChunkId(
   )}`
 }
 
-function buildSummarizeJobId(chatId: string, chunkId: string, model: string): string {
+export function buildSummarizeJobId(chatId: string, chunkId: string, model: string): string {
   return `${SUMMARIZE_JOB_ID_PREFIX}-${shortHash(JSON.stringify({ chatId, chunkId, model }))}`
 }
 

@@ -8,6 +8,7 @@ import {
   createMemoryChunk,
   createMemoryEmbedding,
   createMemorySummary,
+  listMemoryJobs,
 } from '../src/memoryRepository.js'
 import { EntityNotFoundError } from '../src/repository.js'
 import {
@@ -642,6 +643,175 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         role: 'system',
         memo: 'hypaMemory',
         content: '<Previous Conversation>selected summary</Previous Conversation>',
+      })
+      expect(state.unformated.lastChat.at(-1)?.content).toBe('hi there')
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('enqueues missing Hypa memory summarize and embed follow-up jobs idempotently', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(memoryDb, {
+        id: 'chunk-needs-embed',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'summary without embedding',
+        status: 'summarized',
+      })
+      createMemorySummary(memoryDb, {
+        id: 'summary-needs-embed',
+        chatId: 'chat-1',
+        chunkId: 'chunk-needs-embed',
+        model: 'summary-model',
+        text: 'summary without embedding',
+        tokens: 5,
+      })
+      createMemoryChunk(memoryDb, {
+        id: 'chunk-needs-summary',
+        chatId: 'chat-1',
+        messageId: 'memo-b',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'embedding without summary',
+        status: 'pending',
+      })
+      createMemoryEmbedding(memoryDb, {
+        id: 'embedding-needs-summary',
+        chatId: 'chat-1',
+        chunkId: 'chunk-needs-summary',
+        model: 'embedding-model',
+        vector: [1, 0],
+      })
+      const db = memoryEnabledDatabase()
+
+      const first = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(first)
+      fillLorebookSlots(first)
+      await fillHistoryAndBias(first)
+      fillMemoryAndPostHistory(first)
+
+      expect(first.promptMemoryFollowUpDiagnostics).toMatchObject({
+        attempted: true,
+        jobsCreated: 2,
+        existingJobs: 0,
+        summarizeChunkIds: ['chunk-needs-summary'],
+        embedChunkIds: ['chunk-needs-embed'],
+        errors: [],
+      })
+      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' }).map((job) => job.kind).sort()).toEqual(
+        ['embed', 'summarize'],
+      )
+
+      const second = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(second)
+      fillLorebookSlots(second)
+      await fillHistoryAndBias(second)
+      fillMemoryAndPostHistory(second)
+
+      expect(second.promptMemoryFollowUpDiagnostics).toMatchObject({
+        attempted: true,
+        jobsCreated: 0,
+        existingJobs: 2,
+        errors: [],
+      })
+      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' })).toHaveLength(2)
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('does not enqueue Hypa memory follow-up jobs when diagnostics are clean', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      seedPromptMemory(memoryDb, {
+        summaryId: 'summary-a',
+        chunkId: 'chunk-a',
+        text: 'selected summary',
+      })
+      const db = memoryEnabledDatabase()
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.promptMemoryFollowUpDiagnostics).toMatchObject({
+        attempted: false,
+        jobsCreated: 0,
+        existingJobs: 0,
+        errors: [],
+      })
+      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' })).toEqual([])
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('isolates Hypa memory follow-up enqueue failures from prompt assembly', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(memoryDb, {
+        id: 'chunk-needs-embed',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'summary without embedding',
+        status: 'summarized',
+      })
+      createMemorySummary(memoryDb, {
+        id: 'summary-needs-embed',
+        chatId: 'chat-1',
+        chunkId: 'chunk-needs-embed',
+        model: 'summary-model',
+        text: 'summary without embedding',
+        tokens: 5,
+      })
+      const db = memoryEnabledDatabase()
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+          enqueuePromptMemoryFollowUpJob: () => {
+            throw new Error('queue offline')
+          },
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      expect(() => fillMemoryAndPostHistory(state)).not.toThrow()
+
+      expect(state.stopSending).toBe(false)
+      expect(state.promptMemoryFollowUpDiagnostics).toMatchObject({
+        attempted: true,
+        jobsCreated: 0,
+        existingJobs: 0,
+        embedChunkIds: ['chunk-needs-embed'],
+        errors: ['queue offline'],
       })
       expect(state.unformated.lastChat.at(-1)?.content).toBe('hi there')
     } finally {
