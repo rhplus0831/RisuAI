@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-3e - Chat `scriptstate` and scripting side effects**. Next slice:
-**9-3f - Compatibility setters and access adapters**.
+**9-3f - Compatibility setters and access adapters**. Next slice:
+**9-4a - Lorebook collection commands**.
 
 ## Goal
 
@@ -170,6 +170,8 @@ surfaces.
   - **9-3f - Compatibility setters and access adapters.** Replace helper,
     plugin, and MCP character/chat mutation bypasses with commands or
     explicit unsupported behavior.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-3f.md`](../phases-completed/phase-9-client-thinning-9-3f.md).
 - **9-4 - Lorebooks, modules, plugins, assets.** Move child collections,
   extension surfaces, and resource-heavy commands.
   - **9-4a - Lorebook collection commands.** Global, character, chat, and

@@ -13,7 +13,12 @@ import { risuChatParser } from '../parser/parser.svelte'
 import { sendChat } from './index.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { runTrigger } from './triggers'
-import { currentChatStateSnapshot, dispatchPatchChatScriptstate } from '../chatCommands'
+import {
+  currentChatStateSnapshot,
+  dispatchCompatibleChatUpdate,
+  dispatchPatchChatScriptstate,
+} from '../chatCommands'
+import type { Chat } from '../storage/database.svelte'
 
 export async function processMultiCommand(command: string) {
   let pipe = ''
@@ -101,51 +106,68 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       return pipe
     }
     case 'send': {
+      const previous = currentChatStateSnapshot()
+      const previousChat = snapshotChat(currentChat)
       currentChat.message.push({
         role: 'user',
         data: arg,
       })
       setDatabase(db)
+      dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       return pipe
     }
     case 'sendas': {
       //name not implemented
+      const previous = currentChatStateSnapshot()
+      const previousChat = snapshotChat(currentChat)
       currentChat.message.push({
         role: 'char',
         data: arg,
       })
       setDatabase(db)
+      dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       return pipe
     }
     case 'comment': {
       //works differently, but its close enough
+      const previous = currentChatStateSnapshot()
+      const previousChat = snapshotChat(currentChat)
       const addition = `<Comment>\n${arg}\n</Comment>`
       currentChat.message[currentChat.message.length - 1].data += addition
       setDatabase(db)
+      dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       return pipe
     }
     case 'cut': {
+      const previous = currentChatStateSnapshot()
+      const previousChat = snapshotChat(currentChat)
       if (arg.includes('-')) {
         const [start, end] = arg.split('-')
         currentChat.message = currentChat.message.slice(parseInt(start), parseInt(end))
         setDatabase(db)
+        dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       } else if (!isNaN(parseInt(arg))) {
         const index = parseInt(arg)
         currentChat.message = currentChat.message.splice(index, 1)
         setDatabase(db)
+        dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       } else {
         //For risu, doesn'ts work for STScript
         const id = arg
         currentChat.message = currentChat.message.filter((e) => e.chatId !== id)
         setDatabase(db)
+        dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       }
       return pipe
     }
     case 'del': {
       const size = parseInt(arg)
       if (!isNaN(size)) {
+        const previous = currentChatStateSnapshot()
+        const previousChat = snapshotChat(currentChat)
         currentChat.message = currentChat.message.slice(currentChat.message.length - size)
         setDatabase(db)
+        dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       }
       return pipe
     }
@@ -306,6 +328,10 @@ async function processCommand(command: string, pipe: string): Promise<false | st
     }
   }
   return false
+}
+
+function snapshotChat(chat: Chat): Chat {
+  return JSON.parse(JSON.stringify(chat)) as Chat
 }
 
 function commandParser(command: string, pipe: string) {

@@ -100,6 +100,19 @@ export function dispatchUpdateCharacter(
   )
 }
 
+export function dispatchCompatibleCharacterUpdate(
+  previousCharacter: character | undefined,
+  nextCharacter: character | undefined,
+  previous: CharacterStateSnapshot,
+): void {
+  const characterId = nextCharacter?.chaId ?? previousCharacter?.chaId
+  if (!characterId || !previousCharacter || !nextCharacter) return
+
+  const patch = changedCharacterFields(previousCharacter, nextCharacter)
+  if (Object.keys(patch).length === 0) return
+  dispatchUpdateCharacter(characterId, patch, previous)
+}
+
 export function dispatchDeleteCharacter(
   characterId: string,
   previous: CharacterStateSnapshot,
@@ -150,4 +163,26 @@ export function sanitizeCharacterPatch(patch: CharacterSnapshot): CharacterSnaps
     sanitized[key] = cloneJsonValue(value)
   }
   return sanitized
+}
+
+function changedCharacterFields(previous: character, current: character): CharacterSnapshot {
+  const patch: CharacterSnapshot = {}
+  const previousSnapshot = sanitizeCharacterPatch(
+    cloneJsonValue(previous) as unknown as CharacterSnapshot,
+  )
+  const currentSnapshot = sanitizeCharacterPatch(
+    cloneJsonValue(current) as unknown as CharacterSnapshot,
+  )
+  const keys = new Set([...Object.keys(previousSnapshot), ...Object.keys(currentSnapshot)])
+  for (const key of keys) {
+    if (snapshotJson(previousSnapshot[key]) !== snapshotJson(currentSnapshot[key])) {
+      patch[key] = cloneJsonValue(currentSnapshot[key])
+    }
+  }
+  return patch
+}
+
+function snapshotJson(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }

@@ -10,55 +10,45 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-3e landed chat `scriptstate` command coverage. It added
-`PATCH /api/v1/commands/chats/:chatId/scriptstate`, the
-`chat.scriptstate.updated` event, typed browser helpers, command-backed
-server `message_patch` chat-var replay, and Fastify-mode dispatch for
-CBS/chat-var, trigger `setVar`, and slash `/setvar` / `/addvar` writes.
-The older `/api/v1/generate/chat` direct `applyImport` persistence path
-for chat-var writes was removed; durable scriptstate persistence is now
-owned by commands.
+9-3f landed compatibility setters and access adapters. It added shared
+character/chat compatibility diff dispatchers, routed `setCurrentCharacter`,
+`setCharacterByIndex`, `setCurrentChat`, slash message-history commands,
+plugin V3 character/chat index setters, and MCP scalar character edits
+through existing 9-3 commands in Fastify mode, and made MCP lorebook,
+script, trigger, and asset writes explicitly unsupported until 9-4.
 
 ## Immediate Pickup
 
 Continue Phase 9 implementation with
-**9-3f - Compatibility setters and access adapters**.
+**9-4a - Lorebook collection commands**.
 
 Expected scope:
 
-- Replace compatibility setters and mutable access adapters assigned to
-  9-3f with existing commands or explicit unsupported behavior in
-  server-backed web mode.
-- Cover `setCurrentCharacter`, `setCurrentChat`, mutable
-  `getDatabase()`-style character/chat write helpers, CBS/MCP access
-  surfaces, and plugin/MCP character/chat writes called out by
-  `phase-9-command-map.md`.
-- Use already-landed character, chat, message, generation, and
-  scriptstate commands; do not add a new endpoint family for 9-3f.
-- Keep generic message append/update/delete/truncate/replace on the 9-3c
-  commands.
-- Keep generation result persistence on the 9-3d command.
-- Keep scriptstate persistence on the 9-3e command.
-- Keep chat record/folder metadata on the 9-3b commands.
-- Do not reopen settings groups, bot presets, prompt templates/items,
-  personas, translator presets, loadouts, or character scalar/catalog
-  commands in this slice.
-- Preserve the 9-1 command contract by routing through existing command
-  helpers rather than mutating `DBState.db` directly in Fastify mode.
-- Cover representative compatibility writes, explicit unsupported paths,
-  rollback where command dispatch fails, and no command dispatch outside
+- Add lorebook collection commands from the locked command map:
+  global lorebooks, character lorebooks, chat lorebooks, module lorebooks,
+  entry replacement, and reorder/delete behavior where currently exposed.
+- Give lorebook rows stable ids in the current schema as needed before
+  command addressing; this is a current-shape update, not a compatibility
+  migration.
+- Route server-backed web lorebook writes away from mutable
+  `DBState.db` paths and through typed command helpers.
+- Cover existing UI and compatibility surfaces that edit lorebooks,
+  including MCP character lorebook writes that 9-3f now rejects in
   Fastify mode.
+- Preserve existing 9-1 command contract: `baseRevision`, 409 conflict,
+  single mutation/revision/event on success, no revision bump on failure,
+  and rollback from browser dispatch helpers.
 
-Out of scope for 9-3f:
+Out of scope for 9-4a:
 
 - Settings groups, bot presets, prompt templates/items, personas,
-  translator presets, loadouts, character catalog/profile commands, and
-  chat record/folder metadata commands.
-- Generic message history commands; they landed in 9-3c.
-- Generation persistence; it landed in 9-3d.
-- Chat `scriptstate`; it landed in 9-3e.
-- Lorebook/script/trigger child collections and asset bytes/references;
-  keep them in 9-4.
+  translator presets, loadouts, character catalog/profile commands, chat
+  record/folder metadata commands, message commands, generation
+  persistence, scriptstate, and compatibility setters.
+- Script and trigger definition commands; keep them in 9-4b.
+- Module lifecycle/enablement commands; keep them in 9-4c.
+- Asset bytes/references; keep them in 9-4d.
+- Plugin records/config/storage bridge; keep them in 9-4e/9-4f.
 - Enforcing a read-only `DBState.db` guard.
 - Bootstrap/event projection implementation.
 - Server-side `.risu` import/export implementation.
@@ -80,12 +70,12 @@ Implementation notes:
   surgical patches are future work.
 - Tauri keeps its local storage path. Phase 9 gates server-backed web
   behavior without changing local desktop storage mode.
-- Character scalar profile patches now reject child collections and asset
-  reference fields owned by later slices. Do not loosen that in 9-3f.
-- Chat metadata patches now reject fields owned by later slices:
+- Character scalar profile patches reject child collections and asset
+  reference fields owned by later slices.
+- Chat metadata patches reject fields owned by later slices:
   `message`, `localLore`, `scriptstate`, generation/runtime fields, and
-  child collections. Do not loosen that in 9-3f; use message,
-  generation, or scriptstate commands instead.
+  child collections. Use message, generation, or scriptstate commands
+  instead.
 - Message patch commands now reject `generationInfo`; keep durable
   generation metadata on the 9-3d generation persistence command.
 - Generation persistence command accepts a finalized assistant message
@@ -94,19 +84,24 @@ Implementation notes:
 - Message rows preserve existing `message.chatId` as the public message id.
   The 9-3c helpers normalize missing or duplicate ids during message
   command mutations.
-- Chat scriptstate commands accept partial `{ patch }` values plus
-  optional `deleteKeys`; values are limited to string, number, or boolean.
-  Do not widen scriptstate commands to accept message rows, prompt info,
-  generation metadata, or script/trigger definitions.
+- 9-3f made lorebook/script/asset MCP child writes return explicit
+  unsupported errors in Fastify mode. Replace the lorebook part of that
+  behavior in 9-4a, but keep script/trigger and asset writes unsupported
+  until their owning slices land.
 
 ## Later Queue
 
-1. 9-4 - Lorebooks, modules, plugins, assets.
-2. 9-5 - Browser projection.
-3. 9-6 - Storage and provider-key gating.
-4. 9-7 - Server `.risu` codec core.
-5. 9-8 - Import/export routes and bundle assets.
-6. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-4b - Script and trigger definition commands.
+2. 9-4c - Module records and enablement.
+3. 9-4d - Asset reference commands.
+4. 9-4e - Plugin records and configuration.
+5. 9-4f - Plugin-storage kv and plugin database adapters.
+6. 9-4g - Compatibility sweep and focused tests.
+7. 9-5 - Browser projection.
+8. 9-6 - Storage and provider-key gating.
+9. 9-7 - Server `.risu` codec core.
+10. 9-8 - Import/export routes and bundle assets.
+11. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -119,7 +114,7 @@ Implementation notes:
 
 ## Verification
 
-Run focused command/adapter tests while building 9-3f, then
+Run focused command/adapter tests while building 9-4a, then
 before closing the slice run the full matrix:
 
 ```bash
@@ -129,10 +124,10 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-3e:
+Last recorded full baselines after 9-3f:
 
 - `pnpm check` - clean, with 0 Svelte errors and 0 warnings.
-- `pnpm test` - 682 tests passed, 4 skipped.
+- `pnpm test` - 686 tests passed, 4 skipped.
 - `pnpm api:test` - 1097 tests passed.
 - `pnpm build` - passed with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
@@ -146,7 +141,7 @@ Last recorded full baselines after 9-3e:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-3e.md`](../phases-completed/phase-9-client-thinning-9-3e.md)
+  [`../phases-completed/phase-9-client-thinning-9-3f.md`](../phases-completed/phase-9-client-thinning-9-3f.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

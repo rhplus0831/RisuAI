@@ -32,6 +32,11 @@ import {
   type PresetSnapshot,
   type ServerCommandResult,
 } from '../server/commands'
+import {
+  currentCharacterStateSnapshot,
+  dispatchCompatibleCharacterUpdate,
+} from '../characterCommands'
+import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from '../chatCommands'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = '2026.4.181' //<APP_VERSION_POINT>
@@ -804,11 +809,26 @@ export function getCurrentCharacter(options: getDatabaseOptions = {}): character
   return char
 }
 
-export function setCurrentCharacter(char: character) {
+export function setCurrentCharacter(
+  char: character,
+  options: { dispatchServerCommand?: boolean } = {},
+) {
+  const shouldDispatch = options.dispatchServerCommand ?? true
+  const index = get(selectedCharID)
+  const previousState =
+    shouldDispatch && canUseServerCommands() ? currentCharacterStateSnapshot() : null
+  const previousCharacter =
+    previousState && DBState.db.characters
+      ? $state.snapshot(DBState.db.characters[index])
+      : undefined
+
   if (!DBState.db.characters) {
     DBState.db.characters = []
   }
-  DBState.db.characters[get(selectedCharID)] = char
+  DBState.db.characters[index] = char
+  if (previousState) {
+    dispatchCompatibleCharacterUpdate(previousCharacter, char, previousState)
+  }
 }
 
 export function getCharacterByIndex(index: number, options: getDatabaseOptions = {}): character {
@@ -821,10 +841,19 @@ export function getCharacterByIndex(index: number, options: getDatabaseOptions =
 }
 
 export function setCharacterByIndex(index: number, char: character) {
+  const previousState = canUseServerCommands() ? currentCharacterStateSnapshot() : null
+  const previousCharacter =
+    previousState && DBState.db.characters
+      ? $state.snapshot(DBState.db.characters[index])
+      : undefined
+
   if (!DBState.db.characters) {
     DBState.db.characters = []
   }
   DBState.db.characters[index] = char
+  if (previousState) {
+    dispatchCompatibleCharacterUpdate(previousCharacter, char, previousState)
+  }
 }
 
 export function getCurrentChat() {
@@ -833,9 +862,14 @@ export function getCurrentChat() {
 }
 
 export function setCurrentChat(chat: Chat) {
+  const previousState = canUseServerCommands() ? currentChatStateSnapshot() : null
   const char = getCurrentCharacter()
+  const previousChat = previousState ? $state.snapshot(char?.chats?.[char.chatPage]) : undefined
   char.chats[char.chatPage] = chat
-  setCurrentCharacter(char)
+  setCurrentCharacter(char, { dispatchServerCommand: false })
+  if (previousState) {
+    dispatchCompatibleChatUpdate(previousChat, chat, previousState)
+  }
 }
 
 export interface DynamicOutput {

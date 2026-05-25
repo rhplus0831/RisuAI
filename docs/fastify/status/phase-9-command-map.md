@@ -235,25 +235,22 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-3e chat `scriptstate` and scripting side effects is complete.
-Continue with **9-3f - Compatibility setters and access adapters**:
+9-3f compatibility setters and access adapters is complete.
+Continue with **9-4a - Lorebook collection commands**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Replace compatibility setters and mutable access adapters with already
-  landed commands or explicit unsupported behavior in server-backed web
-  mode.
-- Cover `setCurrentCharacter`, `setCurrentChat`, mutable
-  `getDatabase()`-style character/chat write helpers, CBS/MCP access
-  surfaces, and plugin/MCP character/chat writes.
-- Do not add new endpoint families for 9-3f; use existing character,
-  chat, message, generation, and scriptstate commands.
-- Keep generation result persistence on
-  `POST /api/v1/commands/chats/:chatId/generation-result`.
-- Keep scriptstate persistence on
-  `PATCH /api/v1/commands/chats/:chatId/scriptstate`.
-- Keep lorebook/script/trigger child collections, projection enforcement,
-  and plugin bridge work in their later slices.
+- Implement the lorebook endpoints listed above for global,
+  character-scoped, chat-scoped, and module-scoped lorebook collections.
+- Add stable ids to lorebook rows in the current schema where the command
+  shape needs id-addressable children.
+- Replace server-backed web lorebook mutations with typed command helpers
+  and browser dispatch plumbing.
+- Re-enable MCP character lorebook writes in Fastify mode by routing them
+  through the new lorebook commands; keep script/trigger and asset writes
+  explicitly unsupported until their owning 9-4 slices.
+- Keep projection enforcement, plugin database bridge work, and storage
+  gating in their later slices.
 - Preserve the 9-1 command response and conflict contract through the
   existing command helpers.

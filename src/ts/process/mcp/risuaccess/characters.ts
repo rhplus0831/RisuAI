@@ -1,5 +1,10 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
+import {
+  currentCharacterStateSnapshot,
+  dispatchCompatibleCharacterUpdate,
+} from 'src/ts/characterCommands'
+import { canUseServerCommands } from 'src/ts/server/commands'
 import { type character, type loreBook } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
@@ -552,6 +557,8 @@ export class CharacterHandler extends MCPToolHandler {
       backgroundEmbedding: 'backgroundHTML',
     } as const
 
+    const previous = currentCharacterStateSnapshot()
+    const previousCharacter = JSON.parse(JSON.stringify(char)) as character
     for (const [field, value] of Object.entries(data)) {
       if (fieldRemap[field as keyof typeof fieldRemap]) {
         const realField = fieldRemap[field as keyof typeof fieldRemap]
@@ -566,6 +573,7 @@ export class CharacterHandler extends MCPToolHandler {
         ]
       }
     }
+    dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
 
     return [
       {
@@ -592,6 +600,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('lorebook edits')
 
     if (
       !(await this.promptAccess(
@@ -667,6 +676,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('lorebook edits')
 
     if (
       !(await this.promptAccess(
@@ -754,6 +764,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('regex script edits')
 
     if (
       !(await this.promptAccess(
@@ -823,6 +834,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('regex script edits')
 
     if (
       !(await this.promptAccess(
@@ -903,6 +915,8 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    if (canUseServerCommands())
+      return unsupportedServerBackedCharacterWrite('asset reference edits')
 
     if (
       !(await this.promptAccess(
@@ -987,6 +1001,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    if (canUseServerCommands()) return unsupportedServerBackedCharacterWrite('Lua trigger edits')
 
     if (
       !(await this.promptAccess(
@@ -1039,4 +1054,13 @@ export class CharacterHandler extends MCPToolHandler {
       },
     ]
   }
+}
+
+function unsupportedServerBackedCharacterWrite(surface: string): RPCToolCallContent[] {
+  return [
+    {
+      type: 'text',
+      text: `Error: ${surface} are not supported in server-backed web mode until the Phase 9-4 command slice lands.`,
+    },
+  ]
 }

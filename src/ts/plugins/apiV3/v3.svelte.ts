@@ -10,6 +10,11 @@ import {
 } from '../plugins.svelte'
 import { SandboxHost } from './factory'
 import { getDatabase } from 'src/ts/storage/database.svelte'
+import {
+  currentCharacterStateSnapshot,
+  dispatchCompatibleCharacterUpdate,
+} from 'src/ts/characterCommands'
+import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from 'src/ts/chatCommands'
 import { SafeLocalPluginStorage, tagWhitelist } from '../pluginSafeClass'
 import DOMPurify from 'dompurify'
 import {
@@ -886,7 +891,10 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       const charIds = Object.keys(db.characters)
       const charId = charIds[index]
       if (charId) {
+        const previous = currentCharacterStateSnapshot()
+        const previousCharacter = $state.snapshot(DBState.db.characters[charId])
         DBState.db.characters[charId] = char
+        dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
       }
     },
     getChatFromIndex: (characterIndex: number, chatIndex: number) => {
@@ -908,7 +916,10 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (charId) {
         const chats = db.characters[charId].chats
         if (chats && chats[chatIndex]) {
+          const previous = currentChatStateSnapshot()
+          const previousChat = $state.snapshot(DBState.db.characters[charId].chats[chatIndex])
           DBState.db.characters[charId].chats[chatIndex] = chat
+          dispatchCompatibleChatUpdate(previousChat, chat, previous)
         }
       }
     },

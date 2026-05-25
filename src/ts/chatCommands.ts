@@ -131,6 +131,34 @@ export function dispatchUpdateChat(
   )
 }
 
+export function dispatchCompatibleChatUpdate(
+  previousChat: Chat | undefined,
+  nextChat: Chat | undefined,
+  previous: ChatStateSnapshot,
+): void {
+  const chatId = nextChat?.id ?? previousChat?.id
+  if (!chatId || !previousChat || !nextChat) return
+
+  const metadataPatch = changedChatMetadata(previousChat, nextChat)
+  if (Object.keys(metadataPatch).length > 0) {
+    dispatchUpdateChat(chatId, metadataPatch, previous)
+  }
+
+  if (snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? [])) {
+    dispatchReplaceMessages(chatId, nextChat.message ?? [], previous)
+  }
+
+  const scriptstatePatch = changedScriptstatePatch(previousChat.scriptstate, nextChat.scriptstate)
+  if (Object.keys(scriptstatePatch.patch).length > 0 || scriptstatePatch.deleteKeys.length > 0) {
+    dispatchPatchChatScriptstate(
+      chatId,
+      scriptstatePatch.patch,
+      scriptstatePatch.deleteKeys,
+      previous,
+    )
+  }
+}
+
 export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {
   runChatCommand(
     (baseRevision) =>
@@ -446,4 +474,43 @@ function isScriptstateValue(value: unknown): value is ChatScriptstateValue {
     typeof value === 'boolean' ||
     (typeof value === 'number' && Number.isFinite(value))
   )
+}
+
+function changedChatMetadata(previous: Chat, current: Chat): ChatSnapshot {
+  const patch: ChatSnapshot = {}
+  const previousSnapshot = sanitizeChatPatch(cloneJsonValue(previous) as unknown as ChatSnapshot)
+  const currentSnapshot = sanitizeChatPatch(cloneJsonValue(current) as unknown as ChatSnapshot)
+  const keys = new Set([...Object.keys(previousSnapshot), ...Object.keys(currentSnapshot)])
+  for (const key of keys) {
+    if (snapshotJson(previousSnapshot[key]) !== snapshotJson(currentSnapshot[key])) {
+      patch[key] = cloneJsonValue(currentSnapshot[key])
+    }
+  }
+  return patch
+}
+
+function changedScriptstatePatch(
+  previous: Chat['scriptstate'] | undefined,
+  current: Chat['scriptstate'] | undefined,
+): { patch: ChatScriptstatePatch; deleteKeys: string[] } {
+  const patch: ChatScriptstatePatch = {}
+  const deleteKeys: string[] = []
+  const previousState = previous ?? {}
+  const currentState = current ?? {}
+  const keys = new Set([...Object.keys(previousState), ...Object.keys(currentState)])
+  for (const key of keys) {
+    if (!(key in currentState)) {
+      deleteKeys.push(key)
+      continue
+    }
+    if (snapshotJson(previousState[key]) !== snapshotJson(currentState[key])) {
+      patch[key] = currentState[key]
+    }
+  }
+  return { patch: sanitizeScriptstatePatch(patch), deleteKeys }
+}
+
+function snapshotJson(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }
