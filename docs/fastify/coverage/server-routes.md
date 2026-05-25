@@ -5,8 +5,10 @@ Date: 2026-05-26
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
 completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
 memory job/read routes have coverage under `server/fastify/__tests__/`.
-Phase 9 command routes are covered through 9-4g, and the 9-5a command
-event stream is covered by focused route tests.
+Phase 9 command routes are covered through the 9-4 resource families, and
+the command-event SSE stream is covered by focused route tests. Browser
+projection and 9-5d residual-sweep coverage live in the frontend test
+suite rather than this route inventory.
 
 ## Phase 1: Foundation
 

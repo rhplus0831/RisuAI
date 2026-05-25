@@ -10,144 +10,74 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-5d has two residual sweep passes landed:
+9-5b and 9-5c moved Fastify-served web startup onto
+`GET /api/v1/bootstrap` and subscribed it to `GET /api/v1/events`.
 
-- Character asset helper writes in `src/ts/characters.ts`
-  (`selectCharImg`, `dumpCharImage`, `changeCharImage`, `addCharEmotion`,
-  and `rmCharEmotion`) now snapshot previous character state and dispatch
-  through `dispatchCompatibleCharacterUpdate`, so Fastify mode persists
-  owned asset-reference fields through the existing character command.
-- Legacy v1 chat JSON imports now dispatch `createChat` commands after
-  optimistic local insertion, matching the v2 and HTML import paths.
-- Drag-and-drop `.risum` module import now returns explicit unsupported
-  behavior in Fastify server-backed web mode instead of pushing directly
-  into `DBState.db.modules`. Local/Tauri behavior is unchanged.
-- Manual module `.risum` import in `src/ts/process/modules.ts`, service
-  worker shared `.risum` module import, and browser file-handler `.risum`
-  import in `src/ts/characterCards.ts` now return the same explicit
-  unsupported behavior in Fastify mode before local asset decoding.
-- Lorebook local activation in `src/lib/SideBars/LoreBook/LoreBookData.svelte`
-  now dispatches the existing chat lorebook replacement command after the
-  optimistic `chat.localLore` change.
-- Focused coverage was added to
-  `src/ts/compatibilityAdapters.test.ts` for character asset helper
-  command dispatch, and to `src/ts/process/modules.test.ts` for Fastify
-  `.risum` import rejection before local asset writes.
+Two 9-5d residual sweep passes then landed:
+
+- Character asset helpers and legacy v1 chat JSON imports now dispatch
+  existing character/chat commands in Fastify mode.
+- Drag, manual, service-worker, and browser file-handler `.risum` module
+  import paths now return explicit unsupported behavior in server-backed
+  web mode before local asset writes.
+- Lorebook local activation now dispatches the existing chat lorebook
+  replacement command after the optimistic `chat.localLore` change.
+- Focused regressions landed in `src/ts/compatibilityAdapters.test.ts`
+  and `src/ts/process/modules.test.ts`.
 
 ## Immediate Pickup
 
-Continue Phase 9 implementation with **9-5d - Residual command
-replacement sweep**. Do not start 9-5e yet; the read-only guard still
-needs more residual write replacement.
-
-Expected scope:
+Continue **9-5d - Residual command replacement sweep**. Do not start
+9-5e yet; the read-only guard still needs more residual write
+replacement.
 
 - Sweep remaining direct `DBState.db` writes and mutable `getDatabase()`
   references in server-backed web paths for resource families already
   owned by 9-2 through 9-4.
 - Replace remaining server-backed web writes with existing typed command
-  helpers, existing compatibility bridges, or explicit unsupported
-  behavior where the owning later slice has not defined a server path.
+  helpers, compatibility bridges, or explicit unsupported behavior where
+  a later slice has not defined a server path.
 - Keep Tauri/local-only import, storage, backup, and file paths untouched.
 - Treat bootstrap projection replacement and event-driven re-bootstrap as
-  projection boundaries, not direct-write exceptions for ordinary UI
-  mutation paths.
-- Add focused regression tests around the highest-risk residual write
-  sites discovered by the sweep.
+  projection boundaries, not ordinary UI mutation exceptions.
+- Add focused regression tests around the highest-risk write sites found.
 
-Out of scope for 9-5d:
-
-- Enforcing a read-only `DBState.db` guard.
-- Storage/provider-key gating.
-- Server-side `.risu` import/export implementation.
-- Asset byte upload/storage changes beyond existing Fastify asset APIs.
-- Plugin code execution server-side.
-- Per-event surgical browser projection patching.
+Out of scope for 9-5d: the read-only `DBState.db` guard, storage and
+provider-key gating, server-side `.risu` import/export, asset byte
+storage changes beyond existing Fastify asset APIs, server-side plugin
+execution, and per-event surgical browser projection patching.
 
 Implementation notes:
 
-- Phase 9 is not a single "add commands" task. Treat command foundation,
-  browser projection, storage gating, provider-key masking, and the
-  server `.risu` codec as separate rollback surfaces.
-- Build on the foundation in `server/fastify/src/commands/`,
+- Command code lives in `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
-  `src/ts/server/commands.ts`.
-- Use the locked command map in
-  [`phase-9-command-map.md`](phase-9-command-map.md) as the source of
-  truth for command names, payload behavior, event names, and plugin
-  bridge policy.
-- Debounced re-bootstrap is the Phase 9 projection target. Per-event
-  surgical patches are future work.
-- Tauri keeps its local storage path. Phase 9 gates server-backed web
-  behavior without changing local desktop storage mode.
-- Character scalar profile patches reject child collections, but 9-4d now
-  owns character asset-reference fields (`image`, `emotionImages`,
-  `additionalAssets`, `ccAssets`, and `prebuiltAssetExclude`).
-- Chat metadata patches reject fields owned by later slices:
-  `message`, `localLore`, `scriptstate`, generation/runtime fields, and
-  child collections except the 9-4c-owned `modules` active-module field.
-  Use message, generation, or scriptstate commands instead.
-- Message patch commands now reject `generationInfo`; keep durable
-  generation metadata on the 9-3d generation persistence command.
-- Generation persistence command accepts a finalized assistant message
-  snapshot and optional `targetMessageId` for continue-style replacement;
-  do not use it for scriptstate.
-- Message rows preserve existing `message.chatId` as the public message id.
-  The 9-3c helpers normalize missing or duplicate ids during message
-  command mutations.
-- 9-3f made lorebook/script/asset MCP child writes return explicit
-  unsupported errors in Fastify mode. 9-4a replaced lorebook writes,
-  9-4b replaced script/trigger writes, and 9-4d replaced regular asset
-  reference writes; MCP asset import still needs a dedicated server-owned
-  path in a later slice.
-- 9-4a added `src/ts/server/lorebookBridge.svelte.ts` as a debounced
-  whole-collection replacement bridge for bound lorebook UI surfaces.
-- 9-4b added `src/ts/server/scriptDefinitionBridge.svelte.ts` as a
-  debounced whole-collection replacement bridge for bound script/trigger
-  UI surfaces.
-- 9-4c added `src/ts/moduleCommands.ts` for module record dispatch and
-  rollback. Chat active-module toggles use the existing chat metadata
-  command with the `modules` field; character module links use
-  `POST /api/v1/commands/characters/:characterId/modules/reorder`.
-- 9-4d made Fastify-mode `saveAsset` return raw server asset ids, not
-  `assets/<id>.<ext>` paths. Tauri/local storage keeps the old asset path
-  shape. Server validators reject missing or malformed server asset ids
-  for fields that expect uploaded server assets.
-- 9-4e added `src/ts/pluginCommands.ts` for plugin record/config
-  dispatch and rollback. Plugin `name` is the command id and is not
-  renameable through plugin patch commands. Provider selection stores the
-  provider string as-is because plugin-registered provider names do not
-  always equal plugin record names.
-- 9-4f added plugin-storage put/delete/bulk commands and extended
-  `src/ts/pluginCommands.ts` for plugin custom storage rollback. Fastify
-  mode `pluginStorage.*`, plugin database proxy writes, `setDatabaseLite`,
-  and `setDatabase` dispatch command-backed translation for plugin
-  storage, plugin records/provider, and scalar settings; unknown top-level
-  plugin DB keys are stored in `pluginCustomStorage`.
-- 9-4g tightened the plugin database bridge so `currentPluginProvider`,
-  `modules`, and `enabledModules` translate through existing provider and
-  module commands in Fastify mode. This did not add new command endpoints.
-- 9-5a added `GET /api/v1/events` as an auth-gated SSE route over the
-  command event sink. It intentionally does not add browser subscription
-  code; 9-5c owns debounced re-bootstrap on events.
-- 9-5b added `src/ts/server/bootstrap.ts` and `loadWebInitialDatabase()`.
-  Fastify mode reads `/api/v1/bootstrap`, sets `DBState.db`, and caches
-  the revision. It intentionally does not add event subscription,
-  read-only guards, or storage/save-loop gating.
-- 9-5c added `src/ts/server/events.ts` and wired Fastify web startup to
-  subscribe to `/api/v1/events`. Command events debounce a bootstrap
-  re-fetch and replace the browser projection. The helper uses `fetch`
-  rather than native `EventSource` because the route requires the
-  `risu-auth` header.
-- 9-5d first pass routed character asset helper writes and legacy chat v1
-  imports through existing commands, and made `.risum` drag import
-  explicitly unsupported in Fastify mode.
-- 9-5d second pass extended explicit unsupported behavior to manual,
-  shared, and browser file-handler `.risum` module imports in Fastify
-  mode, and routed lorebook local-activation `chat.localLore` writes
-  through the existing chat lorebook replacement command.
-- MCP module import is explicitly unsupported in server-backed web mode
-  until a later slice defines a dedicated server-owned path.
+  `src/ts/server/commands.ts`. The command map is the source of truth for
+  names, payload behavior, events, and plugin bridge policy.
+- Browser projection now loads through `src/ts/server/bootstrap.ts` and
+  refreshes from `src/ts/server/events.ts`; debounced re-bootstrap is the
+  Phase 9 target, while per-event patches are future work.
+- Tauri keeps its local storage path. All 9-5d gates should be
+  server-backed web specific.
+- Character scalar patches reject child collections, while 9-4d owns
+  character asset-reference fields and Fastify-mode `saveAsset` returns
+  raw server asset ids.
+- Chat metadata patches reject `message`, `localLore`, `scriptstate`,
+  generation/runtime fields, and child collections except the 9-4c
+  `modules` field. Use message, generation, scriptstate, lorebook, or
+  module commands for those fields.
+- Message commands reject `generationInfo`; durable generation metadata
+  belongs on the 9-3d generation persistence command. Message rows keep
+  `message.chatId` as the public message id after 9-3c normalization.
+- 9-4a/9-4b whole-collection bridges cover bound lorebook and
+  script/trigger UI surfaces. 9-4c covers module records and
+  active-module toggles. 9-4e/9-4f cover plugin records, provider
+  selection, plugin storage, and unknown plugin DB keys.
+- 9-4g tightened plugin database translation for
+  `currentPluginProvider`, `modules`, and `enabledModules` without adding
+  new endpoints.
+- MCP module import, MCP asset import, and server-backed `.risum` module
+  import remain explicitly unsupported until later slices define
+  dedicated server-owned paths.
 
 ## Later Queue
 
@@ -187,36 +117,18 @@ Last recorded full baselines after the 9-5d first pass:
 - `pnpm build` - passed with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
-Focused 9-5a run:
+Focused 9-5 runs:
 
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/events.test.ts`
+- 9-5a: `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/events.test.ts`
   - 4 tests passed.
-
-Focused 9-5b run:
-
-- `pnpm exec vitest run src/ts/server/bootstrap.test.ts src/ts/bootstrap.test.ts`
+- 9-5b: `pnpm exec vitest run src/ts/server/bootstrap.test.ts src/ts/bootstrap.test.ts`
   - 5 tests passed.
-
-Focused 9-5c run:
-
-- `pnpm exec vitest run src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts`
+- 9-5c: `pnpm exec vitest run src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts`
   - 11 tests passed.
-
-Focused 9-5d first-pass run:
-
-- `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
-  - 8 tests passed.
-- `pnpm check`
-  - clean, with 0 Svelte errors and 0 warnings.
-
-Focused 9-5d second-pass runs:
-
-- `pnpm exec vitest run src/ts/process/modules.test.ts`
-  - 1 test passed.
-- `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts src/ts/process/modules.test.ts`
-  - 9 tests passed.
-- `pnpm check`
-  - clean, with 0 Svelte errors and 0 warnings.
+- 9-5d first pass: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`; `pnpm check`
+  - 8 tests passed; check clean.
+- 9-5d second pass: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts src/ts/process/modules.test.ts`; `pnpm check`
+  - 9 tests passed; check clean.
 
 ## References
 

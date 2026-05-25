@@ -71,16 +71,16 @@ shards under [`coverage/`](coverage/).
   similarity ranking, budget allocation, prompt-memory selection,
   read routes, browser memory adapter/progress/list-cancel behavior, and
   server-backed `hypav3-memory` fixture parity.
-- Phase 9 command coverage has landed through 9-4g plus the 9-5a event
-  stream: foundation, settings, presets, prompt settings/items, personas,
-  translator presets, loadouts, characters, chats, chat folders,
-  messages, generation persistence, chat scriptstate, lorebooks,
-  scripts/triggers, modules, asset references, plugins, plugin storage,
-  and compatibility adapters. Server command routes are covered in
-  `server/fastify/__tests__/commands.test.ts`, browser command helpers in
-  `src/ts/server/commands.test.ts`, adapter routing in
-  `src/ts/compatibilityAdapters.test.ts`, and the SSE stream in
-  `server/fastify/__tests__/events.test.ts`.
+- Phase 9 coverage has landed for command routes through the 9-4 resource
+  families, the 9-5a event stream, 9-5b/9-5c browser projection helpers,
+  and focused 9-5d residual-sweep regressions. Server command routes are
+  covered in `server/fastify/__tests__/commands.test.ts`, browser command
+  helpers in `src/ts/server/commands.test.ts`, adapter routing in
+  `src/ts/compatibilityAdapters.test.ts`, the SSE route in
+  `server/fastify/__tests__/events.test.ts`, bootstrap/event projection
+  helpers in `src/ts/server/bootstrap.test.ts`, `src/ts/server/events.test.ts`,
+  and `src/ts/bootstrap.test.ts`, and module-import residuals in
+  `src/ts/process/modules.test.ts`.
 
 ## Where to look
 

@@ -41,8 +41,9 @@ the phase file.
 
 Phase 9 is the active phase. Phase 8 is closed, so server-owned
 generation, prompt assembly, and memory surfaces are ready for the client
-thinning workstream. Phase 9 has landed through the 9-5a command-event
-stream; the next pickup is 9-5b bootstrap projection loading.
+thinning workstream. Phase 9 has landed through the 9-5c event-driven
+bootstrap refresh; the current pickup is the 9-5d residual
+command-replacement sweep.
 
 ## Completed Detail
 

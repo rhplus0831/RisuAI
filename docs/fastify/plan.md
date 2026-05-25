@@ -41,12 +41,14 @@ Stable baseline facts:
 - Phase 8 closed with server memory tables, read/job routes,
   summarize/embed handlers, prompt-memory selection, and live
   chunk-planning for fresh server-backed chats.
-- Phase 9 has landed command coverage through 9-4g plus the 9-5a event
-  stream: settings, presets, prompt items, personas, translator presets,
-  loadouts, characters, chats, messages, generation persistence,
-  scriptstate, lorebooks, scripts/triggers, modules, asset references,
-  plugins, plugin storage, compatibility adapters, and SSE invalidation
-  transport.
+- Phase 9 has landed command coverage through the 9-4 resource families,
+  plus the 9-5a event stream, 9-5b bootstrap projection loader, 9-5c
+  event-driven re-bootstrap, and early 9-5d residual write replacements.
+  Covered command families include settings, presets, prompt items,
+  personas, translator presets, loadouts, characters, chats, messages,
+  generation persistence, scriptstate, lorebooks, scripts/triggers,
+  modules, asset references, plugins, plugin storage, and compatibility
+  adapters.
 - Domain state still uses the migration-window `data/db.json` blob for
   resources not yet extracted to SQL. Memory uses dedicated SQL tables
   added in Phase 8.

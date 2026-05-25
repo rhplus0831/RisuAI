@@ -14,8 +14,9 @@ tests, assembler tests, and browser `/chat` adapter + preview wiring
 tests. Phase 8 now has memory job/read route coverage, focused memory
 service tests, browser memory adapter tests, and server-backed
 `hypav3-memory` fixture parity. Phase 9 command routes are covered
-through 9-4g, and the 9-5a command-event SSE stream has focused route
-coverage.
+through the 9-4 resource families; 9-5 coverage now includes the command
+event SSE route, browser bootstrap/event projection helpers, and focused
+9-5d residual-sweep regressions.
 
 ## Shards
 

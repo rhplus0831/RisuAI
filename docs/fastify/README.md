@@ -17,11 +17,12 @@ paths directly instead of preserving old intermediate Fastify shapes.
 ## Scope
 
 Current status lives in [`status.md`](status.md). As of 2026-05-26,
-Phases 0-8 are closed and Phase 9, client thinning, is active. The 9-5a
-events endpoint has landed; the next pickup is 9-5b bootstrap projection
-loading. Fastify is the live server path, Express has been deleted, and
-the Dockerfile / compose file target port 6002 with `/app/data`
-persisted.
+Phases 0-8 are closed and Phase 9, client thinning, is active. Phase 9
+has landed through the 9-5c event-driven bootstrap refresh, and 9-5d is
+the active residual command-replacement sweep before the read-only
+`DBState.db` guard. Fastify is the live server path, Express has been
+deleted, and the Dockerfile / compose file target port 6002 with
+`/app/data` persisted.
 
 Historical phase logs live in [`phases-completed/`](phases-completed/).
 Route and test inventories live under [`coverage/`](coverage/).

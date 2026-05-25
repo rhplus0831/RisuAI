@@ -18,7 +18,7 @@ Concise snapshot of each migration workstream. Historical detail is in
 | 6 - Server-side generation              | Complete    | Closed 2026-05-22 for `/completion`.                                       |
 | 7 - Server-side prompt assembly         | Complete    | Closed 2026-05-24 after closeout verification.                             |
 | 8 - Hypa V3 memory server-side          | Complete    | Closed 2026-05-25 after full closeout verification.                        |
-| 9 - Client thinning                     | In progress | 9-5a event stream landed; next slice is 9-5b bootstrap projection loading. |
+| 9 - Client thinning                     | In progress | 9-5d residual sweep active; bootstrap projection and event refresh landed. |
 
 ## Workstreams
 

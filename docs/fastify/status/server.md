@@ -32,7 +32,7 @@ docs.
   emit their mapped command event.
 - `GET /api/v1/events` is the auth-gated Phase 9 command-event SSE
   stream. It sends committed command events as `event: command` frames
-  with `{ type, revision, resource, id?, parentId? }` payloads for later
+  with `{ type, revision, resource, id?, parentId? }` payloads for
   browser projection invalidation.
 - Memory routes are auth-gated: `POST /api/v1/memory/jobs`,
   `GET /api/v1/memory/jobs`, `DELETE /api/v1/memory/jobs/:id`,
@@ -45,7 +45,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-next concrete pickup is 9-5b bootstrap projection loading in
+current pickup is the 9-5d residual command-replacement sweep in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

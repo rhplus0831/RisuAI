@@ -178,7 +178,7 @@ move.
 
 | Family               | Endpoint / helper                                                                                 | Payload notes                                                                                                                                     | Event names                                                                     | Slice      |
 | -------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------- |
-| Events               | `GET /api/v1/events`                                                                              | Persistent SSE of command events. Client subscription and debounced bootstrap re-fetch land in 9-5c.                                              | All command events                                                              | 9-5a, 9-5c |
+| Events               | `GET /api/v1/events`                                                                              | Persistent SSE of command events. Client subscription and debounced bootstrap re-fetch landed in 9-5c.                                            | All command events                                                              | 9-5a, 9-5c |
 | Bootstrap projection | `GET /api/v1/bootstrap`, `src/ts/server/bootstrap.ts`                                             | Web startup uses server bootstrap in server-backed mode. `DBState.db` guard turns on after replacement sweep.                                     | N/A                                                                             | 9-5b, 9-5e |
 | Storage gating       | Browser helpers, not a command route                                                              | Prevent server-backed web startup/save/backup/asset/import paths from reaching localForage, OPFS, AutoStorage, or NodeStorage.                    | N/A                                                                             | 9-6        |
 | Server `.risu` codec | Server modules plus `/api/v1/import/risusave`, `/api/v1/export/risusave`, `/api/v1/export/bundle` | Existing JSON import route becomes the server codec route. Import decodes into command/import resource shape. Export walks real asset references. | `state.imported`, `state.exported` for event stream visibility where applicable | 9-7, 9-8   |
@@ -233,16 +233,15 @@ command; they must never replace the whole DB blob.
   mutation fails in server-backed web mode after assigned replacement
   slices are complete.
 
-## Next Implementation Pickup
+## Current Implementation Pickup
 
-9-5a events endpoint is complete. Continue with
-**9-5b - Bootstrap projection loader**:
+9-5a, 9-5b, and 9-5c are complete. Continue with
+**9-5d - Residual command replacement sweep**:
 
-- Add the browser-side bootstrap helper for authenticated
-  `GET /api/v1/bootstrap` reads in Fastify server-backed web mode.
-- Wire Fastify-served browser startup to load the returned projection into
-  `DBState.db` and cache the returned revision for command helpers.
-- Keep Tauri/local browser startup on the existing local storage path.
-- Keep event subscription, debounced re-bootstrap, residual direct-write
-  sweep, read-only `DBState.db` guard, provider-key masking, server
-  `.risu` import/export, and storage gating in their later slices.
+- Sweep remaining server-backed web direct writes for resource families
+  already owned by 9-2 through 9-4.
+- Replace them with existing typed command helpers or explicit
+  unsupported behavior when the owning later slice has not defined a
+  server path.
+- Keep the read-only `DBState.db` guard, provider-key masking, storage
+  gating, and server `.risu` import/export in their later slices.
