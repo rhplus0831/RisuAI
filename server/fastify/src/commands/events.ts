@@ -259,6 +259,30 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'character.modules.reordered',
     resource: 'character',
   },
+  pluginCreated: {
+    type: 'plugin.created',
+    resource: 'plugin',
+  },
+  pluginUpdated: {
+    type: 'plugin.updated',
+    resource: 'plugin',
+  },
+  pluginDeleted: {
+    type: 'plugin.deleted',
+    resource: 'plugin',
+  },
+  pluginEnabled: {
+    type: 'plugin.enabled',
+    resource: 'plugin',
+  },
+  pluginProviderSelected: {
+    type: 'plugin.provider.selected',
+    resource: 'plugin',
+  },
+  pluginReordered: {
+    type: 'plugin.reordered',
+    resource: 'plugin',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

@@ -1,10 +1,10 @@
 # Phase 9 - Client Thinning
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 Status: active. Last landed slice:
-**9-4d - Asset reference commands**. Next slice:
-**9-4e - Plugin records and configuration**.
+**9-4e - Plugin records and configuration**. Next slice:
+**9-4f - Plugin-storage kv and plugin database adapters**.
 
 ## Goal
 
@@ -192,6 +192,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-4d.md`](../phases-completed/phase-9-client-thinning-9-4d.md).
   - **9-4e - Plugin records and configuration.** Install, enable/disable,
     remove, provider selection, arguments, and plugin config UI writes.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-4e.md`](../phases-completed/phase-9-client-thinning-9-4e.md).
   - **9-4f - Plugin-storage kv and plugin database adapters.** Implement
     the 9-0 translation bridge and composite mixed-resource command, then
     wire plugin API callers and tests.

@@ -1,6 +1,6 @@
 # Next Steps
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 Use this file as the day-to-day pickup runbook. Completed slice details
 live in [`../phases-completed/`](../phases-completed/).
@@ -10,30 +10,33 @@ import paths directly instead of preserving intermediate Fastify shapes.
 
 ## Last Done
 
-9-4d landed asset reference command coverage. It added shared server
-asset-reference validation, allowed character and module asset fields
-through their owning commands, validated persona icons, display
-`customBackground`, and character folder `imgFile` references, routed
-Fastify-mode asset uploads through `POST /api/v1/assets`, resolved server
-asset ids through `/api/v1/assets/:id`, and kept bundle walking plus full
-`.risu` import/export deferred to 9-8.
+9-4e landed plugin record/configuration command coverage. It added
+Fastify commands for plugin create, patch, delete, enable/disable,
+provider selection, and reorder, added typed browser helpers plus
+`src/ts/pluginCommands.ts`, and routed Fastify-mode plugin import/update,
+enable/disable, delete, plugin argument writes, `setArg` / `setArgument`,
+and provider selection through command helpers. Plugin code execution
+remains browser-side, and plugin custom storage plus plugin database
+setter translation stay deferred to 9-4f.
 
 ## Immediate Pickup
 
 Continue Phase 9 implementation with
-**9-4e - Plugin records and configuration**.
+**9-4f - Plugin-storage kv and plugin database adapters**.
 
 Expected scope:
 
-- Add durable plugin record/configuration command coverage for installed
-  plugin rows, enable/disable state, provider selection, arguments, and
-  plugin config UI writes.
-- Route server-backed web plugin record/config writes through command
-  helpers instead of direct `DBState.db` mutation.
+- Add durable plugin-storage kv commands for `pluginCustomStorage`.
+- Route server-backed web `pluginStorage.*` API calls through command
+  helpers instead of direct `DBState.db.pluginCustomStorage` mutation.
+- Implement the plugin database setter translation bridge for
+  `getDatabase`, `setDatabaseLite`, and `setDatabase`: recognized
+  top-level keys dispatch their owning typed commands, and unknown keys go
+  to plugin custom storage.
 - Keep browser plugin code execution sandboxed; commands own durable DB
   state only.
-- Keep plugin custom storage and plugin database setter translation for
-  9-4f.
+- Keep mixed-resource bridge ordering conservative and rollback-aware;
+  do not reintroduce whole-DB replacement.
 - Preserve existing 9-1 command contract: `baseRevision`, 409 conflict,
   single mutation/revision/event on success, no revision bump on failure,
   and rollback from browser dispatch helpers.
@@ -45,9 +48,10 @@ Out of scope for 9-4e:
   record/folder metadata commands, message commands, generation
   persistence, scriptstate, lorebook commands, script/trigger definition
   commands, module record/enablement commands, asset reference commands,
-  and compatibility setters already covered by prior slices.
+  plugin record/configuration commands, and compatibility setters already
+  covered by prior slices.
 - Asset byte upload/storage changes beyond existing Fastify asset APIs.
-- Plugin-storage kv and plugin database setter bridge; keep them in 9-4f.
+- Plugin code execution server-side.
 - Enforcing a read-only `DBState.db` guard.
 - Bootstrap/event projection implementation.
 - Server-side `.risu` import/export implementation.
@@ -102,18 +106,22 @@ Implementation notes:
   `assets/<id>.<ext>` paths. Tauri/local storage keeps the old asset path
   shape. Server validators reject missing or malformed server asset ids
   for fields that expect uploaded server assets.
+- 9-4e added `src/ts/pluginCommands.ts` for plugin record/config
+  dispatch and rollback. Plugin `name` is the command id and is not
+  renameable through plugin patch commands. Provider selection stores the
+  provider string as-is because plugin-registered provider names do not
+  always equal plugin record names.
 - MCP module import is explicitly unsupported in server-backed web mode
   until a later slice defines a dedicated server-owned path.
 
 ## Later Queue
 
-1. 9-4f - Plugin-storage kv and plugin database adapters.
-2. 9-4g - Compatibility sweep and focused tests.
-3. 9-5 - Browser projection.
-4. 9-6 - Storage and provider-key gating.
-5. 9-7 - Server `.risu` codec core.
-6. 9-8 - Import/export routes and bundle assets.
-7. 9-9 - Full server-backed fixture sweep and closeout.
+1. 9-4g - Compatibility sweep and focused tests.
+2. 9-5 - Browser projection.
+3. 9-6 - Storage and provider-key gating.
+4. 9-7 - Server `.risu` codec core.
+5. 9-8 - Import/export routes and bundle assets.
+6. 9-9 - Full server-backed fixture sweep and closeout.
 
 ## Parallel Or Deferred
 
@@ -126,7 +134,7 @@ Implementation notes:
 
 ## Verification
 
-Run focused command/adapter tests while building 9-4e, then
+Run focused command/adapter tests while building 9-4f, then
 before closing the slice run the full matrix:
 
 ```bash
@@ -136,18 +144,18 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded full baselines after 9-4d:
+Last recorded full baselines after 9-4e:
 
 - `pnpm check` - clean, with 0 Svelte errors and 0 warnings.
-- `pnpm test` - 692 tests passed, 4 skipped.
-- `pnpm api:test` - 1109 tests passed.
+- `pnpm test` - 693 tests passed, 4 skipped.
+- `pnpm api:test` - 1112 tests passed.
 - `pnpm build` - passed with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
-Focused 9-4d runs:
+Focused 9-4e runs:
 
-- `pnpm api:test -- commands.test.ts` - 1109 tests passed.
-- `pnpm test -- src/ts/server/commands.test.ts` - 692 tests passed, 4 skipped.
+- `pnpm api:test -- commands.test.ts` - 1112 tests passed.
+- `pnpm test -- src/ts/server/commands.test.ts` - 693 tests passed, 4 skipped.
 
 ## References
 
@@ -158,7 +166,7 @@ Focused 9-4d runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-4d.md`](../phases-completed/phase-9-client-thinning-9-4d.md)
+  [`../phases-completed/phase-9-client-thinning-9-4e.md`](../phases-completed/phase-9-client-thinning-9-4e.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

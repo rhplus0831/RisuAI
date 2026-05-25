@@ -1,6 +1,6 @@
 # Migration Status
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 This is the live Fastify migration handoff: current pickup state,
 blockers, and links to the detailed runbook.
@@ -15,13 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-4d, Asset reference commands.
-- Current gap: 9-4e should add plugin record/configuration commands; 9-5 should still
-  do the residual direct-write sweep before enabling the read-only
-  `DBState.db` guard.
-- Next default pickup: 9-4e, Plugin records and configuration.
-- Last recorded full baselines after 9-4d: `pnpm check` clean,
-  `pnpm test` 692 tests plus 4 skipped, `pnpm api:test` 1109 tests, and
+- Last landed slice: 9-4e, Plugin records and configuration.
+- Current gap: 9-4f should add plugin-storage kv and plugin database
+  setter translation; 9-5 should still do the residual direct-write sweep
+  before enabling the read-only `DBState.db` guard.
+- Next default pickup: 9-4f, Plugin-storage kv and plugin database adapters.
+- Last recorded full baselines after 9-4e: `pnpm check` clean,
+  `pnpm test` 693 tests plus 4 skipped, `pnpm api:test` 1112 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -50,7 +50,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-4d asset references landed; next slice is 9-4e plugins.       |
+| Client thinning                             | Active; 9-4e plugin commands landed; next slice is 9-4f plugin storage. |
 
 ## Maintenance Rules
 

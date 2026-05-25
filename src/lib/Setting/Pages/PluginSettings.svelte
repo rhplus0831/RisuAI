@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import {
     PlusIcon,
     TrashIcon,
@@ -19,6 +20,13 @@
     loadPlugins,
     updatePlugin,
   } from 'src/ts/plugins/plugins.svelte'
+  import {
+    currentPluginWatchSuppressionVersion,
+    currentPluginStateSnapshot,
+    dispatchDeletePlugin,
+    dispatchEnablePlugin,
+    dispatchUpdatePlugin,
+  } from 'src/ts/pluginCommands'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
@@ -28,6 +36,38 @@
   import { hotReloadPluginFiles } from 'src/ts/plugins/apiV3/developMode'
 
   let showParams = $state([])
+  let initializedPluginArgWatch = false
+  let previousPluginArgSnapshots = new Map<string, string>()
+  let previousPluginState = currentPluginStateSnapshot()
+  let lastPluginWatchSuppressionVersion = currentPluginWatchSuppressionVersion()
+
+  $effect(() => {
+    const currentState = currentPluginStateSnapshot()
+    const currentSnapshots = new Map(
+      currentState.plugins.map((plugin) => [plugin.name, JSON.stringify(plugin.realArg ?? {})]),
+    )
+
+    const suppressionVersion = currentPluginWatchSuppressionVersion()
+    if (!initializedPluginArgWatch || suppressionVersion !== lastPluginWatchSuppressionVersion) {
+      initializedPluginArgWatch = true
+      lastPluginWatchSuppressionVersion = suppressionVersion
+      previousPluginArgSnapshots = currentSnapshots
+      previousPluginState = currentState
+      return
+    }
+
+    for (const plugin of currentState.plugins) {
+      const snapshot = currentSnapshots.get(plugin.name)
+      if (!previousPluginArgSnapshots.has(plugin.name)) continue
+      if (snapshot === previousPluginArgSnapshots.get(plugin.name)) continue
+      untrack(() =>
+        dispatchUpdatePlugin(plugin.name, { realArg: plugin.realArg }, previousPluginState),
+      )
+    }
+
+    previousPluginArgSnapshots = currentSnapshots
+    previousPluginState = currentState
+  })
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.plugin}</h2>
@@ -112,8 +152,10 @@
       <button
         class="textcolor2 hover:gray-200 cursor-pointer"
         onclick={async (e) => {
+          const previous = currentPluginStateSnapshot()
           plugin.enabled = !plugin.enabled
           DBState.db.plugins[i] = plugin
+          dispatchEnablePlugin(plugin.name, plugin.enabled, previous)
           loadPlugins()
           e.preventDefault()
         }}
@@ -131,12 +173,14 @@
         onclick={async () => {
           const v = await alertConfirm(language.removeConfirm + (plugin.displayName ?? plugin.name))
           if (v) {
+            const previous = currentPluginStateSnapshot()
             if (DBState.db.currentPluginProvider === plugin.name) {
               DBState.db.currentPluginProvider = ''
             }
             let plugins = DBState.db.plugins ?? []
             plugins.splice(i, 1)
             DBState.db.plugins = plugins
+            dispatchDeletePlugin(plugin.name, previous)
             loadPlugins()
           }
         }}

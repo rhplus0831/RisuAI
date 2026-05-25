@@ -16,6 +16,12 @@ import { checkCodeSafety } from './pluginSafety'
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import { pluginCodeTranspiler } from './apiV3/transpiler'
+import {
+  currentPluginStateSnapshot,
+  dispatchCreatePlugin,
+  dispatchUpdatePlugin,
+  toPluginSnapshot,
+} from '../pluginCommands'
 
 export const customProviderStore = writable([] as string[])
 
@@ -419,10 +425,13 @@ export async function importPlugin(
       }
     }
 
+    const previous = currentPluginStateSnapshot()
     if (oldPluginIndex !== -1) {
       db.plugins[oldPluginIndex] = pluginData
+      dispatchUpdatePlugin(pluginData.name, toPluginSnapshot(pluginData), previous)
     } else if (!isUpdate || argu.isHotReload) {
       db.plugins.push(pluginData)
+      dispatchCreatePlugin(pluginData, previous)
     }
 
     if (argu.isHotReload && !hotReloading.includes(pluginData.name)) {
@@ -597,7 +606,9 @@ export const getV2PluginAPIs = () => {
       const [name, realArg] = arg.split('::')
       for (const plugin of db.plugins) {
         if (plugin.name === name) {
+          const previous = currentPluginStateSnapshot()
           plugin.realArg[realArg] = value
+          dispatchUpdatePlugin(plugin.name, { realArg: plugin.realArg }, previous)
         }
       }
     },

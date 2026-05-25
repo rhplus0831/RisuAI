@@ -155,6 +155,18 @@ import {
   validateFullCharacterModuleOrder,
   validateFullModuleOrder,
 } from '../commands/modules.js'
+import {
+  createPluginRecord,
+  ensurePluginCommandDatabase,
+  ensurePluginRecords,
+  readPluginEnabled,
+  readPluginId,
+  readPluginIdList,
+  readPluginPatch,
+  readPluginProvider,
+  requirePluginIndex,
+  validateFullPluginOrder,
+} from '../commands/plugins.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
@@ -260,6 +272,16 @@ interface ModuleCommandBody {
   patch?: unknown
   moduleId?: unknown
   moduleIds?: unknown
+  enabled?: unknown
+}
+
+interface PluginCommandBody {
+  baseRevision?: unknown
+  plugin?: unknown
+  patch?: unknown
+  pluginId?: unknown
+  pluginIds?: unknown
+  provider?: unknown
   enabled?: unknown
 }
 
@@ -3474,6 +3496,215 @@ export function registerCommandRoutes(
               id: characterId,
             },
             extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/plugins', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PluginCommandBody
+      const baseRevision = readBaseRevision(body)
+      const plugin = createPluginRecord(body.plugin)
+      const result = applyJsonCommandMutation<{ pluginId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginCommandDatabase(database)
+          const plugins = ensurePluginRecords(target)
+          if (plugins.some((candidate) => candidate.name === plugin.name)) {
+            throw new ValidationError(`Plugin already exists: ${plugin.name}`)
+          }
+          plugins.push(plugin)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginCreated, id: plugin.name },
+            extra: { pluginId: plugin.name },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/plugins/:pluginId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const pluginId = readPluginId((req.params as { pluginId?: unknown }).pluginId)
+      const body = (req.body ?? {}) as PluginCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readPluginPatch(body.patch)
+      const result = applyJsonCommandMutation<{ pluginId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginCommandDatabase(database)
+          const plugins = ensurePluginRecords(target)
+          const index = requirePluginIndex(plugins, pluginId)
+          Object.assign(plugins[index], patch)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginUpdated, id: pluginId },
+            extra: { pluginId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/plugins/:pluginId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const pluginId = readPluginId((req.params as { pluginId?: unknown }).pluginId)
+      const body = (req.body ?? {}) as PluginCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ pluginId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginCommandDatabase(database)
+          const plugins = ensurePluginRecords(target)
+          const index = requirePluginIndex(plugins, pluginId)
+          plugins.splice(index, 1)
+          if (target.currentPluginProvider === pluginId) {
+            target.currentPluginProvider = ''
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginDeleted, id: pluginId },
+            extra: { pluginId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/plugins/:pluginId/enable', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const pluginId = readPluginId((req.params as { pluginId?: unknown }).pluginId)
+      const body = (req.body ?? {}) as PluginCommandBody
+      const baseRevision = readBaseRevision(body)
+      const enabled = readPluginEnabled(body.enabled)
+      const result = applyJsonCommandMutation<{ pluginId: string; enabled: boolean }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginCommandDatabase(database)
+          const plugins = ensurePluginRecords(target)
+          const index = requirePluginIndex(plugins, pluginId)
+          plugins[index].enabled = enabled
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginEnabled, id: pluginId },
+            extra: { pluginId, enabled },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/plugins/provider', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PluginCommandBody
+      const baseRevision = readBaseRevision(body)
+      const provider = readPluginProvider(body.provider)
+      const result = applyJsonCommandMutation<{ provider: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginCommandDatabase(database)
+          target.currentPluginProvider = provider
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginProviderSelected, id: provider },
+            extra: { provider },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/plugins/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PluginCommandBody
+      const baseRevision = readBaseRevision(body)
+      const pluginIds = readPluginIdList(body.pluginIds)
+      const result = applyJsonCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensurePluginCommandDatabase(database)
+          const plugins = ensurePluginRecords(target)
+          validateFullPluginOrder(plugins, pluginIds)
+          const byId = new Map(plugins.map((plugin) => [plugin.name, plugin]))
+          target.plugins = pluginIds.map((id) => byId.get(id))
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.pluginReordered },
           }
         },
       })

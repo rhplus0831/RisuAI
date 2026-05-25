@@ -3755,6 +3755,236 @@ describe('Phase 9-4c module record and enablement commands', () => {
   })
 })
 
+describe('Phase 9-4e plugin record and configuration commands', () => {
+  it('creates, patches, enables, selects provider, reorders, and deletes plugins', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentPluginProvider: 'plugin-a',
+      plugins: [
+        {
+          name: 'plugin-a',
+          script: 'Risuai.log("A")',
+          arguments: { token: 'string' },
+          realArg: { token: '' },
+          customLink: [],
+          argMeta: {},
+          version: '3.0',
+          enabled: true,
+        },
+        {
+          name: 'plugin-b',
+          script: 'Risuai.log("B")',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+          version: '3.0',
+          enabled: false,
+        },
+      ],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        plugin: {
+          name: 'plugin-c',
+          script: 'Risuai.log("C")',
+          arguments: { mode: ['fast', 'slow'] },
+          realArg: { mode: 'fast' },
+          customLink: [{ link: 'https://example.com', hoverText: 'Docs' }],
+          argMeta: { mode: { name: 'Mode' } },
+          version: '3.0',
+          enabled: true,
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({
+      revision: 2,
+      pluginId: 'plugin-c',
+      event: { type: 'plugin.created', resource: 'plugin', id: 'plugin-c' },
+    })
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/plugins/plugin-c',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 2,
+        patch: { realArg: { mode: 'slow' }, displayName: 'Plugin C' },
+      },
+    })
+    expect(patched.statusCode).toBe(200)
+    expect(patched.json().event.type).toBe('plugin.updated')
+
+    const enabled = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins/plugin-b/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 3, enabled: true },
+    })
+    expect(enabled.statusCode).toBe(200)
+    expect(enabled.json()).toMatchObject({
+      revision: 4,
+      pluginId: 'plugin-b',
+      enabled: true,
+      event: { type: 'plugin.enabled', id: 'plugin-b' },
+    })
+
+    const provider = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins/provider',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4, provider: 'provider-c' },
+    })
+    expect(provider.statusCode).toBe(200)
+    expect(provider.json()).toMatchObject({
+      revision: 5,
+      provider: 'provider-c',
+      event: { type: 'plugin.provider.selected', id: 'provider-c' },
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 5, pluginIds: ['plugin-c', 'plugin-b', 'plugin-a'] },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().event.type).toBe('plugin.reordered')
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/plugins/plugin-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 6 },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json().event.type).toBe('plugin.deleted')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const database = bootstrap.json().database
+    expect(bootstrap.json().revision).toBe(7)
+    expect(database.plugins.map((plugin: { name: string }) => plugin.name)).toEqual([
+      'plugin-c',
+      'plugin-b',
+    ])
+    expect(database.plugins[0]).toMatchObject({
+      name: 'plugin-c',
+      displayName: 'Plugin C',
+      realArg: { mode: 'slow' },
+    })
+    expect(database.plugins[1].enabled).toBe(true)
+    expect(database.currentPluginProvider).toBe('provider-c')
+    expect(
+      harness.commandEvents
+        .list()
+        .slice(-6)
+        .map((event) => event.type),
+    ).toEqual([
+      'plugin.created',
+      'plugin.updated',
+      'plugin.enabled',
+      'plugin.provider.selected',
+      'plugin.reordered',
+      'plugin.deleted',
+    ])
+  })
+
+  it('rejects malformed plugin commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      plugins: [
+        {
+          name: 'plugin-a',
+          script: '',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+        },
+      ],
+    })
+
+    const badPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/plugins/plugin-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'renamed' } },
+    })
+    expect(badPatch.statusCode).toBe(400)
+    expect(badPatch.json().error).toBe('patch.name cannot be changed by plugin commands')
+
+    const badEnable = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins/plugin-a/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, enabled: 'yes' },
+    })
+    expect(badEnable.statusCode).toBe(400)
+    expect(badEnable.json().error).toBe('enabled must be a boolean')
+
+    const badReorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, pluginIds: ['plugin-a', 'plugin-a'] },
+    })
+    expect(badReorder.statusCode).toBe(400)
+    expect(badReorder.json().error).toBe('Duplicate plugin id in pluginIds: plugin-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.plugins[0].name).toBe('plugin-a')
+  })
+
+  it('returns 404 for missing plugins and 409 for stale plugin revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDatabase(harness.app, assertion, {
+      plugins: [
+        {
+          name: 'plugin-a',
+          script: '',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+        },
+      ],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/plugins/missing',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 1, patch: { enabled: true } },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Plugin not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins/plugin-a/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, enabled: true },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})
+
 describe('Phase 9-4d asset reference commands', () => {
   it('persists uploaded asset ids through owning character, module, persona, settings, and folder commands', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

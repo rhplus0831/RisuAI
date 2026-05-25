@@ -235,18 +235,21 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-4d asset reference commands are complete.
-Continue with **9-4e - Plugin records and configuration**:
+9-4e plugin record/configuration commands are complete.
+Continue with **9-4f - Plugin-storage kv and plugin database adapters**:
 
 - Build on `server/fastify/src/commands/`,
-  `server/fastify/src/routes/commands.ts`, and
-  `src/ts/server/commands.ts`.
-- Implement plugin record/configuration commands for install/create,
-  patch, delete, enablement, provider selection, and reorder/config UI
-  writes.
+  `server/fastify/src/routes/commands.ts`, `src/ts/server/commands.ts`,
+  and `src/ts/pluginCommands.ts`.
+- Implement plugin-storage kv commands for `pluginCustomStorage`.
+- Route plugin `pluginStorage.*` calls through command helpers in
+  server-backed web mode.
+- Implement the plugin database setter translation bridge for
+  `getDatabase`, `setDatabaseLite`, and `setDatabase`.
+- Diff recognized top-level plugin keys to their owning command families
+  and route unknown keys to plugin custom storage.
 - Keep plugin code execution browser-side; commands own durable plugin DB
-  records only.
-- Keep plugin-storage kv and plugin database setter translation in 9-4f.
+  state only.
 - Keep projection enforcement, provider-key masking, server `.risu`
   import/export, and storage gating in their later slices.
 - Preserve the 9-1 command response and conflict contract through the

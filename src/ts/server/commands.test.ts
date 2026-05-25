@@ -25,6 +25,7 @@ import {
   createLoadoutCommand,
   createModuleCommand,
   createPersonaCommand,
+  createPluginCommand,
   clearCachedServerCommandRevision,
   createPromptItemCommand,
   createPresetCommand,
@@ -38,9 +39,11 @@ import {
   deleteMessageCommand,
   deleteModuleCommand,
   deletePersonaCommand,
+  deletePluginCommand,
   deletePromptItemCommand,
   deleteTranslatorPresetCommand,
   favoriteLoadoutCommand,
+  enablePluginCommand,
   enableModuleCommand,
   forkChatCommand,
   getServerCommandBaseRevision,
@@ -57,6 +60,7 @@ import {
   reorderGlobalLorebooksCommand,
   reorderCharacterModulesCommand,
   reorderModulesCommand,
+  reorderPluginsCommand,
   reorderPromptItemsCommand,
   reorderPresetsCommand,
   runServerCommand,
@@ -72,6 +76,7 @@ import {
   replaceModuleTriggersCommand,
   selectCharacterCommand,
   selectPersonaCommand,
+  selectPluginProviderCommand,
   selectTranslatorPresetCommand,
   touchLoadoutCommand,
   truncateMessagesCommand,
@@ -83,6 +88,7 @@ import {
   updateMessageCommand,
   updateModuleCommand,
   updatePersonaCommand,
+  updatePluginCommand,
   updateTranslatorPresetCommand,
   selectPresetCommand,
   updatePromptItemCommand,
@@ -2104,6 +2110,96 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/characters/char-a/modules/reorder',
         method: 'POST',
         body: { baseRevision: 6, moduleIds: ['mod-a'] },
+      },
+    ])
+  })
+
+  it('dispatches plugin record and configuration commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.includes('/plugins')) {
+        return {
+          revision: 10,
+          event: {
+            type: 'plugin.updated',
+            revision: 10,
+            resource: 'plugin',
+          },
+          pluginId: 'plugin-a',
+          provider: 'provider-a',
+          enabled: true,
+        }
+      }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await createPluginCommand({
+      baseRevision: 1,
+      plugin: {
+        name: 'plugin-a',
+        script: 'Risuai.log("hello")',
+        arguments: { token: 'string' },
+        realArg: { token: '' },
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+        enabled: true,
+      },
+    })
+    await updatePluginCommand({
+      baseRevision: 2,
+      pluginId: 'plugin-a',
+      patch: { realArg: { token: 'abc' } },
+    })
+    await deletePluginCommand({ baseRevision: 3, pluginId: 'plugin-a' })
+    await enablePluginCommand({ baseRevision: 4, pluginId: 'plugin-a', enabled: true })
+    await selectPluginProviderCommand({ baseRevision: 5, provider: 'provider-a' })
+    await reorderPluginsCommand({ baseRevision: 6, pluginIds: ['plugin-b', 'plugin-a'] })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/plugins',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          plugin: {
+            name: 'plugin-a',
+            script: 'Risuai.log("hello")',
+            arguments: { token: 'string' },
+            realArg: { token: '' },
+            customLink: [],
+            argMeta: {},
+            version: '3.0',
+            enabled: true,
+          },
+        },
+      },
+      {
+        url: '/api/v1/commands/plugins/plugin-a',
+        method: 'PATCH',
+        body: { baseRevision: 2, patch: { realArg: { token: 'abc' } } },
+      },
+      {
+        url: '/api/v1/commands/plugins/plugin-a',
+        method: 'DELETE',
+        body: { baseRevision: 3 },
+      },
+      {
+        url: '/api/v1/commands/plugins/plugin-a/enable',
+        method: 'POST',
+        body: { baseRevision: 4, enabled: true },
+      },
+      {
+        url: '/api/v1/commands/plugins/provider',
+        method: 'POST',
+        body: { baseRevision: 5, provider: 'provider-a' },
+      },
+      {
+        url: '/api/v1/commands/plugins/reorder',
+        method: 'POST',
+        body: { baseRevision: 6, pluginIds: ['plugin-b', 'plugin-a'] },
       },
     ])
   })

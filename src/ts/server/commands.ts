@@ -452,6 +452,21 @@ export type ModuleSnapshot = Record<string, unknown> & {
   cjs?: string
 }
 
+export type PluginSnapshot = Record<string, unknown> & {
+  name?: string
+  script?: string
+  arguments?: Record<string, 'int' | 'string' | string[]>
+  realArg?: Record<string, string | number>
+  customLink?: Array<{ link: string; hoverText?: string }>
+  argMeta?: Record<string, Record<string, string>>
+  version?: 1 | 2 | '2.1' | '3.0'
+  displayName?: string
+  versionOfPlugin?: string
+  updateURL?: string
+  enabled?: boolean
+  allowedIPC?: string[]
+}
+
 export type ScriptDefinitionSnapshot = Record<string, unknown> & {
   id?: string
   comment?: string
@@ -815,6 +830,36 @@ export interface ReorderModulesCommandInput extends ModuleCommandInput {
 export interface ReorderCharacterModulesCommandInput extends ModuleCommandInput {
   characterId: string
   moduleIds: string[]
+}
+
+export interface PluginCommandInput {
+  baseRevision: number
+}
+
+export interface CreatePluginCommandInput extends PluginCommandInput {
+  plugin: PluginSnapshot
+}
+
+export interface UpdatePluginCommandInput extends PluginCommandInput {
+  pluginId: string
+  patch: PluginSnapshot
+}
+
+export interface DeletePluginCommandInput extends PluginCommandInput {
+  pluginId: string
+}
+
+export interface EnablePluginCommandInput extends PluginCommandInput {
+  pluginId: string
+  enabled: boolean
+}
+
+export interface SelectPluginProviderCommandInput extends PluginCommandInput {
+  provider: string
+}
+
+export interface ReorderPluginsCommandInput extends PluginCommandInput {
+  pluginIds: string[]
 }
 
 export interface AppendMessageCommandInput extends ChatCommandInput {
@@ -1823,6 +1868,89 @@ export async function reorderCharacterModulesCommand(
       signal,
     },
   )
+}
+
+export async function createPluginCommand(
+  input: CreatePluginCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ pluginId: string }>> {
+  return requestCommandJson('/plugins', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      plugin: input.plugin,
+    },
+    signal,
+  })
+}
+
+export async function updatePluginCommand(
+  input: UpdatePluginCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ pluginId: string }>> {
+  return requestCommandJson(`/plugins/${encodeURIComponent(input.pluginId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deletePluginCommand(
+  input: DeletePluginCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ pluginId: string }>> {
+  return requestCommandJson(`/plugins/${encodeURIComponent(input.pluginId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function enablePluginCommand(
+  input: EnablePluginCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ pluginId: string; enabled: boolean }>> {
+  return requestCommandJson(`/plugins/${encodeURIComponent(input.pluginId)}/enable`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      enabled: input.enabled,
+    },
+    signal,
+  })
+}
+
+export async function selectPluginProviderCommand(
+  input: SelectPluginProviderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ provider: string }>> {
+  return requestCommandJson('/plugins/provider', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      provider: input.provider,
+    },
+    signal,
+  })
+}
+
+export async function reorderPluginsCommand(
+  input: ReorderPluginsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson('/plugins/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      pluginIds: input.pluginIds,
+    },
+    signal,
+  })
 }
 
 export async function appendMessageCommand(

@@ -10,6 +10,7 @@ import {
 } from '../plugins.svelte'
 import { SandboxHost } from './factory'
 import { getDatabase } from 'src/ts/storage/database.svelte'
+import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import {
   currentCharacterStateSnapshot,
   dispatchCompatibleCharacterUpdate,
@@ -873,7 +874,9 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       const db = getDatabase()
       for (const p of db.plugins) {
         if (p.name === plugin.name) {
+          const previous = currentPluginStateSnapshot()
           p.realArg[key] = value
+          dispatchUpdatePlugin(p.name, { realArg: p.realArg }, previous)
         }
       }
     },

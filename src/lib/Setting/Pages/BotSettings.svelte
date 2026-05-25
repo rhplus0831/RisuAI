@@ -51,13 +51,18 @@
   import { allBasicParameterItems } from 'src/ts/setting/botSettingsParamsData'
   import SeparateParametersSection from './SeparateParametersSection.svelte'
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import {
     canUseServerCommands,
     patchPromptSettingsCommand,
     runServerCommand,
   } from 'src/ts/server/commands'
+  import {
+    currentPluginWatchSuppressionVersion,
+    currentPluginStateSnapshot,
+    dispatchSelectPluginProvider,
+  } from 'src/ts/pluginCommands'
 
   const stopServerSettingsWatch = watchServerBackedSettings([
     'aiModel',
@@ -104,7 +109,6 @@
     'reverseProxyOobaMode',
     'NAIadventure',
     'NAIappendName',
-    'currentPluginProvider',
     'koboldURL',
     'echoMessage',
     'echoDelay',
@@ -114,6 +118,29 @@
     'proxyRequestModel',
   ])
   onDestroy(stopServerSettingsWatch)
+
+  let initializedPluginProviderWatch = false
+  let previousPluginProvider = ''
+  let lastPluginWatchSuppressionVersion = currentPluginWatchSuppressionVersion()
+  $effect(() => {
+    if (!canUseServerCommands()) return
+    const provider = DBState.db.currentPluginProvider ?? ''
+    const suppressionVersion = currentPluginWatchSuppressionVersion()
+    if (
+      !initializedPluginProviderWatch ||
+      suppressionVersion !== lastPluginWatchSuppressionVersion
+    ) {
+      initializedPluginProviderWatch = true
+      lastPluginWatchSuppressionVersion = suppressionVersion
+      previousPluginProvider = provider
+      return
+    }
+    if (provider === previousPluginProvider) return
+    const previous = currentPluginStateSnapshot()
+    previous.currentPluginProvider = previousPluginProvider
+    previousPluginProvider = provider
+    untrack(() => dispatchSelectPluginProvider(provider, previous))
+  })
 
   const openrouterPinnedItems: ModelGridPinnedItem[] = [
     { id: 'risu/free', displayName: 'Free Auto', providerName: 'Risu' },
