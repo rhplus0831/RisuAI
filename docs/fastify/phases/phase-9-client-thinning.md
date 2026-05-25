@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5d residual helper pass**. Next pickup:
-**9-5d-i - Settings residual command sweep**.
+**9-5d-i - Settings residual command sweep**. Next pickup:
+**9-5d-ii - 9-2 resource UI tails**.
 
 ## Goal
 
@@ -227,11 +227,11 @@ surfaces.
       through existing commands, and made server-backed `.risum` module
       import paths explicitly unsupported. Continue with the smaller
       sub-slices before 9-5e.
-    - **9-5d-i - Settings residual command sweep.** Route remaining
-      server-backed web writes for existing settings groups through
-      `setSettingValue`, `watchServerBackedSettings`, or
-      `patchServerBackedSettings`. Do not use this slice for fields with
-      dedicated resource commands.
+    - **9-5d-i - Settings residual command sweep.** Complete. Routed
+      residual settings-style writes in manual settings pages/components
+      through existing settings command watchers and kept resource-owned
+      fields on their dedicated command bridges. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-5d-i.md`](../phases-completed/phase-9-client-thinning-9-5d-i.md).
     - **9-5d-ii - 9-2 resource UI tails.** Finish residual prompt
       template, persona, translator preset, and loadout UI/helper writes
       with existing command helpers and rollback behavior.

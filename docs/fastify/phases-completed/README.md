@@ -84,6 +84,7 @@ track the next piece of work.
 | 9-5a - Events endpoint                  | [`phase-9-client-thinning-9-5a.md`](phase-9-client-thinning-9-5a.md)                   | Command-event SSE stream, sink subscriptions, and route lifecycle coverage.      |
 | 9-5b - Bootstrap projection             | [`phase-9-client-thinning-9-5b.md`](phase-9-client-thinning-9-5b.md)                   | Browser bootstrap helper, Fastify startup projection load, and revision caching. |
 | 9-5c - Event re-bootstrap               | [`phase-9-client-thinning-9-5c.md`](phase-9-client-thinning-9-5c.md)                   | Browser event subscription and debounced bootstrap projection refresh.           |
+| 9-5d-i - Settings residual sweep        | [`phase-9-client-thinning-9-5d-i.md`](phase-9-client-thinning-9-5d-i.md)               | Residual manual settings writes routed through existing settings command bridge. |
 
 ## Historical Status Logs
 

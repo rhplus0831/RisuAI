@@ -19,6 +19,7 @@
   import { defaultAutoSuggestPrompt } from '../../../ts/storage/defaultPrompts'
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
   import { normalizePromptTemplateIds } from 'src/ts/storage/database.svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import {
     canUseServerCommands,
     createPromptItemCommand,
@@ -30,6 +31,9 @@
     type PromptItemSnapshot,
     type SettingsPatch,
   } from 'src/ts/server/commands'
+
+  const stopServerSettingsWatch = watchServerBackedSettings(['showUnrecommended'])
+  onDestroy(stopServerSettingsWatch)
 
   let sorted = 0
   let warns: string[] = $state([])

@@ -3,6 +3,11 @@
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings(['banCharacterset'])
+  onDestroy(stopServerSettingsWatch)
 
   const characterSets = [
     'Latn',

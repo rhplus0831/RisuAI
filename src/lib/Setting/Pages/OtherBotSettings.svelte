@@ -75,6 +75,8 @@
     'hypaV3Key',
     'hypaCustomSettings',
     'voyageApiKey',
+    'hideApiKey',
+    'useLegacyGUI',
   ])
   onDestroy(stopServerSettingsWatch)
 

@@ -116,6 +116,13 @@
     'textgenWebUIStreamURL',
     'textgenWebUIBlockingURL',
     'proxyRequestModel',
+    'NAIsettings',
+    'ainconfig',
+    'localStopStrings',
+    'enableCustomFlags',
+    'modelTools',
+    'hideApiKey',
+    'useLegacyGUI',
   ])
   onDestroy(stopServerSettingsWatch)
 

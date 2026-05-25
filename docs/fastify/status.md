@@ -15,13 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-5d residual sweep pass for character asset helpers,
-  legacy chat import commands, unsupported server-backed `.risum` module
-  import paths, and lorebook local-activation command dispatch.
+- Last landed work: 9-5d-i settings residual command sweep. Manual
+  settings pages/components now watch remaining scalar/object settings
+  through the existing settings command bridge.
 - Current gap: 9-5d has been decomposed into smaller residual
   command-replacement sub-slices before enabling the read-only
   `DBState.db` guard.
-- Next default pickup: 9-5d-i, Settings residual command sweep.
+- Next default pickup: 9-5d-ii, 9-2 resource UI tails.
 - Last recorded full baselines after the 9-5d first pass: `pnpm check`
   clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
   tests, and `pnpm build` passing with existing CSS `::highlight`,
@@ -52,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-5d residual sweep passes landed; continue with 9-5d-i.        |
+| Client thinning                             | Active; 9-5d-i landed; continue with 9-5d-ii resource tails.            |
 
 ## Maintenance Rules
 

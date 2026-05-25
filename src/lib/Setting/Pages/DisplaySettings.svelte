@@ -22,7 +22,12 @@
 
   const stopServerSettingsWatch = watchServerBackedSettings([
     ...displaySettingKeys,
+    'colorScheme',
+    'colorSchemeName',
     'customBackground',
+    'customTextTheme',
+    'textTheme',
+    'useLegacyGUI',
   ])
   onDestroy(stopServerSettingsWatch)
 </script>

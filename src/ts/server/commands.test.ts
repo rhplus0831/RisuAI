@@ -302,6 +302,71 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('routes residual manual settings through existing settings groups', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 20 }
+      if (url.endsWith('/settings/display')) {
+        return {
+          revision: 21,
+          event: { type: 'settings.updated', revision: 21, resource: 'settings' },
+        }
+      }
+      if (url.endsWith('/settings/providers')) {
+        return {
+          revision: 22,
+          event: { type: 'settings.updated', revision: 22, resource: 'settings' },
+        }
+      }
+      return {
+        revision: 23,
+        event: { type: 'settings.updated', revision: 23, resource: 'settings' },
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await patchServerBackedSettings({
+      patch: {
+        colorSchemeName: 'custom',
+        customModels: [{ id: 'model-a', name: 'Model A' }],
+        banCharacterset: ['Latn'],
+        showUnrecommended: true,
+      },
+    })
+
+    expect(result).toEqual({
+      status: 'ok',
+      revision: 23,
+      event: { type: 'settings.updated', revision: 23, resource: 'settings' },
+    })
+    expect(commandFetch.calls.map((call) => ({ url: call.url, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/settings/display',
+        body: {
+          baseRevision: 20,
+          patch: { colorSchemeName: 'custom' },
+        },
+      },
+      {
+        url: '/api/v1/commands/settings/providers',
+        body: {
+          baseRevision: 21,
+          patch: { customModels: [{ id: 'model-a', name: 'Model A' }] },
+        },
+      },
+      {
+        url: '/api/v1/commands/settings/advanced',
+        body: {
+          baseRevision: 22,
+          patch: { banCharacterset: ['Latn'], showUnrecommended: true },
+        },
+      },
+    ])
+  })
+
   it('retries a server-backed settings patch on conflict', async () => {
     let providerAttempts = 0
     const commandFetch = makeCommandFetch((url) => {

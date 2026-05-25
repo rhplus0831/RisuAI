@@ -10,6 +10,11 @@
   import { PlusIcon, TrashIcon, ArrowUp, ArrowDown } from '@lucide/svelte'
   import type { LLMFlags, LLMFormat, LLMTokenizer } from 'src/ts/model/types'
   import { v4 } from 'uuid'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+
+  const stopServerSettingsWatch = watchServerBackedSettings(['customModels'])
+  onDestroy(stopServerSettingsWatch)
 
   let openedModels = $state(new Set<string>())
 
