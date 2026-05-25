@@ -235,20 +235,19 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-4c module record and enablement commands are complete.
-Continue with **9-4d - Asset reference commands**:
+9-4d asset reference commands are complete.
+Continue with **9-4e - Plugin records and configuration**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement asset-reference handling through the owning resource commands;
-  asset bytes stay on the existing Fastify asset upload path.
-- Replace server-backed web asset reference mutations with typed command
-  helpers and browser dispatch plumbing.
-- Validate referenced server asset ids where the owning field requires a
-  server asset.
-- Keep bundle walking and server `.risu` import/export in 9-8.
-- Keep projection enforcement, plugin database bridge work, and storage
-  gating in their later slices.
+- Implement plugin record/configuration commands for install/create,
+  patch, delete, enablement, provider selection, and reorder/config UI
+  writes.
+- Keep plugin code execution browser-side; commands own durable plugin DB
+  records only.
+- Keep plugin-storage kv and plugin database setter translation in 9-4f.
+- Keep projection enforcement, provider-key masking, server `.risu`
+  import/export, and storage gating in their later slices.
 - Preserve the 9-1 command response and conflict contract through the
   existing command helpers.

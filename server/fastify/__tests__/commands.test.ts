@@ -101,6 +101,42 @@ async function importDatabase(
   return imported.json().revision as number
 }
 
+async function uploadAsset(
+  app: FastifyInstance,
+  assertion: string,
+  bytes = Buffer.from('asset-bytes'),
+  contentType = 'image/png',
+): Promise<{ assetId: string; revision: number }> {
+  const uploaded = await app.inject({
+    method: 'POST',
+    url: '/api/v1/assets',
+    headers: {
+      'risu-auth': assertion,
+      'content-type': contentType,
+    },
+    payload: bytes,
+  })
+  expect(uploaded.statusCode).toBe(201)
+  return uploaded.json() as { assetId: string; revision: number }
+}
+
+function seedAssetMetadata(dataDir: string, assetId = 'a'.repeat(64)): string {
+  const persisted = loadPersisted(dataDir)
+  writePersisted(dataDir, {
+    ...persisted,
+    assets: [
+      ...persisted.assets,
+      {
+        id: assetId,
+        ext: 'png',
+        size: 1,
+        contentType: 'image/png',
+      },
+    ],
+  })
+  return assetId
+}
+
 let harness: Harness
 
 beforeEach(async () => {
@@ -940,6 +976,7 @@ describe('Phase 9-2c prompt template and item commands', () => {
 describe('Phase 9-2d persona commands', () => {
   it('creates, updates, deletes, and reorders personas by stable id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    const personaIconId = seedAssetMetadata(harness.dataDir)
     const revision = await importDatabase(harness.app, assertion, {
       username: 'Current',
       userIcon: 'assets/current.png',
@@ -966,7 +1003,7 @@ describe('Phase 9-2d persona commands', () => {
         persona: {
           id: 'persona-b',
           name: 'B',
-          icon: 'assets/b.png',
+          icon: personaIconId,
           personaPrompt: 'b prompt',
           note: 'b note',
         },
@@ -1050,7 +1087,7 @@ describe('Phase 9-2d persona commands', () => {
     })
     expect(bootstrap.json().database).toMatchObject({
       username: 'B renamed',
-      userIcon: 'assets/b.png',
+      userIcon: personaIconId,
       personaPrompt: 'b prompt',
       userNote: 'b note',
       selectedPersona: 0,
@@ -1059,7 +1096,7 @@ describe('Phase 9-2d persona commands', () => {
       {
         id: 'persona-b',
         name: 'B renamed',
-        icon: 'assets/b.png',
+        icon: personaIconId,
         personaPrompt: 'b prompt',
         note: 'b note',
         largePortrait: true,
@@ -1069,6 +1106,7 @@ describe('Phase 9-2d persona commands', () => {
 
   it('selects a persona while saving the previous legacy profile mirror fields', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    const personaIconId = seedAssetMetadata(harness.dataDir)
     const revision = await importDatabase(harness.app, assertion, {
       username: 'Edited A',
       userIcon: 'assets/edited-a.png',
@@ -1079,7 +1117,7 @@ describe('Phase 9-2d persona commands', () => {
         {
           id: 'persona-b',
           name: 'B',
-          icon: 'assets/b.png',
+          icon: personaIconId,
           personaPrompt: 'b prompt',
           note: 'b note',
         },
@@ -1119,7 +1157,7 @@ describe('Phase 9-2d persona commands', () => {
     expect(bootstrap.json().database).toMatchObject({
       selectedPersona: 1,
       username: 'B',
-      userIcon: 'assets/b.png',
+      userIcon: personaIconId,
       personaPrompt: 'b prompt',
       userNote: 'b note',
     })
@@ -3659,10 +3697,10 @@ describe('Phase 9-4c module record and enablement commands', () => {
       method: 'PATCH',
       url: '/api/v1/commands/modules/mod-a',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, patch: { assets: [] } },
+      payload: { baseRevision: revision, patch: { assets: [['bad.png', 'assets/bad.png', 'png']] } },
     })
     expect(badPatch.statusCode).toBe(400)
-    expect(badPatch.json().error).toBe('patch.assets is owned by a later command slice')
+    expect(badPatch.json().error).toBe('patch.assets[0][1] must be a server asset id')
 
     const badEnable = await harness.app.inject({
       method: 'POST',
@@ -3714,5 +3752,182 @@ describe('Phase 9-4c module record and enablement commands', () => {
     })
     expect(stale.statusCode).toBe(409)
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})
+
+describe('Phase 9-4d asset reference commands', () => {
+  it('persists uploaded asset ids through owning character, module, persona, settings, and folder commands', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const firstAsset = await uploadAsset(harness.app, assertion, Buffer.from('first'))
+    const secondAsset = await uploadAsset(harness.app, assertion, Buffer.from('second'))
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      username: 'User',
+      userIcon: '',
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+      selectedPersona: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          image: '',
+          emotionImages: [],
+          additionalAssets: [],
+          ccAssets: [],
+          chats: [],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+      modules: [{ id: 'mod-a', name: 'Module', description: '', assets: [] }],
+    })
+
+    const character = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          image: firstAsset.assetId,
+          emotionImages: [['happy', firstAsset.assetId]],
+          additionalAssets: [['extra.png', secondAsset.assetId, 'png']],
+          ccAssets: [{ type: 'icon', uri: secondAsset.assetId, name: 'alt', ext: 'png' }],
+          prebuiltAssetExclude: [secondAsset.assetId],
+        },
+      },
+    })
+    expect(character.statusCode).toBe(200)
+    expect(character.json().event).toMatchObject({
+      type: 'character.updated',
+      resource: 'character',
+      id: 'char-a',
+    })
+
+    const module = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: character.json().revision,
+        patch: { assets: [['module.png', firstAsset.assetId, 'png']] },
+      },
+    })
+    expect(module.statusCode).toBe(200)
+    expect(module.json().event).toMatchObject({ type: 'module.updated', id: 'mod-a' })
+
+    const persona = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/personas/persona-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: module.json().revision,
+        patch: { icon: secondAsset.assetId },
+        mirrorLegacyProfile: true,
+      },
+    })
+    expect(persona.statusCode).toBe(200)
+
+    const settings = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: persona.json().revision,
+        patch: { customBackground: firstAsset.assetId },
+      },
+    })
+    expect(settings.statusCode).toBe(200)
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: settings.json().revision,
+        characterOrder: [
+          {
+            id: 'folder-a',
+            name: 'Folder A',
+            color: '',
+            imgFile: secondAsset.assetId,
+            img: `/api/v1/assets/${secondAsset.assetId}`,
+            data: ['char-a'],
+          },
+        ],
+      },
+    })
+    expect(reordered.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const database = bootstrap.json().database
+    expect(database.characters[0]).toMatchObject({
+      image: firstAsset.assetId,
+      emotionImages: [['happy', firstAsset.assetId]],
+      additionalAssets: [['extra.png', secondAsset.assetId, 'png']],
+      ccAssets: [{ type: 'icon', uri: secondAsset.assetId, name: 'alt', ext: 'png' }],
+      prebuiltAssetExclude: [secondAsset.assetId],
+    })
+    expect(database.modules[0].assets).toEqual([['module.png', firstAsset.assetId, 'png']])
+    expect(database.personas[0].icon).toBe(secondAsset.assetId)
+    expect(database.customBackground).toBe(firstAsset.assetId)
+    expect(database.characterOrder[0].imgFile).toBe(secondAsset.assetId)
+  })
+
+  it('rejects malformed and missing asset references without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const uploaded = await uploadAsset(harness.app, assertion, Buffer.from('valid-ref'))
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [], chatFolders: [] }],
+      characterOrder: ['char-a'],
+      modules: [{ id: 'mod-a', name: 'Module', description: '' }],
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+      selectedPersona: 0,
+    })
+    const missingAssetId = '0'.repeat(64)
+
+    const malformed = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { image: 'assets/not-server.png' } },
+    })
+    expect(malformed.statusCode).toBe(400)
+    expect(malformed.json().error).toBe('patch.image must be a server asset id')
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { assets: [['missing.png', missingAssetId, 'png']] },
+      },
+    })
+    expect(missing.statusCode).toBe(400)
+    expect(missing.json().error).toBe('patch.assets[0][1] references a missing server asset')
+
+    const valid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/personas/persona-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { icon: uploaded.assetId } },
+    })
+    expect(valid.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision + 1)
+    expect(bootstrap.json().database.characters[0].image).toBeUndefined()
+    expect(bootstrap.json().database.modules[0].assets).toBeUndefined()
+    expect(bootstrap.json().database.personas[0].icon).toBe(uploaded.assetId)
   })
 })

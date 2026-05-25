@@ -1229,7 +1229,7 @@ describe('server command API adapter', () => {
       updateCharacterCommand({
         baseRevision: 2,
         characterId: 'char-b',
-        patch: { name: 'B renamed' },
+        patch: { name: 'B renamed', image: 'a'.repeat(64) },
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 3, characterId: 'char-b' })
 
@@ -1279,7 +1279,7 @@ describe('server command API adapter', () => {
         method: 'PATCH',
         body: {
           baseRevision: 2,
-          patch: { name: 'B renamed' },
+          patch: { name: 'B renamed', image: 'a'.repeat(64) },
         },
       },
       {
@@ -2055,7 +2055,7 @@ describe('server command API adapter', () => {
     await updateModuleCommand({
       baseRevision: 2,
       moduleId: 'mod-a',
-      patch: { name: 'Renamed' },
+      patch: { name: 'Renamed', assets: [['asset.png', 'b'.repeat(64), 'png']] },
     })
     await deleteModuleCommand({ baseRevision: 3, moduleId: 'mod-a' })
     await enableModuleCommand({ baseRevision: 4, moduleId: 'mod-a', enabled: true })
@@ -2080,7 +2080,10 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/modules/mod-a',
         method: 'PATCH',
-        body: { baseRevision: 2, patch: { name: 'Renamed' } },
+        body: {
+          baseRevision: 2,
+          patch: { name: 'Renamed', assets: [['asset.png', 'b'.repeat(64), 'png']] },
+        },
       },
       {
         url: '/api/v1/commands/modules/mod-a',

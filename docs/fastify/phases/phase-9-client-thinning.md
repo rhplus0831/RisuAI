@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-4c - Module records and enablement**. Next slice:
-**9-4d - Asset reference commands**.
+**9-4d - Asset reference commands**. Next slice:
+**9-4e - Plugin records and configuration**.
 
 ## Goal
 
@@ -188,6 +188,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-4c.md`](../phases-completed/phase-9-client-thinning-9-4c.md).
   - **9-4d - Asset reference commands.** Database references to already
     uploaded asset bytes. Bundle walking stays in 9-8.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-4d.md`](../phases-completed/phase-9-client-thinning-9-4d.md).
   - **9-4e - Plugin records and configuration.** Install, enable/disable,
     remove, provider selection, arguments, and plugin config UI writes.
   - **9-4f - Plugin-storage kv and plugin database adapters.** Implement

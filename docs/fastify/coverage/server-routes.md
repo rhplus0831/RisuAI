@@ -5,9 +5,8 @@ Date: 2026-05-25
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
 completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
 memory job/read routes have coverage under `server/fastify/__tests__/`.
-Phase 9 command routes are covered through 9-4a; unlanded helper routes,
-script/trigger definitions, and later command families remain target
-test rows.
+Phase 9 command routes are covered through 9-4d; unlanded plugin command
+families remain target test rows.
 
 ## Phase 1: Foundation
 
@@ -144,9 +143,9 @@ test expectations were locked by 9-0 in
 | chat scriptstate          | patch/delete scriptstate keys                      | landed; covered by command suites |
 | compatibility adapters    | route legacy setters/MCP writes or reject          | landed; covered by adapter suites |
 | lorebook collections      | global CRUD/reorder + child replacements           | landed; covered by command suites |
-| script/trigger definitions | replace character/module child definitions        | not started |
-| module records/enablement | create / patch / delete / enable / reorder         | not started |
-| asset references          | durable references through owning commands         | not started |
+| script/trigger definitions | replace character/module child definitions        | landed; covered by command suites |
+| module records/enablement | create / patch / delete / enable / reorder         | landed; covered by command suites |
+| asset references          | durable references through owning commands         | landed; covered by command suites |
 | plugin records/config     | create / patch / delete / enable / provider        | not started |
 | plugin-storage            | patch kv                                           | not started |
 

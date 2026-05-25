@@ -141,6 +141,40 @@ let fileCache: {
 let pathCache: { [key: string]: string } = {}
 let checkedPaths: string[] = []
 
+const SERVER_ASSET_ID_RE = /^[a-f0-9]{64}$/
+const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
+const SERVER_ASSET_CONTENT_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  avif: 'image/avif',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  weba: 'audio/webm',
+  webm: 'video/webm',
+  mp4: 'video/mp4',
+  svg: 'image/svg+xml',
+  css: 'text/css',
+  ttf: 'font/ttf',
+  otf: 'font/otf',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+}
+
+function serverAssetIdFromReference(loc: string): string | null {
+  if (SERVER_ASSET_ID_RE.test(loc)) return loc
+  const localPathMatch = LOCAL_ASSET_PATH_RE.exec(loc)
+  return localPathMatch?.[1] ?? null
+}
+
+function serverAssetUrl(loc: string): string | null {
+  const assetId = serverAssetIdFromReference(loc)
+  return assetId ? `/api/v1/assets/${encodeURIComponent(assetId)}` : null
+}
+
 /**
  * Gets the source URL of a file.
  *
@@ -148,6 +182,17 @@ let checkedPaths: string[] = []
  * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
  */
 export async function getFileSrc(loc: string) {
+  if (isFastifyServer) {
+    if (
+      loc.startsWith('/api/v1/assets/') ||
+      loc.startsWith('data:') ||
+      loc.startsWith('http://') ||
+      loc.startsWith('https://')
+    ) {
+      return loc
+    }
+    return serverAssetUrl(loc) ?? loc
+  }
   if (isTauri) {
     if (loc.startsWith('assets')) {
       if (appDataDirPath === '') {
@@ -232,6 +277,19 @@ let appDataDirPath = ''
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the image file.
  */
 export async function readImage(data: string) {
+  if (isFastifyServer) {
+    const assetUrl = serverAssetUrl(data) ?? data
+    const auth = await getNodeServerProxyAuth()
+    const response = await fetch(assetUrl, {
+      headers: {
+        'risu-auth': auth,
+      },
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to read server asset: ${response.status}`)
+    }
+    return new Uint8Array(await response.arrayBuffer())
+  }
   if (isTauri) {
     if (data.startsWith('assets')) {
       if (appDataDirPath === '') {
@@ -266,7 +324,35 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
   }
   let fileExtension: string = 'png'
   if (fileName && fileName.split('.').length > 0) {
-    fileExtension = fileName.split('.').pop()
+    fileExtension = fileName.split('.').pop()?.toLowerCase() ?? 'png'
+  }
+  if (isFastifyServer) {
+    const contentType = SERVER_ASSET_CONTENT_TYPES[fileExtension]
+    if (!contentType) {
+      throw new Error(`Unsupported server asset extension: ${fileExtension}`)
+    }
+    const auth = await getNodeServerProxyAuth()
+    const uploadBody = data.buffer.slice(
+      data.byteOffset,
+      data.byteOffset + data.byteLength,
+    ) as ArrayBuffer
+    const response = await fetch('/api/v1/assets', {
+      method: 'POST',
+      headers: {
+        'content-type': contentType,
+        'risu-auth': auth,
+      },
+      body: uploadBody,
+    })
+    if (!response.ok) {
+      const body = await response.text().catch(() => '')
+      throw new Error(body || `Failed to upload server asset: ${response.status}`)
+    }
+    const responseBody = (await response.json()) as { assetId?: unknown }
+    if (typeof responseBody.assetId !== 'string') {
+      throw new Error('Server asset upload response missing assetId')
+    }
+    return responseBody.assetId
   }
   if (isTauri) {
     await writeFile(`assets/${id}.${fileExtension}`, data, {

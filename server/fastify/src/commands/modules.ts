@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
+import { validateAssetTriples } from './assets.js'
 import {
   type CharacterRecord,
   ensureCharacterCollection,
@@ -17,7 +18,7 @@ export interface ModuleRecord extends JsonRecord {
   mcp?: unknown
 }
 
-const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger', 'assets'])
+const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
 
 const MODULE_SCALAR_FIELD_TYPES = new Map<string, readonly string[]>([
   ['name', ['string']],
@@ -68,12 +69,13 @@ export function createModuleRecord(
   input: unknown,
   label = 'module',
   options: { allowMcp?: boolean } = {},
+  assetOptions: { assetDataDir?: string } = {},
 ): ModuleRecord {
   const module = readJsonObject(input, label) as ModuleRecord
   module.id = typeof module.id === 'string' && module.id.trim() ? module.id : randomUUID()
   module.name = typeof module.name === 'string' && module.name.trim() ? module.name : 'New Module'
   module.description = typeof module.description === 'string' ? module.description : ''
-  validateModuleRecord(module, label, options)
+  validateModuleRecord(module, label, options, assetOptions)
   return module
 }
 
@@ -84,12 +86,15 @@ export function readModuleId(value: unknown, label = 'moduleId'): string {
   return value
 }
 
-export function readModulePatch(input: unknown): JsonRecord {
+export function readModulePatch(
+  input: unknown,
+  options: { assetDataDir?: string } = {},
+): JsonRecord {
   const patch = readJsonObject(input, 'patch')
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one module field')
   }
-  validateModulePatch(patch, 'patch')
+  validateModulePatch(patch, 'patch', {}, options)
   return patch
 }
 
@@ -210,6 +215,7 @@ function validateModuleRecord(
   record: JsonRecord,
   label: string,
   options: { allowMcp?: boolean } = {},
+  assetOptions: { assetDataDir?: string } = {},
 ): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
@@ -217,17 +223,23 @@ function validateModuleRecord(
   if ('mcp' in record && !options.allowMcp) {
     throw new ValidationError(`${label}.mcp is not supported for module commands`)
   }
-  validateModulePatch(record, label, {
-    allowId: true,
-    allowChildren: true,
-    allowMcp: options.allowMcp,
-  })
+  validateModulePatch(
+    record,
+    label,
+    {
+      allowId: true,
+      allowChildren: true,
+      allowMcp: options.allowMcp,
+    },
+    assetOptions,
+  )
 }
 
 function validateModulePatch(
   record: JsonRecord,
   label: string,
   options: { allowId?: boolean; allowChildren?: boolean; allowMcp?: boolean } = {},
+  assetOptions: { assetDataDir?: string } = {},
 ): void {
   for (const key of Object.keys(record)) {
     if ((!options.allowId || key !== 'id') && MODULE_PATCH_EXCLUDED_KEYS.has(key)) {
@@ -245,6 +257,9 @@ function validateModulePatch(
     if (!allowedTypes.includes(type)) {
       throw new ValidationError(`${label}.${key} must be ${describeTypes(allowedTypes)}`)
     }
+  }
+  if (assetOptions.assetDataDir && 'assets' in record) {
+    validateAssetTriples(assetOptions.assetDataDir, record.assets, `${label}.assets`)
   }
 }
 

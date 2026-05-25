@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
+import {
+  validateAssetIdList,
+  validateAssetTriples,
+  validateCcAssetRefs,
+  validateEmotionImageRefs,
+  validateOptionalServerAssetRef,
+} from './assets.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -28,10 +35,6 @@ const EXCLUDED_CHARACTER_PATCH_KEYS = new Set([
   'customscript',
   'triggerscript',
   'scriptstate',
-  'additionalAssets',
-  'ccAssets',
-  'emotionImages',
-  'image',
   'modules',
   'coldstorage',
   'coldStoragedChats',
@@ -103,20 +106,26 @@ export function normalizeCharacterCollection(database: unknown): void {
   ensureCharacterCollection(database as JsonRecord)
 }
 
-export function createCharacterRecord(input: unknown): CharacterRecord {
+export function createCharacterRecord(
+  input: unknown,
+  options: { assetDataDir?: string } = {},
+): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId =
     typeof character.chaId === 'string' && character.chaId.trim() ? character.chaId : randomUUID()
-  validateCharacterRecord(character, 'character')
+  validateCharacterRecord(character, 'character', options)
   return character
 }
 
-export function readCharacterPatch(input: unknown): JsonRecord {
+export function readCharacterPatch(
+  input: unknown,
+  options: { assetDataDir?: string } = {},
+): JsonRecord {
   const patch = readJsonObject(input, 'patch')
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one character field')
   }
-  validateCharacterPatch(patch, 'patch')
+  validateCharacterPatch(patch, 'patch', options)
   return patch
 }
 
@@ -201,6 +210,16 @@ export function validateFullCharacterOrder(
   if (seenCharacterIds.size !== activeIds.size) {
     throw new ValidationError('characterOrder must include every untrashed character id')
   }
+}
+
+export function validateCharacterOrderAssetRefs(
+  dataDir: string,
+  order: readonly CharacterOrderEntry[],
+): void {
+  order.forEach((entry, index) => {
+    if (typeof entry === 'string') return
+    validateOptionalServerAssetRef(dataDir, entry.imgFile, `characterOrder[${index}].imgFile`)
+  })
 }
 
 function normalizeCharacterOrder(
@@ -312,7 +331,11 @@ function validateOrderedCharacterId(
   seenCharacterIds.add(characterId)
 }
 
-function validateCharacterRecord(record: JsonRecord, label: string): void {
+function validateCharacterRecord(
+  record: JsonRecord,
+  label: string,
+  options: { assetDataDir?: string } = {},
+): void {
   if ('chaId' in record && (typeof record.chaId !== 'string' || record.chaId.trim() === '')) {
     throw new ValidationError(`${label}.chaId must be a non-empty string`)
   }
@@ -327,15 +350,40 @@ function validateCharacterRecord(record: JsonRecord, label: string): void {
   ) {
     throw new ValidationError(`${label}.trashTime must be a finite number, null, or undefined`)
   }
+  if (options.assetDataDir) {
+    validateCharacterAssetRefs(options.assetDataDir, record, label)
+  }
 }
 
-function validateCharacterPatch(record: JsonRecord, label: string): void {
+function validateCharacterPatch(
+  record: JsonRecord,
+  label: string,
+  options: { assetDataDir?: string } = {},
+): void {
   for (const key of Object.keys(record)) {
     if (EXCLUDED_CHARACTER_PATCH_KEYS.has(key)) {
       throw new ValidationError(`${label}.${key} is owned by a later command slice`)
     }
   }
-  validateCharacterRecord(record, label)
+  validateCharacterRecord(record, label, options)
+}
+
+function validateCharacterAssetRefs(dataDir: string, record: JsonRecord, label: string): void {
+  if ('image' in record) {
+    validateOptionalServerAssetRef(dataDir, record.image, `${label}.image`)
+  }
+  if ('emotionImages' in record) {
+    validateEmotionImageRefs(dataDir, record.emotionImages, `${label}.emotionImages`)
+  }
+  if ('additionalAssets' in record) {
+    validateAssetTriples(dataDir, record.additionalAssets, `${label}.additionalAssets`)
+  }
+  if ('ccAssets' in record) {
+    validateCcAssetRefs(dataDir, record.ccAssets, `${label}.ccAssets`)
+  }
+  if ('prebuiltAssetExclude' in record) {
+    validateAssetIdList(dataDir, record.prebuiltAssetExclude, `${label}.prebuiltAssetExclude`)
+  }
 }
 
 function validateJsonValue(label: string, value: unknown): void {

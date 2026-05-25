@@ -16,6 +16,12 @@ export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'audio/webm': 'weba',
   'video/mp4': 'mp4',
   'video/webm': 'webm',
+  'image/svg+xml': 'svg',
+  'text/css': 'css',
+  'font/ttf': 'ttf',
+  'font/otf': 'otf',
+  'font/woff': 'woff',
+  'font/woff2': 'woff2',
 }
 
 export const SUPPORTED_ASSET_CONTENT_TYPES = Object.keys(CONTENT_TYPE_EXTENSIONS)

@@ -77,6 +77,7 @@ track the next piece of work.
 | 9-4a - Lorebook collections             | [`phase-9-client-thinning-9-4a.md`](phase-9-client-thinning-9-4a.md)                   | Lorebook commands, browser helpers, UI bridge, and MCP lorebook routing.         |
 | 9-4b - Scripts/triggers                 | [`phase-9-client-thinning-9-4b.md`](phase-9-client-thinning-9-4b.md)                   | Script/trigger commands, browser helpers, UI bridge, and MCP regex/Lua routing.  |
 | 9-4c - Modules                          | [`phase-9-client-thinning-9-4c.md`](phase-9-client-thinning-9-4c.md)                   | Module records, enablement, reorder/link commands, helpers, and UI/MCP routing.  |
+| 9-4d - Asset references                 | [`phase-9-client-thinning-9-4d.md`](phase-9-client-thinning-9-4d.md)                   | Asset-reference validation, upload helper routing, and owning command coverage.  |
 
 ## Historical Status Logs
 

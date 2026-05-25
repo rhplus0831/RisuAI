@@ -7,8 +7,24 @@
     displaySizeSettingsItems,
     displayThemeSettingsItems,
   } from 'src/ts/setting/displaySettingsData.svelte'
+  import { onDestroy } from 'svelte'
+  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
 
   let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
+
+  const displaySettingKeys = [
+    ...displayThemeSettingsItems,
+    ...displaySizeSettingsItems,
+    ...displayOtherSettingsItems,
+  ].flatMap((item) =>
+    'bindKey' in item && typeof item.bindKey === 'string' ? [item.bindKey] : [],
+  )
+
+  const stopServerSettingsWatch = watchServerBackedSettings([
+    ...displaySettingKeys,
+    'customBackground',
+  ])
+  onDestroy(stopServerSettingsWatch)
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.display}</h2>

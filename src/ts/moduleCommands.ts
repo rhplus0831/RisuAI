@@ -20,7 +20,7 @@ export interface ModuleStateSnapshot {
   characters: character[]
 }
 
-const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger', 'assets'])
+const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
 
 export function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value

@@ -75,6 +75,7 @@ import {
   readCharacterPatch,
   requireCharacterIndex,
   selectedCharacterId,
+  validateCharacterOrderAssetRefs,
   validateFullCharacterOrder,
 } from '../commands/characters.js'
 import {
@@ -154,6 +155,7 @@ import {
   validateFullCharacterModuleOrder,
   validateFullModuleOrder,
 } from '../commands/modules.js'
+import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -923,6 +925,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as RuntimeSettingsCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readSettingsGroupPatch(group, body.patch)
+      validateSettingsAssetRefs(dataDir, patch)
       const result = applyJsonCommandMutation({
         db,
         dataDir,
@@ -1436,7 +1439,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
-      const persona = createPersonaRecord(body.persona)
+      const persona = createPersonaRecord(body.persona, { assetDataDir: dataDir })
       const mirror = readPersonaOptionalBoolean(
         body.mirrorLegacyProfile,
         'mirrorLegacyProfile',
@@ -1482,7 +1485,7 @@ export function registerCommandRoutes(
       const personaId = readPersonaId((req.params as { personaId?: unknown }).personaId)
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readPersonaPatch(body.patch)
+      const patch = readPersonaPatch(body.patch, { assetDataDir: dataDir })
       const mirror = readPersonaOptionalBoolean(
         body.mirrorLegacyProfile,
         'mirrorLegacyProfile',
@@ -2068,7 +2071,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
-      const character = createCharacterRecord(body.character)
+      const character = createCharacterRecord(body.character, { assetDataDir: dataDir })
       const result = applyJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
@@ -2106,7 +2109,7 @@ export function registerCommandRoutes(
       const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readCharacterPatch(body.patch)
+      const patch = readCharacterPatch(body.patch, { assetDataDir: dataDir })
       const result = applyJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
@@ -2224,6 +2227,7 @@ export function registerCommandRoutes(
         body.characterOrder !== undefined
           ? readCharacterOrder(body.characterOrder)
           : readCharacterOrder(body.characterIds)
+      validateCharacterOrderAssetRefs(dataDir, order)
       const result = applyJsonCommandMutation<{ selectedCharacterId: string | null }>({
         db,
         dataDir,
@@ -3269,7 +3273,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
-      const module = createModuleRecord(body.module)
+      const module = createModuleRecord(body.module, 'module', {}, { assetDataDir: dataDir })
       const result = applyJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
@@ -3306,7 +3310,7 @@ export function registerCommandRoutes(
       const moduleId = readCommandModuleId((req.params as { moduleId?: unknown }).moduleId)
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readModulePatch(body.patch)
+      const patch = readModulePatch(body.patch, { assetDataDir: dataDir })
       const result = applyJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
@@ -3720,6 +3724,12 @@ function validateSettingValue(key: string, value: unknown): void {
     throw new ValidationError(`${key} must be an array or null`)
   }
   validateJsonValue(key, value)
+}
+
+function validateSettingsAssetRefs(dataDir: string, patch: Record<string, unknown>): void {
+  if ('customBackground' in patch) {
+    validateOptionalServerAssetRef(dataDir, patch.customBackground, 'customBackground')
+  }
 }
 
 function settingValueKind(key: string): SettingValueKind {

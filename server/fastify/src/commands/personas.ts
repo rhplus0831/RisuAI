@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
+import { validateOptionalServerAssetRef } from './assets.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -53,19 +54,25 @@ export function normalizePersonaCollection(database: unknown): void {
   ensurePersonaCollection(database as JsonRecord)
 }
 
-export function createPersonaRecord(input: unknown): PersonaRecord {
+export function createPersonaRecord(
+  input: unknown,
+  options: { assetDataDir?: string } = {},
+): PersonaRecord {
   const persona = readJsonObject(input, 'persona') as PersonaRecord
   persona.id = typeof persona.id === 'string' && persona.id.trim() ? persona.id : randomUUID()
-  validatePersonaRecord(persona, 'persona')
+  validatePersonaRecord(persona, 'persona', options)
   return persona
 }
 
-export function readPersonaPatch(input: unknown): JsonRecord {
+export function readPersonaPatch(
+  input: unknown,
+  options: { assetDataDir?: string } = {},
+): JsonRecord {
   const patch = readJsonObject(input, 'patch')
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one persona field')
   }
-  validatePersonaRecord(patch, 'patch')
+  validatePersonaRecord(patch, 'patch', options)
   return patch
 }
 
@@ -159,7 +166,11 @@ export function validateFullPersonaIdList(
   }
 }
 
-function validatePersonaRecord(record: JsonRecord, label: string): void {
+function validatePersonaRecord(
+  record: JsonRecord,
+  label: string,
+  options: { assetDataDir?: string } = {},
+): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }
@@ -170,6 +181,9 @@ function validatePersonaRecord(record: JsonRecord, label: string): void {
   }
   if ('largePortrait' in record && typeof record.largePortrait !== 'boolean') {
     throw new ValidationError(`${label}.largePortrait must be a boolean`)
+  }
+  if (options.assetDataDir && 'icon' in record) {
+    validateOptionalServerAssetRef(options.assetDataDir, record.icon, `${label}.icon`)
   }
 }
 
