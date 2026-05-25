@@ -18,12 +18,14 @@ vi.mock('../storage/nodeStorage', () => ({
 
 import {
   canUseServerCommands,
+  createCharacterCommand,
   createLoadoutCommand,
   createPersonaCommand,
   clearCachedServerCommandRevision,
   createPromptItemCommand,
   createPresetCommand,
   createTranslatorPresetCommand,
+  deleteCharacterCommand,
   deleteLoadoutCommand,
   deletePersonaCommand,
   deletePromptItemCommand,
@@ -34,14 +36,17 @@ import {
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  reorderCharactersCommand,
   reorderPersonasCommand,
   reorderPromptItemsCommand,
   reorderPresetsCommand,
   runServerCommand,
   runServerPresetCommand,
+  selectCharacterCommand,
   selectPersonaCommand,
   selectTranslatorPresetCommand,
   touchLoadoutCommand,
+  updateCharacterCommand,
   updateLoadoutCommand,
   updatePersonaCommand,
   updateTranslatorPresetCommand,
@@ -1122,6 +1127,183 @@ describe('server command API adapter', () => {
       null,
       { baseRevision: 40, favorite: false },
       { baseRevision: 43, favorite: false },
+    ])
+  })
+
+  it('dispatches character commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/characters/reorder')) {
+        return {
+          revision: 6,
+          event: { type: 'character.reordered', revision: 6, resource: 'character' },
+          selectedCharacterId: 'char-a',
+        }
+      }
+      if (url.endsWith('/characters/select')) {
+        return {
+          revision: 5,
+          event: {
+            type: 'character.selected',
+            revision: 5,
+            resource: 'character',
+            id: 'char-a',
+          },
+          characterId: 'char-a',
+        }
+      }
+      if (url.endsWith('/characters/char-b')) {
+        const method = commandFetch.calls.at(-1)?.method
+        return method === 'DELETE'
+          ? {
+              revision: 4,
+              event: {
+                type: 'character.deleted',
+                revision: 4,
+                resource: 'character',
+                id: 'char-b',
+              },
+              characterId: 'char-b',
+              selectedCharacterId: 'char-a',
+            }
+          : {
+              revision: 3,
+              event: {
+                type: 'character.updated',
+                revision: 3,
+                resource: 'character',
+                id: 'char-b',
+              },
+              characterId: 'char-b',
+            }
+      }
+      return {
+        revision: 2,
+        event: { type: 'character.created', revision: 2, resource: 'character', id: 'char-b' },
+        characterId: 'char-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      createCharacterCommand({
+        baseRevision: 1,
+        character: { chaId: 'char-b', name: 'B' },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, characterId: 'char-b' })
+
+    await expect(
+      updateCharacterCommand({
+        baseRevision: 2,
+        characterId: 'char-b',
+        patch: { name: 'B renamed' },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, characterId: 'char-b' })
+
+    await expect(
+      deleteCharacterCommand({
+        baseRevision: 3,
+        characterId: 'char-b',
+      }),
+    ).resolves.toMatchObject({
+      status: 'ok',
+      revision: 4,
+      characterId: 'char-b',
+      selectedCharacterId: 'char-a',
+    })
+
+    await expect(
+      selectCharacterCommand({
+        baseRevision: 4,
+        characterId: 'char-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, characterId: 'char-a' })
+
+    await expect(
+      reorderCharactersCommand({
+        baseRevision: 5,
+        characterOrder: [{ id: 'folder-a', name: 'Folder', color: '', data: ['char-a'] }],
+      }),
+    ).resolves.toMatchObject({
+      status: 'ok',
+      revision: 6,
+      selectedCharacterId: 'char-a',
+    })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/characters',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          character: { chaId: 'char-b', name: 'B' },
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/char-b',
+        method: 'PATCH',
+        body: {
+          baseRevision: 2,
+          patch: { name: 'B renamed' },
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/char-b',
+        method: 'DELETE',
+        body: {
+          baseRevision: 3,
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/select',
+        method: 'POST',
+        body: {
+          baseRevision: 4,
+          characterId: 'char-a',
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/reorder',
+        method: 'POST',
+        body: {
+          baseRevision: 5,
+          characterOrder: [{ id: 'folder-a', name: 'Folder', color: '', data: ['char-a'] }],
+        },
+      },
+    ])
+  })
+
+  it('runs character commands with revision lookup and one conflict retry', async () => {
+    let attempts = 0
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 50 }
+      attempts += 1
+      if (attempts === 1) {
+        return jsonResponse({ error: 'revision_conflict', currentRevision: 52 }, 409)
+      }
+      return {
+        revision: 53,
+        event: { type: 'character.selected', revision: 53, resource: 'character', id: 'char-a' },
+        characterId: 'char-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      runServerCommand({
+        command: (baseRevision) =>
+          selectCharacterCommand({
+            baseRevision,
+            characterId: 'char-a',
+          }),
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 53, characterId: 'char-a' })
+
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      null,
+      { baseRevision: 50, characterId: 'char-a' },
+      { baseRevision: 52, characterId: 'char-a' },
     ])
   })
 })

@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-2f - Loadouts**. Next slice:
-**9-3a - Character catalog and scalar profile**.
+**9-3a - Character catalog and scalar profile**. Next slice:
+**9-3b - Chat records, folders, and metadata**.
 
 ## Goal
 
@@ -147,6 +147,8 @@ surfaces.
   behind commands.
   - **9-3a - Character catalog and scalar profile.** Character lifecycle,
     selection, ordering, and non-collection profile fields.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-3a.md`](../phases-completed/phase-9-client-thinning-9-3a.md).
   - **9-3b - Chat records, folders, and metadata.** Chat lifecycle, folder
     operations, notes, persona binding, bookmarks, and chat-level metadata.
   - **9-3c - Message history commands.** User-visible transcript append,

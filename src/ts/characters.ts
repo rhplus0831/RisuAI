@@ -44,10 +44,20 @@ import { doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
 import { getColdStorageItem } from './process/coldstorage.svelte'
+import {
+  currentCharacterStateSnapshot,
+  dispatchCreateCharacter,
+  dispatchDeleteCharacter,
+  dispatchSelectCharacter,
+  dispatchUpdateCharacter,
+} from './characterCommands'
 
 export function createNewCharacter() {
-  DBState.db.characters.push(createBlankChar())
+  const previous = currentCharacterStateSnapshot()
+  const character = createBlankChar()
+  DBState.db.characters.push(character)
   checkCharOrder()
+  dispatchCreateCharacter(character, previous)
   return DBState.db.characters.length - 1
 }
 
@@ -774,9 +784,19 @@ export async function removeChar(
   }
   let chars = db.characters
   if (type === 'normal') {
+    const previous = currentCharacterStateSnapshot()
+    const characterId = chars[index]?.chaId
     chars[index].trashTime = Date.now()
+    if (characterId) {
+      dispatchUpdateCharacter(characterId, { trashTime: chars[index].trashTime }, previous)
+    }
   } else {
+    const previous = currentCharacterStateSnapshot()
+    const characterId = chars[index]?.chaId
     chars.splice(index, 1)
+    if (characterId) {
+      dispatchDeleteCharacter(characterId, previous)
+    }
   }
   checkCharOrder()
   DBState.db.characters = chars
@@ -840,5 +860,10 @@ export async function changeChar(
   characterFormatUpdate(index, {
     updateInteraction: true,
   })
+  const previous = currentCharacterStateSnapshot()
   selectedCharID.set(index)
+  const characterId = DBState.db.characters?.[index]?.chaId
+  if (characterId) {
+    dispatchSelectCharacter(characterId, previous)
+  }
 }

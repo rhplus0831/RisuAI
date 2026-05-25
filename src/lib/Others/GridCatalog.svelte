@@ -11,6 +11,7 @@
   import { parseMultilangString } from 'src/ts/util'
   import { checkCharOrder } from 'src/ts/globalApi.svelte'
   import MobileCharacters from '../Mobile/MobileCharacters.svelte'
+  import { currentCharacterStateSnapshot, dispatchUpdateCharacter } from 'src/ts/characterCommands'
   interface Props {
     endGrid?: any
   }
@@ -210,8 +211,13 @@
               <button
                 class="hover:text-textcolor text-textcolor2"
                 onclick={() => {
+                  const previous = currentCharacterStateSnapshot()
+                  const characterId = DBState.db.characters[char.index].chaId
                   DBState.db.characters[char.index].trashTime = undefined
                   checkCharOrder()
+                  if (characterId) {
+                    dispatchUpdateCharacter(characterId, { trashTime: null }, previous)
+                  }
                 }}
               >
                 <Undo2Icon />

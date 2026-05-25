@@ -59,6 +59,11 @@ import { CharXImporter, CharXWriter } from './process/processzip'
 import { exportModule, readModule, type RisuModule } from './process/modules'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
+import {
+  currentCharacterStateSnapshot,
+  dispatchCreateCharacter,
+  dispatchUpdateCharacter,
+} from './characterCommands'
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz'
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
@@ -66,8 +71,7 @@ export const hubURL = isFastifyServer
   ? '/api/v1/hub'
   : isNodeServer
     ? '/hub-proxy'
-    : window.location.hostname === 'nightly.risuai.xyz' ||
-        localStorage.getItem('hub') === 'nightly'
+    : window.location.hostname === 'nightly.risuai.xyz' || localStorage.getItem('hub') === 'nightly'
       ? NIGHTLY_HUB_URL
       : EXTERNAL_HUB_URL
 
@@ -110,7 +114,10 @@ export async function importCharacterProcess(f: {
       (da.char_persona || da.description) &&
       (da.char_greeting || da.first_mes)
     ) {
-      DBState.db.characters.push(convertOffSpecCards(da))
+      const previous = currentCharacterStateSnapshot()
+      const character = convertOffSpecCards(da)
+      DBState.db.characters.push(character)
+      dispatchCreateCharacter(character, previous)
       alertNormal(language.importedCharacter)
       return
     } else {
@@ -325,7 +332,10 @@ export async function importCharacterProcess(f: {
       Buffer.from(readedChara, 'base64').toString('utf-8'),
     )
     const imgp = await saveAsset(img)
-    DBState.db.characters.push(convertOffSpecCards(charaData, imgp))
+    const previous = currentCharacterStateSnapshot()
+    const character = convertOffSpecCards(charaData, imgp)
+    DBState.db.characters.push(character)
+    dispatchCreateCharacter(character, previous)
     alertNormal(language.importedCharacter)
     return DBState.db.characters.length - 1
   }
@@ -687,6 +697,7 @@ async function importCharacterCardSpec(
   const data = card.data
   let im = img ? await saveAsset(img) : undefined
   let db = DBState.db
+  const previous = currentCharacterStateSnapshot()
 
   const risuext = safeStructuredClone(data.extensions.risuai)
   let emotions: [string, string][] = []
@@ -988,6 +999,7 @@ async function importCharacterCardSpec(
   }
 
   db.characters.push(char)
+  dispatchCreateCharacter(char, previous)
   alertNormal(language.importedCharacter)
   return true
 }
@@ -1724,9 +1736,11 @@ export async function shareRisuHub2(
     } else {
       const resJSON = await res.json()
       alertMd(resJSON.message)
+      const previous = currentCharacterStateSnapshot()
       const currentChar = getCurrentCharacter()
       currentChar.realmId = resJSON.id
       setCurrentCharacter(currentChar)
+      dispatchUpdateCharacter(currentChar.chaId, { realmId: currentChar.realmId }, previous)
     }
   } catch (error) {
     alertError(error)

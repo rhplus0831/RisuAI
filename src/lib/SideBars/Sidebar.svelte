@@ -42,6 +42,10 @@
   import DevTool from './DevTool.svelte'
   import QuickSettingsGui from '../Others/QuickSettingsGUI.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
+  import {
+    currentCharacterStateSnapshot,
+    dispatchReorderCharacters,
+  } from 'src/ts/characterCommands'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -131,6 +135,7 @@
     if (mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder) {
       return
     }
+    const previous = currentCharacterStateSnapshot()
     let db = DBState.db
     let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
     let targetFolderIndex = targetIndex.folder ? getFolderIndex(targetIndex.folder) : null
@@ -206,6 +211,7 @@
 
     DBState.db.characterOrder = db.characterOrder
     checkCharOrder()
+    dispatchReorderCharacters(previous)
   }
 
   function getFolderIndex(id: string) {
@@ -273,6 +279,7 @@
     if (mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder) {
       return
     }
+    const previous = currentCharacterStateSnapshot()
     let db = DBState.db
     let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
     let mainFolder = db.characterOrder[mainFolderIndex] as folder
@@ -309,6 +316,9 @@
         db.characterOrder.splice(mainIndex.index, 1)
       }
     }
+    DBState.db.characterOrder = db.characterOrder
+    checkCharOrder()
+    dispatchReorderCharacters(previous)
   }
 
   type DragEv = DragEvent & {
@@ -576,12 +586,14 @@
                         const v = await alertInput(language.changeFolderName, [], char.name)
                         const db = DBState.db
                         if (v) {
+                          const previous = currentCharacterStateSnapshot()
                           const oder = db.characterOrder[ind]
                           if (typeof oder === 'string') {
                             return
                           }
                           oder.name = v
                           db.characterOrder[ind] = oder
+                          dispatchReorderCharacters(previous)
                         }
                       } else if (sel === 1) {
                         const colors = [
@@ -596,17 +608,20 @@
                         ]
                         const sel = parseInt(await alertSelect(colors))
                         const db = DBState.db
+                        const previous = currentCharacterStateSnapshot()
                         const oder = db.characterOrder[ind]
                         if (typeof oder === 'string') {
                           return
                         }
                         oder.color = colors[sel].toLocaleLowerCase()
                         db.characterOrder[ind] = oder
+                        dispatchReorderCharacters(previous)
                       } else if (sel === 2) {
                         const sel = parseInt(
                           await alertSelect(['Reset to Default Image', 'Select Image File']),
                         )
                         const db = DBState.db
+                        const previous = currentCharacterStateSnapshot()
                         const oder = db.characterOrder[ind]
                         if (typeof oder === 'string') {
                           return
@@ -632,6 +647,7 @@
                             db.characterOrder[ind] = oder
                             break
                         }
+                        dispatchReorderCharacters(previous)
                       }
                     }}
                     onClick={() => {

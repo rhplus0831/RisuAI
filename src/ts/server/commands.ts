@@ -391,6 +391,23 @@ export type LoadoutSnapshot = Record<string, unknown> & {
   personaId?: string
 }
 
+export type CharacterSnapshot = Record<string, unknown> & {
+  chaId?: string
+  name?: string
+  trashTime?: number | null
+}
+
+export type CharacterOrderEntry =
+  | string
+  | (Record<string, unknown> & {
+      id: string
+      name?: string
+      color?: string
+      data: string[]
+      imgFile?: string | null
+      img?: string
+    })
+
 export interface PresetCommandInput {
   baseRevision: number
 }
@@ -538,6 +555,31 @@ export interface TouchLoadoutCommandInput extends LoadoutCommandInput {
   loadoutId: string
   lastUsed?: number
   characterId?: string
+}
+
+export interface CharacterCommandInput {
+  baseRevision: number
+}
+
+export interface CreateCharacterCommandInput extends CharacterCommandInput {
+  character: CharacterSnapshot
+}
+
+export interface UpdateCharacterCommandInput extends CharacterCommandInput {
+  characterId: string
+  patch: CharacterSnapshot
+}
+
+export interface DeleteCharacterCommandInput extends CharacterCommandInput {
+  characterId: string
+}
+
+export interface SelectCharacterCommandInput extends CharacterCommandInput {
+  characterId: string
+}
+
+export interface ReorderCharactersCommandInput extends CharacterCommandInput {
+  characterOrder: CharacterOrderEntry[]
 }
 
 export interface RunServerPresetCommandInput<T extends Record<string, unknown> = {}> {
@@ -1036,6 +1078,75 @@ export async function touchLoadoutCommand(
       baseRevision: input.baseRevision,
       lastUsed: input.lastUsed,
       characterId: input.characterId,
+    },
+    signal,
+  })
+}
+
+export async function createCharacterCommand(
+  input: CreateCharacterCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson('/characters', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      character: input.character,
+    },
+    signal,
+  })
+}
+
+export async function updateCharacterCommand(
+  input: UpdateCharacterCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deleteCharacterCommand(
+  input: DeleteCharacterCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string; selectedCharacterId: string | null }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function selectCharacterCommand(
+  input: SelectCharacterCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson('/characters/select', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      characterId: input.characterId,
+    },
+    signal,
+  })
+}
+
+export async function reorderCharactersCommand(
+  input: ReorderCharactersCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedCharacterId: string | null }>> {
+  return requestCommandJson('/characters/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      characterOrder: input.characterOrder,
     },
     signal,
   })

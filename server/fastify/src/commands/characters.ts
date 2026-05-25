@@ -1,0 +1,350 @@
+import { randomUUID } from 'node:crypto'
+import { EntityNotFoundError, ValidationError } from '../repository.js'
+
+type JsonRecord = Record<string, unknown>
+
+export interface CharacterRecord extends JsonRecord {
+  chaId: string
+  name?: string
+  trashTime?: number
+}
+
+export interface CharacterFolderRecord extends JsonRecord {
+  id: string
+  name: string
+  color: string
+  data: string[]
+  imgFile?: string | null
+  img?: string
+}
+
+export type CharacterOrderEntry = string | CharacterFolderRecord
+
+const EXCLUDED_CHARACTER_PATCH_KEYS = new Set([
+  'chaId',
+  'chats',
+  'chatFolders',
+  'globalLore',
+  'customscript',
+  'triggerscript',
+  'scriptstate',
+  'additionalAssets',
+  'ccAssets',
+  'emotionImages',
+  'image',
+  'modules',
+  'coldstorage',
+  'coldStoragedChats',
+])
+
+export function ensureDatabaseObject(database: unknown): JsonRecord {
+  if (!database || typeof database !== 'object' || Array.isArray(database)) {
+    throw new ValidationError('database must be an object before character commands can run')
+  }
+  return database as JsonRecord
+}
+
+export function ensureCharacterCollection(database: JsonRecord): CharacterRecord[] {
+  if (!Array.isArray(database.characters)) {
+    database.characters = []
+  }
+
+  const seen = new Set<string>()
+  const characters = (database.characters as unknown[]).map((raw, index) => {
+    const character =
+      raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
+    const record = createCharacterRecord({
+      name: `Character ${index + 1}`,
+      firstMessage: '',
+      desc: '',
+      notes: '',
+      chats: [],
+      chatFolders: [],
+      chatPage: 0,
+      viewScreen: 'none',
+      bias: [],
+      emotionImages: [],
+      globalLore: [],
+      sdData: [],
+      customscript: [],
+      triggerscript: [],
+      utilityBot: false,
+      exampleMessage: '',
+      creatorNotes: '',
+      systemPrompt: '',
+      postHistoryInstructions: '',
+      alternateGreetings: [],
+      tags: [],
+      creator: '',
+      characterVersion: '',
+      personality: '',
+      scenario: '',
+      firstMsgIndex: -1,
+      replaceGlobalNote: '',
+      additionalText: '',
+      ...character,
+    })
+    if (seen.has(record.chaId)) {
+      record.chaId = randomUUID()
+    }
+    seen.add(record.chaId)
+    return record
+  })
+  database.characters = characters
+
+  normalizeCharacterOrder(database, characters)
+  normalizeCurrentChar(database, characters)
+
+  return characters
+}
+
+export function normalizeCharacterCollection(database: unknown): void {
+  if (!database || typeof database !== 'object' || Array.isArray(database)) return
+  ensureCharacterCollection(database as JsonRecord)
+}
+
+export function createCharacterRecord(input: unknown): CharacterRecord {
+  const character = readJsonObject(input, 'character') as CharacterRecord
+  character.chaId =
+    typeof character.chaId === 'string' && character.chaId.trim() ? character.chaId : randomUUID()
+  validateCharacterRecord(character, 'character')
+  return character
+}
+
+export function readCharacterPatch(input: unknown): JsonRecord {
+  const patch = readJsonObject(input, 'patch')
+  if (Object.keys(patch).length === 0) {
+    throw new ValidationError('patch must include at least one character field')
+  }
+  validateCharacterPatch(patch, 'patch')
+  return patch
+}
+
+export function readCharacterId(value: unknown, label = 'characterId'): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ValidationError(`${label} must be a non-empty string`)
+  }
+  return value
+}
+
+export function readJsonObject(value: unknown, label: string): JsonRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError(`${label} must be an object`)
+  }
+  validateJsonValue(label, value)
+  return value as JsonRecord
+}
+
+export function findCharacterIndex(
+  characters: readonly CharacterRecord[],
+  characterId: string,
+): number {
+  return characters.findIndex((character) => character.chaId === characterId)
+}
+
+export function requireCharacterIndex(
+  characters: readonly CharacterRecord[],
+  characterId: string,
+): number {
+  const index = findCharacterIndex(characters, characterId)
+  if (index === -1) {
+    throw new EntityNotFoundError(`Character not found: ${characterId}`)
+  }
+  return index
+}
+
+export function selectedCharacterId(
+  database: JsonRecord,
+  characters: readonly CharacterRecord[],
+): string | null {
+  const index = Number.isInteger(database.currentChar as number)
+    ? (database.currentChar as number)
+    : -1
+  return characters[index]?.chaId ?? null
+}
+
+export function readCharacterOrder(input: unknown): CharacterOrderEntry[] {
+  if (!Array.isArray(input)) {
+    throw new ValidationError('characterOrder must be an array')
+  }
+  validateJsonValue('characterOrder', input)
+  return input.map((entry, index) => readCharacterOrderEntry(entry, index))
+}
+
+export function validateFullCharacterOrder(
+  characters: readonly CharacterRecord[],
+  order: readonly CharacterOrderEntry[],
+): void {
+  const activeIds = new Set(
+    characters
+      .filter((character) => !character.trashTime && character.chaId !== '§temp')
+      .map((character) => character.chaId),
+  )
+  const seenCharacterIds = new Set<string>()
+  const seenFolderIds = new Set<string>()
+
+  for (const entry of order) {
+    if (typeof entry === 'string') {
+      validateOrderedCharacterId(entry, activeIds, seenCharacterIds)
+      continue
+    }
+
+    if (seenFolderIds.has(entry.id)) {
+      throw new ValidationError(`Duplicate character folder id: ${entry.id}`)
+    }
+    seenFolderIds.add(entry.id)
+    for (const characterId of entry.data) {
+      validateOrderedCharacterId(characterId, activeIds, seenCharacterIds)
+    }
+  }
+
+  if (seenCharacterIds.size !== activeIds.size) {
+    throw new ValidationError('characterOrder must include every untrashed character id')
+  }
+}
+
+function normalizeCharacterOrder(
+  database: JsonRecord,
+  characters: readonly CharacterRecord[],
+): void {
+  const rawOrder = Array.isArray(database.characterOrder) ? database.characterOrder : []
+  const activeIds = new Set(
+    characters
+      .filter((character) => !character.trashTime && character.chaId !== '§temp')
+      .map((character) => character.chaId),
+  )
+  const seen = new Set<string>()
+  const normalized: CharacterOrderEntry[] = []
+
+  for (const rawEntry of rawOrder) {
+    if (typeof rawEntry === 'string') {
+      if (activeIds.has(rawEntry) && !seen.has(rawEntry)) {
+        normalized.push(rawEntry)
+        seen.add(rawEntry)
+      }
+      continue
+    }
+
+    if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) continue
+    const folder = readCharacterOrderEntry(rawEntry, normalized.length)
+    folder.data = folder.data.filter((id) => {
+      if (!activeIds.has(id) || seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+    if (folder.data.length > 0) normalized.push(folder)
+  }
+
+  for (const id of activeIds) {
+    if (!seen.has(id)) normalized.push(id)
+  }
+
+  database.characterOrder = normalized
+}
+
+function normalizeCurrentChar(database: JsonRecord, characters: readonly CharacterRecord[]): void {
+  if (!Number.isInteger(database.currentChar as number)) {
+    database.currentChar = characters.length > 0 ? 0 : -1
+  }
+  if ((database.currentChar as number) >= characters.length) {
+    database.currentChar = characters.length > 0 ? characters.length - 1 : -1
+  }
+  if ((database.currentChar as number) < -1) {
+    database.currentChar = characters.length > 0 ? 0 : -1
+  }
+}
+
+function readCharacterOrderEntry(entry: unknown, index: number): CharacterOrderEntry {
+  if (typeof entry === 'string') {
+    if (entry.trim() === '') {
+      throw new ValidationError(`characterOrder[${index}] must be a non-empty string`)
+    }
+    return entry
+  }
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new ValidationError(`characterOrder[${index}] must be a character id or folder`)
+  }
+
+  const folder = entry as JsonRecord
+  if (typeof folder.id !== 'string' || folder.id.trim() === '') {
+    throw new ValidationError(`characterOrder[${index}].id must be a non-empty string`)
+  }
+  if (folder.name !== undefined && typeof folder.name !== 'string') {
+    throw new ValidationError(`characterOrder[${index}].name must be a string`)
+  }
+  if (folder.color !== undefined && typeof folder.color !== 'string') {
+    throw new ValidationError(`characterOrder[${index}].color must be a string`)
+  }
+  if (!Array.isArray(folder.data) || folder.data.some((id) => typeof id !== 'string' || !id)) {
+    throw new ValidationError(`characterOrder[${index}].data must be an array of character ids`)
+  }
+  if (
+    folder.imgFile !== undefined &&
+    folder.imgFile !== null &&
+    typeof folder.imgFile !== 'string'
+  ) {
+    throw new ValidationError(`characterOrder[${index}].imgFile must be a string or null`)
+  }
+  if (folder.img !== undefined && typeof folder.img !== 'string') {
+    throw new ValidationError(`characterOrder[${index}].img must be a string`)
+  }
+
+  return {
+    ...folder,
+    id: folder.id,
+    name: typeof folder.name === 'string' ? folder.name : 'New Folder',
+    color: typeof folder.color === 'string' ? folder.color : '',
+    data: [...(folder.data as string[])],
+  } as CharacterFolderRecord
+}
+
+function validateOrderedCharacterId(
+  characterId: string,
+  activeIds: Set<string>,
+  seenCharacterIds: Set<string>,
+): void {
+  if (!activeIds.has(characterId)) {
+    throw new ValidationError(`Unknown character id in characterOrder: ${characterId}`)
+  }
+  if (seenCharacterIds.has(characterId)) {
+    throw new ValidationError(`Duplicate character id in characterOrder: ${characterId}`)
+  }
+  seenCharacterIds.add(characterId)
+}
+
+function validateCharacterRecord(record: JsonRecord, label: string): void {
+  if ('chaId' in record && (typeof record.chaId !== 'string' || record.chaId.trim() === '')) {
+    throw new ValidationError(`${label}.chaId must be a non-empty string`)
+  }
+  if ('name' in record && typeof record.name !== 'string') {
+    throw new ValidationError(`${label}.name must be a string`)
+  }
+  if (
+    'trashTime' in record &&
+    record.trashTime !== undefined &&
+    record.trashTime !== null &&
+    (typeof record.trashTime !== 'number' || !Number.isFinite(record.trashTime))
+  ) {
+    throw new ValidationError(`${label}.trashTime must be a finite number, null, or undefined`)
+  }
+}
+
+function validateCharacterPatch(record: JsonRecord, label: string): void {
+  for (const key of Object.keys(record)) {
+    if (EXCLUDED_CHARACTER_PATCH_KEYS.has(key)) {
+      throw new ValidationError(`${label}.${key} is owned by a later command slice`)
+    }
+  }
+  validateCharacterRecord(record, label)
+}
+
+function validateJsonValue(label: string, value: unknown): void {
+  try {
+    JSON.stringify(value)
+  } catch {
+    throw new ValidationError(`${label} must be JSON-serializable`)
+  }
+  if (value === undefined) {
+    throw new ValidationError(`${label} must be JSON-serializable`)
+  }
+}

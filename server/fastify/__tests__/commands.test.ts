@@ -1722,3 +1722,306 @@ describe('Phase 9-2f loadout commands', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-3a character commands', () => {
+  it('creates, updates, selects, reorders, and deletes characters by chaId', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          firstMessage: 'hello',
+          desc: 'desc a',
+          chats: [],
+          chatFolders: [],
+          chatPage: 0,
+          viewScreen: 'none',
+          bias: [],
+          emotionImages: [],
+          globalLore: [],
+          sdData: [],
+          customscript: [],
+          triggerscript: [],
+          utilityBot: false,
+          exampleMessage: '',
+          creatorNotes: '',
+          systemPrompt: '',
+          postHistoryInstructions: '',
+          alternateGreetings: [],
+          tags: [],
+          creator: '',
+          characterVersion: '',
+          personality: '',
+          scenario: '',
+          firstMsgIndex: -1,
+          replaceGlobalNote: '',
+          additionalText: '',
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        character: {
+          chaId: 'char-b',
+          name: 'B',
+          firstMessage: 'hi',
+          desc: 'desc b',
+          chats: [],
+          chatFolders: [],
+          chatPage: 0,
+          viewScreen: 'none',
+          bias: [],
+          emotionImages: [],
+          globalLore: [],
+          sdData: [],
+          customscript: [],
+          triggerscript: [],
+          utilityBot: false,
+          exampleMessage: '',
+          creatorNotes: '',
+          systemPrompt: '',
+          postHistoryInstructions: '',
+          alternateGreetings: [],
+          tags: [],
+          creator: '',
+          characterVersion: '',
+          personality: '',
+          scenario: '',
+          firstMsgIndex: -1,
+          replaceGlobalNote: '',
+          additionalText: '',
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'character.created',
+        revision: 2,
+        resource: 'character',
+        id: 'char-b',
+      },
+      characterId: 'char-b',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        patch: {
+          name: 'B renamed',
+          desc: 'new desc',
+          trashTime: 1000,
+        },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event).toMatchObject({
+      type: 'character.updated',
+      resource: 'character',
+      id: 'char-b',
+    })
+
+    const restored = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        patch: {
+          trashTime: null,
+        },
+      },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: restored.json().revision,
+        characterId: 'char-b',
+      },
+    })
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json()).toEqual({
+      revision: 5,
+      event: {
+        type: 'character.selected',
+        revision: 5,
+        resource: 'character',
+        id: 'char-b',
+      },
+      characterId: 'char-b',
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: selected.json().revision,
+        characterOrder: [
+          {
+            id: 'folder-a',
+            name: 'Folder A',
+            color: 'blue',
+            data: ['char-b'],
+          },
+          'char-a',
+        ],
+      },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json()).toEqual({
+      revision: 6,
+      event: {
+        type: 'character.reordered',
+        revision: 6,
+        resource: 'character',
+      },
+      selectedCharacterId: 'char-b',
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: reordered.json().revision,
+      },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toEqual({
+      revision: 7,
+      event: {
+        type: 'character.deleted',
+        revision: 7,
+        resource: 'character',
+        id: 'char-a',
+      },
+      characterId: 'char-a',
+      selectedCharacterId: 'char-b',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.currentChar).toBe(0)
+    expect(bootstrap.json().database.characters).toMatchObject([
+      {
+        chaId: 'char-b',
+        name: 'B renamed',
+        desc: 'new desc',
+      },
+    ])
+    expect(bootstrap.json().database.characterOrder).toEqual([
+      {
+        id: 'folder-a',
+        name: 'Folder A',
+        color: 'blue',
+        data: ['char-b'],
+      },
+    ])
+  })
+
+  it('rejects malformed character commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [],
+          chatFolders: [],
+          trashTime: undefined,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [],
+          chatFolders: [],
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const update = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { chats: [] },
+      },
+    })
+    expect(update.statusCode).toBe(400)
+    expect(update.json().error).toBe('patch.chats is owned by a later command slice')
+
+    const reorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        characterOrder: ['char-a', 'char-a'],
+      },
+    })
+    expect(reorder.statusCode).toBe(400)
+    expect(reorder.json().error).toBe('Duplicate character id in characterOrder: char-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characterOrder).toEqual(['char-a', 'char-b'])
+  })
+
+  it('returns 404 and 409 for missing characters and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [], chatFolders: [] }],
+      characterOrder: ['char-a'],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/missing',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { name: 'Nope' },
+      },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('Character not found: missing')
+
+    const stale = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 0,
+        characterId: 'char-a',
+      },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

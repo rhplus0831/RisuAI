@@ -235,19 +235,19 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-2f loadouts are complete. Continue with
-**9-3a - Character catalog and scalar profile**:
+9-3a character catalog/scalar profile is complete. Continue with
+**9-3b - Chat records, folders, and metadata**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement character commands from the Characters, Chats, Messages
-  command-family table.
-- Replace character catalog/order/trash/folder/selection and scalar profile
-  mutation paths in server-backed web mode with typed commands while
-  keeping local/Tauri behavior unchanged.
-- Keep chat records, message history, generation persistence,
-  scriptstate, lorebook/script/trigger child collections, projection
-  enforcement, and plugin bridge work in their later slices.
-- Preserve the 9-1 command response and conflict contract for every
-  character command.
+- Implement chat record and chat-folder commands from the Characters,
+  Chats, Messages command-family table.
+- Replace chat record, current chat/page, chat-folder, notes, persona
+  binding, and bookmark metadata mutation paths in server-backed web mode
+  with typed commands while keeping local/Tauri behavior unchanged.
+- Keep message history, generation persistence, scriptstate,
+  lorebook/script/trigger child collections, projection enforcement, and
+  plugin bridge work in their later slices.
+- Preserve the 9-1 command response and conflict contract for every chat
+  and chat-folder command.

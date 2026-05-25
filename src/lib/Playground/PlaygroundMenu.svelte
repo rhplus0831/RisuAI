@@ -19,6 +19,12 @@
   import PlaygroundMcp from './PlaygroundMCP.svelte'
   import PlaygroundDocs from './PlaygroundDocs.svelte'
   import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte'
+  import {
+    currentCharacterStateSnapshot,
+    dispatchCreateCharacter,
+    dispatchSelectCharacter,
+    dispatchUpdateCharacter,
+  } from 'src/ts/characterCommands'
 
   let easterEggTouch = $state(0)
 
@@ -27,6 +33,7 @@
     PlaygroundStore.set(2)
 
     if (charIndex !== -1) {
+      const previous = currentCharacterStateSnapshot()
       const char = DBState.db.characters[charIndex] as character
       char.utilityBot = true
       char.name = 'assistant'
@@ -35,13 +42,21 @@
       characterFormatUpdate(charIndex)
 
       selectedCharID.set(charIndex)
+      dispatchUpdateCharacter(
+        char.chaId,
+        { utilityBot: true, name: 'assistant', firstMessage: '{{none}}' },
+        previous,
+      )
+      dispatchSelectCharacter(char.chaId, previous)
       return
     }
 
+    const previous = currentCharacterStateSnapshot()
     const character = createBlankChar()
     character.chaId = '§playground'
 
     DBState.db.characters.push(character)
+    dispatchCreateCharacter(character, previous)
 
     playgroundChat()
   }

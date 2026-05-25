@@ -64,6 +64,18 @@ import {
   readOptionalTimestamp,
   requireLoadoutIndex,
 } from '../commands/loadouts.js'
+import {
+  createCharacterRecord,
+  ensureCharacterCollection,
+  ensureDatabaseObject as ensureCharacterDatabaseObject,
+  findCharacterIndex,
+  readCharacterId,
+  readCharacterOrder,
+  readCharacterPatch,
+  requireCharacterIndex,
+  selectedCharacterId,
+  validateFullCharacterOrder,
+} from '../commands/characters.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -115,6 +127,15 @@ interface LoadoutCommandBody {
   favorite?: unknown
   lastUsed?: unknown
   characterId?: unknown
+}
+
+interface CharacterCommandBody {
+  baseRevision?: unknown
+  character?: unknown
+  patch?: unknown
+  characterId?: unknown
+  characterIds?: unknown
+  characterOrder?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -1904,6 +1925,195 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.loadoutTouched, id: loadoutId },
             extra: { loadoutId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as CharacterCommandBody
+      const baseRevision = readBaseRevision(body)
+      const character = createCharacterRecord(body.character)
+      const result = applyJsonCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = ensureCharacterCollection(target)
+          if (findCharacterIndex(characters, character.chaId) !== -1) {
+            throw new ValidationError(`Duplicate character id: ${character.chaId}`)
+          }
+          characters.push(character)
+          ensureCharacterCollection(target)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.characterCreated, id: character.chaId },
+            extra: { characterId: character.chaId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/characters/:characterId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as CharacterCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readCharacterPatch(body.patch)
+      const result = applyJsonCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = ensureCharacterCollection(target)
+          const index = requireCharacterIndex(characters, characterId)
+          characters[index] = {
+            ...characters[index],
+            ...patch,
+            chaId: characterId,
+          }
+          ensureCharacterCollection(target)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.characterUpdated, id: characterId },
+            extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/characters/:characterId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as CharacterCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{
+        characterId: string
+        selectedCharacterId: string | null
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = ensureCharacterCollection(target)
+          const index = requireCharacterIndex(characters, characterId)
+          characters.splice(index, 1)
+          ensureCharacterCollection(target)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.characterDeleted, id: characterId },
+            extra: {
+              characterId,
+              selectedCharacterId: selectedCharacterId(target, characters),
+            },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/select', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as CharacterCommandBody
+      const baseRevision = readBaseRevision(body)
+      const characterId = readCharacterId(body.characterId)
+      const result = applyJsonCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = ensureCharacterCollection(target)
+          const index = requireCharacterIndex(characters, characterId)
+          target.currentChar = index
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.characterSelected, id: characterId },
+            extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as CharacterCommandBody
+      const baseRevision = readBaseRevision(body)
+      const order =
+        body.characterOrder !== undefined
+          ? readCharacterOrder(body.characterOrder)
+          : readCharacterOrder(body.characterIds)
+      const result = applyJsonCommandMutation<{ selectedCharacterId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = ensureCharacterCollection(target)
+          validateFullCharacterOrder(characters, order)
+          target.characterOrder = order
+          return {
+            event: COMMAND_EVENT_CATALOG.characterReordered,
+            extra: { selectedCharacterId: selectedCharacterId(target, characters) },
           }
         },
       })
