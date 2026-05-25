@@ -64,6 +64,7 @@ import {
   dispatchCreateCharacter,
   dispatchUpdateCharacter,
 } from './characterCommands'
+import { currentModuleStateSnapshot, dispatchCreateModule } from './moduleCommands'
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz'
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
@@ -423,7 +424,9 @@ export async function characterURLImport() {
         return false
       }
     }
+    const previous = currentModuleStateSnapshot()
     DBState.db.modules.push(importData)
+    dispatchCreateModule(importData, previous)
     alertNormal(language.successImport)
     SettingsMenuIndex.set(14)
     settingsOpen.set(true)
@@ -459,7 +462,9 @@ export async function characterURLImport() {
     const module = new Uint8Array(await data.arrayBuffer())
     const md = await readModule(Buffer.from(module))
     md.id = v4()
+    const previous = currentModuleStateSnapshot()
     DBState.db.modules.push(md)
+    dispatchCreateModule(md, previous)
     alertNormal(language.successImport)
     SettingsMenuIndex.set(14)
     settingsOpen.set(true)
@@ -546,7 +551,9 @@ export async function characterURLImport() {
     if (name.endsWith('risum')) {
       const md = await readModule(Buffer.from(data))
       md.id = v4()
+      const previous = currentModuleStateSnapshot()
       DBState.db.modules.push(md)
+      dispatchCreateModule(md, previous)
       alertNormal(language.successImport)
       SettingsMenuIndex.set(14)
       settingsOpen.set(true)

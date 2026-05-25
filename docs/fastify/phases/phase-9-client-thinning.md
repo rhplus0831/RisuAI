@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: active. Last landed slice:
-**9-4b - Script and trigger definition commands**. Next slice:
-**9-4c - Module records and enablement**.
+**9-4c - Module records and enablement**. Next slice:
+**9-4d - Asset reference commands**.
 
 ## Goal
 
@@ -184,6 +184,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-4b.md`](../phases-completed/phase-9-client-thinning-9-4b.md).
   - **9-4c - Module records and enablement.** Module lifecycle,
     enablement, active-module helpers, and compatibility paths.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-4c.md`](../phases-completed/phase-9-client-thinning-9-4c.md).
   - **9-4d - Asset reference commands.** Database references to already
     uploaded asset bytes. Bundle walking stays in 9-8.
   - **9-4e - Plugin records and configuration.** Install, enable/disable,

@@ -235,19 +235,19 @@ command; they must never replace the whole DB blob.
 
 ## Next Implementation Pickup
 
-9-4b script and trigger definition commands are complete.
-Continue with **9-4c - Module records and enablement**:
+9-4c module record and enablement commands are complete.
+Continue with **9-4d - Asset reference commands**:
 
 - Build on `server/fastify/src/commands/`,
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`.
-- Implement the module endpoints listed above for module lifecycle,
-  enablement, global module reorder, and character module-link reorder.
-- Replace server-backed web module lifecycle and enablement mutations with
-  typed command helpers and browser dispatch plumbing.
-- Keep module lorebook edits on 9-4a commands and module script/trigger
-  edits on 9-4b commands.
-- Keep asset writes explicitly unsupported until 9-4d.
+- Implement asset-reference handling through the owning resource commands;
+  asset bytes stay on the existing Fastify asset upload path.
+- Replace server-backed web asset reference mutations with typed command
+  helpers and browser dispatch plumbing.
+- Validate referenced server asset ids where the owning field requires a
+  server asset.
+- Keep bundle walking and server `.risu` import/export in 9-8.
 - Keep projection enforcement, plugin database bridge work, and storage
   gating in their later slices.
 - Preserve the 9-1 command response and conflict contract through the

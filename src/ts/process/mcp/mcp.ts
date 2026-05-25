@@ -2,6 +2,7 @@ import { getDatabase } from 'src/ts/storage/database.svelte'
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { DBState } from 'src/ts/stores.svelte'
 import { getModuleMcps } from '../modules'
+import { canUseServerCommands } from '../../server/commands'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
 import type { MCPClientLike } from './internalmcp'
@@ -311,6 +312,10 @@ export async function importMCPModule() {
     const meta = metas[x]
     if (!meta) {
       alertError('MCP module not found or invalid URL')
+      return
+    }
+    if (canUseServerCommands()) {
+      alertError('MCP module import is not supported in Fastify server-backed mode yet')
       return
     }
     const db = getDatabase()

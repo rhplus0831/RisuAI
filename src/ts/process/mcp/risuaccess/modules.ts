@@ -13,6 +13,12 @@ import {
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
 } from 'src/ts/server/scriptDefinitionBridge.svelte'
+import {
+  currentModuleStateSnapshot,
+  dispatchEnableModule,
+  dispatchUpdateModule,
+  type ModuleStateSnapshot,
+} from 'src/ts/moduleCommands'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
@@ -468,6 +474,12 @@ export class ModuleHandler extends MCPToolHandler {
       'customModuleToggle',
     ]
 
+    const previous: ModuleStateSnapshot | null = canUseServerCommands()
+      ? currentModuleStateSnapshot()
+      : null
+    const patch: Record<string, unknown> = {}
+    let enabled: boolean | null = null
+
     for (const [key, value] of Object.entries(data)) {
       if (!allowedFields.includes(key)) continue
 
@@ -479,9 +491,20 @@ export class ModuleHandler extends MCPToolHandler {
           enabledModules.delete(id)
         }
         DBState.db.enabledModules = Array.from(enabledModules)
+        enabled = Boolean(value)
       } else {
         // @ts-ignore
         module[key] = value
+        patch[key] = value
+      }
+    }
+
+    if (previous) {
+      if (Object.keys(patch).length > 0) {
+        dispatchUpdateModule(id, patch, previous)
+      }
+      if (enabled !== null) {
+        dispatchEnableModule(id, enabled, previous)
       }
     }
 

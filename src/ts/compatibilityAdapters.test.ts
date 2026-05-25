@@ -379,6 +379,45 @@ describe('Phase 9-3f compatibility adapters', () => {
       },
     })
   })
+
+  it('routes MCP module info and enablement writes through module commands', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.modules = [{ id: 'mod-a', name: 'Module', description: '' }]
+    DBState.db.enabledModules = []
+    const handler = new ModuleHandler()
+
+    const result = await handler.setModuleInfo('mod-a', {
+      name: 'Renamed module',
+      description: 'Updated',
+      enabled: true,
+    })
+    expect(result[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('Successfully updated module'),
+    })
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a')).toBe(true)
+      expect(calls.some((call) => call.url === '/api/v1/commands/modules/enable')).toBe(true)
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/modules/mod-a')).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          name: 'Renamed module',
+          description: 'Updated',
+        },
+      },
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/modules/enable')).toMatchObject({
+      method: 'POST',
+      body: {
+        moduleId: 'mod-a',
+        enabled: true,
+      },
+    })
+  })
 })
 
 function snapshot<T>(value: T): T {

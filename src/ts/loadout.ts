@@ -1,4 +1,5 @@
 import { changeUserPersona } from './persona'
+import { currentModuleStateSnapshot, dispatchEnableModule } from './moduleCommands'
 import {
   canUseServerCommands,
   createLoadoutCommand,
@@ -154,7 +155,20 @@ export function applyLoadout(
     }
   }
   if (apply.includes('modules')) {
+    const modulePrevious = currentModuleStateSnapshot()
+    const previousModules = new Set(DBState.db.enabledModules ?? [])
+    const nextModules = new Set(loadout.modules ?? [])
     DBState.db.enabledModules = loadout.modules
+    for (const moduleId of nextModules) {
+      if (!previousModules.has(moduleId)) {
+        dispatchEnableModule(moduleId, true, modulePrevious)
+      }
+    }
+    for (const moduleId of previousModules) {
+      if (!nextModules.has(moduleId)) {
+        dispatchEnableModule(moduleId, false, modulePrevious)
+      }
+    }
   }
   if (apply.includes('globalVariables')) {
     DBState.db.globalChatVariables = loadout.globalVariables

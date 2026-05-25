@@ -235,6 +235,30 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'triggerDefinitions.replaced',
     resource: 'triggerDefinition',
   },
+  moduleCreated: {
+    type: 'module.created',
+    resource: 'module',
+  },
+  moduleUpdated: {
+    type: 'module.updated',
+    resource: 'module',
+  },
+  moduleDeleted: {
+    type: 'module.deleted',
+    resource: 'module',
+  },
+  moduleEnabled: {
+    type: 'module.enabled',
+    resource: 'module',
+  },
+  moduleReordered: {
+    type: 'module.reordered',
+    resource: 'module',
+  },
+  characterModulesReordered: {
+    type: 'character.modules.reordered',
+    resource: 'character',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

@@ -8,6 +8,11 @@
   import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { SettingsMenuIndex, settingsOpen } from 'src/ts/stores.svelte'
+  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
+  import {
+    currentModuleStateSnapshot,
+    dispatchReorderCharacterModules,
+  } from 'src/ts/moduleCommands'
 
   interface Props {
     close?: any
@@ -96,35 +101,23 @@
                       : 'text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer'}
                   onclick={async (e) => {
                     e.stopPropagation()
-                    if (
-                      DBState.db.characters[$selectedCharID].chats[
-                        DBState.db.characters[$selectedCharID].chatPage
-                      ].modules.includes(rmodule.id)
-                    ) {
-                      DBState.db.characters[$selectedCharID].chats[
-                        DBState.db.characters[$selectedCharID].chatPage
-                      ].modules.splice(
-                        DBState.db.characters[$selectedCharID].chats[
-                          DBState.db.characters[$selectedCharID].chatPage
-                        ].modules.indexOf(rmodule.id),
-                        1,
-                      )
+                    const character = DBState.db.characters[$selectedCharID]
+                    const chat = character.chats[character.chatPage]
+                    chat.modules ??= []
+                    const previous = currentChatStateSnapshot()
+                    if (chat.modules.includes(rmodule.id)) {
+                      chat.modules.splice(chat.modules.indexOf(rmodule.id), 1)
                     } else {
-                      DBState.db.characters[$selectedCharID].chats[
-                        DBState.db.characters[$selectedCharID].chatPage
-                      ].modules.push(rmodule.id)
+                      chat.modules.push(rmodule.id)
                     }
-                    DBState.db.characters[$selectedCharID].chats[
-                      DBState.db.characters[$selectedCharID].chatPage
-                    ].modules =
-                      DBState.db.characters[$selectedCharID].chats[
-                        DBState.db.characters[$selectedCharID].chatPage
-                      ].modules
+                    chat.modules = chat.modules
+                    dispatchUpdateChat(chat.id, { modules: chat.modules }, previous)
                     $ReloadGUIPointer += 1
                   }}
                   oncontextmenu={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
+                    const previous = currentModuleStateSnapshot()
                     if (!DBState.db.characters[$selectedCharID].modules) {
                       DBState.db.characters[$selectedCharID].modules = []
                     }
@@ -136,6 +129,10 @@
                     } else {
                       DBState.db.characters[$selectedCharID].modules.push(rmodule.id)
                     }
+                    dispatchReorderCharacterModules(
+                      DBState.db.characters[$selectedCharID].chaId,
+                      previous,
+                    )
                     $ReloadGUIPointer += 1
                   }}
                 >

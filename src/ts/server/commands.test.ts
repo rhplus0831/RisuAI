@@ -23,6 +23,7 @@ import {
   createChatFolderCommand,
   createCharacterCommand,
   createLoadoutCommand,
+  createModuleCommand,
   createPersonaCommand,
   clearCachedServerCommandRevision,
   createPromptItemCommand,
@@ -35,10 +36,12 @@ import {
   deleteGlobalLorebookCommand,
   deleteLoadoutCommand,
   deleteMessageCommand,
+  deleteModuleCommand,
   deletePersonaCommand,
   deletePromptItemCommand,
   deleteTranslatorPresetCommand,
   favoriteLoadoutCommand,
+  enableModuleCommand,
   forkChatCommand,
   getServerCommandBaseRevision,
   patchPromptSettingsCommand,
@@ -52,6 +55,8 @@ import {
   reorderChatsCommand,
   reorderPersonasCommand,
   reorderGlobalLorebooksCommand,
+  reorderCharacterModulesCommand,
+  reorderModulesCommand,
   reorderPromptItemsCommand,
   reorderPresetsCommand,
   runServerCommand,
@@ -76,6 +81,7 @@ import {
   updateGlobalLorebookCommand,
   updateLoadoutCommand,
   updateMessageCommand,
+  updateModuleCommand,
   updatePersonaCommand,
   updateTranslatorPresetCommand,
   selectPresetCommand,
@@ -2019,6 +2025,82 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/modules/mod-a/triggers',
         method: 'PUT',
         body: { baseRevision: 4, triggers: [trigger] },
+      },
+    ])
+  })
+
+  it('dispatches module record and enablement commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.includes('/modules') || url.includes('/characters/char-a/modules/reorder')) {
+        return {
+          revision: 9,
+          event: {
+            type: 'module.updated',
+            revision: 9,
+            resource: 'module',
+          },
+          moduleId: 'mod-a',
+          characterId: 'char-a',
+          enabled: true,
+        }
+      }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await createModuleCommand({
+      baseRevision: 1,
+      module: { id: 'mod-a', name: 'A', description: 'Module' },
+    })
+    await updateModuleCommand({
+      baseRevision: 2,
+      moduleId: 'mod-a',
+      patch: { name: 'Renamed' },
+    })
+    await deleteModuleCommand({ baseRevision: 3, moduleId: 'mod-a' })
+    await enableModuleCommand({ baseRevision: 4, moduleId: 'mod-a', enabled: true })
+    await reorderModulesCommand({ baseRevision: 5, moduleIds: ['mod-b', 'mod-a'] })
+    await reorderCharacterModulesCommand({
+      baseRevision: 6,
+      characterId: 'char-a',
+      moduleIds: ['mod-a'],
+    })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/modules',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          module: { id: 'mod-a', name: 'A', description: 'Module' },
+        },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a',
+        method: 'PATCH',
+        body: { baseRevision: 2, patch: { name: 'Renamed' } },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a',
+        method: 'DELETE',
+        body: { baseRevision: 3 },
+      },
+      {
+        url: '/api/v1/commands/modules/enable',
+        method: 'POST',
+        body: { baseRevision: 4, moduleId: 'mod-a', enabled: true },
+      },
+      {
+        url: '/api/v1/commands/modules/reorder',
+        method: 'POST',
+        body: { baseRevision: 5, moduleIds: ['mod-b', 'mod-a'] },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/modules/reorder',
+        method: 'POST',
+        body: { baseRevision: 6, moduleIds: ['mod-a'] },
       },
     ])
   })

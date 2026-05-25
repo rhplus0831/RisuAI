@@ -15,13 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed slice: 9-4b, Script and trigger definition commands.
-- Current gap: 9-4c should add module record and enablement commands;
-  9-5 should still do the residual direct-write sweep before enabling the
-  read-only `DBState.db` guard.
-- Next default pickup: 9-4c, Module records and enablement.
-- Last recorded full baselines after 9-4b: `pnpm check` clean,
-  `pnpm test` 690 tests plus 4 skipped, `pnpm api:test` 1104 tests, and
+- Last landed slice: 9-4c, Module records and enablement.
+- Current gap: 9-4d should add asset reference commands; 9-5 should still
+  do the residual direct-write sweep before enabling the read-only
+  `DBState.db` guard.
+- Next default pickup: 9-4d, Asset reference commands.
+- Last recorded full baselines after 9-4c: `pnpm check` clean,
+  `pnpm test` 692 tests plus 4 skipped, `pnpm api:test` 1107 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
   externalization, plugin-timing, and chunk-size warnings.
 
@@ -43,14 +43,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                    |
-| ------------------------------------------- | ------------------------------------------------------------------------ |
-| Removals                                    | Closed; historical detail archived.                                      |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                               |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.  |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                         |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                         |
-| Client thinning                             | Active; 9-4b script/trigger commands landed; next slice is 9-4c modules. |
+| Workstream                                  | State                                                                   |
+| ------------------------------------------- | ----------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                     |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                              |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                        |
+| Client thinning                             | Active; 9-4c module commands landed; next slice is 9-4d assets.         |
 
 ## Maintenance Rules
 

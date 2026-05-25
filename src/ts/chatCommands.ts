@@ -46,6 +46,7 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'lastDate',
   'bookmarks',
   'bookmarkNames',
+  'modules',
 ])
 
 export const MESSAGE_PATCH_ALLOWED_KEYS = new Set([

@@ -3497,3 +3497,222 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 })
+
+describe('Phase 9-4c module record and enablement commands', () => {
+  it('creates, patches, enables, reorders, relinks, and deletes modules', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: ['mod-a'],
+      modules: [
+        { id: 'mod-a', name: 'A', description: 'Alpha' },
+        { id: 'mod-b', name: 'B', description: 'Beta' },
+        { id: 'mcp-a', name: 'MCP', description: 'Bridge', mcp: { url: 'internal:risuai' } },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          modules: ['mod-a', 'mod-b'],
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'Chat',
+              note: '',
+              message: [],
+              localLore: [],
+              modules: ['mod-a', 'mod-b'],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+      loadouts: [{ id: 'loadout-a', name: 'L', modules: ['mod-a', 'mod-b'] }],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        module: { id: 'mod-c', name: 'C', description: 'Gamma', namespace: 'ns-c' },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({
+      revision: 2,
+      event: {
+        type: 'module.created',
+        revision: 2,
+        resource: 'module',
+        id: 'mod-c',
+      },
+      moduleId: 'mod-c',
+    })
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-c',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: 2,
+        patch: { name: 'Renamed C', hideIcon: true, customModuleToggle: 'toggle' },
+      },
+    })
+    expect(patched.statusCode).toBe(200)
+    expect(patched.json().event.type).toBe('module.updated')
+
+    const enabled = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 3, moduleId: 'mod-b', enabled: true },
+    })
+    expect(enabled.statusCode).toBe(200)
+    expect(enabled.json()).toMatchObject({
+      revision: 4,
+      moduleId: 'mod-b',
+      enabled: true,
+      event: { type: 'module.enabled', id: 'mod-b' },
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4, moduleIds: ['mod-c', 'mod-b', 'mod-a', 'mcp-a'] },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().event.type).toBe('module.reordered')
+
+    const characterLinks = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 5, moduleIds: ['mod-b', 'mod-a'] },
+    })
+    expect(characterLinks.statusCode).toBe(200)
+    expect(characterLinks.json()).toMatchObject({
+      revision: 6,
+      characterId: 'char-a',
+      event: { type: 'character.modules.reordered', id: 'char-a' },
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/modules/mod-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 6 },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json().event.type).toBe('module.deleted')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const database = bootstrap.json().database
+    expect(bootstrap.json().revision).toBe(7)
+    expect(database.modules.map((module: { id: string }) => module.id)).toEqual([
+      'mod-c',
+      'mod-a',
+      'mcp-a',
+    ])
+    expect(database.modules[0]).toMatchObject({
+      id: 'mod-c',
+      name: 'Renamed C',
+      hideIcon: true,
+      customModuleToggle: 'toggle',
+    })
+    expect(database.enabledModules).toEqual(['mod-a'])
+    expect(database.characters[0].modules).toEqual(['mod-a'])
+    expect(database.characters[0].chats[0].modules).toEqual(['mod-a'])
+    expect(database.loadouts[0].modules).toEqual(['mod-a'])
+    expect(
+      harness.commandEvents
+        .list()
+        .slice(-6)
+        .map((event) => event.type),
+    ).toEqual([
+      'module.created',
+      'module.updated',
+      'module.enabled',
+      'module.reordered',
+      'character.modules.reordered',
+      'module.deleted',
+    ])
+  })
+
+  it('rejects malformed module commands without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: [],
+      modules: [{ id: 'mod-a', name: 'A', description: '' }],
+      characters: [{ chaId: 'char-a', name: 'A', modules: ['mod-a'] }],
+      characterOrder: ['char-a'],
+    })
+
+    const badPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { assets: [] } },
+    })
+    expect(badPatch.statusCode).toBe(400)
+    expect(badPatch.json().error).toBe('patch.assets is owned by a later command slice')
+
+    const badEnable = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, moduleId: 'mod-a', enabled: 'yes' },
+    })
+    expect(badEnable.statusCode).toBe(400)
+    expect(badEnable.json().error).toBe('enabled must be a boolean')
+
+    const badReorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, moduleIds: ['mod-a', 'mod-a'] },
+    })
+    expect(badReorder.statusCode).toBe(400)
+    expect(badReorder.json().error).toBe('Duplicate module id in moduleIds: mod-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.modules).toEqual([{ id: 'mod-a', name: 'A', description: '' }])
+  })
+
+  it('returns 404 for MCP module rows and 409 for stale module revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modules: [{ id: 'mcp-a', name: 'MCP', description: '', mcp: { url: 'internal:risuai' } }],
+    })
+
+    const mcpPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mcp-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'Nope' } },
+    })
+    expect(mcpPatch.statusCode).toBe(404)
+    expect(mcpPatch.json().error).toBe('Module not found: mcp-a')
+
+    const stale = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, moduleId: 'mcp-a', enabled: true },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})

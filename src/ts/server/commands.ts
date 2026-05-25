@@ -418,6 +418,7 @@ export type ChatSnapshot = Record<string, unknown> & {
   bindedPersona?: string
   bookmarks?: string[]
   bookmarkNames?: Record<string, string>
+  modules?: string[]
 }
 
 export type LorebookEntrySnapshot = Record<string, unknown> & {
@@ -437,6 +438,18 @@ export type GlobalLorebookSnapshot = Record<string, unknown> & {
   id?: string
   name?: string
   data?: LorebookEntrySnapshot[]
+}
+
+export type ModuleSnapshot = Record<string, unknown> & {
+  id?: string
+  name?: string
+  description?: string
+  namespace?: string
+  lowLevelAccess?: boolean
+  hideIcon?: boolean
+  backgroundEmbedding?: string
+  customModuleToggle?: string
+  cjs?: string
 }
 
 export type ScriptDefinitionSnapshot = Record<string, unknown> & {
@@ -771,6 +784,37 @@ export interface ReplaceModuleScriptsCommandInput extends ScriptDefinitionComman
 export interface ReplaceModuleTriggersCommandInput extends ScriptDefinitionCommandInput {
   moduleId: string
   triggers: TriggerDefinitionSnapshot[]
+}
+
+export interface ModuleCommandInput {
+  baseRevision: number
+}
+
+export interface CreateModuleCommandInput extends ModuleCommandInput {
+  module: ModuleSnapshot
+}
+
+export interface UpdateModuleCommandInput extends ModuleCommandInput {
+  moduleId: string
+  patch: ModuleSnapshot
+}
+
+export interface DeleteModuleCommandInput extends ModuleCommandInput {
+  moduleId: string
+}
+
+export interface EnableModuleCommandInput extends ModuleCommandInput {
+  moduleId: string
+  enabled: boolean
+}
+
+export interface ReorderModulesCommandInput extends ModuleCommandInput {
+  moduleIds: string[]
+}
+
+export interface ReorderCharacterModulesCommandInput extends ModuleCommandInput {
+  characterId: string
+  moduleIds: string[]
 }
 
 export interface AppendMessageCommandInput extends ChatCommandInput {
@@ -1692,6 +1736,93 @@ export async function replaceModuleTriggersCommand(
     },
     signal,
   })
+}
+
+export async function createModuleCommand(
+  input: CreateModuleCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson('/modules', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      module: input.module,
+    },
+    signal,
+  })
+}
+
+export async function updateModuleCommand(
+  input: UpdateModuleCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deleteModuleCommand(
+  input: DeleteModuleCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function enableModuleCommand(
+  input: EnableModuleCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ moduleId: string; enabled: boolean }>> {
+  return requestCommandJson('/modules/enable', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      moduleId: input.moduleId,
+      enabled: input.enabled,
+    },
+    signal,
+  })
+}
+
+export async function reorderModulesCommand(
+  input: ReorderModulesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson('/modules/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      moduleIds: input.moduleIds,
+    },
+    signal,
+  })
+}
+
+export async function reorderCharacterModulesCommand(
+  input: ReorderCharacterModulesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson(
+    `/characters/${encodeURIComponent(input.characterId)}/modules/reorder`,
+    {
+      method: 'POST',
+      body: {
+        baseRevision: input.baseRevision,
+        moduleIds: input.moduleIds,
+      },
+      signal,
+    },
+  )
 }
 
 export async function appendMessageCommand(

@@ -138,6 +138,22 @@ import {
   readScriptDefinitions,
   readTriggerDefinitions,
 } from '../commands/scriptDefinitions.js'
+import {
+  createModuleRecord,
+  ensureEnabledModules,
+  ensureModuleCommandDatabase,
+  ensureModuleRecords,
+  findCharacterForModuleCommand,
+  readCharacterId as readModuleCharacterId,
+  readModuleEnabled,
+  readModuleId as readCommandModuleId,
+  readModuleIdList,
+  readModulePatch,
+  removeModuleReferences,
+  requireModuleIndex,
+  validateFullCharacterModuleOrder,
+  validateFullModuleOrder,
+} from '../commands/modules.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
 
@@ -234,6 +250,15 @@ interface ScriptDefinitionCommandBody {
   baseRevision?: unknown
   scripts?: unknown
   triggers?: unknown
+}
+
+interface ModuleCommandBody {
+  baseRevision?: unknown
+  module?: unknown
+  patch?: unknown
+  moduleId?: unknown
+  moduleIds?: unknown
+  enabled?: unknown
 }
 
 const SETTINGS_GROUPS = [
@@ -3224,6 +3249,227 @@ export function registerCommandRoutes(
               parentId,
             },
             extra: { chatId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/modules', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModuleCommandBody
+      const baseRevision = readBaseRevision(body)
+      const module = createModuleRecord(body.module)
+      const result = applyJsonCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureModuleCommandDatabase(database)
+          const modules = ensureModuleRecords(target)
+          if (modules.some((candidate) => candidate.id === module.id)) {
+            throw new ValidationError(`Module already exists: ${module.id}`)
+          }
+          modules.push(module)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleCreated, id: module.id },
+            extra: { moduleId: module.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/modules/:moduleId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const moduleId = readCommandModuleId((req.params as { moduleId?: unknown }).moduleId)
+      const body = (req.body ?? {}) as ModuleCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readModulePatch(body.patch)
+      const result = applyJsonCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureModuleCommandDatabase(database)
+          const modules = ensureModuleRecords(target)
+          const index = requireModuleIndex(modules, moduleId)
+          Object.assign(modules[index], patch)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleUpdated, id: moduleId },
+            extra: { moduleId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/modules/:moduleId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const moduleId = readCommandModuleId((req.params as { moduleId?: unknown }).moduleId)
+      const body = (req.body ?? {}) as ModuleCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureModuleCommandDatabase(database)
+          const modules = ensureModuleRecords(target)
+          const index = requireModuleIndex(modules, moduleId)
+          modules.splice(index, 1)
+          removeModuleReferences(target, moduleId)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleDeleted, id: moduleId },
+            extra: { moduleId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/modules/enable', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModuleCommandBody
+      const baseRevision = readBaseRevision(body)
+      const moduleId = readCommandModuleId(body.moduleId)
+      const enabled = readModuleEnabled(body.enabled)
+      const result = applyJsonCommandMutation<{ moduleId: string; enabled: boolean }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureModuleCommandDatabase(database)
+          requireModuleIndex(ensureModuleRecords(target), moduleId)
+          const enabledModules = new Set(ensureEnabledModules(target))
+          if (enabled) {
+            enabledModules.add(moduleId)
+          } else {
+            enabledModules.delete(moduleId)
+          }
+          target.enabledModules = Array.from(enabledModules)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleEnabled, id: moduleId },
+            extra: { moduleId, enabled },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/modules/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModuleCommandBody
+      const baseRevision = readBaseRevision(body)
+      const moduleIds = readModuleIdList(body.moduleIds)
+      const result = applyJsonCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureModuleCommandDatabase(database)
+          const modules = ensureModuleRecords(target)
+          validateFullModuleOrder(modules, moduleIds)
+          const byId = new Map(modules.map((module) => [module.id, module]))
+          target.modules = moduleIds.map((id) => byId.get(id))
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleReordered },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/:characterId/modules/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readModuleCharacterId(
+        (req.params as { characterId?: unknown }).characterId,
+      )
+      const body = (req.body ?? {}) as ModuleCommandBody
+      const baseRevision = readBaseRevision(body)
+      const moduleIds = readModuleIdList(body.moduleIds)
+      const result = applyJsonCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureModuleCommandDatabase(database)
+          const modules = ensureModuleRecords(target)
+          const character = findCharacterForModuleCommand(target, characterId)
+          validateFullCharacterModuleOrder(modules, character, moduleIds)
+          character.modules = moduleIds
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.characterModulesReordered,
+              id: characterId,
+            },
+            extra: { characterId },
           }
         },
       })

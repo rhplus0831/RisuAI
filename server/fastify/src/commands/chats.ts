@@ -45,6 +45,7 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'lastDate',
   'bookmarks',
   'bookmarkNames',
+  'modules',
 ])
 
 const ALLOWED_CHAT_FOLDER_PATCH_KEYS = new Set(['name', 'color', 'folded'])
@@ -438,6 +439,13 @@ function validateChatRecord(
   }
   if ('bookmarkNames' in record) {
     validateStringRecord(record.bookmarkNames, `${label}.bookmarkNames`)
+  }
+  if (
+    'modules' in record &&
+    (!Array.isArray(record.modules) ||
+      record.modules.some((id) => typeof id !== 'string' || id.trim() === ''))
+  ) {
+    throw new ValidationError(`${label}.modules must be an array of module ids`)
   }
   if (
     'fmIndex' in record &&

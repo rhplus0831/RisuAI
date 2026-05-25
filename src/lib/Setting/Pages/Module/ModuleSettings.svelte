@@ -25,6 +25,19 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { onDestroy } from 'svelte'
   import { importMCPModule } from 'src/ts/process/mcp/mcp'
+  import {
+    currentModuleStateSnapshot,
+    dispatchCreateModule,
+    dispatchDeleteModule,
+    dispatchEnableModule,
+    dispatchUpdateModule,
+    toModuleSnapshot,
+  } from 'src/ts/moduleCommands'
+
+  function cloneJsonValue<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T
+  }
+
   let tempModule: RisuModule = $state({
     name: '',
     description: '',
@@ -86,12 +99,15 @@
               use:tooltip={language.enableGlobal}
               onclick={async (e) => {
                 e.stopPropagation()
+                const previous = currentModuleStateSnapshot()
+                const enabled = !DBState.db.enabledModules.includes(rmodule.id)
                 if (DBState.db.enabledModules.includes(rmodule.id)) {
                   DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
                 } else {
                   DBState.db.enabledModules.push(rmodule.id)
                 }
                 DBState.db.enabledModules = DBState.db.enabledModules
+                dispatchEnableModule(rmodule.id, enabled, previous)
               }}
             >
               <Globe size={18} />
@@ -113,7 +129,7 @@
                 onclick={async (e) => {
                   e.stopPropagation()
                   const index = DBState.db.modules.findIndex((v) => v.id === rmodule.id)
-                  tempModule = rmodule
+                  tempModule = cloneJsonValue(rmodule)
                   editModuleIndex = index
                   mode = 2
                 }}
@@ -135,6 +151,7 @@
                 e.stopPropagation()
                 const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
                 if (d) {
+                  const previous = currentModuleStateSnapshot()
                   if (DBState.db.enabledModules.includes(rmodule.id)) {
                     DBState.db.enabledModules.splice(
                       DBState.db.enabledModules.indexOf(rmodule.id),
@@ -145,6 +162,7 @@
                   const index = DBState.db.modules.findIndex((v) => v.id === rmodule.id)
                   DBState.db.modules.splice(index, 1)
                   DBState.db.modules = DBState.db.modules
+                  dispatchDeleteModule(rmodule.id, previous)
                 }
               }}
             >
@@ -170,7 +188,6 @@
           description: '',
           id: v4(),
         }
-        DBState.db.modules.push(tempModule)
         mode = 1
       }}
     >
@@ -199,7 +216,9 @@
   <Button
     className="mt-6"
     onclick={() => {
+      const previous = currentModuleStateSnapshot()
       DBState.db.modules.push(tempModule)
+      dispatchCreateModule(tempModule, previous)
       mode = 0
     }}>{language.createModule}</Button
   >
@@ -210,7 +229,9 @@
     <Button
       className="mt-6"
       onclick={() => {
+        const previous = currentModuleStateSnapshot()
         DBState.db.modules[editModuleIndex] = tempModule
+        dispatchUpdateModule(tempModule.id, toModuleSnapshot(tempModule), previous)
         mode = 0
       }}>{language.editModule}</Button
     >

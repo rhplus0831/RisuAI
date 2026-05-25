@@ -37,6 +37,7 @@ import {
   ReloadGUIPointer,
 } from '../stores.svelte'
 import { get } from 'svelte/store'
+import { currentModuleStateSnapshot, dispatchCreateModule } from '../moduleCommands'
 
 export interface MCPModule {
   url: string
@@ -277,7 +278,9 @@ export async function importModule() {
     try {
       const buf = Buffer.from(fileData)
       const module = await readModule(buf)
+      const previous = currentModuleStateSnapshot()
       DBState.db.modules.push(module)
+      dispatchCreateModule(module, previous)
     } catch (error) {
       console.error(error)
       alertError(language.errors.noData)
@@ -299,7 +302,9 @@ export async function importModule() {
           return false
         }
       }
+      const previous = currentModuleStateSnapshot()
       DBState.db.modules.push(importData)
+      dispatchCreateModule(importData, previous)
       return
     }
     // importData.type === 'risu' in conflict with HypaV3 preset exports
@@ -312,7 +317,9 @@ export async function importModule() {
         lorebook: lores,
         id: v4(),
       }
+      const previous = currentModuleStateSnapshot()
       DBState.db.modules.push(importModule)
+      dispatchCreateModule(importModule, previous)
       return
     }
     if (importData.entries) {
@@ -323,7 +330,9 @@ export async function importModule() {
         lorebook: lores,
         id: v4(),
       }
+      const previous = currentModuleStateSnapshot()
       DBState.db.modules.push(importModule)
+      dispatchCreateModule(importModule, previous)
       return
     }
     if (importData.type === 'regex' && importData.data) {
@@ -334,7 +343,9 @@ export async function importModule() {
         regex: regexs,
         id: v4(),
       }
+      const previous = currentModuleStateSnapshot()
       DBState.db.modules.push(importModule)
+      dispatchCreateModule(importModule, previous)
       return
     }
   } catch (error) {
