@@ -11,55 +11,54 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Last Done
 
-8-7b added a thin browser-side Fastify memory API adapter at
-`src/ts/process/request/serverMemory.ts`. It is gated by
-`isFastifyServer`, authenticates through `getNodeServerProxyAuth`, and
-preserves the current Fastify JSON envelopes directly for `{ chunks }`,
-`{ summaries }`, `{ jobs }`, and `{ job }` cancellation responses.
+8-7c wired server Hypa V3 progress side effects into the existing browser
+progress store. `src/ts/process/request/serverMemory.ts` now exposes a
+Fastify-gated `applyServerHypaV3Progress` mapper that accepts the
+`hypav3_progress` payload shape, validates the legacy progress fields, and
+sets `hypaV3ProgressStore` with only `open`, `miniMsg`, `msg`, and
+`subMsg`. Server-backed chat terminal side-effect handling now applies
+those progress payloads alongside the existing TTS side effect path.
 
 ## Immediate Pickup
 
-Continue Phase 8 with **8-7c - Browser progress listener**.
+Continue Phase 8 with **8-7d - Memory job list/cancel UI path**.
 
 Expected scope:
 
-- Wire server memory progress events into the existing
-  `hypaV3ProgressStore` shape.
-- Consume the `hypav3_progress` side effect shape produced by
-  `server/fastify/src/memoryEvents.ts`.
-- Keep the listener behind existing server-backed/Fastify gates.
-- Preserve the existing browser progress store fields (`open`,
-  `miniMsg`, `msg`, `subMsg`) so UI components do not need to learn the
-  server event contract yet.
+- Add a minimal browser-visible pending / running job list for server
+  memory jobs using the 8-7b adapter.
+- Wire cancellation controls through `cancelServerMemoryJob`.
+- Keep the UI behind existing server-backed/Fastify gates.
+- Preserve existing local Hypa V3 controls where still needed outside
+  server-backed mode.
 
-Out of scope for 8-7c:
+Out of scope for 8-7d:
 
 - Embedding provider dispatch and query embedding generation.
 - Summary generation and embedding provider work in route handlers.
-- Browser list/cancel controls.
 - Browser-local embedding runtimes.
 - Removing the legacy browser-local Hypa V3 runtime.
+- Bulk re-summary and per-summary metadata edits in server-backed mode.
 
 Implementation notes:
 
 - The browser adapter from 8-7b lives in
   `src/ts/process/request/serverMemory.ts`.
-- Server memory event types and side-effect payloads live in
-  `server/fastify/src/memoryEvents.ts`.
-- The target browser store is `hypaV3ProgressStore` in
-  `src/ts/stores.svelte.ts`.
-- There is not yet a dedicated browser memory event stream adapter; if
-  8-7c needs one, keep it narrow and gate it on Fastify/server-backed
-  mode.
+- It now contains both read/list/cancel helpers and the 8-7c
+  `applyServerHypaV3Progress` mapper.
+- The target browser UI for existing Hypa V3 state is likely under
+  `src/lib/Others/HypaV3Modal.svelte` and related utilities.
+- Prefer narrow list/cancel wiring over broad modal cleanup; fixture
+  parity is queued separately as 8-7e.
 - Preserve the no-compatibility-migrations policy: update current
   Fastify/browser adapter shapes directly if the contract needs a tighter
   shape.
 
-## Queue After 8-7b
+## Queue After 8-7c
 
-1. 8-7c - Browser progress listener.
-2. 8-7d - Memory job list/cancel UI path.
-3. 8-7e - `hypav3-memory` fixture parity.
+1. 8-7d - Memory job list/cancel UI path.
+2. 8-7e - `hypav3-memory` fixture parity.
+3. 8-8 - Phase 8 closeout.
 
 ## Parallel Or Deferred
 
@@ -113,11 +112,21 @@ pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts
 
 8-7b passed the focused browser adapter file with 9 tests.
 
+Focused 8-7c verification:
+
+```bash
+pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts
+pnpm check
+```
+
+8-7c passed the focused browser adapter file with 11 tests, and
+`pnpm check` was clean.
+
 ## References
 
 - Active phase: [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-8-memory-8-7b.md`](../phases-completed/phase-8-memory-8-7b.md)
+  [`../phases-completed/phase-8-memory-8-7c.md`](../phases-completed/phase-8-memory-8-7c.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Phase 7 final summary:

@@ -3,8 +3,8 @@
 Date: 2026-05-25
 
 Status: in progress. Completed through
-**8-7b - Browser memory API adapter**.
-Next slice: **8-7c - Browser progress listener**.
+**8-7c - Browser progress listener**.
+Next slice: **8-7d - Memory job list/cancel UI path**.
 
 ## Goal
 
@@ -129,6 +129,11 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   `getNodeServerProxyAuth`, preserves `{ chunks }`, `{ summaries }`,
   `{ jobs }`, and `{ job }` envelopes directly, and hides route details
   from later browser progress/list UI slices.
+- The 8-7c browser progress listener slice adds a gated
+  `applyServerHypaV3Progress` mapper to the same adapter. Server-backed
+  chat terminal side effects with `kind: 'hypav3_progress'` now update
+  `hypaV3ProgressStore` using only the existing browser progress fields:
+  `open`, `miniMsg`, `msg`, and `subMsg`.
 
 ## Scope
 
@@ -194,7 +199,7 @@ browser progress store.
   - **8-7b - Browser memory API adapter.** Thin server-backed client for
     chunks, summaries, job listing, and cancellation. Done.
   - **8-7c - Browser progress listener.** Wire server memory progress
-    into the existing `hypaV3ProgressStore` shape.
+    into the existing `hypaV3ProgressStore` shape. Done.
   - **8-7d - Memory job list/cancel UI path.** Add minimal pending /
     running job list and cancel controls. Bulk re-summary and per-summary
     metadata edits stay disabled in server-backed mode.

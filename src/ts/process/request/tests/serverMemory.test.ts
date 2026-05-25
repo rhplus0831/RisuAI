@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 
@@ -17,6 +18,7 @@ vi.mock('../../../storage/nodeStorage', () => ({
 }))
 
 import {
+  applyServerHypaV3Progress,
   cancelServerMemoryJob,
   canUseServerMemoryApi,
   listServerMemoryChunks,
@@ -26,6 +28,7 @@ import {
   type ServerMemoryJob,
   type ServerMemorySummary,
 } from '../serverMemory'
+import { hypaV3ProgressStore } from '../../../stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -100,6 +103,12 @@ function makeMemoryFetch(bodyForUrl: (url: string, init: RequestInit) => unknown
 
 beforeEach(() => {
   platformState.isFastifyServer = true
+  hypaV3ProgressStore.set({
+    open: false,
+    miniMsg: '',
+    msg: '',
+    subMsg: '',
+  })
 })
 
 afterEach(() => {
@@ -215,5 +224,59 @@ describe('server memory API adapter', () => {
     const result = await cancelServerMemoryJob('job-1')
 
     expect(result).toEqual({ status: 'error', error: 'Network error: socket closed' })
+  })
+
+  it('applies Fastify Hypa V3 progress payloads to the browser store', () => {
+    const applied = applyServerHypaV3Progress({
+      open: true,
+      miniMsg: '2',
+      msg: '[Hypa V3] Summarizing...',
+      subMsg: '2 queued',
+      status: 'running',
+      queuedCount: 2,
+    })
+
+    expect(applied).toBe(true)
+    expect(get(hypaV3ProgressStore)).toEqual({
+      open: true,
+      miniMsg: '2',
+      msg: '[Hypa V3] Summarizing...',
+      subMsg: '2 queued',
+    })
+  })
+
+  it('ignores malformed or unavailable Hypa V3 progress payloads', () => {
+    hypaV3ProgressStore.set({
+      open: true,
+      miniMsg: '1',
+      msg: 'existing',
+      subMsg: 'existing sub',
+    })
+
+    expect(applyServerHypaV3Progress({ open: true, miniMsg: 1, msg: '', subMsg: '' })).toBe(
+      false,
+    )
+    expect(get(hypaV3ProgressStore)).toEqual({
+      open: true,
+      miniMsg: '1',
+      msg: 'existing',
+      subMsg: 'existing sub',
+    })
+
+    platformState.isFastifyServer = false
+    expect(
+      applyServerHypaV3Progress({
+        open: false,
+        miniMsg: '',
+        msg: '',
+        subMsg: '',
+      }),
+    ).toBe(false)
+    expect(get(hypaV3ProgressStore)).toEqual({
+      open: true,
+      miniMsg: '1',
+      msg: 'existing',
+      subMsg: 'existing sub',
+    })
   })
 })

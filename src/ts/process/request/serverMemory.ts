@@ -1,11 +1,21 @@
 import { isFastifyServer } from '../../platform'
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
+import { hypaV3ProgressStore } from '../../stores.svelte'
 
 const MEMORY_ENDPOINT = '/api/v1/memory'
 
 export type ServerMemoryChunkStatus = 'pending' | 'summarized' | 'failed'
 export type ServerMemoryJobKind = 'chunk' | 'embed' | 'summarize'
 export type ServerMemoryJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface ServerHypaV3ProgressPayload {
+  open: boolean
+  miniMsg: string
+  msg: string
+  subMsg: string
+  status?: ServerMemoryJobStatus
+  queuedCount?: number
+}
 
 export interface ServerMemoryChunk {
   id: string
@@ -57,6 +67,25 @@ export type ServerMemoryResult<T> =
 
 export function canUseServerMemoryApi(): boolean {
   return isFastifyServer
+}
+
+export function applyServerHypaV3Progress(payload: unknown): boolean {
+  if (!canUseServerMemoryApi()) return false
+  if (!payload || typeof payload !== 'object') return false
+
+  const progress = payload as Partial<ServerHypaV3ProgressPayload>
+  if (typeof progress.open !== 'boolean') return false
+  if (typeof progress.miniMsg !== 'string') return false
+  if (typeof progress.msg !== 'string') return false
+  if (typeof progress.subMsg !== 'string') return false
+
+  hypaV3ProgressStore.set({
+    open: progress.open,
+    miniMsg: progress.miniMsg,
+    msg: progress.msg,
+    subMsg: progress.subMsg,
+  })
+  return true
 }
 
 function appendQuery(path: string, entries: Record<string, string | undefined>): string {

@@ -40,6 +40,7 @@ track the next piece of work.
 | 8-6d - Missing-memory follow-up enqueue | [`phase-8-memory-8-6d.md`](phase-8-memory-8-6d.md)                                     | Best-effort summarize/embed enqueue from prompt-memory diagnostics.     |
 | 8-7a - Chunk + summary read routes      | [`phase-8-memory-8-7a.md`](phase-8-memory-8-7a.md)                                     | Auth-gated chunk/summary read routes for the browser adapter.           |
 | 8-7b - Browser memory API adapter       | [`phase-8-memory-8-7b.md`](phase-8-memory-8-7b.md)                                     | Gated browser client for memory reads, jobs, and cancellation.          |
+| 8-7c - Browser progress listener        | [`phase-8-memory-8-7c.md`](phase-8-memory-8-7c.md)                                     | Gated `hypav3_progress` side effects into `hypaV3ProgressStore`.        |
 
 ## Historical Status Logs
 

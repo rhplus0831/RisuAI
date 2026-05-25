@@ -16,9 +16,9 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 8, Hypa V3 memory.
-- Last landed slice: 8-7b, browser memory API adapter.
+- Last landed slice: 8-7c, browser progress listener.
 - Current blocker: none recorded.
-- Next default pickup: 8-7c, browser progress listener.
+- Next default pickup: 8-7d, memory job list/cancel UI path.
 - Last recorded full baselines after 8-6c: `pnpm check` clean,
   `pnpm test` 639 tests plus 4 skipped, `pnpm api:test` 1039 tests, and
   `pnpm build` passing with existing CSS `::highlight`, browser
@@ -32,6 +32,9 @@ Completed phase detail and old landed-slice logs live in
 - Focused verification after 8-7b:
   `pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts`
   passed with 9 tests.
+- Focused verification after 8-7c:
+  `pnpm exec vitest run src/ts/process/request/tests/serverMemory.test.ts`
+  passed with 11 tests; `pnpm check` was clean.
 
 ## Start Here
 
@@ -53,7 +56,7 @@ Completed phase detail and old landed-slice logs live in
 | Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Active; next slice is 8-7c browser progress listener.                        |
+| Hypa V3 memory                              | Active; next slice is 8-7d memory job list/cancel UI path.                   |
 | Client thinning                             | Not started; waits for server-owned prompt, generation, and memory surfaces. |
 
 ## Maintenance Rules

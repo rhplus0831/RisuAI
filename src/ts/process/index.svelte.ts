@@ -35,6 +35,7 @@ import {
   type ServerChatTerminal,
 } from './request/serverChat'
 import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
+import { applyServerHypaV3Progress } from './request/serverMemory'
 import { sayTTS } from './tts'
 
 export interface OpenAIChat {
@@ -178,12 +179,21 @@ export async function sendChat(
     const setProcessStage = (stage: number) => chatProcessStage.set(stage)
     const applyServerTerminalSideEffects = async (terminal: ServerChatTerminal): Promise<void> => {
       for (const sideEffect of terminal.sideEffects ?? []) {
-        if (sideEffect.kind !== 'tts') continue
-        const payload = sideEffect.payload
-        if (!payload || typeof payload !== 'object') continue
-        const text = (payload as { text?: unknown }).text
-        if (typeof text === 'string' && text.length > 0) {
-          await sayTTS(currentChar, text)
+        switch (sideEffect.kind) {
+          case 'tts': {
+            const payload = sideEffect.payload
+            if (!payload || typeof payload !== 'object') continue
+            const text = (payload as { text?: unknown }).text
+            if (typeof text === 'string' && text.length > 0) {
+              await sayTTS(currentChar, text)
+            }
+            break
+          }
+          case 'hypav3_progress':
+            applyServerHypaV3Progress(sideEffect.payload)
+            break
+          default:
+            break
         }
       }
     }
