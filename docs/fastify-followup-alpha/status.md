@@ -12,12 +12,19 @@ current server schema, command surface, and import/export paths directly.
 
 ## Current Snapshot
 
-- Active work: broad alpha closeout verification is blocked by
-  `pnpm check` diagnostics found on 2026-05-27.
-- Phase follow-up findings remain closed; the open slice is a broad
-  closeout typecheck cleanup.
-- No follow-up found in this audit: Phases 0, 1, 2, 4, 5, and 7.
+- Active work: Phase 6 SSE line-ending handling, Phase 9 projection-write
+  tails, Phase 5 sendChat boundary cleanup, and broad alpha closeout
+  typecheck cleanup.
+- Broad alpha closeout verification is blocked by `pnpm check`
+  diagnostics found on 2026-05-27.
+- No follow-up found in this audit: Phases 0, 1, 2, 4, and 7.
 - Next default pickup: clear
+  [`phases/phase-6-sse-line-endings-alpha.md`](phases/phase-6-sse-line-endings-alpha.md),
+  then clear
+  [`phases/phase-9-projection-write-tails-alpha.md`](phases/phase-9-projection-write-tails-alpha.md),
+  then clear
+  [`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md),
+  then clear
   [`phases/broad-closeout-typecheck-alpha.md`](phases/broad-closeout-typecheck-alpha.md),
   then rerun broad alpha closeout verification.
 - Closeout rule: keep this file to the current snapshot. Put landed
@@ -43,11 +50,11 @@ current server schema, command surface, and import/export paths directly.
 | 2 - Storage / import / assets / backups | No follow-up | Baseline storage, import, asset, backup, and static route work still appears complete.                                                  | None                                                                                                       |
 | 3 - Proxy migration                     | Closed       | Hub passthrough now reuses the shared proxy response-header strip policy, with hub-only transport header stripping retained.            | [`phases-completed/phase-3-hub-response-headers.md`](phases-completed/phase-3-hub-response-headers.md)     |
 | 4 - sendChat tests                      | No follow-up | Fixture harness and coverage inventory still appear complete.                                                                           | None                                                                                                       |
-| 5 - sendChat extraction                 | No follow-up | Browser extraction baseline still appears complete.                                                                                     | None                                                                                                       |
-| 6 - Server-side generation              | Closed       | Unterminated provider SSE tails now emit typed provider errors instead of successful `done` streams.                                    | [`phases-completed/phase-6-generation-sse-tails.md`](phases-completed/phase-6-generation-sse-tails.md)     |
+| 5 - sendChat extraction                 | Open         | Historical extraction closed, but later server-backed sendChat adapter logic grew the current coordinator from the 445-line closeout shape to 703 lines. | [`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md)                   |
+| 6 - Server-side generation              | Open         | Unterminated provider SSE tails now emit typed provider errors, but CRLF-delimited complete SSE events can still be misclassified as truncated tails. | [`phases/phase-6-sse-line-endings-alpha.md`](phases/phase-6-sse-line-endings-alpha.md)                     |
 | 7 - Server-side prompt assembly         | No follow-up | Regenerate, provider guards, stop-trigger payloads, and route-backed fixture coverage still appear complete.                            | None                                                                                                       |
 | 8 - Hypa V3 memory                      | Closed       | Memory event delivery is now best-effort across external sinks, SSE subscribers, worker progress emits, and memory job routes.          | [`phases-completed/phase-8-memory-event-isolation.md`](phases-completed/phase-8-memory-event-isolation.md) |
-| 9 - Client thinning                     | Closed       | 9A converted module settings, side chat list, Hypa/supa memory toggles, and lorebook page selection to command-first/draft-first flows. | [`phases-completed/phase-9-client-thinning-9a.md`](phases-completed/phase-9-client-thinning-9a.md)         |
+| 9 - Client thinning                     | Open         | 9A is closed, but the completion re-audit found remaining character/chat/module import, ordering/selection, module-apply, MCP risuaccess, and helper-coverage projection-write tails. | [`phases/phase-9-projection-write-tails-alpha.md`](phases/phase-9-projection-write-tails-alpha.md)         |
 
 ## Broad Closeout Finding
 
@@ -58,6 +65,39 @@ diagnostics across 17 files. The failures are typecheck-only so far:
 cleanup in
 [`phases/broad-closeout-typecheck-alpha.md`](phases/broad-closeout-typecheck-alpha.md).
 
+## Phase 6 Alpha Finding
+
+The 2026-05-27 re-audit found that the truncated-tail fix is present
+and covered for OpenAI-compatible, Anthropic, Mistral, and Gemini SSE
+providers, but those parsers still find completed events only with
+`\n\n`. Standard CRLF-delimited SSE blocks (`\r\n\r\n`) can remain in
+the buffer until EOF and then be misreported as truncated tails. Track
+the narrow parser and regression-test work in
+[`phases/phase-6-sse-line-endings-alpha.md`](phases/phase-6-sse-line-endings-alpha.md).
+
+## Phase 5 Alpha Finding
+
+The 2026-05-27 re-audit found that Phase 5 did close historically at
+commit `a7e2831d`, with `src/ts/process/index.svelte.ts` at 445 lines
+and the extraction helpers in place. The current coordinator is 703
+lines after later server-backed prompt-assembly, patch-replay,
+terminal side-effect, restoration, and generation-result persistence
+logic landed inline. Local Phase 5 fixtures and helper tests still
+passed, and server-backed sendChat tests also passed, so this is
+tracked as boundary drift rather than a confirmed behavior regression.
+
+## Phase 9 Alpha Finding
+
+The 2026-05-27 completion re-audit found that Phase 9A did close its
+documented projection-write blockers, but broader Phase 9 still has
+reachable Fastify-web or browser MCP tails that mutate projected
+character/chat/module import, order/selection, module-apply, and MCP
+aliases before command dispatch. The same audit also found missing
+direct helper coverage for `SideChatList`/`chatCommands.ts` and
+`deleteGlobalModule` under the projection guard. Track the remaining
+implementation and validation work in
+[`phases/phase-9-projection-write-tails-alpha.md`](phases/phase-9-projection-write-tails-alpha.md).
+
 ## Verification From Audit
 
 The audit used subagents for Phases 0-2, 3-6, 7, 8, and 9, then
@@ -66,7 +106,11 @@ subagent runs, focused Phase 7/8/9 suites passed, `pnpm build` passed,
 and `pnpm smoke:fastify-browser` passed. Phase 3 now has focused
 coverage for hub response-header filtering, Phase 6 has focused
 coverage for truncated provider SSE tails, and Phase 8 has focused
-coverage for best-effort memory event delivery.
+coverage for best-effort memory event delivery. The latest local
+Phase 6 re-audit reopens CRLF-delimited SSE handling as a narrow
+remaining parser gap. The latest local Phase 9 completion re-audit
+keeps 9A closed but reopens import/order/module-apply/MCP
+projection-write tails and helper coverage as Phase 9B.
 
 Latest broad closeout attempt on 2026-05-27:
 
@@ -75,6 +119,14 @@ Latest broad closeout attempt on 2026-05-27:
 - `pnpm api:test` passed: 68 files, 1212 passed.
 - `pnpm build` passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
+
+Latest focused Phase 5 re-audit on 2026-05-27:
+
+- Local Phase 5 fixture/helper sweep passed: 28 files, 316 tests.
+- Server-backed sendChat fixture/preview sweep passed: 2 files, 26
+  tests.
+- `pnpm check` still failed with the known broad alpha blocker,
+  including the server-backed sendChat fixture typing bucket.
 
 ## Closeout Expectations
 

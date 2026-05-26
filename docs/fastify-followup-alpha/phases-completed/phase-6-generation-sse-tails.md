@@ -31,5 +31,7 @@ pnpm api:test -- server/fastify/__tests__/generation.completion.test.ts
 
 ## Broad Closeout
 
-Functional Phase 6 alpha work is closed. Broad verification status lives
-in [`../status.md`](../status.md).
+This truncated-tail slice is closed. Phase 6 is reopened for the
+narrow SSE line-ending parser gap in
+[`../phases/phase-6-sse-line-endings-alpha.md`](../phases/phase-6-sse-line-endings-alpha.md).
+Broad verification status lives in [`../status.md`](../status.md).

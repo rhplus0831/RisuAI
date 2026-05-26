@@ -7,7 +7,7 @@ Status: open.
 ## Goal
 
 Restore broad alpha closeout by making `pnpm check` pass without
-reopening the already closed Phase 3, 6, 8, or 9 functional slices.
+expanding the focused Phase 5, 6, or 9 functional slices.
 
 ## Closeout Finding
 
@@ -63,8 +63,9 @@ workspace:
 
 ## Boundaries
 
-- Do not reopen Phase 3, 6, 8, or 9 solely because their files appear in
-  the typecheck output; reopen only for a confirmed behavior regression.
+- Do not expand Phase 5, 6, or 9 solely because their files appear in
+  the typecheck output; widen a focused slice only for a confirmed
+  behavior regression.
 - Do not turn this doc into a long work log. Move landed closeout detail
   to `../phases-completed/` after the slice closes.
 
