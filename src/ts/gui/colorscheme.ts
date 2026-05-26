@@ -5,6 +5,7 @@ import { BufferToText, selectSingleFile } from '../util'
 import { alertError } from '../alert'
 import { isLite } from '../lite'
 import { CustomCSSStore, DBState, SafeModeStore } from '../stores.svelte'
+import { applyServerBackedSettingsPatch } from '../server/settingsBridge.svelte'
 
 export interface ColorScheme {
   bgcolor: string
@@ -150,10 +151,11 @@ export const colorSchemeList = Object.keys(colorShemes) as (keyof typeof colorSh
 
 export function changeColorScheme(colorScheme: string) {
   try {
+    const patch: Record<string, unknown> = { colorSchemeName: colorScheme }
     if (colorScheme !== 'custom') {
-      DBState.db.colorScheme = safeStructuredClone(colorShemes[colorScheme])
+      patch.colorScheme = safeStructuredClone(colorShemes[colorScheme])
     }
-    DBState.db.colorSchemeName = colorScheme
+    applyServerBackedSettingsPatch(patch)
     updateColorScheme()
   } catch (error) {}
 }
@@ -188,7 +190,12 @@ export function updateColorScheme() {
 
 export function changeColorSchemeType(type: 'light' | 'dark') {
   try {
-    DBState.db.colorScheme.type = type
+    applyServerBackedSettingsPatch({
+      colorScheme: {
+        ...DBState.db.colorScheme,
+        type,
+      },
+    })
     updateColorScheme()
     updateTextThemeAndCSS()
   } catch (error) {}
@@ -223,8 +230,10 @@ export async function importColorScheme() {
       alertError('Invalid color scheme')
       return
     }
-    changeColorScheme('custom')
-    DBState.db.colorScheme = colorScheme
+    applyServerBackedSettingsPatch({
+      colorSchemeName: 'custom',
+      colorScheme,
+    })
     updateColorScheme()
   } catch (e) {
     alertError('Invalid color scheme')

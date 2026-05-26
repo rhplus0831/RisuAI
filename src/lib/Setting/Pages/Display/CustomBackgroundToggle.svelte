@@ -4,6 +4,7 @@
   import { DBState } from 'src/ts/stores.svelte'
   import { selectSingleFile } from 'src/ts/util'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 </script>
 
 <div class="flex items-center mt-2">
@@ -11,16 +12,16 @@
     check={DBState.db.customBackground !== ''}
     onChange={async (check) => {
       if (check) {
-        DBState.db.customBackground = '-'
+        applyServerBackedSetting('customBackground', '-')
         const d = await selectSingleFile(['png', 'webp', 'gif'])
         if (!d) {
-          DBState.db.customBackground = ''
+          applyServerBackedSetting('customBackground', '')
           return
         }
         const img = await saveImage(d.data)
-        DBState.db.customBackground = img
+        applyServerBackedSetting('customBackground', img)
       } else {
-        DBState.db.customBackground = ''
+        applyServerBackedSetting('customBackground', '')
       }
     }}
     name={language.useCustomBackground}

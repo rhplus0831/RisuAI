@@ -29,6 +29,7 @@
     updatePersonaCommand,
     type PersonaSnapshot,
   } from 'src/ts/server/commands'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
@@ -78,12 +79,14 @@
   function restorePersonaState(snapshot: PersonaStateSnapshot): void {
     suppressPersonaRollback = true
     try {
-      DBState.db.personas = cloneJsonValue(snapshot.personas)
-      DBState.db.selectedPersona = snapshot.selectedPersona
-      DBState.db.username = snapshot.username
-      DBState.db.userIcon = snapshot.userIcon
-      DBState.db.personaPrompt = snapshot.personaPrompt
-      DBState.db.userNote = snapshot.userNote
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.personas = cloneJsonValue(snapshot.personas)
+        DBState.db.selectedPersona = snapshot.selectedPersona
+        DBState.db.username = snapshot.username
+        DBState.db.userIcon = snapshot.userIcon
+        DBState.db.personaPrompt = snapshot.personaPrompt
+        DBState.db.userNote = snapshot.userNote
+      })
     } finally {
       queueMicrotask(() => {
         suppressPersonaRollback = false
@@ -94,12 +97,27 @@
   function runWithoutPersonaWatcher(mutator: () => void): void {
     suppressPersonaRollback = true
     try {
-      mutator()
+      withTrustedServerProjectionWrite(mutator)
     } finally {
       setTimeout(() => {
         suppressPersonaRollback = false
       }, 0)
     }
+  }
+
+  function updateSelectedPersonaField(
+    field: 'username' | 'userNote' | 'personaPrompt',
+    value: string,
+  ): void {
+    withTrustedServerProjectionWrite(() => {
+      DBState.db[field] = value
+    })
+  }
+
+  function updateSelectedPersonaLargePortrait(value: boolean): void {
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.personas[DBState.db.selectedPersona].largePortrait = value
+    })
   }
 
   function selectedPersonaId(): string | null {
@@ -389,20 +407,32 @@
   </div>
   <div class="flex grow flex-col p-2 max-w-full">
     <span class="text-sm text-textcolor2">{language.name}</span>
-    <TextInput marginBottom size="lg" placeholder="User" bind:value={DBState.db.username} />
+    <TextInput
+      marginBottom
+      size="lg"
+      placeholder="User"
+      bind:value={
+        () => DBState.db.username, (value) => updateSelectedPersonaField('username', value)
+      }
+    />
     <span class="text-sm text-textcolor2">{language.note}</span>
     {#if DBState.db.personaNote}
       <TextInput
         marginBottom
         size="lg"
-        bind:value={DBState.db.userNote}
+        bind:value={
+          () => DBState.db.userNote, (value) => updateSelectedPersonaField('userNote', value)
+        }
         placeholder={`Put a unique identifier for this persona here.\nExample: [Alternate Hunters persona]`}
       />
     {/if}
     <span class="text-sm text-textcolor2">{language.description}</span>
     <TextAreaInput
       autocomplete="off"
-      bind:value={DBState.db.personaPrompt}
+      bind:value={
+        () => DBState.db.personaPrompt,
+        (value) => updateSelectedPersonaField('personaPrompt', value)
+      }
       placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`}
     />
     <div class="flex gap-2 mt-4 max-w-full flex-wrap">
@@ -440,8 +470,11 @@
           }
         }}>{language.remove}</Button
       >
-      <Check bind:check={DBState.db.personas[DBState.db.selectedPersona].largePortrait}
-        >{language.largePortrait}</Check
+      <Check
+        bind:check={
+          () => DBState.db.personas[DBState.db.selectedPersona].largePortrait,
+          (value) => updateSelectedPersonaLargePortrait(value)
+        }>{language.largePortrait}</Check
       >
     </div>
   </div>

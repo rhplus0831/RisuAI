@@ -26,9 +26,10 @@ and add any longer closeout note under `../phases-completed/`.
      `OtherBotSettings.svelte`.
    - 9D (landed 2026-05-26): memory and audio provider settings in
      `OtherBotSettings.svelte` and `PlaygroundEmbedding.svelte`.
-   - 9E (next): persona, display/theme, global regex, lore preset, and
-     bot preset editors.
-   - 9F: plugin settings, custom models, and advanced setting editors.
+   - 9E (landed 2026-05-26): persona, display/theme, global regex, lore
+     preset, and bot preset editors.
+   - 9F (next): plugin settings, custom models, and advanced setting
+     editors.
    - 9G: character core profile, media, and basic option editors.
    - 9H: character lore, script, prompt, TTS, and chat-name editors.
    - 9I: sidebar toggles, custom sidebar/loadout helpers, welcome setup,
@@ -124,6 +125,15 @@ pnpm smoke:fastify-browser
 ```
 
 Latest Phase 9 memory/audio settings verification, 2026-05-26:
+
+```bash
+pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm api:test -- server/fastify/__tests__/commands.test.ts
+pnpm exec svelte-check --tsconfig ./tsconfig.json
+pnpm smoke:fastify-browser
+```
+
+Latest Phase 9 persona/display/regex/preset verification, 2026-05-26:
 
 ```bash
 pnpm exec vitest run src/ts/server/commands.test.ts

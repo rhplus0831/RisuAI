@@ -2,6 +2,7 @@
   import { DBState } from 'src/ts/stores.svelte'
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
   import ColorInput from 'src/lib/UI/GUI/ColorInput.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 
   const colors = [
     ['FontColorStandard', 'Normal Text', false],
@@ -11,6 +12,14 @@
     ['FontColorQuote1', 'Single Quote Text', true],
     ['FontColorQuote2', 'Double Quote Text', true],
   ] as const
+
+  function setTextThemeValue(key: (typeof colors)[number][0], value: string) {
+    applyServerBackedSetting('customTextTheme', {
+      ...DBState.db.customTextTheme,
+      [key]: value,
+    })
+    updateTextThemeAndCSS()
+  }
 </script>
 
 {#if DBState.db.textTheme === 'custom'}
@@ -18,8 +27,9 @@
     <div class="flex items-center mt-2">
       <ColorInput
         nullable={color[2]}
-        bind:value={DBState.db.customTextTheme[color[0]]}
+        value={DBState.db.customTextTheme[color[0]]}
         oninput={updateTextThemeAndCSS}
+        onchange={(value) => setTextThemeValue(color[0], value)}
       />
       <span class="ml-2">{color[1]}</span>
     </div>

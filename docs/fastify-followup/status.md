@@ -52,8 +52,11 @@ directly.
   through command-backed drafts for TTS provider keys, emotion processor
   selection, Hypa V3 presets, embedding provider settings, custom
   embedding settings, and Voyage keys.
-- Next default pickup: Phase 9 Slice 9E, persona, display/theme, global
-  regex, lore preset, and bot preset editors.
+- Landed 2026-05-26: Phase 9 persona, display/theme, global regex, lore
+  preset, and bot preset editors now route Fastify-web mutations through
+  command-backed settings, persona, preset, or lorebook helpers.
+- Next default pickup: Phase 9 Slice 9F, plugin settings, custom models,
+  and advanced setting editors.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.
 

@@ -10,6 +10,7 @@
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import ColorInput from 'src/lib/UI/GUI/ColorInput.svelte'
   import { DownloadIcon, HardDriveUploadIcon } from '@lucide/svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 
   const colors = [
     ['bgcolor', 'Background'],
@@ -22,6 +23,14 @@
     ['textcolor', 'Text Color'],
     ['textcolor2', 'Text Color 2'],
   ] as const
+
+  function setColorSchemeValue(key: (typeof colors)[number][0], value: string) {
+    applyServerBackedSetting('colorScheme', {
+      ...DBState.db.colorScheme,
+      [key]: value,
+    })
+    updateColorScheme()
+  }
 </script>
 
 {#if DBState.db.colorSchemeName === 'custom'}
@@ -39,7 +48,11 @@
 
     {#each colors as color}
       <div class="flex items-center mt-2">
-        <ColorInput bind:value={DBState.db.colorScheme[color[0]]} oninput={updateColorScheme} />
+        <ColorInput
+          value={DBState.db.colorScheme[color[0]]}
+          oninput={() => updateColorScheme()}
+          onchange={(value) => setColorSchemeValue(color[0], value)}
+        />
         <span class="ml-2">{color[1]}</span>
       </div>
     {/each}

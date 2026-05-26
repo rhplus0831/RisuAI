@@ -1,18 +1,29 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
+
   import ColorPicker from 'svelte-awesome-color-picker'
   interface Props {
     value?: string
     nullable?: boolean
     oninput?: () => void
+    onchange?: (value: string) => void
   }
 
-  let { value = $bindable('#000000'), nullable = false, oninput }: Props = $props()
+  let { value = $bindable('#000000'), nullable = false, oninput, onchange }: Props = $props()
+  let initialized = false
 
   $effect(() => {
     //this is for updating
-    value
+    const currentValue = value
 
-    oninput?.()
+    untrack(() => {
+      oninput?.()
+      if (!initialized) {
+        initialized = true
+        return
+      }
+      onchange?.(currentValue)
+    })
   })
 </script>
 

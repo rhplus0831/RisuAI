@@ -124,6 +124,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   googleClaudeTokenizing: 'runtime',
   gptVisionQuality: 'media',
   guiHTML: 'display',
+  globalscript: 'advanced',
   hamburgerButtonBottom: 'sidebar',
   heightMode: 'display',
   hideAllImages: 'display',

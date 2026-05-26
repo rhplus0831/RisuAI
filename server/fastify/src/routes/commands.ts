@@ -320,6 +320,7 @@ type SettingValueKind =
   | 'boolean'
   | 'number'
   | 'string'
+  | 'stringOrNull'
   | 'object'
   | 'array'
   | 'arrayOrNull'
@@ -609,6 +610,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'realmDirectOpen',
     'returnCSSError',
     'personaNote',
+    'globalscript',
     'enableBookmark',
     'useTokenizerCaching',
     'auxModelUnderModelSettings',
@@ -898,8 +900,6 @@ const STRING_SETTING_KEYS = new Set([
   'systemRoleReplacement',
   'textgenWebUIBlockingURL',
   'textgenWebUIStreamURL',
-  'textScreenBorder',
-  'textScreenColor',
   'textTheme',
   'theme',
   'thinkingType',
@@ -925,11 +925,14 @@ const ARRAY_SETTING_KEYS = new Set([
   'customFlags',
   'customQuotesData',
   'customModels',
+  'globalscript',
   'modelTools',
   'hypaV3Presets',
 ])
 
 const ARRAY_OR_NULL_SETTING_KEYS = new Set(['localStopStrings'])
+
+const STRING_OR_NULL_SETTING_KEYS = new Set(['textScreenBorder', 'textScreenColor'])
 
 const OBJECT_SETTING_KEYS = new Set([
   'account',
@@ -4084,6 +4087,9 @@ function validateSettingValue(key: string, value: unknown): void {
   if (kind === 'string' && typeof value !== 'string') {
     throw new ValidationError(`${key} must be a string`)
   }
+  if (kind === 'stringOrNull' && value !== null && typeof value !== 'string') {
+    throw new ValidationError(`${key} must be a string or null`)
+  }
   if (kind === 'object' && (!value || typeof value !== 'object' || Array.isArray(value))) {
     throw new ValidationError(`${key} must be an object`)
   }
@@ -4106,6 +4112,7 @@ function settingValueKind(key: string): SettingValueKind {
   if (BOOLEAN_SETTING_KEYS.has(key)) return 'boolean'
   if (NUMBER_SETTING_KEYS.has(key)) return 'number'
   if (STRING_SETTING_KEYS.has(key)) return 'string'
+  if (STRING_OR_NULL_SETTING_KEYS.has(key)) return 'stringOrNull'
   if (OBJECT_SETTING_KEYS.has(key)) return 'object'
   if (ARRAY_SETTING_KEYS.has(key)) return 'array'
   if (ARRAY_OR_NULL_SETTING_KEYS.has(key)) return 'arrayOrNull'

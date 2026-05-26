@@ -95,15 +95,17 @@ export async function selectUserImg() {
   const previous = snapshotPersonas()
   const img = selected.data
   const imgp = await saveImage(img)
-  DBState.db.userIcon = imgp
-  DBState.db.personas[DBState.db.selectedPersona] = {
-    ...DBState.db.personas[DBState.db.selectedPersona],
-    name: DBState.db.username,
-    icon: DBState.db.userIcon,
-    personaPrompt: DBState.db.personaPrompt,
-    note: DBState.db.userNote,
-    id: DBState.db.personas[DBState.db.selectedPersona]?.id ?? v4(),
-  }
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.userIcon = imgp
+    DBState.db.personas[DBState.db.selectedPersona] = {
+      ...DBState.db.personas[DBState.db.selectedPersona],
+      name: DBState.db.username,
+      icon: DBState.db.userIcon,
+      personaPrompt: DBState.db.personaPrompt,
+      note: DBState.db.userNote,
+      id: DBState.db.personas[DBState.db.selectedPersona]?.id ?? v4(),
+    }
+  })
   const personaId = selectedPersonaId()
   if (personaId) {
     runPersonaCommand(
@@ -123,10 +125,12 @@ export function saveUserPersona(options: { dispatch?: boolean } = {}) {
   const dispatch = options.dispatch ?? true
   const previous = snapshotPersonas()
   if (!DBState.db.personas[DBState.db.selectedPersona]) return
-  DBState.db.personas[DBState.db.selectedPersona].name = DBState.db.username
-  DBState.db.personas[DBState.db.selectedPersona].icon = DBState.db.userIcon
-  DBState.db.personas[DBState.db.selectedPersona].personaPrompt = DBState.db.personaPrompt
-  DBState.db.personas[DBState.db.selectedPersona].note = DBState.db.userNote
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.personas[DBState.db.selectedPersona].name = DBState.db.username
+    DBState.db.personas[DBState.db.selectedPersona].icon = DBState.db.userIcon
+    DBState.db.personas[DBState.db.selectedPersona].personaPrompt = DBState.db.personaPrompt
+    DBState.db.personas[DBState.db.selectedPersona].note = DBState.db.userNote
+  })
   const personaId = selectedPersonaId()
   if (dispatch && personaId) {
     runPersonaCommand(
@@ -152,11 +156,13 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
   normalizePersonaIds()
   const personaId = target.id
   const pr = target
-  DBState.db.personaPrompt = pr.personaPrompt
-  DBState.db.username = pr.name
-  DBState.db.userIcon = pr.icon
-  DBState.db.userNote = pr.note
-  DBState.db.selectedPersona = id
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.personaPrompt = pr.personaPrompt
+    DBState.db.username = pr.name
+    DBState.db.userIcon = pr.icon
+    DBState.db.userNote = pr.note
+    DBState.db.selectedPersona = id
+  })
   if (personaId) {
     runPersonaCommand(
       (baseRevision) =>
@@ -257,7 +263,9 @@ export async function importUserPersona() {
         note: data.note,
         id: v4(),
       }
-      DBState.db.personas.push(persona)
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.personas.push(persona)
+      })
       runPersonaCommand(
         (baseRevision) =>
           createPersonaCommand({

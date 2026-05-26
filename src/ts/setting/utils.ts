@@ -19,6 +19,7 @@ import {
   settingsGroupForKey,
   type SettingsGroup,
 } from '../server/commands'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
 /**
  * Sentinel value representing an uninitialized local state in wrapper components.
@@ -56,7 +57,9 @@ export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingCo
   const previousValue = getSettingValue(item, ctx)
   const commandPatch = buildServerSettingsPatch(item)
 
-  setLocalSettingValue(item, newValue, ctx)
+  withTrustedServerProjectionWrite(() => {
+    setLocalSettingValue(item, newValue, ctx)
+  })
 
   if (item.onChange) {
     item.onChange(newValue, ctx)
@@ -152,7 +155,9 @@ function rollbackLocalSetting(
   ctx: SettingContext,
 ): void {
   if (getSettingValue(item, ctx) !== attemptedValue) return
-  setLocalSettingValue(item, previousValue, ctx)
+  withTrustedServerProjectionWrite(() => {
+    setLocalSettingValue(item, previousValue, ctx)
+  })
 }
 
 function serverPatchKeyForItem(item: SettingItem): string | null {

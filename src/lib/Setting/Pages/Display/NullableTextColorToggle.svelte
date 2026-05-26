@@ -2,6 +2,7 @@
   import { language } from 'src/lang'
   import { DBState } from 'src/ts/stores.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 
   interface Props {
     field: 'textScreenColor' | 'textScreenBorder'
@@ -18,7 +19,7 @@
     <Check
       check={true}
       onChange={() => {
-        DBState.db[field] = null
+        applyServerBackedSetting(field, null)
       }}
       name={language[labelKey]}
       hiddenName
@@ -28,7 +29,7 @@
       class="style2 text-sm mr-2"
       value={currentValue}
       oninput={(e) => {
-        DBState.db[field] = e.currentTarget.value
+        applyServerBackedSetting(field, e.currentTarget.value)
       }}
     />
     <span>{language[labelKey]}</span>
@@ -38,7 +39,7 @@
     <Check
       check={false}
       onChange={() => {
-        DBState.db[field] = defaultColor
+        applyServerBackedSetting(field, defaultColor)
       }}
       name={language[labelKey]}
     />

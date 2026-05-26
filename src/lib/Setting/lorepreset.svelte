@@ -12,6 +12,7 @@
     ensureAllClientLorebookIds,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   let editMode = $state(false)
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
@@ -21,6 +22,18 @@
     const stopLorebooks = watchServerBackedLorebooks()
     return () => stopLorebooks()
   })
+
+  function selectLorebook(index) {
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.loreBookPage = index
+    })
+  }
+
+  function renameLorebook(index, name) {
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.loreBook[index].name = name
+    })
+  }
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -42,7 +55,7 @@
       <button
         onclick={() => {
           if (!editMode) {
-            DBState.db.loreBookPage = ind
+            selectLorebook(ind)
           }
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
@@ -50,7 +63,7 @@
       >
         {#if editMode}
           <TextInput
-            bind:value={DBState.db.loreBook[ind].name}
+            bind:value={() => DBState.db.loreBook[ind].name, (value) => renameLorebook(ind, value)}
             placeholder="string"
             padding={false}
           />
@@ -71,10 +84,12 @@
               if (d) {
                 const previous = currentLorebookStateSnapshot()
                 const lorebookId = lore.id
-                DBState.db.loreBookPage = 0
-                let loreBook = DBState.db.loreBook
-                loreBook.splice(ind, 1)
-                DBState.db.loreBook = loreBook
+                withTrustedServerProjectionWrite(() => {
+                  DBState.db.loreBookPage = 0
+                  let loreBook = DBState.db.loreBook
+                  loreBook.splice(ind, 1)
+                  DBState.db.loreBook = loreBook
+                })
                 if (lorebookId) {
                   dispatchDeleteGlobalLorebook(lorebookId, previous)
                 }
@@ -96,14 +111,15 @@
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
           const previous = currentLorebookStateSnapshot()
-          let loreBooks = DBState.db.loreBook
           let newLoreBook = {
             name: `New LoreBook`,
             data: [],
           }
-          loreBooks.push(newLoreBook)
-
-          DBState.db.loreBook = loreBooks
+          withTrustedServerProjectionWrite(() => {
+            let loreBooks = DBState.db.loreBook
+            loreBooks.push(newLoreBook)
+            DBState.db.loreBook = loreBooks
+          })
           dispatchCreateGlobalLorebook(newLoreBook, previous)
         }}
       >

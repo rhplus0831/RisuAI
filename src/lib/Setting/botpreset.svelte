@@ -83,6 +83,10 @@
     secondPresetId = null
     selectedDiffPreset = null
   }
+
+  function renamePreset(index: number, name: string) {
+    updatePreset(index, { name })
+  }
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -176,12 +180,9 @@
       >
         {#if editMode}
           <TextInput
-            bind:value={DBState.db.botPresets[i].name}
+            bind:value={() => DBState.db.botPresets[i].name, (value) => renamePreset(i, value)}
             placeholder="string"
             padding={false}
-            onchange={() => {
-              updatePreset(i, { name: DBState.db.botPresets[i].name })
-            }}
           />
         {:else}
           {#if i < 9}

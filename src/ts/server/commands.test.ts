@@ -409,10 +409,12 @@ describe('server command API adapter', () => {
     const result = await patchServerBackedSettings({
       patch: {
         colorSchemeName: 'custom',
+        textScreenColor: null,
         customModels: [{ id: 'model-a', name: 'Model A' }],
         bias: [['token', -10]],
         additionalParams: [['stop', 'value']],
         moduleIntergration: 'module-ns',
+        globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
         banCharacterset: ['Latn'],
         showUnrecommended: true,
       },
@@ -432,7 +434,7 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/settings/display',
         body: {
           baseRevision: 20,
-          patch: { colorSchemeName: 'custom' },
+          patch: { colorSchemeName: 'custom', textScreenColor: null },
         },
       },
       {
@@ -452,6 +454,7 @@ describe('server command API adapter', () => {
           baseRevision: 22,
           patch: {
             moduleIntergration: 'module-ns',
+            globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
             banCharacterset: ['Latn'],
             showUnrecommended: true,
           },

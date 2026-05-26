@@ -349,13 +349,21 @@ describe('Phase 9-2a scalar settings groups', () => {
       notification: false,
       useAutoSuggestions: false,
       useAutoTranslateInput: false,
+      globalscript: [],
     })
 
     const display = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/display',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, patch: { notification: true } },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          notification: true,
+          textScreenColor: null,
+          customTextTheme: { FontColorStandard: '#ffffff' },
+        },
+      },
     })
     expect(display.statusCode).toBe(200)
 
@@ -381,6 +389,19 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(language.statusCode).toBe(200)
 
+    const advanced = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/advanced',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: language.json().revision,
+        patch: {
+          globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
+        },
+      },
+    })
+    expect(advanced.statusCode).toBe(200)
+
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
@@ -390,6 +411,9 @@ describe('Phase 9-2a scalar settings groups', () => {
       notification: true,
       useAutoSuggestions: true,
       useAutoTranslateInput: true,
+      textScreenColor: null,
+      customTextTheme: { FontColorStandard: '#ffffff' },
+      globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
     })
   })
 

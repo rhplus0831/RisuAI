@@ -69,6 +69,14 @@ import/export events match the command map.
   Fal, `google`, Imagen, `openaiCompatImage`, and `wavespeedImage`.
   WaveSpeed and NovelAI image upload/reset side effects now mutate local
   command-backed drafts instead of the Fastify projection directly.
+- Landed 2026-05-26: Persona, display/theme, global regex, lore preset,
+  and bot preset editors now avoid raw Fastify projection mutation.
+  Persona profile and image helpers use trusted optimistic writes plus
+  persona commands, bot presets continue through preset commands, global
+  regex is covered by grouped settings commands, display custom
+  color/text/background editors dispatch display settings patches, and
+  lore preset list mutations use trusted local updates with lorebook
+  commands/watchers.
 
 ## Tasks
 
@@ -134,11 +142,14 @@ client mutation.
   `openAIKey` and `NAIApiKey` remained on the 9C drafts. Extended client
   command grouping and Fastify route tests for media / memory groups and
   masked provider secrets.
-- 9E - Persona, display/theme, global regex, lore preset, and bot preset
-  editors. Cover `PersonaSettings.svelte`, `GlobalRegex.svelte`,
-  `lorepreset.svelte`, `botpreset.svelte`, custom background/color/text
-  theme editors, and related helpers. Add or reuse persona, display, and
-  lorebook commands instead of direct projection mutation.
+- 9E - Completed 2026-05-26: Persona, display/theme, global regex, lore
+  preset, and bot preset editors. Converted `PersonaSettings.svelte`,
+  `src/ts/persona.ts`, `GlobalRegex.svelte`, `lorepreset.svelte`,
+  `botpreset.svelte`, custom background/color/text theme editors, and
+  the shared setting renderer write path to command-backed or trusted
+  optimistic writes. Added grouped settings coverage for `globalscript`
+  and nullable text screen colors, and extended focused client /
+  Fastify command tests.
 - 9F - Plugin, custom model, and advanced setting editors. Cover
   `PluginSettings.svelte`, `CustomModelsSettings.svelte`, advanced
   setting pages, and plugin command bridges. Extend plugin/custom-model
