@@ -416,6 +416,7 @@ describe('server command API adapter', () => {
       patch: {
         colorSchemeName: 'custom',
         textScreenColor: null,
+        promptDiffPrefs: { diffStyle: 'line', contextRadius: 2 },
         customModels: [{ id: 'model-a', name: 'Model A' }],
         bias: [['token', -10]],
         additionalParams: [['stop', 'value']],
@@ -444,7 +445,11 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/settings/display',
         body: {
           baseRevision: 20,
-          patch: { colorSchemeName: 'custom', textScreenColor: null },
+          patch: {
+            colorSchemeName: 'custom',
+            textScreenColor: null,
+            promptDiffPrefs: { diffStyle: 'line', contextRadius: 2 },
+          },
         },
       },
       {

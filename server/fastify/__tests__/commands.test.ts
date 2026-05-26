@@ -361,6 +361,7 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           notification: true,
           textScreenColor: null,
+          promptDiffPrefs: { diffStyle: 'line', contextRadius: 2 },
           customTextTheme: { FontColorStandard: '#ffffff' },
         },
       },
@@ -436,6 +437,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       useAutoSuggestions: true,
       useAutoTranslateInput: true,
       textScreenColor: null,
+      promptDiffPrefs: { diffStyle: 'line', contextRadius: 2 },
       customTextTheme: { FontColorStandard: '#ffffff' },
       globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
       allowAllExtentionFiles: true,

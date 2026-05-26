@@ -2,22 +2,13 @@ import { Readable } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
-import { bufferToBodyInit, filterResponseHeaders } from '../proxy.js'
+import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from '../proxy.js'
 
 const HUB_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
 
-const STRIP_REQUEST_HEADERS = new Set([
-  'host',
-  'connection',
-  'content-length',
-  'risu-auth',
-  'x-risu-node-path',
-])
+const STRIP_REQUEST_HEADERS = new Set(['x-risu-node-path'])
 
-const HUB_TRANSPORT_RESPONSE_HEADERS = new Set([
-  'content-length',
-  'transfer-encoding',
-])
+const HUB_TRANSPORT_RESPONSE_HEADERS = new Set(['content-length', 'transfer-encoding'])
 
 const PREFIX = '/api/v1/hub'
 
@@ -25,15 +16,10 @@ function buildForwardHeaders(
   source: Record<string, unknown>,
   hubOrigin: string,
 ): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(source)) {
-    if (typeof k !== 'string') continue
-    if (STRIP_REQUEST_HEADERS.has(k.toLowerCase())) continue
-    if (typeof v === 'string') {
-      out[k] = v
-    } else if (Array.isArray(v)) {
-      const joined = v.filter((entry): entry is string => typeof entry === 'string').join(', ')
-      if (joined.length > 0) out[k] = joined
+  const out = normalizeForwardHeaders(source)
+  for (const key of Object.keys(out)) {
+    if (STRIP_REQUEST_HEADERS.has(key.toLowerCase())) {
+      delete out[key]
     }
   }
   out['origin'] = hubOrigin
@@ -89,9 +75,7 @@ async function forwardOnce(
   }
 
   if (upstream.body) {
-    const stream = Readable.fromWeb(
-      upstream.body as Parameters<typeof Readable.fromWeb>[0],
-    )
+    const stream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0])
     await reply.send(stream)
   } else {
     await reply.send()
@@ -119,13 +103,13 @@ export function registerHubRoutes(
         if (!(await requireAuth(authState, req, reply))) return
 
         const upstreamUrl = resolveUpstreamUrl(req, hubUrl)
-        const headers = buildForwardHeaders(
-          req.headers as Record<string, unknown>,
-          hubOrigin,
-        )
+        const headers = buildForwardHeaders(req.headers as Record<string, unknown>, hubOrigin)
 
         const body =
-          Buffer.isBuffer(req.body) && req.method !== 'GET' && req.method !== 'HEAD' && req.body.length > 0
+          Buffer.isBuffer(req.body) &&
+          req.method !== 'GET' &&
+          req.method !== 'HEAD' &&
+          req.body.length > 0
             ? req.body
             : undefined
 

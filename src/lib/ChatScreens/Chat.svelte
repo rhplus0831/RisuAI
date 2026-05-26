@@ -61,6 +61,8 @@
     getCurrentCharacter,
     getCurrentChat,
     setCurrentChat,
+    type Chat,
+    type Message,
     type MessageGenerationInfo,
   } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
@@ -72,6 +74,7 @@
   import { getLLMCache, setLLMCache } from '../../ts/translator/translator'
   import {
     currentChatStateSnapshot,
+    cloneJsonValue,
     dispatchDeleteMessage,
     dispatchForkChat,
     dispatchReplaceMessages,
@@ -80,6 +83,7 @@
     dispatchUpdateMessage,
     ensureMessageId,
   } from 'src/ts/chatCommands'
+  import { canUseServerCommands } from 'src/ts/server/commands'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -136,6 +140,30 @@
   let translated = $state(false)
   let partialEditEnabled = $state(true)
 
+  function cloneMessagesWithIds(chat: Chat): Message[] {
+    const messages = cloneJsonValue(chat.message ?? [])
+    for (const item of messages) {
+      item.chatId ||= uuidv4()
+    }
+    return messages
+  }
+
+  function dispatchReplaceMessagesForChat(
+    chat: Chat,
+    messages: Message[],
+    previous: ReturnType<typeof currentChatStateSnapshot>,
+  ) {
+    if (chat.id) {
+      dispatchReplaceMessages(chat.id, messages, previous)
+    }
+  }
+
+  function localChatMutation(callback: () => void) {
+    if (!canUseServerCommands()) {
+      callback()
+    }
+  }
+
   async function rm(e: MouseEvent, rec?: boolean) {
     const previous = currentChatStateSnapshot()
     const chat =
@@ -143,12 +171,21 @@
         DBState.db.characters[selIdState.selId].chatPage
       ]
     if (e.shiftKey) {
-      let msg = chat.message
-      const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
-      msg = msg.slice(0, idx)
-      chat.message = msg
-      if (chat.id) {
-        dispatchTruncateMessages(chat.id, afterMessageId, previous)
+      if (canUseServerCommands()) {
+        const afterMessageId = idx > 0 ? chat.message[idx - 1]?.chatId : null
+        if (chat.id && (idx === 0 || afterMessageId)) {
+          dispatchTruncateMessages(chat.id, afterMessageId, previous)
+        } else {
+          dispatchReplaceMessagesForChat(chat, cloneMessagesWithIds(chat).slice(0, idx), previous)
+        }
+      } else {
+        let msg = chat.message
+        const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
+        msg = msg.slice(0, idx)
+        chat.message = msg
+        if (chat.id) {
+          dispatchTruncateMessages(chat.id, afterMessageId, previous)
+        }
       }
       return
     }
@@ -159,24 +196,59 @@
         const r = await alertConfirm(language.instantRemoveConfirm)
         let msg = chat.message
         if (!r) {
-          const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
-          msg = msg.slice(0, idx)
-          chat.message = msg
-          if (chat.id) {
-            dispatchTruncateMessages(chat.id, afterMessageId, previous)
+          if (canUseServerCommands()) {
+            const afterMessageId = idx > 0 ? chat.message[idx - 1]?.chatId : null
+            if (chat.id && (idx === 0 || afterMessageId)) {
+              dispatchTruncateMessages(chat.id, afterMessageId, previous)
+            } else {
+              dispatchReplaceMessagesForChat(
+                chat,
+                cloneMessagesWithIds(chat).slice(0, idx),
+                previous,
+              )
+            }
+          } else {
+            const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
+            msg = msg.slice(0, idx)
+            chat.message = msg
+            if (chat.id) {
+              dispatchTruncateMessages(chat.id, afterMessageId, previous)
+            }
           }
         } else {
+          if (canUseServerCommands()) {
+            const messageId = chat.message[idx]?.chatId
+            if (messageId) {
+              dispatchDeleteMessage(messageId, previous)
+            } else {
+              const nextMessages = cloneMessagesWithIds(chat)
+              nextMessages.splice(idx, 1)
+              dispatchReplaceMessagesForChat(chat, nextMessages, previous)
+            }
+          } else {
+            const messageId = ensureMessageId(msg[idx])
+            msg.splice(idx, 1)
+            chat.message = msg
+            dispatchDeleteMessage(messageId, previous)
+          }
+        }
+      } else {
+        if (canUseServerCommands()) {
+          const messageId = chat.message[idx]?.chatId
+          if (messageId) {
+            dispatchDeleteMessage(messageId, previous)
+          } else {
+            const nextMessages = cloneMessagesWithIds(chat)
+            nextMessages.splice(idx, 1)
+            dispatchReplaceMessagesForChat(chat, nextMessages, previous)
+          }
+        } else {
+          let msg = chat.message
           const messageId = ensureMessageId(msg[idx])
           msg.splice(idx, 1)
           chat.message = msg
           dispatchDeleteMessage(messageId, previous)
         }
-      } else {
-        let msg = chat.message
-        const messageId = ensureMessageId(msg[idx])
-        msg.splice(idx, 1)
-        chat.message = msg
-        dispatchDeleteMessage(messageId, previous)
       }
     }
   }
@@ -187,9 +259,23 @@
       DBState.db.characters[selIdState.selId].chats[
         DBState.db.characters[selIdState.selId].chatPage
       ]
-    const messageId = ensureMessageId(chat.message[idx])
+    const messageId = chat.message[idx]?.chatId
+    if (canUseServerCommands()) {
+      if (messageId) {
+        dispatchUpdateMessage(messageId, { data: message }, previous)
+      } else {
+        const nextMessages = cloneMessagesWithIds(chat)
+        if (nextMessages[idx]) {
+          nextMessages[idx].data = message
+          dispatchReplaceMessagesForChat(chat, nextMessages, previous)
+        }
+      }
+      return
+    }
+
+    const localMessageId = ensureMessageId(chat.message[idx])
     chat.message[idx].data = message
-    dispatchUpdateMessage(messageId, { data: message }, previous)
+    dispatchUpdateMessage(localMessageId, { data: message }, previous)
   }
 
   function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
@@ -200,9 +286,22 @@
           DBState.db.characters[selIdState.selId].chatPage
         ]
       message = e.detail.newData
-      const messageId = ensureMessageId(chat.message[idx])
-      chat.message[idx].data = e.detail.newData
-      dispatchUpdateMessage(messageId, { data: e.detail.newData }, previous)
+      const messageId = chat.message[idx]?.chatId
+      if (canUseServerCommands()) {
+        if (messageId) {
+          dispatchUpdateMessage(messageId, { data: e.detail.newData }, previous)
+        } else {
+          const nextMessages = cloneMessagesWithIds(chat)
+          if (nextMessages[idx]) {
+            nextMessages[idx].data = e.detail.newData
+            dispatchReplaceMessagesForChat(chat, nextMessages, previous)
+          }
+        }
+      } else {
+        const localMessageId = ensureMessageId(chat.message[idx])
+        chat.message[idx].data = e.detail.newData
+        dispatchUpdateMessage(localMessageId, { data: e.detail.newData }, previous)
+      }
       displaya(e.detail.newData)
     }
   }
@@ -363,35 +462,38 @@
 
     if (!chat.message[idx]) return
 
-    let messageId = chat.message[idx]?.chatId
-    const messageContent = chat.message[idx]?.data
-    const hadMessageId = Boolean(messageId)
+    const nextMessages = canUseServerCommands() ? cloneMessagesWithIds(chat) : null
+    let messageId = canUseServerCommands() ? nextMessages?.[idx]?.chatId : chat.message[idx]?.chatId
+    const messageContent = chat.message[idx]?.data ?? ''
+    const hadMessageId = Boolean(chat.message[idx]?.chatId)
 
     if (!messageId) {
       messageId = uuidv4()
-      chat.message[idx].chatId = messageId
+      localChatMutation(() => {
+        chat.message[idx].chatId = messageId
+      })
     }
 
-    chat.bookmarks ??= []
-    chat.bookmarkNames ??= {}
+    const bookmarks = [...(chat.bookmarks ?? [])]
+    const bookmarkNames = { ...(chat.bookmarkNames ?? {}) }
 
-    const bookmarkIndex = chat.bookmarks.indexOf(messageId)
+    const bookmarkIndex = bookmarks.indexOf(messageId)
 
     if (bookmarkIndex > -1) {
-      chat.bookmarks.splice(bookmarkIndex, 1)
-      delete chat.bookmarkNames[messageId]
+      bookmarks.splice(bookmarkIndex, 1)
+      delete bookmarkNames[messageId]
     } else {
-      chat.bookmarks.push(messageId)
+      bookmarks.push(messageId)
 
       const msgSender = chat.message[idx]?.role === 'user' ? getUserName() : name
       const newName = await alertInput(
         language.bookmarkAskNameOrDefault,
         [],
-        chat.bookmarkNames[messageId] || '',
+        bookmarkNames[messageId] || '',
       )
 
       if (newName && newName.trim() !== '') {
-        chat.bookmarkNames[messageId] = newName
+        bookmarkNames[messageId] = newName
       } else {
         let defaultName
 
@@ -437,20 +539,30 @@
         if (!defaultName) {
           defaultName = messageContent.slice(0, 50) + '...'
         }
-        chat.bookmarkNames[messageId] = msgSender + '| ' + defaultName
+        bookmarkNames[messageId] = msgSender + '| ' + defaultName
       }
     }
 
-    chat.bookmarks = [...chat.bookmarks]
+    localChatMutation(() => {
+      if (!hadMessageId) {
+        chat.message[idx].chatId = messageId
+      }
+      chat.bookmarks = [...bookmarks]
+      chat.bookmarkNames = bookmarkNames
+    })
     if (!hadMessageId && chat.id) {
-      dispatchReplaceMessages(chat.id, chat.message, previous)
+      dispatchReplaceMessages(
+        chat.id,
+        canUseServerCommands() && nextMessages ? nextMessages : chat.message,
+        previous,
+      )
     }
     if (chat.id) {
       dispatchUpdateChat(
         chat.id,
         {
-          bookmarks: chat.bookmarks,
-          bookmarkNames: chat.bookmarkNames,
+          bookmarks,
+          bookmarkNames,
         },
         previous,
       )
@@ -1071,23 +1183,34 @@
           DBState.db.characters[selIdState.selId].chatPage
         ]
 
+      let folder
+      let sourcePatch: { folderId?: string | null } = {}
       if (DBState.db.createFolderOnBranch && !currentChat.folderId) {
         const folderId = v4()
-        DBState.db.characters[selIdState.selId].chatFolders ??= []
-        const folder = {
+        folder = {
           id: folderId,
           name: `Branches of ${currentChat.name}`,
           folded: false,
         }
-        DBState.db.characters[selIdState.selId].chatFolders.unshift(folder)
-        currentChat.folderId = folderId
+        sourcePatch = { folderId }
+        localChatMutation(() => {
+          DBState.db.characters[selIdState.selId].chatFolders ??= []
+          DBState.db.characters[selIdState.selId].chatFolders.unshift(folder)
+          currentChat.folderId = folderId
+        })
       }
 
       const currentMessage = currentChat.message[idx]
-      const newChat = $state.snapshot(currentChat)
+      const newChat = cloneJsonValue(currentChat)
+      if (sourcePatch.folderId) {
+        newChat.folderId = sourcePatch.folderId
+      }
       newChat.name = createChatCopyName(newChat.name, 'Branch')
       newChat.id = v4()
       newChat.message = newChat.message.slice(0, idx + 1)
+      for (const item of newChat.message) {
+        item.chatId ||= uuidv4()
+      }
       newChat.message.push({
         role: 'char',
         data:
@@ -1103,17 +1226,24 @@
         chatId: v4(),
       })
 
-      DBState.db.characters[selIdState.selId].chats.unshift(newChat)
-      changeChatTo(0)
+      localChatMutation(() => {
+        DBState.db.characters[selIdState.selId].chats.unshift(newChat)
+        changeChatTo(0)
+      })
       if (currentChat.id) {
-        const folder = DBState.db.characters[selIdState.selId].chatFolders?.find(
-          (item) =>
-            item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
-        )
+        const existingFolder =
+          folder ??
+          DBState.db.characters[selIdState.selId].chatFolders?.find(
+            (item) =>
+              item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
+          )
         dispatchForkChat(currentChat.id, previous, {
           chat: newChat,
-          sourcePatch: { folderId: currentChat.folderId ?? null },
-          folder,
+          sourcePatch:
+            Object.keys(sourcePatch).length > 0
+              ? sourcePatch
+              : { folderId: currentChat.folderId ?? null },
+          folder: existingFolder,
         })
       }
     }}
@@ -1133,12 +1263,29 @@
           DBState.db.characters[selIdState.selId].chatPage
         ].message[idx]
       const previous = currentChatStateSnapshot()
-      const messageId = ensureMessageId(currentMessage)
       const disabled = !currentMessage.disabled
-      DBState.db.characters[selIdState.selId].chats[
-        DBState.db.characters[selIdState.selId].chatPage
-      ].message[idx].disabled = disabled
-      dispatchUpdateMessage(messageId, { disabled }, previous)
+      const messageId = currentMessage.chatId
+      if (canUseServerCommands()) {
+        if (messageId) {
+          dispatchUpdateMessage(messageId, { disabled }, previous)
+        } else {
+          const chat =
+            DBState.db.characters[selIdState.selId].chats[
+              DBState.db.characters[selIdState.selId].chatPage
+            ]
+          const nextMessages = cloneMessagesWithIds(chat)
+          if (nextMessages[idx]) {
+            nextMessages[idx].disabled = disabled
+            dispatchReplaceMessagesForChat(chat, nextMessages, previous)
+          }
+        }
+      } else {
+        const localMessageId = ensureMessageId(currentMessage)
+        DBState.db.characters[selIdState.selId].chats[
+          DBState.db.characters[selIdState.selId].chatPage
+        ].message[idx].disabled = disabled
+        dispatchUpdateMessage(localMessageId, { disabled }, previous)
+      }
     }}
   >
     <PowerOff size={20} />
@@ -1156,12 +1303,29 @@
           DBState.db.characters[selIdState.selId].chatPage
         ].message[idx]
       const previous = currentChatStateSnapshot()
-      const messageId = ensureMessageId(currentMessage)
       const disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
-      DBState.db.characters[selIdState.selId].chats[
-        DBState.db.characters[selIdState.selId].chatPage
-      ].message[idx].disabled = disabled
-      dispatchUpdateMessage(messageId, { disabled }, previous)
+      const messageId = currentMessage.chatId
+      if (canUseServerCommands()) {
+        if (messageId) {
+          dispatchUpdateMessage(messageId, { disabled }, previous)
+        } else {
+          const chat =
+            DBState.db.characters[selIdState.selId].chats[
+              DBState.db.characters[selIdState.selId].chatPage
+            ]
+          const nextMessages = cloneMessagesWithIds(chat)
+          if (nextMessages[idx]) {
+            nextMessages[idx].disabled = disabled
+            dispatchReplaceMessagesForChat(chat, nextMessages, previous)
+          }
+        }
+      } else {
+        const localMessageId = ensureMessageId(currentMessage)
+        DBState.db.characters[selIdState.selId].chats[
+          DBState.db.characters[selIdState.selId].chatPage
+        ].message[idx].disabled = disabled
+        dispatchUpdateMessage(localMessageId, { disabled }, previous)
+      }
     }}
   >
     <Scissors size={20} />
@@ -1471,10 +1635,23 @@
                     DBState.db.characters[selIdState.selId].chats[
                       DBState.db.characters[selIdState.selId].chatPage
                     ]
-                  const messageId = ensureMessageId(chat.message[idx])
                   const role = chat.message[idx].role === 'char' ? 'user' : 'char'
-                  chat.message[idx].role = role
-                  dispatchUpdateMessage(messageId, { role }, previous)
+                  const messageId = chat.message[idx].chatId
+                  if (canUseServerCommands()) {
+                    if (messageId) {
+                      dispatchUpdateMessage(messageId, { role }, previous)
+                    } else {
+                      const nextMessages = cloneMessagesWithIds(chat)
+                      if (nextMessages[idx]) {
+                        nextMessages[idx].role = role
+                        dispatchReplaceMessagesForChat(chat, nextMessages, previous)
+                      }
+                    }
+                  } else {
+                    const localMessageId = ensureMessageId(chat.message[idx])
+                    chat.message[idx].role = role
+                    dispatchUpdateMessage(localMessageId, { role }, previous)
+                  }
                   ReloadChatPointer.update((v) => {
                     v[idx] = (v[idx] ?? 0) + 1
                     return v

@@ -18,6 +18,7 @@
   import { checkPersonaBinded, getUserName } from 'src/ts/util'
   import { v4 } from 'uuid'
   import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
+  import { canUseServerCommands } from 'src/ts/server/commands'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
   const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
@@ -81,17 +82,17 @@
             e.stopPropagation()
             const previous = currentChatStateSnapshot()
             const chatIndex = DBState.db.characters[$selectedCharID].chatPage
-            if (!DBState.db.personas[DBState.db.selectedPersona].id) {
-              DBState.db.personas[DBState.db.selectedPersona].id = v4()
-            }
             const chat = DBState.db.characters[$selectedCharID].chats[chatIndex]
-            if (checkPersonaBinded()) {
-              chat.bindedPersona = ''
-            } else {
-              chat.bindedPersona = DBState.db.personas[DBState.db.selectedPersona].id
+            const persona = DBState.db.personas[DBState.db.selectedPersona]
+            const bindedPersona = checkPersonaBinded() ? '' : (persona.id ?? v4())
+            if (!canUseServerCommands()) {
+              if (!persona.id) {
+                persona.id = bindedPersona
+              }
+              chat.bindedPersona = bindedPersona
             }
             if (chat.id) {
-              dispatchUpdateChat(chat.id, { bindedPersona: chat.bindedPersona }, previous)
+              dispatchUpdateChat(chat.id, { bindedPersona }, previous)
             }
           }}
         >

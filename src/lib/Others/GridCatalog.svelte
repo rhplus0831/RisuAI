@@ -12,6 +12,7 @@
   import { checkCharOrder } from 'src/ts/globalApi.svelte'
   import MobileCharacters from '../Mobile/MobileCharacters.svelte'
   import { currentCharacterStateSnapshot, dispatchUpdateCharacter } from 'src/ts/characterCommands'
+  import { canUseServerCommands } from 'src/ts/server/commands'
   interface Props {
     endGrid?: any
   }
@@ -213,8 +214,10 @@
                 onclick={() => {
                   const previous = currentCharacterStateSnapshot()
                   const characterId = DBState.db.characters[char.index].chaId
-                  DBState.db.characters[char.index].trashTime = undefined
-                  checkCharOrder()
+                  if (!canUseServerCommands()) {
+                    DBState.db.characters[char.index].trashTime = undefined
+                    checkCharOrder()
+                  }
                   if (characterId) {
                     dispatchUpdateCharacter(characterId, { trashTime: null }, previous)
                   }

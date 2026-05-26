@@ -22,6 +22,7 @@
     type ServerCommandResult,
     type TranslatorPresetSnapshot,
   } from 'src/ts/server/commands'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     createTranslatorPreset,
     decodeTranslatorPresetFile,
@@ -72,10 +73,12 @@
   }
 
   function restoreTranslatorPresetState(snapshot: TranslatorPresetStateSnapshot): void {
-    DBState.db.translatorPresets = cloneJsonValue(snapshot.translatorPresets)
-    DBState.db.translatorPresetId = snapshot.translatorPresetId
-    DBState.db.translatorPrompt = snapshot.translatorPrompt
-    DBState.db.translatorMaxResponse = snapshot.translatorMaxResponse
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.translatorPresets = cloneJsonValue(snapshot.translatorPresets)
+      DBState.db.translatorPresetId = snapshot.translatorPresetId
+      DBState.db.translatorPrompt = snapshot.translatorPrompt
+      DBState.db.translatorMaxResponse = snapshot.translatorMaxResponse
+    })
   }
 
   function createClientTranslatorPresetId(): string {
@@ -91,7 +94,9 @@
   }
 
   function selectedTranslatorPresetId(): string | null {
-    normalizeTranslatorPresets()
+    if (!canUseServerCommands()) {
+      normalizeTranslatorPresets()
+    }
     return DBState.db.translatorPresets[DBState.db.translatorPresetId]?.id ?? null
   }
 
@@ -154,7 +159,10 @@
     previous: TranslatorPresetStateSnapshot,
   ): void {
     if (!canUseServerCommands()) return
-    if (pendingTranslatorPresetUpdate.presetId !== presetId && pendingTranslatorPresetUpdate.timer) {
+    if (
+      pendingTranslatorPresetUpdate.presetId !== presetId &&
+      pendingTranslatorPresetUpdate.timer
+    ) {
       clearTimeout(pendingTranslatorPresetUpdate.timer)
       pendingTranslatorPresetUpdate.timer = null
       pendingTranslatorPresetUpdate.patch = {}
@@ -211,9 +219,12 @@
     () => DBState.db.translatorPresetId,
     (value) => {
       const previous = currentTranslatorPresetStateSnapshot()
-      DBState.db.translatorPresetId = Number(value)
-      syncCurrentTranslatorPreset()
-      const presetId = selectedTranslatorPresetId()
+      const presetIndex = Number(value)
+      const presetId = DBState.db.translatorPresets[presetIndex]?.id ?? null
+      if (!canUseServerCommands()) {
+        DBState.db.translatorPresetId = presetIndex
+        syncCurrentTranslatorPreset()
+      }
       if (presetId) dispatchSelectTranslatorPreset(presetId, previous)
     }
   }
@@ -230,15 +241,19 @@
       const previous = currentTranslatorPresetStateSnapshot()
       const newPreset = createTranslatorPreset()
       newPreset.id = createClientTranslatorPresetId()
-      const presets = DBState.db.translatorPresets
-      presets.push(newPreset)
-      DBState.db.translatorPresets = presets
-      DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
-      normalizeTranslatorPresets()
-      dispatchCreateTranslatorPreset(
-        DBState.db.translatorPresets[DBState.db.translatorPresetId],
-        previous,
-      )
+      if (!canUseServerCommands()) {
+        const presets = DBState.db.translatorPresets
+        presets.push(newPreset)
+        DBState.db.translatorPresets = presets
+        DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
+        normalizeTranslatorPresets()
+        dispatchCreateTranslatorPreset(
+          DBState.db.translatorPresets[DBState.db.translatorPresetId],
+          previous,
+        )
+      } else {
+        dispatchCreateTranslatorPreset(newPreset, previous)
+      }
     }}
   >
     <PlusIcon size={24} />
@@ -262,9 +277,11 @@
 
       const previous = currentTranslatorPresetStateSnapshot()
       const presetId = selectedTranslatorPresetId()
-      preset.name = newName
-      DBState.db.translatorPresets = presets
-      syncCurrentTranslatorPreset()
+      if (!canUseServerCommands()) {
+        preset.name = newName
+        DBState.db.translatorPresets = presets
+        syncCurrentTranslatorPreset()
+      }
       if (presetId) queueTranslatorPresetUpdate(presetId, { name: newName }, previous)
     }}
   >
@@ -287,19 +304,25 @@
 
       if (!confirmed) return
 
-      normalizeTranslatorPresets()
+      if (!canUseServerCommands()) {
+        normalizeTranslatorPresets()
+      }
       const previous = currentTranslatorPresetStateSnapshot()
       const presetId = preset.id
-      DBState.db.translatorPresetId = 0
-      presets.splice(id, 1)
-      DBState.db.translatorPresets = presets
-      normalizeTranslatorPresets()
+      let selectPresetId: string | undefined
+      if (!canUseServerCommands()) {
+        DBState.db.translatorPresetId = 0
+        presets.splice(id, 1)
+        DBState.db.translatorPresets = presets
+        normalizeTranslatorPresets()
+        selectPresetId = DBState.db.translatorPresets[DBState.db.translatorPresetId]?.id
+      } else {
+        const nextPresets = cloneJsonValue(presets)
+        nextPresets.splice(id, 1)
+        selectPresetId = nextPresets[0]?.id
+      }
       if (presetId) {
-        dispatchDeleteTranslatorPreset(
-          presetId,
-          DBState.db.translatorPresets[DBState.db.translatorPresetId]?.id,
-          previous,
-        )
+        dispatchDeleteTranslatorPreset(presetId, selectPresetId, previous)
       }
     }}
   >
@@ -344,16 +367,20 @@
         const newPreset = await decodeTranslatorPresetFile(selectedFile.data)
         newPreset.id = createClientTranslatorPresetId()
         const previous = currentTranslatorPresetStateSnapshot()
-        const presets = DBState.db.translatorPresets
+        if (!canUseServerCommands()) {
+          const presets = DBState.db.translatorPresets
 
-        presets.push(newPreset)
-        DBState.db.translatorPresets = presets
-        DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
-        normalizeTranslatorPresets()
-        dispatchCreateTranslatorPreset(
-          DBState.db.translatorPresets[DBState.db.translatorPresetId],
-          previous,
-        )
+          presets.push(newPreset)
+          DBState.db.translatorPresets = presets
+          DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
+          normalizeTranslatorPresets()
+          dispatchCreateTranslatorPreset(
+            DBState.db.translatorPresets[DBState.db.translatorPresetId],
+            previous,
+          )
+        } else {
+          dispatchCreateTranslatorPreset(newPreset, previous)
+        }
 
         alertNormal(language.successImport)
       } catch (error) {
@@ -377,8 +404,10 @@
       (value) => {
         const previous = currentTranslatorPresetStateSnapshot()
         const presetId = selectedTranslatorPresetId()
-        preset.maxResponse = value
-        syncCurrentTranslatorPreset()
+        if (!canUseServerCommands()) {
+          preset.maxResponse = value
+          syncCurrentTranslatorPreset()
+        }
         if (presetId) queueTranslatorPresetUpdate(presetId, { maxResponse: value }, previous)
       }
     }
@@ -392,8 +421,10 @@
       (value) => {
         const previous = currentTranslatorPresetStateSnapshot()
         const presetId = selectedTranslatorPresetId()
-        preset.prompt = value
-        syncCurrentTranslatorPreset()
+        if (!canUseServerCommands()) {
+          preset.prompt = value
+          syncCurrentTranslatorPreset()
+        }
         if (presetId) queueTranslatorPresetUpdate(presetId, { prompt: value }, previous)
       }
     }

@@ -124,10 +124,12 @@
               const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
               if (d) {
                 const previous = currentChatStateSnapshot()
-                changeChatTo(0)
-                let chats = DBState.db.characters[$selectedCharID].chats
-                chats.splice(i, 1)
-                DBState.db.characters[$selectedCharID].chats = chats
+                if (!canUseServerCommands()) {
+                  changeChatTo(0)
+                  let chats = DBState.db.characters[$selectedCharID].chats
+                  chats.splice(i, 1)
+                  DBState.db.characters[$selectedCharID].chats = chats
+                }
                 dispatchDeleteChat(chat.id, previous)
               }
             }}
@@ -145,7 +147,6 @@
           const previous = currentChatStateSnapshot()
           const cha = DBState.db.characters[$selectedCharID]
           const len = DBState.db.characters[$selectedCharID].chats.length
-          let chats = DBState.db.characters[$selectedCharID].chats
           const chat = {
             message: [],
             note: '',
@@ -154,7 +155,6 @@
             fmIndex: -1,
             id: v4(),
           }
-          chats.unshift(chat)
           if (cha.type === 'group') {
             cha.characters.map((c) => {
               chat.message.push({
@@ -164,8 +164,12 @@
               })
             })
           }
-          DBState.db.characters[$selectedCharID].chats = chats
-          changeChatTo(0)
+          if (!canUseServerCommands()) {
+            let chats = DBState.db.characters[$selectedCharID].chats
+            chats.unshift(chat)
+            DBState.db.characters[$selectedCharID].chats = chats
+            changeChatTo(0)
+          }
           dispatchCreateChat(cha.chaId, chat, previous)
           close()
         }}

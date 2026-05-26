@@ -231,13 +231,17 @@ describe('Phase 3C hub passthrough', () => {
     expect(res.body).toBe('body')
   })
 
-  it('strips host / connection / risu-auth / x-risu-node-path from forwarded headers', async () => {
+  it('strips proxy control headers from forwarded headers', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await harness.app.inject({
       method: 'GET',
       url: '/api/v1/hub/anything',
       headers: {
         'risu-auth': assertion,
+        'risu-timeout-ms': '1234',
+        'risu-url': encodeURIComponent('https://example.invalid/override'),
+        'risu-header': encodeURIComponent(JSON.stringify({ 'x-leak': 'nope' })),
+        'x-risu-node-path': encodeURIComponent(`${echo.url}/anything`),
         connection: 'keep-alive',
         'x-keep-me': 'yes',
       },
@@ -245,6 +249,9 @@ describe('Phase 3C hub passthrough', () => {
     expect(echo.requests).toHaveLength(1)
     const fwd = echo.requests[0].headers
     expect(fwd['risu-auth']).toBeUndefined()
+    expect(fwd['risu-timeout-ms']).toBeUndefined()
+    expect(fwd['risu-url']).toBeUndefined()
+    expect(fwd['risu-header']).toBeUndefined()
     expect(fwd['x-risu-node-path']).toBeUndefined()
     expect(fwd['x-keep-me']).toBe('yes')
   })

@@ -119,11 +119,14 @@ snapshot.
 has two provider sweeps. The Phase 6 sweep runs the twelve provider
 fixtures through `/api/v1/generate/completion` with
 `platform.isFastifyServer === true` and `db.useServerGeneration === true`.
-The Phase 7 sweep runs the same dual-mode fixtures through
-`/api/v1/generate/chat` with `db.useServerPromptAssembly === true` and
-asserts that they do not escape to `/completion`. A separate
-route-backed harness drives the real Fastify `/chat` route for send,
-continue, regenerate, preview, and preview-prompt.
+The Phase 7 prompt-assembly guardrail has two narrower layers: an
+adapter replay that exercises `/api/v1/generate/chat` for the
+`hypav3-memory` and side-effect/rollback paths, plus a route-backed
+harness that drives the real Fastify `/chat` route for `simple-send`,
+`continue`, `regenerate`, `preview`, and `preview-prompt` and asserts
+that those requests do not escape to `/completion`. The twelve
+dual-mode provider fixtures are currently pinned through
+`/api/v1/generate/completion`, not through the real `/chat` route.
 
 The same file covers server-dispatched rollback, TTS side effects, and
 the Phase 8 `hypav3-memory` server-backed memory path, including

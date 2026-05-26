@@ -77,6 +77,18 @@ export const hubURL = isFastifyServer
       ? NIGHTLY_HUB_URL
       : EXTERNAL_HUB_URL
 
+function appendImportedCharacter(
+  character: character,
+  previous: ReturnType<typeof currentCharacterStateSnapshot>,
+) {
+  if (!isFastifyServer) {
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.push(character)
+    })
+  }
+  dispatchCreateCharacter(character, previous)
+}
+
 export async function importCharacter() {
   try {
     const files = await selectFileByDom(['*'], 'multiple')
@@ -118,10 +130,7 @@ export async function importCharacterProcess(f: {
     ) {
       const previous = currentCharacterStateSnapshot()
       const character = convertOffSpecCards(da)
-      withTrustedServerProjectionWrite(() => {
-        DBState.db.characters.push(character)
-      })
-      dispatchCreateCharacter(character, previous)
+      appendImportedCharacter(character, previous)
       alertNormal(language.importedCharacter)
       return
     } else {
@@ -130,7 +139,9 @@ export async function importCharacterProcess(f: {
     }
   }
   let db = getDatabase()
-  db.statics.imports += 1
+  if (!isFastifyServer) {
+    db.statics.imports += 1
+  }
 
   if (f.name.endsWith('charx') || f.name.endsWith('jpg') || f.name.endsWith('jpeg')) {
     console.log('reading charx')
@@ -338,14 +349,13 @@ export async function importCharacterProcess(f: {
     const imgp = await saveAsset(img)
     const previous = currentCharacterStateSnapshot()
     const character = convertOffSpecCards(charaData, imgp)
-    DBState.db.characters.push(character)
-    dispatchCreateCharacter(character, previous)
+    appendImportedCharacter(character, previous)
     alertNormal(language.importedCharacter)
-    return DBState.db.characters.length - 1
+    return isFastifyServer ? undefined : DBState.db.characters.length - 1
   }
   await importCharacterCardSpec(parsed, img, 'normal', assets)
 
-  return DBState.db.characters.length - 1
+  return isFastifyServer ? undefined : DBState.db.characters.length - 1
 }
 
 export const getRealmInfo = async (realmPath: string) => {
@@ -1009,10 +1019,7 @@ async function importCharacterCardSpec(
     char.modification_date = card.data.modification_date ?? 0
   }
 
-  withTrustedServerProjectionWrite(() => {
-    DBState.db.characters.push(char)
-  })
-  dispatchCreateCharacter(char, previous)
+  appendImportedCharacter(char, previous)
   alertNormal(language.importedCharacter)
   return true
 }

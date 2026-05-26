@@ -488,6 +488,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'textScreenBorder',
     'showSavingIcon',
     'showPromptComparison',
+    'promptDiffPrefs',
     'useChatCopy',
     'useAdditionalAssetsPreview',
     'useLegacyGUI',

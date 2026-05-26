@@ -228,6 +228,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   PresensePenalty: 'runtime',
   presetChain: 'advanced',
   promptInfoInsideChat: 'advanced',
+  promptDiffPrefs: 'display',
   promptTextInfoInsideChat: 'advanced',
   proxyKey: 'providers',
   proxyRequestModel: 'providers',

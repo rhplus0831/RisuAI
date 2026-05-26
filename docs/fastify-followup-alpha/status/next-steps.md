@@ -13,7 +13,8 @@ Fastify shapes.
 
 ## Immediate Pickup
 
-No open alpha pickup remains. The broad typecheck blocker is closed and
+No open alpha pickup remains. The broad typecheck blocker and the
+`LEFTOVER.md` Phase 3 / Phase 7 / Phase 9 audit pickup are closed, and
 the full broad matrix passed on 2026-05-27.
 
 For future work, pick one focused slice per work session only after a
@@ -23,16 +24,17 @@ longer closeout note under `../phases-completed/`.
 
 ## Closed Alpha Slices
 
-| Slice | Anchor | Closeout |
-| ----- | ------ | -------- |
-| Broad closeout typecheck cleanup | `50d55b97` | [`../phases-completed/broad-closeout-typecheck-alpha.md`](../phases-completed/broad-closeout-typecheck-alpha.md) |
-| Phase 5 sendChat boundary cleanup | `bd7a4712` | [`../phases-completed/phase-5-sendchat-boundary-alpha.md`](../phases-completed/phase-5-sendchat-boundary-alpha.md) |
-| Phase 9B projection-write tails | `cf830b9e` | [`../phases-completed/phase-9-projection-write-tails-9b.md`](../phases-completed/phase-9-projection-write-tails-9b.md) |
-| Phase 6 SSE line endings | `0c429fe8` | [`../phases-completed/phase-6-sse-line-endings.md`](../phases-completed/phase-6-sse-line-endings.md) |
-| Phase 6 truncated SSE tails | `d570f482` | [`../phases-completed/phase-6-generation-sse-tails.md`](../phases-completed/phase-6-generation-sse-tails.md) |
-| Phase 3 hub response headers | `0cee686d` | [`../phases-completed/phase-3-hub-response-headers.md`](../phases-completed/phase-3-hub-response-headers.md) |
-| Phase 8 memory event isolation | `ed4d53a8` | [`../phases-completed/phase-8-memory-event-isolation.md`](../phases-completed/phase-8-memory-event-isolation.md) |
-| Phase 9A projection-write blockers | `7bc0e8f6` | [`../phases-completed/phase-9-client-thinning-9a.md`](../phases-completed/phase-9-client-thinning-9a.md) |
+| Slice                              | Anchor     | Closeout                                                                                                               |
+| ---------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Leftover audit closeout            | pending    | [`../phases-completed/leftover-audit-closeout.md`](../phases-completed/leftover-audit-closeout.md)                     |
+| Broad closeout typecheck cleanup   | `50d55b97` | [`../phases-completed/broad-closeout-typecheck-alpha.md`](../phases-completed/broad-closeout-typecheck-alpha.md)       |
+| Phase 5 sendChat boundary cleanup  | `bd7a4712` | [`../phases-completed/phase-5-sendchat-boundary-alpha.md`](../phases-completed/phase-5-sendchat-boundary-alpha.md)     |
+| Phase 9B projection-write tails    | `cf830b9e` | [`../phases-completed/phase-9-projection-write-tails-9b.md`](../phases-completed/phase-9-projection-write-tails-9b.md) |
+| Phase 6 SSE line endings           | `0c429fe8` | [`../phases-completed/phase-6-sse-line-endings.md`](../phases-completed/phase-6-sse-line-endings.md)                   |
+| Phase 6 truncated SSE tails        | `d570f482` | [`../phases-completed/phase-6-generation-sse-tails.md`](../phases-completed/phase-6-generation-sse-tails.md)           |
+| Phase 3 hub response headers       | `0cee686d` | [`../phases-completed/phase-3-hub-response-headers.md`](../phases-completed/phase-3-hub-response-headers.md)           |
+| Phase 8 memory event isolation     | `ed4d53a8` | [`../phases-completed/phase-8-memory-event-isolation.md`](../phases-completed/phase-8-memory-event-isolation.md)       |
+| Phase 9A projection-write blockers | `7bc0e8f6` | [`../phases-completed/phase-9-client-thinning-9a.md`](../phases-completed/phase-9-client-thinning-9a.md)               |
 
 ## Latest Broad Verification
 

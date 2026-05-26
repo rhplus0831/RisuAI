@@ -3,6 +3,7 @@
   import type { NanoGPTBalance, NanoGPTSubscriptionUsage } from 'src/ts/model/nanogpt'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
+  import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
 
   interface Props {
     apiKey: string
@@ -27,8 +28,15 @@
       getNanoGPTSubscription(key),
     ])
     // Persist subscription state so chat requests can pick the right endpoint
-    const db = getDatabase()
-    db.nanogptSubscriptionState = subscription?.state ?? ''
+    const subscriptionState = subscription?.state ?? ''
+    if (canUseServerCommands()) {
+      void patchServerBackedSettings({
+        patch: { nanogptSubscriptionState: subscriptionState },
+      })
+    } else {
+      const db = getDatabase()
+      db.nanogptSubscriptionState = subscriptionState
+    }
     return { balance, subscription }
   }
 

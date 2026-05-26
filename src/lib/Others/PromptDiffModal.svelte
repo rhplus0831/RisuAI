@@ -1,6 +1,7 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
   import { getDatabase, type PromptDiffPrefs } from '../../ts/storage/database.svelte'
+  import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
   import type {
     PromptItem,
     PromptItemPlain,
@@ -181,9 +182,7 @@
   let expandedRanges = $state<ExpandedRange[]>([])
 
   function savePrefsToDB() {
-    const db = getDatabase()
-
-    db.promptDiffPrefs = {
+    const nextPrefs = {
       ...DEFAULT_PROMPT_DIFF_PREFS,
       diffStyle,
       formatStyle,
@@ -192,6 +191,13 @@
       showOnlyChanges,
       contextRadius,
     }
+    if (canUseServerCommands()) {
+      void patchServerBackedSettings({ patch: { promptDiffPrefs: nextPrefs } })
+      return
+    }
+
+    const db = getDatabase()
+    db.promptDiffPrefs = nextPrefs
   }
 
   function handleClose() {
