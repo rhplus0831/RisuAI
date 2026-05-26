@@ -4,29 +4,61 @@
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
   import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte'
   import ModelList from 'src/lib/UI/ModelList.svelte'
-  import { DBState, easyPanelStore } from 'src/ts/stores.svelte'
+  import { easyPanelStore } from 'src/ts/stores.svelte'
   import Help from '../Help.svelte'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import AllSeperateParameters from '../AllSeperateParameters.svelte'
-  import { onDestroy, onMount } from 'svelte'
   import { XIcon } from '@lucide/svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import CustomModelsSettings from 'src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import type { SeparateParameters } from 'src/ts/storage/database.svelte'
 
-  const stopServerSettingsWatch = watchServerBackedSettings([
+  type AuxModelSettings = {
+    memory: string
+    translate: string
+    emotion: string
+    otherAx: string
+  }
+
+  type SeparateParameterSettings = {
+    memory: SeparateParameters
+    emotion: SeparateParameters
+    translate: SeparateParameters
+    otherAx: SeparateParameters
+    overrides: Record<string, SeparateParameters>
+  }
+
+  const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>(
     'seperateParametersEnabled',
+    false,
+  )
+  const doNotChangeSeperateModelsDraft = createServerBackedSettingDraft<boolean>(
     'doNotChangeSeperateModels',
-    'seperateModels',
-    'epEnabled',
+    false,
+  )
+  const seperateModelsDraft = createServerBackedSettingDraft<AuxModelSettings>('seperateModels', {
+    memory: '',
+    translate: '',
+    emotion: '',
+    otherAx: '',
+  })
+  const epEnabledDraft = createServerBackedSettingDraft<boolean>('epEnabled', false)
+  const disableSeperateParameterChangeOnPresetChangeDraft = createServerBackedSettingDraft<boolean>(
     'disableSeperateParameterChangeOnPresetChange',
-    'aiModel',
-    'subModel',
+    false,
+  )
+  const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
+  const subModelDraft = createServerBackedSettingDraft<string>('subModel', '')
+  const seperateParametersDraft = createServerBackedSettingDraft<SeparateParameterSettings>(
     'seperateParameters',
+    { memory: {}, emotion: {}, translate: {}, otherAx: {}, overrides: {} },
+  )
+  const seperateParametersByModelDraft = createServerBackedSettingDraft<boolean>(
     'seperateParametersByModel',
-  ])
-  onDestroy(stopServerSettingsWatch)
+    false,
+  )
 
   let selectedOption = $state('models')
   let selectedParameterOption = $state('memory')
@@ -34,16 +66,41 @@
 
   let hasEPRequirements = $derived.by(() => {
     return (
-      DBState.db.seperateParametersEnabled &&
-      DBState.db.doNotChangeSeperateModels &&
-      DBState.db.seperateModels &&
-      DBState.db.epEnabled &&
-      DBState.db.disableSeperateParameterChangeOnPresetChange
+      seperateParametersEnabledDraft.value &&
+      doNotChangeSeperateModelsDraft.value &&
+      seperateModelsDraft.value &&
+      epEnabledDraft.value &&
+      disableSeperateParameterChangeOnPresetChangeDraft.value
     )
   })
 
   const onClose = () => {
     easyPanelStore.open = false
+  }
+
+  function enableEasyPanelRequirements(): void {
+    seperateParametersEnabledDraft.value = true
+    doNotChangeSeperateModelsDraft.value = true
+    seperateModelsDraft.value = {
+      memory: '',
+      translate: '',
+      emotion: '',
+      otherAx: '',
+    }
+    epEnabledDraft.value = true
+    disableSeperateParameterChangeOnPresetChangeDraft.value = true
+  }
+
+  function ensureParameterOverride(model: string): void {
+    if (!model) return
+    if (seperateParametersDraft.value.overrides?.[model]) return
+    seperateParametersDraft.value = {
+      ...seperateParametersDraft.value,
+      overrides: {
+        ...(seperateParametersDraft.value.overrides ?? {}),
+        [model]: {},
+      },
+    }
   }
 </script>
 
@@ -84,16 +141,7 @@
       <Button
         className="mt-4"
         onclick={() => {
-          DBState.db.seperateParametersEnabled = true
-          DBState.db.doNotChangeSeperateModels = true
-          DBState.db.seperateModels = {
-            memory: '',
-            translate: '',
-            emotion: '',
-            otherAx: '',
-          }
-          DBState.db.epEnabled = true
-          DBState.db.disableSeperateParameterChangeOnPresetChange = true
+          enableEasyPanelRequirements()
         }}
       >
         {language.run}
@@ -102,16 +150,16 @@
       <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 justify-center items-center">
         <div class="col-span-1">
           <span class="text-textcolor">{language.mainModel}</span>
-          <ModelList bind:value={DBState.db.aiModel} blankable excludesPrefix="plugin" />
+          <ModelList bind:value={aiModelDraft.value} blankable excludesPrefix="plugin" />
         </div>
         <div class="col-span-1">
           <span class="text-textcolor">{language.submodel}</span>
-          <ModelList bind:value={DBState.db.subModel} blankable excludesPrefix="plugin" />
+          <ModelList bind:value={subModelDraft.value} blankable excludesPrefix="plugin" />
         </div>
         <div class="col-span-1">
           <span class="text-textcolor">{language.longTermMemory}</span>
           <ModelList
-            bind:value={DBState.db.seperateModels.memory}
+            bind:value={seperateModelsDraft.value.memory}
             blankable
             excludesPrefix="plugin"
           />
@@ -119,7 +167,7 @@
         <div class="col-span-1">
           <span class="text-textcolor">{language.translator}</span>
           <ModelList
-            bind:value={DBState.db.seperateModels.translate}
+            bind:value={seperateModelsDraft.value.translate}
             blankable
             excludesPrefix="plugin"
           />
@@ -127,7 +175,7 @@
         <div class="col-span-1">
           <span class="text-textcolor">{language.emotionImage}</span>
           <ModelList
-            bind:value={DBState.db.seperateModels.emotion}
+            bind:value={seperateModelsDraft.value.emotion}
             blankable
             excludesPrefix="plugin"
           />
@@ -136,7 +184,7 @@
         <div class="col-span-1">
           <span class="text-textcolor">{language.others}</span>
           <ModelList
-            bind:value={DBState.db.seperateModels.otherAx}
+            bind:value={seperateModelsDraft.value.otherAx}
             blankable
             excludesPrefix="plugin"
           />
@@ -144,20 +192,19 @@
       </div>
     {/if}
     {#if selectedOption === 'parameters'}
-      {#if DBState.db.seperateParametersByModel}
+      {#if seperateParametersByModelDraft.value}
         <ModelList
           bind:value={parameterModelSelection}
           blankable
           excludesPrefix="plugin"
           onChange={(v) => {
-            DBState.db.seperateParameters.overrides ??= {}
-            DBState.db.seperateParameters.overrides[v] ??= {}
+            ensureParameterOverride(v)
           }}
         />
 
-        {#if parameterModelSelection !== ''}
+        {#if parameterModelSelection !== '' && seperateParametersDraft.value.overrides[parameterModelSelection]}
           <AllSeperateParameters
-            bind:value={DBState.db.seperateParameters.overrides[parameterModelSelection]}
+            bind:value={seperateParametersDraft.value.overrides[parameterModelSelection]}
             withImportExport
             paramKey={parameterModelSelection}
           />
@@ -176,25 +223,25 @@
         <div class="w-full mt-4 flex flex-col">
           {#if selectedParameterOption === 'memory'}
             <AllSeperateParameters
-              bind:value={DBState.db.seperateParameters.memory}
+              bind:value={seperateParametersDraft.value.memory}
               withImportExport
               paramKey="memory"
             />
           {:else if selectedParameterOption === 'translate'}
             <AllSeperateParameters
-              bind:value={DBState.db.seperateParameters.translate}
+              bind:value={seperateParametersDraft.value.translate}
               withImportExport
               paramKey="translate"
             />
           {:else if selectedParameterOption === 'emotion'}
             <AllSeperateParameters
-              bind:value={DBState.db.seperateParameters.emotion}
+              bind:value={seperateParametersDraft.value.emotion}
               withImportExport
               paramKey="emotion"
             />
           {:else if selectedParameterOption === 'otherAx'}
             <AllSeperateParameters
-              bind:value={DBState.db.seperateParameters.otherAx}
+              bind:value={seperateParametersDraft.value.otherAx}
               withImportExport
               paramKey="otherAx"
             />
@@ -206,7 +253,7 @@
     {:else if selectedOption === 'settings'}
       <CheckInput
         name={language.seperateParametersByModel}
-        bind:check={DBState.db.seperateParametersByModel}
+        bind:check={seperateParametersByModelDraft.value}
       />
     {/if}
   </div>

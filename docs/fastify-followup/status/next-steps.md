@@ -19,8 +19,10 @@ and add any longer closeout note under `../phases-completed/`.
    Fastify-served browser work from silent client persistence.
    - 9A (landed 2026-05-26): provider routing and model scalar settings in
      `BotSettings.svelte`.
-   - 9B (next): OpenRouter, auxiliary model, and separate-parameter selectors.
-   - 9C: image provider settings in `OtherBotSettings.svelte`.
+   - 9B (landed 2026-05-26): OpenRouter, auxiliary model, and
+     separate-parameter selectors, including matching EasyPanel model /
+     parameter shortcuts.
+   - 9C (next): image provider settings in `OtherBotSettings.svelte`.
    - 9D: memory and audio provider settings in `OtherBotSettings.svelte`
      and `PlaygroundEmbedding.svelte`.
    - 9E: persona, display/theme, global regex, lore preset, and bot
@@ -96,6 +98,14 @@ pnpm smoke:fastify-browser
 ```
 
 Latest Phase 9 provider/model scalar verification, 2026-05-26:
+
+```bash
+pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm api:test -- server/fastify/__tests__/commands.test.ts
+pnpm exec svelte-check --tsconfig ./tsconfig.json
+```
+
+Latest Phase 9 OpenRouter / auxiliary selector verification, 2026-05-26:
 
 ```bash
 pnpm exec vitest run src/ts/server/commands.test.ts

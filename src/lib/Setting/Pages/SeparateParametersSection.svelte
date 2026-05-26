@@ -1,17 +1,27 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { DBState } from 'src/ts/stores.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import AllSeperateParameters from 'src/lib/Others/AllSeperateParameters.svelte'
-  import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import type { SeparateParameters } from 'src/ts/storage/database.svelte'
 
-  const stopServerSettingsWatch = watchServerBackedSettings([
+  type SeparateParameterSettings = {
+    memory: SeparateParameters
+    emotion: SeparateParameters
+    translate: SeparateParameters
+    otherAx: SeparateParameters
+    overrides: Record<string, SeparateParameters>
+  }
+
+  const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>(
     'seperateParametersEnabled',
+    false,
+  )
+  const seperateParametersDraft = createServerBackedSettingDraft<SeparateParameterSettings>(
     'seperateParameters',
-  ])
-  onDestroy(stopServerSettingsWatch)
+    { memory: {}, emotion: {}, translate: {}, otherAx: {}, overrides: {} },
+  )
 
   const paramLabels: Record<string, string> = {
     memory: 'longTermMemory',
@@ -23,13 +33,13 @@
 
 <Accordion name={language.seperateParameters} styled>
   <CheckInput
-    bind:check={DBState.db.seperateParametersEnabled}
+    bind:check={seperateParametersEnabledDraft.value}
     name={language.seperateParametersEnabled}
   />
-  {#if DBState.db.seperateParametersEnabled}
-    {#each Object.keys(DBState.db.seperateParameters) as param}
+  {#if seperateParametersEnabledDraft.value}
+    {#each Object.keys(seperateParametersDraft.value) as param}
       <Accordion name={language[paramLabels[param]] ?? param} styled>
-        <AllSeperateParameters bind:value={DBState.db.seperateParameters[param]} paramKey={param} />
+        <AllSeperateParameters bind:value={seperateParametersDraft.value[param]} paramKey={param} />
       </Accordion>
     {/each}
   {/if}

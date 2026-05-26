@@ -39,8 +39,12 @@ directly.
   in `BotSettings.svelte` now use command-backed drafts for model
   selection, provider credentials, provider model fields, and related
   reset side effects.
-- Next default pickup: Phase 9 Slice 9B, OpenRouter, auxiliary model,
-  and separate-parameter selectors.
+- Landed 2026-05-26: Phase 9 OpenRouter settings, auxiliary model
+  selectors, separate-parameter selectors, and EasyPanel shortcuts now
+  bind to command-backed drafts for provider routing arrays, auxiliary
+  models, separate parameter overrides, and EasyPanel setup toggles.
+- Next default pickup: Phase 9 Slice 9C, image provider settings in
+  `OtherBotSettings.svelte`.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.
 

@@ -212,6 +212,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   openrouterMiddleOut: 'providers',
   openrouterProvider: 'providers',
   openrouterRequestModel: 'providers',
+  useInstructPrompt: 'providers',
   outputImageModal: 'media',
   personaNote: 'advanced',
   playMessage: 'display',

@@ -2,32 +2,56 @@
   import { language } from 'src/lang'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
-
-  import { DBState } from 'src/ts/stores.svelte'
   import ChatFormatSettings from './ChatFormatSettings.svelte'
   import OpenrouterProviderList from 'src/lib/UI/OpenrouterProviderList.svelte'
   import { PlusIcon, TrashIcon } from '@lucide/svelte'
   import { getOpenRouterProviders } from 'src/ts/model/openrouter'
-  import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
-  const stopServerSettingsWatch = watchServerBackedSettings([
+  type OpenrouterProviderSettings = {
+    order: string[]
+    only: string[]
+    ignore: string[]
+  }
+
+  const openrouterFallbackDraft = createServerBackedSettingDraft<boolean>(
     'openrouterFallback',
+    false,
+  )
+  const openrouterMiddleOutDraft = createServerBackedSettingDraft<boolean>(
     'openrouterMiddleOut',
+    false,
+  )
+  const useInstructPromptDraft = createServerBackedSettingDraft<boolean>('useInstructPrompt', false)
+  const openrouterProviderDraft = createServerBackedSettingDraft<OpenrouterProviderSettings>(
     'openrouterProvider',
-  ])
-  onDestroy(stopServerSettingsWatch)
+    { order: [], only: [], ignore: [] },
+  )
+
+  function addProviderEntry(key: keyof OpenrouterProviderSettings): void {
+    openrouterProviderDraft.value = {
+      ...openrouterProviderDraft.value,
+      [key]: [...(openrouterProviderDraft.value[key] ?? []), ''],
+    }
+  }
+
+  function removeProviderEntry(key: keyof OpenrouterProviderSettings): void {
+    openrouterProviderDraft.value = {
+      ...openrouterProviderDraft.value,
+      [key]: (openrouterProviderDraft.value[key] ?? []).slice(0, -1),
+    }
+  }
 </script>
 
 <Accordion name={`OpenRouter ${language.settings}`} styled>
   <div class="flex items-center mb-4">
-    <Check bind:check={DBState.db.openrouterFallback} name={language.openRouterFallback} />
+    <Check bind:check={openrouterFallbackDraft.value} name={language.openRouterFallback} />
   </div>
   <div class="flex items-center mb-4">
-    <Check bind:check={DBState.db.openrouterMiddleOut} name={language.openRouterMiddleOut} />
+    <Check bind:check={openrouterMiddleOutDraft.value} name={language.openRouterMiddleOut} />
   </div>
   <div class="flex items-center mb-4">
-    <Check bind:check={DBState.db.useInstructPrompt} name={language.useInstructPrompt} />
+    <Check bind:check={useInstructPromptDraft.value} name={language.useInstructPrompt} />
   </div>
   {#await getOpenRouterProviders()}
     <Accordion name={language.openRouterProviderOrder} help="openRouterProviderOrder" styled>
@@ -41,13 +65,13 @@
     </Accordion>
   {:then openRouterProviders}
     <Accordion name={language.openRouterProviderOrder} help="openRouterProviderOrder" styled>
-      {#each DBState.db.openrouterProvider.order as _, i}
+      {#each openrouterProviderDraft.value.order as _, i}
         <span class="text-textcolor mt-4">
           {language.provider}
           {i + 1}
         </span>
         <OpenrouterProviderList
-          bind:value={DBState.db.openrouterProvider.order[i]}
+          bind:value={openrouterProviderDraft.value.order[i]}
           options={openRouterProviders}
         />
       {/each}
@@ -55,30 +79,26 @@
         <button
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
-            let value = DBState.db.openrouterProvider.order ?? []
-            value.push('')
-            DBState.db.openrouterProvider.order = value
+            addProviderEntry('order')
           }}><PlusIcon /></button
         >
         <button
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
-            let value = DBState.db.openrouterProvider.order ?? []
-            value.pop()
-            DBState.db.openrouterProvider.order = value
+            removeProviderEntry('order')
           }}><TrashIcon /></button
         >
       </div>
     </Accordion>
 
     <Accordion name={language.openRouterProviderOnly} help="openRouterProviderOnly" styled>
-      {#each DBState.db.openrouterProvider.only as model, i}
+      {#each openrouterProviderDraft.value.only as model, i}
         <span class="text-textcolor mt-4">
           {language.provider}
           {i + 1}
         </span>
         <OpenrouterProviderList
-          bind:value={DBState.db.openrouterProvider.only[i]}
+          bind:value={openrouterProviderDraft.value.only[i]}
           options={openRouterProviders}
         />
       {/each}
@@ -86,30 +106,26 @@
         <button
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
-            let value = DBState.db.openrouterProvider.only ?? []
-            value.push('')
-            DBState.db.openrouterProvider.only = value
+            addProviderEntry('only')
           }}><PlusIcon /></button
         >
         <button
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
-            let value = DBState.db.openrouterProvider.only ?? []
-            value.pop()
-            DBState.db.openrouterProvider.only = value
+            removeProviderEntry('only')
           }}><TrashIcon /></button
         >
       </div>
     </Accordion>
 
     <Accordion name={language.openRouterProviderIgnore} help="openRouterProviderIgnore" styled>
-      {#each DBState.db.openrouterProvider.ignore as model, i}
+      {#each openrouterProviderDraft.value.ignore as model, i}
         <span class="text-textcolor mt-4">
           {language.provider}
           {i + 1}
         </span>
         <OpenrouterProviderList
-          bind:value={DBState.db.openrouterProvider.ignore[i]}
+          bind:value={openrouterProviderDraft.value.ignore[i]}
           options={openRouterProviders}
         />
       {/each}
@@ -117,24 +133,20 @@
         <button
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
-            let value = DBState.db.openrouterProvider.ignore ?? []
-            value.push('')
-            DBState.db.openrouterProvider.ignore = value
+            addProviderEntry('ignore')
           }}><PlusIcon /></button
         >
         <button
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
-            let value = DBState.db.openrouterProvider.ignore ?? []
-            value.pop()
-            DBState.db.openrouterProvider.ignore = value
+            removeProviderEntry('ignore')
           }}><TrashIcon /></button
         >
       </div>
     </Accordion>
   {/await}
 
-  {#if DBState.db.useInstructPrompt}
+  {#if useInstructPromptDraft.value}
     <ChatFormatSettings />
   {/if}
 </Accordion>

@@ -52,6 +52,15 @@ import/export events match the command map.
   side effects. Fastify grouped settings validation now treats
   `customAPIFormat` and `ollamaRequestFormat` as numeric enum fields and
   accepts `NAIadventure` / `NAIappendName` in the provider group.
+- Landed 2026-05-26: OpenRouter settings, auxiliary model selectors,
+  separate-parameter selectors, and EasyPanel model / parameter shortcuts
+  now bind through `createServerBackedSettingDraft`. The slice covers
+  `openrouterFallback`, `openrouterMiddleOut`, `useInstructPrompt`,
+  `openrouterProvider`, `aiModel`, `subModel`, `seperateModels`,
+  `seperateModelsForAxModels`, `doNotChangeSeperateModels`,
+  `seperateParameters`, `seperateParametersEnabled`,
+  `seperateParametersByModel`, `epEnabled`, and
+  `disableSeperateParameterChangeOnPresetChange`.
 
 ## Tasks
 
@@ -90,11 +99,15 @@ client mutation.
   settings commands. Kept optimistic projection updates behind
   `withTrustedServerProjectionWrite`, removed duplicate
   `watchServerBackedSettings` keys, and extended command allowlist tests.
-- 9B - OpenRouter, auxiliary model, and separate-parameter selectors.
-  Cover `OpenrouterSettings.svelte`, `AuxModelSelectors.svelte`,
-  `SeparateParametersSection.svelte`, and the matching EasyPanel model /
-  parameter shortcuts. Route provider order/only/ignore arrays,
-  auxiliary models, and separate parameter overrides through commands.
+- 9B - Completed 2026-05-26: OpenRouter, auxiliary model, and
+  separate-parameter selectors. Converted `OpenrouterSettings.svelte`,
+  `AuxModelSelectors.svelte`, `SeparateParametersSection.svelte`, and
+  the matching EasyPanel model / parameter shortcuts from direct
+  projection bindings to command-backed drafts. Added grouped command
+  allowlist coverage for `useInstructPrompt` and extended focused client
+  / Fastify command tests for provider order/only/ignore arrays,
+  auxiliary models, separate parameter overrides, and EasyPanel setup
+  toggles.
 - 9C - Image provider settings. Cover the image-generation portions of
   `OtherBotSettings.svelte`: `sdConfig`, `NAIImgConfig`, `comfyConfig`,
   `openaiCompatImage`, `wavespeedImage`, `fal*`, Imagen, Stability, and
