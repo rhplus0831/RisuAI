@@ -50,7 +50,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-current pickup is 9-7e, the repository-backed `.risu` export adapter in
+current pickup is 9-8b, the repository `.risu` export route in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

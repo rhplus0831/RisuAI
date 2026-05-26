@@ -147,8 +147,8 @@ Planned later, with final shapes locked phase by phase:
 
 - Helper generation routes for translate, TTS, image, token counting, and
   encodings where the server owns the provider path.
-- `.risu` export, bundle export, and multipart `.risu` import in Phase 9,
-  after the server owns the final per-resource schema.
+- `.risu` export and bundle export in Phase 9, after the server owns the final
+  per-resource schema. Multipart `.risu` import landed in 9-8a.
 
 Conscious differences vs the `move-to-fastify` branch:
 

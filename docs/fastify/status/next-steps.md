@@ -12,46 +12,44 @@ shapes.
 
 ## Last Done
 
-**9-7e - Repository-backed export adapter** is the latest landed slice.
+**9-8a - Multipart `.risu` import route** is the latest landed slice.
 
-- `server/fastify/src/risuSave/exportSnapshot.ts` now owns the pure
-  repository-backed `.risu` export adapter. It reads persisted `db.json`
-  through repository helpers, validates against the current Phase 9 import
-  snapshot shape, and returns route-ready legacy or RISUSAVE block bytes.
-- RISUSAVE block export rebuilds root `__directory` metadata and emits root,
-  preset, module, loadout, plugin, plugin-storage, per-character, and config
-  blocks without HTTP route wiring or repository mutation.
-- Server asset ids are preserved as JSON references only. The adapter does
-  not walk asset references, read asset bytes, include ZIP bundles, or touch
-  browser caches, localForage, Tauri remotes, OPFS, AutoStorage, or Svelte
-  database state.
-- Export parity exposed a legacy envelope encoder bug for 64-byte asset-id
-  strings; the server encoder now writes standard MessagePack for JSON-shaped
-  save data while keeping existing `msgpackr` decode support.
-- Focused coverage in `server/fastify/__tests__/risuSaveCodec.test.ts`
-  proves repository legacy/block export round trips, directory shape,
-  compression, asset-id preservation, missing database rejection, block input
-  validation, and browser-storage / Tauri / Svelte / global compression-stream
-  detachment.
+- `@fastify/multipart` is registered in `server/fastify/src/app.ts` with the
+  configured body limit and a one-file limit.
+- `POST /api/v1/import/risusave` now keeps the existing JSON `{ database }`
+  fixture path and additionally accepts multipart uploads for real `.risu`
+  files.
+- Multipart uploads decode through `decodeRisuSaveImportSnapshot()` in
+  `server/fastify/src/risuSave/importSnapshot.ts`, apply the normalized
+  database through repository import helpers, and run the same legacy Hypa V3
+  memory replacement path as JSON imports.
+- The multipart response returns `revision`, decoded `envelope`,
+  `importReport.unsupportedReferences`, and the zeroed asset report reserved
+  for 9-8c asset walking. Unsupported remote/cache-only block references are
+  reported explicitly; no browser cache, localForage, Tauri remote, OPFS, or
+  AutoStorage recovery was added.
+- Focused route coverage in
+  `server/fastify/__tests__/risuSaveImportRoute.test.ts` proves JSON fallback,
+  auth, legacy uploads, RISUSAVE block uploads, unsupported-reference reports,
+  missing-file rejection, malformed-upload rejection, and no persistence
+  mutation on malformed input.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-8a - Multipart `.risu` import route**.
+Immediate pickup: **9-8b - Repository `.risu` export route**.
 
-- Add multipart upload handling at `/api/v1/import/risusave` for actual
-  `.risu` files. Keep the existing JSON import behavior only if it remains
-  useful for tests or backward fixture setup.
-- Decode uploads through `decodeRisuSaveImportSnapshot()` in
-  `server/fastify/src/risuSave/importSnapshot.ts`, apply the normalized
-  database through repository import helpers, and run the same memory legacy
-  replacement path used by JSON imports where appropriate.
-- Return revision plus concrete import reports. Unsupported remote/cache-only
-  block references from the codec should be reported explicitly; do not try to
-  recover them from browser caches, Tauri remotes, OPFS, AutoStorage, or
-  localForage.
-- Keep repository `.risu` export route wiring deferred to 9-8b. Asset
-  reference walking and ZIP bundle export stay in 9-8c and 9-8d.
-- Treat imported snapshots as current Phase 9 schema targets. Do not add
+- Add `/api/v1/export/risusave` using the repository-backed export adapter in
+  `server/fastify/src/risuSave/exportSnapshot.ts`.
+- Return downloadable `.risu` bytes with a concrete filename and content type.
+  Support the route-ready legacy and RISUSAVE block encoders already added in
+  9-7e; keep the request shape small and explicit.
+- Preserve server asset ids as JSON references only. Do not walk asset
+  references, read asset bytes, include ZIP bundles, or touch browser caches,
+  Tauri remotes, OPFS, AutoStorage, localForage, or Svelte database state.
+- Return validation errors from malformed/missing persisted databases as
+  `400` responses. Auth behavior should match the import route.
+- Keep asset reference walking in 9-8c and bundle export in 9-8d.
+- Treat exported snapshots as current Phase 9 schema targets. Do not add
   compatibility migrations for intermediate Fastify shapes.
 
 ## Implementation Notes
@@ -89,15 +87,14 @@ Immediate pickup: **9-8a - Multipart `.risu` import route**.
 
 ## Later Queue
 
-1. 9-8a - Multipart `.risu` import route.
-2. 9-8b - Repository `.risu` export route.
-3. 9-8c - Asset reference walker.
-4. 9-8d - Bundle export route.
-5. 9-9a - Server-backed browser smoke harness.
-6. 9-9b - Generation and memory fixture closeout.
-7. 9-9c - Server-backed storage-write audit.
-8. 9-9d - Manual Fastify web and Tauri local verification.
-9. 9-9e - Phase 9 docs closeout.
+1. 9-8b - Repository `.risu` export route.
+2. 9-8c - Asset reference walker.
+3. 9-8d - Bundle export route.
+4. 9-9a - Server-backed browser smoke harness.
+5. 9-9b - Generation and memory fixture closeout.
+6. 9-9c - Server-backed storage-write audit.
+7. 9-9d - Manual Fastify web and Tauri local verification.
+8. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -110,12 +107,12 @@ Immediate pickup: **9-8a - Multipart `.risu` import route**.
 
 ## Verification
 
-For the current 9-8a slice, start with focused server import route and
+For the current 9-8b slice, start with focused server export route and
 `.risu` codec coverage plus type checks:
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts
-pnpm api:test -- server/fastify/__tests__/bootstrap.test.ts
+pnpm api:test -- server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 pnpm check
 ```
 
@@ -129,10 +126,13 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded focused baseline after 9-7e:
+Last recorded focused baseline after 9-8a:
 
 - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts`
   - 20 Fastify `.risu` codec / import-export snapshot tests passed.
+- `pnpm api:test -- server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
+  - command selected the full Fastify API suite: 65 files and 1147 tests
+    passed.
 - `pnpm check` - clean.
 
 Last recorded broader baselines:
@@ -154,7 +154,7 @@ Last recorded broader baselines:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-7e.md`](../phases-completed/phase-9-client-thinning-9-7e.md)
+  [`../phases-completed/phase-9-client-thinning-9-8a.md`](../phases-completed/phase-9-client-thinning-9-8a.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

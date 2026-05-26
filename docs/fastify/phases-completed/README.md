@@ -102,6 +102,7 @@ track the next piece of work.
 | 9-7c - RISUSAVE block codec             | [`phase-9-client-thinning-9-7c.md`](phase-9-client-thinning-9-7c.md)                   | Production server-safe RISUSAVE block codec and unsupported-reference reporting. |
 | 9-7d - Decode normalization             | [`phase-9-client-thinning-9-7d.md`](phase-9-client-thinning-9-7d.md)                   | Server-safe `.risu` import snapshot normalization and validation.                |
 | 9-7e - Repository export adapter        | [`phase-9-client-thinning-9-7e.md`](phase-9-client-thinning-9-7e.md)                   | Server-safe repository-backed `.risu` export snapshots and encoder parity.       |
+| 9-8a - Multipart `.risu` import route   | [`phase-9-client-thinning-9-8a.md`](phase-9-client-thinning-9-8a.md)                   | Multipart `.risu` upload route, repository import application, and reports.      |
 
 ## Historical Status Logs
 

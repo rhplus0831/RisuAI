@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
+import fastifyMultipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
@@ -67,6 +68,13 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     global: false,
     max: 2000,
     timeWindow: '1 minute',
+  })
+
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: config.bodyLimit,
+      files: 1,
+    },
   })
 
   app.addContentTypeParser(

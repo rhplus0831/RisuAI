@@ -8,7 +8,8 @@ memory job/read routes have coverage under `server/fastify/__tests__/`.
 Phase 9 command routes are covered through the 9-4 resource families, the
 command-event SSE stream has focused route tests, backup restore emits
 `state.restored`, bootstrap secret masking is covered, and server `.risu`
-codec / import-normalization behavior is covered by focused server tests.
+codec / import-normalization / multipart import behavior is covered by
+focused server tests.
 Browser projection, storage gates, and residual-sweep coverage live in
 the frontend test suite when they are not route behavior.
 
@@ -26,7 +27,7 @@ the frontend test suite when they are not route behavior.
 | Route                                       | Pinned behavior                            | Status      |
 | ------------------------------------------- | ------------------------------------------ | ----------- |
 | `GET /api/v1/bootstrap`                     | Fresh data dir returns `revision: 0`, current `schemaVersion`, `database: null`, and `assetBaseUrl`. Requires auth once a password is set. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
-| `POST /api/v1/import/risusave`              | JSON `{ database }` replaces `db.json.database`, bumps revision, rejects missing database, returns zeroed `assetReport`. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
+| `POST /api/v1/import/risusave`              | JSON `{ database }` replaces `db.json.database`, bumps revision, rejects missing database, returns zeroed `assetReport`; multipart `.risu` uploads decode through the server codec, apply normalized imports, report unsupported remote/cache-only references, and reject malformed files without mutating persistence. | covered by `server/fastify/__tests__/bootstrap.test.ts` and `server/fastify/__tests__/risuSaveImportRoute.test.ts` |
 | `POST /api/v1/assets`                       | Auth-gated raw upload computes SHA-256, writes `data/assets/<sha>.<ext>`, returns metadata + revision, and is idempotent on re-upload. | covered by `server/fastify/__tests__/assets.test.ts` |
 | `GET /api/v1/assets/:id`                    | Public read serves stored bytes with Content-Type, immutable cache header, and 404 for unknown / malformed ids. | covered by `server/fastify/__tests__/assets.test.ts` |
 | `HEAD /api/v1/assets/:id`                   | Mirrors GET headers with no body.          | covered by `server/fastify/__tests__/assets.test.ts` |
@@ -43,8 +44,8 @@ and clean API behavior when `staticRoot` is absent.
 
 No Phase 2 server routes exist for `.risu` export, bundle export,
 asset delete, or asset GC. The legacy JSON import route remains here;
-server `.risu` codec core is Phase 9 work, and multipart route wiring
-waits for 9-8.
+server `.risu` codec core and multipart import route wiring are Phase 9
+work.
 
 ## Phase 3: Proxy + Hub
 
@@ -169,3 +170,4 @@ shapes.
 | server-backed asset reads       | `loadAsset()` and `readImage()` fetch Fastify asset ids through `/api/v1/assets/:id` with `risu-auth`, without falling through to local storage. | covered by `src/ts/server/assets.test.ts`, `src/ts/bootstrap.test.ts`, and `server/fastify/__tests__/assets.test.ts` |
 | residual local caches           | RISUSAVE cache/remotes, cold-storage helpers, and Google Search MCP credential storage are gated or explicitly unsupported in Fastify mode. | covered by `src/ts/storage/risuSave.test.ts`, `src/ts/process/coldstorage.test.ts`, and `src/ts/process/mcp/googlesearchclient.test.ts` |
 | server `.risu` codec / import snapshot | Legacy envelopes and RISUSAVE blocks decode through server-safe codecs; decoded saves normalize into current Phase 9 import snapshots and malformed rows reject. | covered by `server/fastify/__tests__/risuSaveCodec.test.ts` |
+| multipart `.risu` import route | `/api/v1/import/risusave` accepts one uploaded `.risu`, applies the normalized import through repository helpers, runs memory legacy replacement, and reports unsupported references without browser cache recovery. | covered by `server/fastify/__tests__/risuSaveImportRoute.test.ts` |
