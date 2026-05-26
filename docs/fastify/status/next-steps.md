@@ -12,26 +12,33 @@ shapes.
 
 ## Last Done
 
-**9-9c - Server-backed storage-write audit** is the latest landed slice.
+**9-9d - Manual verification, partial** is the latest landed slice.
 
-- Extended the Fastify browser smoke with an IndexedDB/localForage, OPFS, and
-  legacy storage-route write audit.
-- Exercised startup, bootstrap/events, one command mutation, server completion,
-  memory reads, `.risu` export, bundle export, asset upload/read, and projection
-  refresh with no server-backed local storage writes observed.
-- Re-ran the 9-9b server-backed generation and memory fixture baselines plus
-  focused `.risu` codec/import/export/bootstrap coverage.
+- Re-ran the 9-9d automated preflight: browser smoke/storage audit,
+  server-backed sendChat fixtures, focused memory/generation helpers, focused
+  server `.risu` codec/reference tests, focused Fastify
+  import/export/bootstrap coverage, and `pnpm check`.
+- Manually drove the Fastify-served web path against an isolated server data
+  directory for import, chat/message persistence, regenerate replacement,
+  message edit, character switch, settings mutation, projection refresh, and
+  reload persistence.
+- Confirmed the Fastify-served web pass performed no IndexedDB/localForage or
+  OPFS writes.
+- `pnpm tauribuild` and the focused local backup regression command passed.
+- Tauri desktop manual verification is still pending because the Tauri dev
+  webview now launches but stays blocked on the local frontend `appVer`
+  initialization error from `src/ts/parser/parser.svelte.ts:109`.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-9d - Manual Fastify web and Tauri local verification**.
+Immediate pickup: **finish 9-9d - Tauri/local manual verification**.
 
-- Record manual Fastify web checks for import, chat send, regenerate, edit,
-  character switch, settings mutation, persist, and reload.
-- Record matching Tauri/local checks to prove Phase 9 server-backed gates did
-  not break the existing local storage path.
-- Use the 9-9c browser smoke and focused storage/generation/memory baselines as
-  the automated preflight before manual verification.
+- Fix or work around the local/Tauri frontend `appVer` initialization error,
+  then run Tauri and record import, chat send, regenerate, edit, character
+  switch, settings mutation, persist, and reload checks.
+- The Fastify-served web half of 9-9d is already recorded in
+  [`../phases-completed/phase-9-client-thinning-9-9d.md`](../phases-completed/phase-9-client-thinning-9-9d.md).
+- Do not advance to 9-9e until Tauri/local manual verification is recorded.
 - Do not add compatibility migrations for intermediate Fastify shapes; there
   are no actual Fastify users yet.
 
@@ -70,7 +77,7 @@ Immediate pickup: **9-9d - Manual Fastify web and Tauri local verification**.
 
 ## Later Queue
 
-1. 9-9d - Manual Fastify web and Tauri local verification.
+1. Finish 9-9d - Tauri/local manual verification.
 2. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
@@ -84,9 +91,8 @@ Immediate pickup: **9-9d - Manual Fastify web and Tauri local verification**.
 
 ## Verification
 
-For the current 9-9d slice, start by re-running the automated preflight that
-was green after 9-9c, then perform and record the manual Fastify web and
-Tauri/local checks:
+For the current 9-9d remainder, use the already-green automated preflight as
+the baseline, then perform and record the manual Tauri/local checks:
 
 ```bash
 pnpm smoke:fastify-browser
@@ -97,14 +103,18 @@ pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts serv
 pnpm check
 ```
 
-Manual checks to record for both Fastify web and Tauri/local mode:
+Manual Tauri/local checks still to record:
 
 - App loads the expected persisted state after startup.
 - Import succeeds or shows the expected unsupported message for the mode.
 - Chat send, regenerate, message edit, and character switch behave correctly.
 - A representative settings change persists after reload.
-- Server-backed web keeps using the server projection; Tauri/local keeps using
-  the local storage path.
+- Tauri/local keeps using the local storage path.
+
+Fastify-served web manual checks are already recorded in the 9-9d partial
+closeout: import, chat/message persistence, regenerate replacement, message
+edit, character switch, settings mutation, projection refresh, reload
+persistence, and no IndexedDB/localForage or OPFS writes.
 
 Run the full matrix before closing a parent phase or a broad
 server-backed behavior surface:
@@ -116,7 +126,7 @@ pnpm api:test
 pnpm build
 ```
 
-Latest recorded focused baseline, after 9-9c:
+Latest recorded focused baseline, after 9-9d partial:
 
 - `pnpm smoke:fastify-browser`
   - passed; built the SPA and ran the Playwright browser smoke through Fastify
@@ -136,6 +146,24 @@ Latest recorded focused baseline, after 9-9c:
   - command selected the full Fastify API suite: 68 files and 1162 tests
     passed.
 - `pnpm check` - clean.
+- Fastify-served web manual command flow
+  - passed; isolated server data dir, import revision 1, chat `chat-manual-a`,
+    edited user message, regenerated assistant message, selected
+    `char-manual-b`, `useServerPromptAssembly: true` after reload, and no
+    IndexedDB/localForage or OPFS writes observed.
+- `pnpm tauribuild`
+  - passed with existing CSS `::highlight`, browser externalization,
+    plugin-timing, ineffective dynamic import, and chunk-size warnings.
+- `pnpm test -- src/ts/storage/backup.test.ts src/ts/server/backups.test.ts`
+  - passed; command selected the full client suite: 65 files, 734 tests
+    passed, 4 skipped.
+- Tauri desktop manual launch
+  - partially passed; after Cargo and Linux Tauri/WebKit/GTK libraries were
+    installed, `pnpm tauri dev` compiled the Rust target and launched
+    `target/debug/risuai` under Xvfb. Manual verification remains blocked
+    because the app logs `Cannot access 'appVer' before initialization` from
+    `src/ts/parser/parser.svelte.ts:109` and stays on the local app loading
+    path.
 
 Last recorded broader baselines:
 
@@ -156,7 +184,7 @@ Last recorded broader baselines:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-9c.md`](../phases-completed/phase-9-client-thinning-9-9c.md)
+  [`../phases-completed/phase-9-client-thinning-9-9d.md`](../phases-completed/phase-9-client-thinning-9-9d.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

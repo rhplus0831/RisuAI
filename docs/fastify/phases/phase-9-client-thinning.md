@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-9c - Server-backed storage-write audit**. Next pickup:
-**9-9d - Manual Fastify web and Tauri local verification**.
+**9-9d - Manual verification, partial**. Next pickup:
+finish **9-9d - Tauri/local manual verification**.
 
 ## Goal
 
@@ -374,6 +374,11 @@ surfaces.
   - **9-9d - Manual Fastify web and Tauri local verification.** Record manual
     import, chat, regenerate, edit, character switch, settings, persist, and
     reload checks for both modes.
+    - Status: partial. Fastify-served web checks and automated preflight are
+      complete; Tauri/local manual checks are pending because this environment
+      now launches the Tauri dev webview but stays blocked on the local
+      frontend `appVer` initialization error. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-9d.md`](../phases-completed/phase-9-client-thinning-9-9d.md).
   - **9-9e - Phase 9 docs closeout.** Update status, coverage, and completed
     phase docs after the closeout verification slices are green.
 
