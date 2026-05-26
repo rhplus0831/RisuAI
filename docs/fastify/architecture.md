@@ -128,7 +128,8 @@ Implemented route families are tracked in
 [`coverage/server-routes.md`](coverage/server-routes.md). At a high
 level, the current Fastify API covers:
 
-- Health, auth, bootstrap, JSON save import, assets, backups, optional
+- Health, auth, bootstrap, JSON and multipart `.risu` save import,
+  repository `.risu` export, bundle export, assets, backups, optional
   static SPA serving, and legacy storage compatibility.
 - Proxy fetch, stream-job WebSocket, and Risu hub passthrough.
 - Auth-gated completion generation and chat / preview-prompt generation,
@@ -147,8 +148,6 @@ Planned later, with final shapes locked phase by phase:
 
 - Helper generation routes for translate, TTS, image, token counting, and
   encodings where the server owns the provider path.
-- `.risu` export and bundle export in Phase 9, after the server owns the final
-  per-resource schema. Multipart `.risu` import landed in 9-8a.
 
 Conscious differences vs the `move-to-fastify` branch:
 

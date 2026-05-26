@@ -73,14 +73,14 @@ shards under [`coverage/`](coverage/).
   server-backed `hypav3-memory` fixture parity.
 - Phase 9 coverage has landed for command routes through the 9-4 resource
   families, 9-5 projection events / bootstrap / guard behavior, 9-6
-  storage and provider-secret gates, and 9-7a through 9-7d server `.risu`
-  fixture / codec / import normalization. Server command routes are
-  covered in `server/fastify/__tests__/commands.test.ts`; browser command
-  helpers in `src/ts/server/commands.test.ts`; projection helpers in
-  `src/ts/server/bootstrap.test.ts`, `src/ts/server/events.test.ts`, and
-  `src/ts/bootstrap.test.ts`; backup, asset, local-cache, cold-storage,
-  and MCP credential gates in their focused tests; and server `.risu`
-  codec/import behavior in `server/fastify/__tests__/risuSaveCodec.test.ts`.
+  storage and provider-secret gates, and 9-7/9-8 server `.risu` codec,
+  import, export, asset-report, and bundle behavior. Server command routes
+  are covered in `server/fastify/__tests__/commands.test.ts`; browser
+  command helpers in `src/ts/server/commands.test.ts`; projection helpers
+  in `src/ts/server/bootstrap.test.ts`, `src/ts/server/events.test.ts`,
+  and `src/ts/bootstrap.test.ts`; backup, asset, local-cache,
+  cold-storage, and MCP credential gates in their focused tests; and
+  `.risu` behavior in the `risuSave*` Fastify tests.
 
 ## Where to look
 

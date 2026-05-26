@@ -34,7 +34,8 @@ Stable baseline facts:
 
 - `server/fastify/` is the live server path. Express and the old
   `runserver` script are gone.
-- Fastify owns auth, bootstrap, JSON import, assets, backups, proxy /
+- Fastify owns auth, bootstrap, JSON and multipart `.risu` import,
+  repository `.risu` export, bundle export, assets, backups, proxy /
   stream-job / hub routes, legacy storage compatibility, completion
   generation, chat generation, preview-prompt, and Hypa V3 memory queue
   surfaces.
@@ -43,12 +44,13 @@ Stable baseline facts:
   chunk-planning for fresh server-backed chats.
 - Phase 9 has landed command coverage through the 9-4 resource families,
   the 9-5 projection stream/guard work, the 9-6 server-backed storage and
-  provider-secret gates, and the 9-7a through 9-7d server `.risu`
-  fixture, codec, and import-normalization work. Covered command families
-  include settings, presets, prompt items, personas, translator presets,
-  loadouts, characters, chats, messages, generation persistence,
-  scriptstate, lorebooks, scripts/triggers, modules, asset references,
-  plugins, plugin storage, and compatibility adapters.
+  provider-secret gates, and the 9-7/9-8 server `.risu` codec,
+  multipart import, repository export, asset-reference, and bundle export
+  work. Covered command families include settings, presets, prompt items,
+  personas, translator presets, loadouts, characters, chats, messages,
+  generation persistence, scriptstate, lorebooks, scripts/triggers,
+  modules, asset references, plugins, plugin storage, and compatibility
+  adapters.
 - Domain state still uses the migration-window `data/db.json` blob for
   resources not yet extracted to SQL. Memory uses dedicated SQL tables
   added in Phase 8.
@@ -79,8 +81,8 @@ rules. The headline order:
    switchover. Done server-side on 2026-05-20. No domain SQL schema
    yet; per-resource tables land later as server APIs need durable
    shapes. The server stayed JSON-native through Phase 2; binary
-   `.risu` codec work is now Phase 9, with bundle export still deferred
-   to the 9-8 asset-walking route slices.
+   `.risu` codec, import/export, asset walking, and bundle export work
+   landed in Phase 9.
 3. **Proxy migration** - move provider proxy and Risu hub
    passthrough behind Fastify; keep the stream-job WebSocket
    contract. Done 2026-05-21, including Fastify legacy storage /

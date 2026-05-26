@@ -36,8 +36,8 @@ is not actively maintained.
   Drive" UI entries. The former `drive/backuplocal.ts` local-backup
   helper moved to `storage/backup.ts` with Account Sync branches
   stripped. The replacement for cloud backup snapshots is the
-  Fastify server's own `/api/v1/backups` (Phase 2); bundle export
-  is deferred to Phase 9.
+  Fastify server's own `/api/v1/backups` (Phase 2); portable bundle
+  download is `GET /api/v1/export/bundle` (Phase 9).
 - **Supa memory, Hypa V2, Hanurai.** Legacy memory engines are no
   longer selectable live modes. The dedicated Supa / Hypa V2 / Hanurai
   entry points and selection branches are gone; Hypa V3 is the only

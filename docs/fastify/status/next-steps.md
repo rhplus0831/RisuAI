@@ -112,42 +112,12 @@ pnpm api:test
 pnpm build
 ```
 
-Last recorded focused baseline after 9-8d:
+Latest recorded focused baseline, after 9-8d:
 
 - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`
   - 2 files and 23 Fastify `.risu` codec / asset-reference tests passed.
 - `pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
   - command selected the full Fastify API suite: 68 files and 1162 tests
-    passed.
-- `pnpm check` - clean.
-
-Last recorded focused baseline after 9-8c:
-
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`
-  - 2 files and 23 Fastify `.risu` codec / asset-reference tests passed.
-- `pnpm api:test -- server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
-  - command selected the full Fastify API suite: 67 files and 1157 tests
-    passed.
-- `pnpm check` - clean.
-
-Last recorded focused baseline after 9-8b:
-
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts`
-  - 20 Fastify `.risu` codec / import-export snapshot tests passed.
-- `pnpm api:test -- server/fastify/__tests__/risuSaveExportRoute.test.ts`
-  - command selected the full Fastify API suite: 66 files and 1153 tests
-    passed.
-- `pnpm api:test -- server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
-  - command selected the full Fastify API suite: 66 files and 1153 tests
-    passed.
-- `pnpm check` - clean.
-
-Last recorded focused baseline after 9-8a:
-
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts`
-  - 20 Fastify `.risu` codec / import-export snapshot tests passed.
-- `pnpm api:test -- server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
-  - command selected the full Fastify API suite: 65 files and 1147 tests
     passed.
 - `pnpm check` - clean.
 

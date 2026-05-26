@@ -8,8 +8,8 @@ memory job/read routes have coverage under `server/fastify/__tests__/`.
 Phase 9 command routes are covered through the 9-4 resource families, the
 command-event SSE stream has focused route tests, backup restore emits
 `state.restored`, bootstrap secret masking is covered, and server `.risu`
-codec / import-normalization / multipart import behavior is covered by
-focused server tests.
+codec / import / export / bundle behavior is covered by focused Fastify
+tests.
 Browser projection, storage gates, and residual-sweep coverage live in
 the frontend test suite when they are not route behavior.
 
