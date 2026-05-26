@@ -18,7 +18,7 @@ Concise snapshot of each migration workstream. Historical detail is in
 | 6 - Server-side generation              | Complete    | Closed 2026-05-22 for `/completion`.                           |
 | 7 - Server-side prompt assembly         | Complete    | Closed 2026-05-24 after closeout verification.                 |
 | 8 - Hypa V3 memory server-side          | Complete    | Closed 2026-05-25 after full closeout verification.            |
-| 9 - Client thinning                     | In progress | 9-5d is split into residual sub-slices; next pickup is 9-5d-i. |
+| 9 - Client thinning                     | In progress | 9-7d landed; next pickup is 9-7e repository-backed export.     |
 
 ## Workstreams
 

@@ -25,9 +25,9 @@ Completed phase detail and old landed-slice logs live in
   persistence yet.
 - Next default pickup: 9-7e, repository-backed export adapter.
 - Last recorded focused baselines after 9-7d: focused Fastify
-  `risuSaveCodec.test.ts` passed with 16 tests and `pnpm check` clean. Last
-  full client test command, full `pnpm api:test`, and `pnpm build` baselines
-  remain the 9-6c records.
+  `risuSaveCodec.test.ts` passed with 16 tests and `pnpm check` clean.
+  Broader baselines remain: 9-6c for full client/API test commands and
+  `pnpm check`, and 9-5d for the last full `pnpm build`.
 
 ## Start Here
 

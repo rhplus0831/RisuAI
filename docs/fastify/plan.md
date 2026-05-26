@@ -42,13 +42,13 @@ Stable baseline facts:
   summarize/embed handlers, prompt-memory selection, and live
   chunk-planning for fresh server-backed chats.
 - Phase 9 has landed command coverage through the 9-4 resource families,
-  plus the 9-5a event stream, 9-5b bootstrap projection loader, 9-5c
-  event-driven re-bootstrap, and early 9-5d residual write replacements.
-  Covered command families include settings, presets, prompt items,
-  personas, translator presets, loadouts, characters, chats, messages,
-  generation persistence, scriptstate, lorebooks, scripts/triggers,
-  modules, asset references, plugins, plugin storage, and compatibility
-  adapters.
+  the 9-5 projection stream/guard work, the 9-6 server-backed storage and
+  provider-secret gates, and the 9-7a through 9-7d server `.risu`
+  fixture, codec, and import-normalization work. Covered command families
+  include settings, presets, prompt items, personas, translator presets,
+  loadouts, characters, chats, messages, generation persistence,
+  scriptstate, lorebooks, scripts/triggers, modules, asset references,
+  plugins, plugin storage, and compatibility adapters.
 - Domain state still uses the migration-window `data/db.json` blob for
   resources not yet extracted to SQL. Memory uses dedicated SQL tables
   added in Phase 8.
@@ -78,9 +78,9 @@ rules. The headline order:
    save import, backups, Fastify static serving, and container
    switchover. Done server-side on 2026-05-20. No domain SQL schema
    yet; per-resource tables land later as server APIs need durable
-   shapes. The binary `.risu`
-   codec and bundle export stay out of the server until Phase 9 -
-   the server is JSON-native through Phase 2.
+   shapes. The server stayed JSON-native through Phase 2; binary
+   `.risu` codec work is now Phase 9, with bundle export still deferred
+   to the 9-8 asset-walking route slices.
 3. **Proxy migration** - move provider proxy and Risu hub
    passthrough behind Fastify; keep the stream-job WebSocket
    contract. Done 2026-05-21, including Fastify legacy storage /

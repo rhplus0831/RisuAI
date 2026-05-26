@@ -72,15 +72,15 @@ shards under [`coverage/`](coverage/).
   read routes, browser memory adapter/progress/list-cancel behavior, and
   server-backed `hypav3-memory` fixture parity.
 - Phase 9 coverage has landed for command routes through the 9-4 resource
-  families, the 9-5a event stream, 9-5b/9-5c browser projection helpers,
-  and focused 9-5d residual-sweep regressions. Server command routes are
-  covered in `server/fastify/__tests__/commands.test.ts`, browser command
-  helpers in `src/ts/server/commands.test.ts`, adapter routing in
-  `src/ts/compatibilityAdapters.test.ts`, the SSE route in
-  `server/fastify/__tests__/events.test.ts`, bootstrap/event projection
-  helpers in `src/ts/server/bootstrap.test.ts`, `src/ts/server/events.test.ts`,
-  and `src/ts/bootstrap.test.ts`, and module-import residuals in
-  `src/ts/process/modules.test.ts`.
+  families, 9-5 projection events / bootstrap / guard behavior, 9-6
+  storage and provider-secret gates, and 9-7a through 9-7d server `.risu`
+  fixture / codec / import normalization. Server command routes are
+  covered in `server/fastify/__tests__/commands.test.ts`; browser command
+  helpers in `src/ts/server/commands.test.ts`; projection helpers in
+  `src/ts/server/bootstrap.test.ts`, `src/ts/server/events.test.ts`, and
+  `src/ts/bootstrap.test.ts`; backup, asset, local-cache, cold-storage,
+  and MCP credential gates in their focused tests; and server `.risu`
+  codec/import behavior in `server/fastify/__tests__/risuSaveCodec.test.ts`.
 
 ## Where to look
 

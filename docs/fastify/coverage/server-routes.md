@@ -5,10 +5,12 @@ Date: 2026-05-26
 Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
 completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
 memory job/read routes have coverage under `server/fastify/__tests__/`.
-Phase 9 command routes are covered through the 9-4 resource families, and
-the command-event SSE stream is covered by focused route tests. Browser
-projection and 9-5d residual-sweep coverage live in the frontend test
-suite rather than this route inventory.
+Phase 9 command routes are covered through the 9-4 resource families, the
+command-event SSE stream has focused route tests, backup restore emits
+`state.restored`, bootstrap secret masking is covered, and server `.risu`
+codec / import-normalization behavior is covered by focused server tests.
+Browser projection, storage gates, and residual-sweep coverage live in
+the frontend test suite when they are not route behavior.
 
 ## Phase 1: Foundation
 
@@ -31,7 +33,7 @@ suite rather than this route inventory.
 | `POST /api/v1/assets/exists`                | Public preflight returns missing SHA-256 ids and validates `ids: string[]`. | covered by `server/fastify/__tests__/assets.test.ts` |
 | `GET /api/v1/backups`                       | Auth-gated list returns backups newest-first or an empty array. | covered by `server/fastify/__tests__/backups.test.ts` |
 | `POST /api/v1/backups`                      | Auth-gated create snapshots `db.json`, writes manifest + snapshot, accepts optional string label, does not bump revision. | covered by `server/fastify/__tests__/backups.test.ts` |
-| `POST /api/v1/backups/:id/restore`          | Auth-gated restore copies snapshot to live `db.json`, bumps revision, rejects unknown / malformed ids. | covered by `server/fastify/__tests__/backups.test.ts` |
+| `POST /api/v1/backups/:id/restore`          | Auth-gated restore copies snapshot to live `db.json`, bumps revision, emits `state.restored`, and rejects unknown / malformed ids. | covered by `server/fastify/__tests__/backups.test.ts` |
 | `DELETE /api/v1/backups/:id`                | Auth-gated delete removes backup directory and rejects unknown / malformed ids. | covered by `server/fastify/__tests__/backups.test.ts` |
 
 Static serving is covered by `server/fastify/__tests__/static.test.ts`:
@@ -40,8 +42,9 @@ unknown non-API GETs, no fallback for `/api/*` or non-GET routes,
 and clean API behavior when `staticRoot` is absent.
 
 No Phase 2 server routes exist for `.risu` export, bundle export,
-asset delete, or asset GC. `.risu` encode/decode and bundle assembly
-stay client-side until Phase 9.
+asset delete, or asset GC. The legacy JSON import route remains here;
+server `.risu` codec core is Phase 9 work, and multipart route wiring
+waits for 9-8.
 
 ## Phase 3: Proxy + Hub
 
@@ -156,3 +159,13 @@ Plus: landed command families cover revision conflict
 (`409 + currentRevision`), rollback/no-revision-bump failure behavior,
 bootstrap visibility, mapped command events, and browser helper request
 shapes.
+
+## Phase 9: Storage Gates And `.risu` Codec
+
+| Surface                         | Pinned behavior                                   | Status      |
+| ------------------------------- | ------------------------------------------------- | ----------- |
+| bootstrap provider secrets      | `/api/v1/bootstrap` masks provider/media/memory secrets while settings commands preserve masked placeholders as "leave unchanged". | covered by `server/fastify/__tests__/bootstrap.test.ts` and `server/fastify/__tests__/commands.test.ts` |
+| server-backed backups           | Browser helpers use `/api/v1/backups`; local file restore and partial local backup return explicit unsupported behavior in Fastify mode. | covered by `src/ts/server/backups.test.ts` and `src/ts/storage/backup.test.ts` |
+| server-backed asset reads       | `loadAsset()` and `readImage()` fetch Fastify asset ids through `/api/v1/assets/:id` with `risu-auth`, without falling through to local storage. | covered by `src/ts/server/assets.test.ts`, `src/ts/bootstrap.test.ts`, and `server/fastify/__tests__/assets.test.ts` |
+| residual local caches           | RISUSAVE cache/remotes, cold-storage helpers, and Google Search MCP credential storage are gated or explicitly unsupported in Fastify mode. | covered by `src/ts/storage/risuSave.test.ts`, `src/ts/process/coldstorage.test.ts`, and `src/ts/process/mcp/googlesearchclient.test.ts` |
+| server `.risu` codec / import snapshot | Legacy envelopes and RISUSAVE blocks decode through server-safe codecs; decoded saves normalize into current Phase 9 import snapshots and malformed rows reject. | covered by `server/fastify/__tests__/risuSaveCodec.test.ts` |

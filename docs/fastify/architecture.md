@@ -216,11 +216,11 @@ At the target state, the server owns:
 - Persisted state. The browser never writes to localForage in
   server-backed mode.
 - Provider API keys for server-owned flows. During the current migration
-  window, the Phase 6 client adapter still reads the existing DB key fields
-  before projection masking and sends only the selected provider's key in the
-  `/generate/completion` options body; `/api/v1/bootstrap` now masks the
-  projected provider secrets and settings commands preserve masked
-  placeholders as "leave unchanged".
+  window, `/api/v1/generate/chat` resolves provider secrets from the
+  server-side database, while the older `/api/v1/generate/completion`
+  adapter still accepts the selected provider options supplied by its
+  caller. `/api/v1/bootstrap` masks projected provider secrets and
+  settings commands preserve masked placeholders as "leave unchanged".
 - Outbound HTTP for generation providers covered by the
   server-backed adapter. Uncovered providers continue through the
   local browser dispatch path until a routed server slice lands.

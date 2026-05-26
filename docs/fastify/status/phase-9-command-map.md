@@ -107,24 +107,24 @@ their resource family.
 | `src/ts/bootstrap.ts`                                                                               | Decode local save, mutate format-cleanup fields, set normalized DB                                             | Server-backed web startup must load `/api/v1/bootstrap` instead                              | Tauri/local storage boot and format cleanup remain client-local                       | High: startup can reintroduce local persistence             | 9-5, 9-6            |
 | `src/ts/globalApi.svelte.ts`                                                                        | Character order cleanup, chat page selection, backup restore, asset/local storage writes                       | Character order and selected chat/page become commands; asset references use owning commands | Tauri file writes, local backups, and local asset cache remain local                  | High: helper APIs are widely imported                       | 9-3, 9-4d, 9-6, 9-8 |
 | `src/lib/Setting/Wrappers/*` and setting data files                                                 | Dynamic Svelte binds to arbitrary top-level DB keys                                                            | Replace with grouped settings commands or local draft state per page                         | None for server-backed web                                                            | Medium: dynamic bind keys hide write families               | 9-2a                |
-| `src/lib/Setting/Pages/BotSettings.svelte`, `OobaSettings.svelte`, model helpers                    | Provider keys, model selection, runtime params, fallback models, custom API formats                            | Grouped settings commands; provider secrets later masked in bootstrap                        | Local/Tauri provider key storage remains unchanged                                    | High: provider secrets plus many direct binds               | 9-2a, 9-6           |
+| `src/lib/Setting/Pages/BotSettings.svelte`, `OobaSettings.svelte`, model helpers                    | Provider keys, model selection, runtime params, fallback models, custom API formats                            | Grouped settings commands; provider secrets are masked in bootstrap                          | Local/Tauri provider key storage remains unchanged                                    | High: provider secrets plus many direct binds               | 9-2a, 9-6           |
 | `src/lib/Setting/Pages/PromptSettings.svelte`, `src/lib/UI/PromptDataItem.svelte`                   | Prompt template fields, prompt items, schema fields, fallback model arrays                                     | Prompt settings and prompt-item CRUD/reorder commands                                        | None for server-backed web                                                            | Medium: prompt assembly already server-owned                | 9-2c                |
 | `src/lib/Setting/botpreset.svelte`, `saveCurrentPreset`, `copyPreset`, `changeToPreset`             | Preset create/copy/update/delete/reorder/select and apply-to-db side effects                                   | Preset commands plus explicit apply/select behavior                                          | Local mode keeps helper behavior until replaced                                       | High: preset apply touches many settings groups             | 9-2b                |
-| `src/ts/persona.ts`, `PersonaSettings.svelte`, persona sidebars                                     | Persona list, selected persona, mirrored user profile fields, persona image refs                               | Persona commands with explicit legacy-profile mirror fields                                  | Local image save remains local until asset gating                                     | Medium: selected persona has mirrored fields                | 9-2d, 9-4d          |
+| `src/ts/persona.ts`, `PersonaSettings.svelte`, persona sidebars                                     | Persona list, selected persona, mirrored user profile fields, persona image refs                               | Persona commands with explicit legacy-profile mirror fields                                  | Tauri/local image save remains local; server-backed asset bytes use the Fastify asset API | Medium: selected persona has mirrored fields             | 9-2d, 9-4d          |
 | `TranslatorPresetSettings.svelte`, translator helpers                                               | Translator presets, selected translator preset, translator runtime fields                                      | Translator preset commands and settings group patches                                        | Runtime translation calls stay outside command scope                                  | Medium                                                      | 9-2e                |
 | `src/ts/loadout.ts`, `LoadoutModal.svelte`                                                          | Loadout save/delete/favorite/last-used/apply, enabled modules/global vars side effects                         | Loadout commands; apply stays composite/deferred until touched resources have commands       | None for server-backed web                                                            | Medium: apply crosses modules and globals                   | 9-2f                |
-| `src/ts/characters.ts`, `characterCards.ts`, `PlaygroundMenu.svelte`, catalog UI                    | Character create/import/update/delete/order, images, chat import, cold-storage hydration                       | Character catalog/profile commands; imports route through server codec later                 | Tauri/local card import remains local until server import lands                       | High: large object replacement and imports                  | 9-3a, 9-8           |
+| `src/ts/characters.ts`, `characterCards.ts`, `PlaygroundMenu.svelte`, catalog UI                    | Character create/import/update/delete/order, images, chat import, cold-storage hydration                       | Character catalog/profile commands; `.risu` route imports wait for 9-8 server codec wiring   | Tauri/local card import remains local until server import lands                       | High: large object replacement and imports                  | 9-3a, 9-8           |
 | `src/lib/SideBars/Sidebar.svelte`, `GridCatalog.svelte`                                             | Character order/folders/trash state/selection helpers                                                          | Character reorder, folder, trash/restore commands                                            | UI-only selection state stays client-local if not durable                             | Medium                                                      | 9-3a, 9-3b          |
 | `src/lib/ChatScreens/*`, `ChatList.svelte`, `SideChatList.svelte`                                   | Chat create/fork/delete/rename/folder/bookmark/current page, message edit/delete/truncate/bookmark             | Chat, chat-folder, and message commands                                                      | In-flight editor drafts remain client-local                                           | High: high-churn chat workflow                              | 9-3b, 9-3c          |
 | `src/ts/process/postGeneration/*`, `src/ts/process/index.svelte.ts`, server message patch consumers | Streaming flags, assistant row append/update, reroll metadata, prompt info, generation info                    | Generation persistence command and message commands                                          | Transient streaming display state stays client-local                                  | High: rollback after partial generation is user-visible     | 9-3d                |
 | `src/ts/process/triggers.ts`, `scriptings.ts`, `command.ts`, CBS helpers                            | Script-trigger mutations to character/chat/persona variables and chat state                                    | Scriptstate command plus compatibility setters/adapters                                      | Pure runtime command execution remains browser-side                                   | High: hidden writes through scripting APIs                  | 9-3e, 9-3f, 9-4b    |
 | `src/ts/process/lorebook.svelte.ts`, `LoreBookList.svelte`, `lorepreset.svelte`                     | Global, character, chat, and module lore entries/settings                                                      | Lorebook and child replacement commands                                                      | Local import/export waits for server codec                                            | Medium: nested child arrays                                 | 9-4a                |
 | `src/ts/process/modules.ts`, `ModuleSettings.svelte`, `ModuleChatMenu.svelte`                       | Module import/create/update/delete, enabled modules, character module links                                    | Module record, enablement, and link commands                                                 | None for server-backed web                                                            | Medium                                                      | 9-4c                |
-| `src/lib/SideBars/CharConfig.svelte`, script/trigger components                                     | Character profile fields, assets, scripts, triggers, TTS config, alternate greetings                           | Character scalar patch plus child replacement commands                                       | Asset bytes remain upload/local until 9-4d/9-6                                        | High: many direct binds into selected character             | 9-3a, 9-4b, 9-4d    |
+| `src/lib/SideBars/CharConfig.svelte`, script/trigger components                                     | Character profile fields, assets, scripts, triggers, TTS config, alternate greetings                           | Character scalar patch plus child replacement commands                                       | Tauri/local asset bytes remain local; server-backed refs/reads use owning commands and asset routes | High: many direct binds into selected character | 9-3a, 9-4b, 9-4d    |
 | `src/ts/plugins/plugins.svelte.ts`, `apiV3/v3.svelte.ts`, `PluginSettings.svelte`                   | Plugin install/config/enable/provider/args, pluginCustomStorage, plugin DB setters                             | Plugin record/config commands and plugin-storage bridge                                      | Plugin code execution remains browser sandboxed                                       | High: plugin setters bypass property greps                  | 9-4e, 9-4f          |
-| `src/ts/storage/risuSave.ts`, `backup.ts`, `kei/backup.ts`                                          | `.risu` decode/encode, restore, local/remote backup save, asset cache walking                                  | Server `.risu` codec, import/export routes, backup restore event                             | Tauri and local backups remain local                                                  | High: whole-state replacement and assets                    | 9-6, 9-7, 9-8       |
+| `src/ts/storage/risuSave.ts`, `backup.ts`, `kei/backup.ts`                                          | `.risu` decode/encode, restore, local/remote backup save, asset cache walking                                  | Server `.risu` codec core and backup restore event landed; import/export routes remain in 9-8 | Tauri and local backups remain local                                                 | High: whole-state replacement and assets                    | 9-6, 9-7, 9-8       |
 | `src/ts/storage/autoStorage.ts`, `nodeStorage.ts`, `opfsStorage.ts`, localForage users              | Local persistence and asset cache writes                                                                       | Server-backed web must not reach these paths after gating                                    | Tauri/local mode keeps them                                                           | High: persistence bypass                                    | 9-6                 |
-| `src/ts/process/promptAssembly/buildMemoryWindow.ts`, Hypa V3 local helpers                         | Legacy `hypaV3Data` cache writes and local memory side effects                                                 | Server-backed memory is Phase 8 repository-backed; remaining local writes must be gated      | Local memory mode remains local                                                       | Medium                                                      | 9-5, 9-6            |
+| `src/ts/process/promptAssembly/buildMemoryWindow.ts`, Hypa V3 local helpers                         | Legacy `hypaV3Data` cache writes and local memory side effects                                                 | Server-backed memory is Phase 8 repository-backed; legacy local writeback is gated           | Local memory mode remains local                                                       | Medium                                                      | 9-5, 9-6            |
 | `src/lib/Others/WelcomeRisu.svelte`, setup and pro-tools panels                                     | First-run profile/provider/default preset settings                                                             | Settings/persona/preset commands in server-backed mode                                       | Local first-run setup stays local until projection loads                              | Medium                                                      | 9-2a, 9-2b, 9-2d    |
 | `src/lib/Others/PromptDiffModal.svelte`, NanoGPT dashboard, misc utility panels                     | Preference fields, subscription state, custom sidebar items, advanced arrays                                   | Settings or resource-specific commands by field owner                                        | Runtime-only cache fields may remain client-local if not persisted                    | Low to medium                                               | 9-2a, 9-4d, 9-6     |
 
@@ -181,10 +181,10 @@ move.
 | Events               | `GET /api/v1/events`                                                          | Persistent SSE of command events. Client subscription and debounced bootstrap re-fetch landed in 9-5c.                                                | All command events                                                              | 9-5a, 9-5c       |
 | Bootstrap projection | `GET /api/v1/bootstrap`, `src/ts/server/bootstrap.ts`                         | Web startup uses server bootstrap in server-backed mode. `DBState.db` guard turns on after replacement sweep through trusted projection writes.       | N/A                                                                             | 9-5b, 9-5e-i-iii |
 | Storage gating       | Browser helpers, not a command route                                          | Prevent server-backed web startup/save/backup/asset/cache paths from reaching localForage, OPFS, AutoStorage, or NodeStorage.                         | N/A                                                                             | 9-6a-d           |
-| Provider masking     | `GET /api/v1/bootstrap`, settings command placeholders                        | Mask provider secrets only after server-backed provider paths no longer need client-visible keys. Placeholder values still mean "leave unchanged".    | N/A                                                                             | 9-6e             |
-| Server `.risu` codec | Server codec modules                                                          | Legacy and RISUSAVE decode/encode move to server-safe code; decoded saves normalize into current import snapshots; route wiring stays in 9-8.         | N/A                                                                             | 9-7a-e           |
+| Provider masking     | `GET /api/v1/bootstrap`, settings command placeholders                        | Bootstrap masks provider/media/memory secrets; grouped settings commands resolve the shared masked placeholder as "leave unchanged".                  | N/A                                                                             | 9-6e             |
+| Server `.risu` codec | Server codec modules                                                          | Legacy and RISUSAVE decode core moved to server-safe code; decoded saves normalize into current import snapshots; repository export is 9-7e and route wiring stays in 9-8. | N/A                                                   | 9-7a-e           |
 | Import/export routes | `/api/v1/import/risusave`, `/api/v1/export/risusave`, `/api/v1/export/bundle` | Multipart import, repository `.risu` export, asset reference walking, and bundle export. Existing JSON import is replaced when the codec route lands. | `state.imported`, `state.exported` for event stream visibility where applicable | 9-8a-d           |
-| Backup restore       | Existing `/api/v1/backups/:id/restore`                                        | Keep backup routes administrative. Restore-event emission lands with server backup/restore projection.                                                | `state.restored` (planned)                                                      | 9-6c             |
+| Backup restore       | Existing `/api/v1/backups/:id/restore`                                        | Keep backup routes administrative. Restore emits `state.restored` after the repository revision bump so browser projection re-fetches bootstrap.       | `state.restored`                                                                | 9-6c             |
 
 ## Plugin Database Bridge
 
@@ -231,46 +231,23 @@ command; they must never replace the whole DB blob.
 - Server-backed send fixtures stay pinned for generation/message
   replacement slices, especially `message_patch`, rollback restoration,
   and Hypa V3 memory side effects.
-- 9-5 must add a negative guard test proving direct `DBState.db`
-  mutation fails in server-backed web mode after assigned replacement
-  slices are complete.
+- 9-5e coverage proves direct `DBState.db` mutation fails in
+  server-backed web mode after assigned replacement slices are complete.
 
 ## Current Implementation Pickup
 
-9-5a, 9-5b, 9-5c, and 9-5d are complete. 9-5d was split into smaller
-residual command-replacement sub-slices:
+Command families, projection events, residual write sweeps, projection
+guard integration, server-backed storage gates, asset-byte reads,
+backup/restore projection, residual local-cache gates, and provider
+secret masking are complete through 9-6e.
 
-- **9-5d-i - Settings residual command sweep.** Route remaining
-  server-backed web writes to existing settings groups through the
-  settings command bridge.
-- **9-5d-ii - 9-2 resource UI tails.** Prompt templates, personas,
-  translator presets, and loadouts.
-- **9-5d-iii - 9-3 character/chat UI tails.** Complete. Character
-  profile/assets, chat folders, selected chat/page state, playground/
-  realm/grid helpers, and legacy import helpers now stay on existing 9-3
-  commands or explicit unsupported behavior.
-- **9-5d-iv - 9-4 extension UI/API tails.** Complete. Lorebook,
-  module UI/MCP helper, plugin settings, plugin database translation, and
-  plugin-storage residuals stay on existing 9-4/settings bridges or
-  explicit unsupported behavior.
-- **9-5d-v - Process/runtime durable-write classification.** Complete.
-  Generation/scriptstate classification, sendChat entry-context command
-  routing, legacy memory writeback gating, and MCP refresh settings bridge.
+Server `.risu` core work is complete through **9-7d - Decode
+normalization and validation**: the fixture harness, legacy envelope
+codec, RISUSAVE block codec, and import snapshot normalizer now live
+under `server/fastify/src/risuSave/`.
 
-Later Phase 9 slices are pre-split by rollback surface:
-
-- **9-5e-i through 9-5e-iii.** Complete. The read-only `DBState.db` guard
-  foundation is in place, command bridge optimistic/rollback writes use
-  trusted scopes, and the guarded server-backed sendChat fixture path is
-  green.
-- **9-6a through 9-6e.** Gate server-backed persistence, asset bytes,
-  backup/restore projection, residual local caches, and finally provider
-  secret masking.
-- **9-7a through 9-7e.** Build the `.risu` fixture harness, port legacy
-  envelopes, port RISUSAVE blocks, normalize/validate decoded saves, and add
-  repository-backed export snapshots.
-- **9-8a through 9-8d.** Add multipart import, repository `.risu` export, the
-  asset reference walker, and bundle export.
-- **9-9a through 9-9e.** Close with browser smoke coverage, generation/memory
-  fixture reconciliation, storage-write audit, manual mode verification, and
-  documentation closeout.
+Current pickup: **9-7e - Repository-backed export adapter**. Build export
+snapshots from server persistence, preserving server asset ids as
+references only. Multipart import/export routes, repository imports,
+asset walking, bundle export, and browser smoke closeout remain in 9-8
+and 9-9.

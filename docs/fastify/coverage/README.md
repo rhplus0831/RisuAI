@@ -13,10 +13,11 @@ leaf tests, token/preflight/budget/trigger tests, template renderer
 tests, assembler tests, and browser `/chat` adapter + preview wiring
 tests. Phase 8 now has memory job/read route coverage, focused memory
 service tests, browser memory adapter tests, and server-backed
-`hypav3-memory` fixture parity. Phase 9 command routes are covered
-through the 9-4 resource families; 9-5 coverage now includes the command
-event SSE route, browser bootstrap/event projection helpers, and focused
-9-5d residual-sweep regressions.
+`hypav3-memory` fixture parity. Phase 9 coverage now spans command
+routes through the 9-4 resource families, 9-5 projection events /
+bootstrap / guard behavior, 9-6 storage and provider-secret gates, and
+9-7a through 9-7d server `.risu` fixture / codec / import-normalization
+tests.
 
 ## Shards
 

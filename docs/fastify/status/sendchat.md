@@ -1,6 +1,6 @@
 # sendChat Status
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 This file tracks the current `sendChat` boundary. Historical extraction
 and fixture inventories are archived or covered by the coverage docs.
