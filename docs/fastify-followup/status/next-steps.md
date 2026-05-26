@@ -19,9 +19,9 @@ and add any longer closeout note under `../phases-completed/`.
    closeout.
    - 6A: landed streaming error frame contract plus OpenAI-compatible
      failure handling.
-   - 6B: Anthropic, Mistral, and Gemini stream failure alignment. Pick
+   - 6B: landed Anthropic, Mistral, and Gemini stream failure alignment.
+   - 6C: Ollama stream failure alignment and final provider audit. Pick
      this next.
-   - 6C: Ollama stream failure alignment and final provider audit.
 
 2. Phase 0 and Phase 3 are small independent cleanup slices.
    - 0A: Google Drive public artifact removal.
@@ -88,6 +88,7 @@ pnpm test -- src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/proces
 Focused Phase 6:
 
 ```bash
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/ollama.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts
 ```
 

@@ -318,6 +318,61 @@ describe('runGeminiStream', () => {
     expect(frames).toEqual([])
   })
 
+  it('surfaces upstream non-OK responses as error frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return new Response(
+        JSON.stringify({ error: { message: 'permission denied', status: 'PERMISSION_DENIED' } }),
+        {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        },
+      )
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'error', error: 'permission denied', status: 403, code: 'PERMISSION_DENIED' },
+    ])
+  })
+
+  it('surfaces a missing upstream stream body as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
+    ])
+  })
+
+  it('surfaces invalid upstream stream JSON as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream(['data: {nope}\n\n']))
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
+    expect(frames).toHaveLength(1)
+    expect(frames[0]).toMatchObject({
+      kind: 'error',
+      error: expect.stringContaining('invalid upstream stream JSON'),
+    })
+  })
+
   it('reassembles a frame split across two reader reads', async () => {
     const big = JSON.stringify({ candidates: [{ content: { parts: [{ text: 'split' }] } }] })
     const mid = Math.floor(big.length / 2)

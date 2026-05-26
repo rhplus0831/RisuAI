@@ -238,6 +238,10 @@ interface GeminiResponse {
   error?: { message?: unknown; status?: unknown }
 }
 
+interface GeminiErrorResponse {
+  error?: { message?: unknown; status?: unknown }
+}
+
 function extractText(body: GeminiResponse): string {
   let text = ''
   const cands = Array.isArray(body.candidates) ? body.candidates : []
@@ -256,6 +260,32 @@ function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   if (raw === 'MAX_TOKENS') return 'length'
   if (raw === 'SAFETY') return 'content_filter'
   return raw.toLowerCase()
+}
+
+async function readGeminiStreamError(response: Response): Promise<CompletionStreamFrame> {
+  let error = `HTTP ${response.status}`
+  let code: string | undefined
+  try {
+    const text = await response.text()
+    if (text.length > 0) {
+      try {
+        const parsed = JSON.parse(text) as GeminiErrorResponse
+        if (typeof parsed.error?.message === 'string' && parsed.error.message.length > 0) {
+          error = parsed.error.message
+        } else {
+          error = text
+        }
+        if (typeof parsed.error?.status === 'string' && parsed.error.status.length > 0) {
+          code = parsed.error.status
+        }
+      } catch {
+        error = text
+      }
+    }
+  } catch {
+    // Keep the HTTP status fallback.
+  }
+  return { kind: 'error', error, status: response.status, code }
 }
 
 export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
@@ -333,7 +363,11 @@ export async function* runGeminiStream(
   if (req.signal.aborted) return
 
   const h = await vertexHeaders(req)
-  if (!h.ok) return
+  if (!h.ok) {
+    if (req.signal.aborted) return
+    yield { kind: 'error', error: h.error, code: 'vertex_auth_failed' }
+    return
+  }
 
   let response: Response
   try {
@@ -343,11 +377,20 @@ export async function* runGeminiStream(
       body: JSON.stringify(buildPayload(req)),
       signal: req.signal,
     })
-  } catch {
+  } catch (err) {
+    if (req.signal.aborted) return
+    const msg = err instanceof Error ? err.message : String(err)
+    yield { kind: 'error', error: `upstream fetch failed: ${msg}`, code: 'fetch_failed' }
     return
   }
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
+    yield await readGeminiStreamError(response)
+    return
+  }
+
+  if (!response.body) {
+    yield { kind: 'error', error: 'upstream returned no stream body', status: response.status }
     return
   }
 
@@ -359,7 +402,16 @@ export async function* runGeminiStream(
   try {
     while (true) {
       if (req.signal.aborted) return
-      const { value, done } = await reader.read()
+      let readResult: ReadableStreamReadResult<Uint8Array>
+      try {
+        readResult = await reader.read()
+      } catch (err) {
+        if (req.signal.aborted) return
+        const msg = err instanceof Error ? err.message : String(err)
+        yield { kind: 'error', error: `upstream stream read failed: ${msg}` }
+        return
+      }
+      const { value, done } = readResult
       if (done) break
       buf += decoder.decode(value, { stream: true })
 
@@ -379,8 +431,10 @@ export async function* runGeminiStream(
         let frame: GeminiResponse
         try {
           frame = JSON.parse(data) as GeminiResponse
-        } catch {
-          continue
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
+          return
         }
         const text = extractText(frame)
         if (text.length > 0) {

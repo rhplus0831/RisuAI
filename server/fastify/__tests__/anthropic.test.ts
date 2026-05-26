@@ -342,6 +342,75 @@ describe('runAnthropicStream', () => {
     expect(frames).toEqual([])
   })
 
+  it('surfaces upstream non-OK responses as error frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return new Response(
+        JSON.stringify({ error: { message: 'overloaded', type: 'overloaded_error' } }),
+        {
+          status: 529,
+          headers: { 'content-type': 'application/json' },
+        },
+      )
+    })
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'error', error: 'overloaded', status: 529, code: 'overloaded_error' },
+    ])
+  })
+
+  it('surfaces a missing upstream stream body as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
+    ])
+  })
+
+  it('surfaces invalid upstream stream JSON as an error frame', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([`event: content_block_delta\ndata: {nope}\n\n`]),
+    )
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toHaveLength(1)
+    expect(frames[0]).toMatchObject({
+      kind: 'error',
+      error: expect.stringContaining('invalid upstream stream JSON'),
+    })
+  })
+
   it('ignores ping and content_block_start/stop events', async () => {
     vi.stubGlobal('fetch', async () => {
       return sseUpstream([

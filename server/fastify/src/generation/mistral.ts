@@ -203,7 +203,7 @@ interface MistralNonStreamChoice {
 interface MistralNonStreamResponse {
   choices?: MistralNonStreamChoice[]
   model?: unknown
-  error?: { message?: unknown }
+  error?: { message?: unknown; code?: unknown }
 }
 
 export async function runMistral(req: MistralRequest): Promise<CompletionResult> {
@@ -266,9 +266,37 @@ interface MistralStreamFrame {
   choices?: MistralStreamChoice[]
 }
 
+interface MistralErrorResponse {
+  error?: { message?: unknown; code?: unknown }
+}
+
 function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   if (typeof raw !== 'string' || raw.length === 0) return 'stop'
   return raw
+}
+
+async function readMistralStreamError(response: Response): Promise<CompletionStreamFrame> {
+  let error = `HTTP ${response.status}`
+  let code: string | undefined
+  try {
+    const text = await response.text()
+    if (text.length > 0) {
+      try {
+        const parsed = JSON.parse(text) as MistralErrorResponse
+        if (typeof parsed.error?.message === 'string' && parsed.error.message.length > 0) {
+          error = parsed.error.message
+        }
+        if (typeof parsed.error?.code === 'string' && parsed.error.code.length > 0) {
+          code = parsed.error.code
+        }
+      } catch {
+        error = text
+      }
+    }
+  } catch {
+    // Keep the HTTP status fallback.
+  }
+  return { kind: 'error', error, status: response.status, code }
 }
 
 export async function* runMistralStream(
@@ -285,11 +313,20 @@ export async function* runMistralStream(
       body: init.body,
       signal: req.signal,
     })
-  } catch {
+  } catch (err) {
+    if (req.signal.aborted) return
+    const msg = err instanceof Error ? err.message : String(err)
+    yield { kind: 'error', error: `upstream fetch failed: ${msg}`, code: 'fetch_failed' }
     return
   }
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
+    yield await readMistralStreamError(response)
+    return
+  }
+
+  if (!response.body) {
+    yield { kind: 'error', error: 'upstream returned no stream body', status: response.status }
     return
   }
 
@@ -301,7 +338,16 @@ export async function* runMistralStream(
   try {
     while (true) {
       if (req.signal.aborted) return
-      const { value, done } = await reader.read()
+      let readResult: ReadableStreamReadResult<Uint8Array>
+      try {
+        readResult = await reader.read()
+      } catch (err) {
+        if (req.signal.aborted) return
+        const msg = err instanceof Error ? err.message : String(err)
+        yield { kind: 'error', error: `upstream stream read failed: ${msg}` }
+        return
+      }
+      const { value, done } = readResult
       if (done) break
       buf += decoder.decode(value, { stream: true })
 
@@ -319,8 +365,10 @@ export async function* runMistralStream(
         let frame: MistralStreamFrame
         try {
           frame = JSON.parse(data) as MistralStreamFrame
-        } catch {
-          continue
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
+          return
         }
         const choice = Array.isArray(frame.choices) ? frame.choices[0] : undefined
         const delta = choice?.delta?.content

@@ -453,6 +453,56 @@ describe('runMistralStream', () => {
     expect(frames).toEqual([])
   })
 
+  it('surfaces upstream non-OK responses as error frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return new Response(JSON.stringify({ error: { message: 'rate limited', code: 'quota' } }), {
+        status: 429,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const resolved = resolveMistralRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runMistralStream(resolved)) frames.push(f)
+    expect(frames).toEqual([{ kind: 'error', error: 'rate limited', status: 429, code: 'quota' }])
+  })
+
+  it('surfaces a missing upstream stream body as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
+    const resolved = resolveMistralRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runMistralStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
+    ])
+  })
+
+  it('surfaces invalid upstream stream JSON as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream(['data: {nope}\n\n']))
+    const resolved = resolveMistralRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runMistralStream(resolved)) frames.push(f)
+    expect(frames).toHaveLength(1)
+    expect(frames[0]).toMatchObject({
+      kind: 'error',
+      error: expect.stringContaining('invalid upstream stream JSON'),
+    })
+  })
+
   it('reassembles partial frames split across reader reads', async () => {
     const big = JSON.stringify({ choices: [{ delta: { content: 'split' } }] })
     const mid = Math.floor(big.length / 2)

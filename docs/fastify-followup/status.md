@@ -14,15 +14,15 @@ directly.
 
 - Active work: audit follow-up for Phases 0, 3, and 6.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Highest-risk remaining gap: Phase 6 non-OpenAI streaming providers can
-  still appear as empty successful SSE streams.
+- Highest-risk remaining gap: Phase 6 Ollama NDJSON streaming failures can
+  still appear as empty successful streams.
 - Phase 8 follow-up has landed slices 8A-8C and is closed again.
 - Phase 7 follow-up has landed slices 7A-7E and is closed again.
 - Phase 9 follow-up has landed guard/import-event work plus slices
   9A-9J; use the table below for prior commit anchors and
   `status/next-steps.md` for pickup order.
-- Next default pickup: Phase 6 Slice 6B, Anthropic, Mistral, and Gemini
-  stream failure alignment.
+- Next default pickup: Phase 6 Slice 6C, Ollama stream failure alignment
+  and final provider audit.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 

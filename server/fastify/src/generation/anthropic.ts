@@ -120,7 +120,7 @@ interface AnthropicResponse {
   content?: AnthropicContentBlock[]
   model?: unknown
   stop_reason?: unknown
-  error?: { message?: unknown }
+  error?: { message?: unknown; type?: unknown }
 }
 
 export async function runAnthropic(req: AnthropicRequest): Promise<CompletionResult> {
@@ -194,6 +194,10 @@ interface AnthropicStreamFrame {
   delta?: AnthropicDelta
 }
 
+interface AnthropicErrorResponse {
+  error?: { message?: unknown; type?: unknown }
+}
+
 function parseUpstreamEvent(block: string): AnthropicStreamEvent | null {
   let event = ''
   let data = ''
@@ -213,6 +217,30 @@ function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   return raw
 }
 
+async function readAnthropicStreamError(response: Response): Promise<CompletionStreamFrame> {
+  let error = `HTTP ${response.status}`
+  let code: string | undefined
+  try {
+    const text = await response.text()
+    if (text.length > 0) {
+      try {
+        const parsed = JSON.parse(text) as AnthropicErrorResponse
+        if (typeof parsed.error?.message === 'string' && parsed.error.message.length > 0) {
+          error = parsed.error.message
+        }
+        if (typeof parsed.error?.type === 'string' && parsed.error.type.length > 0) {
+          code = parsed.error.type
+        }
+      } catch {
+        error = text
+      }
+    }
+  } catch {
+    // Keep the HTTP status fallback.
+  }
+  return { kind: 'error', error, status: response.status, code }
+}
+
 export async function* runAnthropicStream(
   req: AnthropicRequest,
 ): AsyncGenerator<CompletionStreamFrame, void, void> {
@@ -227,11 +255,20 @@ export async function* runAnthropicStream(
       body: init.body,
       signal: req.signal,
     })
-  } catch {
+  } catch (err) {
+    if (req.signal.aborted) return
+    const msg = err instanceof Error ? err.message : String(err)
+    yield { kind: 'error', error: `upstream fetch failed: ${msg}`, code: 'fetch_failed' }
     return
   }
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
+    yield await readAnthropicStreamError(response)
+    return
+  }
+
+  if (!response.body) {
+    yield { kind: 'error', error: 'upstream returned no stream body', status: response.status }
     return
   }
 
@@ -244,7 +281,16 @@ export async function* runAnthropicStream(
   try {
     while (true) {
       if (req.signal.aborted) return
-      const { value, done } = await reader.read()
+      let readResult: ReadableStreamReadResult<Uint8Array>
+      try {
+        readResult = await reader.read()
+      } catch (err) {
+        if (req.signal.aborted) return
+        const msg = err instanceof Error ? err.message : String(err)
+        yield { kind: 'error', error: `upstream stream read failed: ${msg}` }
+        return
+      }
+      const { value, done } = readResult
       if (done) break
       buf += decoder.decode(value, { stream: true })
 
@@ -263,8 +309,10 @@ export async function* runAnthropicStream(
             if (frame.delta?.type === 'text_delta' && typeof t === 'string' && t.length > 0) {
               yield { kind: 'token', content: t }
             }
-          } catch {
-            // ignore malformed frame
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
+            return
           }
         } else if (evt.event === 'message_delta') {
           try {
@@ -272,8 +320,10 @@ export async function* runAnthropicStream(
             if (frame.delta?.stop_reason !== undefined) {
               finishReason = mapFinishReason(frame.delta.stop_reason)
             }
-          } catch {
-            // ignore malformed frame
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
+            return
           }
         } else if (evt.event === 'message_stop') {
           sawStop = true
