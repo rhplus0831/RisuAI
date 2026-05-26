@@ -15,16 +15,14 @@ Pick one slice per work session. Each slice should leave the worktree in
 a reviewable state with focused tests, update the affected phase file,
 and add any longer closeout note under `../phases-completed/`.
 
-1. Phase 6 streaming errors should land before broad generation
-   closeout.
+1. Phase 6 streaming errors are closed again.
    - 6A: landed streaming error frame contract plus OpenAI-compatible
      failure handling.
    - 6B: landed Anthropic, Mistral, and Gemini stream failure alignment.
-   - 6C: Ollama stream failure alignment and final provider audit. Pick
-     this next.
+   - 6C: landed Ollama stream failure alignment and final provider audit.
 
 2. Phase 0 and Phase 3 are small independent cleanup slices.
-   - 0A: Google Drive public artifact removal.
+   - 0A: Google Drive public artifact removal. Pick this next by default.
    - 3A: shared or explicitly aligned proxy response-header filtering.
 
 ## Recently Closed
@@ -90,6 +88,13 @@ Focused Phase 6:
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/ollama.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts
+```
+
+Focused Phase 0:
+
+```bash
+rg -n "CLIENT_SECRET|CLIENT_ID|drive\\.js|Google Drive sync" public src server docs/fastify-followup
+pnpm build
 ```
 
 Broad closeout:

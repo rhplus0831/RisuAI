@@ -127,6 +127,28 @@ interface OllamaChunk {
   error?: unknown
 }
 
+async function readOllamaStreamError(response: Response): Promise<CompletionStreamFrame> {
+  let error = `HTTP ${response.status}`
+  try {
+    const text = await response.text()
+    if (text.length > 0) {
+      try {
+        const parsed = JSON.parse(text) as OllamaChunk
+        if (typeof parsed.error === 'string' && parsed.error.length > 0) {
+          error = parsed.error
+        } else {
+          error = text
+        }
+      } catch {
+        error = text
+      }
+    }
+  } catch {
+    // Keep the HTTP status fallback.
+  }
+  return { kind: 'error', error, status: response.status }
+}
+
 function mapDoneReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   if (typeof raw !== 'string' || raw.length === 0) return 'stop'
   if (raw === 'stop') return 'stop'
@@ -205,11 +227,20 @@ export async function* runOllamaStream(
       body: JSON.stringify(buildPayload(req, true)),
       signal: req.signal,
     })
-  } catch {
+  } catch (err) {
+    if (req.signal.aborted) return
+    const msg = err instanceof Error ? err.message : String(err)
+    yield { kind: 'error', error: `upstream fetch failed: ${msg}`, code: 'fetch_failed' }
     return
   }
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
+    yield await readOllamaStreamError(response)
+    return
+  }
+
+  if (!response.body) {
+    yield { kind: 'error', error: 'upstream returned no stream body', status: response.status }
     return
   }
 
@@ -222,7 +253,16 @@ export async function* runOllamaStream(
   try {
     while (true) {
       if (req.signal.aborted) return
-      const { value, done } = await reader.read()
+      let readResult: ReadableStreamReadResult<Uint8Array>
+      try {
+        readResult = await reader.read()
+      } catch (err) {
+        if (req.signal.aborted) return
+        const msg = err instanceof Error ? err.message : String(err)
+        yield { kind: 'error', error: `upstream stream read failed: ${msg}` }
+        return
+      }
+      const { value, done } = readResult
       if (done) break
       buf += decoder.decode(value, { stream: true })
       // Ollama streams NDJSON: one JSON object per `\n`-terminated line. A
@@ -236,8 +276,14 @@ export async function* runOllamaStream(
         let chunk: OllamaChunk
         try {
           chunk = JSON.parse(line) as OllamaChunk
-        } catch {
-          continue
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
+          return
+        }
+        if (typeof chunk.error === 'string' && chunk.error.length > 0) {
+          yield { kind: 'error', error: chunk.error }
+          return
         }
         const text = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
         if (text.length > 0) {
@@ -254,6 +300,10 @@ export async function* runOllamaStream(
     if (tail.length > 0) {
       try {
         const chunk = JSON.parse(tail) as OllamaChunk
+        if (typeof chunk.error === 'string' && chunk.error.length > 0) {
+          yield { kind: 'error', error: chunk.error }
+          return
+        }
         const text = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
         if (text.length > 0) {
           yield { kind: 'token', content: text }
@@ -262,8 +312,10 @@ export async function* runOllamaStream(
           sawDone = true
           finishReason = mapDoneReason(chunk.done_reason)
         }
-      } catch {
-        // ignore malformed tail
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
+        return
       }
     }
   } finally {

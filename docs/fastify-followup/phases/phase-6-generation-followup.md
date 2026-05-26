@@ -2,7 +2,7 @@
 
 Date: 2026-05-27
 
-Status: reopened by audit. Slices 6A and 6B landed; continue with 6C.
+Status: closed again. Slices 6A-6C landed.
 
 ## Goal
 
@@ -26,9 +26,9 @@ no useful error.
       known synchronously.
 - [x] Update OpenAI-compatible streaming so non-OK and bodyless upstream
       responses surface the upstream status/message.
-- [ ] Audit remaining streaming providers for the same silent-return pattern
+- [x] Audit remaining streaming providers for the same silent-return pattern
       and align them with the chosen error semantics.
-- [ ] Add focused tests for upstream 500, upstream invalid stream body,
+- [x] Add focused tests for upstream 500, upstream invalid stream body,
       and missing upstream body for the remaining streaming providers.
 
 ## Session Slices
@@ -40,10 +40,10 @@ no useful error.
 - 6B - Landed. Anthropic, Mistral, and Gemini stream failures now use
   the 6A typed error-frame semantics for upstream non-OK responses,
   missing stream bodies, fetch/read failures, and invalid stream JSON.
-- 6C - Next. Ollama and final stream audit. Apply the chosen semantics to the
-  NDJSON stream path, rerun a grep over all `run*Stream` providers for
-  silent `return` branches, and close any remaining gaps found by that
-  audit.
+- 6C - Landed. Ollama NDJSON streaming now uses the 6A typed error-frame
+  semantics for upstream non-OK responses, missing stream bodies, fetch/read
+  failures, invalid stream JSON, and upstream error chunks. The final
+  `run*Stream` audit found no remaining upstream-failure silent returns.
 
 ## Exit Criteria
 

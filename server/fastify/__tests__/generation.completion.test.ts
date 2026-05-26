@@ -1930,4 +1930,77 @@ describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
     )
   })
+
+  it('streaming emits an error event when upstream returns non-OK', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: 'ollama failed' }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...ollamaPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: error\ndata: ${JSON.stringify({
+        type: 'provider_error',
+        error: 'ollama failed',
+        status: 500,
+      })}\n\n`,
+    )
+  })
+
+  it('streaming emits an error event when upstream has no body', async () => {
+    globalThis.fetch = (async () =>
+      new Response(null, { status: 200 })) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...ollamaPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe(
+      `event: error\ndata: ${JSON.stringify({
+        type: 'provider_error',
+        error: 'upstream returned no stream body',
+        status: 200,
+      })}\n\n`,
+    )
+  })
+
+  it('streaming emits an error event for invalid upstream NDJSON', async () => {
+    const enc = new TextEncoder()
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode('{not-json}\n'))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...ollamaPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('event: error')
+    expect(res.body).toContain('invalid upstream stream JSON')
+  })
 })

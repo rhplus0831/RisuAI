@@ -12,17 +12,16 @@ directly.
 
 ## Current Snapshot
 
-- Active work: audit follow-up for Phases 0, 3, and 6.
+- Active work: audit follow-up for Phases 0 and 3.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Highest-risk remaining gap: Phase 6 Ollama NDJSON streaming failures can
-  still appear as empty successful streams.
+- Phase 6 follow-up has landed slices 6A-6C and is closed again.
 - Phase 8 follow-up has landed slices 8A-8C and is closed again.
 - Phase 7 follow-up has landed slices 7A-7E and is closed again.
 - Phase 9 follow-up has landed guard/import-event work plus slices
   9A-9J; use the table below for prior commit anchors and
   `status/next-steps.md` for pickup order.
-- Next default pickup: Phase 6 Slice 6C, Ollama stream failure alignment
-  and final provider audit.
+- Next default pickup: Phase 0 Slice 0A, Google Drive public artifact
+  removal. Phase 3 Slice 3A can also land independently.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 
@@ -53,7 +52,7 @@ directly.
 | 3 - Proxy migration                     | Reopened     | Stream-job proxy response header filtering diverges from direct proxy filtering.                          | [`phases/phase-3-proxy-followup.md`](phases/phase-3-proxy-followup.md)                     |
 | 4 - sendChat tests                      | No follow-up | Audit found test scaffold complete for the migration slice.                                               | None                                                                                       |
 | 5 - sendChat extraction                 | No follow-up | Audit found browser extraction baseline complete.                                                         | None                                                                                       |
-| 6 - Server-side generation              | Reopened     | Non-OpenAI streaming provider failures can still be emitted as empty successful SSE streams.              | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |
+| 6 - Server-side generation              | Closed       | 6C aligned Ollama NDJSON stream failures with typed error frames and completed the final stream audit.    | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |
 | 7 - Server-side prompt assembly         | Closed       | 7E added route-backed fixture coverage for send, continue, regenerate, preview, and preview-prompt paths. | [`phases/phase-7-prompt-assembly-followup.md`](phases/phase-7-prompt-assembly-followup.md) |
 | 8 - Hypa V3 memory                      | Closed       | 8C added missing-summary diagnostics and follow-ups for chunks with no embedding yet.                     | [`phases/phase-8-memory-followup.md`](phases/phase-8-memory-followup.md)                   |
 | 9 - Client thinning                     | Closed       | 9J removed the remaining focused direct-bind hits, covered allowlist gaps, and passed browser smoke.      | [`phases/phase-9-client-thinning-followup.md`](phases/phase-9-client-thinning-followup.md) |

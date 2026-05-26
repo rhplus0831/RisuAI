@@ -332,7 +332,7 @@ describe('runOllamaStream', () => {
     ])
   })
 
-  it('tolerates malformed NDJSON lines without crashing the stream', async () => {
+  it('emits an error when an NDJSON line is malformed', async () => {
     vi.stubGlobal('fetch', async () =>
       ndjsonResponse([
         `not-json\n`,
@@ -348,10 +348,11 @@ describe('runOllamaStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runOllamaStream(resolved)) frames.push(f)
-    expect(frames).toEqual([
-      { kind: 'token', content: 'after-bad-line' },
-      { kind: 'done', finishReason: 'stop' },
-    ])
+    expect(frames).toHaveLength(1)
+    expect(frames[0]).toMatchObject({
+      kind: 'error',
+      error: expect.stringContaining('invalid upstream stream JSON'),
+    })
   })
 
   it('yields nothing when signal is pre-aborted', async () => {
@@ -373,8 +374,13 @@ describe('runOllamaStream', () => {
     expect(frames).toEqual([])
   })
 
-  it('returns no frames when upstream is non-2xx', async () => {
-    vi.stubGlobal('fetch', async () => new Response('bad', { status: 500 }))
+  it('emits an error frame with parsed message when upstream is non-2xx', async () => {
+    vi.stubGlobal('fetch', async () =>
+      new Response(JSON.stringify({ error: 'model unavailable' }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
     const resolved = resolveOllamaRequest({
       model: 'llama3',
       messages: [{ role: 'user', content: 'hi' }],
@@ -383,7 +389,103 @@ describe('runOllamaStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runOllamaStream(resolved)) frames.push(f)
-    expect(frames).toEqual([])
+    expect(frames).toEqual([{ kind: 'error', error: 'model unavailable', status: 500 }])
+  })
+
+  it('emits an error frame with raw text when upstream non-2xx is not JSON', async () => {
+    vi.stubGlobal('fetch', async () => new Response('bad gateway', { status: 502 }))
+    const resolved = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runOllamaStream(resolved)) frames.push(f)
+    expect(frames).toEqual([{ kind: 'error', error: 'bad gateway', status: 502 }])
+  })
+
+  it('emits an error frame when upstream has no stream body', async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
+    const resolved = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runOllamaStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
+    ])
+  })
+
+  it('emits an error frame when fetch fails', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('connection refused')
+    })
+    const resolved = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runOllamaStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error: 'upstream fetch failed: connection refused',
+        code: 'fetch_failed',
+      },
+    ])
+  })
+
+  it('emits an error frame when reading the upstream stream fails', async () => {
+    vi.stubGlobal('fetch', async () => {
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(new Error('socket closed'))
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson' },
+      })
+    })
+    const resolved = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runOllamaStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'error', error: 'upstream stream read failed: socket closed' },
+    ])
+  })
+
+  it('emits an error frame when the final NDJSON object is malformed', async () => {
+    vi.stubGlobal('fetch', async () =>
+      ndjsonResponse([
+        `${JSON.stringify({ message: { content: 'one' }, done: false })}\n`,
+        '{bad-tail',
+      ]),
+    )
+    const resolved = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runOllamaStream(resolved)) frames.push(f)
+    expect(frames[0]).toEqual({ kind: 'token', content: 'one' })
+    expect(frames[1]).toMatchObject({
+      kind: 'error',
+      error: expect.stringContaining('invalid upstream stream JSON'),
+    })
   })
 
   it('handles a final NDJSON object that lacks a trailing newline', async () => {
