@@ -30,6 +30,10 @@ async function decompress(data: Uint8Array) {
 }
 
 export async function getColdStorageItem(key: string) {
+  if (isFastifyServer) {
+    return null
+  }
+
   if (isNodeServer) {
     try {
       const storage = forageStorage.realStorage as NodeStorage
@@ -74,6 +78,10 @@ export async function getColdStorageItem(key: string) {
 }
 
 export async function setColdStorageItem(key: string, value: any): Promise<boolean> {
+  if (isFastifyServer) {
+    return false
+  }
+
   console.log('setting cold storage item', key, value)
 
   let compressed: Uint8Array
@@ -131,6 +139,12 @@ export async function setColdStorageItem(key: string, value: any): Promise<boole
 }
 
 export async function listColdStorageItems(): Promise<{ items: string[] }> {
+  if (isFastifyServer) {
+    return {
+      items: [],
+    }
+  }
+
   if (isNodeServer) {
     const fullKeys = await (forageStorage.realStorage as NodeStorage).keys()
     const keys = fullKeys
@@ -161,6 +175,10 @@ export async function listColdStorageItems(): Promise<{ items: string[] }> {
 }
 
 export async function cleanColdStorage() {
+  if (isFastifyServer) {
+    return
+  }
+
   const actualUsedKeys = await listColdDataKeys()
   const allKeys = (await listColdStorageItems()).items
   const unusedKeys = allKeys.filter((k) => !actualUsedKeys.includes(k))
@@ -187,6 +205,10 @@ export async function cleanColdStorage() {
 }
 
 async function removeColdStorageItems(keys: string[]) {
+  if (isFastifyServer) {
+    return
+  }
+
   if (isNodeServer) {
     try {
       const storage = forageStorage.realStorage as NodeStorage
@@ -418,6 +440,11 @@ export async function preLoadChat(characterIndex: number, chatIndex: number) {
   }
 
   if (chat.message?.[0]?.data?.startsWith(coldStorageHeader)) {
+    if (isFastifyServer) {
+      alertError('Cold-storage chat hydration is not supported in server-backed web mode yet')
+      return
+    }
+
     //bring back from cold storage
     const coldDataKey = chat.message[0].data.slice(coldStorageHeader.length)
     const coldData = await getColdStorageItem(coldDataKey)

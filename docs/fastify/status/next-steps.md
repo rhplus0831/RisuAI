@@ -188,26 +188,40 @@ existing settings command bridge:
   `src/ts/storage/backup.test.ts`, and
   `server/fastify/__tests__/backups.test.ts`.
 
+9-6d then classified residual local cache/storage helpers:
+
+- Fastify-mode RISUSAVE block encode/decode no longer reads or writes the
+  browser `risuSaveCache` localForage cache, and remote/cache-only blocks now
+  report unavailable behavior instead of falling through to local storage.
+- Cold-storage helpers now return before OPFS, localForage-backed NodeStorage,
+  or Tauri-local paths in server-backed web mode; cold-storage chat hydration
+  is explicitly unsupported.
+- Google Search MCP credential localForage storage is explicitly unsupported in
+  server-backed web mode. Runtime-local caches such as MCP tool-call display
+  state, translation/model caches, embedding caches, inlay assets, and plugin
+  permission prompts remain browser-local because they are not authoritative
+  server database state.
+- Focused coverage landed in `src/ts/storage/risuSave.test.ts`,
+  `src/ts/process/coldstorage.test.ts`, and
+  `src/ts/process/mcp/googlesearchclient.test.ts`.
+
 ## Immediate Pickup
 
-Immediate pickup: **9-6d - Residual local cache classification**.
+Immediate pickup: **9-6e - Provider secret masking**.
 
-- Classify remaining local cache/storage helper paths in Fastify mode as
-  server-backed unsupported, server-owned, or runtime-local before touching
-  provider secret masking.
-- Audit `.risu` cache/remotes, MCP helper storage, search credentials,
-  cold-storage helpers, memory leftovers, and any surviving localForage /
-  OPFS / AutoStorage / NodeStorage branches not already gated by 9-6a through
-  9-6c.
-- Add narrow gates or explicit unsupported behavior only where a server-backed
-  web path can still reach local persistence; do not port the `.risu` codec or
-  import/export routes in this slice.
-- Keep Tauri/local mode untouched.
-- Do not broaden this slice into provider secret masking, server-side plugin
-  execution, server `.risu` codec/import/export, asset bundle walking, or
-  per-event surgical browser patches.
-- Treat cache/storage paths as server-backed web gates, not compatibility
-  migrations; there are no actual Fastify users yet.
+- Mask provider secret fields in `GET /api/v1/bootstrap` now that
+  server-backed local cache/storage helpers have been classified and gated.
+- Preserve grouped settings command placeholder semantics: placeholder values
+  in settings patches mean "leave unchanged", while explicit new secret values
+  replace the stored server secret.
+- Confirm server-backed generation, memory, MCP refresh-token, proxy, and
+  provider helper paths do not require client-visible provider secrets before
+  masking each field family.
+- Keep Tauri/local mode unchanged and do not broaden this slice into provider
+  dispatch flattening, server-side plugin execution, server `.risu` codec/
+  import/export, asset bundle walking, or surgical event patches.
+- Treat masking as a current-schema update, not a compatibility migration;
+  there are no actual Fastify users yet.
 
 Implementation notes:
 
@@ -229,6 +243,10 @@ Implementation notes:
 - 9-6c closed the backup/restore projection gap: Fastify backup UI/helper
   paths use `/api/v1/backups`, restore emits `state.restored`, and the
   browser's existing SSE invalidation path re-fetches bootstrap.
+- 9-6d closed the residual local cache/storage gate for RISUSAVE caches/
+  remotes, cold-storage helpers, and Google Search MCP credential storage.
+  Runtime-only local caches remain browser-local and are not server database
+  authority.
 - Character scalar patches reject child collections, while 9-4d owns
   character asset-reference fields and Fastify-mode `saveAsset` returns
   raw server asset ids.
@@ -250,27 +268,26 @@ Implementation notes:
   dedicated server-owned paths.
 - Several direct-write search hits are expected rollback helpers,
   optimistic command updates, projection replacement writes, or runtime-only
-  state. 9-6d should classify local cache/storage helper entry points instead
-  of mechanically deleting every local assignment.
+  state. 9-6e should focus on bootstrap masking and settings-command secret
+  semantics instead of reopening local cache classification.
 
 ## Later Queue
 
-1. 9-6d - Residual local cache classification.
-2. 9-6e - Provider secret masking.
-3. 9-7a - `.risu` fixture corpus and codec harness.
-4. 9-7b - Legacy envelope codec port.
-5. 9-7c - RISUSAVE block codec port.
-6. 9-7d - Decode normalization and validation.
-7. 9-7e - Repository-backed export adapter.
-8. 9-8a - Multipart `.risu` import route.
-9. 9-8b - Repository `.risu` export route.
-10. 9-8c - Asset reference walker.
-11. 9-8d - Bundle export route.
-12. 9-9a - Server-backed browser smoke harness.
-13. 9-9b - Generation and memory fixture closeout.
-14. 9-9c - Server-backed storage-write audit.
-15. 9-9d - Manual Fastify web and Tauri local verification.
-16. 9-9e - Phase 9 docs closeout.
+1. 9-6e - Provider secret masking.
+2. 9-7a - `.risu` fixture corpus and codec harness.
+3. 9-7b - Legacy envelope codec port.
+4. 9-7c - RISUSAVE block codec port.
+5. 9-7d - Decode normalization and validation.
+6. 9-7e - Repository-backed export adapter.
+7. 9-8a - Multipart `.risu` import route.
+8. 9-8b - Repository `.risu` export route.
+9. 9-8c - Asset reference walker.
+10. 9-8d - Bundle export route.
+11. 9-9a - Server-backed browser smoke harness.
+12. 9-9b - Generation and memory fixture closeout.
+13. 9-9c - Server-backed storage-write audit.
+14. 9-9d - Manual Fastify web and Tauri local verification.
+15. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -342,6 +359,9 @@ Focused 9-5 runs:
 - 9-5e-iii: `pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChatContext.test.ts`;
   `pnpm check`
   - 49 guarded fixture/bootstrap/context tests passed; check clean.
+- 9-6d: `pnpm test src/ts/storage/risuSave.test.ts src/ts/process/coldstorage.test.ts src/ts/process/mcp/googlesearchclient.test.ts`;
+  `pnpm check`
+  - 4 residual local cache/storage gate tests passed; check clean.
 
 ## References
 
@@ -352,7 +372,7 @@ Focused 9-5 runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-5e-iii.md`](../phases-completed/phase-9-client-thinning-9-5e-iii.md)
+  [`../phases-completed/phase-9-client-thinning-9-6d.md`](../phases-completed/phase-9-client-thinning-9-6d.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

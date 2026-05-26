@@ -3,7 +3,7 @@ import * as fflate from 'fflate'
 import { getDatabase, presetTemplate, type Database } from './database.svelte'
 import localforage from 'localforage'
 import { forageStorage } from '../globalApi.svelte'
-import { isNodeServer, isTauri } from 'src/ts/platform'
+import { isFastifyServer, isNodeServer, isTauri } from 'src/ts/platform'
 import { writeFile, BaseDirectory, exists, mkdir, readFile } from '@tauri-apps/plugin-fs'
 
 const packr = new Packr({
@@ -367,11 +367,13 @@ export class RisuSaveEncoder {
     buf.set(nameBuf, 3)
     buf.set(new Uint8Array(lengthBuf), 3 + nameBuf.length)
     buf.set(databuf, 7 + nameBuf.length)
-    await risuSaveCacheForage.setItem(`risuSaveBlock_${arg.name}`, {
-      type: arg.type,
-      data: arg.data,
-      name: arg.name,
-    })
+    if (!isFastifyServer) {
+      await risuSaveCacheForage.setItem(`risuSaveBlock_${arg.name}`, {
+        type: arg.type,
+        data: arg.data,
+        name: arg.name,
+      })
+    }
     return buf
   }
 
@@ -496,6 +498,12 @@ export class RisuSaveDecoder {
                   if (!loadedBlocks.has(dirKey)) {
                     try {
                       console.log(`Loading directory block ${dirKey} from cache`)
+                      if (isFastifyServer) {
+                        console.warn(
+                          `RisuSave cache block ${dirKey} is not available in server-backed web mode.`,
+                        )
+                        continue
+                      }
                       const dirData: {
                         type: RisuSaveType
                         data: string
@@ -559,7 +567,12 @@ export class RisuSaveDecoder {
             } = JSON.parse(this.blocks[key].content)
             const fileName = `remotes/${remoteInfo.name}.local.bin`
             let remoteData: Uint8Array | null = null
-            if (isTauri) {
+            if (isFastifyServer) {
+              console.warn(
+                `RisuSave remote block ${remoteInfo.name} is not available in server-backed web mode.`,
+              )
+              break
+            } else if (isTauri) {
               try {
                 if (await exists(fileName, { baseDir: BaseDirectory.AppData })) {
                   remoteData = await readFile(fileName, { baseDir: BaseDirectory.AppData })

@@ -3,6 +3,7 @@ import type { MCPTool, RPCToolCallContent } from './mcplib'
 import { fetchNative } from '../../globalApi.svelte'
 import { alertInput } from '../../alert'
 import localforage from 'localforage'
+import { isFastifyServer } from 'src/ts/platform'
 
 interface WebSearchArgs {
   query: string
@@ -56,6 +57,12 @@ export class GoogleSearchClient extends MCPClientLike {
   }
 
   private async initializeCredentials(): Promise<void> {
+    if (isFastifyServer) {
+      throw new Error(
+        'Google Search MCP credentials are not supported in server-backed web mode yet',
+      )
+    }
+
     const storedCredentials =
       await this.credentialsStorage.getItem<GoogleSearchCredentials>('google-search-creds')
 

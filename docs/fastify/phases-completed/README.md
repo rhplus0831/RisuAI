@@ -92,6 +92,10 @@ track the next piece of work.
 | 9-5e-i - Projection write gate           | [`phase-9-client-thinning-9-5e-i.md`](phase-9-client-thinning-9-5e-i.md)               | Opt-in read-only projection guard and trusted bootstrap/event refresh writes.    |
 | 9-5e-ii - Command bridge guard           | [`phase-9-client-thinning-9-5e-ii.md`](phase-9-client-thinning-9-5e-ii.md)             | Command bridge optimistic/rollback paths wrapped in trusted projection scopes.   |
 | 9-5e-iii - Guard audit closeout          | [`phase-9-client-thinning-9-5e-iii.md`](phase-9-client-thinning-9-5e-iii.md)           | Guarded server-backed sendChat fixture path and runtime write classification.    |
+| 9-6a - Persistence gate                  | [`phase-9-client-thinning-9-6a.md`](phase-9-client-thinning-9-6a.md)                   | Fastify startup/save/backup maintenance skips local persistence paths.           |
+| 9-6b - Asset byte gate                   | [`phase-9-client-thinning-9-6b.md`](phase-9-client-thinning-9-6b.md)                   | Fastify asset reads use `/api/v1/assets` instead of browser local storage.       |
+| 9-6c - Backup/restore projection         | [`phase-9-client-thinning-9-6c.md`](phase-9-client-thinning-9-6c.md)                   | Server backup helpers/routes and restore projection invalidation.                |
+| 9-6d - Residual local cache gates        | [`phase-9-client-thinning-9-6d.md`](phase-9-client-thinning-9-6d.md)                   | RISUSAVE cache/remotes, cold-storage, and Google Search credential gates.        |
 
 ## Historical Status Logs
 

@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-6b - Asset byte gate**. Next pickup:
-**9-6c - Server backup/restore projection**.
+**9-6d - Residual local cache classification**. Next pickup:
+**9-6e - Provider secret masking**.
 
 ## Goal
 
@@ -299,6 +299,8 @@ surfaces.
     localForage/cache helpers, including `.risu` cache/remotes, MCP helper
     storage, search credentials, cold-storage, and memory leftovers, as
     server-backed unsupported, server-owned, or runtime-local.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-6d.md`](../phases-completed/phase-9-client-thinning-9-6d.md).
   - **9-6e - Provider secret masking.** Mask provider secret fields in
     `/api/v1/bootstrap` only after server-backed provider paths no longer need
     client-visible keys. Preserve settings-command placeholder semantics.

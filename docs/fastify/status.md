@@ -15,16 +15,17 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-6c server backup/restore projection. Fastify-mode
-  backup UI/helper paths now use `/api/v1/backups`; local backup file and
-  partial-backup paths are gated before local storage access.
-- Current gap: remaining local cache/storage helpers need classification
-  before provider secret masking can safely land.
-- Next default pickup: 9-6d, residual local cache classification.
-- Last recorded focused baselines after 9-6c: `pnpm check` clean,
-  client test command 730 tests plus 4 skipped, and `pnpm api:test`
-  1119 tests. Last full `pnpm build` baseline still passes with existing CSS `::highlight`,
-  browser externalization, plugin-timing, and chunk-size warnings.
+- Last landed work: 9-6d residual local cache classification. Fastify-mode
+  `.risu` cache/remotes, cold-storage helpers, and Google Search MCP
+  credentials now return before local persistence access; runtime-only caches
+  remain browser-local.
+- Current gap: provider secret masking can now land against the classified
+  storage/cache surface.
+- Next default pickup: 9-6e, provider secret masking.
+- Last recorded focused baselines after 9-6d: `pnpm check` clean and focused
+  client tests for RISUSAVE cache, cold storage, and Google Search MCP
+  credential gates passed. Last full client test command, `pnpm api:test`, and
+  `pnpm build` baselines remain the 9-6c records.
 
 ## Start Here
 
@@ -51,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                             |
-| Client thinning                             | Active; 9-6c landed; continue with 9-6d residual local cache classification. |
+| Client thinning                             | Active; 9-6d landed; continue with 9-6e provider secret masking.             |
 
 ## Maintenance Rules
 
