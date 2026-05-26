@@ -13,3 +13,4 @@ work logs.
 | 6 - Server-side generation | Closed | [`../phases-completed/phase-6-generation-sse-tails.md`](../phases-completed/phase-6-generation-sse-tails.md)     |
 | 8 - Hypa V3 memory         | Closed | [`../phases-completed/phase-8-memory-event-isolation.md`](../phases-completed/phase-8-memory-event-isolation.md) |
 | 9 - Client thinning        | Closed | [`../phases-completed/phase-9-client-thinning-9a.md`](../phases-completed/phase-9-client-thinning-9a.md)         |
+| Broad closeout - typecheck | Open   | [`broad-closeout-typecheck-alpha.md`](broad-closeout-typecheck-alpha.md)                                         |

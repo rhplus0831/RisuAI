@@ -18,9 +18,12 @@ and add any longer closeout note under `../phases-completed/`.
 
 Recommended order:
 
-1. No reopened alpha slices remain. Run broad alpha closeout
-   verification, or open a new phase doc if a fresh audit finding is
-   identified.
+1. Clear the broad closeout typecheck blocker:
+   [`../phases/broad-closeout-typecheck-alpha.md`](../phases/broad-closeout-typecheck-alpha.md).
+   Start with `pnpm check`; the 2026-05-27 closeout pass failed with 57
+   diagnostics across 17 files while the rest of the closeout matrix
+   passed.
+2. After `pnpm check` passes, rerun broad alpha closeout verification.
 
 Recently closed:
 
@@ -36,7 +39,31 @@ Recently closed:
   module settings, `SideChatList`, Hypa/supa memory toggles, and
   lorebook page selection to command-first or draft-first flows.
 
+Latest broad closeout attempt on 2026-05-27:
+
+- `pnpm check` failed: 57 errors, 0 warnings, 17 files.
+- `pnpm test` passed: 67 files, 742 passed, 4 skipped.
+- `pnpm api:test` passed: 68 files, 1212 passed.
+- `pnpm build` passed with nonblocking build warnings.
+- `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
+
 ## Focused Verification
+
+Broad closeout typecheck blocker:
+
+```bash
+pnpm check
+```
+
+After the blocker is fixed, rerun the full closeout matrix:
+
+```bash
+pnpm check
+pnpm test
+pnpm api:test
+pnpm build
+pnpm smoke:fastify-browser
+```
 
 Phase 3 (closed, re-run only for regression checks):
 
