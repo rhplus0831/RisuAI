@@ -373,6 +373,21 @@ describe('runGeminiStream', () => {
     })
   })
 
+  it('surfaces unterminated upstream SSE tails as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream(['data: {nope}']))
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'error', error: 'truncated upstream stream event' },
+    ])
+  })
+
   it('reassembles a frame split across two reader reads', async () => {
     const big = JSON.stringify({ candidates: [{ content: { parts: [{ text: 'split' }] } }] })
     const mid = Math.floor(big.length / 2)

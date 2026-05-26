@@ -18,15 +18,16 @@ and add any longer closeout note under `../phases-completed/`.
 
 Recommended order:
 
-1. Phase 6 - unterminated provider SSE tails must emit typed provider
-   errors instead of `done`.
-2. Phase 3 - hub passthrough response-header filtering should match the
+1. Phase 3 - hub passthrough response-header filtering should match the
    shared direct proxy strip set.
-3. Phase 8 - memory event sinks and subscribers must not be able to
+2. Phase 8 - memory event sinks and subscribers must not be able to
    abort committed memory jobs/routes.
 
 Recently closed:
 
+- Phase 6 - unterminated OpenAI-compatible, Anthropic, Mistral, and
+  Gemini SSE tails now emit typed provider errors instead of successful
+  `done` streams.
 - Phase 9 - 9A converted the reopened projection-write blockers in
   module settings, `SideChatList`, Hypa/supa memory toggles, and
   lorebook page selection to command-first or draft-first flows.
@@ -40,7 +41,7 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm api:test -- server/fastify/__tests__/hub.test.ts server/fastify/__tests__/proxy.test.ts
 ```
 
-Phase 6:
+Phase 6 (closed, re-run only for regression checks):
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/openai.test.ts server/fastify/__tests__/anthropic.test.ts server/fastify/__tests__/mistral.test.ts server/fastify/__tests__/gemini.test.ts

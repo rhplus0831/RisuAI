@@ -497,4 +497,21 @@ describe('runOpenAIStream', () => {
       error: expect.stringContaining('invalid upstream stream JSON'),
     })
   })
+
+  it('surfaces unterminated upstream SSE tails as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream(['data: {nope}']))
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'error', error: 'truncated upstream stream event' },
+    ])
+  })
 })

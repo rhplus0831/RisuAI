@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+import { hasNonIgnorableSseTail } from './sse.js'
 
 export interface AnthropicRequest {
   model: string
@@ -340,6 +341,11 @@ export async function* runAnthropicStream(
   }
 
   if (!sawStop && !req.signal.aborted) {
+    buf += decoder.decode()
+    if (hasNonIgnorableSseTail(buf)) {
+      yield { kind: 'error', error: 'truncated upstream stream event' }
+      return
+    }
     yield { kind: 'done', finishReason }
   }
 }

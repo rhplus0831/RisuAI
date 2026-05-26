@@ -417,6 +417,37 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     expect(res.body).toContain('event: error')
     expect(res.body).toContain('invalid upstream stream JSON')
   })
+
+  it('streaming emits an error event for unterminated upstream SSE tails', async () => {
+    const enc = new TextEncoder()
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode('data: {nope}'))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...openaiPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe(
+      `event: error\ndata: ${JSON.stringify({
+        type: 'provider_error',
+        error: 'truncated upstream stream event',
+      })}\n\n`,
+    )
+  })
 })
 
 describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', () => {

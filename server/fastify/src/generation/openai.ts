@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+import { hasNonIgnorableSseTail } from './sse.js'
 
 export interface OpenAIRequest {
   model: string
@@ -350,6 +351,11 @@ export async function* runOpenAIStream(
   }
 
   if (!req.signal.aborted) {
+    buf += decoder.decode()
+    if (hasNonIgnorableSseTail(buf)) {
+      yield { kind: 'error', error: 'truncated upstream stream event' }
+      return
+    }
     yield { kind: 'done', finishReason }
   }
 }

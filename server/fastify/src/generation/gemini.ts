@@ -1,4 +1,5 @@
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+import { hasNonIgnorableSseTail } from './sse.js'
 import { resolveVertexBearer } from './vertexAuth.js'
 
 export interface VertexAuthInput {
@@ -453,6 +454,11 @@ export async function* runGeminiStream(
   }
 
   if (!req.signal.aborted) {
+    buf += decoder.decode()
+    if (hasNonIgnorableSseTail(buf)) {
+      yield { kind: 'error', error: 'truncated upstream stream event' }
+      return
+    }
     yield { kind: 'done', finishReason }
   }
 }

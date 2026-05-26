@@ -10,6 +10,6 @@ work logs.
 | Phase | Status | Doc |
 | ----- | ------ | --- |
 | 3 - Proxy migration | Reopened | [`phase-3-proxy-followup-alpha.md`](phase-3-proxy-followup-alpha.md) |
-| 6 - Server-side generation | Reopened | [`phase-6-generation-followup-alpha.md`](phase-6-generation-followup-alpha.md) |
+| 6 - Server-side generation | Closed | [`../phases-completed/phase-6-generation-sse-tails.md`](../phases-completed/phase-6-generation-sse-tails.md) |
 | 8 - Hypa V3 memory | Reopened | [`phase-8-memory-followup-alpha.md`](phase-8-memory-followup-alpha.md) |
 | 9 - Client thinning | Reopened | [`phase-9-client-thinning-followup-alpha.md`](phase-9-client-thinning-followup-alpha.md) |

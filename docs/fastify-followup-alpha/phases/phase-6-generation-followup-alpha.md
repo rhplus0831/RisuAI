@@ -2,7 +2,8 @@
 
 Date: 2026-05-27
 
-Status: reopened by alpha audit.
+Status: closed. Landed slice summary:
+`../phases-completed/phase-6-generation-sse-tails.md`.
 
 ## Goal
 

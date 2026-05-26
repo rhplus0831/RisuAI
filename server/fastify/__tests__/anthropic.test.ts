@@ -411,6 +411,25 @@ describe('runAnthropicStream', () => {
     })
   })
 
+  it('surfaces unterminated upstream SSE tails as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream([`event: content_block_delta\ndata: {nope}`]))
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'error', error: 'truncated upstream stream event' },
+    ])
+  })
+
   it('ignores ping and content_block_start/stop events', async () => {
     vi.stubGlobal('fetch', async () => {
       return sseUpstream([

@@ -1,6 +1,7 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { parseOpenAIStyleSseData } from './openai.js'
+import { hasNonIgnorableSseTail } from './sse.js'
 
 export interface MistralRequest {
   model: string
@@ -387,6 +388,11 @@ export async function* runMistralStream(
   }
 
   if (!req.signal.aborted) {
+    buf += decoder.decode()
+    if (hasNonIgnorableSseTail(buf)) {
+      yield { kind: 'error', error: 'truncated upstream stream event' }
+      return
+    }
     yield { kind: 'done', finishReason }
   }
 }

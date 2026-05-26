@@ -503,6 +503,21 @@ describe('runMistralStream', () => {
     })
   })
 
+  it('surfaces unterminated upstream SSE tails as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream(['data: {nope}']))
+    const resolved = resolveMistralRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runMistralStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'error', error: 'truncated upstream stream event' },
+    ])
+  })
+
   it('reassembles partial frames split across reader reads', async () => {
     const big = JSON.stringify({ choices: [{ delta: { content: 'split' } }] })
     const mid = Math.floor(big.length / 2)
