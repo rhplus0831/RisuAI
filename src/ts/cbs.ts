@@ -44,7 +44,6 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
   callInternalFunction: (args: string[]) => {
     return ''
   },
-  isTauri: false,
   isNodeServer: false,
   isMobile: false,
   appVer: '0.0.0',
@@ -128,7 +127,6 @@ export type CBSRegisterArg = {
   getSelectedCharID: () => number
   getModelInfo: (model: string) => LLMModel
   callInternalFunction: (args: string[]) => string
-  isTauri: boolean
   isNodeServer: boolean
   isMobile: boolean
   appVer: string
@@ -162,7 +160,6 @@ export function registerCBS(arg: CBSRegisterArg) {
     getModuleLorebooks,
     pickHashRand,
     getSelectedCharID,
-    isTauri,
     isNodeServer,
     isMobile,
     appVer,
@@ -2069,7 +2066,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           return isMobile ? '1' : '0'
         }
         case 'local': {
-          return isTauri ? '1' : '0'
+          return '0'
         }
         case 'node': {
           return isNodeServer ? '1' : '0'
@@ -2120,7 +2117,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           return '🫖'
         }
         case 'risutype': {
-          return isTauri ? 'local' : isNodeServer ? 'node' : 'web'
+          return isNodeServer ? 'node' : 'web'
         }
         case 'maxcontext': {
           return db.maxContext.toString()

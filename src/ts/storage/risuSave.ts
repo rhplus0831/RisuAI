@@ -3,8 +3,7 @@ import * as fflate from 'fflate'
 import { getDatabase, presetTemplate, type Database } from './database.svelte'
 import localforage from 'localforage'
 import { forageStorage } from '../globalApi.svelte'
-import { isFastifyServer, isNodeServer, isTauri } from 'src/ts/platform'
-import { writeFile, BaseDirectory, exists, mkdir, readFile } from '@tauri-apps/plugin-fs'
+import { isFastifyServer, isNodeServer } from 'src/ts/platform'
 
 const packr = new Packr({
   useRecords: false,
@@ -336,7 +335,7 @@ export class RisuSaveEncoder {
   async encodeBlock(arg: EncodeBlockArg, option: EncodeBlockOption = { remote: 'none' }) {
     if (
       option.remote === 'force' ||
-      (option.remote === 'prefer' && (isTauri || isNodeServer) && !disableRemoteSaving())
+      (option.remote === 'prefer' && isNodeServer && !disableRemoteSaving())
     ) {
       return await this.encodeRemoteBlock(arg)
     }
@@ -384,13 +383,9 @@ export class RisuSaveEncoder {
 
     if (arg.skipRemoteSaving && checkedRemoteExistence.has(arg.name) === false) {
       let fileExists = false
-      if (isTauri) {
-        fileExists = await exists(fileName, { baseDir: BaseDirectory.AppData })
-      } else {
-        const stored = await forageStorage.keys()
-        if (stored.includes(fileName)) {
-          fileExists = true
-        }
+      const stored = await forageStorage.keys()
+      if (stored.includes(fileName)) {
+        fileExists = true
       }
       if (!fileExists) {
         console.log(
@@ -402,14 +397,7 @@ export class RisuSaveEncoder {
     }
 
     if (!arg.skipRemoteSaving) {
-      if (isTauri) {
-        if (!(await exists('remotes', { baseDir: BaseDirectory.AppData }))) {
-          await mkdir('remotes', { recursive: true, baseDir: BaseDirectory.AppData })
-        }
-        await writeFile(fileName, encoded!, { baseDir: BaseDirectory.AppData })
-      } else {
-        await forageStorage.setItem(fileName, encoded)
-      }
+      await forageStorage.setItem(fileName, encoded)
     }
     return await this.encodeBlock({
       compression: false,
@@ -572,14 +560,6 @@ export class RisuSaveDecoder {
                 `RisuSave remote block ${remoteInfo.name} is not available in server-backed web mode.`,
               )
               break
-            } else if (isTauri) {
-              try {
-                if (await exists(fileName, { baseDir: BaseDirectory.AppData })) {
-                  remoteData = await readFile(fileName, { baseDir: BaseDirectory.AppData })
-                }
-              } catch (error) {
-                console.error(`Error reading remote file ${fileName} in Tauri:`, error)
-              }
             } else {
               const stored = await forageStorage.getItem(fileName)
               if (stored) {

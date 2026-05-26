@@ -133,7 +133,6 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getSelectedCharID: getActiveSelectedCharID,
     getModelInfo: () => PLACEHOLDER_MODEL,
     callInternalFunction: () => '',
-    isTauri: false,
     isNodeServer: true,
     isMobile: false,
     appVer: '2026.4.181',

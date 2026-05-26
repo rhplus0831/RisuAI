@@ -17,7 +17,7 @@ import {
   createHypaV3Preset,
 } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
-import { isTauri, isNodeServer, isFastifyServer } from 'src/ts/platform'
+import { isNodeServer, isFastifyServer } from 'src/ts/platform'
 import { safeStructuredClone } from '../polyfill'
 import {
   canUseServerCommands,
@@ -772,7 +772,7 @@ export function setDatabase(data: Database) {
   data.echoDelay ??= 0
   data.useServerGeneration ??= false
   data.useServerPromptAssembly ??= false
-  if (!isNodeServer && !isTauri) {
+  if (!isNodeServer) {
     //this is intended to forcely reduce the size of the database in web
     data.promptInfoInsideChat = false
   }

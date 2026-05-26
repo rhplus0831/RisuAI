@@ -67,7 +67,6 @@ vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
   return {
     ...actual,
-    isTauri: false,
     isNodeServer: false,
     get isFastifyServer() {
       return platformState.isFastifyServer

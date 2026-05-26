@@ -1,7 +1,7 @@
 import { getDatabase } from './database.svelte'
 import { alertNormal } from '../alert'
 import { language } from 'src/lang'
-import { isTauri, isNodeServer, isFirefox } from 'src/ts/platform'
+import { isNodeServer, isFirefox } from 'src/ts/platform'
 
 async function requestPersistantStorageMain() {
   if (navigator.storage && navigator.storage.persist) {
@@ -34,7 +34,7 @@ async function requestPersistantStorageMain() {
 
 export async function persistantStorageRecommended() {
   const db = getDatabase()
-  if (navigator.storage && navigator.storage.persist && !isTauri && !isNodeServer) {
+  if (navigator.storage && navigator.storage.persist && !isNodeServer) {
     if (await navigator.storage.persisted()) {
       return false
     }

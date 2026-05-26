@@ -1,14 +1,5 @@
-import {
-  writeFile,
-  BaseDirectory,
-  readFile,
-  exists,
-  mkdir,
-  remove,
-  readDir,
-} from '@tauri-apps/plugin-fs'
 import { forageStorage } from '../globalApi.svelte'
-import { isTauri, isNodeServer, isFastifyServer } from 'src/ts/platform'
+import { isNodeServer, isFastifyServer } from 'src/ts/platform'
 import { DBState } from '../stores.svelte'
 import type { NodeStorage } from '../storage/nodeStorage'
 import { compress as fflateCompress, decompress as fflateDecompress } from 'fflate'
@@ -41,16 +32,6 @@ export async function getColdStorageItem(key: string) {
       if (!f) {
         return null
       }
-      const text = new TextDecoder().decode(await decompress(new Uint8Array(f)))
-      return JSON.parse(text)
-    } catch (error) {
-      return null
-    }
-  } else if (isTauri) {
-    try {
-      const f = await readFile('./coldstorage/' + key + '.json', {
-        baseDir: BaseDirectory.AppData,
-      })
       const text = new TextDecoder().decode(await decompress(new Uint8Array(f)))
       return JSON.parse(text)
     } catch (error) {
@@ -109,19 +90,6 @@ export async function setColdStorageItem(key: string, value: any): Promise<boole
       console.error('Cold storage node write failed:', error)
       return false
     }
-  } else if (isTauri) {
-    try {
-      if (!(await exists('./coldstorage'))) {
-        await mkdir('./coldstorage', { recursive: true, baseDir: BaseDirectory.AppData })
-      }
-      await writeFile('./coldstorage/' + key + '.json', compressed, {
-        baseDir: BaseDirectory.AppData,
-      })
-      return true
-    } catch (error) {
-      console.error('Cold storage Tauri write failed:', error)
-      return false
-    }
   } else {
     //use opfs
     try {
@@ -150,12 +118,6 @@ export async function listColdStorageItems(): Promise<{ items: string[] }> {
     const keys = fullKeys
       .filter((k) => k.startsWith('coldstorage/'))
       .map((k) => k.replace('coldstorage/', ''))
-    return {
-      items: keys,
-    }
-  } else if (isTauri) {
-    const entries = await readDir('./coldstorage', { baseDir: BaseDirectory.AppData })
-    const keys = entries.filter((e) => e.name.endsWith('.json')).map((e) => e.name.slice(0, -5))
     return {
       items: keys,
     }
@@ -214,14 +176,6 @@ async function removeColdStorageItems(keys: string[]) {
       const storage = forageStorage.realStorage as NodeStorage
       const deleteKeys = keys.map((k) => 'coldstorage/' + k)
       ;(storage as NodeStorage).removeItem(deleteKeys)
-    } catch (error) {
-      console.error(error)
-    }
-  } else if (isTauri) {
-    try {
-      for (let i = 0; i < keys.length; i++) {
-        await remove('./coldstorage/' + keys[i] + '.json')
-      }
     } catch (error) {
       console.error(error)
     }

@@ -22,7 +22,6 @@ vi.mock('src/ts/platform', async (importActual) => {
   return {
     ...actual,
     isFastifyServer: true,
-    isTauri: false,
   }
 })
 
@@ -70,16 +69,6 @@ vi.mock('../process/coldstorage.svelte', () => ({
   setColdStorageItem: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-  BaseDirectory: { AppData: 'AppData' },
-  readDir: vi.fn(),
-  readFile: vi.fn(),
-  writeFile: vi.fn(),
-}))
-
-vi.mock('@tauri-apps/plugin-process', () => ({
-  relaunch: vi.fn(),
-}))
 
 vi.mock('src/lang', () => ({
   language: {

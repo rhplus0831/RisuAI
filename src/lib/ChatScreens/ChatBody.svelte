@@ -188,7 +188,7 @@
       return
     }
     const imgs = bodyRoot.querySelectorAll(
-      'img:not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([src^="tauri:"]):not([noimage])',
+      'img:not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([noimage])',
     ) as NodeListOf<HTMLImageElement>
 
     if (imgs.length > 0) {

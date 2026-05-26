@@ -41,7 +41,7 @@ import {
   saveAsset,
   VirtualWriter,
 } from './globalApi.svelte'
-import { isTauri, isNodeServer, isFastifyServer } from 'src/ts/platform'
+import { isNodeServer, isFastifyServer } from 'src/ts/platform'
 import { compressImage, getImageType } from './media'
 import {
   DBState,
@@ -57,8 +57,6 @@ import { PngChunk } from './pngChunk'
 import type { OnnxModelFiles } from './process/transformers'
 import { CharXImporter, CharXWriter } from './process/processzip'
 import { exportModule, readModule, type RisuModule } from './process/modules'
-import { readFile } from '@tauri-apps/plugin-fs'
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import {
   currentCharacterStateSnapshot,
   dispatchCreateCharacter,
@@ -508,32 +506,6 @@ export async function characterURLImport() {
       if (launchParams.files && launchParams.files.length) {
         const files = launchParams.files as FileSystemFileHandle[]
         handleFiles(files)
-      }
-    })
-  }
-
-  if ('tauriOpenedFiles' in window) {
-    //@ts-expect-error tauriOpenedFiles is custom Tauri property, not defined in Window interface
-    const files: string[] = window.tauriOpenedFiles
-    if (files) {
-      for (const file of files) {
-        const data = await readFile(file)
-        await importFile(file, data)
-      }
-    }
-  }
-
-  if (isTauri) {
-    await onOpenUrl((urls) => {
-      for (const url of urls) {
-        const splited = url.split('/')
-        const id = splited[splited.length - 1]
-        const type = splited[splited.length - 2]
-        switch (type) {
-          case 'realm': {
-            downloadRisuHub(id)
-          }
-        }
       }
     })
   }
@@ -1798,11 +1770,11 @@ export async function getRisuHub(arg: {
 }): Promise<hubType[]> {
   try {
     arg.search += ' __shared'
-    const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${!isNodeServer && !isTauri ? 'web' : 'other'}`
+    const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${!isNodeServer ? 'web' : 'other'}`
 
     const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg), {
       headers: {
-        'x-risuai-info': appVer + ';' + (isNodeServer ? 'node' : isTauri ? 'tauri' : 'web'),
+        'x-risuai-info': appVer + ';' + (isNodeServer ? 'node' : 'web'),
       },
     })
     if (da.status !== 200) {

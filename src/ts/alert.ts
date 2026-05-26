@@ -1,7 +1,7 @@
 import { get, writable } from 'svelte/store'
 import { sleep } from './util'
 import { language } from '../lang'
-import { isTauri, isNodeServer } from 'src/ts/platform'
+import { isNodeServer } from 'src/ts/platform'
 import { getDatabase, type MessageGenerationInfo } from './storage/database.svelte'
 import { alertStore as alertStoreImported } from './stores.svelte'
 
@@ -84,7 +84,7 @@ export function alertError(msg: string | Error) {
   ) {
     submsg = db.usePlainFetch
       ? language.errors.networkFetchPlain
-      : !isTauri && !isNodeServer
+      : !isNodeServer
         ? language.errors.networkFetchWeb
         : language.errors.networkFetch
   }

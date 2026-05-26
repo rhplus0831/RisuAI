@@ -1,18 +1,6 @@
-import {
-  writeFile,
-  BaseDirectory,
-  readFile,
-  exists,
-  mkdir,
-  readDir,
-  remove,
-} from '@tauri-apps/plugin-fs'
-import { changeFullscreen, checkNullish, sleep } from './util'
-import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { checkNullish, sleep } from './util'
 import { v4 as uuidv4, v4 } from 'uuid'
-import { appDataDir, join } from '@tauri-apps/api/path'
 import { get } from 'svelte/store'
-import { open } from '@tauri-apps/plugin-shell'
 import {
   setDatabase,
   type Database,
@@ -21,7 +9,6 @@ import {
   appVer,
   getCurrentCharacter,
 } from './storage/database.svelte'
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { checkRisuUpdate } from './update'
 import {
   MobileGUI,
@@ -63,17 +50,14 @@ import { AutoStorage } from './storage/autoStorage'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { autoServerBackup, saveDbKei } from './kei/backup'
-import { save } from '@tauri-apps/plugin-dialog'
-import { listen } from '@tauri-apps/api/event'
 import { language } from 'src/lang'
 import { startObserveDom } from './observer.svelte'
 import { updateGuisize } from './gui/guisize'
 import { updateLorebooks } from './characters'
 import { initMobileGesture } from './hotkey'
-import { fetch as TauriHTTPFetch } from '@tauri-apps/plugin-http'
 import { moduleUpdate } from './process/modules'
 import { makeColdData } from './process/coldstorage.svelte'
-import { isTauri, isNodeServer, isFastifyServer } from './platform'
+import { isNodeServer, isFastifyServer } from './platform'
 import { isLocalNetworkUrl } from './network/localNetwork'
 import {
   decodeProxyJobWsChunk,
@@ -87,8 +71,6 @@ import { listServerBackups, restoreServerBackup } from './server/backups'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
 export const forageStorage = new AutoStorage()
-
-const appWindow = isTauri ? getCurrentWebviewWindow() : null
 
 interface fetchLog {
   body: string
@@ -119,18 +101,14 @@ export async function downloadFile(name: string, dat: Uint8Array | ArrayBuffer |
     a.remove()
   }
 
-  if (isTauri) {
-    await writeFile(name, data, { baseDir: BaseDirectory.Download })
-  } else {
-    const blob = new Blob([data], { type: 'application/octet-stream' })
-    const url = URL.createObjectURL(blob)
+  const blob = new Blob([data], { type: 'application/octet-stream' })
+  const url = URL.createObjectURL(blob)
 
-    downloadURL(url, name)
+  downloadURL(url, name)
 
-    setTimeout(() => {
-      URL.revokeObjectURL(url)
-    }, 10000)
-  }
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+  }, 10000)
 }
 
 let fileCache: {
@@ -140,9 +118,6 @@ let fileCache: {
   origin: [],
   res: [],
 }
-
-let pathCache: { [key: string]: string } = {}
-let checkedPaths: string[] = []
 
 const SERVER_ASSET_CONTENT_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -182,22 +157,6 @@ export async function getFileSrc(loc: string) {
       return loc
     }
     return serverAssetUrl(loc) ?? loc
-  }
-  if (isTauri) {
-    if (loc.startsWith('assets')) {
-      if (appDataDirPath === '') {
-        appDataDirPath = await appDataDir()
-      }
-      const cached = pathCache[loc]
-      if (cached) {
-        return convertFileSrc(cached)
-      } else {
-        const joined = await join(appDataDirPath, loc)
-        pathCache[loc] = joined
-        return convertFileSrc(joined)
-      }
-    }
-    return convertFileSrc(loc)
   }
   try {
     if (usingSw) {
@@ -258,8 +217,6 @@ export async function getFileSrc(loc: string) {
   }
 }
 
-let appDataDirPath = ''
-
 /**
  * Reads an image file and returns its data.
  *
@@ -270,17 +227,7 @@ export async function readImage(data: string) {
   if (isFastifyServer) {
     return readServerAssetBytes(data)
   }
-  if (isTauri) {
-    if (data.startsWith('assets')) {
-      if (appDataDirPath === '') {
-        appDataDirPath = await appDataDir()
-      }
-      return await readFile(await join(appDataDirPath, data))
-    }
-    return await readFile(data)
-  } else {
-    return (await forageStorage.getItem(data)) as unknown as Uint8Array
-  }
+  return (await forageStorage.getItem(data)) as unknown as Uint8Array
 }
 
 /**
@@ -334,19 +281,12 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
     }
     return responseBody.assetId
   }
-  if (isTauri) {
-    await writeFile(`assets/${id}.${fileExtension}`, data, {
-      baseDir: BaseDirectory.AppData,
-    })
-    return `assets/${id}.${fileExtension}`
-  } else {
-    let form = `assets/${id}.${fileExtension}`
-    const replacer = await forageStorage.setItem(form, data)
-    if (replacer) {
-      return replacer
-    }
-    return form
+  let form = `assets/${id}.${fileExtension}`
+  const replacer = await forageStorage.setItem(form, data)
+  if (replacer) {
+    return replacer
   }
+  return form
 }
 
 /**
@@ -359,11 +299,7 @@ export async function loadAsset(id: string) {
   if (isFastifyServer) {
     return readServerAssetBytes(id)
   }
-  if (isTauri) {
-    return await readFile(id, { baseDir: BaseDirectory.AppData })
-  } else {
-    return (await forageStorage.getItem(id)) as unknown as Uint8Array
-  }
+  return (await forageStorage.getItem(id)) as unknown as Uint8Array
 }
 
 let lastSave = ''
@@ -552,15 +488,8 @@ export async function saveDb() {
         continue
       }
       const dbData = new Uint8Array(encoded)
-      if (isTauri) {
-        await writeFile('database/database.bin', dbData, { baseDir: BaseDirectory.AppData })
-        await writeFile(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData, {
-          baseDir: BaseDirectory.AppData,
-        })
-      } else {
-        await forageStorage.setItem('database/database.bin', dbData)
-        await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
-      }
+      await forageStorage.setItem('database/database.bin', dbData)
+      await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
       await getDbBackups()
       savetrys = 0
       await saveDbKei()
@@ -588,36 +517,18 @@ export async function getDbBackups() {
     return []
   }
 
-  if (isTauri) {
-    const keys = await readDir('database', { baseDir: BaseDirectory.AppData })
-    let backups: number[] = []
-    for (const key of keys) {
-      if (key.name.startsWith('dbbackup-')) {
-        let da = key.name.substring(9)
-        da = da.substring(0, da.length - 4)
-        backups.push(parseInt(da))
-      }
-    }
-    backups.sort((a, b) => b - a)
-    while (backups.length > 20) {
-      const last = backups.pop()
-      await remove(`database/dbbackup-${last}.bin`, { baseDir: BaseDirectory.AppData })
-    }
-    return backups
-  } else {
-    const keys = await forageStorage.keys()
+  const keys = await forageStorage.keys()
 
-    const backups = keys
-      .filter((key) => key.startsWith('database/dbbackup-'))
-      .map((key) => parseInt(key.slice(18, -4)))
-      .sort((a, b) => b - a)
+  const backups = keys
+    .filter((key) => key.startsWith('database/dbbackup-'))
+    .map((key) => parseInt(key.slice(18, -4)))
+    .sort((a, b) => b - a)
 
-    while (backups.length > 20) {
-      const last = backups.pop()
-      await forageStorage.removeItem(`database/dbbackup-${last}.bin`)
-    }
-    return backups
+  while (backups.length > 20) {
+    const last = backups.pop()
+    await forageStorage.removeItem(`database/dbbackup-${last}.bin`)
   }
+  return backups
 }
 
 let usingSw = false
@@ -643,12 +554,12 @@ export function getFetchData(id: string) {
 
 const knownHostes = ['localhost', '127.0.0.1', '0.0.0.0']
 const webLocalNetworkBlockedMessage =
-  '웹에서는 사설망 직접 호출 불가. Tauri 또는 LAN Node self-host 사용'
+  'Direct private network calls are not supported in the web version'
 const defaultProxyJobHeartbeatSec = 15
 
 function getProxy2Url() {
   if (isFastifyServer) return '/api/v1/proxy/fetch'
-  return !isTauri && !isNodeServer ? `${hubURL}/proxy2` : `/proxy2`
+  return !isNodeServer ? `${hubURL}/proxy2` : `/proxy2`
 }
 
 function getProxyStreamJobsCreateUrl() {
@@ -799,15 +710,15 @@ export async function globalFetch(
     const urlHost = new URL(url).hostname
     const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
     const forcePlainFetch =
-      ((knownHostes.includes(urlHost) && !isTauri) || db.usePlainFetch || arg.plainFetchForce) &&
+      ((knownHostes.includes(urlHost)) || db.usePlainFetch || arg.plainFetchForce) &&
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute
 
-    if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
+    if (useLocalNetworkRoute && !isNodeServer) {
       return { ok: false, headers: {}, status: 400, data: webLocalNetworkBlockedMessage }
     }
 
-    if (knownHostes.includes(urlHost) && !isTauri && !isNodeServer) {
+    if (knownHostes.includes(urlHost) && !isNodeServer) {
       return {
         ok: false,
         headers: {},
@@ -832,9 +743,6 @@ export async function globalFetch(
 
     try {
       if (useLocalNetworkRoute) {
-        if (isTauri) {
-          return await fetchWithTauri(url, requestArg)
-        }
         return await fetchWithProxy(url, requestArg)
       }
       if (forcePlainFetch) {
@@ -843,9 +751,6 @@ export async function globalFetch(
       //userScriptFetch is provided by userscript
       if (window.userScriptFetch) {
         return await fetchWithUSFetch(url, requestArg)
-      }
-      if (isTauri) {
-        return await fetchWithTauri(url, requestArg)
       }
       return await fetchWithProxy(url, requestArg)
     } finally {
@@ -953,31 +858,6 @@ async function fetchWithUSFetch(url: string, arg: GlobalFetchArgs): Promise<Glob
   } catch (error) {
     return { ok: false, data: `${error}`, headers: {}, status: 400 }
   }
-}
-
-/**
- * Performs a fetch request using Tauri.
- *
- * @param {string} url - The URL to fetch.
- * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
- * @returns {Promise<GlobalFetchResult>} - The result of the fetch request.
- */
-async function fetchWithTauri(url: string, arg: GlobalFetchArgs): Promise<GlobalFetchResult> {
-  try {
-    const headers = { 'Content-Type': 'application/json', ...arg.headers }
-    const response = await TauriHTTPFetch(new URL(url), {
-      body: JSON.stringify(arg.body),
-      headers,
-      method: arg.method ?? 'POST',
-      signal: arg.abortSignal,
-    })
-    const data = arg.rawResponse
-      ? new Uint8Array(await response.arrayBuffer())
-      : await response.json()
-    const ok = response.status >= 200 && response.status < 300
-    addFetchLogInGlobalFetch(data, ok, url, arg, response.status)
-    return { ok, data, headers: Object.fromEntries(response.headers), status: response.status }
-  } catch (error) {}
 }
 
 /**
@@ -1302,11 +1182,7 @@ export function getFetchLogs() {
  * @param {string} url - The URL to open.
  */
 export function openURL(url: string) {
-  if (isTauri) {
-    open(url)
-  } else {
-    window.open(url, '_blank')
-  }
+  window.open(url, '_blank')
 }
 
 /**
@@ -1326,46 +1202,10 @@ function formDataToString(formData: FormData): string {
 }
 
 /**
- * A writer class for Tauri environment.
- */
-export class TauriWriter {
-  path: string
-  firstWrite: boolean = true
-
-  /**
-   * Creates an instance of TauriWriter.
-   *
-   * @param {string} path - The file path to write to.
-   */
-  constructor(path: string) {
-    this.path = path
-  }
-
-  /**
-   * Writes data to the file.
-   *
-   * @param {Uint8Array} data - The data to write.
-   */
-  async write(data: Uint8Array) {
-    await writeFile(this.path, data, {
-      append: !this.firstWrite,
-    })
-    this.firstWrite = false
-  }
-
-  /**
-   * Closes the writer. (No operation for TauriWriter)
-   */
-  async close() {
-    // do nothing
-  }
-}
-
-/**
  * Class representing a local writer.
  */
 export class LocalWriter {
-  writer: WritableStreamDefaultWriter | TauriWriter
+  writer: WritableStreamDefaultWriter
 
   /**
    * Initializes the writer.
@@ -1375,21 +1215,6 @@ export class LocalWriter {
    * @returns {Promise<boolean>} - A promise that resolves to a boolean indicating success.
    */
   async init(name = 'Binary', ext = ['bin']): Promise<boolean> {
-    if (isTauri) {
-      const filePath = await save({
-        filters: [
-          {
-            name: name,
-            extensions: ext,
-          },
-        ],
-      })
-      if (!filePath) {
-        return false
-      }
-      this.writer = new TauriWriter(filePath)
-      return true
-    }
     const streamSaver = await import('streamsaver')
     const writableStream = streamSaver.createWriteStream(name + '.' + ext[0])
     this.writer = writableStream.getWriter()
@@ -1450,109 +1275,6 @@ export class VirtualWriter {
   close(): void {
     // do nothing
   }
-}
-
-/**
- * Index for fetch operations.
- * @type {number}
- */
-let fetchIndex = 0
-
-/**
- * Stores native fetch data.
- * @type {{ [key: string]: StreamedFetchChunk[] }}
- */
-let nativeFetchData: { [key: string]: StreamedFetchChunk[] } = {}
-
-/**
- * Interface representing a streamed fetch chunk data.
- * @interface
- */
-interface StreamedFetchChunkData {
-  type: 'chunk'
-  body: string
-  id: string
-}
-
-/**
- * Interface representing a streamed fetch header data.
- * @interface
- */
-interface StreamedFetchHeaderData {
-  type: 'headers'
-  body: { [key: string]: string }
-  id: string
-  status: number
-}
-
-/**
- * Interface representing a streamed fetch end data.
- * @interface
- */
-interface StreamedFetchEndData {
-  type: 'end'
-  id: string
-}
-
-/**
- * Type representing a streamed fetch chunk.
- * @typedef {StreamedFetchChunkData | StreamedFetchHeaderData | StreamedFetchEndData} StreamedFetchChunk
- */
-type StreamedFetchChunk = StreamedFetchChunkData | StreamedFetchHeaderData | StreamedFetchEndData
-
-/**
- * Interface representing a streamed fetch plugin.
- * @interface
- */
-interface StreamedFetchPlugin {
-  /**
-   * Performs a streamed fetch operation.
-   * @param {Object} options - The options for the fetch operation.
-   * @param {string} options.id - The ID of the fetch operation.
-   * @param {string} options.url - The URL to fetch.
-   * @param {string} options.body - The body of the fetch request.
-   * @param {{ [key: string]: string }} options.headers - The headers of the fetch request.
-   * @returns {Promise<{ error: string, success: boolean }>} - The result of the fetch operation.
-   */
-  streamedFetch(options: {
-    id: string
-    url: string
-    body: string
-    headers: { [key: string]: string }
-  }): Promise<{ error: string; success: boolean }>
-
-  /**
-   * Adds a listener for the specified event.
-   * @param {string} eventName - The name of the event.
-   * @param {(data: StreamedFetchChunk) => void} listenerFunc - The function to call when the event is triggered.
-   */
-  addListener(eventName: 'streamed_fetch', listenerFunc: (data: StreamedFetchChunk) => void): void
-}
-
-/**
- * Indicates whether streamed fetch listening is active.
- * @type {boolean}
- */
-let streamedFetchListening = false
-
-/**
- * The streamed fetch plugin instance.
- * @type {StreamedFetchPlugin | undefined}
- */
-let capStreamedFetch: StreamedFetchPlugin | undefined
-
-if (isTauri) {
-  listen('streamed_fetch', (event) => {
-    try {
-      const parsed = JSON.parse(event.payload as string)
-      const id = parsed.id
-      nativeFetchData[id]?.push(parsed)
-    } catch (error) {
-      console.error(error)
-    }
-  }).then((v) => {
-    streamedFetchListening = true
-  })
 }
 
 /**
@@ -1897,15 +1619,13 @@ export async function fetchNative(
 
   const db = getDatabase()
   const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
-  if (useLocalNetworkRoute && !isTauri && !isNodeServer) {
+  if (useLocalNetworkRoute && !isNodeServer) {
     throw new Error(webLocalNetworkBlockedMessage)
   }
-  let throughProxy = !isTauri && !isNodeServer && !db.usePlainFetch
+  let throughProxy = !isNodeServer && !db.usePlainFetch
   if (useLocalNetworkRoute) {
     if (isNodeServer) {
       throughProxy = true
-    } else if (isTauri) {
-      throughProxy = false
     }
   }
   const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
@@ -1926,105 +1646,6 @@ export async function fetchNative(
         headers: headers,
         method: arg.method,
         signal: requestSignal,
-      })
-    } else if (isTauri) {
-      fetchIndex++
-      if (requestSignal && requestSignal.aborted) {
-        throw new Error('aborted')
-      }
-      if (fetchIndex >= 100000) {
-        fetchIndex = 0
-      }
-      let fetchId = fetchIndex.toString().padStart(5, '0')
-      nativeFetchData[fetchId] = []
-      let resolved = false
-
-      let error = ''
-      while (!streamedFetchListening) {
-        await sleep(100)
-      }
-      if (isTauri) {
-        invoke('streamed_fetch', {
-          id: fetchId,
-          url: url,
-          headers: JSON.stringify(headers),
-          body: realBody ? Buffer.from(realBody).toString('base64') : '',
-          method: arg.method,
-          timeout_secs: arg.requestTimeoutMs
-            ? Math.max(1, Math.ceil(arg.requestTimeoutMs / 1000))
-            : undefined,
-        }).then((res) => {
-          try {
-            const parsedRes = JSON.parse(res as string)
-            if (!parsedRes.success) {
-              error = parsedRes.body
-              resolved = true
-            }
-          } catch (e) {
-            error = JSON.stringify(e)
-            resolved = true
-          }
-        })
-      } else if (capStreamedFetch) {
-        capStreamedFetch
-          .streamedFetch({
-            id: fetchId,
-            url: url,
-            headers: headers,
-            body: realBody ? Buffer.from(realBody).toString('base64') : '',
-          })
-          .then((res) => {
-            if (!res.success) {
-              error = res.error
-              resolved = true
-            }
-          })
-      }
-
-      let resHeaders: { [key: string]: string } = null
-      let status = 400
-
-      let readableStream = pipeFetchLog(
-        fetchLogIndex,
-        new ReadableStream<Uint8Array>({
-          async start(controller) {
-            while (!resolved || nativeFetchData[fetchId].length > 0) {
-              if (nativeFetchData[fetchId].length > 0) {
-                const data = nativeFetchData[fetchId].shift()
-                if (data.type === 'chunk') {
-                  const chunk = Buffer.from(data.body, 'base64')
-                  controller.enqueue(chunk as unknown as Uint8Array)
-                }
-                if (data.type === 'headers') {
-                  resHeaders = data.body
-                  status = data.status
-                }
-                if (data.type === 'end') {
-                  resolved = true
-                }
-              }
-              await sleep(10)
-            }
-            controller.close()
-          },
-        }),
-      )
-
-      while (resHeaders === null && !resolved) {
-        await sleep(10)
-      }
-
-      if (resHeaders === null) {
-        resHeaders = {}
-      }
-
-      if (error !== '') {
-        throw new Error(error)
-      }
-
-      return new Response(readableStream, {
-        headers: new Headers(resHeaders),
-        status: status,
       })
     } else if (throughProxy) {
       const useProxyJobWs =
@@ -2204,11 +1825,7 @@ export async function loadInternalBackup() {
     return
   }
 
-  const keys = isTauri
-    ? (await readDir('database', { baseDir: BaseDirectory.AppData })).map((v) => {
-        return v.name
-      })
-    : await forageStorage.keys()
+  const keys = await forageStorage.keys()
   let internalBackups: string[] = []
   for (const key of keys) {
     if (key.includes('dbbackup-')) {
@@ -2233,9 +1850,7 @@ export async function loadInternalBackup() {
 
   const selectedBackup = internalBackups[alertResult]
 
-  const data = isTauri
-    ? await readFile('database/' + selectedBackup, { baseDir: BaseDirectory.AppData })
-    : await forageStorage.getItem(selectedBackup)
+  const data = await forageStorage.getItem(selectedBackup)
 
   setDatabase(await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array))
 

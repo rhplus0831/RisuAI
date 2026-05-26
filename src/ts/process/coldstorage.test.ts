@@ -19,7 +19,6 @@ vi.mock('src/ts/platform', async (importActual) => {
   return {
     ...actual,
     isNodeServer: false,
-    isTauri: false,
     get isFastifyServer() {
       return platformState.isFastifyServer
     },

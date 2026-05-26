@@ -1,5 +1,5 @@
 import type { SettingItem } from './types'
-import { isNodeServer, isTauri } from '../platform'
+import { isNodeServer } from '../platform'
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -156,7 +156,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'segmented',
     labelKey: 'requestLocation',
     bindKey: 'requestLocation',
-    condition: () => !isNodeServer && !isTauri,
+    condition: () => !isNodeServer,
     options: {
       segmentOptions: [
         { value: '', label: 'Default' },
@@ -370,7 +370,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'promptInfoInsideChat',
     bindKey: 'promptInfoInsideChat',
-    condition: () => isNodeServer || isTauri,
+    condition: () => isNodeServer,
     helpKey: 'promptInfoInsideChatDesc',
     classes: 'mt-4',
   },
@@ -379,7 +379,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'promptTextInfoInsideChat',
     bindKey: 'promptTextInfoInsideChat',
-    condition: (ctx) => (isNodeServer || isTauri) && ctx.db.promptInfoInsideChat,
+    condition: (ctx) => isNodeServer && ctx.db.promptInfoInsideChat,
     classes: 'mt-4',
   },
   {

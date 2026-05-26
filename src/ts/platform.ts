@@ -1,5 +1,3 @@
-import * as tauriOs from '@tauri-apps/plugin-os'
-
 type UserAgentDataLike = {
   platform?: string
   getHighEntropyValues?: (hints: string[]) => Promise<{
@@ -16,8 +14,7 @@ export type RisuEnvironmentLabel = 'local' | 'node' | 'web' | 'web(dev)'
 
 const browserNavigator = navigator as BrowserNavigator
 
-export const isTauri: boolean = !!(window as Window & { __TAURI_INTERNALS__?: unknown })
-  .__TAURI_INTERNALS__
+export const isTauri = false as const
 export const isNodeServer: boolean = !!(globalThis as typeof globalThis & { __NODE__?: boolean })
   .__NODE__
 export const isFastifyServer: boolean = !!(
@@ -120,10 +117,6 @@ async function getBrowserHighEntropyOSVersion(): Promise<string | null> {
 }
 
 export function getRisuEnvironmentLabel(): RisuEnvironmentLabel {
-  if (isTauri) {
-    return 'local'
-  }
-
   if (import.meta.env.DEV) {
     return 'web(dev)'
   }
@@ -141,14 +134,6 @@ export function getFallbackOSLabel(): string {
 }
 
 export async function getDetailedOSLabel(): Promise<string> {
-  if (isTauri) {
-    try {
-      return joinOSLabel(formatOSName(tauriOs.type()), normalizeOSVersion(tauriOs.version()))
-    } catch (error) {
-      console.warn('Failed to read native OS details:', error)
-    }
-  }
-
   const osName = getBrowserOSName()
   const browserVersion = await getBrowserHighEntropyOSVersion()
 

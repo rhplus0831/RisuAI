@@ -5,7 +5,6 @@
  */
 
 import type { SettingItem } from './types'
-import { changeFullscreen } from '../util'
 import { updateAnimationSpeed } from '../gui/animation'
 import { guiSizeText, updateGuisize } from '../gui/guisize'
 import { updateTextThemeAndCSS } from '../gui/colorscheme'
@@ -253,7 +252,7 @@ export const displayOtherSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'fullscreen',
     bindKey: 'fullScreen',
-    onChange: () => changeFullscreen(),
+    onChange: () => {},
     keywords: ['fullscreen'],
   },
   {

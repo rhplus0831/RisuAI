@@ -10,7 +10,7 @@ import {
   globalFetch,
   textifyReadableStream,
 } from 'src/ts/globalApi.svelte'
-import { isNodeServer, isTauri } from 'src/ts/platform'
+import { isNodeServer } from 'src/ts/platform'
 import { simplifySchema } from 'src/ts/util'
 import { isLocalNetworkUrl } from 'src/ts/network/localNetwork'
 
@@ -671,7 +671,7 @@ export async function requestOpenAI(
       urlHost.includes('172.0.0.1') ||
       urlHost.includes('0.0.0.0')
     ) {
-      if (!isTauri && !isNodeServer) {
+      if (!isNodeServer) {
         return {
           type: 'fail',
           result:
