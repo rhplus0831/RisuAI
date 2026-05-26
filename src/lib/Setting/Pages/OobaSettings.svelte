@@ -3,21 +3,21 @@
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import OptionalInput from 'src/lib/UI/GUI/OptionalInput.svelte'
 
-  import { DBState } from 'src/ts/stores.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import { language } from 'src/lang'
   import { PlusIcon, TrashIcon } from '@lucide/svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import ChatFormatSettings from './ChatFormatSettings.svelte'
-  import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
-
-  const stopServerSettingsWatch = watchServerBackedSettings([
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  const reverseProxyOobaArgsDraft = createServerBackedSettingDraft<Record<string, any>>(
     'reverseProxyOobaArgs',
+    {},
+  )
+  const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>(
     'localStopStrings',
-  ])
-  onDestroy(stopServerSettingsWatch)
+    null,
+  )
 
   interface Props {
     instructionMode?: boolean
@@ -31,269 +31,269 @@
     <ChatFormatSettings />
   {:else}
     <span class="text-textcolor">Ooba Mode</span>
-    <SelectInput className="mt-2 mb-4" bind:value={DBState.db.reverseProxyOobaArgs.mode}>
+    <SelectInput className="mt-2 mb-4" bind:value={reverseProxyOobaArgsDraft.value.mode}>
       <OptionInput value="instruct">Instruct</OptionInput>
       <OptionInput value="chat">Chat</OptionInput>
       <OptionInput value="chat-instruct">Chat-Instruct</OptionInput>
     </SelectInput>
     <!-- name1 = user | name2 = bot --->
 
-    {#if DBState.db.reverseProxyOobaArgs.mode === 'instruct'}
+    {#if reverseProxyOobaArgsDraft.value.mode === 'instruct'}
       <span class="text-textcolor">user prefix</span>
       <OptionalInput
         marginBottom={true}
-        bind:value={DBState.db.reverseProxyOobaArgs.name1_instruct}
+        bind:value={reverseProxyOobaArgsDraft.value.name1_instruct}
       />
       <span class="text-textcolor">bot prefix</span>
       <OptionalInput
         marginBottom={true}
-        bind:value={DBState.db.reverseProxyOobaArgs.name2_instruct}
+        bind:value={reverseProxyOobaArgsDraft.value.name2_instruct}
       />
       <span class="text-textcolor">system prefix</span>
       <OptionalInput
         marginBottom={true}
-        bind:value={DBState.db.reverseProxyOobaArgs.context_instruct}
+        bind:value={reverseProxyOobaArgsDraft.value.context_instruct}
       />
       <span class="text-textcolor">system message</span>
       <OptionalInput
         marginBottom={true}
-        bind:value={DBState.db.reverseProxyOobaArgs.system_message}
+        bind:value={reverseProxyOobaArgsDraft.value.system_message}
       />
     {/if}
-    {#if DBState.db.reverseProxyOobaArgs.mode === 'chat' || DBState.db.reverseProxyOobaArgs.mode === 'chat-instruct'}
+    {#if reverseProxyOobaArgsDraft.value.mode === 'chat' || reverseProxyOobaArgsDraft.value.mode === 'chat-instruct'}
       <span class="text-textcolor">user prefix</span>
-      <OptionalInput marginBottom={true} bind:value={DBState.db.reverseProxyOobaArgs.name1} />
+      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.name1} />
       <span class="text-textcolor">bot prefix</span>
-      <OptionalInput marginBottom={true} bind:value={DBState.db.reverseProxyOobaArgs.name2} />
+      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.name2} />
       <span class="text-textcolor">system prefix</span>
-      <OptionalInput marginBottom={true} bind:value={DBState.db.reverseProxyOobaArgs.context} />
+      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.context} />
       <span class="text-textcolor">start message</span>
-      <OptionalInput marginBottom={true} bind:value={DBState.db.reverseProxyOobaArgs.greeting} />
+      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.greeting} />
     {/if}
-    {#if DBState.db.reverseProxyOobaArgs.mode === 'chat-instruct'}
+    {#if reverseProxyOobaArgsDraft.value.mode === 'chat-instruct'}
       <span class="text-textcolor">chat_instruct_command</span>
       <OptionalInput
         marginBottom={true}
-        bind:value={DBState.db.reverseProxyOobaArgs.chat_instruct_command}
+        bind:value={reverseProxyOobaArgsDraft.value.chat_instruct_command}
       />
     {/if}
   {/if}
   <span class="text-textcolor">tokenizer</span>
-  <OptionalInput marginBottom={true} bind:value={DBState.db.reverseProxyOobaArgs.tokenizer} />
+  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.tokenizer} />
   <span class="text-textcolor">min_p</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.min_p}
+    bind:value={reverseProxyOobaArgsDraft.value.min_p}
     numberMode
   />
   <span class="text-textcolor">top_k</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.top_k}
+    bind:value={reverseProxyOobaArgsDraft.value.top_k}
     numberMode
   />
   <span class="text-textcolor">repetition_penalty</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.repetition_penalty}
+    bind:value={reverseProxyOobaArgsDraft.value.repetition_penalty}
     numberMode
   />
   <span class="text-textcolor">repetition_penalty_range</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.repetition_penalty_range}
+    bind:value={reverseProxyOobaArgsDraft.value.repetition_penalty_range}
     numberMode
   />
   <span class="text-textcolor">typical_p</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.typical_p}
+    bind:value={reverseProxyOobaArgsDraft.value.typical_p}
     numberMode
   />
   <span class="text-textcolor">tfs</span>
-  <OptionalInput marginBottom={true} bind:value={DBState.db.reverseProxyOobaArgs.tfs} numberMode />
+  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.tfs} numberMode />
   <span class="text-textcolor">top_a</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.top_a}
+    bind:value={reverseProxyOobaArgsDraft.value.top_a}
     numberMode
   />
   <span class="text-textcolor">epsilon_cutoff</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.epsilon_cutoff}
+    bind:value={reverseProxyOobaArgsDraft.value.epsilon_cutoff}
     numberMode
   />
   <span class="text-textcolor">eta_cutoff</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.eta_cutoff}
+    bind:value={reverseProxyOobaArgsDraft.value.eta_cutoff}
     numberMode
   />
   <span class="text-textcolor">guidance_scale</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.guidance_scale}
+    bind:value={reverseProxyOobaArgsDraft.value.guidance_scale}
     numberMode
   />
   <span class="text-textcolor">penalty_alpha</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.penalty_alpha}
+    bind:value={reverseProxyOobaArgsDraft.value.penalty_alpha}
     numberMode
   />
   <span class="text-textcolor">mirostat_mode</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.mirostat_mode}
+    bind:value={reverseProxyOobaArgsDraft.value.mirostat_mode}
     numberMode
   />
   <span class="text-textcolor">mirostat_tau</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.mirostat_tau}
+    bind:value={reverseProxyOobaArgsDraft.value.mirostat_tau}
     numberMode
   />
   <span class="text-textcolor">mirostat_eta</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.mirostat_eta}
+    bind:value={reverseProxyOobaArgsDraft.value.mirostat_eta}
     numberMode
   />
   <span class="text-textcolor">encoder_repetition_penalty</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.encoder_repetition_penalty}
+    bind:value={reverseProxyOobaArgsDraft.value.encoder_repetition_penalty}
     numberMode
   />
   <span class="text-textcolor">no_repeat_ngram_size</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.no_repeat_ngram_size}
+    bind:value={reverseProxyOobaArgsDraft.value.no_repeat_ngram_size}
     numberMode
   />
   <span class="text-textcolor">min_length</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.min_length}
+    bind:value={reverseProxyOobaArgsDraft.value.min_length}
     numberMode
   />
   <span class="text-textcolor">num_beams</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.num_beams}
+    bind:value={reverseProxyOobaArgsDraft.value.num_beams}
     numberMode
   />
   <span class="text-textcolor">length_penalty</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.length_penalty}
+    bind:value={reverseProxyOobaArgsDraft.value.length_penalty}
     numberMode
   />
   <span class="text-textcolor">truncation_length</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.truncation_length}
+    bind:value={reverseProxyOobaArgsDraft.value.truncation_length}
     numberMode
   />
   <span class="text-textcolor">max_tokens_second</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.max_tokens_second}
+    bind:value={reverseProxyOobaArgsDraft.value.max_tokens_second}
     numberMode
   />
   <span class="text-textcolor">negative_prompt</span>
-  <OptionalInput marginBottom={true} bind:value={DBState.db.reverseProxyOobaArgs.negative_prompt} />
+  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.negative_prompt} />
   <span class="text-textcolor">custom_token_bans</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.custom_token_bans}
+    bind:value={reverseProxyOobaArgsDraft.value.custom_token_bans}
   />
   <span class="text-textcolor">grammar_string</span>
-  <OptionalInput marginBottom={true} bind:value={DBState.db.reverseProxyOobaArgs.grammar_string} />
+  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.grammar_string} />
 
   <span class="text-textcolor">temperature_last</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.temperature_last}
+    bind:value={reverseProxyOobaArgsDraft.value.temperature_last}
     boolMode
   />
   <span class="text-textcolor">do_sample</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.do_sample}
+    bind:value={reverseProxyOobaArgsDraft.value.do_sample}
     boolMode
   />
   <span class="text-textcolor">early_stopping</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.early_stopping}
+    bind:value={reverseProxyOobaArgsDraft.value.early_stopping}
     boolMode
   />
   <span class="text-textcolor">auto_max_new_tokens</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.auto_max_new_tokens}
+    bind:value={reverseProxyOobaArgsDraft.value.auto_max_new_tokens}
     boolMode
   />
 
   <span class="text-textcolor">ban_eos_token</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.ban_eos_token}
+    bind:value={reverseProxyOobaArgsDraft.value.ban_eos_token}
     boolMode
   />
   <span class="text-textcolor">add_bos_token</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.add_bos_token}
+    bind:value={reverseProxyOobaArgsDraft.value.add_bos_token}
     boolMode
   />
   <span class="text-textcolor">skip_special_tokens</span>
   <OptionalInput
     marginBottom={true}
-    bind:value={DBState.db.reverseProxyOobaArgs.skip_special_tokens}
+    bind:value={reverseProxyOobaArgsDraft.value.skip_special_tokens}
     boolMode
   />
 
   {#if instructionMode}
     <div class="flex items-center mt-4">
       <CheckInput
-        check={!!DBState.db.localStopStrings}
+        check={!!localStopStringsDraft.value}
         name={language.customStopWords}
         onChange={() => {
-          if (!DBState.db.localStopStrings) {
-            DBState.db.localStopStrings = []
+          if (!localStopStringsDraft.value) {
+            localStopStringsDraft.value = []
           } else {
-            DBState.db.localStopStrings = null
+            localStopStringsDraft.value = null
           }
         }}
       />
     </div>
-    {#if DBState.db.localStopStrings}
+    {#if localStopStringsDraft.value}
       <div class="flex flex-col p-2 rounded-sm border border-selected mt-2 gap-1">
         <div class="p-2">
           <button
             class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
             onclick={() => {
-              let localStopStrings = DBState.db.localStopStrings
+              const localStopStrings = localStopStringsDraft.value ?? []
               localStopStrings.push('')
-              DBState.db.localStopStrings = localStopStrings
+              localStopStringsDraft.value = localStopStrings
             }}><PlusIcon /></button
           >
         </div>
-        {#each DBState.db.localStopStrings as stopString, i}
+        {#each localStopStringsDraft.value as stopString, i}
           <div class="flex w-full">
             <div class="grow">
-              <TextInput marginBottom bind:value={DBState.db.localStopStrings[i]} fullwidth fullh />
+              <TextInput marginBottom bind:value={localStopStringsDraft.value[i]} fullwidth fullh />
             </div>
             <div>
               <button
                 class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                 onclick={() => {
-                  let localStopStrings = DBState.db.localStopStrings
+                  const localStopStrings = localStopStringsDraft.value ?? []
                   localStopStrings.splice(i, 1)
-                  DBState.db.localStopStrings = localStopStrings
+                  localStopStringsDraft.value = localStopStrings
                 }}><TrashIcon /></button
               >
             </div>

@@ -22,6 +22,10 @@ directly.
 - Landed 2026-05-26: Phase 9 module-selection writes now use
   command-backed trusted optimistic helpers for chat and character
   module toggles.
+- Landed 2026-05-26: Phase 9 Bot/Ooba settings for `ooba`,
+  `reverseProxyOobaArgs`, and `localStopStrings` now bind to local
+  command-backed drafts instead of mutating the Fastify projection
+  directly.
 - Next default pickup: Phase 9 remaining direct-write sweep.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.

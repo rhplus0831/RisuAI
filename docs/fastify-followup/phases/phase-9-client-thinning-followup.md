@@ -33,6 +33,11 @@ import/export events match the command map.
 - Landed 2026-05-26: chat and character module-selection writes in the
   module menu now run through command-backed trusted optimistic helpers
   instead of mutating the Fastify projection directly.
+- Landed 2026-05-26: Bot/Ooba nested settings for `ooba`,
+  `reverseProxyOobaArgs`, and `localStopStrings` now use
+  `createServerBackedSettingDraft`; command allowlists cover `ooba`,
+  `reverseProxyOobaArgs`, and `localStopStrings`, and focused client /
+  Fastify command tests cover the mapping.
 
 ## Tasks
 
@@ -43,8 +48,12 @@ import/export events match the command map.
   playground writes through commands or explicitly disable them when they
   are unsupported.
 - Continue with settings/editor binding surfaces after the module-menu
-  slice. Current high-yield grep:
+  and Bot/Ooba settings-draft slices. Current high-yield grep:
   `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`.
+  The next settings targets should reuse `createServerBackedSettingDraft`
+  for nested top-level setting objects and remove those keys from
+  `watchServerBackedSettings` in the same component to avoid duplicate
+  command dispatch.
 - Add any remaining command allowlist coverage found by the broader
   direct-write audit. The named slice added coverage for `notification`
   and `useAutoSuggestions`; module-selection reused existing chat and
@@ -89,5 +98,10 @@ pnpm check
 - direct selected-character memory write: `src/ts/stores.svelte.ts:185`
 - direct notification setting bind:
   `src/lib/Setting/Pages/Display/NotificationToggle.svelte:10`
+- settings draft helper:
+  `src/ts/server/settingsBridge.svelte.ts:32`
+- Bot/Ooba settings draft consumers:
+  `src/lib/Setting/Pages/BotSettings.svelte:128`,
+  `src/lib/Setting/Pages/OobaSettings.svelte:12`
 - save route registration: `server/fastify/src/routes/save.ts:39`
 - current state event catalog: `server/fastify/src/commands/events.ts:302`

@@ -28,8 +28,64 @@ export interface WatchServerBackedSettingsOptions {
   delayMs?: number
 }
 
+export interface ServerBackedSettingDraft<T> {
+  value: T
+}
+
 export function applyServerBackedSetting(key: string, value: unknown): void {
   applyServerBackedSettingsPatch({ [key]: value })
+}
+
+export function createServerBackedSettingDraft<T>(
+  key: string,
+  fallback: T,
+  options: WatchServerBackedSettingsOptions = {},
+): ServerBackedSettingDraft<T> {
+  const initialValue = currentSettingValue(key, fallback)
+  const draft = $state<ServerBackedSettingDraft<T>>({ value: cloneJsonValue(initialValue) })
+  const delayMs = options.delayMs ?? 250
+  let initialized = false
+  let suppressDraftDispatch = false
+  let previousServerSnapshot = snapshotJson(initialValue)
+
+  $effect(() => {
+    const serverValue = currentSettingValue(key, fallback)
+    const serverSnapshot = snapshotJson(serverValue)
+    const draftSnapshot = snapshotJson(draft.value)
+
+    if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
+      suppressDraftDispatch = true
+      draft.value = cloneJsonValue(serverValue)
+      queueMicrotask(() => {
+        suppressDraftDispatch = false
+      })
+    }
+
+    previousServerSnapshot = serverSnapshot
+  })
+
+  $effect(() => {
+    const snapshot = snapshotJson(draft.value)
+    if (!initialized) {
+      initialized = true
+      return
+    }
+    if (suppressDraftDispatch) return
+
+    untrack(() => {
+      if (!settingsGroupForKey(key)) return
+      const target = DBState.db as unknown as Record<string, unknown>
+      const attempted = cloneJsonValue(draft.value)
+      const previous = cloneJsonValue(target[key])
+      withTrustedServerProjectionWrite(() => {
+        target[key] = attempted
+      })
+      queueSettingsPatch({ [key]: attempted }, { [key]: previous }, delayMs)
+      previousServerSnapshot = snapshot
+    })
+  })
+
+  return draft
 }
 
 export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
@@ -155,6 +211,12 @@ function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): vo
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function currentSettingValue<T>(key: string, fallback: T): T {
+  const target = DBState.db as unknown as Record<string, unknown> | undefined
+  const value = target?.[key]
+  return value === undefined ? fallback : (value as T)
 }
 
 function cloneJsonValue<T>(value: T): T {

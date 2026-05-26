@@ -202,6 +202,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   ollamaRequestFormat: 'providers',
   ollamaThinkingMode: 'providers',
   ollamaURL: 'providers',
+  ooba: 'providers',
   openAIKey: 'providers',
   openaiCompatImage: 'media',
   openrouterFallback: 'providers',

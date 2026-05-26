@@ -15,9 +15,17 @@ Fastify shapes.
    - Continue the broader Fastify-web direct `DBState.db` write audit
      beyond the named guard and module-selection slices landed on
      2026-05-26.
+   - Landed 2026-05-26: Bot/Ooba settings for `ooba`,
+     `reverseProxyOobaArgs`, and `localStopStrings` now use
+     `createServerBackedSettingDraft` so nested setting controls bind to
+     local drafts and dispatch grouped settings commands.
    - Next good audit targets are the remaining settings and editor
      binding surfaces found by `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`,
-     especially Bot/OtherBot/Prompt settings and `CharConfig`.
+     especially the rest of Bot settings (`NAIsettings`, `ainconfig`,
+     `bias`, `additionalParams`, prompt-format fields), OtherBot media /
+     memory settings (`sdConfig`, `NAIImgConfig`, `comfyConfig`,
+     `openaiCompatImage`, `wavespeedImage`, `hypaCustomSettings`),
+     Prompt settings, and `CharConfig`.
    - Landed 2026-05-26: `.risu` import/export routes emit
      `state.imported` / `state.exported`, and `pnpm smoke:fastify-browser`
      covers multipart `.risu` import plus direct projection-write
@@ -68,6 +76,15 @@ Latest Phase 9 event-slice verification, 2026-05-26:
 pnpm api:test
 pnpm smoke:fastify-browser
 pnpm check
+```
+
+Latest Phase 9 settings-draft verification, 2026-05-26:
+
+```bash
+pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm api:test -- server/fastify/__tests__/commands.test.ts
+pnpm check
+pnpm smoke:fastify-browser
 ```
 
 Focused Phase 7:

@@ -208,6 +208,9 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('notification')).toBe('display')
     expect(settingsGroupForKey('useAutoSuggestions')).toBe('runtime')
     expect(settingsGroupForKey('useAutoTranslateInput')).toBe('language')
+    expect(settingsGroupForKey('ooba')).toBe('providers')
+    expect(settingsGroupForKey('reverseProxyOobaArgs')).toBe('providers')
+    expect(settingsGroupForKey('localStopStrings')).toBe('runtime')
   })
 
   it('reads and caches the command base revision from bootstrap', async () => {

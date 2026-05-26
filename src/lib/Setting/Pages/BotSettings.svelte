@@ -52,7 +52,10 @@
   import SeparateParametersSection from './SeparateParametersSection.svelte'
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
   import { onDestroy, untrack } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import {
+    createServerBackedSettingDraft,
+    watchServerBackedSettings,
+  } from 'src/ts/server/settingsBridge.svelte'
   import {
     canUseServerCommands,
     patchPromptSettingsCommand,
@@ -118,7 +121,6 @@
     'proxyRequestModel',
     'NAIsettings',
     'ainconfig',
-    'localStopStrings',
     'enableCustomFlags',
     'modelTools',
     'hideApiKey',
@@ -126,6 +128,11 @@
     'moduleIntergration',
   ])
   onDestroy(stopServerSettingsWatch)
+  const oobaDraft = createServerBackedSettingDraft<Record<string, any>>('ooba', { formating: {} })
+  const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>(
+    'localStopStrings',
+    null,
+  )
 
   let initializedPluginProviderWatch = false
   let previousPluginProvider = ''
@@ -776,7 +783,7 @@
       step={0.01}
       fixed={2}
       marginBottom
-      bind:value={DBState.db.ooba.repetition_penalty}
+      bind:value={oobaDraft.value.repetition_penalty}
     />
     <span class="text-textcolor">Length Penalty</span>
     <SliderInput
@@ -785,10 +792,10 @@
       step={0.05}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ooba.length_penalty}
+      bind:value={oobaDraft.value.length_penalty}
     />
     <span class="text-textcolor">Top K</span>
-    <SliderInput min={0} max={100} step={1} marginBottom bind:value={DBState.db.ooba.top_k} />
+    <SliderInput min={0} max={100} step={1} marginBottom bind:value={oobaDraft.value.top_k} />
     <span class="text-textcolor">Top P</span>
     <SliderInput
       min={0}
@@ -796,7 +803,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ooba.top_p}
+      bind:value={oobaDraft.value.top_p}
     />
     <span class="text-textcolor">Typical P</span>
     <SliderInput
@@ -805,7 +812,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ooba.typical_p}
+      bind:value={oobaDraft.value.typical_p}
     />
     <span class="text-textcolor">Top A</span>
     <SliderInput
@@ -814,7 +821,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ooba.top_a}
+      bind:value={oobaDraft.value.top_a}
     />
     <span class="text-textcolor">No Repeat n-gram Size</span>
     <SliderInput
@@ -822,57 +829,57 @@
       max={20}
       step={1}
       marginBottom
-      bind:value={DBState.db.ooba.no_repeat_ngram_size}
+      bind:value={oobaDraft.value.no_repeat_ngram_size}
     />
     <div class="flex items-center mt-4">
-      <Check bind:check={DBState.db.ooba.do_sample} name={'Do Sample'} />
+      <Check bind:check={oobaDraft.value.do_sample} name={'Do Sample'} />
     </div>
     <div class="flex items-center mt-4">
-      <Check bind:check={DBState.db.ooba.add_bos_token} name={'Add BOS Token'} />
+      <Check bind:check={oobaDraft.value.add_bos_token} name={'Add BOS Token'} />
     </div>
     <div class="flex items-center mt-4">
-      <Check bind:check={DBState.db.ooba.ban_eos_token} name={'Ban EOS Token'} />
+      <Check bind:check={oobaDraft.value.ban_eos_token} name={'Ban EOS Token'} />
     </div>
     <div class="flex items-center mt-4">
-      <Check bind:check={DBState.db.ooba.skip_special_tokens} name={'Skip Special Tokens'} />
+      <Check bind:check={oobaDraft.value.skip_special_tokens} name={'Skip Special Tokens'} />
     </div>
     <div class="flex items-center mt-4">
       <Check
-        check={!!DBState.db.localStopStrings}
+        check={!!localStopStringsDraft.value}
         name={language.customStopWords}
         onChange={() => {
-          if (!DBState.db.localStopStrings) {
-            DBState.db.localStopStrings = []
+          if (!localStopStringsDraft.value) {
+            localStopStringsDraft.value = []
           } else {
-            DBState.db.localStopStrings = null
+            localStopStringsDraft.value = null
           }
         }}
       />
     </div>
-    {#if DBState.db.localStopStrings}
+    {#if localStopStringsDraft.value}
       <div class="flex flex-col p-2 rounded-sm border border-selected mt-2 gap-1">
         <div class="p-2">
           <button
             class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
             onclick={() => {
-              let localStopStrings = DBState.db.localStopStrings
+              const localStopStrings = localStopStringsDraft.value ?? []
               localStopStrings.push('')
-              DBState.db.localStopStrings = localStopStrings
+              localStopStringsDraft.value = localStopStrings
             }}><PlusIcon /></button
           >
         </div>
-        {#each DBState.db.localStopStrings as stopString, i}
+        {#each localStopStringsDraft.value as stopString, i}
           <div class="flex w-full">
             <div class="grow">
-              <TextInput marginBottom bind:value={DBState.db.localStopStrings[i]} fullwidth fullh />
+              <TextInput marginBottom bind:value={localStopStringsDraft.value[i]} fullwidth fullh />
             </div>
             <div>
               <button
                 class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                 onclick={() => {
-                  let localStopStrings = DBState.db.localStopStrings
+                  const localStopStrings = localStopStringsDraft.value ?? []
                   localStopStrings.splice(i, 1)
-                  DBState.db.localStopStrings = localStopStrings
+                  localStopStringsDraft.value = localStopStrings
                 }}><TrashIcon /></button
               >
             </div>
@@ -883,7 +890,7 @@
     <div class="flex flex-col p-3 rounded-md border-selected border mt-4">
       <ChatFormatSettings />
     </div>
-    <Check bind:check={DBState.db.ooba.formating.useName} name={language.useNamePrefix} />
+    <Check bind:check={oobaDraft.value.formating.useName} name={language.useNamePrefix} />
   {:else if modelInfo.format === LLMFormat.NovelAI}
     <div class="flex flex-col p-3 bg-darkbg mt-4">
       <span class="text-textcolor">Starter</span>
