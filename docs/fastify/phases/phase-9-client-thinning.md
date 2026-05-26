@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-7c - RISUSAVE block codec port**. Next pickup:
-**9-7d - Decode normalization and validation**.
+**9-7d - Decode normalization and validation**. Next pickup:
+**9-7e - Repository-backed export adapter**.
 
 ## Goal
 
@@ -326,6 +326,8 @@ surfaces.
   - **9-7d - Decode normalization and validation.** Convert decoded saves into
     current Phase 9 import snapshots/resource shapes and validate malformed
     rows and stable ids.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-7d.md`](../phases-completed/phase-9-client-thinning-9-7d.md).
   - **9-7e - Repository-backed export adapter.** Build export snapshots from
     server persistence with server asset ids preserved as references. ZIP
     bundle generation and multipart import stay in 9-8.

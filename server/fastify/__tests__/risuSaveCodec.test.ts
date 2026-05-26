@@ -16,6 +16,7 @@ import {
   decodeLegacyRisuSaveEnvelope,
   encodeLegacyRisuSaveEnvelope,
 } from '../src/risuSave/legacyEnvelopeCodec.js'
+import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const harnessSource = readFileSync(path.join(here, '../src/risuSave/fixtureHarness.ts'), 'utf8')
@@ -24,10 +25,14 @@ const legacyCodecSource = readFileSync(
   'utf8',
 )
 const blockCodecSource = readFileSync(path.join(here, '../src/risuSave/blockCodec.ts'), 'utf8')
+const importSnapshotSource = readFileSync(
+  path.join(here, '../src/risuSave/importSnapshot.ts'),
+  'utf8',
+)
 
 describe('server .risu fixture harness', () => {
   it('keeps codec helpers server-safe and detached from browser storage modules', () => {
-    for (const source of [harnessSource, legacyCodecSource, blockCodecSource]) {
+    for (const source of [harnessSource, legacyCodecSource, blockCodecSource, importSnapshotSource]) {
       expect(source).not.toContain('localforage')
       expect(source).not.toContain('@tauri-apps')
       expect(source).not.toContain('database.svelte')
@@ -227,6 +232,136 @@ describe('server .risu fixture harness', () => {
     expect(truncated).toBeDefined()
     expect(() => decodeRisuSaveBlockEnvelope(truncated!.bytes)).toThrow(
       /Malformed RISUSAVE block/,
+    )
+  })
+
+  it('normalizes decoded legacy envelopes into current import snapshots', () => {
+    const fixture = risuSaveFixtureCases.find((item) => item.name === 'legacy-raw-basic')
+    expect(fixture).toBeDefined()
+
+    const decoded = decodeRisuSaveImportSnapshot(fixture!.bytes)
+
+    expect(decoded.envelope).toBe('legacy-raw')
+    expect(decoded.unsupportedReferences).toEqual([])
+    expect(decoded.database.characters).toHaveLength(1)
+    expect(decoded.database.characterOrder).toEqual(['fixture-char'])
+    expect(decoded.database.currentChar).toBe(0)
+    expect(decoded.database.botPresets).toEqual([{ id: 'preset-a', name: 'Preset A' }])
+    expect(decoded.database.botPresetsId).toBe(0)
+
+    const character = decoded.database.characters[0] as Record<string, unknown>
+    expect(character.chaId).toBe('fixture-char')
+    expect(character.chats).toHaveLength(1)
+    const chat = (character.chats as Array<Record<string, unknown>>)[0]
+    expect(chat.id).toEqual(expect.any(String))
+    expect(chat.id).not.toBe('')
+    expect(chat.message).toEqual([])
+  })
+
+  it('assembles and normalizes RISUSAVE block envelopes into import snapshots', () => {
+    const fixture = risuSaveFixtureCases.find((item) => item.name === 'risusave-blocks-basic')
+    expect(fixture).toBeDefined()
+
+    const decoded = decodeRisuSaveImportSnapshot(fixture!.bytes)
+
+    expect(decoded.envelope).toBe('risusave-blocks')
+    expect(decoded.unsupportedReferences).toEqual([])
+    expect(decoded.database.version).toBe(1)
+    expect(decoded.database.__directory).toBeUndefined()
+    expect(decoded.database.botPresets).toEqual([{ id: 'preset-a', name: 'Preset A' }])
+    expect(decoded.database.modules).toEqual([
+      { id: 'module-a', name: 'Module A', description: '', lorebook: [] },
+    ])
+    expect(decoded.database.loadouts).toEqual([
+      {
+        id: 'loadout-a',
+        name: 'Loadout A',
+        lastUsed: expect.any(Number),
+        favorite: false,
+        characterIds: [],
+        modules: [],
+        globalVariables: {},
+        presetName: '',
+        personaId: '',
+      },
+    ])
+    expect(decoded.database.plugins).toEqual([{ id: 'plugin-a', name: 'Plugin A' }])
+    expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { enabled: true } })
+    expect(decoded.database.characterOrder).toEqual(['fixture-char'])
+  })
+
+  it('applies root-component blocks as validated top-level fields', () => {
+    const encoded = encodeRisuSaveBlockEnvelope([
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 1, __directory: ['root-component'] }),
+      },
+      {
+        name: 'root-component',
+        type: RisuSaveBlockType.ROOT_COMPONENT,
+        data: JSON.stringify({ key: 'customRootField', data: { enabled: true } }),
+      },
+    ])
+
+    expect(decodeRisuSaveImportSnapshot(encoded).database).toMatchObject({
+      version: 1,
+      customRootField: { enabled: true },
+    })
+  })
+
+  it('reports unsupported remote and cache-only references without local storage fallback', () => {
+    const remote = risuSaveFixtureCases.find((item) => item.name === 'risusave-remote-reference')
+    const cacheOnly = risuSaveFixtureCases.find(
+      (item) => item.name === 'risusave-cache-only-reference',
+    )
+    expect(remote).toBeDefined()
+    expect(cacheOnly).toBeDefined()
+
+    expect(decodeRisuSaveImportSnapshot(remote!.bytes).unsupportedReferences).toEqual([
+      { name: 'remote-char', type: RisuSaveBlockType.REMOTE, kind: 'remote' },
+    ])
+    expect(decodeRisuSaveImportSnapshot(cacheOnly!.bytes).unsupportedReferences).toEqual([
+      { name: 'cache-only-char', type: RisuSaveBlockType.REMOTE, kind: 'cache-only' },
+    ])
+  })
+
+  it('rejects malformed decoded import rows', () => {
+    const invalidMessage = encodeLegacyRisuSaveEnvelope({
+      characters: [
+        {
+          chaId: 'bad-char',
+          name: 'Bad',
+          chats: [
+            {
+              id: 'bad-chat',
+              name: 'Bad Chat',
+              note: '',
+              localLore: [],
+              message: [{ role: 'system', data: 'nope', chatId: 'bad-message' }],
+            },
+          ],
+        },
+      ],
+    })
+    expect(() => decodeRisuSaveImportSnapshot(invalidMessage)).toThrow(
+      /message\[0\]\.role must be user or char/,
+    )
+
+    const invalidRootComponent = encodeRisuSaveBlockEnvelope([
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 1, __directory: ['bad-component'] }),
+      },
+      {
+        name: 'bad-component',
+        type: RisuSaveBlockType.ROOT_COMPONENT,
+        data: JSON.stringify({ key: '', data: true }),
+      },
+    ])
+    expect(() => decodeRisuSaveImportSnapshot(invalidRootComponent)).toThrow(
+      /bad-component block key must be a non-empty string/,
     )
   })
 })

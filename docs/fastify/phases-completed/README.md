@@ -100,6 +100,7 @@ track the next piece of work.
 | 9-7a - `.risu` fixture harness          | [`phase-9-client-thinning-9-7a.md`](phase-9-client-thinning-9-7a.md)                   | Server-safe `.risu` fixture corpus and codec harness for legacy/block inputs.    |
 | 9-7b - Legacy envelope codec            | [`phase-9-client-thinning-9-7b.md`](phase-9-client-thinning-9-7b.md)                   | Production server-safe legacy raw/compressed/stream `.risu` envelope codec.      |
 | 9-7c - RISUSAVE block codec             | [`phase-9-client-thinning-9-7c.md`](phase-9-client-thinning-9-7c.md)                   | Production server-safe RISUSAVE block codec and unsupported-reference reporting. |
+| 9-7d - Decode normalization             | [`phase-9-client-thinning-9-7d.md`](phase-9-client-thinning-9-7d.md)                   | Server-safe `.risu` import snapshot normalization and validation.                |
 
 ## Historical Status Logs
 
