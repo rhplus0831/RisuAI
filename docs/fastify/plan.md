@@ -29,9 +29,10 @@ End state:
 
 The original closeout snapshot belongs in [`status.md`](status.md).
 Phases 0-9 were closed for the Fastify-served web migration scope in
-`edbc2d07`; audit follow-up discovered additional findings afterward. All
-identified follow-up slices for Phases 0, 3, 6, 7, 8, and 9 are closed
-again in [`../fastify-followup/`](../fastify-followup/). Tauri /
+`edbc2d07`. The first audit follow-up is closed in
+[`../fastify-followup/`](../fastify-followup/). The current second-pass
+handoff is [`../fastify-followup-alpha/`](../fastify-followup-alpha/),
+where the remaining broad closeout blocker is `pnpm check`. Tauri /
 Desktop manual verification remains deferred to a separate later task.
 
 Stable baseline facts:

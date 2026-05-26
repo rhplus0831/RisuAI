@@ -1,6 +1,6 @@
 # Phase 6 - Server-Side Generation
 
-Date: 2026-05-24
+Date: 2026-05-27
 
 Status: closed 2026-05-22.
 
@@ -12,6 +12,8 @@ request shaping tests.
 Original closeout work is complete. Post-closeout audit work for
 streaming provider failure frames closed in
 [`../../fastify-followup/phases/phase-6-generation-followup.md`](../../fastify-followup/phases/phase-6-generation-followup.md).
+The alpha pass also closed truncated provider SSE-tail handling in
+[`../../fastify-followup-alpha/phases-completed/phase-6-generation-sse-tails.md`](../../fastify-followup-alpha/phases-completed/phase-6-generation-sse-tails.md).
 Provider paths still waiting on server-side prompt flattening or fixture
 demand are tracked in the provider coverage matrix.
 

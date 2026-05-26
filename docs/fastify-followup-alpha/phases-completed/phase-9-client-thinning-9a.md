@@ -30,19 +30,8 @@ pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__test
 pnpm smoke:fastify-browser
 ```
 
-Known broader-check status:
+## Broad Closeout
 
-- `pnpm check` still fails on pre-existing Fastify/server type errors
-  outside this 9A slice. The 9A-owned module test fixture error found
-  during verification was fixed; the remaining `svelte-check` output is
-  in server memory/generation/prompt/proxy/hub areas and route-backed
-  sendChat fixture typing.
-
-Pending before any broad alpha closeout:
-
-```bash
-pnpm check
-pnpm test
-pnpm api:test
-pnpm build
-```
+Functional Phase 9A alpha work is closed. `pnpm check` still fails on
+broader Fastify/server type errors outside this slice; the current
+blocker lives in [`../status.md`](../status.md).

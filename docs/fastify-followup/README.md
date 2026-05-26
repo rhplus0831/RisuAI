@@ -2,13 +2,15 @@
 
 Date: 2026-05-27
 
-This directory records audit follow-up work found after
+This directory records the first audit follow-up pass after
 `docs/fastify` marked Phases 0-9 closed. It stays separate from the
-main roadmap so closed phase docs remain concise.
+main roadmap so closed phase docs remain concise. The current
+second-pass handoff lives in
+[`../fastify-followup-alpha/`](../fastify-followup-alpha/).
 
 Use `docs/fastify` for original scope, boundaries, and historical
-closeout detail. Use this directory for reopened audit tasks, current
-handoff state, and exit criteria.
+closeout detail. Use this directory for first-audit reopened tasks and
+closeout criteria; use `docs/fastify-followup-alpha` for current work.
 
 Policy note: there are no actual Fastify users yet, so this process does
 not need compatibility migrations. Update the current schema, command
@@ -31,9 +33,10 @@ intermediate Fastify shapes.
 
 ## Audit Summary
 
-The audit did not identify actionable follow-up tasks for Phases 1, 2,
-4, or 5. Follow-up slices for Phases 0, 3, 6, 7, 8, and 9 are closed as
-of 2026-05-27.
+The first audit did not identify actionable follow-up tasks for Phases
+1, 2, 4, or 5. Its follow-up slices for Phases 0, 3, 6, 7, 8, and 9 are
+closed as of 2026-05-27. The current alpha pass has a separate broad
+typecheck blocker.
 
-Treat `status.md` and `status/next-steps.md` as the live record for new
-audit findings; keep landed detail under `phases-completed/`.
+Treat `status.md` and `status/next-steps.md` as the first-audit record;
+keep landed detail under `phases-completed/`.

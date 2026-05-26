@@ -31,19 +31,10 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm test -- src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/process/request/tests/serverMemory.test.ts
 ```
 
-Pending before broad alpha closeout:
+## Broad Closeout
 
-```bash
-pnpm check
-pnpm test
-pnpm api:test
-pnpm build
-```
-
-## Next Pickup
-
-No reopened alpha slices remain. Continue with broad alpha closeout
-verification unless a new audit finding is opened.
+Functional Phase 8 alpha work is closed. Broad verification status lives
+in [`../status.md`](../status.md).
 
 The lower-priority mixed pending embed batch note from the Phase 8
 audit was not changed in this slice; treat it as future work only if

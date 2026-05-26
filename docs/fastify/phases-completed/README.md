@@ -125,8 +125,9 @@ track the next piece of work.
 ## Maintenance
 
 - Update [`../status.md`](../status.md) and
-  [`../status/next-steps.md`](../status/next-steps.md) for live handoff
-  state.
+  [`../status/next-steps.md`](../status/next-steps.md) for original
+  closeout state. Current post-closeout alpha work belongs in
+  [`../../fastify-followup-alpha/`](../../fastify-followup-alpha/).
 - Keep active phase files focused on remaining work.
 - When a phase closes, move its detailed closeout here and leave only a
   short summary in `../phases/`.

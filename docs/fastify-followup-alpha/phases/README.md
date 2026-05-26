@@ -2,10 +2,10 @@
 
 Date: 2026-05-27
 
-This directory contains active or reopened alpha follow-up scope from
-the second Phases 0-9 audit. Completed slice logs should move to
-`../phases-completed/`; do not turn these active phase docs into long
-work logs.
+This directory keeps the open alpha work item plus a concise index to
+completed alpha slice logs. Completed detail belongs in
+`../phases-completed/`; do not turn active phase docs into long work
+logs.
 
 | Phase                      | Status | Doc                                                                                                              |
 | -------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |

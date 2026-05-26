@@ -1,10 +1,12 @@
 # Migration Phases
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 These files track the original migration phase scope and closeout state.
-Post-closeout audit work and closeout state live in
-[`../../fastify-followup/phases/`](../../fastify-followup/phases/).
+First-audit follow-up closeout state lives in
+[`../../fastify-followup/phases/`](../../fastify-followup/phases/);
+current second-pass alpha work lives in
+[`../../fastify-followup-alpha/phases/`](../../fastify-followup-alpha/phases/).
 Completed details, landed slice tables, and old status logs live in
 [`../phases-completed/`](../phases-completed/).
 
@@ -41,10 +43,10 @@ the phase file.
 0 -> 4 -> 5 -> 6 -> 7
 ```
 
-Audit follow-up status lives in `docs/fastify-followup`. As of
-2026-05-27, all identified follow-up slices are closed again. Tauri /
-Desktop manual verification remains a separate deferred task and does
-not change the original Fastify web closeout state.
+The first audit follow-up in `docs/fastify-followup` is closed. The
+current alpha handoff in `docs/fastify-followup-alpha` keeps broad
+typecheck cleanup separate from the original Fastify web closeout. Tauri
+/ Desktop manual verification remains a separate deferred task.
 
 ## Completed Detail
 

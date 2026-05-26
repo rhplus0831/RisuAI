@@ -6,6 +6,8 @@ Status: closed. Completed through **8-9 - Phase 8 closeout**.
 Post-closeout audit work for custom embedding follow-ups, production
 memory progress events, and missing-summary diagnostics closed in
 [`../../fastify-followup/phases/phase-8-memory-followup.md`](../../fastify-followup/phases/phase-8-memory-followup.md).
+The alpha pass also closed memory event delivery isolation in
+[`../../fastify-followup-alpha/phases-completed/phase-8-memory-event-isolation.md`](../../fastify-followup-alpha/phases-completed/phase-8-memory-event-isolation.md).
 
 ## Goal
 
@@ -151,8 +153,8 @@ model }` with empty `group_id` / `group_index`; contextual Voyage
   failures non-blocking. The default `chunk` job handler remains a no-op
   by design; live chunk planning uses the prompt assembly context rather
   than a queued chunk snapshot.
-- The 8-9 closeout verified the full matrix and moved the live handoff to
-  Phase 9 client thinning.
+- The 8-9 closeout verified the full matrix and moved the original
+  handoff to Phase 9 client thinning.
 
 ## Scope
 

@@ -2,8 +2,10 @@
 
 Date: 2026-05-27
 
-Use this file as the pickup runbook for reopened audit work. The phase
-files under `../phases/` hold source evidence and exit criteria.
+Use this file as the closed first-audit runbook. The phase files under
+`../phases/` hold source evidence and exit criteria for that audit; the
+current alpha pickup lives in
+[`../../fastify-followup-alpha/status/next-steps.md`](../../fastify-followup-alpha/status/next-steps.md).
 
 Policy note: no actual Fastify users exist yet. Update current schemas,
 commands, and import paths directly rather than preserving intermediate
@@ -15,8 +17,8 @@ Pick one slice per work session. Each slice should leave the worktree in
 a reviewable state with focused tests, update the affected phase file,
 and add any longer closeout note under `../phases-completed/`.
 
-No immediate pickup remains from the current audit. Continue only when a
-new audit finding is added to `../status.md` and the relevant phase file.
+No immediate pickup remains from the first audit. For current work,
+start with the alpha broad typecheck cleanup.
 
 ## Recently Closed
 

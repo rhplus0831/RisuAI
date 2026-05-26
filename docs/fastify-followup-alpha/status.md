@@ -24,6 +24,16 @@ current server schema, command surface, and import/export paths directly.
   slice detail under `phases-completed/` and keep focused scope,
   boundaries, and exit criteria under `phases/`.
 
+## Recent Alpha Anchors
+
+| Commit     | Scope                                           |
+| ---------- | ----------------------------------------------- |
+| `7bc0e8f6` | Closed Phase 9A projection-write blockers.      |
+| `d570f482` | Closed Phase 6 truncated provider SSE tails.    |
+| `0cee686d` | Closed Phase 3 hub response-header filtering.   |
+| `ed4d53a8` | Closed Phase 8 memory event delivery isolation. |
+| `6137b782` | Recorded the broad closeout typecheck blocker.  |
+
 ## Audit Findings
 
 | Phase                                   | State        | Finding                                                                                                                                 | Task Doc                                                                                                   |

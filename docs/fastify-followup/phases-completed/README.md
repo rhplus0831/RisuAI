@@ -7,6 +7,6 @@ have already landed. Treat any "Historical Next Pickup" section as the
 handoff that was true when that slice closed, not as the current work
 queue.
 
-Current follow-up status lives in [`../status.md`](../status.md), and
-the current pickup runbook lives in
-[`../status/next-steps.md`](../status/next-steps.md).
+First-audit follow-up status lives in [`../status.md`](../status.md).
+Current second-pass work lives in
+[`../../fastify-followup-alpha/status.md`](../../fastify-followup-alpha/status.md).

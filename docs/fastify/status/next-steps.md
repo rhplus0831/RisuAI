@@ -3,8 +3,10 @@
 Date: 2026-05-27
 
 Use this file as the original Phase 9 closeout runbook. The
-post-closeout audit pickup state lives in
-[`../../fastify-followup/status/next-steps.md`](../../fastify-followup/status/next-steps.md).
+first post-closeout audit is archived in
+[`../../fastify-followup/status/next-steps.md`](../../fastify-followup/status/next-steps.md);
+the current alpha pickup state lives in
+[`../../fastify-followup-alpha/status/next-steps.md`](../../fastify-followup-alpha/status/next-steps.md).
 Completed original migration slice details live in
 [`../phases-completed/`](../phases-completed/), and the closeout snapshot
 lives in [`../status.md`](../status.md).
@@ -16,8 +18,9 @@ shapes.
 ## Last Done
 
 **9-9e - Phase 9 docs closeout** is the latest landed original
-migration slice. Follow-up commits after `edbc2d07` are tracked in
-`docs/fastify-followup`.
+migration slice. First-audit follow-up commits after `edbc2d07` are
+tracked in `docs/fastify-followup`; the second-pass alpha trail is in
+`docs/fastify-followup-alpha`.
 
 - Closed Phase 9 for the Fastify-served web client-thinning scope.
 - Recorded the already-green 9-9d automated preflight and Fastify-served web
@@ -28,9 +31,10 @@ migration slice. Follow-up commits after `edbc2d07` are tracked in
 
 ## Immediate Pickup
 
-Immediate pickup: **none for the original migration**. The reopened
-audit work in `docs/fastify-followup` is closed as of 2026-05-27; add a
-new follow-up slice there only when a fresh code finding appears.
+Immediate pickup: **none for the original migration**. The current
+post-closeout pickup is the alpha broad typecheck cleanup in
+`docs/fastify-followup-alpha`; start there before treating this original
+runbook as current.
 
 - Do not fold audit follow-up or Tauri / Desktop manual verification
   back into the original Phase 9 docs closeout.
@@ -73,9 +77,10 @@ new follow-up slice there only when a fresh code finding appears.
 
 ## Later Queue
 
-1. New audit follow-up in `docs/fastify-followup` if a fresh finding
-   appears.
-2. Separate later task - Tauri / Desktop manual verification.
+1. Broad alpha closeout in `docs/fastify-followup-alpha`.
+2. New first-audit follow-up only if a fresh finding specifically
+   belongs to that archive.
+3. Separate later task - Tauri / Desktop manual verification.
 
 ## Parallel Or Deferred
 

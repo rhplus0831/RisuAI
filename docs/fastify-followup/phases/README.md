@@ -2,9 +2,10 @@
 
 Date: 2026-05-27
 
-These files track follow-up work found by the audit of Phases 0-9. Use
-the original `docs/fastify/phases/` files for scope and boundary
-context; use this directory for task scope and closeout criteria.
+These files track first-audit follow-up work found after Phases 0-9.
+Use the original `docs/fastify/phases/` files for scope and boundary
+context; use this directory for first-audit task scope and closeout
+criteria. Current alpha work is in `docs/fastify-followup-alpha/phases/`.
 
 ## Phase Index
 
@@ -25,7 +26,7 @@ Phase 8 follow-up is closed again after missing-summary follow-ups.
 Phase 6 follow-up is closed again after Ollama stream failure alignment.
 Phase 0 follow-up is closed again after 0A.
 Phase 3 follow-up is closed again after response-header alignment.
-No immediate pickup remains from the current audit.
+No immediate pickup remains from the first audit.
 ```
 
 ## Session Slice Index

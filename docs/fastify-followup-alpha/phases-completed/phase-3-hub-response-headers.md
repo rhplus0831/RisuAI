@@ -29,16 +29,7 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm api:test -- server/fastify/__tests__/hub.test.ts server/fastify/__tests__/proxy.test.ts
 ```
 
-Pending before broad alpha closeout:
+## Broad Closeout
 
-```bash
-pnpm check
-pnpm test
-pnpm api:test
-pnpm build
-```
-
-## Next Pickup
-
-The alpha handoff now points to Phase 8 memory event isolation as the
-default next slice.
+Functional Phase 3 alpha work is closed. Broad verification status lives
+in [`../status.md`](../status.md).

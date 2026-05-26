@@ -2,8 +2,9 @@
 
 Date: 2026-05-27
 
-This is the live handoff for audit follow-up work after Phases 0-9 were
-reported closed in `docs/fastify`.
+This is the first audit follow-up snapshot after Phases 0-9 were
+reported closed in `docs/fastify`. The current second-pass handoff lives
+in [`../fastify-followup-alpha/status.md`](../fastify-followup-alpha/status.md).
 
 Policy note: there are no actual Fastify users yet, so do not add
 compatibility migrations for intermediate Fastify shapes. Update the
@@ -12,10 +13,13 @@ directly.
 
 ## Current Snapshot
 
-- Active work: none. All currently identified audit follow-up slices are
-  closed.
+- Active work in this first follow-up: none. All identified first-audit
+  slices are closed.
+- Current handoff: broad alpha closeout typecheck cleanup in
+  [`../fastify-followup-alpha/`](../fastify-followup-alpha/).
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Next default pickup: none. Reopen only if a new audit finding appears.
+- Next default pickup here: none. Use the alpha handoff for current
+  work.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 

@@ -53,5 +53,5 @@ chunk-size warnings.
 ## Next Pickup
 
 Continue with 8-9 - Phase 8 closeout. Run the full verification matrix,
-confirm the Phase 8 exit criteria, and flip the live handoff to Phase 9
-client thinning when complete.
+confirm the Phase 8 exit criteria, and flip the original handoff to
+Phase 9 client thinning when complete.
