@@ -1,7 +1,11 @@
 <script lang="ts">
   import { alertMd } from 'src/ts/alert'
   import { shareRealmCardData } from 'src/ts/realm'
-  import { downloadPreset } from 'src/ts/storage/database.svelte'
+  import {
+    downloadPreset,
+    getCharacterByIndex,
+    setCharacterByIndex,
+  } from 'src/ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { selectedCharID, ShowRealmFrameStore } from 'src/ts/stores.svelte'
   import { sleep } from 'src/ts/util'
@@ -34,7 +38,9 @@
         //TODO, add preset edit
       } else if (DBState.db.characters[$selectedCharID].type === 'character') {
         loadingStage = 0
-        DBState.db.characters[$selectedCharID].realmId = e.data.id
+        const char = getCharacterByIndex($selectedCharID, { snapshot: true })
+        char.realmId = e.data.id
+        setCharacterByIndex($selectedCharID, char)
       }
       close()
     }

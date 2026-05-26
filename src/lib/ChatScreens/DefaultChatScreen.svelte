@@ -33,7 +33,11 @@
   } from '../../ts/stores.svelte'
   import { tick } from 'svelte'
   import Chat from './Chat.svelte'
-  import { type Message } from '../../ts/storage/database.svelte'
+  import {
+    getCharacterByIndex,
+    setCharacterByIndex,
+    type Message,
+  } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { getCharImage } from '../../ts/characters'
   import { chatProcessStage, doingChat, sendChat } from '../../ts/process/index.svelte'
@@ -1066,9 +1070,9 @@
             <CreatorQuote
               quote={DBState.db.characters[$selectedCharID].creatorNotes}
               onRemove={() => {
-                const cha = DBState.db.characters[$selectedCharID]
+                const cha = getCharacterByIndex($selectedCharID, { snapshot: true })
                 cha.removedQuotes = true
-                DBState.db.characters[$selectedCharID] = cha
+                setCharacterByIndex($selectedCharID, cha)
               }}
             />
           {/if}

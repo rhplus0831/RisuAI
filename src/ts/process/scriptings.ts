@@ -3,9 +3,11 @@ import { getChatVar, getGlobalChatVar, setChatVar } from '../parser/chatVar.svel
 import { hasher, type simpleCharacterArgument, risuChatParser } from '../parser/parser.svelte'
 import { LuaEngine, LuaFactory } from 'wasmoon'
 import {
+  getCharacterByIndex,
   getCurrentCharacter,
   getCurrentChat,
   getDatabase,
+  setCharacterByIndex,
   setDatabase,
   type Chat,
   type character,
@@ -663,7 +665,9 @@ export async function runScripted(
         if (typeof name !== 'string') {
           throw 'Invalid data type'
         }
-        DBState.db.characters[selectedChar].name = name
+        const char = getCharacterByIndex(selectedChar, { snapshot: true })
+        char.name = name
+        setCharacterByIndex(selectedChar, char)
       })
 
       declareAPI('getDescription', (id: string) => {
@@ -680,12 +684,12 @@ export async function runScripted(
           return
         }
         const selectedChar = get(selectedCharID)
-        const char = DBState.db.characters[selectedChar]
+        const char = getCharacterByIndex(selectedChar, { snapshot: true })
         if (typeof data !== 'string') {
           throw 'Invalid data type'
         }
         char.desc = desc
-        DBState.db.characters[selectedChar] = char
+        setCharacterByIndex(selectedChar, char)
       })
 
       declareAPI('getCharacterFirstMessage', (id: string) => {
@@ -698,14 +702,13 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const db = getDatabase()
         const selectedChar = get(selectedCharID)
-        const char = db.characters[selectedChar]
+        const char = getCharacterByIndex(selectedChar, { snapshot: true })
         if (typeof data !== 'string') {
           return false
         }
         char.firstMessage = data
-        DBState.db.characters[selectedChar] = char
+        setCharacterByIndex(selectedChar, char)
         return true
       })
 
@@ -739,12 +742,13 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const db = getDatabase()
         const selectedChar = get(selectedCharID)
         if (typeof data !== 'string') {
           return false
         }
-        DBState.db.characters[selectedChar].backgroundHTML = data
+        const char = getCharacterByIndex(selectedChar, { snapshot: true })
+        char.backgroundHTML = data
+        setCharacterByIndex(selectedChar, char)
         return true
       })
 

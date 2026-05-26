@@ -9,6 +9,8 @@ import {
   type Chat,
   type character,
 } from '../storage/database.svelte'
+import { saveUserPersona } from '../persona'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { tokenize } from '../tokenizer'
 import { getModuleTriggers } from './modules'
 import { get } from 'svelte/store'
@@ -2398,9 +2400,6 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
           char.desc = value
-          const selectedCharId = get(selectedCharID)
-          const db = getDatabase()
-          ;(db.characters[selectedCharId] as character).desc = value
           setCurrentCharacter(char)
           break
         }
@@ -2420,8 +2419,10 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
           if (DBState.db.personas[DBState.db.selectedPersona]) {
-            DBState.db.personas[DBState.db.selectedPersona].personaPrompt = value
-            DBState.db.personaPrompt = value
+            withTrustedServerProjectionWrite(() => {
+              DBState.db.personaPrompt = value
+            })
+            saveUserPersona()
           }
           break
         }
@@ -2435,9 +2436,6 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
           char.replaceGlobalNote = value
-          const selectedCharId = get(selectedCharID)
-          const db = getDatabase()
-          ;(db.characters[selectedCharId] as character).replaceGlobalNote = value
           setCurrentCharacter(char)
           break
         }
