@@ -17,11 +17,9 @@ and add any longer closeout note under `../phases-completed/`.
 
 1. Phase 9 client thinning remains first because it protects all
    Fastify-served browser work from silent client persistence.
-   - 9A-9G landed on 2026-05-26; commit anchors are in `../status.md`.
-   - 9H (next): character lore, script, prompt, TTS, and chat-name
-     editors.
-   - 9I: sidebar toggles, custom sidebar/loadout helpers, welcome setup,
-     and runtime API write classification.
+   - 9A-9H landed on 2026-05-26; commit anchors are in `../status.md`.
+   - 9I (next): sidebar toggles, custom sidebar/loadout helpers, welcome
+     setup, and runtime API write classification.
    - 9J: final direct-write sweep, allowlist gaps, browser smoke, and
      Phase 9 closeout.
 

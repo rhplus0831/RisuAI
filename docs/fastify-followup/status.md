@@ -19,8 +19,9 @@ directly.
 - Phase 9 follow-up has landed guard/import-event work plus slices 9A-9G;
   use the table below for commit anchors and `status/next-steps.md` for
   pickup order.
-- Next default pickup: Phase 9 Slice 9H, character lore, script, prompt,
-  TTS, and chat-name editors.
+- Next default pickup: Phase 9 Slice 9I, sidebar toggles, custom
+  sidebar/loadout helpers, welcome setup, and runtime API write
+  classification.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 
@@ -37,6 +38,7 @@ directly.
 | `2321516b`                                        | 9E persona, display/theme, global regex, lore preset, and bot preset editors. |
 | `668ea890`                                        | 9F plugin, custom model, and advanced setting editors.                        |
 | `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                   |
+| pending                                           | 9H character lore, script, prompt, TTS, and chat-name editors.                |
 
 ## Phase Status
 

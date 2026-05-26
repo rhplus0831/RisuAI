@@ -2329,6 +2329,10 @@ describe('Phase 9-3a character commands', () => {
         patch: {
           name: 'B renamed',
           desc: 'new desc',
+          systemPrompt: 'new system prompt',
+          ttsMode: 'openai',
+          oaiTTSConfig: { enabled: true, voice: 'alloy', model: 'tts-1', format: 'mp3' },
+          depth_prompt: { depth: 2, prompt: 'stay close' },
           trashTime: 1000,
         },
       },
@@ -2338,6 +2342,17 @@ describe('Phase 9-3a character commands', () => {
       type: 'character.updated',
       resource: 'character',
       id: 'char-b',
+    })
+    expect(
+      (loadPersisted(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+        (character) => character.chaId === 'char-b',
+      ),
+    ).toMatchObject({
+      name: 'B renamed',
+      systemPrompt: 'new system prompt',
+      ttsMode: 'openai',
+      oaiTTSConfig: { enabled: true, voice: 'alloy', model: 'tts-1', format: 'mp3' },
+      depth_prompt: { depth: 2, prompt: 'stay close' },
     })
 
     const restored = await harness.app.inject({

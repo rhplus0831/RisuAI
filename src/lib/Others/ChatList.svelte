@@ -21,10 +21,14 @@
     currentChatStateSnapshot,
     dispatchCreateChat,
     dispatchDeleteChat,
+    dispatchUpdateChat,
   } from 'src/ts/chatCommands'
+  import { canUseServerCommands } from 'src/ts/server/commands'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
 
   let editMode = $state(false)
+  let chatNameDrafts = $state({})
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
 
@@ -32,6 +36,29 @@
     const stop = watchServerBackedChatMetadata()
     return stop
   })
+
+  $effect(() => {
+    const drafts = {}
+    for (const chat of DBState.db.characters[$selectedCharID]?.chats ?? []) {
+      if (chat.id) {
+        drafts[chat.id] = chat.name ?? ''
+      }
+    }
+    chatNameDrafts = drafts
+  })
+
+  function updateChatName(chat, name) {
+    if (!chat?.id || chat.name === name) return
+    const previous = currentChatStateSnapshot()
+    if (canUseServerCommands()) {
+      dispatchUpdateChat(chat.id, { name }, previous)
+      return
+    }
+
+    withTrustedServerProjectionWrite(() => {
+      chat.name = name
+    })
+  }
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -62,8 +89,11 @@
       >
         {#if editMode}
           <TextInput
-            bind:value={DBState.db.characters[$selectedCharID].chats[i].name}
+            bind:value={chatNameDrafts[chat.id]}
             padding={false}
+            onchange={() => {
+              updateChatName(chat, chatNameDrafts[chat.id])
+            }}
           />
         {:else}
           <span>{chat.name}</span>

@@ -21,8 +21,17 @@
   import Help from 'src/lib/Others/Help.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { watchServerBackedLorebooks } from 'src/ts/server/lorebookBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { createServerBackedCharacterDraft } from 'src/ts/server/characterBridge.svelte'
+  import type { loreBook } from 'src/ts/storage/database.svelte'
 
   let submenu = $state(0)
+  const characterLoreSettingsDraft = createServerBackedCharacterDraft(['loreSettings', 'lorePlus'])
+  let characterLoreDraft = $state<loreBook[]>([])
+  let chatLoreDraft = $state<loreBook[]>([])
+  let loreDraftKey = ''
+  let loreDraftSnapshot = ''
+  let suppressLoreDraftDispatch = false
   interface Props {
     globalMode?: boolean
   }
@@ -34,20 +43,69 @@
     return () => stopLorebooks()
   })
 
+  $effect(() => {
+    const character = DBState.db.characters?.[$selectedCharID]
+    const chat = character?.chats?.[character.chatPage]
+    const key = `${character?.chaId ?? ''}:${chat?.id ?? ''}`
+    const snapshot = snapshotJson({
+      key,
+      characterLore: character?.globalLore ?? [],
+      chatLore: chat?.localLore ?? [],
+    })
+
+    if (key !== loreDraftKey || snapshot !== loreDraftSnapshot) {
+      suppressLoreDraftDispatch = true
+      loreDraftKey = key
+      characterLoreDraft = cloneJsonValue(character?.globalLore ?? [])
+      chatLoreDraft = cloneJsonValue(chat?.localLore ?? [])
+      loreDraftSnapshot = snapshot
+      queueMicrotask(() => {
+        suppressLoreDraftDispatch = false
+      })
+    }
+  })
+
+  $effect(() => {
+    const character = DBState.db.characters?.[$selectedCharID]
+    const chat = character?.chats?.[character.chatPage]
+    const key = `${character?.chaId ?? ''}:${chat?.id ?? ''}`
+    const snapshot = snapshotJson({
+      key,
+      characterLore: characterLoreDraft,
+      chatLore: chatLoreDraft,
+    })
+
+    if (suppressLoreDraftDispatch || !character || !chat || snapshot === loreDraftSnapshot) return
+
+    withTrustedServerProjectionWrite(() => {
+      character.globalLore = cloneJsonValue(characterLoreDraft)
+      chat.localLore = cloneJsonValue(chatLoreDraft)
+    })
+    loreDraftSnapshot = snapshot
+  })
+
+  function cloneJsonValue<T>(value: T): T {
+    if (value === undefined) return value
+    return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  function snapshotJson(value: unknown): string {
+    const snapshot = JSON.stringify(value)
+    return snapshot === undefined ? '__undefined__' : snapshot
+  }
+
   function isAllCharacterLoreAlwaysActive() {
-    const globalLore = DBState.db.characters[$selectedCharID].globalLore
+    const globalLore = characterLoreDraft
     return globalLore && globalLore.every((book) => book.alwaysActive)
   }
 
   function isAllChatLoreAlwaysActive() {
-    const localLore =
-      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-        .localLore
+    const localLore = chatLoreDraft
     return localLore && localLore.every((book) => book.alwaysActive)
   }
 
   function toggleCharacterLoreAlwaysActive() {
-    const globalLore = DBState.db.characters[$selectedCharID].globalLore
+    const globalLore = characterLoreDraft
 
     if (!globalLore) return
 
@@ -56,12 +114,11 @@
     globalLore.forEach((book) => {
       book.alwaysActive = !allActive
     })
+    characterLoreDraft = [...globalLore]
   }
 
   function toggleChatLoreAlwaysActive() {
-    const localLore =
-      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-        .localLore
+    const localLore = chatLoreDraft
 
     if (!localLore) return
 
@@ -70,6 +127,7 @@
     localLore.forEach((book) => {
       book.alwaysActive = !allActive
     })
+    chatLoreDraft = [...localLore]
   }
 </script>
 
@@ -110,31 +168,48 @@
       >{submenu === 0 ? language.globalLoreInfo : language.localLoreInfo}</span
     >
   {/if}
-  <LoreBookList
-    {globalMode}
-    {submenu}
-    lorePlus={!globalMode && DBState.db.characters[$selectedCharID]?.lorePlus}
-  />
+  {#if !globalMode && submenu === 0}
+    <LoreBookList
+      {globalMode}
+      {submenu}
+      lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus}
+      bind:externalLoreBooks={characterLoreDraft}
+    />
+  {:else if !globalMode && submenu === 1}
+    <LoreBookList
+      {globalMode}
+      {submenu}
+      lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus}
+      bind:externalLoreBooks={chatLoreDraft}
+    />
+  {:else}
+    <LoreBookList
+      {globalMode}
+      {submenu}
+      lorePlus={!globalMode && DBState.db.characters[$selectedCharID]?.lorePlus}
+    />
+  {/if}
 {:else}
-  {#if DBState.db.characters[$selectedCharID].loreSettings}
+  {#if characterLoreSettingsDraft.value.loreSettings}
     <div class="flex items-center mt-4">
       <Check
         check={false}
         onChange={() => {
-          DBState.db.characters[$selectedCharID].loreSettings = undefined
+          characterLoreSettingsDraft.value.loreSettings = undefined
+          characterLoreSettingsDraft.value = { ...characterLoreSettingsDraft.value }
         }}
         name={language.useGlobalSettings}
       />
     </div>
     <div class="flex items-center mt-4">
       <Check
-        bind:check={DBState.db.characters[$selectedCharID].loreSettings.recursiveScanning}
+        bind:check={characterLoreSettingsDraft.value.loreSettings.recursiveScanning}
         name={language.recursiveScanning}
       />
     </div>
     <div class="flex items-center mt-4">
       <Check
-        bind:check={DBState.db.characters[$selectedCharID].loreSettings.fullWordMatching}
+        bind:check={characterLoreSettingsDraft.value.loreSettings.fullWordMatching}
         name={language.fullWordMatching}
       />
     </div>
@@ -143,25 +218,26 @@
       size="sm"
       min={0}
       max={20}
-      bind:value={DBState.db.characters[$selectedCharID].loreSettings.scanDepth}
+      bind:value={characterLoreSettingsDraft.value.loreSettings.scanDepth}
     />
     <span class="text-textcolor">{language.loreBookToken}</span>
     <NumberInput
       size="sm"
       min={0}
       max={4096}
-      bind:value={DBState.db.characters[$selectedCharID].loreSettings.tokenBudget}
+      bind:value={characterLoreSettingsDraft.value.loreSettings.tokenBudget}
     />
   {:else}
     <div class="flex items-center mt-4">
       <Check
         check={true}
         onChange={() => {
-          DBState.db.characters[$selectedCharID].loreSettings = {
+          characterLoreSettingsDraft.value.loreSettings = {
             tokenBudget: DBState.db.loreBookToken,
             scanDepth: DBState.db.loreBookDepth,
             recursiveScanning: false,
           }
+          characterLoreSettingsDraft.value = { ...characterLoreSettingsDraft.value }
         }}
         name={language.useGlobalSettings}
       />
@@ -169,7 +245,7 @@
   {/if}
   <div class="flex items-center mt-4">
     {#if DBState.db.useExperimental}
-      <Check bind:check={DBState.db.characters[$selectedCharID].lorePlus} name={language.lorePlus}
+      <Check bind:check={characterLoreSettingsDraft.value.lorePlus} name={language.lorePlus}
         ><Help key="lorePlus"></Help><Help key="experimental"></Help></Check
       >
     {/if}

@@ -1,7 +1,12 @@
 <script lang="ts">
   import { language } from '../../lang'
   import { tokenizeAccurate } from '../../ts/tokenizer'
-  import { saveImage as saveAsset, type character } from '../../ts/storage/database.svelte'
+  import {
+    saveImage as saveAsset,
+    type character,
+    type customscript,
+    type triggerscript,
+  } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { untrack } from 'svelte'
   import {
@@ -110,7 +115,40 @@
     'hideChatIcon',
     'utilityBot',
     'escapeOutput',
+    'backgroundHTML',
+    'virtualscript',
+    'ttsMode',
+    'ttsSpeech',
+    'voicevoxConfig',
+    'naittsConfig',
+    'oaiVoice',
+    'oaiTTSConfig',
+    'hfTTS',
+    'vits',
+    'gptSoVitsConfig',
+    'fishSpeechConfig',
+    'ttsReadOnlyQuoted',
+    'bias',
+    'exampleMessage',
+    'creatorNotes',
+    'systemPrompt',
+    'replaceGlobalNote',
+    'additionalText',
+    'personality',
+    'scenario',
+    'defaultVariables',
+    'translatorNote',
+    'additionalData',
+    'nickname',
+    'depth_prompt',
+    'alternateGreetings',
+    'removedQuotes',
   ])
+  let characterScriptsDraft = $state<customscript[]>([])
+  let characterTriggersDraft = $state<triggerscript[]>([])
+  let scriptDraftCharacterId = $state<string | null>(null)
+  let scriptDraftSnapshot = ''
+  let suppressScriptDraftDispatch = false
 
   $effect(() => {
     const stopCharacter = watchServerBackedCharacterProfile()
@@ -121,6 +159,50 @@
       stopChat()
       stopScripts()
     }
+  })
+
+  $effect(() => {
+    const character = DBState.db.characters?.[$selectedCharID]
+    const characterId = character?.chaId ?? null
+    const snapshot = snapshotJson({
+      characterId,
+      scripts: character?.customscript ?? [],
+      triggers: character?.triggerscript ?? [],
+    })
+
+    if (characterId !== scriptDraftCharacterId || snapshot !== scriptDraftSnapshot) {
+      suppressScriptDraftDispatch = true
+      scriptDraftCharacterId = characterId
+      characterScriptsDraft = cloneJsonValue(character?.customscript ?? [])
+      characterTriggersDraft = cloneJsonValue(character?.triggerscript ?? [])
+      scriptDraftSnapshot = snapshot
+      queueMicrotask(() => {
+        suppressScriptDraftDispatch = false
+      })
+    }
+  })
+
+  $effect(() => {
+    const characterId = scriptDraftCharacterId
+    const snapshot = snapshotJson({
+      characterId,
+      scripts: characterScriptsDraft,
+      triggers: characterTriggersDraft,
+    })
+
+    if (suppressScriptDraftDispatch || !characterId || snapshot === scriptDraftSnapshot) return
+
+    untrack(() => {
+      withTrustedServerProjectionWrite(() => {
+        const character = DBState.db.characters?.find(
+          (candidate) => candidate.chaId === characterId,
+        )
+        if (!character) return
+        character.customscript = cloneJsonValue(characterScriptsDraft)
+        character.triggerscript = cloneJsonValue(characterTriggersDraft)
+      })
+      scriptDraftSnapshot = snapshot
+    })
   })
 
   let lasttokens = {
@@ -206,41 +288,45 @@
   })
   $effect.pre(() => {
     if (
-      DBState.db.characters[$selectedCharID].ttsMode === 'novelai' &&
-      (DBState.db.characters[$selectedCharID] as character).naittsConfig === undefined
+      characterDraft.value.ttsMode === 'novelai' &&
+      characterDraft.value.naittsConfig === undefined
     ) {
-      ;(DBState.db.characters[$selectedCharID] as character).naittsConfig = {
-        customvoice: false,
-        voice: 'Aini',
-        version: 'v2',
-      }
+      updateCharacterDraft((character) => {
+        character.naittsConfig = {
+          customvoice: false,
+          voice: 'Aini',
+          version: 'v2',
+        }
+      })
     }
   })
   $effect.pre(() => {
     if (
-      DBState.db.characters[$selectedCharID].ttsMode === 'gptsovits' &&
-      (DBState.db.characters[$selectedCharID] as character).gptSoVitsConfig === undefined
+      characterDraft.value.ttsMode === 'gptsovits' &&
+      characterDraft.value.gptSoVitsConfig === undefined
     ) {
-      ;(DBState.db.characters[$selectedCharID] as character).gptSoVitsConfig = {
-        url: '',
-        use_auto_path: false,
-        ref_audio_path: '',
-        use_long_audio: false,
-        ref_audio_data: {
-          fileName: '',
-          assetId: '',
-        },
-        volume: 1.0,
-        text_lang: 'auto',
-        text: 'en',
-        use_prompt: false,
-        prompt_lang: 'en',
-        top_p: 1,
-        temperature: 0.7,
-        speed: 1,
-        top_k: 5,
-        text_split_method: 'cut0',
-      }
+      updateCharacterDraft((character) => {
+        character.gptSoVitsConfig = {
+          url: '',
+          use_auto_path: false,
+          ref_audio_path: '',
+          use_long_audio: false,
+          ref_audio_data: {
+            fileName: '',
+            assetId: '',
+          },
+          volume: 1.0,
+          text_lang: 'auto',
+          text: 'en',
+          use_prompt: false,
+          prompt_lang: 'en',
+          top_p: 1,
+          temperature: 0.7,
+          speed: 1,
+          top_k: 5,
+          text_split_method: 'cut0',
+        }
+      })
     }
   })
 
@@ -252,30 +338,34 @@
 
   $effect.pre(() => {
     if (
-      DBState.db.characters[$selectedCharID].ttsMode === 'fishspeech' &&
-      (DBState.db.characters[$selectedCharID] as character).fishSpeechConfig === undefined
+      characterDraft.value.ttsMode === 'fishspeech' &&
+      characterDraft.value.fishSpeechConfig === undefined
     ) {
-      ;(DBState.db.characters[$selectedCharID] as character).fishSpeechConfig = {
-        model: {
-          _id: '',
-          title: '',
-          description: '',
-        },
-        chunk_length: 200,
-        normalize: false,
-      }
+      updateCharacterDraft((character) => {
+        character.fishSpeechConfig = {
+          model: {
+            _id: '',
+            title: '',
+            description: '',
+          },
+          chunk_length: 200,
+          normalize: false,
+        }
+      })
     }
   })
 
   $effect.pre(() => {
     if (
-      DBState.db.characters[$selectedCharID].ttsMode === 'openai' &&
-      (DBState.db.characters[$selectedCharID] as character).oaiTTSConfig === undefined
+      characterDraft.value.ttsMode === 'openai' &&
+      characterDraft.value.oaiTTSConfig === undefined
     ) {
-      ;(DBState.db.characters[$selectedCharID] as character).oaiTTSConfig = {
-        enabled: false,
-        format: 'mp3',
-      }
+      updateCharacterDraft((character) => {
+        character.oaiTTSConfig = {
+          enabled: false,
+          format: 'mp3',
+        }
+      })
     }
   })
 
@@ -308,24 +398,36 @@
 
   function moveAlternateGreetingUp(index: number) {
     if (index === 0) return
-    if (DBState.db.characters[$selectedCharID].type === 'character') {
-      let alternateGreetings = DBState.db.characters[$selectedCharID].alternateGreetings
+    if (characterDraft.value.type === 'character') {
+      let alternateGreetings = characterDraft.value.alternateGreetings
       let temp = alternateGreetings[index]
       alternateGreetings[index] = alternateGreetings[index - 1]
       alternateGreetings[index - 1] = temp
-      DBState.db.characters[$selectedCharID].alternateGreetings = alternateGreetings
+      characterDraft.value.alternateGreetings = alternateGreetings
+      characterDraft.value = { ...characterDraft.value }
     }
   }
 
   function moveAlternateGreetingDown(index: number) {
-    if (index === DBState.db.characters[$selectedCharID].alternateGreetings.length - 1) return
-    if (DBState.db.characters[$selectedCharID].type === 'character') {
-      let alternateGreetings = DBState.db.characters[$selectedCharID].alternateGreetings
+    if (index === characterDraft.value.alternateGreetings.length - 1) return
+    if (characterDraft.value.type === 'character') {
+      let alternateGreetings = characterDraft.value.alternateGreetings
       let temp = alternateGreetings[index]
       alternateGreetings[index] = alternateGreetings[index + 1]
       alternateGreetings[index + 1] = temp
-      DBState.db.characters[$selectedCharID].alternateGreetings = alternateGreetings
+      characterDraft.value.alternateGreetings = alternateGreetings
+      characterDraft.value = { ...characterDraft.value }
     }
+  }
+
+  function cloneJsonValue<T>(value: T): T {
+    if (value === undefined) return value
+    return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  function snapshotJson(value: unknown): string {
+    const snapshot = JSON.stringify(value)
+    return snapshot === undefined ? '__undefined__' : snapshot
   }
 
   function updateCharacterDraft(mutator: (character: character) => void): void {
@@ -885,55 +987,54 @@
       highlight
       margin="both"
       autocomplete="off"
-      bind:value={DBState.db.characters[$selectedCharID].backgroundHTML}
+      bind:value={characterDraft.value.backgroundHTML}
     ></TextAreaInput>
 
     <span class="text-textcolor mt-4">{language.regexScript} <Help key="regexScript" /></span>
-    <RegexList bind:value={DBState.db.characters[$selectedCharID].customscript} />
+    <RegexList bind:value={characterScriptsDraft} />
     <div class="text-textcolor2 mt-2 flex gap-2">
       <button
         class="font-medium cursor-pointer hover:text-green-500"
         onclick={() => {
-          if (DBState.db.characters[$selectedCharID].type === 'character') {
-            let script = DBState.db.characters[$selectedCharID].customscript
-            script.push({
-              comment: '',
-              in: '',
-              out: '',
-              type: 'editinput',
-            })
-            DBState.db.characters[$selectedCharID].customscript = script
+          if (characterDraft.value.type === 'character') {
+            characterScriptsDraft = [
+              ...characterScriptsDraft,
+              {
+                comment: '',
+                in: '',
+                out: '',
+                type: 'editinput',
+              },
+            ]
           }
         }}><PlusIcon /></button
       >
       <button
         class="font-medium cursor-pointer hover:text-green-500"
         onclick={() => {
-          exportRegex(DBState.db.characters[$selectedCharID].customscript)
+          exportRegex(characterScriptsDraft)
         }}><DownloadIcon /></button
       >
       <button
         class="font-medium cursor-pointer hover:text-green-500"
         onclick={async () => {
-          DBState.db.characters[$selectedCharID].customscript = await importRegex(
-            DBState.db.characters[$selectedCharID].customscript,
-          )
+          characterScriptsDraft = await importRegex(characterScriptsDraft)
         }}><HardDriveUploadIcon /></button
       >
     </div>
 
     <span class="text-textcolor mt-4">{language.triggerScript} <Help key="triggerScript" /></span>
     <TriggerList
-      bind:value={(DBState.db.characters[$selectedCharID] as character).triggerscript}
+      bind:value={characterTriggersDraft}
       lowLevelAble={DBState.db.characters[$selectedCharID].lowLevelAccess}
     />
 
-    {#if DBState.db.characters[$selectedCharID].virtualscript || DBState.db.showUnrecommended}
+    {#if characterDraft.value.virtualscript || DBState.db.showUnrecommended}
       <span class="text-textcolor mt-4">{language.charjs} <Help key="charjs" unrecommended /></span>
       <TextAreaInput
         margin="both"
         autocomplete="off"
-        bind:value={DBState.db.characters[$selectedCharID].virtualscript}
+        bind:value={characterDraft.value.virtualscript}
       ></TextAreaInput>
     {/if}
   {/if}
@@ -981,10 +1082,12 @@
     <span class="text-textcolor">{language.provider}</span>
     <SelectInput
       className="mb-4 mt-2"
-      bind:value={DBState.db.characters[$selectedCharID].ttsMode}
+      bind:value={characterDraft.value.ttsMode}
       onchange={(e) => {
-        if (DBState.db.characters[$selectedCharID].type === 'character') {
-          ;(DBState.db.characters[$selectedCharID] as character).ttsSpeech = ''
+        if (characterDraft.value.type === 'character') {
+          updateCharacterDraft((character) => {
+            character.ttsSpeech = ''
+          })
         }
       }}
     >
@@ -1000,28 +1103,28 @@
       <OptionInput value="fishspeech">fish-speech</OptionInput>
     </SelectInput>
 
-    {#if DBState.db.characters[$selectedCharID].ttsMode === 'webspeech'}
+    {#if characterDraft.value.ttsMode === 'webspeech'}
       {#if !speechSynthesis}
         <span class="text-textcolor">Web Speech isn't supported in your browser or OS</span>
       {:else}
         <span class="text-textcolor">{language.Speech}</span>
         <SelectInput
           className="mb-4 mt-2"
-          bind:value={(DBState.db.characters[$selectedCharID] as character).ttsSpeech}
+          bind:value={characterDraft.value.ttsSpeech}
         >
           <OptionInput value="">Auto</OptionInput>
           {#each getWebSpeechTTSVoices() as voice}
             <OptionInput value={voice}>{voice}</OptionInput>
           {/each}
         </SelectInput>
-        {#if (DBState.db.characters[$selectedCharID] as character).ttsSpeech !== ''}
+        {#if characterDraft.value.ttsSpeech !== ''}
           <span class="text-red-400 text-sm"
             >If you do not set it to Auto, it may not work properly when importing from another OS
             or browser.</span
           >
         {/if}
       {/if}
-    {:else if DBState.db.characters[$selectedCharID].ttsMode === 'elevenlab'}
+    {:else if characterDraft.value.ttsMode === 'elevenlab'}
       <span class="text-sm mb-2 text-textcolor2"
         >Please set the ElevenLabs API key in "global Settings → Bot Settings → Others → ElevenLabs
         API key"</span
@@ -1030,7 +1133,7 @@
         <span class="text-textcolor">{language.Speech}</span>
         <SelectInput
           className="mb-4 mt-2"
-          bind:value={(DBState.db.characters[$selectedCharID] as character).ttsSpeech}
+          bind:value={characterDraft.value.ttsSpeech}
         >
           <OptionInput value="">Unset</OptionInput>
           {#each voices as voice}
@@ -1038,32 +1141,32 @@
           {/each}
         </SelectInput>
       {/await}
-    {:else if DBState.db.characters[$selectedCharID].ttsMode === 'VOICEVOX'}
+    {:else if characterDraft.value.ttsMode === 'VOICEVOX'}
       <span class="text-textcolor">Speaker</span>
       <SelectInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].voicevoxConfig.speaker}
+        bind:value={characterDraft.value.voicevoxConfig.speaker}
       >
         {#await getVOICEVOXVoices() then voices}
           {#each voices as voice}
             <OptionInput
               value={voice.list}
-              selected={DBState.db.characters[$selectedCharID].voicevoxConfig.speaker ===
-                voice.list}>{voice.name}</OptionInput
+              selected={characterDraft.value.voicevoxConfig.speaker === voice.list}
+              >{voice.name}</OptionInput
             >
           {/each}
         {/await}
       </SelectInput>
-      {#if DBState.db.characters[$selectedCharID].voicevoxConfig.speaker}
+      {#if characterDraft.value.voicevoxConfig.speaker}
         <span class="text=neutral-200">Style</span>
         <SelectInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].ttsSpeech}
+          bind:value={characterDraft.value.ttsSpeech}
         >
-          {#each JSON.parse(DBState.db.characters[$selectedCharID].voicevoxConfig.speaker) as styles}
+          {#each JSON.parse(characterDraft.value.voicevoxConfig.speaker) as styles}
             <OptionInput
               value={styles.id}
-              selected={DBState.db.characters[$selectedCharID].ttsSpeech === styles.id}
+              selected={characterDraft.value.ttsSpeech === styles.id}
               >{styles.name}</OptionInput
             >
           {/each}
@@ -1073,41 +1176,41 @@
       <NumberInput
         size={'sm'}
         marginBottom
-        bind:value={DBState.db.characters[$selectedCharID].voicevoxConfig.SPEED_SCALE}
+        bind:value={characterDraft.value.voicevoxConfig.SPEED_SCALE}
       />
 
       <span class="text-textcolor">Pitch scale</span>
       <NumberInput
         size={'sm'}
         marginBottom
-        bind:value={DBState.db.characters[$selectedCharID].voicevoxConfig.PITCH_SCALE}
+        bind:value={characterDraft.value.voicevoxConfig.PITCH_SCALE}
       />
 
       <span class="text-textcolor">Volume scale</span>
       <NumberInput
         size={'sm'}
         marginBottom
-        bind:value={DBState.db.characters[$selectedCharID].voicevoxConfig.VOLUME_SCALE}
+        bind:value={characterDraft.value.voicevoxConfig.VOLUME_SCALE}
       />
 
       <span class="text-textcolor">Intonation scale</span>
       <NumberInput
         size={'sm'}
         marginBottom
-        bind:value={DBState.db.characters[$selectedCharID].voicevoxConfig.INTONATION_SCALE}
+        bind:value={characterDraft.value.voicevoxConfig.INTONATION_SCALE}
       />
       <span class="text-sm mb-2 text-textcolor2"
         >To use VOICEVOX, you need to run a colab and put the localtunnel URL in "Settings → Other
         Bots". https://colab.research.google.com/drive/1tyeXJSklNfjW-aZJAib1JfgOMFarAwze</span
       >
-    {:else if DBState.db.characters[$selectedCharID].ttsMode === 'novelai'}
+    {:else if characterDraft.value.ttsMode === 'novelai'}
       <span class="text-textcolor">Custom Voice Seed</span>
-      <Check bind:check={DBState.db.characters[$selectedCharID].naittsConfig.customvoice} />
-      {#if !DBState.db.characters[$selectedCharID].naittsConfig.customvoice}
+      <Check bind:check={characterDraft.value.naittsConfig.customvoice} />
+      {#if !characterDraft.value.naittsConfig.customvoice}
         <span class="text-textcolor">Voice</span>
         <SelectInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].naittsConfig.voice}
+          bind:value={characterDraft.value.naittsConfig.voice}
         >
           {#await getNovelAIVoices() then voices}
             {#each voices as voiceGroup}
@@ -1115,7 +1218,7 @@
                 {#each voiceGroup.voices as voice}
                   <OptionInput
                     value={voice}
-                    selected={DBState.db.characters[$selectedCharID].naittsConfig.voice === voice}
+                    selected={characterDraft.value.naittsConfig.voice === voice}
                     >{voice}</OptionInput
                   >
                 {/each}
@@ -1127,23 +1230,23 @@
         <span class="text-textcolor">Voice</span>
         <TextInput
           size={'sm'}
-          bind:value={DBState.db.characters[$selectedCharID].naittsConfig.voice}
+          bind:value={characterDraft.value.naittsConfig.voice}
         />
       {/if}
       <span class="text-textcolor">Version</span>
       <SelectInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].naittsConfig.version}
+        bind:value={characterDraft.value.naittsConfig.version}
       >
         <OptionInput value="v1">v1</OptionInput>
         <OptionInput value="v2">v2</OptionInput>
       </SelectInput>
-    {:else if DBState.db.characters[$selectedCharID].ttsMode === 'openai'}
+    {:else if characterDraft.value.ttsMode === 'openai'}
       <span class="text-textcolor">Voice</span>
-      {#if !DBState.db.characters[$selectedCharID].oaiTTSConfig?.enabled}
+      {#if !characterDraft.value.oaiTTSConfig?.enabled}
         <SelectInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].oaiVoice}
+          bind:value={characterDraft.value.oaiVoice}
         >
           <OptionInput value="">Unset</OptionInput>
           {#each oaiVoices as voice}
@@ -1153,19 +1256,19 @@
       {:else}
         <TextInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].oaiTTSConfig.voice}
-          placeholder={DBState.db.characters[$selectedCharID].oaiVoice || 'alloy'}
+          bind:value={characterDraft.value.oaiTTSConfig.voice}
+          placeholder={characterDraft.value.oaiVoice || 'alloy'}
         />
       {/if}
 
       <span class="text-textcolor">Advanced (OpenAI-compatible endpoint)</span>
-      <Check bind:check={DBState.db.characters[$selectedCharID].oaiTTSConfig.enabled} />
+      <Check bind:check={characterDraft.value.oaiTTSConfig.enabled} />
 
-      {#if DBState.db.characters[$selectedCharID].oaiTTSConfig?.enabled}
+      {#if characterDraft.value.oaiTTSConfig?.enabled}
         <span class="text-textcolor">Base URL</span>
         <TextInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].oaiTTSConfig.baseURL}
+          bind:value={characterDraft.value.oaiTTSConfig.baseURL}
           placeholder="https://api.openai.com/v1"
         />
 
@@ -1173,21 +1276,21 @@
         <TextInput
           className="mb-4 mt-2"
           hideText={DBState.db.hideApiKey}
-          bind:value={DBState.db.characters[$selectedCharID].oaiTTSConfig.apiKey}
+          bind:value={characterDraft.value.oaiTTSConfig.apiKey}
           placeholder="Leave empty to use global OpenAI API key"
         />
 
         <span class="text-textcolor">Model</span>
         <TextInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].oaiTTSConfig.model}
+          bind:value={characterDraft.value.oaiTTSConfig.model}
           placeholder="tts-1"
         />
 
         <span class="text-textcolor">Response Format</span>
         <SelectInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].oaiTTSConfig.format}
+          bind:value={characterDraft.value.oaiTTSConfig.format}
         >
           <OptionInput value="mp3">mp3</OptionInput>
           <OptionInput value="opus">opus</OptionInput>
@@ -1197,23 +1300,23 @@
           <OptionInput value="pcm">pcm</OptionInput>
         </SelectInput>
       {/if}
-    {:else if DBState.db.characters[$selectedCharID].ttsMode === 'huggingface'}
+    {:else if characterDraft.value.ttsMode === 'huggingface'}
       <span class="text-textcolor">Model</span>
       <TextInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].hfTTS.model}
+        bind:value={characterDraft.value.hfTTS.model}
       />
 
       <span class="text-textcolor">Language</span>
       <TextInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].hfTTS.language}
+        bind:value={characterDraft.value.hfTTS.language}
         placeholder="en"
       />
-    {:else if DBState.db.characters[$selectedCharID].ttsMode === 'vits'}
-      {#if DBState.db.characters[$selectedCharID].vits}
+    {:else if characterDraft.value.ttsMode === 'vits'}
+      {#if characterDraft.value.vits}
         <span class="text-textcolor"
-          >{DBState.db.characters[$selectedCharID].vits.name ?? 'Unnamed VitsModel'}</span
+          >{characterDraft.value.vits.name ?? 'Unnamed VitsModel'}</span
         >
       {:else}
         <span class="text-textcolor">No Model</span>
@@ -1221,41 +1324,43 @@
       <Button
         onclick={async () => {
           const model = await registerOnnxModel()
-          if (model && DBState.db.characters[$selectedCharID].type === 'character') {
-            DBState.db.characters[$selectedCharID].vits = model
+          if (model && characterDraft.value.type === 'character') {
+            updateCharacterDraft((character) => {
+              character.vits = model
+            })
           }
         }}>{language.selectModel}</Button
       >
-    {:else if DBState.db.characters[$selectedCharID].ttsMode === 'gptsovits'}
+    {:else if characterDraft.value.ttsMode === 'gptsovits'}
       <span class="text-textcolor">Volume</span>
       <SliderInput
         min={0.0}
         max={1.0}
         step={0.01}
         fixed={2}
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.volume}
+        bind:value={characterDraft.value.gptSoVitsConfig.volume}
       />
       <span class="text-textcolor">URL</span>
       <TextInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.url}
+        bind:value={characterDraft.value.gptSoVitsConfig.url}
       />
 
       <span class="text-textcolor">Use Auto Path</span>
-      <Check bind:check={DBState.db.characters[$selectedCharID].gptSoVitsConfig.use_auto_path} />
+      <Check bind:check={characterDraft.value.gptSoVitsConfig.use_auto_path} />
 
-      {#if !DBState.db.characters[$selectedCharID].gptSoVitsConfig.use_auto_path}
+      {#if !characterDraft.value.gptSoVitsConfig.use_auto_path}
         <span class="text-textcolor"
           >Reference Audio Path (e.g. C:/Users/user/Downloads/GPT-SoVITS-v2-240821)</span
         >
         <TextInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.ref_audio_path}
+          bind:value={characterDraft.value.gptSoVitsConfig.ref_audio_path}
         />
       {/if}
 
       <span class="text-textcolor">Use Long Audio</span>
-      <Check bind:check={DBState.db.characters[$selectedCharID].gptSoVitsConfig.use_long_audio} />
+      <Check bind:check={characterDraft.value.gptSoVitsConfig.use_long_audio} />
 
       <span class="text-textcolor">Reference Audio Data (3~10s audio file)</span>
       <Button
@@ -1265,23 +1370,25 @@
             return null
           }
           const saveId = await saveAsset(audio.data)
-          DBState.db.characters[$selectedCharID].gptSoVitsConfig.ref_audio_data = {
-            fileName: audio.name,
-            assetId: saveId,
-          }
+          updateCharacterDraft((character) => {
+            character.gptSoVitsConfig.ref_audio_data = {
+              fileName: audio.name,
+              assetId: saveId,
+            }
+          })
         }}
         className="h-10"
       >
-        {#if DBState.db.characters[$selectedCharID].gptSoVitsConfig.ref_audio_data.assetId === '' || DBState.db.characters[$selectedCharID].gptSoVitsConfig.ref_audio_data.assetId === undefined}
+        {#if characterDraft.value.gptSoVitsConfig.ref_audio_data.assetId === '' || characterDraft.value.gptSoVitsConfig.ref_audio_data.assetId === undefined}
           {language.selectFile}
         {:else}
-          {DBState.db.characters[$selectedCharID].gptSoVitsConfig.ref_audio_data.fileName}
+          {characterDraft.value.gptSoVitsConfig.ref_audio_data.fileName}
         {/if}
       </Button>
       <span class="text-textcolor">Text Language</span>
       <SelectInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.text_lang}
+        bind:value={characterDraft.value.gptSoVitsConfig.text_lang}
       >
         <OptionInput value="auto">Multi-language Mixed</OptionInput>
         <OptionInput value="auto_yue">Multi-language Mixed (Cantonese)</OptionInput>
@@ -1296,23 +1403,23 @@
         <OptionInput value="all_ko">Korean</OptionInput>
       </SelectInput>
 
-      {#if !DBState.db.characters[$selectedCharID].gptSoVitsConfig.use_long_audio}
+      {#if !characterDraft.value.gptSoVitsConfig.use_long_audio}
         <span class="text-textcolor">Use Reference Audio Script</span>
-        <Check bind:check={DBState.db.characters[$selectedCharID].gptSoVitsConfig.use_prompt} />
+        <Check bind:check={characterDraft.value.gptSoVitsConfig.use_prompt} />
       {/if}
 
-      {#if DBState.db.characters[$selectedCharID].gptSoVitsConfig.use_prompt && !DBState.db.characters[$selectedCharID].gptSoVitsConfig.use_long_audio}
+      {#if characterDraft.value.gptSoVitsConfig.use_prompt && !characterDraft.value.gptSoVitsConfig.use_long_audio}
         <span class="text-textcolor">Reference Audio Script</span>
         <TextAreaInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.prompt}
+          bind:value={characterDraft.value.gptSoVitsConfig.prompt}
         />
       {/if}
 
       <span class="text-textcolor">Reference Audio Language</span>
       <SelectInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.prompt_lang}
+        bind:value={characterDraft.value.gptSoVitsConfig.prompt_lang}
       >
         <OptionInput value="auto">Multi-language Mixed</OptionInput>
         <OptionInput value="auto_yue">Multi-language Mixed (Cantonese)</OptionInput>
@@ -1332,7 +1439,7 @@
         max={1.0}
         step={0.05}
         fixed={2}
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.top_p}
+        bind:value={characterDraft.value.gptSoVitsConfig.top_p}
       />
 
       <span class="text-textcolor">Temperature</span>
@@ -1341,7 +1448,7 @@
         max={1.0}
         step={0.05}
         fixed={2}
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.temperature}
+        bind:value={characterDraft.value.gptSoVitsConfig.temperature}
       />
 
       <span class="text-textcolor">Speed</span>
@@ -1350,7 +1457,7 @@
         max={1.65}
         step={0.05}
         fixed={2}
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.speed}
+        bind:value={characterDraft.value.gptSoVitsConfig.speed}
       />
 
       <span class="text-textcolor">Top K</span>
@@ -1358,13 +1465,13 @@
         min={1}
         max={100}
         step={1}
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.top_k}
+        bind:value={characterDraft.value.gptSoVitsConfig.top_k}
       />
 
       <span class="text-textcolor">Text Split Method</span>
       <SelectInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].gptSoVitsConfig.text_split_method}
+        bind:value={characterDraft.value.gptSoVitsConfig.text_split_method}
       >
         <OptionInput value="cut0">Cut 0 (No splitting)</OptionInput>
         <OptionInput value="cut1">Cut 1 (Split every 4 sentences)</OptionInput>
@@ -1373,14 +1480,14 @@
         <OptionInput value="cut4">Cut 4 (Split by English periods)</OptionInput>
         <OptionInput value="cut5">Cut 5 (Split by various punctuation marks)</OptionInput>
       </SelectInput>
-    {:else if DBState.db.characters[$selectedCharID].ttsMode === 'fishspeech'}
+    {:else if characterDraft.value.ttsMode === 'fishspeech'}
       {#await getFishSpeechModels()}
         <span class="text-textcolor">Loading...</span>
       {:then}
         <span class="text-textcolor">Model</span>
         <SelectInput
           className="mb-4 mt-2"
-          bind:value={DBState.db.characters[$selectedCharID].fishSpeechConfig.model._id}
+          bind:value={characterDraft.value.fishSpeechConfig.model._id}
         >
           <OptionInput value="">Not selected</OptionInput>
           {#each fishSpeechModels as model}
@@ -1399,19 +1506,19 @@
       <span class="text-textcolor">Chunk Length</span>
       <NumberInput
         className="mb-4 mt-2"
-        bind:value={DBState.db.characters[$selectedCharID].fishSpeechConfig.chunk_length}
+        bind:value={characterDraft.value.fishSpeechConfig.chunk_length}
       />
 
       <span class="mt-2 text-textcolor">Normalize</span>
       <Check
         className="mb-4 mt-2"
-        bind:check={DBState.db.characters[$selectedCharID].fishSpeechConfig.normalize}
+        bind:check={characterDraft.value.fishSpeechConfig.normalize}
       />
     {/if}
-    {#if DBState.db.characters[$selectedCharID].ttsMode}
+    {#if characterDraft.value.ttsMode}
       <div class="flex items-center mt-2">
         <Check
-          bind:check={DBState.db.characters[$selectedCharID].ttsReadOnlyQuoted}
+          bind:check={characterDraft.value.ttsReadOnlyQuoted}
           name={language.ttsReadOnlyQuoted}
         />
       </div>
@@ -1432,25 +1539,26 @@
             <button
               class="font-medium cursor-pointer hover:text-green-500"
               onclick={() => {
-                if (DBState.db.characters[$selectedCharID].type === 'character') {
-                  ;(DBState.db.characters[$selectedCharID] as character).bias.push(['', 0])
+                if (characterDraft.value.type === 'character') {
+                  characterDraft.value.bias.push(['', 0])
+                  characterDraft.value = { ...characterDraft.value }
                 }
               }}><PlusIcon /></button
             >
           </th>
         </tr>
-        {#if (DBState.db.characters[$selectedCharID] as character).bias.length === 0}
+        {#if characterDraft.value.bias.length === 0}
           <tr>
             <td colspan="3">{language.noBias}</td>
           </tr>
         {/if}
-        {#each (DBState.db.characters[$selectedCharID] as character).bias as bias, i}
+        {#each characterDraft.value.bias as bias, i}
           <tr class="align-middle text-center">
             <td class="font-medium truncate w-1/2">
               <TextInput
                 fullh
                 fullwidth
-                bind:value={(DBState.db.characters[$selectedCharID] as character).bias[i][0]}
+                bind:value={characterDraft.value.bias[i][0]}
                 placeholder="string"
               />
             </td>
@@ -1458,7 +1566,7 @@
               <NumberInput
                 fullh
                 fullwidth
-                bind:value={(DBState.db.characters[$selectedCharID] as character).bias[i][1]}
+                bind:value={characterDraft.value.bias[i][1]}
                 max={100}
                 min={-100}
               />
@@ -1467,8 +1575,9 @@
               <button
                 class="font-medium flex justify-center items-center w-full h-full cursor-pointer hover:text-green-500"
                 onclick={() => {
-                  if (DBState.db.characters[$selectedCharID].type === 'character') {
-                    ;(DBState.db.characters[$selectedCharID] as character).bias.splice(i, 1)
+                  if (characterDraft.value.type === 'character') {
+                    characterDraft.value.bias.splice(i, 1)
+                    characterDraft.value = { ...characterDraft.value }
                   }
                 }}><TrashIcon /></button
               >
@@ -1484,15 +1593,17 @@
     highlight
     margin="both"
     autocomplete="off"
-    bind:value={DBState.db.characters[$selectedCharID].exampleMessage}
+    bind:value={characterDraft.value.exampleMessage}
   ></TextAreaInput>
 
   <span class="text-textcolor">{language.creatorNotes} <Help key="creatorQuotes" /></span>
   <MultiLangInput
-    bind:value={DBState.db.characters[$selectedCharID].creatorNotes}
+    bind:value={characterDraft.value.creatorNotes}
     className="my-2"
     onInput={() => {
-      DBState.db.characters[$selectedCharID].removedQuotes = false
+      updateCharacterDraft((character) => {
+        character.removedQuotes = false
+      })
     }}
   ></MultiLangInput>
 
@@ -1501,7 +1612,7 @@
     highlight
     margin="both"
     autocomplete="off"
-    bind:value={DBState.db.characters[$selectedCharID].systemPrompt}
+    bind:value={characterDraft.value.systemPrompt}
   ></TextAreaInput>
 
   <span class="text-textcolor">{language.replaceGlobalNote} <Help key="replaceGlobalNote" /></span>
@@ -1509,7 +1620,7 @@
     highlight
     margin="both"
     autocomplete="off"
-    bind:value={DBState.db.characters[$selectedCharID].replaceGlobalNote}
+    bind:value={characterDraft.value.replaceGlobalNote}
   ></TextAreaInput>
 
   <span class="text-textcolor mt-2">{language.additionalText} <Help key="additionalText" /></span>
@@ -1517,10 +1628,10 @@
     highlight
     margin="both"
     autocomplete="off"
-    bind:value={DBState.db.characters[$selectedCharID].additionalText}
+    bind:value={characterDraft.value.additionalText}
   ></TextAreaInput>
 
-  {#if DBState.db.showUnrecommended || DBState.db.characters[$selectedCharID].personality.length > 3}
+  {#if DBState.db.showUnrecommended || characterDraft.value.personality.length > 3}
     <span class="text-textcolor"
       >{language.personality} <Help key="personality" unrecommended /></span
     >
@@ -1528,16 +1639,16 @@
       highlight
       margin="both"
       autocomplete="off"
-      bind:value={DBState.db.characters[$selectedCharID].personality}
+      bind:value={characterDraft.value.personality}
     ></TextAreaInput>
   {/if}
-  {#if DBState.db.showUnrecommended || DBState.db.characters[$selectedCharID].scenario.length > 3}
+  {#if DBState.db.showUnrecommended || characterDraft.value.scenario.length > 3}
     <span class="text-textcolor">{language.scenario} <Help key="scenario" unrecommended /></span>
     <TextAreaInput
       highlight
       margin="both"
       autocomplete="off"
-      bind:value={DBState.db.characters[$selectedCharID].scenario}
+      bind:value={characterDraft.value.scenario}
     ></TextAreaInput>
   {/if}
 
@@ -1547,42 +1658,42 @@
   <TextAreaInput
     margin="both"
     autocomplete="off"
-    bind:value={DBState.db.characters[$selectedCharID].defaultVariables}
+    bind:value={characterDraft.value.defaultVariables}
   ></TextAreaInput>
 
   <span class="text-textcolor mt-2">{language.translatorNote} <Help key="translatorNote" /></span>
   <TextAreaInput
     margin="both"
     autocomplete="off"
-    bind:value={DBState.db.characters[$selectedCharID].translatorNote}
+    bind:value={characterDraft.value.translatorNote}
   ></TextAreaInput>
 
   <span class="text-textcolor">{language.creator}</span>
   <TextInput
     size="sm"
     autocomplete="off"
-    bind:value={DBState.db.characters[$selectedCharID].additionalData.creator}
+    bind:value={characterDraft.value.additionalData.creator}
   />
 
   <span class="text-textcolor">{language.CharVersion}</span>
   <TextInput
     size="sm"
-    bind:value={DBState.db.characters[$selectedCharID].additionalData.character_version}
+    bind:value={characterDraft.value.additionalData.character_version}
   />
 
   <span class="text-textcolor">{language.nickname} <Help key="nickname" /></span>
-  <TextInput size="sm" bind:value={DBState.db.characters[$selectedCharID].nickname} />
+  <TextInput size="sm" bind:value={characterDraft.value.nickname} />
 
   <span class="text-textcolor">{language.depthPrompt}</span>
   <div class="flex justify-center items-center">
     <NumberInput
       size="sm"
-      bind:value={DBState.db.characters[$selectedCharID].depth_prompt.depth}
+      bind:value={characterDraft.value.depth_prompt.depth}
       className="w-12"
     />
     <TextInput
       size="sm"
-      bind:value={DBState.db.characters[$selectedCharID].depth_prompt.prompt}
+      bind:value={characterDraft.value.depth_prompt.prompt}
       className="flex-1"
     />
   </div>
@@ -1597,10 +1708,11 @@
             <button
               class="hover:text-green-500"
               onclick={() => {
-                if (DBState.db.characters[$selectedCharID].type === 'character') {
-                  let alternateGreetings = DBState.db.characters[$selectedCharID].alternateGreetings
+                if (characterDraft.value.type === 'character') {
+                  let alternateGreetings = characterDraft.value.alternateGreetings
                   alternateGreetings.push('')
-                  DBState.db.characters[$selectedCharID].alternateGreetings = alternateGreetings
+                  characterDraft.value.alternateGreetings = alternateGreetings
+                  characterDraft.value = { ...characterDraft.value }
                 }
               }}
             >
@@ -1608,17 +1720,17 @@
             </button>
           </th>
         </tr>
-        {#if DBState.db.characters[$selectedCharID].alternateGreetings.length === 0}
+        {#if characterDraft.value.alternateGreetings.length === 0}
           <tr>
             <td colspan="3">{language.noData}</td>
           </tr>
         {/if}
-        {#each DBState.db.characters[$selectedCharID].alternateGreetings as bias, i}
+        {#each characterDraft.value.alternateGreetings as bias, i}
           <tr>
             <td class="font-medium truncate">
               <TextAreaInput
                 highlight
-                bind:value={DBState.db.characters[$selectedCharID].alternateGreetings[i]}
+                bind:value={characterDraft.value.alternateGreetings[i]}
                 placeholder="..."
                 fullwidth
               />
@@ -1635,22 +1747,23 @@
                 <button
                   class="hover:text-blue-500 p-1"
                   onclick={() => moveAlternateGreetingDown(i)}
-                  disabled={i ===
-                    DBState.db.characters[$selectedCharID].alternateGreetings.length - 1}
+                  disabled={i === characterDraft.value.alternateGreetings.length - 1}
                 >
                   <ArrowDown size={16} />
                 </button>
                 <button
                   class="hover:text-red-500 p-1"
                   onclick={() => {
-                    if (DBState.db.characters[$selectedCharID].type === 'character') {
-                      DBState.db.characters[$selectedCharID].chats[
-                        DBState.db.characters[$selectedCharID].chatPage
-                      ].fmIndex = -1
-                      let alternateGreetings =
-                        DBState.db.characters[$selectedCharID].alternateGreetings
+                    if (characterDraft.value.type === 'character') {
+                      updateSelectedChatMetadata(() => {
+                        DBState.db.characters[$selectedCharID].chats[
+                          DBState.db.characters[$selectedCharID].chatPage
+                        ].fmIndex = -1
+                      })
+                      let alternateGreetings = characterDraft.value.alternateGreetings
                       alternateGreetings.splice(i, 1)
-                      DBState.db.characters[$selectedCharID].alternateGreetings = alternateGreetings
+                      characterDraft.value.alternateGreetings = alternateGreetings
+                      characterDraft.value = { ...characterDraft.value }
                     }
                   }}
                 >

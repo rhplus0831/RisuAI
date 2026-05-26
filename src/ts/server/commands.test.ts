@@ -1403,7 +1403,14 @@ describe('server command API adapter', () => {
       updateCharacterCommand({
         baseRevision: 2,
         characterId: 'char-b',
-        patch: { name: 'B renamed', image: 'a'.repeat(64) },
+        patch: {
+          name: 'B renamed',
+          image: 'a'.repeat(64),
+          systemPrompt: 'new system prompt',
+          ttsMode: 'openai',
+          oaiTTSConfig: { enabled: true, voice: 'alloy', model: 'tts-1', format: 'mp3' },
+          depth_prompt: { depth: 2, prompt: 'stay close' },
+        },
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 3, characterId: 'char-b' })
 
@@ -1453,7 +1460,14 @@ describe('server command API adapter', () => {
         method: 'PATCH',
         body: {
           baseRevision: 2,
-          patch: { name: 'B renamed', image: 'a'.repeat(64) },
+          patch: {
+            name: 'B renamed',
+            image: 'a'.repeat(64),
+            systemPrompt: 'new system prompt',
+            ttsMode: 'openai',
+            oaiTTSConfig: { enabled: true, voice: 'alloy', model: 'tts-1', format: 'mp3' },
+            depth_prompt: { depth: 2, prompt: 'stay close' },
+          },
         },
       },
       {

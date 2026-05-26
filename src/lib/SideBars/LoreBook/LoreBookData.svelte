@@ -28,6 +28,7 @@
     currentLorebookStateSnapshot,
     dispatchReplaceChatLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   interface Props {
     value: loreBook
@@ -69,30 +70,34 @@
     return book.id ? getCurrentChat()?.localLore.some((e) => e.id === book.id) : false
   }
   function activateLocally(book: loreBook) {
-    if (!book.id) {
-      book.id = v4()
-    }
+    withTrustedServerProjectionWrite(() => {
+      if (!book.id) {
+        book.id = v4()
+      }
 
-    const childLore: loreBook = {
-      key: '',
-      comment: '',
-      content: '',
-      mode: 'child',
-      insertorder: 100,
-      alwaysActive: true,
-      secondkey: '',
-      selective: false,
-      id: book.id,
-    }
-    getCurrentChat().localLore.push(childLore)
+      const childLore: loreBook = {
+        key: '',
+        comment: '',
+        content: '',
+        mode: 'child',
+        insertorder: 100,
+        alwaysActive: true,
+        secondkey: '',
+        selective: false,
+        id: book.id,
+      }
+      getCurrentChat().localLore.push(childLore)
+    })
   }
   function deactivateLocally(book: loreBook) {
     if (!book.id) return
-    const chat = getCurrentChat()
-    const childLore = chat?.localLore?.find((e) => e.id === book.id)
-    if (childLore) {
-      chat.localLore = chat.localLore.filter((e) => e.id !== book.id)
-    }
+    withTrustedServerProjectionWrite(() => {
+      const chat = getCurrentChat()
+      const childLore = chat?.localLore?.find((e) => e.id === book.id)
+      if (childLore) {
+        chat.localLore = chat.localLore.filter((e) => e.id !== book.id)
+      }
+    })
   }
   function toggleLocalActive(check: boolean, book: loreBook) {
     const previous = currentLorebookStateSnapshot()

@@ -243,6 +243,86 @@ function normalizeCharacterDraft(value: CharacterSnapshot): CharacterDraftValue 
   value.hideChatIcon ??= false
   value.utilityBot ??= false
   value.escapeOutput ??= false
+  value.backgroundHTML ??= ''
+  value.virtualscript ??= ''
+  value.ttsMode ??= ''
+  value.ttsSpeech ??= ''
+  value.voicevoxConfig ??= {
+    speaker: '',
+    SPEED_SCALE: 1,
+    PITCH_SCALE: 0,
+    VOLUME_SCALE: 1,
+    INTONATION_SCALE: 1,
+  }
+  value.naittsConfig ??= {
+    customvoice: false,
+    voice: 'Aini',
+    version: 'v2',
+  }
+  value.oaiVoice ??= ''
+  value.oaiTTSConfig ??= {
+    enabled: false,
+    format: 'mp3',
+  }
+  value.hfTTS ??= {
+    model: '',
+    language: 'en',
+  }
+  value.gptSoVitsConfig ??= {
+    url: '',
+    use_auto_path: false,
+    ref_audio_path: '',
+    use_long_audio: false,
+    ref_audio_data: {
+      fileName: '',
+      assetId: '',
+    },
+    volume: 1.0,
+    text_lang: 'auto',
+    text: 'en',
+    use_prompt: false,
+    prompt_lang: 'en',
+    top_p: 1,
+    temperature: 0.7,
+    speed: 1,
+    top_k: 5,
+    text_split_method: 'cut0',
+  }
+  value.fishSpeechConfig ??= {
+    model: {
+      _id: '',
+      title: '',
+      description: '',
+    },
+    chunk_length: 200,
+    normalize: false,
+  }
+  value.ttsReadOnlyQuoted ??= false
+  value.bias ??= []
+  value.exampleMessage ??= ''
+  value.creatorNotes ??= ''
+  value.systemPrompt ??= ''
+  value.replaceGlobalNote ??= ''
+  value.additionalText ??= ''
+  value.personality ??= ''
+  value.scenario ??= ''
+  value.defaultVariables ??= ''
+  value.translatorNote ??= ''
+  const additionalData =
+    value.additionalData && typeof value.additionalData === 'object'
+      ? (value.additionalData as Record<string, unknown>)
+      : {}
+  additionalData.creator ??= ''
+  additionalData.character_version ??= ''
+  value.additionalData = additionalData
+  value.nickname ??= ''
+  value.depth_prompt ??= {
+    depth: 4,
+    prompt: '',
+  }
+  value.alternateGreetings ??= []
+  value.removedQuotes ??= false
+  value.lorePlus ??= false
   return value
 }
 

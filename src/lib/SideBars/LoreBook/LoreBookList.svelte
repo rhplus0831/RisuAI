@@ -23,7 +23,7 @@
     globalMode = false,
     submenu = 0,
     lorePlus = false,
-    externalLoreBooks = null,
+    externalLoreBooks = $bindable(null),
     showFolder = '',
   }: Props = $props()
   let stb: Sortable = null
