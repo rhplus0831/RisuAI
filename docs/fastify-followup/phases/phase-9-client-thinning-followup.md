@@ -85,6 +85,12 @@ import/export events match the command map.
   `banCharacterset` bind through `createServerBackedSettingDraft`, and
   client command grouping now covers `allowAllExtentionFiles` and
   `auxModelUnderModelSettings`.
+- Landed 2026-05-26: Character core profile, media, and basic option
+  editors in `CharConfig.svelte` now bind through
+  `createServerBackedCharacterDraft` or trusted character/media helpers.
+  The slice covers name, description, first message, portrait selection
+  and rotation, emotion labels, view-screen and image-generation fields,
+  additional asset rows/exclusions, and simple character option toggles.
 
 ## Tasks
 
@@ -166,11 +172,13 @@ client mutation.
   `customModels`, `banCharacterset`, `allowAllExtentionFiles`,
   `auxModelUnderModelSettings`, and `pluginDevelopMode`, and added
   focused client / Fastify command tests.
-- 9G - Character core profile, media, and basic option editors. Cover
-  the basic `CharConfig.svelte` fields such as name, description, first
-  message, portrait/media assets, view screen, and simple character
-  option toggles. Use character commands or debounced server-backed
-  drafts.
+- 9G - Completed 2026-05-26: Character core profile, media, and basic
+  option editors. Added a selected-character draft bridge for scalar
+  profile/media fields, converted the basic `CharConfig.svelte` profile
+  and media bindings away from raw Fastify projection writes, kept chat
+  `fmIndex` side effects behind trusted writes for the chat watcher, and
+  wrapped character image/emotion helper mutations for projection-guard
+  mode. Focused client, Fastify command route, and Svelte checks passed.
 - 9H - Character lore, script, prompt, TTS, and chat-name editors. Cover
   the deeper `CharConfig.svelte` sections, `LoreBookSetting.svelte`,
   `LoreBookList.svelte`, `ChatList.svelte`, and side-chat name editors.

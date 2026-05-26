@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
@@ -27,6 +27,7 @@ vi.mock('./process/coldstorage.svelte', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from './server/commands'
+import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import {
   currentCharacterStateSnapshot,
   dispatchCompatibleCharacterUpdate,
@@ -109,6 +110,7 @@ function seedCharacter(): character {
 beforeEach(() => {
   platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
+  setServerProjectionWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(0)
   DBState.db = {
@@ -116,6 +118,10 @@ beforeEach(() => {
     characters: [seedCharacter()],
     characterOrder: ['char-a'],
   } as any
+})
+
+afterEach(() => {
+  setServerProjectionWriteGuardEnabled(false)
 })
 
 describe('Phase 9-3f compatibility adapters', () => {
@@ -251,6 +257,30 @@ describe('Phase 9-3f compatibility adapters', () => {
           emotionImages: [],
         },
       },
+    })
+  })
+
+  it('keeps character asset helper writes behind trusted projection updates', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.characters[0].image = 'direct'
+    }).toThrow()
+
+    changeCharImage(0, 0)
+    rmCharEmotion(0, 0)
+
+    expect(DBState.db.characters[0].image).toBe('asset-old')
+    expect(DBState.db.characters[0].emotionImages).toEqual([])
+    expect(() => {
+      DBState.db.characters[0].image = 'direct'
+    }).toThrow()
+
+    await vi.waitFor(() => {
+      expect(
+        calls.filter((call) => call.url === '/api/v1/commands/characters/char-a'),
+      ).toHaveLength(2)
     })
   })
 

@@ -11,6 +11,7 @@ import {
 } from '../characterCommands'
 import { canUseServerCommands, type CharacterSnapshot } from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
+import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 interface PendingCharacterPatch {
   characterId: string
@@ -24,6 +25,77 @@ let suppressRollbackDispatch = false
 
 export interface WatchServerBackedCharacterProfileOptions {
   delayMs?: number
+}
+
+export type CharacterDraftValue = Record<string, any> & CharacterSnapshot
+
+export interface ServerBackedCharacterDraft {
+  characterId: string | null
+  value: CharacterDraftValue
+}
+
+export function createServerBackedCharacterDraft(
+  keys: readonly string[],
+): ServerBackedCharacterDraft {
+  const draft = $state<ServerBackedCharacterDraft>({
+    characterId: null,
+    value: {},
+  })
+  let initialized = false
+  let suppressDraftDispatch = false
+  let previousServerSnapshot = ''
+
+  $effect(() => {
+    const character = DBState.db.characters?.[get(selectedCharID)]
+    const characterId = character?.chaId ?? null
+    const serverValue = character
+      ? normalizeCharacterDraft(
+          pickCharacterFields(character as unknown as CharacterSnapshot, keys),
+        )
+      : {}
+    const serverSnapshot = snapshotJson({ characterId, value: serverValue })
+    const draftSnapshot = snapshotJson({ characterId: draft.characterId, value: draft.value })
+
+    if (
+      !initialized ||
+      characterId !== draft.characterId ||
+      (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot)
+    ) {
+      suppressDraftDispatch = true
+      draft.characterId = characterId
+      draft.value = cloneJsonValue(serverValue)
+      queueMicrotask(() => {
+        suppressDraftDispatch = false
+      })
+      initialized = true
+    }
+
+    previousServerSnapshot = serverSnapshot
+  })
+
+  let draftInitialized = false
+  $effect(() => {
+    const characterId = draft.characterId
+    if (!draftInitialized) {
+      draftInitialized = true
+      return
+    }
+    if (suppressDraftDispatch || !characterId) return
+
+    untrack(() => {
+      const patch = sanitizeCharacterPatch(cloneJsonValue(draft.value))
+      withTrustedServerProjectionWrite(() => {
+        const character = DBState.db.characters?.find(
+          (candidate) => candidate.chaId === characterId,
+        )
+        if (!character) return
+        Object.assign(character, patch)
+      })
+      previousServerSnapshot = snapshotJson({ characterId, value: patch })
+    })
+  })
+
+  return draft
 }
 
 export function watchServerBackedCharacterProfile(
@@ -134,6 +206,44 @@ function changedProfileFields(
     }
   }
   return patch
+}
+
+function pickCharacterFields(
+  character: CharacterSnapshot,
+  keys: readonly string[],
+): CharacterDraftValue {
+  const picked: CharacterDraftValue = {}
+  for (const key of keys) {
+    picked[key] = cloneJsonValue(character[key])
+  }
+  return picked
+}
+
+function normalizeCharacterDraft(value: CharacterSnapshot): CharacterDraftValue {
+  value.name ??= ''
+  value.desc ??= ''
+  value.firstMessage ??= ''
+  value.image ??= ''
+  value.ccAssets ??= []
+  value.largePortrait ??= false
+  value.viewScreen ??= 'none'
+  value.emotionImages ??= []
+  value.inlayViewScreen ??= false
+  value.newGenData ??= {
+    prompt: '',
+    negative: '',
+    instructions: '',
+    emotionInstructions: '',
+  }
+  value.additionalAssets ??= []
+  value.prebuiltAssetCommand ??= false
+  value.prebuiltAssetStyle ??= ''
+  value.prebuiltAssetExclude ??= []
+  value.lowLevelAccess ??= false
+  value.hideChatIcon ??= false
+  value.utilityBot ??= false
+  value.escapeOutput ??= false
+  return value
 }
 
 function snapshotJson(value: unknown): string {

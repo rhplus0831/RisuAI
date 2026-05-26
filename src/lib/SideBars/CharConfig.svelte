@@ -74,13 +74,16 @@
   import { exportRegex, importRegex } from 'src/ts/process/scripts'
   import SliderInput from '../UI/GUI/SliderInput.svelte'
   import Toggles from './Toggles.svelte'
-  import { watchServerBackedCharacterProfile } from 'src/ts/server/characterBridge.svelte'
+  import {
+    createServerBackedCharacterDraft,
+    watchServerBackedCharacterProfile,
+  } from 'src/ts/server/characterBridge.svelte'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
-  let emos: [string, string][] = $state([])
   let iconButtonSize = window.innerWidth > 360 ? (24 as const) : (20 as const)
   let tokens = $state({
     desc: 0,
@@ -88,6 +91,26 @@
     localNote: 0,
     charaNote: 0,
   })
+  const characterDraft = createServerBackedCharacterDraft([
+    'name',
+    'desc',
+    'firstMessage',
+    'image',
+    'ccAssets',
+    'largePortrait',
+    'viewScreen',
+    'emotionImages',
+    'inlayViewScreen',
+    'newGenData',
+    'additionalAssets',
+    'prebuiltAssetCommand',
+    'prebuiltAssetStyle',
+    'prebuiltAssetExclude',
+    'lowLevelAccess',
+    'hideChatIcon',
+    'utilityBot',
+    'escapeOutput',
+  ])
 
   $effect(() => {
     const stopCharacter = watchServerBackedCharacterProfile()
@@ -129,10 +152,6 @@
       ? (DBState.db.characters[$selectedCharID] as character).license
       : '',
   )
-
-  $effect.pre(() => {
-    emos = DBState.db.characters[$selectedCharID].emotionImages
-  })
 
   $effect.pre(() => {
     const chara = DBState.db.characters[$selectedCharID]
@@ -308,6 +327,52 @@
       DBState.db.characters[$selectedCharID].alternateGreetings = alternateGreetings
     }
   }
+
+  function updateCharacterDraft(mutator: (character: character) => void): void {
+    mutator(characterDraft.value as unknown as character)
+    characterDraft.value = { ...characterDraft.value }
+  }
+
+  function updateSelectedChatMetadata(mutator: () => void): void {
+    withTrustedServerProjectionWrite(mutator)
+  }
+
+  function clearOrRotateCharacterImage(): void {
+    updateCharacterDraft((character) => {
+      if (character.ccAssets && character.ccAssets.length > 0) {
+        const image = character.ccAssets[0].uri
+        character.ccAssets.splice(0, 1)
+        character.image = image
+      } else {
+        character.image = ''
+      }
+    })
+  }
+
+  function removeCharacterCcAsset(index: number): void {
+    updateCharacterDraft((character) => {
+      character.ccAssets?.splice(index, 1)
+    })
+  }
+
+  function updateCharacterInlayScreen(): void {
+    updateCharacterDraft((character) => {
+      Object.assign(character, updateInlayScreen(character))
+    })
+  }
+
+  function togglePrebuiltAssetExclude(assetId: string): void {
+    updateCharacterDraft((character) => {
+      character.prebuiltAssetExclude ??= []
+      if (character.prebuiltAssetExclude.includes(assetId)) {
+        character.prebuiltAssetExclude = character.prebuiltAssetExclude.filter(
+          (entry) => entry !== assetId,
+        )
+      } else {
+        character.prebuiltAssetExclude.push(assetId)
+      }
+    })
+  }
 </script>
 
 {#if licensed !== 'private' && !$MobileGUI}
@@ -381,14 +446,10 @@
       size="xl"
       marginBottom
       placeholder="Character Name"
-      bind:value={DBState.db.characters[$selectedCharID].name}
+      bind:value={characterDraft.value.name}
     />
     <span class="text-textcolor">{language.description} <Help key="charDesc" /></span>
-    <TextAreaInput
-      highlight
-      margin="both"
-      autocomplete="off"
-      bind:value={DBState.db.characters[$selectedCharID].desc}
+    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.desc}
     ></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
     <span class="text-textcolor">{language.firstMessage} <Help key="charFirstMessage" /></span>
@@ -396,7 +457,7 @@
       highlight
       margin="both"
       autocomplete="off"
-      bind:value={DBState.db.characters[$selectedCharID].firstMessage}
+      bind:value={characterDraft.value.firstMessage}
     ></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg} {language.tokens}</span>
   {/if}
@@ -458,27 +519,21 @@
 
   {#if viewSubMenu === 0}
     <div class="p-2 border-darkborderc border rounded-md flex flex-wrap gap-2">
-      {#if DBState.db.characters[$selectedCharID].image !== '' && DBState.db.characters[$selectedCharID].image}
+      {#if characterDraft.value.image !== '' && characterDraft.value.image}
         <button
           onclick={() => {
             if (
               DBState.db.characters[$selectedCharID].type === 'character' &&
-              DBState.db.characters[$selectedCharID].image !== '' &&
-              DBState.db.characters[$selectedCharID].image &&
+              characterDraft.value.image !== '' &&
+              characterDraft.value.image &&
               iconRemoveMode
             ) {
-              DBState.db.characters[$selectedCharID].image = ''
-              if (
-                (DBState.db.characters[$selectedCharID] as character).ccAssets &&
-                (DBState.db.characters[$selectedCharID] as character).ccAssets.length > 0
-              ) {
-                changeCharImage($selectedCharID, 0)
-              }
+              clearOrRotateCharacterImage()
               iconRemoveMode = false
             }
           }}
         >
-          {#await getCharImage(DBState.db.characters[$selectedCharID].image, (DBState.db.characters[$selectedCharID] as character).largePortrait ? 'lgcss' : 'css')}
+          {#await getCharImage(characterDraft.value.image, characterDraft.value.largePortrait ? 'lgcss' : 'css')}
             <div
               class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
               class:ring-red-500={iconRemoveMode}
@@ -492,19 +547,19 @@
           {/await}
         </button>
       {/if}
-      {#if (DBState.db.characters[$selectedCharID] as character).ccAssets}
-        {#each (DBState.db.characters[$selectedCharID] as character).ccAssets as assets, i}
+      {#if characterDraft.value.ccAssets}
+        {#each characterDraft.value.ccAssets as assets, i}
           <button
             onclick={async () => {
               if (!iconRemoveMode) {
                 changeCharImage($selectedCharID, i)
               } else if (DBState.db.characters[$selectedCharID].type === 'character') {
-                ;(DBState.db.characters[$selectedCharID] as character).ccAssets.splice(i, 1)
+                removeCharacterCcAsset(i)
                 iconRemoveMode = false
               }
             }}
           >
-            {#await getCharImage(assets.uri, (DBState.db.characters[$selectedCharID] as character).largePortrait ? 'lgcss' : 'css')}
+            {#await getCharImage(assets.uri, characterDraft.value.largePortrait ? 'lgcss' : 'css')}
               <div
                 class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
                 class:ring-red-500={iconRemoveMode}
@@ -528,9 +583,7 @@
       >
         <div
           class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
-          style={(DBState.db.characters[$selectedCharID] as character).largePortrait
-            ? 'height: 10.66rem;'
-            : ''}
+          style={characterDraft.value.largePortrait ? 'height: 10.66rem;' : ''}
         >
           <PlusIcon />
         </div>
@@ -547,22 +600,17 @@
       </button>
     </div>
 
-    {#if DBState.db.characters[$selectedCharID].image !== ''}
+    {#if characterDraft.value.image !== ''}
       <div class="flex items-center mt-4">
-        <Check
-          bind:check={DBState.db.characters[$selectedCharID].largePortrait}
-          name={language.largePortrait}
-        />
+        <Check bind:check={characterDraft.value.largePortrait} name={language.largePortrait} />
       </div>
     {/if}
   {:else if viewSubMenu === 1}
     <SelectInput
       className="mb-2"
-      bind:value={DBState.db.characters[$selectedCharID].viewScreen}
+      bind:value={characterDraft.value.viewScreen}
       onchange={() => {
-        DBState.db.characters[$selectedCharID] = updateInlayScreen(
-          DBState.db.characters[$selectedCharID],
-        )
+        updateCharacterInlayScreen()
       }}
     >
       <OptionInput value="none">{language.none}</OptionInput>
@@ -570,7 +618,7 @@
       <OptionInput value="imggen">{language.imageGeneration}</OptionInput>
     </SelectInput>
 
-    {#if DBState.db.characters[$selectedCharID].viewScreen === 'emotion'}
+    {#if characterDraft.value.viewScreen === 'emotion'}
       <span class="text-textcolor mt-6">{language.emotionImage} <Help key="emotion" /></span>
       <span class="text-textcolor2 text-xs">{language.emotionWarn}</span>
 
@@ -582,12 +630,12 @@
               <th class="font-medium w-1/2">{language.emotion}</th>
               <th class="font-medium"></th>
             </tr>
-            {#if DBState.db.characters[$selectedCharID].emotionImages.length === 0}
+            {#if characterDraft.value.emotionImages.length === 0}
               <tr>
                 <td colspan="3">{language.noImages}</td>
               </tr>
             {:else}
-              {#each emos as emo, i}
+              {#each characterDraft.value.emotionImages as emo, i}
                 <tr>
                   {#await getCharImage(emo[1], 'plain')}
                     <td class="font-medium truncate w-1/3"></td>
@@ -600,7 +648,7 @@
                     <TextInput
                       marginBottom
                       size="lg"
-                      bind:value={DBState.db.characters[$selectedCharID].emotionImages[i][0]}
+                      bind:value={characterDraft.value.emotionImages[i][0]}
                     />
                   </td>
                   <td>
@@ -633,68 +681,50 @@
         {/if}
       </div>
 
-      {#if (DBState.db.characters[$selectedCharID] as character).inlayViewScreen}
+      {#if characterDraft.value.inlayViewScreen}
         <span class="text-textcolor mt-2">{language.imgGenInstructions}</span>
-        <TextAreaInput
-          highlight
-          bind:value={
-            (DBState.db.characters[$selectedCharID] as character).newGenData.emotionInstructions
-          }
-        />
+        <TextAreaInput highlight bind:value={characterDraft.value.newGenData.emotionInstructions} />
       {/if}
 
       <CheckInput
-        bind:check={(DBState.db.characters[$selectedCharID] as character).inlayViewScreen}
+        bind:check={characterDraft.value.inlayViewScreen}
         name={language.inlayViewScreen}
         onChange={() => {
           if (DBState.db.characters[$selectedCharID].type === 'character') {
             if (
-              (DBState.db.characters[$selectedCharID] as character).inlayViewScreen &&
-              (DBState.db.characters[$selectedCharID] as character).additionalAssets === undefined
+              characterDraft.value.inlayViewScreen &&
+              characterDraft.value.additionalAssets === undefined
             ) {
-              ;(DBState.db.characters[$selectedCharID] as character).additionalAssets = []
+              characterDraft.value.additionalAssets = []
             } else if (
-              !(DBState.db.characters[$selectedCharID] as character).inlayViewScreen &&
-              (DBState.db.characters[$selectedCharID] as character).additionalAssets.length === 0
+              !characterDraft.value.inlayViewScreen &&
+              characterDraft.value.additionalAssets.length === 0
             ) {
-              ;(DBState.db.characters[$selectedCharID] as character).additionalAssets = undefined
+              characterDraft.value.additionalAssets = undefined
             }
 
-            DBState.db.characters[$selectedCharID] = updateInlayScreen(
-              DBState.db.characters[$selectedCharID] as character,
-            )
+            updateCharacterInlayScreen()
           }
         }}
       />
     {/if}
-    {#if DBState.db.characters[$selectedCharID].viewScreen === 'imggen'}
+    {#if characterDraft.value.viewScreen === 'imggen'}
       <span class="text-textcolor mt-6">{language.imageGeneration} <Help key="imggen" /></span>
       <span class="text-textcolor2 text-xs">{language.emotionWarn}</span>
 
       <span class="text-textcolor mt-2">{language.imgGenPrompt}</span>
-      <TextAreaInput
-        highlight
-        bind:value={(DBState.db.characters[$selectedCharID] as character).newGenData.prompt}
-      />
+      <TextAreaInput highlight bind:value={characterDraft.value.newGenData.prompt} />
       <span class="text-textcolor mt-2">{language.imgGenNegatives}</span>
-      <TextAreaInput
-        highlight
-        bind:value={(DBState.db.characters[$selectedCharID] as character).newGenData.negative}
-      />
+      <TextAreaInput highlight bind:value={characterDraft.value.newGenData.negative} />
       <span class="text-textcolor mt-2">{language.imgGenInstructions}</span>
-      <TextAreaInput
-        highlight
-        bind:value={(DBState.db.characters[$selectedCharID] as character).newGenData.instructions}
-      />
+      <TextAreaInput highlight bind:value={characterDraft.value.newGenData.instructions} />
 
       <CheckInput
-        bind:check={(DBState.db.characters[$selectedCharID] as character).inlayViewScreen}
+        bind:check={characterDraft.value.inlayViewScreen}
         name={language.inlayViewScreen}
         onChange={() => {
           if ((DBState.db.characters[$selectedCharID] as character).type === 'character') {
-            ;(DBState.db.characters[$selectedCharID] as character) = updateInlayScreen(
-              DBState.db.characters[$selectedCharID] as character,
-            )
+            updateCharacterInlayScreen()
           }
         }}
       />
@@ -702,16 +732,13 @@
   {:else if viewSubMenu === 2}
     {#if DBState.db.newImageHandlingBeta}
       <CheckInput
-        bind:check={DBState.db.characters[$selectedCharID].prebuiltAssetCommand}
+        bind:check={characterDraft.value.prebuiltAssetCommand}
         name={language.insertAssetPrompt}
       />
 
-      {#if DBState.db.characters[$selectedCharID].prebuiltAssetCommand}
+      {#if characterDraft.value.prebuiltAssetCommand}
         <span class="text-textcolor mt-2">{language.assetStyle}</span>
-        <SelectInput
-          className="mb-2"
-          bind:value={DBState.db.characters[$selectedCharID].prebuiltAssetStyle}
-        >
+        <SelectInput className="mb-2" bind:value={characterDraft.value.prebuiltAssetStyle}>
           <OptionInput value="">{language.static}</OptionInput>
           <OptionInput value="dynamic">{language.dynamic}</OptionInput>
         </SelectInput>
@@ -744,8 +771,8 @@
                       'svg',
                       'avif',
                     ])
-                    DBState.db.characters[$selectedCharID].additionalAssets =
-                      DBState.db.characters[$selectedCharID].additionalAssets ?? []
+                    characterDraft.value.additionalAssets =
+                      characterDraft.value.additionalAssets ?? []
                     if (!da) {
                       return
                     }
@@ -754,13 +781,8 @@
                       const name = f.name
                       const extension = name.split('.').pop().toLowerCase()
                       const imgp = await saveAsset(img, '', extension)
-                      DBState.db.characters[$selectedCharID].additionalAssets.push([
-                        name,
-                        imgp,
-                        extension,
-                      ])
-                      DBState.db.characters[$selectedCharID].additionalAssets =
-                        DBState.db.characters[$selectedCharID].additionalAssets
+                      characterDraft.value.additionalAssets.push([name, imgp, extension])
+                      characterDraft.value = { ...characterDraft.value }
                     }
                   }
                 }}
@@ -769,12 +791,12 @@
               </button>
             </th>
           </tr>
-          {#if !DBState.db.characters[$selectedCharID].additionalAssets || DBState.db.characters[$selectedCharID].additionalAssets.length === 0}
+          {#if !characterDraft.value.additionalAssets || characterDraft.value.additionalAssets.length === 0}
             <tr>
               <td class="text-textcolor2"> No Assets</td>
             </tr>
           {:else}
-            {#each DBState.db.characters[$selectedCharID].additionalAssets as assets, i}
+            {#each characterDraft.value.additionalAssets as assets, i}
               <tr>
                 <td class="font-medium truncate">
                   {#if assetFilePath[i] && DBState.db.useAdditionalAssetsPreview}
@@ -798,7 +820,7 @@
                   <TextInput
                     size="sm"
                     marginBottom
-                    bind:value={DBState.db.characters[$selectedCharID].additionalAssets[i][0]}
+                    bind:value={characterDraft.value.additionalAssets[i][0]}
                     placeholder="..."
                   />
                 </td>
@@ -808,13 +830,15 @@
                     class="hover:text-blue-500"
                     onclick={() => {
                       if (DBState.db.characters[$selectedCharID].type === 'character') {
-                        DBState.db.characters[$selectedCharID].chats[
-                          DBState.db.characters[$selectedCharID].chatPage
-                        ].fmIndex = -1
-                        let additionalAssets =
-                          DBState.db.characters[$selectedCharID].additionalAssets
+                        updateSelectedChatMetadata(() => {
+                          DBState.db.characters[$selectedCharID].chats[
+                            DBState.db.characters[$selectedCharID].chatPage
+                          ].fmIndex = -1
+                        })
+                        let additionalAssets = characterDraft.value.additionalAssets
                         additionalAssets.splice(i, 1)
-                        DBState.db.characters[$selectedCharID].additionalAssets = additionalAssets
+                        characterDraft.value.additionalAssets = additionalAssets
+                        characterDraft.value = { ...characterDraft.value }
                       }
                     }}
                   >
@@ -823,28 +847,14 @@
                   {#if DBState.db.useAdditionalAssetsPreview}
                     <button
                       class="hover:text-blue-500"
-                      class:text-textcolor2={DBState.db.characters[
-                        $selectedCharID
-                      ].prebuiltAssetExclude?.includes?.(assets[1])}
+                      class:text-textcolor2={characterDraft.value.prebuiltAssetExclude?.includes?.(
+                        assets[1],
+                      )}
                       onclick={() => {
-                        DBState.db.characters[$selectedCharID].prebuiltAssetExclude ??= []
-                        if (
-                          DBState.db.characters[$selectedCharID].prebuiltAssetExclude.includes(
-                            assets[1],
-                          )
-                        ) {
-                          DBState.db.characters[$selectedCharID].prebuiltAssetExclude =
-                            DBState.db.characters[$selectedCharID].prebuiltAssetExclude.filter(
-                              (e) => e !== assets[1],
-                            )
-                        } else {
-                          DBState.db.characters[$selectedCharID].prebuiltAssetExclude.push(
-                            assets[1],
-                          )
-                        }
+                        togglePrebuiltAssetExclude(assets[1])
                       }}
                     >
-                      {#if DBState.db.characters[$selectedCharID]?.prebuiltAssetExclude?.includes?.(assets[1])}
+                      {#if characterDraft.value.prebuiltAssetExclude?.includes?.(assets[1])}
                         <ImageOffIcon />
                       {:else}
                         <ImageIcon />
@@ -1655,33 +1665,21 @@
   </div>
 
   <div class="flex items-center mt-4">
-    <Check
-      bind:check={DBState.db.characters[$selectedCharID].lowLevelAccess}
-      name={language.lowLevelAccess}
-    />
+    <Check bind:check={characterDraft.value.lowLevelAccess} name={language.lowLevelAccess} />
     <span> <Help key="lowLevelAccess" name={language.lowLevelAccess} /></span>
   </div>
 
   <div class="flex items-center mt-4">
-    <Check
-      bind:check={DBState.db.characters[$selectedCharID].hideChatIcon}
-      name={language.hideChatIcon}
-    />
+    <Check bind:check={characterDraft.value.hideChatIcon} name={language.hideChatIcon} />
   </div>
 
   <div class="flex items-center mt-4">
-    <Check
-      bind:check={DBState.db.characters[$selectedCharID].utilityBot}
-      name={language.utilityBot}
-    />
+    <Check bind:check={characterDraft.value.utilityBot} name={language.utilityBot} />
     <span> <Help key="utilityBot" name={language.utilityBot} /></span>
   </div>
 
   <div class="flex items-center mt-4">
-    <Check
-      bind:check={DBState.db.characters[$selectedCharID].escapeOutput}
-      name={language.escapeOutput}
-    />
+    <Check bind:check={characterDraft.value.escapeOutput} name={language.escapeOutput} />
   </div>
 
   {#if DBState.db.hypaV3}

@@ -61,8 +61,12 @@ directly.
   commands, custom models and ban-character-set bind through
   command-backed drafts, and advanced command classification now covers
   `allowAllExtentionFiles` and `auxModelUnderModelSettings`.
-- Next default pickup: Phase 9 Slice 9G, character core profile, media,
-  and basic option editors.
+- Landed 2026-05-26: Phase 9 character core profile, media, and basic
+  option editors in `CharConfig.svelte` now bind through a local
+  server-backed character draft or trusted media helpers instead of
+  mutating the Fastify projection directly.
+- Next default pickup: Phase 9 Slice 9H, character lore, script, prompt,
+  TTS, and chat-name editors.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.
 
