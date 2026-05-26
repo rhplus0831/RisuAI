@@ -11,6 +11,7 @@ import {
   type CharacterSnapshot,
   type ServerCommandResult,
 } from './server/commands'
+import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { character, folder } from './storage/database.svelte'
 
@@ -49,10 +50,12 @@ export function currentCharacterStateSnapshot(): CharacterStateSnapshot {
 }
 
 export function restoreCharacterState(snapshot: CharacterStateSnapshot): void {
-  DBState.db.characters = cloneJsonValue(snapshot.characters)
-  DBState.db.characterOrder = cloneJsonValue(snapshot.characterOrder)
-  ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
-  selectedCharID.set(snapshot.selectedCharID)
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characters = cloneJsonValue(snapshot.characters)
+    DBState.db.characterOrder = cloneJsonValue(snapshot.characterOrder)
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    selectedCharID.set(snapshot.selectedCharID)
+  })
 }
 
 export function runCharacterCommand<T extends Record<string, unknown>>(

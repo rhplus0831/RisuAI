@@ -10,6 +10,7 @@ import {
   type ModuleSnapshot,
   type ServerCommandResult,
 } from './server/commands'
+import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { DBState, ReloadGUIPointer } from './stores.svelte'
 import type { RisuModule } from './process/modules'
 import type { character } from './storage/database.svelte'
@@ -36,10 +37,12 @@ export function currentModuleStateSnapshot(): ModuleStateSnapshot {
 }
 
 export function restoreModuleState(snapshot: ModuleStateSnapshot): void {
-  DBState.db.modules = cloneJsonValue(snapshot.modules)
-  DBState.db.enabledModules = cloneJsonValue(snapshot.enabledModules)
-  DBState.db.characters = cloneJsonValue(snapshot.characters)
-  ReloadGUIPointer.set(Math.random())
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.modules = cloneJsonValue(snapshot.modules)
+    DBState.db.enabledModules = cloneJsonValue(snapshot.enabledModules)
+    DBState.db.characters = cloneJsonValue(snapshot.characters)
+    ReloadGUIPointer.set(Math.random())
+  })
 }
 
 export function runModuleCommand<T extends Record<string, unknown>>(

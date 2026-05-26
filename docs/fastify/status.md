@@ -15,12 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-5e-i projection write gate foundation. Fastify
-  projection replacement now uses trusted bootstrap/event-refresh helpers,
-  and an opt-in read-only `DBState.db` guard primitive is available.
-- Current gap: command optimistic/rollback writes are not integrated with
-  trusted guard scopes yet.
-- Next default pickup: 9-5e-ii, command bridge guard integration.
+- Last landed work: 9-5e-ii command bridge guard integration. The
+  Fastify projection write guard now has a standalone trusted write scope,
+  and command-owned optimistic/rollback paths for the main bridges use it.
+- Current gap: the guard still needs the 9-5e-iii fixture-path audit to
+  classify remaining failures as missed residual writes or intentional
+  local/runtime-only state.
+- Next default pickup: 9-5e-iii, guard audit closeout.
 - Last recorded full baselines after the 9-5d first pass: `pnpm check`
   clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
   tests, and `pnpm build` passing with existing CSS `::highlight`,
@@ -51,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-5e-i landed; continue with 9-5e-ii command bridge guard integration. |
+| Client thinning                             | Active; 9-5e-ii landed; continue with 9-5e-iii guard audit closeout. |
 
 ## Maintenance Rules
 

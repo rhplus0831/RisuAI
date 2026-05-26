@@ -62,6 +62,7 @@ import {
   type AfterTTSResult,
   type TTSHookFn,
 } from 'src/ts/process/ttsHooks'
+import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -76,9 +77,11 @@ function dispatchPluginApiSettingsPatch(
   void patchServerBackedSettings({
     patch,
     rollback: () => {
-      Object.assign(DBState.db as unknown as Record<string, unknown>, cloneJsonValue(previous))
-      updateColorScheme()
-      updateTextThemeAndCSS()
+      withTrustedServerProjectionWrite(() => {
+        Object.assign(DBState.db as unknown as Record<string, unknown>, cloneJsonValue(previous))
+        updateColorScheme()
+        updateTextThemeAndCSS()
+      })
     },
   })
 }

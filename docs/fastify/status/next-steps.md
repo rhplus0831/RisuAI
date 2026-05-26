@@ -117,24 +117,40 @@ existing settings command bridge:
 - Focused bootstrap coverage proves trusted projection replacement still
   works, direct guarded Fastify projection writes fail loudly when enabled,
   and local web writes remain unguarded.
-- The guard is not yet integrated with command optimistic/rollback paths;
-  that remains the next sub-slice.
+- Command optimistic/rollback integration was left to 9-5e-ii.
+
+9-5e-ii then integrated command bridges with the projection guard:
+
+- The guard primitive now lives in
+  `src/ts/server/projectionWriteGuard.svelte.ts`, with
+  `storage/database.svelte.ts` re-exporting the existing bootstrap/test
+  helper surface.
+- Command-owned rollback restorers for character, chat, module, plugin,
+  loadout, persona, settings, lorebook, script-definition, plugin V3
+  settings/theme, and MCP refresh-token paths now run inside trusted
+  projection write scopes.
+- Preset helper optimistic writes, selected character/chat compatibility
+  setters, and command-side id normalization helpers now run inside trusted
+  projection write scopes.
+- Focused guard coverage proves trusted writes can update a guarded Fastify
+  projection and the projection is read-only again after the trusted scope
+  exits.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-5e-ii - Command bridge guard integration**.
+Immediate pickup: **9-5e-iii - Guard audit closeout**.
 
-- Route command-owned optimistic updates and rollback paths through
-  trusted guard-compatible write scopes, or remove local writes where the
-  bootstrap projection refresh is authoritative.
+- Enable the guard across the server-backed fixture path and classify
+  failures as missed 9-5d residuals, intentional local/runtime-only state,
+  or follow-up residual slices.
 - Keep Tauri/local mode untouched.
 - Do not add new command endpoints.
-- Do not broaden this slice into residual write fixes, storage/provider
+- Do not broaden this slice into storage/provider
   gating, server-side `.risu` import/export, asset byte changes,
   server-side plugin execution, per-event surgical browser patches, or
-  full fixture-path guard enablement.
-- If command-bridge guard work reveals missed durable writes, split them
-  into follow-up residual slices instead of folding them into 9-5e-ii.
+  residual-write implementation.
+- If the fixture-path audit reveals missed durable writes, split them into
+  follow-up residual slices instead of folding them into 9-5e-iii.
 
 Implementation notes:
 
@@ -142,6 +158,10 @@ Implementation notes:
   `server/fastify/src/routes/commands.ts`, and
   `src/ts/server/commands.ts`. The command map is the source of truth for
   names, payload behavior, events, and plugin bridge policy.
+- The browser-side trusted write helper lives in
+  `src/ts/server/projectionWriteGuard.svelte.ts`; keep it as the narrow
+  escape hatch for command-owned optimistic writes, rollbacks, and
+  bootstrap projection replacement.
 - Browser projection now loads through `src/ts/server/bootstrap.ts` and
   refreshes from `src/ts/server/events.ts`; debounced re-bootstrap is the
   Phase 9 target, while per-event patches are future work.
@@ -168,32 +188,31 @@ Implementation notes:
   dedicated server-owned paths.
 - Several direct-write search hits are expected rollback helpers,
   optimistic command updates, projection replacement writes, or
-  runtime-only state. 9-5e-ii should distinguish those classes instead of
+  runtime-only state. 9-5e-iii should distinguish those classes instead of
   mechanically deleting every local assignment.
 
 ## Later Queue
 
-1. 9-5e-ii - Command bridge guard integration.
-2. 9-5e-iii - Guard audit closeout.
-3. 9-6a - Server-backed persistence gate.
-4. 9-6b - Asset byte gate.
-5. 9-6c - Server backup/restore projection.
-6. 9-6d - Residual local cache classification.
-7. 9-6e - Provider secret masking.
-8. 9-7a - `.risu` fixture corpus and codec harness.
-9. 9-7b - Legacy envelope codec port.
-10. 9-7c - RISUSAVE block codec port.
-11. 9-7d - Decode normalization and validation.
-12. 9-7e - Repository-backed export adapter.
-13. 9-8a - Multipart `.risu` import route.
-14. 9-8b - Repository `.risu` export route.
-15. 9-8c - Asset reference walker.
-16. 9-8d - Bundle export route.
-17. 9-9a - Server-backed browser smoke harness.
-18. 9-9b - Generation and memory fixture closeout.
-19. 9-9c - Server-backed storage-write audit.
-20. 9-9d - Manual Fastify web and Tauri local verification.
-21. 9-9e - Phase 9 docs closeout.
+1. 9-5e-iii - Guard audit closeout.
+2. 9-6a - Server-backed persistence gate.
+3. 9-6b - Asset byte gate.
+4. 9-6c - Server backup/restore projection.
+5. 9-6d - Residual local cache classification.
+6. 9-6e - Provider secret masking.
+7. 9-7a - `.risu` fixture corpus and codec harness.
+8. 9-7b - Legacy envelope codec port.
+9. 9-7c - RISUSAVE block codec port.
+10. 9-7d - Decode normalization and validation.
+11. 9-7e - Repository-backed export adapter.
+12. 9-8a - Multipart `.risu` import route.
+13. 9-8b - Repository `.risu` export route.
+14. 9-8c - Asset reference walker.
+15. 9-8d - Bundle export route.
+16. 9-9a - Server-backed browser smoke harness.
+17. 9-9b - Generation and memory fixture closeout.
+18. 9-9c - Server-backed storage-write audit.
+19. 9-9d - Manual Fastify web and Tauri local verification.
+20. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 

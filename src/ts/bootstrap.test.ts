@@ -128,6 +128,7 @@ import { loadWebInitialDatabase } from './bootstrap'
 import {
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
 } from './storage/database.svelte'
 import { DBState, LoadingStatusState } from './stores.svelte'
 
@@ -243,6 +244,27 @@ describe('web bootstrap startup source', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('allows command-owned trusted projection writes and re-freezes afterward', async () => {
+    await loadWebInitialDatabase()
+    setServerProjectionWriteGuardEnabled(true)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.language = 'ja'
+      DBState.db.characters.push({ chaId: 'char-command', name: 'Command', chats: [] } as any)
+    })
+
+    expect(DBState.db.language).toBe('ja')
+    expect(DBState.db.characters).toEqual([
+      { chaId: 'char-command', name: 'Command', chats: [] },
+    ])
+    expect(() => {
+      DBState.db.language = 'ko'
+    }).toThrow()
+    expect(() => {
+      DBState.db.characters.push({ chaId: 'char-direct', name: 'Direct', chats: [] } as any)
+    }).toThrow()
   })
 
   it('leaves local web database writes unguarded', async () => {

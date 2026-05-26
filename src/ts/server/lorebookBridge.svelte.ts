@@ -19,6 +19,7 @@ import {
   type LorebookEntrySnapshot,
   type ServerCommandResult,
 } from './commands'
+import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
@@ -56,11 +57,13 @@ export function currentLorebookStateSnapshot(): LorebookStateSnapshot {
 }
 
 export function restoreLorebookState(snapshot: LorebookStateSnapshot): void {
-  DBState.db.loreBook = cloneJsonValue(snapshot.loreBook) as typeof DBState.db.loreBook
-  DBState.db.loreBookPage = snapshot.loreBookPage
-  DBState.db.characters = cloneJsonValue(snapshot.characters)
-  DBState.db.modules = cloneJsonValue(snapshot.modules) as typeof DBState.db.modules
-  selectedCharID.set(snapshot.selectedCharID)
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.loreBook = cloneJsonValue(snapshot.loreBook) as typeof DBState.db.loreBook
+    DBState.db.loreBookPage = snapshot.loreBookPage
+    DBState.db.characters = cloneJsonValue(snapshot.characters)
+    DBState.db.modules = cloneJsonValue(snapshot.modules) as typeof DBState.db.modules
+    selectedCharID.set(snapshot.selectedCharID)
+  })
 }
 
 export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
@@ -71,21 +74,23 @@ export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
 }
 
 export function ensureAllClientLorebookIds(): void {
-  for (const lorebook of (DBState.db.loreBook ?? []) as GlobalLorebook[]) {
-    lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()
-    lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
-  }
-  for (const character of DBState.db.characters ?? []) {
-    character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
-    for (const chat of character.chats ?? []) {
-      chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
+  withTrustedServerProjectionWrite(() => {
+    for (const lorebook of (DBState.db.loreBook ?? []) as GlobalLorebook[]) {
+      lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()
+      lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
     }
-  }
-  for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
-    if (Array.isArray(module.lorebook)) {
-      module.lorebook = ensureClientLorebookEntryIds(module.lorebook)
+    for (const character of DBState.db.characters ?? []) {
+      character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
+      for (const chat of character.chats ?? []) {
+        chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
+      }
     }
-  }
+    for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
+      if (Array.isArray(module.lorebook)) {
+        module.lorebook = ensureClientLorebookEntryIds(module.lorebook)
+      }
+    }
+  })
 }
 
 export function dispatchCreateGlobalLorebook(

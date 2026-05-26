@@ -3,6 +3,7 @@ import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from '
 import { DBState } from 'src/ts/stores.svelte'
 import { getModuleMcps } from '../modules'
 import { canUseServerCommands, patchServerBackedSettings } from '../../server/commands'
+import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
 import type { MCPClientLike } from './internalmcp'
@@ -243,7 +244,9 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
   void patchServerBackedSettings({
     patch: { authRefreshes: next },
     rollback: () => {
-      DBState.db.authRefreshes = previous
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.authRefreshes = previous
+      })
     },
   })
 }

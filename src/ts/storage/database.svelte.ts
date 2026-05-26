@@ -37,13 +37,16 @@ import {
   dispatchCompatibleCharacterUpdate,
 } from '../characterCommands'
 import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from '../chatCommands'
+import {
+  createReadOnlyServerProjection,
+  isServerProjectionWriteGuardEnabled,
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from '../server/projectionWriteGuard.svelte'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = '2026.4.181' //<APP_VERSION_POINT>
 export let webAppSubVer = ''
-
-let serverProjectionWriteGuardEnabled = false
-const frozenServerProjectionTargets = new WeakSet<object>()
 
 function createClientPresetId() {
   return crypto.randomUUID()
@@ -792,42 +795,15 @@ export function applyServerProjectionDatabase(data: Database) {
   return withTrustedServerProjectionWrite(() => setDatabase(data))
 }
 
-export function setServerProjectionWriteGuardEnabled(enabled: boolean) {
-  serverProjectionWriteGuardEnabled = enabled
-  if (enabled && isFastifyServer && DBState.db && typeof DBState.db === 'object') {
-    DBState.db = createReadOnlyServerProjection($state.snapshot(DBState.db) as Database)
-  }
-}
-
-export function isServerProjectionWriteGuardEnabled() {
-  return serverProjectionWriteGuardEnabled && isFastifyServer
-}
-
-function withTrustedServerProjectionWrite<T>(callback: () => T): T {
-  return callback()
-}
-
-function createReadOnlyServerProjection<T extends object>(target: T): T {
-  freezeServerProjectionTarget(target)
-  return target
-}
-
-function freezeServerProjectionTarget(target: object) {
-  if (frozenServerProjectionTargets.has(target)) return
-  frozenServerProjectionTargets.add(target)
-
-  for (const key of Reflect.ownKeys(target)) {
-    const value = Reflect.get(target, key)
-    if (value && typeof value === 'object') {
-      freezeServerProjectionTarget(value)
-    }
-  }
-  Object.freeze(target)
+export {
+  isServerProjectionWriteGuardEnabled,
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
 }
 
 export function setDatabaseLite(data: Database) {
   DBState.db =
-    serverProjectionWriteGuardEnabled && isFastifyServer
+    isServerProjectionWriteGuardEnabled()
       ? createReadOnlyServerProjection(data)
       : data
 }
@@ -856,22 +832,24 @@ export function setCurrentCharacter(
   char: character,
   options: { dispatchServerCommand?: boolean } = {},
 ) {
-  const shouldDispatch = options.dispatchServerCommand ?? true
-  const index = get(selectedCharID)
-  const previousState =
-    shouldDispatch && canUseServerCommands() ? currentCharacterStateSnapshot() : null
-  const previousCharacter =
-    previousState && DBState.db.characters
-      ? $state.snapshot(DBState.db.characters[index])
-      : undefined
+  withTrustedServerProjectionWrite(() => {
+    const shouldDispatch = options.dispatchServerCommand ?? true
+    const index = get(selectedCharID)
+    const previousState =
+      shouldDispatch && canUseServerCommands() ? currentCharacterStateSnapshot() : null
+    const previousCharacter =
+      previousState && DBState.db.characters
+        ? $state.snapshot(DBState.db.characters[index])
+        : undefined
 
-  if (!DBState.db.characters) {
-    DBState.db.characters = []
-  }
-  DBState.db.characters[index] = char
-  if (previousState) {
-    dispatchCompatibleCharacterUpdate(previousCharacter, char, previousState)
-  }
+    if (!DBState.db.characters) {
+      DBState.db.characters = []
+    }
+    DBState.db.characters[index] = char
+    if (previousState) {
+      dispatchCompatibleCharacterUpdate(previousCharacter, char, previousState)
+    }
+  })
 }
 
 export function getCharacterByIndex(index: number, options: getDatabaseOptions = {}): character {
@@ -884,19 +862,21 @@ export function getCharacterByIndex(index: number, options: getDatabaseOptions =
 }
 
 export function setCharacterByIndex(index: number, char: character) {
-  const previousState = canUseServerCommands() ? currentCharacterStateSnapshot() : null
-  const previousCharacter =
-    previousState && DBState.db.characters
-      ? $state.snapshot(DBState.db.characters[index])
-      : undefined
+  withTrustedServerProjectionWrite(() => {
+    const previousState = canUseServerCommands() ? currentCharacterStateSnapshot() : null
+    const previousCharacter =
+      previousState && DBState.db.characters
+        ? $state.snapshot(DBState.db.characters[index])
+        : undefined
 
-  if (!DBState.db.characters) {
-    DBState.db.characters = []
-  }
-  DBState.db.characters[index] = char
-  if (previousState) {
-    dispatchCompatibleCharacterUpdate(previousCharacter, char, previousState)
-  }
+    if (!DBState.db.characters) {
+      DBState.db.characters = []
+    }
+    DBState.db.characters[index] = char
+    if (previousState) {
+      dispatchCompatibleCharacterUpdate(previousCharacter, char, previousState)
+    }
+  })
 }
 
 export function getCurrentChat() {
@@ -905,14 +885,16 @@ export function getCurrentChat() {
 }
 
 export function setCurrentChat(chat: Chat) {
-  const previousState = canUseServerCommands() ? currentChatStateSnapshot() : null
-  const char = getCurrentCharacter()
-  const previousChat = previousState ? $state.snapshot(char?.chats?.[char.chatPage]) : undefined
-  char.chats[char.chatPage] = chat
-  setCurrentCharacter(char, { dispatchServerCommand: false })
-  if (previousState) {
-    dispatchCompatibleChatUpdate(previousChat, chat, previousState)
-  }
+  withTrustedServerProjectionWrite(() => {
+    const previousState = canUseServerCommands() ? currentChatStateSnapshot() : null
+    const char = getCurrentCharacter()
+    const previousChat = previousState ? $state.snapshot(char?.chats?.[char.chatPage]) : undefined
+    char.chats[char.chatPage] = chat
+    setCurrentCharacter(char, { dispatchServerCommand: false })
+    if (previousState) {
+      dispatchCompatibleChatUpdate(previousChat, chat, previousState)
+    }
+  })
 }
 
 export interface DynamicOutput {
@@ -2210,181 +2192,197 @@ function saveCurrentPresetLocal() {
 }
 
 export function saveCurrentPreset() {
-  const savedPreset = saveCurrentPresetLocal()
-  if (!savedPreset?.id) return
-  runPresetCommand((baseRevision) =>
-    updatePresetCommand({
-      baseRevision,
-      presetId: savedPreset.id!,
-      patch: safeStructuredClone(savedPreset) as unknown as PresetSnapshot,
-    }),
-  )
+  withTrustedServerProjectionWrite(() => {
+    const savedPreset = saveCurrentPresetLocal()
+    if (!savedPreset?.id) return
+    runPresetCommand((baseRevision) =>
+      updatePresetCommand({
+        baseRevision,
+        presetId: savedPreset.id!,
+        patch: safeStructuredClone(savedPreset) as unknown as PresetSnapshot,
+      }),
+    )
+  })
 }
 
 export function copyPreset(id: number) {
-  saveCurrentPresetLocal()
-  let db = DBState.db
-  normalizeBotPresetIds(db)
-  let pres = db.botPresets
-  const newPres = safeStructuredClone(pres[id])
-  if (!newPres?.id) return
-  const sourcePresetId = newPres.id
-  newPres.id = createClientPresetId()
-  newPres.name += ' Copy'
-  db.botPresets.push(newPres)
-  runPresetCommand((baseRevision) =>
-    copyPresetCommand({
-      baseRevision,
-      presetId: sourcePresetId,
-      name: newPres.name,
-      saveCurrent: true,
-    }),
-  )
+  withTrustedServerProjectionWrite(() => {
+    saveCurrentPresetLocal()
+    let db = DBState.db
+    normalizeBotPresetIds(db)
+    let pres = db.botPresets
+    const newPres = safeStructuredClone(pres[id])
+    if (!newPres?.id) return
+    const sourcePresetId = newPres.id
+    newPres.id = createClientPresetId()
+    newPres.name += ' Copy'
+    db.botPresets.push(newPres)
+    runPresetCommand((baseRevision) =>
+      copyPresetCommand({
+        baseRevision,
+        presetId: sourcePresetId,
+        name: newPres.name,
+        saveCurrent: true,
+      }),
+    )
+  })
 }
 
 export function changeToPreset(id = 0, savecurrent = true) {
-  if (savecurrent) {
-    saveCurrentPresetLocal()
-  }
-  let db = DBState.db
-  normalizeBotPresetIds(db)
-  let pres = db.botPresets
-  const newPres = pres[id]
-  const targetPresetId = newPres?.id
-  db.botPresetsId = id
-  if (newPres) {
-    setPreset(db, newPres)
-  }
-  if (targetPresetId) {
-    runPresetCommand((baseRevision) =>
-      selectPresetCommand({
-        baseRevision,
-        presetId: targetPresetId,
-        apply: true,
-        saveCurrent: savecurrent,
-      }),
-    )
-  }
+  withTrustedServerProjectionWrite(() => {
+    if (savecurrent) {
+      saveCurrentPresetLocal()
+    }
+    let db = DBState.db
+    normalizeBotPresetIds(db)
+    let pres = db.botPresets
+    const newPres = pres[id]
+    const targetPresetId = newPres?.id
+    db.botPresetsId = id
+    if (newPres) {
+      setPreset(db, newPres)
+    }
+    if (targetPresetId) {
+      runPresetCommand((baseRevision) =>
+        selectPresetCommand({
+          baseRevision,
+          presetId: targetPresetId,
+          apply: true,
+          saveCurrent: savecurrent,
+        }),
+      )
+    }
+  })
 }
 
 export function createPreset(preset: botPreset) {
-  let db = DBState.db
-  normalizeBotPresetIds(db)
-  const newPreset = safeStructuredClone(preset)
-  newPreset.id ??= createClientPresetId()
-  db.botPresets.push(newPreset)
-  db.botPresets = db.botPresets
-  runPresetCommand((baseRevision) =>
-    createPresetCommand({
-      baseRevision,
-      preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
-    }),
-  )
+  withTrustedServerProjectionWrite(() => {
+    let db = DBState.db
+    normalizeBotPresetIds(db)
+    const newPreset = safeStructuredClone(preset)
+    newPreset.id ??= createClientPresetId()
+    db.botPresets.push(newPreset)
+    db.botPresets = db.botPresets
+    runPresetCommand((baseRevision) =>
+      createPresetCommand({
+        baseRevision,
+        preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
+      }),
+    )
+  })
 }
 
 function addImportedPreset(preset: botPreset) {
-  let db = DBState.db
-  normalizeBotPresetIds(db)
-  const newPreset = safeStructuredClone(preset)
-  newPreset.id ??= createClientPresetId()
-  db.botPresets.push(newPreset)
-  db.botPresets = db.botPresets
-  runPresetCommand((baseRevision) =>
-    importPresetCommand({
-      baseRevision,
-      preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
-    }),
-  )
+  withTrustedServerProjectionWrite(() => {
+    let db = DBState.db
+    normalizeBotPresetIds(db)
+    const newPreset = safeStructuredClone(preset)
+    newPreset.id ??= createClientPresetId()
+    db.botPresets.push(newPreset)
+    db.botPresets = db.botPresets
+    runPresetCommand((baseRevision) =>
+      importPresetCommand({
+        baseRevision,
+        preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
+      }),
+    )
+  })
 }
 
 export function updatePreset(id: number, patch: Partial<botPreset>) {
-  let db = DBState.db
-  normalizeBotPresetIds(db)
-  const presetId = db.botPresets[id]?.id
-  if (!presetId) return
-  Object.assign(db.botPresets[id], patch)
-  runPresetCommand((baseRevision) =>
-    updatePresetCommand({
-      baseRevision,
-      presetId,
-      patch: safeStructuredClone({ ...patch, id: presetId }) as PresetSnapshot,
-    }),
-  )
+  withTrustedServerProjectionWrite(() => {
+    let db = DBState.db
+    normalizeBotPresetIds(db)
+    const presetId = db.botPresets[id]?.id
+    if (!presetId) return
+    Object.assign(db.botPresets[id], patch)
+    runPresetCommand((baseRevision) =>
+      updatePresetCommand({
+        baseRevision,
+        presetId,
+        patch: safeStructuredClone({ ...patch, id: presetId }) as PresetSnapshot,
+      }),
+    )
+  })
 }
 
 export function deletePreset(id: number, selectIndex = 0, apply = true) {
-  let db = DBState.db
-  normalizeBotPresetIds(db)
-  if (db.botPresets.length <= 1) return
-  const presetId = db.botPresets[id]?.id
-  const nextSelectedPreset =
-    db.botPresets[selectIndex]?.id === presetId
-      ? db.botPresets.find((preset) => preset.id !== presetId)
-      : db.botPresets[selectIndex]
-  const selectPresetId = nextSelectedPreset?.id
-  if (!presetId) return
-  let botPresets = db.botPresets
-  botPresets.splice(id, 1)
-  db.botPresets = botPresets
-  const selectedIndex = selectPresetId
-    ? db.botPresets.findIndex((preset) => preset.id === selectPresetId)
-    : -1
-  if (selectedIndex >= 0) {
-    db.botPresetsId = selectedIndex
-    if (apply) {
-      setPreset(db, db.botPresets[selectedIndex])
+  withTrustedServerProjectionWrite(() => {
+    let db = DBState.db
+    normalizeBotPresetIds(db)
+    if (db.botPresets.length <= 1) return
+    const presetId = db.botPresets[id]?.id
+    const nextSelectedPreset =
+      db.botPresets[selectIndex]?.id === presetId
+        ? db.botPresets.find((preset) => preset.id !== presetId)
+        : db.botPresets[selectIndex]
+    const selectPresetId = nextSelectedPreset?.id
+    if (!presetId) return
+    let botPresets = db.botPresets
+    botPresets.splice(id, 1)
+    db.botPresets = botPresets
+    const selectedIndex = selectPresetId
+      ? db.botPresets.findIndex((preset) => preset.id === selectPresetId)
+      : -1
+    if (selectedIndex >= 0) {
+      db.botPresetsId = selectedIndex
+      if (apply) {
+        setPreset(db, db.botPresets[selectedIndex])
+      }
+    } else if (db.botPresetsId >= db.botPresets.length) {
+      db.botPresetsId = db.botPresets.length - 1
     }
-  } else if (db.botPresetsId >= db.botPresets.length) {
-    db.botPresetsId = db.botPresets.length - 1
-  }
-  runPresetCommand((baseRevision) =>
-    deletePresetCommand({
-      baseRevision,
-      presetId,
-      selectPresetId,
-      apply,
-      saveCurrent: false,
-    }),
-  )
+    runPresetCommand((baseRevision) =>
+      deletePresetCommand({
+        baseRevision,
+        presetId,
+        selectPresetId,
+        apply,
+        saveCurrent: false,
+      }),
+    )
+  })
 }
 
 export function reorderPresets(fromIndex: number, toIndex: number) {
-  let db = DBState.db
-  normalizeBotPresetIds(db)
-  if (fromIndex === toIndex) return
-  if (
-    fromIndex < 0 ||
-    toIndex < 0 ||
-    fromIndex >= db.botPresets.length ||
-    toIndex > db.botPresets.length
-  ) {
-    return
-  }
+  withTrustedServerProjectionWrite(() => {
+    let db = DBState.db
+    normalizeBotPresetIds(db)
+    if (fromIndex === toIndex) return
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= db.botPresets.length ||
+      toIndex > db.botPresets.length
+    ) {
+      return
+    }
 
-  let botPresets = [...db.botPresets]
-  const movedItem = botPresets.splice(fromIndex, 1)[0]
-  if (!movedItem) return
+    let botPresets = [...db.botPresets]
+    const movedItem = botPresets.splice(fromIndex, 1)[0]
+    if (!movedItem) return
 
-  const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
-  botPresets.splice(adjustedToIndex, 0, movedItem)
+    const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
+    botPresets.splice(adjustedToIndex, 0, movedItem)
 
-  const currentId = db.botPresetsId
-  if (currentId === fromIndex) {
-    db.botPresetsId = adjustedToIndex
-  } else if (fromIndex < currentId && adjustedToIndex >= currentId) {
-    db.botPresetsId = currentId - 1
-  } else if (fromIndex > currentId && adjustedToIndex <= currentId) {
-    db.botPresetsId = currentId + 1
-  }
+    const currentId = db.botPresetsId
+    if (currentId === fromIndex) {
+      db.botPresetsId = adjustedToIndex
+    } else if (fromIndex < currentId && adjustedToIndex >= currentId) {
+      db.botPresetsId = currentId - 1
+    } else if (fromIndex > currentId && adjustedToIndex <= currentId) {
+      db.botPresetsId = currentId + 1
+    }
 
-  db.botPresets = botPresets
-  const presetIds = db.botPresets.map((preset) => preset.id).filter((id): id is string => !!id)
-  runPresetCommand((baseRevision) =>
-    reorderPresetsCommand({
-      baseRevision,
-      presetIds,
-    }),
-  )
+    db.botPresets = botPresets
+    const presetIds = db.botPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+    runPresetCommand((baseRevision) =>
+      reorderPresetsCommand({
+        baseRevision,
+        presetIds,
+      }),
+    )
+  })
 }
 
 export function setPreset(db: Database, newPres: botPreset) {

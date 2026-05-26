@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5e-i - Projection write gate foundation**. Next pickup:
-**9-5e-ii - Command bridge guard integration**.
+**9-5e-ii - Command bridge guard integration**. Next pickup:
+**9-5e-iii - Guard audit closeout**.
 
 ## Goal
 
@@ -269,6 +269,8 @@ surfaces.
       optimistic updates and rollback paths through trusted write scopes, or
       remove local writes where projection refresh is authoritative. No new
       command endpoints.
+      - Status: complete. Closeout:
+        [`../phases-completed/phase-9-client-thinning-9-5e-ii.md`](../phases-completed/phase-9-client-thinning-9-5e-ii.md).
     - **9-5e-iii - Guard audit closeout.** Enable the guard across the
       server-backed fixture path and classify failures as missed 9-5d residuals
       or intentional local/runtime-only state. Large resource replacements go

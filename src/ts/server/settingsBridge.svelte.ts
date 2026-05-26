@@ -6,6 +6,7 @@ import {
   settingsGroupForKey,
   type SettingsPatch,
 } from './commands'
+import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -109,12 +110,14 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
 }
 
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
-  const target = DBState.db as unknown as Record<string, unknown>
-  for (const [key, previousValue] of Object.entries(previous)) {
-    if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
-      target[key] = cloneJsonValue(previousValue)
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db as unknown as Record<string, unknown>
+    for (const [key, previousValue] of Object.entries(previous)) {
+      if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
+        target[key] = cloneJsonValue(previousValue)
+      }
     }
-  }
+  })
 }
 
 function snapshotJson(value: unknown): string {

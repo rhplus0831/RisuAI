@@ -16,6 +16,7 @@ import {
   type PersonaSnapshot,
   type ServerCommandResult,
 } from './server/commands'
+import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
 type Persona = (typeof DBState.db.personas)[number]
 
@@ -43,21 +44,25 @@ function snapshotPersonas(): {
 }
 
 function restorePersonaSnapshot(snapshot: ReturnType<typeof snapshotPersonas>): void {
-  DBState.db.personas = cloneJsonValue(snapshot.personas)
-  DBState.db.selectedPersona = snapshot.selectedPersona
-  DBState.db.username = snapshot.username
-  DBState.db.userIcon = snapshot.userIcon
-  DBState.db.personaPrompt = snapshot.personaPrompt
-  DBState.db.userNote = snapshot.userNote
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.personas = cloneJsonValue(snapshot.personas)
+    DBState.db.selectedPersona = snapshot.selectedPersona
+    DBState.db.username = snapshot.username
+    DBState.db.userIcon = snapshot.userIcon
+    DBState.db.personaPrompt = snapshot.personaPrompt
+    DBState.db.userNote = snapshot.userNote
+  })
 }
 
 export function normalizePersonaIds(): void {
-  const seen = new Set<string>()
-  for (const persona of DBState.db.personas ?? []) {
-    const id = typeof persona.id === 'string' && persona.id.trim() ? persona.id : v4()
-    persona.id = seen.has(id) ? v4() : id
-    seen.add(persona.id)
-  }
+  withTrustedServerProjectionWrite(() => {
+    const seen = new Set<string>()
+    for (const persona of DBState.db.personas ?? []) {
+      const id = typeof persona.id === 'string' && persona.id.trim() ? persona.id : v4()
+      persona.id = seen.has(id) ? v4() : id
+      seen.add(persona.id)
+    }
+  })
 }
 
 function selectedPersonaId(): string | null {

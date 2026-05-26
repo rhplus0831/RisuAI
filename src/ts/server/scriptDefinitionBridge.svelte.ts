@@ -14,6 +14,7 @@ import {
   type ServerCommandResult,
   type TriggerDefinitionSnapshot,
 } from './commands'
+import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 export interface ScriptDefinitionStateSnapshot {
   characters: character[]
@@ -43,8 +44,10 @@ export function currentScriptDefinitionStateSnapshot(): ScriptDefinitionStateSna
 }
 
 export function restoreScriptDefinitionState(snapshot: ScriptDefinitionStateSnapshot): void {
-  DBState.db.characters = cloneJsonValue(snapshot.characters)
-  DBState.db.modules = cloneJsonValue(snapshot.modules) as typeof DBState.db.modules
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characters = cloneJsonValue(snapshot.characters)
+    DBState.db.modules = cloneJsonValue(snapshot.modules) as typeof DBState.db.modules
+  })
 }
 
 export function ensureClientScriptDefinitionIds(scripts: customscript[]): customscript[] {
@@ -62,18 +65,20 @@ export function ensureClientTriggerDefinitionIds(triggers: triggerscript[]): tri
 }
 
 export function ensureAllClientScriptDefinitionIds(): void {
-  for (const character of DBState.db.characters ?? []) {
-    character.customscript = ensureClientScriptDefinitionIds(character.customscript ?? [])
-    character.triggerscript = ensureClientTriggerDefinitionIds(character.triggerscript ?? [])
-  }
-  for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
-    if (Array.isArray(module.regex)) {
-      module.regex = ensureClientScriptDefinitionIds(module.regex)
+  withTrustedServerProjectionWrite(() => {
+    for (const character of DBState.db.characters ?? []) {
+      character.customscript = ensureClientScriptDefinitionIds(character.customscript ?? [])
+      character.triggerscript = ensureClientTriggerDefinitionIds(character.triggerscript ?? [])
     }
-    if (Array.isArray(module.trigger)) {
-      module.trigger = ensureClientTriggerDefinitionIds(module.trigger)
+    for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
+      if (Array.isArray(module.regex)) {
+        module.regex = ensureClientScriptDefinitionIds(module.regex)
+      }
+      if (Array.isArray(module.trigger)) {
+        module.trigger = ensureClientTriggerDefinitionIds(module.trigger)
+      }
     }
-  }
+  })
 }
 
 export function dispatchReplaceCharacterScripts(

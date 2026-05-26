@@ -10,6 +10,7 @@ import {
   type LoadoutSnapshot,
   type ServerCommandResult,
 } from './server/commands'
+import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { changeToPreset, getCurrentCharacter } from './storage/database.svelte'
 import { DBState } from './stores.svelte'
 
@@ -62,8 +63,10 @@ export function currentLoadoutStateSnapshot(): LoadoutStateSnapshot {
 }
 
 export function restoreLoadoutState(snapshot: LoadoutStateSnapshot): void {
-  DBState.db.loadouts = cloneJsonValue(snapshot.loadouts)
-  DBState.db.lastLoadedLoadoutName = snapshot.lastLoadedLoadoutName
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.loadouts = cloneJsonValue(snapshot.loadouts)
+    DBState.db.lastLoadedLoadoutName = snapshot.lastLoadedLoadoutName
+  })
 }
 
 function runLoadoutCommand<T extends Record<string, unknown>>(

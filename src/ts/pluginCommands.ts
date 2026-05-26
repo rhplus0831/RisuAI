@@ -16,6 +16,7 @@ import {
   type PluginSnapshot,
   type ServerCommandResult,
 } from './server/commands'
+import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { DBState } from './stores.svelte'
 
 export interface PluginStateSnapshot {
@@ -43,10 +44,12 @@ export function currentPluginStateSnapshot(): PluginStateSnapshot {
 }
 
 export function restorePluginState(snapshot: PluginStateSnapshot): void {
-  pluginWatchSuppressionVersion += 1
-  DBState.db.plugins = cloneJsonValue(snapshot.plugins)
-  DBState.db.currentPluginProvider = snapshot.currentPluginProvider
-  DBState.db.pluginCustomStorage = cloneJsonValue(snapshot.pluginCustomStorage)
+  withTrustedServerProjectionWrite(() => {
+    pluginWatchSuppressionVersion += 1
+    DBState.db.plugins = cloneJsonValue(snapshot.plugins)
+    DBState.db.currentPluginProvider = snapshot.currentPluginProvider
+    DBState.db.pluginCustomStorage = cloneJsonValue(snapshot.pluginCustomStorage)
+  })
 }
 
 export function currentPluginWatchSuppressionVersion(): number {
@@ -147,8 +150,10 @@ export function currentPluginStorageSnapshot(): PluginStorageSnapshot {
 }
 
 export function restorePluginStorage(snapshot: PluginStorageSnapshot): void {
-  pluginWatchSuppressionVersion += 1
-  DBState.db.pluginCustomStorage = cloneJsonValue(snapshot)
+  withTrustedServerProjectionWrite(() => {
+    pluginWatchSuppressionVersion += 1
+    DBState.db.pluginCustomStorage = cloneJsonValue(snapshot)
+  })
 }
 
 export function dispatchPutPluginStorage(
