@@ -1,6 +1,6 @@
 # Test Coverage
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 This is the coverage router. Detail per area lives in the
 shards under [`coverage/`](coverage/).
@@ -63,8 +63,11 @@ shards under [`coverage/`](coverage/).
   `modules.test.ts`, `lorebook.test.ts`, `tokens.test.ts`,
   `preflight.test.ts`, `budgetFinalize.test.ts`, `triggers.test.ts`,
   `templates.test.ts`, `memory.test.ts`, and `assemble.test.ts`, plus
-  browser adapter / preview wiring coverage in `serverChat.test.ts`,
-  `sseParse.test.ts`, and `sendChat.serverPreview.test.ts`.
+  browser adapter / regenerate / preview wiring coverage in
+  `serverChat.test.ts`, `sseParse.test.ts`, and
+  `sendChat.serverPreview.test.ts`. The server-backed fixture suite also
+  drives the real Fastify `/chat` route for send, continue, regenerate,
+  preview, and preview-prompt.
 - Phase 8 memory coverage has landed for schema/repository primitives,
   legacy import, job routes, worker lifecycle/retry/progress,
   planner/chunk bridge, summary and embedding adapters/handlers,

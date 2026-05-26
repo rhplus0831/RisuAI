@@ -1,6 +1,6 @@
 # Fastify Follow-Up Phases
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 These files track reopened work found by the audit of Phases 0-9. Use
 the original `docs/fastify/phases/` files for scope and boundary
@@ -8,20 +8,19 @@ context; use this directory for remaining tasks and closeout criteria.
 
 ## Phase Index
 
-| Phase                           | State    | Open                                                                         |
+| Phase                           | State    | Doc                                                                          |
 | ------------------------------- | -------- | ---------------------------------------------------------------------------- |
 | 0 - Removals                    | Reopened | [`phase-0-removals-followup.md`](phase-0-removals-followup.md)               |
 | 3 - Proxy migration             | Reopened | [`phase-3-proxy-followup.md`](phase-3-proxy-followup.md)                     |
 | 6 - Server-side generation      | Reopened | [`phase-6-generation-followup.md`](phase-6-generation-followup.md)           |
-| 7 - Server-side prompt assembly | Reopened | [`phase-7-prompt-assembly-followup.md`](phase-7-prompt-assembly-followup.md) |
+| 7 - Server-side prompt assembly | Closed   | [`phase-7-prompt-assembly-followup.md`](phase-7-prompt-assembly-followup.md) |
 | 8 - Hypa V3 memory server-side  | Reopened | [`phase-8-memory-followup.md`](phase-8-memory-followup.md)                   |
-| 9 - Client thinning             | Reopened | [`phase-9-client-thinning-followup.md`](phase-9-client-thinning-followup.md) |
+| 9 - Client thinning             | Closed   | [`phase-9-client-thinning-followup.md`](phase-9-client-thinning-followup.md) |
 
 ## Dependency Order
 
 ```text
-Phase 9 guard/write sweep should be the first pickup.
-Phase 7 should close before relying on server-backed regenerate/manual chat smoke.
+Phase 7 and Phase 9 follow-up are closed again.
 Phase 8 should close before relying on memory progress or custom embedding follow-ups.
 Phase 6 can close independently but should land before broad generation closeout.
 Phase 0 and Phase 3 cleanup can land independently.
@@ -32,31 +31,31 @@ Phase 0 and Phase 3 cleanup can land independently.
 Each slice is intended to fit in one focused work session with its own
 implementation, tests, and handoff update.
 
-| Slice | Phase | Scope |
-| ----- | ----- | ----- |
-| 9A | 9 | Provider routing and model scalar settings. |
-| 9B | 9 | OpenRouter, auxiliary model, and separate-parameter selectors. |
-| 9C | 9 | Image provider settings. |
-| 9D | 9 | Memory and audio provider settings. |
-| 9E | 9 | Persona, display/theme, global regex, lore preset, and bot preset editors. |
-| 9F | 9 | Plugin, custom model, and advanced setting editors. |
-| 9G | 9 | Character core profile, media, and basic option editors. |
-| 9H | 9 | Character lore, script, prompt, TTS, and chat-name editors. |
-| 9I | 9 | Sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API write classification. |
-| 9J | 9 | Final direct-write sweep and closeout. |
-| 7A | 7 | Browser regenerate request wiring. |
-| 7B | 7 | Server regenerate assembly semantics. |
-| 7C | 7 | `/chat` provider dispatch guards. |
-| 7D | 7 | Stop-trigger mutation payload delivery. |
-| 7E | 7 | Route-backed fixture coverage. |
-| 8A | 8 | Custom embedding follow-up routing. |
-| 8B | 8 | Production memory progress events. |
-| 8C | 8 | Missing-summary diagnostics. |
-| 6A | 6 | Stream error contract and OpenAI-compatible path. |
-| 6B | 6 | Anthropic, Mistral, and Gemini stream failures. |
-| 6C | 6 | Ollama and final stream audit. |
-| 0A | 0 | Google Drive public artifact removal. |
-| 3A | 3 | Proxy response-header alignment. |
+| Slice | Phase | Scope                                                                                                 |
+| ----- | ----- | ----------------------------------------------------------------------------------------------------- |
+| 9A    | 9     | Provider routing and model scalar settings.                                                           |
+| 9B    | 9     | OpenRouter, auxiliary model, and separate-parameter selectors.                                        |
+| 9C    | 9     | Image provider settings.                                                                              |
+| 9D    | 9     | Memory and audio provider settings.                                                                   |
+| 9E    | 9     | Persona, display/theme, global regex, lore preset, and bot preset editors.                            |
+| 9F    | 9     | Plugin, custom model, and advanced setting editors.                                                   |
+| 9G    | 9     | Character core profile, media, and basic option editors.                                              |
+| 9H    | 9     | Character lore, script, prompt, TTS, and chat-name editors.                                           |
+| 9I    | 9     | Sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API write classification. |
+| 9J    | 9     | Final direct-write sweep and closeout.                                                                |
+| 7A    | 7     | Browser regenerate request wiring.                                                                    |
+| 7B    | 7     | Server regenerate assembly semantics.                                                                 |
+| 7C    | 7     | `/chat` provider dispatch guards.                                                                     |
+| 7D    | 7     | Stop-trigger mutation payload delivery.                                                               |
+| 7E    | 7     | Route-backed fixture coverage.                                                                        |
+| 8A    | 8     | Custom embedding follow-up routing.                                                                   |
+| 8B    | 8     | Production memory progress events.                                                                    |
+| 8C    | 8     | Missing-summary diagnostics.                                                                          |
+| 6A    | 6     | Stream error contract and OpenAI-compatible path.                                                     |
+| 6B    | 6     | Anthropic, Mistral, and Gemini stream failures.                                                       |
+| 6C    | 6     | Ollama and final stream audit.                                                                        |
+| 0A    | 0     | Google Drive public artifact removal.                                                                 |
+| 3A    | 3     | Proxy response-header alignment.                                                                      |
 
 ## No Follow-Up Found
 

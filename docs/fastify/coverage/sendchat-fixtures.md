@@ -121,7 +121,9 @@ fixtures through `/api/v1/generate/completion` with
 `platform.isFastifyServer === true` and `db.useServerGeneration === true`.
 The Phase 7 sweep runs the same dual-mode fixtures through
 `/api/v1/generate/chat` with `db.useServerPromptAssembly === true` and
-asserts that they do not escape to `/completion`.
+asserts that they do not escape to `/completion`. A separate
+route-backed harness drives the real Fastify `/chat` route for send,
+continue, regenerate, preview, and preview-prompt.
 
 The same file covers server-dispatched rollback, TTS side effects, and
 the Phase 8 `hypav3-memory` server-backed memory path, including

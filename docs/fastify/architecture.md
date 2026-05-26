@@ -1,6 +1,6 @@
 # Architecture
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 This doc describes the target shape of the Fastify server and the
 boundaries between it and the browser client. Current route coverage
@@ -228,9 +228,9 @@ At the target state, the server owns:
   plain-section, history, script, module, lorebook, token/budget,
   trigger, template renderer, memory/cache card, `assemblePrompt`, and
   chat-route surfaces are server-side. Preview, preview-prompt, send,
-  and continue can use `/chat` behind `db.useServerPromptAssembly`;
-  regenerate parity remains reopened follow-up work. Phase 8 also
-  includes live chunk planning for fresh server-backed chats.
+  continue, and regenerate can use `/chat` behind
+  `db.useServerPromptAssembly`. Phase 8 also includes live chunk
+  planning for fresh server-backed chats.
 
 Browser owns:
 

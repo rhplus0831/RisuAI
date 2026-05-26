@@ -10,7 +10,7 @@ provider secrets are masked in bootstrap, and server `.risu` import/export and
 bundle routes own save movement.
 
 Post-closeout audit note: direct-write follow-up slices reopened after this
-closeout and are tracked in
+closeout and later closed through 9J in
 `docs/fastify-followup/phases/phase-9-client-thinning-followup.md`.
 
 ## Confirmed

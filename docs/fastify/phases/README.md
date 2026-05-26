@@ -41,10 +41,11 @@ the phase file.
 0 -> 4 -> 5 -> 6 -> 7
 ```
 
-Phases 0, 3, 6, 7, 8, and 9 have reopened audit follow-up in
-`docs/fastify-followup`. Tauri / Desktop manual verification remains a
-separate deferred task and does not change the original Fastify web
-closeout state.
+Audit follow-up status lives in `docs/fastify-followup`. As of
+2026-05-27, Phases 7 and 9 are closed again; Phases 0, 3, 6, and 8
+remain open. Tauri / Desktop manual verification remains a separate
+deferred task and does not change the original Fastify web closeout
+state.
 
 ## Completed Detail
 

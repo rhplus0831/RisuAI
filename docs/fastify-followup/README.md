@@ -1,6 +1,6 @@
 # Fastify Follow-Up Handoff
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 This directory records audit follow-up work found after
 `docs/fastify` marked Phases 0-9 closed. It is separate from the main
@@ -33,8 +33,8 @@ intermediate Fastify shapes.
 ## Audit Summary
 
 The audit did not identify actionable follow-up tasks for Phases 1, 2,
-4, or 5. Phases 0, 3, 6, 7, 8, and 9 have reopened work tracked here.
+4, or 5. Phases 7 and 9 have closed follow-up slices; Phases 0, 3, 6,
+and 8 remain open.
 
 Treat this directory as the active handoff until every reopened phase
-below is closed and the main `docs/fastify` status is corrected with a
-short closeout note.
+is closed and the main `docs/fastify` status has a short closeout note.

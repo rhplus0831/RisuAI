@@ -41,7 +41,7 @@ directly.
 | `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                                        |
 | `007dbe3c`                                        | 9H character lore, script, prompt, TTS, and chat-name editors.                                     |
 | `c1966217`                                        | 9I sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API classification. |
-| current 9J change                                 | Final direct-write sweep, allowlist gaps, browser smoke, and Phase 9 closeout.                     |
+| `67a9dab4`                                        | Final direct-write sweep, allowlist gaps, browser smoke, and Phase 9 closeout.                     |
 
 ## Phase Status
 
@@ -65,5 +65,6 @@ directly.
 - Broad closeout should run `pnpm check`, `pnpm test`, `pnpm api:test`,
   and `pnpm build` unless a narrower change has an explicit owner
   approval to defer the full matrix.
-- Fastify-served browser behavior should pass `pnpm smoke:fastify-browser`
-  before Phase 9 is considered closed again.
+- Fastify-served browser behavior passed `pnpm smoke:fastify-browser`
+  for the Phase 9 follow-up closeout; rerun it before closing any future
+  browser projection sweep.

@@ -1,6 +1,6 @@
 # Server Status
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 This file tracks the current Fastify server surface. Historical server
 logs and landed provider lists are archived or covered by the coverage
@@ -21,10 +21,13 @@ docs.
 - `POST /api/v1/generate/chat` owns Phase 7 prompt assembly SSE events.
   It streams assembled prompt payloads and metadata, builds an internal
   typed mutation payload on `AssembleResult`, emits that payload as
-  `message_patch` on successful assembly, persists `varChanged` for send
-  and continue requests, and can
+  `message_patch` on successful assembly, persists `varChanged` for
+  send, continue, and regenerate requests, and can
   dispatch production providers through the chat `token`, `error`, and
   enriched `done` events when `db.useServerPromptAssembly` is enabled.
+  Regenerate consumes `regenerateMessageId`, unsupported provider
+  families return explicit SSE errors, and stop-trigger aborts include
+  mutation/restoration payloads before the terminal error.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
   prompt assembly.
 - Command routes are live under `/api/v1/commands/*` for settings,
@@ -59,9 +62,9 @@ docs.
 ## Current Server Work
 
 Original Phase 8 Hypa V3 memory and Phase 9 client thinning are closed.
-Audit follow-up for Phase 6 streaming errors, Phase 7 regenerate /
-provider / stop-trigger gaps, Phase 8 memory follow-ups, and Phase 9
-direct-write slices lives in `docs/fastify-followup`.
+Phase 7 and Phase 9 audit follow-up are closed again. Remaining audit
+follow-up for Phase 0 removals, Phase 3 proxy headers, Phase 6 streaming
+errors, and Phase 8 memory ownership lives in `docs/fastify-followup`.
 
 ## Watch Points
 

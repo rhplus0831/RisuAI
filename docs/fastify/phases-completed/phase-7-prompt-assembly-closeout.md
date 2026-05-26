@@ -10,14 +10,16 @@ for the browser adapter.
 Post-closeout audit note: regenerate browser wiring / assembly
 semantics, deferred-provider guards, stop-trigger mutation delivery, and
 route-backed fixture coverage were reopened in
-`docs/fastify-followup/phases/phase-7-prompt-assembly-followup.md`.
+`docs/fastify-followup/phases/phase-7-prompt-assembly-followup.md` and
+later closed again in slices 7A-7E.
 
 ## Confirmed
 
 - `send` and `continue` route through the server prompt assembly mode
   contract, with server-backed fixture coverage proving those calls do
   not fall back to `/api/v1/generate/completion`. The route validates
-  `regenerate`, but full regenerate semantics are follow-up work.
+  `regenerate`; full regenerate semantics landed later in the Phase 7
+  follow-up.
 - `preview` and `preview-prompt` use `/api/v1/generate/chat` in
   server-backed mode; `preview` fills `previewFormated`, and
   `preview-prompt` fills `previewBody`.

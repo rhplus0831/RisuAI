@@ -1,6 +1,6 @@
 # Migration Plan
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 ## Goal
 
@@ -29,9 +29,10 @@ End state:
 
 The original closeout snapshot belongs in [`status.md`](status.md).
 Phases 0-9 were closed for the Fastify-served web migration scope in
-`edbc2d07`; audit follow-up discovered reopened work afterward and is
-tracked in [`../fastify-followup/`](../fastify-followup/). Tauri /
-Desktop manual verification remains deferred to a separate later task.
+`edbc2d07`; audit follow-up discovered reopened work afterward. Phase 7
+and Phase 9 follow-up are closed again, while Phases 0, 3, 6, and 8
+remain tracked in [`../fastify-followup/`](../fastify-followup/). Tauri
+/ Desktop manual verification remains deferred to a separate later task.
 
 Stable baseline facts:
 
@@ -107,13 +108,15 @@ rules. The headline order:
    Phase 7.
 7. **Server-side prompt assembly** - server walks the preset's
    `promptTemplate`, lorebook activation, persona, memory, and
-   triggers. Closed 2026-05-24.
+   triggers. Closed 2026-05-24; follow-up for regenerate, provider
+   guards, stop-trigger payloads, and route-backed fixtures closed
+   2026-05-27.
 8. **Memory** - Hypa V3 chunking, embeddings, summarization as an
    async job queue on the server. Closed 2026-05-25.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation
    with commands; cut the whole-state save bridge; client becomes a
    projection of server events. Closed for the original Fastify web
-   scope; audit follow-up slices continue in `docs/fastify-followup`.
+   scope; direct-write follow-up closed 2026-05-27.
 
 ## Non-goals
 

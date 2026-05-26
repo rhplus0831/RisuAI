@@ -34,6 +34,9 @@ and add any longer closeout note under `../phases-completed/`.
 
 ## Recently Closed
 
+Phase 9 client-thinning follow-up closed in slices 9A-9J. The final
+direct-write sweep is anchored at `67a9dab4`.
+
 Phase 7 prompt assembly follow-up closed in slices 7A-7E.
 
 - 7A: landed browser regenerate request wiring.
@@ -45,7 +48,7 @@ Phase 7 prompt assembly follow-up closed in slices 7A-7E.
 
 ## Suggested Verification
 
-Focused Phase 9 direct-write slice:
+Closed Phase 9 reference verification:
 
 ```bash
 pnpm exec vitest run src/ts/server/commands.test.ts src/ts/compatibilityAdapters.test.ts
@@ -60,7 +63,7 @@ pnpm exec vitest run src/ts/plugins/plugins.test.ts
 pnpm smoke:fastify-browser
 ```
 
-Focused Phase 7:
+Closed Phase 7 reference verification:
 
 ```bash
 pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts

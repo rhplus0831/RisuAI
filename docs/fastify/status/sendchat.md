@@ -1,6 +1,6 @@
 # sendChat Status
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 This file tracks the current `sendChat` boundary. Historical extraction
 and fixture inventories are archived or covered by the coverage docs.
@@ -18,21 +18,23 @@ and fixture inventories are archived or covered by the coverage docs.
   assembly for
   user-message appends, start-trigger / run-var message replacements,
   chat-var deltas, and `additonalSysPrompt` rows.
-- Behind `db.useServerPromptAssembly`, send and continue calls consume
-  the server prompt payload, apply message/scriptstate patches, and then
-  consume the `/chat` provider token stream instead of calling local
-  browser provider dispatch. Regenerate remains follow-up work.
+- Behind `db.useServerPromptAssembly`, send, continue, and regenerate
+  calls consume the server prompt payload, apply message/scriptstate
+  patches, and then consume the `/chat` provider token stream instead of
+  calling local browser provider dispatch.
 - The gate defaults off and is independent of `db.useServerGeneration`.
 - `/chat` now emits `info.generationId`, `info.generationInfo`, provider
   `token` events, terminal `error` events, and enriched terminal `done`
-  events for server-dispatched sends.
+  events for server-dispatched sends. Stop-trigger aborts replay
+  `message_patch` data and restoration metadata before the terminal
+  error.
 
 ## Active Boundary
 
-Phase 7 prompt assembly was closed for the original migration scope.
-Follow-up work remains for browser regenerate wiring, server regenerate
-semantics, deferred-provider guards, stop-trigger mutation delivery, and
-route-backed fixture coverage.
+Phase 7 prompt assembly was closed for the original migration scope and
+its follow-up gaps are closed again in slices 7A-7E. Server-backed
+fixture coverage now exercises the real Fastify `/chat` route for send,
+continue, regenerate, preview, and preview-prompt.
 
 Phase 7 closeout detail lives in
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md);

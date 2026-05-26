@@ -6,7 +6,7 @@ Status: closed 2026-05-24.
 
 Post-closeout audit work for regenerate semantics, deferred-provider
 guards, stop-trigger mutation delivery, and route-backed fixture coverage
-is tracked in
+closed in follow-up slices 7A-7E and is archived in
 [`../../fastify-followup/phases/phase-7-prompt-assembly-followup.md`](../../fastify-followup/phases/phase-7-prompt-assembly-followup.md).
 
 Closeout archive:
@@ -46,7 +46,7 @@ without requiring the browser to own mutable send-time state.
 Phase 7 closeout confirmed the original `/chat` assembly and dispatch
 baseline behind `db.useServerPromptAssembly`. A later audit reopened
 regenerate, provider-guard, stop-trigger, and route-backed fixture gaps;
-use the follow-up doc for the current contract.
+those follow-up gaps closed again on 2026-05-27.
 
 ## Optional Or Parallel Work
 
@@ -71,13 +71,11 @@ use the follow-up doc for the current contract.
 
 ## Exit Criteria
 
-- Original scope closed: `send`, `continue`, preview, and
-  preview-prompt can use the server prompt assembly path behind
-  `db.useServerPromptAssembly`; regenerate completion is tracked in
-  follow-up.
-- Original scope closed: browser-visible chat mutations for successful
-  assembly are represented as typed server events; stop-trigger mutation
-  delivery remains follow-up work.
+- Closed: `send`, `continue`, `regenerate`, preview, and preview-prompt
+  can use the server prompt assembly path behind
+  `db.useServerPromptAssembly`.
+- Closed: browser-visible chat mutations for successful assembly and
+  stop-trigger aborts are represented as typed server events.
 - Closed: server-side dispatch streams through the locked SSE taxonomy.
 - Closed: the local `sendChat` fixtures, server-backed sweep, Fastify API
   tests, type check, and build pass.

@@ -7,7 +7,8 @@ Date: 2026-05-24
 server-dispatched `/chat` stream.
 
 Post-closeout audit note: the send-path dispatch work landed here, but
-explicit regenerate wiring and assembly semantics were later reopened in
+explicit regenerate wiring and assembly semantics were later reopened and
+closed in
 `docs/fastify-followup/phases/phase-7-prompt-assembly-followup.md`.
 
 ## Landed
@@ -27,11 +28,12 @@ explicit regenerate wiring and assembly semantics were later reopened in
   `/api/v1/generate/completion` and still preserve message output,
   generation metadata, stages, and `addRerolls`.
 
-## Watch Points
+## Historical Watch Points
 
-- 7-12d-iv still needs the typed `tts` `side_effect` event and
-  `error.restoration` rollback for failures after browser-visible
-  mutations begin.
+- At this slice boundary, 7-12d-iv still needed the typed `tts`
+  `side_effect` event and `error.restoration` rollback for failures
+  after browser-visible mutations began. That work later landed in the
+  Phase 7 closeout.
 - Image generation, Hypa V3 memory, plugin / Lua hooks, NovelAI string
   flattening, and low-level trigger effects remain deferred.
 - Server-side provider dispatch currently resolves from persisted
