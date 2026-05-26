@@ -449,7 +449,7 @@ async function handleAnthropicStreaming(
   const { signal, cleanup } = attachAbort(req)
   try {
     const ap = coerceAnthropicAdditionalParams(options)
-    if (!ap.ok) {
+    if (ap.ok === false) {
       badRequest(reply, ap.error)
       return
     }
@@ -485,7 +485,7 @@ async function handleAnthropicBuffered(
   const { signal, cleanup } = attachAbort(req)
   try {
     const ap = coerceAnthropicAdditionalParams(options)
-    if (!ap.ok) {
+    if (ap.ok === false) {
       badRequest(reply, ap.error)
       return
     }
@@ -700,7 +700,7 @@ async function handleBedrockBuffered(
       badRequest(reply, 'options.bedrock.credentials is required')
       return
     }
-    if (!creds.ok) {
+    if (creds.ok === false) {
       badRequest(reply, creds.error)
       return
     }
@@ -755,7 +755,7 @@ async function handleResponsesBuffered(
   const { signal, cleanup } = attachAbort(req)
   try {
     const ap = coerceResponsesAdditionalParams(options)
-    if (!ap.ok) {
+    if (ap.ok === false) {
       badRequest(reply, ap.error)
       return
     }
@@ -799,7 +799,7 @@ async function handleLegacyInstructBuffered(
   const { signal, cleanup } = attachAbort(req)
   try {
     const ap = coerceLegacyInstructAdditionalParams(options)
-    if (!ap.ok) {
+    if (ap.ok === false) {
       badRequest(reply, ap.error)
       return
     }
@@ -845,15 +845,19 @@ async function handleGeminiStreaming(
   const { signal, cleanup } = attachAbort(req)
   try {
     const vertex = coerceVertexAuth(options.vertex)
-    if (vertex !== null && !vertex.ok) {
-      badRequest(reply, vertex.error)
-      return
+    let vertexAuth: VertexAuthCoerced | undefined
+    if (vertex !== null) {
+      if (vertex.ok === false) {
+        badRequest(reply, vertex.error)
+        return
+      }
+      vertexAuth = vertex.value
     }
     const resolved = resolveGeminiRequest({
       model,
       messages,
       apiKey: options.apiKey,
-      vertex: vertex !== null ? vertex.value : undefined,
+      vertex: vertexAuth,
       baseUrl: options.baseUrl,
       maxOutputTokens: options.maxOutputTokens,
       temperature: options.temperature,
@@ -884,15 +888,19 @@ async function handleGeminiBuffered(
   const { signal, cleanup } = attachAbort(req)
   try {
     const vertex = coerceVertexAuth(options.vertex)
-    if (vertex !== null && !vertex.ok) {
-      badRequest(reply, vertex.error)
-      return
+    let vertexAuth: VertexAuthCoerced | undefined
+    if (vertex !== null) {
+      if (vertex.ok === false) {
+        badRequest(reply, vertex.error)
+        return
+      }
+      vertexAuth = vertex.value
     }
     const resolved = resolveGeminiRequest({
       model,
       messages,
       apiKey: options.apiKey,
-      vertex: vertex !== null ? vertex.value : undefined,
+      vertex: vertexAuth,
       baseUrl: options.baseUrl,
       maxOutputTokens: options.maxOutputTokens,
       temperature: options.temperature,
@@ -934,7 +942,7 @@ async function handleCohereBuffered(
       return
     }
     const ap = coerceCohereAdditionalParams(options)
-    if (!ap.ok) {
+    if (ap.ok === false) {
       badRequest(reply, ap.error)
       return
     }
@@ -980,7 +988,7 @@ async function handleMistralStreaming(
   const { signal, cleanup } = attachAbort(req)
   try {
     const ap = coerceMistralAdditionalParams(options)
-    if (!ap.ok) {
+    if (ap.ok === false) {
       badRequest(reply, ap.error)
       return
     }
@@ -1019,7 +1027,7 @@ async function handleMistralBuffered(
   const { signal, cleanup } = attachAbort(req)
   try {
     const ap = coerceMistralAdditionalParams(options)
-    if (!ap.ok) {
+    if (ap.ok === false) {
       badRequest(reply, ap.error)
       return
     }
@@ -1312,7 +1320,7 @@ export function registerGenerationRoutes(app: FastifyInstance, authState: AuthSt
       provider as OpenAICompatibleProvider,
       options,
     )
-    if (!variantResult.ok) {
+    if (variantResult.ok === false) {
       return badRequest(reply, variantResult.error)
     }
 

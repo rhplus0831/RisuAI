@@ -127,11 +127,10 @@ function ensureDefinitionRecords(
   const seen = new Set<string>()
   return input.map((raw, index) => {
     const record = readJsonObject(raw, `${label}[${index}]`)
-    record.id = typeof record.id === 'string' && record.id.trim() ? record.id : randomUUID()
-    if (seen.has(record.id)) {
-      record.id = randomUUID()
-    }
-    seen.add(record.id)
+    const id = typeof record.id === 'string' && record.id.trim() ? record.id : randomUUID()
+    const normalizedId = seen.has(id) ? randomUUID() : id
+    record.id = normalizedId
+    seen.add(normalizedId)
     validateDefinitionRecord(record, `${label}[${index}]`, kind)
     return record
   })

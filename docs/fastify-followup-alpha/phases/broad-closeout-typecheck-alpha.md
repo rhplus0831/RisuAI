@@ -2,7 +2,8 @@
 
 Date: 2026-05-27
 
-Status: open.
+Status: closed. Closeout log:
+[`../phases-completed/broad-closeout-typecheck-alpha.md`](../phases-completed/broad-closeout-typecheck-alpha.md).
 
 ## Goal
 
@@ -11,12 +12,13 @@ expanding the focused Phase 5, 6, or 9 functional slices.
 
 ## Closeout Finding
 
-The latest 2026-05-27 broad verification pass failed at `pnpm check`
-with 58 diagnostics across 18 files. The rest of the matrix passed in
-the same workspace:
+The 2026-05-27 broad verification pass initially failed at `pnpm check`
+with 58 diagnostics across 18 files. The cleanup closed those
+diagnostics and the full matrix now passes:
 
-- `pnpm test`: passed, 67 files, 742 tests passed, 4 skipped.
-- `pnpm api:test`: passed, 68 files, 1212 tests passed.
+- `pnpm check`: passed, 0 errors and 0 warnings.
+- `pnpm test`: passed, 69 files, 747 tests passed, 4 skipped.
+- `pnpm api:test`: passed, 68 files, 1217 tests passed.
 - `pnpm build`: passed with nonblocking CSS pseudo-element,
   browser-externalized module, chunk-size, and plugin-timing warnings.
 - `pnpm smoke:fastify-browser`: passed, 1 browser smoke test.
@@ -49,18 +51,24 @@ the same workspace:
 - Client test fixture typing:
   `src/ts/process/modules.test.ts`.
 
+## Closed Scope
+
+The alpha typecheck cleanup landed on 2026-05-27. Keep any detailed
+slice notes in the completed closeout log linked above.
+
 ## Tasks
 
-- Re-run `pnpm check` first and keep the current diagnostics grouped by
+- Completed: re-ran `pnpm check` first and kept the diagnostics grouped by
   code surface before editing.
-- Fix type narrowing at the source where practical: discriminate result
-  unions explicitly, narrow `unknown` values before numeric or index use,
-  and keep SQLite row mapping typed at repository boundaries.
-- Keep behavior changes minimal. Do not add compatibility migrations for
-  intermediate Fastify shapes.
+- Completed: fixed type narrowing at the source where practical: result
+  unions are discriminated explicitly, `unknown` values are narrowed
+  before numeric or index use, and SQLite row mapping is typed at
+  repository boundaries.
+- Completed: kept behavior changes minimal and did not add compatibility
+  migrations for intermediate Fastify shapes.
 - If a typecheck failure exposes a real behavior regression, open a
   dedicated phase finding before broadening scope.
-- After `pnpm check` passes, rerun the broad closeout matrix and browser
+- Completed: after `pnpm check` passed, reran the broad closeout matrix and browser
   smoke.
 
 ## Boundaries
@@ -87,3 +95,11 @@ pnpm api:test
 pnpm build
 pnpm smoke:fastify-browser
 ```
+
+Latest closeout verification on 2026-05-27:
+
+- `pnpm check`: passed, 0 errors and 0 warnings.
+- `pnpm test`: passed, 69 files, 747 tests passed, 4 skipped.
+- `pnpm api:test`: passed, 68 files, 1217 tests passed.
+- `pnpm build`: passed with known nonblocking build warnings.
+- `pnpm smoke:fastify-browser`: passed, 1 browser smoke test.

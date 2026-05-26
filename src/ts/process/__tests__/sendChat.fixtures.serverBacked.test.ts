@@ -68,6 +68,24 @@ vi.mock('uuid', () => ({
   v4: () => `uuid-${uuidState.counter++}`,
 }))
 
+type InjectMethod = 'DELETE' | 'GET' | 'HEAD' | 'PATCH' | 'POST' | 'PUT' | 'OPTIONS'
+
+function toInjectMethod(method: string | undefined): InjectMethod {
+  const normalized = (method ?? 'GET').toUpperCase()
+  switch (normalized) {
+    case 'DELETE':
+    case 'GET':
+    case 'HEAD':
+    case 'PATCH':
+    case 'POST':
+    case 'PUT':
+    case 'OPTIONS':
+      return normalized
+    default:
+      return 'GET'
+  }
+}
+
 vi.mock('@mlc-ai/web-tokenizers', () => ({
   Tokenizer: {
     fromJSON: async () => ({
@@ -398,7 +416,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
     if (isTokenizerUrl(rawUrl)) return serveTokenizerFetch(rawUrl)
     const url = rawUrl.startsWith('http') ? new URL(rawUrl).pathname : rawUrl
-    const method = init?.method ?? 'GET'
+    const method = toInjectMethod(init?.method)
     const headers = headersRecord(init?.headers)
     const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
     if (url === '/api/v1/generate/chat') {
@@ -426,9 +444,14 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
       headers,
       payload,
     })
+    const responseHeaders: Record<string, string> = {}
+    for (const [key, value] of Object.entries(res.headers)) {
+      if (typeof value === 'string') responseHeaders[key] = value
+      else if (Array.isArray(value)) responseHeaders[key] = value.join(', ')
+    }
     return new Response(res.body, {
       status: res.statusCode,
-      headers: res.headers as Record<string, string>,
+      headers: responseHeaders,
     })
   }
 
@@ -461,7 +484,7 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
   const char = DBState.db.characters[0]
   const chat = char.chats[char.chatPage ?? 0]
   chat.id = 'chat-route-backed'
-  DBState.db.currentChar = 0
+  ;(DBState.db as typeof DBState.db & { currentChar: number }).currentChar = 0
   DBState.db.mainPrompt = defaultMainPrompt
   DBState.db.formatingOrder = [
     'main',

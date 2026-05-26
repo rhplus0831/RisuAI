@@ -96,9 +96,10 @@ export function registerMemoryJobRoutes(
       reply.code(400)
       return badRequest('kind must be one of: chunk, embed, summarize')
     }
+    const maxAttempts = body.maxAttempts
     if (
-      body.maxAttempts !== undefined &&
-      (!Number.isInteger(body.maxAttempts) || body.maxAttempts <= 0)
+      maxAttempts !== undefined &&
+      (typeof maxAttempts !== 'number' || !Number.isInteger(maxAttempts) || maxAttempts <= 0)
     ) {
       reply.code(400)
       return badRequest('maxAttempts must be a positive integer when provided')
@@ -116,7 +117,7 @@ export function registerMemoryJobRoutes(
         chatId: body.chatId,
         kind: body.kind,
         payload: body.payload ?? {},
-        maxAttempts: typeof body.maxAttempts === 'number' ? body.maxAttempts : undefined,
+        maxAttempts: typeof maxAttempts === 'number' ? maxAttempts : undefined,
         nextRunAt: typeof body.nextRunAt === 'string' ? body.nextRunAt : undefined,
       })
       emitRouteJobEvent(db, options.onEvent, job.id)

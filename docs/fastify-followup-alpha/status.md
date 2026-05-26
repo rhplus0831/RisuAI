@@ -12,13 +12,13 @@ current server schema, command surface, and import/export paths directly.
 
 ## Current Snapshot
 
-- Active work: broad alpha closeout typecheck cleanup.
-- Broad alpha closeout verification is blocked by `pnpm check`
-  diagnostics found on 2026-05-27.
+- Active work: none; the alpha broad closeout is complete.
+- Broad alpha closeout verification passed on 2026-05-27 after the
+  typecheck cleanup.
 - No follow-up found in this audit: Phases 0, 1, 2, 4, and 7.
-- Next default pickup: clear
-  [`phases/broad-closeout-typecheck-alpha.md`](phases/broad-closeout-typecheck-alpha.md),
-  then rerun broad alpha closeout verification.
+- Next default pickup: none open. Future agents should start from this
+  status, then create a new focused phase doc only if a new audit finding
+  appears.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/` and keep focused scope,
   boundaries, and exit criteria under `phases/`.
@@ -48,14 +48,13 @@ current server schema, command surface, and import/export paths directly.
 | 8 - Hypa V3 memory                      | Closed       | Memory event delivery is now best-effort across external sinks, SSE subscribers, worker progress emits, and memory job routes.                                                                    | [`phases-completed/phase-8-memory-event-isolation.md`](phases-completed/phase-8-memory-event-isolation.md)       |
 | 9 - Client thinning                     | Closed       | Character/chat/module import, ordering/selection, module-apply, MCP risuaccess, and helper-coverage projection-write tails are closed for this alpha pass.                                        | [`phases-completed/phase-9-projection-write-tails-9b.md`](phases-completed/phase-9-projection-write-tails-9b.md) |
 
-## Broad Closeout Finding
+## Broad Closeout Result
 
-The latest 2026-05-27 closeout pass found that `pnpm check` fails with
-58 diagnostics across 18 files. The failures are typecheck-only so far:
-`pnpm test`, `pnpm api:test`, `pnpm build`, and
-`pnpm smoke:fastify-browser` all passed in the same pass. Track the
-cleanup in
-[`phases/broad-closeout-typecheck-alpha.md`](phases/broad-closeout-typecheck-alpha.md).
+The 2026-05-27 closeout pass initially found that `pnpm check` failed
+with 58 diagnostics across 18 files. The typecheck cleanup is now
+closed, and the full broad closeout matrix passed. The completed log
+lives in
+[`phases-completed/broad-closeout-typecheck-alpha.md`](phases-completed/broad-closeout-typecheck-alpha.md).
 
 ## Phase 6 Alpha Closeout
 
@@ -96,11 +95,11 @@ memory event delivery. The latest local Phase 9B slice closes the
 reopened import/order/module-apply/MCP projection-write tails and helper
 coverage.
 
-Latest broad closeout attempt on 2026-05-27:
+Latest broad closeout on 2026-05-27:
 
-- `pnpm check` failed: 58 errors, 0 warnings, 18 files.
-- `pnpm test` passed: 67 files, 742 passed, 4 skipped.
-- `pnpm api:test` passed: 68 files, 1212 passed.
+- `pnpm check` passed: 0 errors, 0 warnings.
+- `pnpm test` passed: 69 files, 747 passed, 4 skipped.
+- `pnpm api:test` passed: 68 files, 1217 passed.
 - `pnpm build` passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
 
@@ -111,24 +110,22 @@ Latest focused Phase 9B closeout on 2026-05-27:
 - Focused Fastify command/event/bootstrap API suite passed: 68 files,
   1217 tests.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
-- `pnpm check` still failed with the known broad alpha blocker: 58
-  errors, 0 warnings, 18 files.
+- `pnpm check` now passes after the broad alpha typecheck cleanup.
 
 Latest focused Phase 5 re-audit on 2026-05-27:
 
 - Local Phase 5 fixture/helper sweep passed: 28 files, 316 tests.
 - Server-backed sendChat fixture/preview sweep passed: 2 files, 26
   tests.
-- `pnpm check` still failed with the known broad alpha blocker: 58
-  errors, 0 warnings, 18 files. The current failure list has no
-  diagnostics in the new extracted sendChat helper files.
+- `pnpm check` now passes after the broad alpha typecheck cleanup. There
+  are no diagnostics in the extracted sendChat helper files.
 
 ## Closeout Expectations
 
 - Each reopened phase must include focused regression tests for the
   finding it fixes.
 - Broad closeout should run `pnpm check`, `pnpm test`, `pnpm api:test`,
-  and `pnpm build` unless a narrower change has explicit owner approval
-  to defer the full matrix.
+  `pnpm build`, and `pnpm smoke:fastify-browser` unless a narrower
+  change has explicit owner approval to defer the full matrix.
 - Re-run `pnpm smoke:fastify-browser` before closing any future browser
   projection sweep.

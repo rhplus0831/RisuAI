@@ -246,7 +246,7 @@ export function collectTriggers(
   modules: RisuModule[],
 ): triggerscript[] {
   const characterLowLevelAccess = char.lowLevelAccess ?? false
-  const own = (char.triggerscript ?? []).map((v) => ({
+  const own: triggerscript[] = (char.triggerscript ?? []).map((v) => ({
     ...v,
     lowLevelAccess: characterLowLevelAccess,
   }))
@@ -879,11 +879,13 @@ export async function runStartTrigger(
   chat: Chat,
 ): Promise<TriggerRunResult | null> {
   const db = ctx.database
+  const currentCharIndex = (db as { currentChar?: unknown }).currentChar
   const runCtx: TriggerRunContext = {
     modules: getActiveModules(db, char, chat),
     model: db.aiModel,
     database: db,
-    selectedCharID: ctx.selectedCharID ?? db.currentChar ?? 0,
+    selectedCharID:
+      ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0),
     chatPage: ctx.chatPage ?? char.chatPage ?? 0,
   }
   return runTrigger(runCtx, char, 'start', { chat })

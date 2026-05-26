@@ -215,10 +215,16 @@ function normalizeEmbeddingData(
 
   for (let i = 0; i < rawData.length; i += 1) {
     const item = rawData[i] as EmbeddingResponseItem
-    const index = hasIndexes ? item.index : i
-    if (!Number.isInteger(index) || index < 0 || index >= expectedCount) {
+    const rawIndex = hasIndexes ? item.index : i
+    if (
+      typeof rawIndex !== 'number' ||
+      !Number.isInteger(rawIndex) ||
+      rawIndex < 0 ||
+      rawIndex >= expectedCount
+    ) {
       return { error: 'embedding response contains an invalid index', code: 'invalid-response' }
     }
+    const index = rawIndex
     if (vectors[index] !== undefined) {
       return { error: 'embedding response contains duplicate indexes', code: 'invalid-response' }
     }

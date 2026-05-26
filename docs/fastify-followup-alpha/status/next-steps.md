@@ -12,20 +12,19 @@ Fastify shapes.
 
 ## Immediate Pickup
 
-Pick one slice per work session. Each slice should leave the worktree in
-a reviewable state with focused tests, update the affected phase file,
-and add any longer closeout note under `../phases-completed/`.
+No open alpha pickup remains. The broad closeout typecheck blocker is
+closed and the full broad matrix passed on 2026-05-27.
 
-Recommended order:
-
-1. Clear the broad closeout typecheck blocker:
-   [`../phases/broad-closeout-typecheck-alpha.md`](../phases/broad-closeout-typecheck-alpha.md).
-   Start with `pnpm check`; the latest 2026-05-27 check failed with 58
-   diagnostics across 18 files while focused Phase 5 tests passed.
-2. After `pnpm check` passes, rerun broad alpha closeout verification.
+For future work, pick one focused slice per work session only after a
+new audit finding is recorded. Each slice should leave the worktree in a
+reviewable state with focused tests, update the affected phase file, and
+add any longer closeout note under `../phases-completed/`.
 
 Recently closed:
 
+- Broad closeout typecheck cleanup - `pnpm check` is clean, the memory
+  repository/proxy/prompt/test typing drift is closed, and the broad
+  matrix passed.
 - Phase 5 - `sendChat` is back to a 358-line coordinator, with
   server-backed `/chat` adapter logic and the local prompt assembly
   wrapper extracted into focused browser-side helpers.
@@ -47,11 +46,11 @@ Recently closed:
   ordering/selection, module-apply, MCP `risuaccess`, and helper
   coverage projection-write tails.
 
-Latest broad closeout attempt on 2026-05-27:
+Latest broad closeout on 2026-05-27:
 
-- `pnpm check` failed: 58 errors, 0 warnings, 18 files.
-- `pnpm test` passed: 67 files, 742 passed, 4 skipped.
-- `pnpm api:test` passed: 68 files, 1212 passed.
+- `pnpm check` passed: 0 errors, 0 warnings.
+- `pnpm test` passed: 69 files, 747 passed, 4 skipped.
+- `pnpm api:test` passed: 68 files, 1217 passed.
 - `pnpm build` passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
 
@@ -60,9 +59,8 @@ Latest focused Phase 5 closeout on 2026-05-27:
 - Local Phase 5 fixture/helper sweep passed: 28 files, 316 tests.
 - Server-backed sendChat fixture/preview sweep passed: 2 files, 26
   tests.
-- `pnpm check` still failed with the known broad alpha blocker: 58
-  errors, 0 warnings, 18 files. There are no diagnostics in the new
-  extracted sendChat helper files.
+- `pnpm check` now passes after the broad alpha typecheck cleanup. There
+  are no diagnostics in the new extracted sendChat helper files.
 
 Latest focused Phase 9B closeout on 2026-05-27:
 
@@ -71,8 +69,7 @@ Latest focused Phase 9B closeout on 2026-05-27:
 - Focused Fastify command/event/bootstrap API suite passed: 68 files,
   1217 tests.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
-- `pnpm check` still failed with the known broad alpha blocker: 58
-  errors, 0 warnings, 18 files.
+- `pnpm check` now passes after the broad alpha typecheck cleanup.
 
 ## Focused Verification
 
@@ -92,13 +89,14 @@ pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts src/ts/p
 pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts
 ```
 
-Broad closeout typecheck blocker:
+Broad closeout typecheck cleanup (closed; re-run for regression checks):
 
 ```bash
 pnpm check
 ```
 
-After the blocker is fixed, rerun the full closeout matrix:
+The blocker is fixed. Re-run the full closeout matrix for any future
+broad closeout regression check:
 
 ```bash
 pnpm check
@@ -138,6 +136,7 @@ pnpm check
 pnpm test
 pnpm api:test
 pnpm build
+pnpm smoke:fastify-browser
 ```
 
 ## References
@@ -147,5 +146,7 @@ pnpm build
 - Original Fastify status: `docs/fastify/status.md`
 - Original Phase 9 command map:
   `docs/fastify/status/phase-9-command-map.md`
+- Broad closeout typecheck cleanup:
+  [`../phases-completed/broad-closeout-typecheck-alpha.md`](../phases-completed/broad-closeout-typecheck-alpha.md)
 - Phase 9B closeout:
   [`../phases-completed/phase-9-projection-write-tails-9b.md`](../phases-completed/phase-9-projection-write-tails-9b.md)

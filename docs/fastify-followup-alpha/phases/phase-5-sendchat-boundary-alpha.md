@@ -34,10 +34,10 @@ The 2026-05-27 alpha re-audit found:
 - The original Phase 5 helper modules and local fixtures still pass, so
   this is a boundary drift cleanup rather than a known behavior
   regression.
-- The broad alpha `pnpm check` blocker still includes
+- At re-audit time, the broad alpha `pnpm check` blocker included
   `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-  typing diagnostics, which should be handled with the broad typecheck
-  cleanup unless this refactor touches that harness.
+  typing diagnostics. That blocker is now closed by the broad
+  typecheck cleanup.
 
 ## Closed Scope
 
@@ -102,6 +102,6 @@ The 2026-05-27 re-audit ran:
   passed, 28 files and 316 tests.
 - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts`:
   passed, 2 files and 26 tests.
-- `pnpm check`: failed with the known broad alpha typecheck blocker
-  (58 errors, 0 warnings, 18 files). The current failure list has no
-  diagnostics in the extracted sendChat helper files.
+- `pnpm check`: now passes after the broad alpha typecheck cleanup. The
+  earlier blocker had no diagnostics in the extracted sendChat helper
+  files.

@@ -260,6 +260,14 @@ function runStatement(statement: StatementSync, ...values: SqlValue[]): void {
   }
 }
 
+function getRow<TRow>(statement: StatementSync, ...values: SqlValue[]): TRow | undefined {
+  return statement.get(...values) as unknown as TRow | undefined
+}
+
+function allRows<TRow>(statement: StatementSync, ...values: SqlValue[]): TRow[] {
+  return statement.all(...values) as unknown as TRow[]
+}
+
 function normalizeTimestamp(value: string | Date | undefined): string {
   if (value === undefined) return new Date().toISOString()
   const iso = value instanceof Date ? value.toISOString() : value
@@ -457,9 +465,7 @@ export function createMemoryChunk(db: DatabaseSync, input: CreateMemoryChunkInpu
 
 export function getMemoryChunk(db: DatabaseSync, id: string): MemoryChunk | null {
   requireString(id, 'chunk id')
-  const row = db.prepare('SELECT * FROM memory_chunks WHERE id = ?').get(id) as
-    | MemoryChunkRow
-    | undefined
+  const row = getRow<MemoryChunkRow>(db.prepare('SELECT * FROM memory_chunks WHERE id = ?'), id)
   return row ? mapMemoryChunkRow(row) : null
 }
 
@@ -479,16 +485,15 @@ export function listMemoryChunks(
     values.push(requireChunkStatus(filter.status))
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-  const rows = db
-    .prepare(
-      `
+  const rows = allRows<MemoryChunkRow>(
+    db.prepare(`
         SELECT *
         FROM memory_chunks
         ${where}
         ORDER BY chat_id, range_start_seq, range_end_seq, created_at, id
-      `,
-    )
-    .all(...values) as MemoryChunkRow[]
+      `),
+    ...values,
+  )
   return rows.map(mapMemoryChunkRow)
 }
 
@@ -545,9 +550,10 @@ export function createMemorySummary(
 
 export function getMemorySummary(db: DatabaseSync, id: string): MemorySummary | null {
   requireString(id, 'summary id')
-  const row = db.prepare('SELECT * FROM memory_summaries WHERE id = ?').get(id) as
-    | MemorySummaryRow
-    | undefined
+  const row = getRow<MemorySummaryRow>(
+    db.prepare('SELECT * FROM memory_summaries WHERE id = ?'),
+    id,
+  )
   return row ? mapMemorySummaryRow(row) : null
 }
 
@@ -573,16 +579,15 @@ export function listMemorySummaries(
     values.push(filter.model)
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-  const rows = db
-    .prepare(
-      `
+  const rows = allRows<MemorySummaryRow>(
+    db.prepare(`
         SELECT *
         FROM memory_summaries
         ${where}
         ORDER BY chat_id, created_at, id
-      `,
-    )
-    .all(...values) as MemorySummaryRow[]
+      `),
+    ...values,
+  )
   return rows.map(mapMemorySummaryRow)
 }
 
@@ -663,9 +668,10 @@ export function createMemoryEmbedding(
 
 export function getMemoryEmbedding(db: DatabaseSync, id: string): MemoryEmbedding | null {
   requireString(id, 'embedding id')
-  const row = db.prepare('SELECT * FROM memory_embeddings WHERE id = ?').get(id) as
-    | MemoryEmbeddingRow
-    | undefined
+  const row = getRow<MemoryEmbeddingRow>(
+    db.prepare('SELECT * FROM memory_embeddings WHERE id = ?'),
+    id,
+  )
   return row ? mapMemoryEmbeddingRow(row) : null
 }
 
@@ -700,16 +706,15 @@ export function listMemoryEmbeddings(
     }
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-  const rows = db
-    .prepare(
-      `
+  const rows = allRows<MemoryEmbeddingRow>(
+    db.prepare(`
         SELECT *
         FROM memory_embeddings
         ${where}
         ORDER BY chat_id, group_id, group_index, created_at, id
-      `,
-    )
-    .all(...values) as MemoryEmbeddingRow[]
+      `),
+    ...values,
+  )
   return rows.map(mapMemoryEmbeddingRow)
 }
 
@@ -767,9 +772,7 @@ export function enqueueMemoryJob(db: DatabaseSync, input: EnqueueMemoryJobInput)
 
 export function getMemoryJob(db: DatabaseSync, id: string): MemoryJob | null {
   requireString(id, 'job id')
-  const row = db.prepare('SELECT * FROM memory_jobs WHERE id = ?').get(id) as
-    | MemoryJobRow
-    | undefined
+  const row = getRow<MemoryJobRow>(db.prepare('SELECT * FROM memory_jobs WHERE id = ?'), id)
   return row ? mapMemoryJobRow(row) : null
 }
 
@@ -803,16 +806,15 @@ export function listMemoryJobs(
     values.push(...statuses)
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-  const rows = db
-    .prepare(
-      `
+  const rows = allRows<MemoryJobRow>(
+    db.prepare(`
         SELECT *
         FROM memory_jobs
         ${where}
         ORDER BY created_at, id
-      `,
-    )
-    .all(...values) as MemoryJobRow[]
+      `),
+    ...values,
+  )
   return rows.map(mapMemoryJobRow)
 }
 
@@ -832,9 +834,8 @@ export function claimNextMemoryJob(
     conditions.push('kind = ?')
     values.push(requireJobKind(filter.kind))
   }
-  const row = db
-    .prepare(
-      `
+  const row = getRow<MemoryJobRow>(
+    db.prepare(`
         UPDATE memory_jobs
         SET status = 'running',
             attempt_count = attempt_count + 1,
@@ -848,9 +849,10 @@ export function claimNextMemoryJob(
           LIMIT 1
         )
         RETURNING *
-      `,
-    )
-    .get(now, ...values) as MemoryJobRow | undefined
+      `),
+    now,
+    ...values,
+  )
   return row ? mapMemoryJobRow(row) : null
 }
 
@@ -871,17 +873,16 @@ function transitionMemoryJobStatus(
     values.push(patch.error ?? null)
   }
   values.push(...legalFromStatuses, id)
-  const row = db
-    .prepare(
-      `
+  const row = getRow<MemoryJobRow>(
+    db.prepare(`
         UPDATE memory_jobs
         SET ${updates.join(', ')}
         WHERE status IN (${legalFromStatuses.map(() => '?').join(', ')})
           AND id = ?
         RETURNING *
-      `,
-    )
-    .get(...values) as MemoryJobRow | undefined
+      `),
+    ...values,
+  )
   return row ? mapMemoryJobRow(row) : null
 }
 

@@ -390,7 +390,7 @@ export function registerGenerationChatRoutes(
 
     const body = (req.body ?? {}) as ChatRequestBody
     const validation = validate(body)
-    if (!validation.ok) {
+    if (validation.ok === false) {
       return badRequest(reply, validation.error)
     }
 
@@ -404,7 +404,7 @@ export function registerGenerationChatRoutes(
 
     const body = (req.body ?? {}) as ChatRequestBody
     const validation = validatePreview(body)
-    if (!validation.ok) {
+    if (validation.ok === false) {
       return badRequest(reply, validation.error)
     }
 

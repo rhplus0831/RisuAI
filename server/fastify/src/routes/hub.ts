@@ -2,7 +2,7 @@ import { Readable } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
-import { filterResponseHeaders } from '../proxy.js'
+import { bufferToBodyInit, filterResponseHeaders } from '../proxy.js'
 
 const HUB_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
 
@@ -67,7 +67,7 @@ async function forwardOnce(
     redirect: 'manual',
   }
   if (body !== undefined) {
-    fetchInit.body = body
+    fetchInit.body = bufferToBodyInit(body)
     fetchInit.duplex = 'half'
   }
   const upstream = await fetch(upstreamUrl, fetchInit)

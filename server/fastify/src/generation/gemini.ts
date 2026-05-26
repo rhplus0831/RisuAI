@@ -218,7 +218,7 @@ async function vertexHeaders(
     req.vertex.privateKey,
     req.signal,
   )
-  if (!bearer.ok) return { ok: false, error: bearer.error }
+  if (bearer.ok === false) return { ok: false, error: bearer.error }
   return { ok: true, headers: { ...base, authorization: `Bearer ${bearer.token}` } }
 }
 
@@ -293,7 +293,7 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
   }
 
   const h = await vertexHeaders(req)
-  if (!h.ok) {
+  if (h.ok === false) {
     if (req.signal.aborted) {
       return { type: 'fail', result: 'aborted', aborted: true }
     }
@@ -362,7 +362,7 @@ export async function* runGeminiStream(
   if (req.signal.aborted) return
 
   const h = await vertexHeaders(req)
-  if (!h.ok) {
+  if (h.ok === false) {
     if (req.signal.aborted) return
     yield { kind: 'error', error: h.error, code: 'vertex_auth_failed' }
     return

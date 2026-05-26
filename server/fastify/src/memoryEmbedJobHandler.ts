@@ -188,7 +188,7 @@ async function executeEmbedJob(input: {
   }
 
   const modelRequest = resolveMemoryEmbeddingModel(input.database, payload.model as HypaModel)
-  if (!modelRequest.ok) {
+  if (modelRequest.ok === false) {
     throw new Error(modelRequest.error)
   }
 
@@ -266,7 +266,7 @@ async function executeContextualEmbedJobs(input: {
     })
 
     const modelRequest = resolveMemoryEmbeddingModel(input.database, 'voyageContext3')
-    if (!modelRequest.ok) {
+    if (modelRequest.ok === false) {
       throw new Error(modelRequest.error)
     }
 
@@ -462,7 +462,7 @@ function loadDatabase(opts: EmbedMemoryJobHandlerOptions): Database {
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')
   }
-  return database as Database
+  return database as unknown as Database
 }
 
 function resolveHypaV3Settings(database: Database): HypaV3Settings {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import net from 'node:net'
 import { Readable } from 'node:stream'
-import { filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
+import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
 
 export const PROXY_STREAM_DEFAULT_TIMEOUT_MS = 600_000
 export const PROXY_STREAM_MAX_TIMEOUT_MS = 3_600_000
@@ -286,7 +286,7 @@ export async function runStreamJob(
     const upstream = await fetch(targetUrl, {
       method: arg.method,
       headers,
-      body: arg.bodyBuffer,
+      body: arg.bodyBuffer ? bufferToBodyInit(arg.bodyBuffer) : undefined,
       signal: job.abortController.signal,
     })
 

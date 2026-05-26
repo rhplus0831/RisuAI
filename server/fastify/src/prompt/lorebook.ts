@@ -578,8 +578,9 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         }
       }
 
-      if (forceState === 'activate') activated = true
-      else if (forceState === 'deactivate') activated = false
+      const effectiveForceState = forceState as 'none' | 'activate' | 'deactivate'
+      if (effectiveForceState === 'activate') activated = true
+      else if (effectiveForceState === 'deactivate') activated = false
 
       if (!activated) continue
 

@@ -201,7 +201,7 @@ async function executeSummarizeJob(input: {
 
   assertChatExists(input.database, input.job.chatId)
   const modelRequest = resolveMemorySummaryModel(input.database, payload.model)
-  if (!modelRequest.ok) {
+  if (modelRequest.ok === false) {
     markChunkFailed(input.opts.db, chunk.id)
     throw new Error(modelRequest.error)
   }
@@ -305,10 +305,20 @@ function parseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload {
   if (typeof payload.model !== 'string' || payload.model.length === 0) {
     throw new Error('summarize payload model must be a non-empty string')
   }
-  if (!Number.isInteger(payload.rangeStartSeq) || payload.rangeStartSeq < 0) {
+  const rangeStartSeq = payload.rangeStartSeq
+  if (
+    typeof rangeStartSeq !== 'number' ||
+    !Number.isInteger(rangeStartSeq) ||
+    rangeStartSeq < 0
+  ) {
     throw new Error('summarize payload rangeStartSeq must be a non-negative integer')
   }
-  if (!Number.isInteger(payload.rangeEndSeq) || payload.rangeEndSeq < payload.rangeStartSeq) {
+  const rangeEndSeq = payload.rangeEndSeq
+  if (
+    typeof rangeEndSeq !== 'number' ||
+    !Number.isInteger(rangeEndSeq) ||
+    rangeEndSeq < rangeStartSeq
+  ) {
     throw new Error('summarize payload rangeEndSeq must be >= rangeStartSeq')
   }
   if (!isIntegerArray(payload.messageIndexes)) {
@@ -321,8 +331,8 @@ function parseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload {
     schemaVersion: 1,
     chunkId: payload.chunkId,
     model: payload.model,
-    rangeStartSeq: payload.rangeStartSeq,
-    rangeEndSeq: payload.rangeEndSeq,
+    rangeStartSeq,
+    rangeEndSeq,
     messageIndexes: payload.messageIndexes,
     chatMemos: payload.chatMemos,
   }
@@ -337,7 +347,7 @@ function loadDatabase(opts: SummarizeMemoryJobHandlerOptions): Database {
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')
   }
-  return database as Database
+  return database as unknown as Database
 }
 
 function resolveHypaV3Settings(database: Database): HypaV3Settings {

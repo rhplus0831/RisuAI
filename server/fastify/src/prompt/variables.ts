@@ -63,7 +63,9 @@ export interface ExpandResult {
 }
 
 export function expandVariables(input: string, ctx: ExpandContext): ExpandResult {
-  const selectedCharID = ctx.selectedCharID ?? ctx.database.currentChar ?? 0
+  const currentCharIndex = (ctx.database as { currentChar?: unknown }).currentChar
+  const selectedCharID =
+    ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
   const char = ctx.database.characters[selectedCharID]
   const chatPage = ctx.chatPage ?? char?.chatPage ?? 0
   const chat = char?.chats?.[chatPage]

@@ -93,6 +93,7 @@ vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
 
 import { applyModule, importModule } from './modules'
 import { DBState } from '../stores.svelte'
+import type { character } from '../storage/database.svelte'
 
 describe('module imports', () => {
   beforeEach(() => {
@@ -157,7 +158,7 @@ describe('module imports', () => {
       globalLore: [{ comment: 'Existing lore', content: 'old' }],
       customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
       triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
-    }
+    } as unknown as character
     DBState.db.characters = [character]
     getCurrentCharacter.mockReturnValue(character)
     getDatabase.mockReturnValue({

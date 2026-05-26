@@ -23,7 +23,7 @@ export async function summarizeOnce(
   opts: SummarizeOnceOptions,
 ): Promise<SummaryAdapterResult> {
   const variantResult = resolveOpenAICompatibleVariant(opts.provider, opts.options ?? {})
-  if (!variantResult.ok) return { error: variantResult.error }
+  if (variantResult.ok === false) return { error: variantResult.error }
 
   const variant = variantResult.variant
   const request = resolveOpenAIRequest({

@@ -94,3 +94,9 @@ export function filterResponseHeaders(source: Headers): Record<string, string> {
   }
   return out
 }
+
+export function bufferToBodyInit(buffer: Buffer): BodyInit {
+  const body = new Uint8Array(buffer.length)
+  body.set(buffer)
+  return body
+}

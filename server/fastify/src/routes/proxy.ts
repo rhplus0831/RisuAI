@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import {
+  bufferToBodyInit,
   createTimeoutController,
   decodeRisuUrl,
   filterResponseHeaders,
@@ -50,7 +51,7 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
         const upstream = await fetch(url, {
           method,
           headers,
-          body,
+          body: body ? bufferToBodyInit(body) : undefined,
           signal: timeout.signal,
         })
 
