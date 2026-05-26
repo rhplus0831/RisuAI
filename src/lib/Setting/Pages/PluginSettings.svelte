@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
   import {
     PlusIcon,
     TrashIcon,
@@ -21,12 +20,12 @@
     updatePlugin,
   } from 'src/ts/plugins/plugins.svelte'
   import {
-    currentPluginWatchSuppressionVersion,
     currentPluginStateSnapshot,
     dispatchDeletePlugin,
     dispatchEnablePlugin,
     dispatchUpdatePlugin,
   } from 'src/ts/pluginCommands'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
@@ -36,38 +35,23 @@
   import { hotReloadPluginFiles } from 'src/ts/plugins/apiV3/developMode'
 
   let showParams = $state([])
-  let initializedPluginArgWatch = false
-  let previousPluginArgSnapshots = new Map<string, string>()
-  let previousPluginState = currentPluginStateSnapshot()
-  let lastPluginWatchSuppressionVersion = currentPluginWatchSuppressionVersion()
 
-  $effect(() => {
-    const currentState = currentPluginStateSnapshot()
-    const currentSnapshots = new Map(
-      currentState.plugins.map((plugin) => [plugin.name, JSON.stringify(plugin.realArg ?? {})]),
-    )
-
-    const suppressionVersion = currentPluginWatchSuppressionVersion()
-    if (!initializedPluginArgWatch || suppressionVersion !== lastPluginWatchSuppressionVersion) {
-      initializedPluginArgWatch = true
-      lastPluginWatchSuppressionVersion = suppressionVersion
-      previousPluginArgSnapshots = currentSnapshots
-      previousPluginState = currentState
-      return
+  function setPluginArg(index: number, arg: string, value: number | string) {
+    const plugin = DBState.db.plugins?.[index]
+    if (!plugin) return
+    const previous = currentPluginStateSnapshot()
+    const nextRealArg = {
+      ...(plugin.realArg ?? {}),
+      [arg]: value,
     }
-
-    for (const plugin of currentState.plugins) {
-      const snapshot = currentSnapshots.get(plugin.name)
-      if (!previousPluginArgSnapshots.has(plugin.name)) continue
-      if (snapshot === previousPluginArgSnapshots.get(plugin.name)) continue
-      untrack(() =>
-        dispatchUpdatePlugin(plugin.name, { realArg: plugin.realArg }, previousPluginState),
-      )
-    }
-
-    previousPluginArgSnapshots = currentSnapshots
-    previousPluginState = currentState
-  })
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins[index] = {
+        ...plugin,
+        realArg: nextRealArg,
+      }
+    })
+    dispatchUpdatePlugin(plugin.name, { realArg: nextRealArg }, previous)
+  }
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.plugin}</h2>
@@ -153,9 +137,14 @@
         class="textcolor2 hover:gray-200 cursor-pointer"
         onclick={async (e) => {
           const previous = currentPluginStateSnapshot()
-          plugin.enabled = !plugin.enabled
-          DBState.db.plugins[i] = plugin
-          dispatchEnablePlugin(plugin.name, plugin.enabled, previous)
+          const enabled = !plugin.enabled
+          withTrustedServerProjectionWrite(() => {
+            DBState.db.plugins[i] = {
+              ...plugin,
+              enabled,
+            }
+          })
+          dispatchEnablePlugin(plugin.name, enabled, previous)
           loadPlugins()
           e.preventDefault()
         }}
@@ -174,12 +163,14 @@
           const v = await alertConfirm(language.removeConfirm + (plugin.displayName ?? plugin.name))
           if (v) {
             const previous = currentPluginStateSnapshot()
-            if (DBState.db.currentPluginProvider === plugin.name) {
-              DBState.db.currentPluginProvider = ''
-            }
-            let plugins = DBState.db.plugins ?? []
-            plugins.splice(i, 1)
-            DBState.db.plugins = plugins
+            withTrustedServerProjectionWrite(() => {
+              if (DBState.db.currentPluginProvider === plugin.name) {
+                DBState.db.currentPluginProvider = ''
+              }
+              const plugins = DBState.db.plugins ?? []
+              plugins.splice(i, 1)
+              DBState.db.plugins = plugins
+            })
             dispatchDeletePlugin(plugin.name, previous)
             loadPlugins()
           }
@@ -222,7 +213,10 @@
             {#if Array.isArray(plugin.arguments[arg])}
               <SelectInput
                 className="mt-2 mb-4"
-                bind:value={DBState.db.plugins[i].realArg[arg] as string}
+                bind:value={
+                  () => DBState.db.plugins[i].realArg[arg] as string,
+                  (value) => setPluginArg(i, arg, value)
+                }
               >
                 {#each plugin.arguments[arg] as a}
                   <OptionInput value={a}>a</OptionInput>
@@ -231,7 +225,10 @@
             {:else if plugin.arguments[arg] === 'string'}
               {#if plugin?.argMeta?.[arg]?.textarea}
                 <TextAreaInput
-                  bind:value={DBState.db.plugins[i].realArg[arg] as string}
+                  bind:value={
+                    () => DBState.db.plugins[i].realArg[arg] as string,
+                    (value) => setPluginArg(i, arg, value)
+                  }
                   placeholder={plugin?.argMeta?.[arg]?.placeholder}
                 />
               {:else if plugin?.argMeta?.[arg]?.radio}
@@ -240,7 +237,7 @@
                     check={DBState.db.plugins[i].realArg[arg] === radioOption.split('|').at(-1)}
                     onChange={(e) => {
                       if (e) {
-                        DBState.db.plugins[i].realArg[arg] = radioOption.split('|').at(-1)
+                        setPluginArg(i, arg, radioOption.split('|').at(-1))
                       }
                     }}
                     margin={false}
@@ -249,7 +246,10 @@
                 {/each}
               {:else}
                 <TextInput
-                  bind:value={DBState.db.plugins[i].realArg[arg] as string}
+                  bind:value={
+                    () => DBState.db.plugins[i].realArg[arg] as string,
+                    (value) => setPluginArg(i, arg, value)
+                  }
                   placeholder={plugin?.argMeta?.[arg]?.placeholder}
                 />
               {/if}
@@ -258,7 +258,7 @@
                 <CheckInput
                   check={DBState.db.plugins[i].realArg[arg] === '1'}
                   onChange={(e) => {
-                    DBState.db.plugins[i].realArg[arg] = e ? '1' : '0'
+                    setPluginArg(i, arg, e ? '1' : '0')
                   }}
                   margin={false}
                   name={plugin?.argMeta?.[arg]?.checkbox === '1'
@@ -272,7 +272,7 @@
                       parseInt(radioOption.split('|').at(-1))}
                     onChange={(e) => {
                       if (e) {
-                        DBState.db.plugins[i].realArg[arg] = parseInt(radioOption.split('|').at(-1))
+                        setPluginArg(i, arg, parseInt(radioOption.split('|').at(-1)))
                       }
                     }}
                     margin={false}
@@ -281,7 +281,10 @@
                 {/each}
               {:else}
                 <NumberInput
-                  bind:value={DBState.db.plugins[i].realArg[arg] as number}
+                  bind:value={
+                    () => DBState.db.plugins[i].realArg[arg] as number,
+                    (value) => setPluginArg(i, arg, value)
+                  }
                   placeholder={plugin?.argMeta?.[arg]?.placeholder}
                 />
               {/if}

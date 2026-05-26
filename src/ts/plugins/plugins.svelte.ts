@@ -41,6 +41,7 @@ import {
   toModuleSnapshot,
 } from '../moduleCommands'
 import { canUseServerCommands } from '../server/commands'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
 export const customProviderStore = writable([] as string[])
 
@@ -426,7 +427,9 @@ export async function importPlugin(
       enabled: true,
     }
 
-    db.plugins ??= []
+    withTrustedServerProjectionWrite(() => {
+      db.plugins ??= []
+    })
 
     const oldPluginIndex = db.plugins.findIndex((p: RisuPlugin) => p.name === pluginData.name)
 
@@ -446,10 +449,14 @@ export async function importPlugin(
 
     const previous = currentPluginStateSnapshot()
     if (oldPluginIndex !== -1) {
-      db.plugins[oldPluginIndex] = pluginData
+      withTrustedServerProjectionWrite(() => {
+        db.plugins[oldPluginIndex] = pluginData
+      })
       dispatchUpdatePlugin(pluginData.name, toPluginSnapshot(pluginData), previous)
     } else if (!isUpdate || argu.isHotReload) {
-      db.plugins.push(pluginData)
+      withTrustedServerProjectionWrite(() => {
+        db.plugins.push(pluginData)
+      })
       dispatchCreatePlugin(pluginData, previous)
     }
 
@@ -458,7 +465,9 @@ export async function importPlugin(
     }
 
     console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`)
-    setDatabaseLite(db)
+    withTrustedServerProjectionWrite(() => {
+      setDatabaseLite(db)
+    })
 
     loadPlugins()
   } catch (error) {
@@ -536,6 +545,11 @@ export const allowedDbKeys = [
   'plugins',
   'pluginCustomStorage',
   'currentPluginProvider',
+  'customModels',
+  'banCharacterset',
+  'allowAllExtentionFiles',
+  'auxModelUnderModelSettings',
+  'pluginDevelopMode',
   'temperature',
   'askRemoval',
   'maxContext',
@@ -566,7 +580,9 @@ function pluginCustomStorage(): Record<string, unknown> {
 
 function setPluginStorageValue(key: string, value: unknown): void {
   const previous = currentPluginStorageSnapshot()
-  pluginCustomStorage()[key] = cloneJsonValue(value)
+  withTrustedServerProjectionWrite(() => {
+    pluginCustomStorage()[key] = cloneJsonValue(value)
+  })
   if (canUseServerCommands()) {
     dispatchPutPluginStorage(key, value, previous)
   }
@@ -574,7 +590,9 @@ function setPluginStorageValue(key: string, value: unknown): void {
 
 function deletePluginStorageValue(key: string): void {
   const previous = currentPluginStorageSnapshot()
-  delete pluginCustomStorage()[key]
+  withTrustedServerProjectionWrite(() => {
+    delete pluginCustomStorage()[key]
+  })
   if (canUseServerCommands()) {
     dispatchDeletePluginStorage(key, previous)
   }
@@ -582,13 +600,18 @@ function deletePluginStorageValue(key: string): void {
 
 function replacePluginStorage(values: Record<string, unknown>): void {
   const previous = currentPluginStorageSnapshot()
-  DBState.db.pluginCustomStorage = cloneJsonValue(values)
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.pluginCustomStorage = cloneJsonValue(values)
+  })
   if (canUseServerCommands()) {
     dispatchBulkPluginStorage({ values, clear: true }, previous)
   }
 }
 
-function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { full: boolean }): void {
+function applyPluginDatabasePatch(
+  newDb: Record<string, unknown>,
+  options: { full: boolean },
+): void {
   const previous = currentPluginStateSnapshot()
   const previousModules =
     'modules' in newDb || 'enabledModules' in newDb ? currentModuleStateSnapshot() : null
@@ -602,12 +625,16 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
         value && typeof value === 'object' && !Array.isArray(value)
           ? cloneJsonValue(value as Record<string, unknown>)
           : {}
-      DBState.db.pluginCustomStorage = cloneJsonValue(replacedStorage)
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.pluginCustomStorage = cloneJsonValue(replacedStorage)
+      })
       continue
     }
 
     if (allowedDbKeys.includes(key)) {
-      ;(DBState.db as any)[key] = cloneJsonValue(value)
+      withTrustedServerProjectionWrite(() => {
+        ;(DBState.db as any)[key] = cloneJsonValue(value)
+      })
       if (key === 'currentPluginProvider' && typeof value === 'string') {
         dispatchSelectPluginProvider(value, previous)
       } else if (key === 'plugins' && Array.isArray(value)) {
@@ -615,7 +642,9 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
       } else if (key === 'modules' && Array.isArray(value) && previousModules) {
         dispatchModuleCollectionPatch(value as RisuModule[], previousModules)
       } else if (key === 'enabledModules' && Array.isArray(value) && previousModules) {
-        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : DBState.db.modules
+        const moduleSource = Array.isArray(newDb.modules)
+          ? (newDb.modules as RisuModule[])
+          : DBState.db.modules
         dispatchEnabledModulesPatch(value, previousModules, moduleSource ?? [])
       } else {
         settingsPatch[key] = value
@@ -624,7 +653,9 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
     }
 
     storageValues[key] = cloneJsonValue(value)
-    pluginCustomStorage()[key] = cloneJsonValue(value)
+    withTrustedServerProjectionWrite(() => {
+      pluginCustomStorage()[key] = cloneJsonValue(value)
+    })
   }
 
   if (replacedStorage) {

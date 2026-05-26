@@ -28,9 +28,9 @@ and add any longer closeout note under `../phases-completed/`.
      `OtherBotSettings.svelte` and `PlaygroundEmbedding.svelte`.
    - 9E (landed 2026-05-26): persona, display/theme, global regex, lore
      preset, and bot preset editors.
-   - 9F (next): plugin settings, custom models, and advanced setting
-     editors.
-   - 9G: character core profile, media, and basic option editors.
+   - 9F (landed 2026-05-26): plugin settings, custom models, and
+     advanced setting editors.
+   - 9G (next): character core profile, media, and basic option editors.
    - 9H: character lore, script, prompt, TTS, and chat-name editors.
    - 9I: sidebar toggles, custom sidebar/loadout helpers, welcome setup,
      and runtime API write classification.
@@ -140,6 +140,14 @@ pnpm exec vitest run src/ts/server/commands.test.ts
 pnpm api:test -- server/fastify/__tests__/commands.test.ts
 pnpm exec svelte-check --tsconfig ./tsconfig.json
 pnpm smoke:fastify-browser
+```
+
+Latest Phase 9 plugin/custom-model/advanced verification, 2026-05-26:
+
+```bash
+pnpm exec vitest run src/ts/server/commands.test.ts src/ts/plugins/plugins.test.ts
+pnpm api:test -- server/fastify/__tests__/commands.test.ts
+pnpm exec svelte-check --tsconfig ./tsconfig.json
 ```
 
 Focused Phase 7:

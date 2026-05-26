@@ -55,8 +55,14 @@ directly.
 - Landed 2026-05-26: Phase 9 persona, display/theme, global regex, lore
   preset, and bot preset editors now route Fastify-web mutations through
   command-backed settings, persona, preset, or lorebook helpers.
-- Next default pickup: Phase 9 Slice 9F, plugin settings, custom models,
-  and advanced setting editors.
+- Landed 2026-05-26: Phase 9 plugin settings, custom models, and
+  advanced setting editors now avoid raw Fastify projection mutation.
+  Plugin argument/edit/install paths use trusted optimistic plugin
+  commands, custom models and ban-character-set bind through
+  command-backed drafts, and advanced command classification now covers
+  `allowAllExtentionFiles` and `auxModelUnderModelSettings`.
+- Next default pickup: Phase 9 Slice 9G, character core profile, media,
+  and basic option editors.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.
 

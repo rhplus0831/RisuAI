@@ -416,6 +416,8 @@ describe('server command API adapter', () => {
         moduleIntergration: 'module-ns',
         globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
         banCharacterset: ['Latn'],
+        allowAllExtentionFiles: true,
+        auxModelUnderModelSettings: true,
         showUnrecommended: true,
       },
     })
@@ -456,6 +458,8 @@ describe('server command API adapter', () => {
             moduleIntergration: 'module-ns',
             globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
             banCharacterset: ['Latn'],
+            allowAllExtentionFiles: true,
+            auxModelUnderModelSettings: true,
             showUnrecommended: true,
           },
         },

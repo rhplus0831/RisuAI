@@ -141,6 +141,46 @@ describe('plugin database command bridge', () => {
     expect(DBState.db.moduleIntergration).toBe('ns-a, ns-b')
   })
 
+  it('routes plugin custom model and advanced database writes through settings commands', async () => {
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      customModels: [{ id: 'xcustom:::a', name: 'Model A', key: 'secret' }],
+      banCharacterset: ['Latn'],
+      allowAllExtentionFiles: true,
+      auxModelUnderModelSettings: true,
+      pluginDevelopMode: true,
+    })
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(true)
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/advanced')).toBe(true)
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/settings/providers')).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          customModels: [{ id: 'xcustom:::a', name: 'Model A', key: 'secret' }],
+        },
+      },
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/settings/advanced')).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 11,
+        patch: {
+          banCharacterset: ['Latn'],
+          allowAllExtentionFiles: true,
+          auxModelUnderModelSettings: true,
+          pluginDevelopMode: true,
+        },
+      },
+    })
+    expect(calls.some((call) => call.url.includes('/api/v1/commands/plugin-storage'))).toBe(false)
+  })
+
   it('routes plugin module database writes through module commands', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()

@@ -10,11 +10,11 @@
   import { PlusIcon, TrashIcon, ArrowUp, ArrowDown } from '@lucide/svelte'
   import type { LLMFlags, LLMFormat, LLMTokenizer } from 'src/ts/model/types'
   import { v4 } from 'uuid'
-  import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
-  const stopServerSettingsWatch = watchServerBackedSettings(['customModels'])
-  onDestroy(stopServerSettingsWatch)
+  type CustomModel = (typeof DBState.db)['customModels'][number]
+
+  const customModelsDraft = createServerBackedSettingDraft<CustomModel[]>('customModels', [])
 
   let openedModels = $state(new Set<string>())
 
@@ -23,28 +23,50 @@
   }: {
     noAccordion?: boolean
   } = $props()
+
+  function updateCustomModels(updater: (models: CustomModel[]) => void) {
+    const models = [...(customModelsDraft.value ?? [])]
+    updater(models)
+    customModelsDraft.value = models
+  }
+
+  function updateCustomModel(index: number, patch: Partial<CustomModel>) {
+    updateCustomModels((models) => {
+      if (!models[index]) return
+      models[index] = {
+        ...models[index],
+        ...patch,
+      }
+    })
+  }
+
+  function toggleCustomModelFlag(index: number, flag: LLMFlags) {
+    updateCustomModels((models) => {
+      const model = models[index]
+      if (!model) return
+      const flags = model.flags ?? []
+      models[index] = {
+        ...model,
+        flags: flags.includes(flag) ? flags.filter((f) => f !== flag) : [...flags, flag],
+      }
+    })
+  }
 </script>
 
 {#snippet CustomFlagButton(index: number, name: string, flag: LLMFlags)}
   <Button
     className="mt-2"
     onclick={(e) => {
-      if (DBState.db.customModels[index].flags.includes(flag)) {
-        DBState.db.customModels[index].flags = DBState.db.customModels[index].flags.filter(
-          (f) => f !== flag,
-        )
-      } else {
-        DBState.db.customModels[index].flags.push(flag)
-      }
+      toggleCustomModelFlag(index, flag)
     }}
-    styled={DBState.db.customModels[index].flags.includes(flag) ? 'primary' : 'outlined'}
+    styled={(customModelsDraft.value[index]?.flags ?? []).includes(flag) ? 'primary' : 'outlined'}
   >
     {name}
   </Button>
 {/snippet}
 
 {#snippet mainBody()}
-  {#each DBState.db.customModels as model, index (model.id)}
+  {#each customModelsDraft.value as model, index (model.id)}
     <div class="flex flex-col mt-2">
       <button
         class="hover:bg-selected px-6 py-2 text-lg rounded-t-md border-selected border flex justify-between items-center"
@@ -67,11 +89,11 @@
             onclick={(e) => {
               e.stopPropagation()
               if (index === 0) return
-              let models = DBState.db.customModels
-              let temp = models[index]
-              models[index] = models[index - 1]
-              models[index - 1] = temp
-              DBState.db.customModels = models
+              updateCustomModels((models) => {
+                let temp = models[index]
+                models[index] = models[index - 1]
+                models[index - 1] = temp
+              })
             }}
           >
             <ArrowUp />
@@ -81,12 +103,12 @@
             styled="outlined"
             onclick={(e) => {
               e.stopPropagation()
-              if (index === DBState.db.customModels.length - 1) return
-              let models = DBState.db.customModels
-              let temp = models[index]
-              models[index] = models[index + 1]
-              models[index + 1] = temp
-              DBState.db.customModels = models
+              if (index === customModelsDraft.value.length - 1) return
+              updateCustomModels((models) => {
+                let temp = models[index]
+                models[index] = models[index + 1]
+                models[index + 1] = temp
+              })
             }}
           >
             <ArrowDown />
@@ -96,9 +118,9 @@
             styled="outlined"
             onclick={(e) => {
               e.stopPropagation()
-              let models = DBState.db.customModels
-              models.splice(index, 1)
-              DBState.db.customModels = models
+              updateCustomModels((models) => {
+                models.splice(index, 1)
+              })
               openedModels.delete(model.id)
               openedModels = new Set(openedModels)
             }}
@@ -110,19 +132,37 @@
       {#if openedModels.has(model.id)}
         <div class="flex flex-col border border-selected p-2 rounded-b-md overflow-x-auto">
           <span class="text-textcolor mt-4">{language.name}</span>
-          <TextInput size={'sm'} bind:value={DBState.db.customModels[index].name} />
+          <TextInput
+            size={'sm'}
+            bind:value={
+              () => customModelsDraft.value[index]?.name ?? '',
+              (value) => updateCustomModel(index, { name: value })
+            }
+          />
           <span class="text-textcolor mt-4">{language.proxyRequestModel}</span>
-          <TextInput size={'sm'} bind:value={DBState.db.customModels[index].internalId} />
+          <TextInput
+            size={'sm'}
+            bind:value={
+              () => customModelsDraft.value[index]?.internalId ?? '',
+              (value) => updateCustomModel(index, { internalId: value })
+            }
+          />
           <span class="text-textcolor mt-4">URL</span>
-          <TextInput size={'sm'} bind:value={DBState.db.customModels[index].url} />
+          <TextInput
+            size={'sm'}
+            bind:value={
+              () => customModelsDraft.value[index]?.url ?? '',
+              (value) => updateCustomModel(index, { url: value })
+            }
+          />
           <span class="text-textcolor mt-4">{language.tokenizer}</span>
           <SelectInput
             size={'sm'}
-            value={DBState.db.customModels[index].tokenizer.toString()}
+            value={(customModelsDraft.value[index]?.tokenizer ?? 0).toString()}
             onchange={(e) => {
-              DBState.db.customModels[index].tokenizer = parseInt(
-                e.currentTarget.value,
-              ) as LLMTokenizer
+              updateCustomModel(index, {
+                tokenizer: parseInt(e.currentTarget.value) as LLMTokenizer,
+              })
             }}
           >
             <OptionInput value="0">Unknown</OptionInput>
@@ -145,9 +185,9 @@
           <span class="text-textcolor">{language.format}</span>
           <SelectInput
             size={'sm'}
-            value={DBState.db.customModels[index].format.toString()}
+            value={(customModelsDraft.value[index]?.format ?? 0).toString()}
             onchange={(e) => {
-              DBState.db.customModels[index].format = parseInt(e.currentTarget.value) as LLMFormat
+              updateCustomModel(index, { format: parseInt(e.currentTarget.value) as LLMFormat })
             }}
           >
             <OptionInput value="0">OpenAICompatible</OptionInput>
@@ -167,10 +207,19 @@
             <OptionInput value="18">OpenAIResponseAPI</OptionInput>
           </SelectInput>
           <span class="text-textcolor">{language.proxyAPIKey}</span>
-          <TextInput size={'sm'} bind:value={DBState.db.customModels[index].key} />
+          <TextInput
+            size={'sm'}
+            bind:value={
+              () => customModelsDraft.value[index]?.key ?? '',
+              (value) => updateCustomModel(index, { key: value })
+            }
+          />
           <span class="text-textcolor">{language.additionalParams}</span>
           <TextAreaInput
-            bind:value={DBState.db.customModels[index].params}
+            bind:value={
+              () => customModelsDraft.value[index]?.params ?? '',
+              (value) => updateCustomModel(index, { params: value })
+            }
             placeholder={`temperature=0.7
     max_tokens=2000
     reasoning_effort="high"
@@ -211,16 +260,18 @@
     <button
       class="hover:bg-selected px-6 py-2 text-lg rounded-md border-selected border flex justify-center items-center cursor-pointer"
       onclick={() => {
-        DBState.db.customModels.push({
-          internalId: '',
-          url: '',
-          tokenizer: 0,
-          format: 0,
-          id: 'xcustom:::' + v4(),
-          key: '',
-          name: '',
-          params: '',
-          flags: [],
+        updateCustomModels((models) => {
+          models.push({
+            internalId: '',
+            url: '',
+            tokenizer: 0,
+            format: 0,
+            id: 'xcustom:::' + v4(),
+            key: '',
+            name: '',
+            params: '',
+            flags: [],
+          })
         })
       }}
     >

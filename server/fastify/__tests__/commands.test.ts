@@ -397,6 +397,8 @@ describe('Phase 9-2a scalar settings groups', () => {
         baseRevision: language.json().revision,
         patch: {
           globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
+          allowAllExtentionFiles: true,
+          auxModelUnderModelSettings: true,
         },
       },
     })
@@ -414,6 +416,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       textScreenColor: null,
       customTextTheme: { FontColorStandard: '#ffffff' },
       globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
+      allowAllExtentionFiles: true,
+      auxModelUnderModelSettings: true,
     })
   })
 

@@ -1,13 +1,10 @@
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
-  import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
-  const stopServerSettingsWatch = watchServerBackedSettings(['banCharacterset'])
-  onDestroy(stopServerSettingsWatch)
+  const banCharactersetDraft = createServerBackedSettingDraft<string[]>('banCharacterset', [])
 
   const characterSets = [
     'Latn',
@@ -55,12 +52,12 @@
 <Accordion styled name={language.banCharacterset}>
   {#each characterSets as set}
     <Button
-      styled={DBState.db.banCharacterset.includes(set) ? 'primary' : 'outlined'}
+      styled={banCharactersetDraft.value.includes(set) ? 'primary' : 'outlined'}
       onclick={(e) => {
-        if (DBState.db.banCharacterset.includes(set)) {
-          DBState.db.banCharacterset = DBState.db.banCharacterset.filter((item) => item !== set)
+        if (banCharactersetDraft.value.includes(set)) {
+          banCharactersetDraft.value = banCharactersetDraft.value.filter((item) => item !== set)
         } else {
-          DBState.db.banCharacterset.push(set)
+          banCharactersetDraft.value = [...banCharactersetDraft.value, set]
         }
       }}
     >

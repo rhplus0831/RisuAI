@@ -77,6 +77,14 @@ import/export events match the command map.
   color/text/background editors dispatch display settings patches, and
   lore preset list mutations use trusted local updates with lorebook
   commands/watchers.
+- Landed 2026-05-26: Plugin settings, custom model editing, and advanced
+  setting custom editors now avoid raw Fastify projection mutation.
+  Plugin argument edits, enable/delete, import/update, plugin database
+  bridge writes, and plugin storage updates use trusted optimistic
+  writes with plugin/settings/storage commands. `customModels` and
+  `banCharacterset` bind through `createServerBackedSettingDraft`, and
+  client command grouping now covers `allowAllExtentionFiles` and
+  `auxModelUnderModelSettings`.
 
 ## Tasks
 
@@ -150,10 +158,14 @@ client mutation.
   optimistic writes. Added grouped settings coverage for `globalscript`
   and nullable text screen colors, and extended focused client /
   Fastify command tests.
-- 9F - Plugin, custom model, and advanced setting editors. Cover
-  `PluginSettings.svelte`, `CustomModelsSettings.svelte`, advanced
-  setting pages, and plugin command bridges. Extend plugin/custom-model
-  commands and event allowlists where needed.
+- 9F - Completed 2026-05-26: Plugin, custom model, and advanced setting
+  editors. Converted `PluginSettings.svelte`,
+  `CustomModelsSettings.svelte`, `BanCharacterSetSettings.svelte`, and
+  the plugin database/storage bridge to command-backed or trusted
+  optimistic writes. Extended plugin bridge classification for
+  `customModels`, `banCharacterset`, `allowAllExtentionFiles`,
+  `auxModelUnderModelSettings`, and `pluginDevelopMode`, and added
+  focused client / Fastify command tests.
 - 9G - Character core profile, media, and basic option editors. Cover
   the basic `CharConfig.svelte` fields such as name, description, first
   message, portrait/media assets, view screen, and simple character
