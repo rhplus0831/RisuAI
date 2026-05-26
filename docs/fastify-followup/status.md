@@ -38,7 +38,7 @@ directly.
 | `2321516b`                                        | 9E persona, display/theme, global regex, lore preset, and bot preset editors. |
 | `668ea890`                                        | 9F plugin, custom model, and advanced setting editors.                        |
 | `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                   |
-| pending                                           | 9H character lore, script, prompt, TTS, and chat-name editors.                |
+| `007dbe3c`                                        | 9H character lore, script, prompt, TTS, and chat-name editors.                |
 
 ## Phase Status
 
