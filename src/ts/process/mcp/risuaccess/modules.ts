@@ -484,17 +484,8 @@ export class ModuleHandler extends MCPToolHandler {
       if (!allowedFields.includes(key)) continue
 
       if (key === 'enabled') {
-        const enabledModules = new Set(DBState.db.enabledModules || [])
-        if (value) {
-          enabledModules.add(id)
-        } else {
-          enabledModules.delete(id)
-        }
-        DBState.db.enabledModules = Array.from(enabledModules)
         enabled = Boolean(value)
       } else {
-        // @ts-ignore
-        module[key] = value
         patch[key] = value
       }
     }
@@ -505,6 +496,20 @@ export class ModuleHandler extends MCPToolHandler {
       }
       if (enabled !== null) {
         dispatchEnableModule(id, enabled, previous)
+      }
+    } else {
+      if (enabled !== null) {
+        const enabledModules = new Set(DBState.db.enabledModules || [])
+        if (enabled) {
+          enabledModules.add(id)
+        } else {
+          enabledModules.delete(id)
+        }
+        DBState.db.enabledModules = Array.from(enabledModules)
+      }
+      for (const [key, value] of Object.entries(patch)) {
+        // @ts-ignore
+        module[key] = value
       }
     }
 
@@ -609,12 +614,9 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    if (!module.lorebook) {
-      module.lorebook = []
-    }
-
     const previous = currentLorebookStateSnapshot()
-    const index = module.lorebook.findIndex((l) => {
+    const entries = cloneJsonValue(module.lorebook ?? [])
+    const index = entries.findIndex((l) => {
       const displayName = l.comment || 'Unnamed ' + pickHashRand(5515, l.content)
       return displayName === name
     })
@@ -631,10 +633,12 @@ export class ModuleHandler extends MCPToolHandler {
         insertorder: 100,
         mode: 'normal' as const,
       }
-      module.lorebook.push(newEntry)
+      entries.push(newEntry)
       if (canUseServerCommands()) {
-        ensureClientLorebookEntryIds(module.lorebook)
-        dispatchReplaceModuleLorebooks(module.id, module.lorebook, previous, 0)
+        ensureClientLorebookEntryIds(entries)
+        dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
+      } else {
+        module.lorebook = entries
       }
       return [
         {
@@ -644,7 +648,7 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const entry = module.lorebook[index]
+    const entry = entries[index]
 
     if (content !== undefined) {
       entry.content = content
@@ -663,8 +667,10 @@ export class ModuleHandler extends MCPToolHandler {
     }
 
     if (canUseServerCommands()) {
-      ensureClientLorebookEntryIds(module.lorebook)
-      dispatchReplaceModuleLorebooks(module.id, module.lorebook, previous, 0)
+      ensureClientLorebookEntryIds(entries)
+      dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
+    } else {
+      module.lorebook = entries
     }
 
     return [
@@ -695,12 +701,9 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    if (!module.lorebook) {
-      module.lorebook = []
-    }
-
     const previous = currentLorebookStateSnapshot()
-    const index = module.lorebook.findIndex((l) => {
+    const entries = cloneJsonValue(module.lorebook ?? [])
+    const index = entries.findIndex((l) => {
       const displayName = l.comment || 'Unnamed ' + pickHashRand(5515, l.content)
       return displayName === name
     })
@@ -714,10 +717,12 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    module.lorebook.splice(index, 1)
+    entries.splice(index, 1)
     if (canUseServerCommands()) {
-      ensureClientLorebookEntryIds(module.lorebook)
-      dispatchReplaceModuleLorebooks(module.id, module.lorebook, previous, 0)
+      ensureClientLorebookEntryIds(entries)
+      dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
+    } else {
+      module.lorebook = entries
     }
 
     return [
@@ -783,12 +788,10 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    if (!module.regex) {
-      module.regex = []
-    }
     const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
+    const scripts = cloneJsonValue(module.regex ?? [])
 
-    const index = module.regex.findIndex((r) => {
+    const index = scripts.findIndex((r) => {
       const displayName = r.comment || 'Unnamed ' + pickHashRand(5515, r.in + r.out)
       return displayName === name
     })
@@ -802,10 +805,12 @@ export class ModuleHandler extends MCPToolHandler {
         flag: flag || '',
         ableFlag: ableFlag !== undefined ? ableFlag : true,
       }
-      module.regex.push(newScript)
+      scripts.push(newScript)
       if (previous) {
-        ensureClientScriptDefinitionIds(module.regex)
-        dispatchReplaceModuleScripts(module.id, module.regex, previous, 0)
+        ensureClientScriptDefinitionIds(scripts)
+        dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
+      } else {
+        module.regex = scripts
       }
       return [
         {
@@ -815,7 +820,7 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const script = module.regex[index]
+    const script = scripts[index]
 
     if (newName !== undefined) script.comment = newName
     if (regexIn !== undefined) script.in = regexIn
@@ -824,8 +829,10 @@ export class ModuleHandler extends MCPToolHandler {
     if (flag !== undefined) script.flag = flag
     if (ableFlag !== undefined) script.ableFlag = ableFlag
     if (previous) {
-      ensureClientScriptDefinitionIds(module.regex)
-      dispatchReplaceModuleScripts(module.id, module.regex, previous, 0)
+      ensureClientScriptDefinitionIds(scripts)
+      dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
+    } else {
+      module.regex = scripts
     }
 
     return [
@@ -856,12 +863,10 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    if (!module.regex) {
-      module.regex = []
-    }
     const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
+    const scripts = cloneJsonValue(module.regex ?? [])
 
-    const index = module.regex.findIndex((r) => {
+    const index = scripts.findIndex((r) => {
       const displayName = r.comment || 'Unnamed ' + pickHashRand(5515, r.in + r.out)
       return displayName === name
     })
@@ -875,10 +880,12 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    module.regex.splice(index, 1)
+    scripts.splice(index, 1)
     if (previous) {
-      ensureClientScriptDefinitionIds(module.regex)
-      dispatchReplaceModuleScripts(module.id, module.regex, previous, 0)
+      ensureClientScriptDefinitionIds(scripts)
+      dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
+    } else {
+      module.regex = scripts
     }
 
     return [
@@ -937,13 +944,16 @@ export class ModuleHandler extends MCPToolHandler {
     }
 
     const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
-    const firstTrigger = module.trigger?.[0]
+    const triggers = cloneJsonValue(module.trigger ?? [])
+    const firstTrigger = triggers[0]
     if (firstTrigger?.effect?.[0]?.type === 'triggerlua') {
       // @ts-ignore
       firstTrigger.effect[0].code = code
       if (previous) {
-        ensureClientTriggerDefinitionIds(module.trigger)
-        dispatchReplaceModuleTriggers(module.id, module.trigger, previous, 0)
+        ensureClientTriggerDefinitionIds(triggers)
+        dispatchReplaceModuleTriggers(module.id, triggers, previous, 0)
+      } else {
+        module.trigger = triggers
       }
       return [
         {
@@ -960,4 +970,9 @@ export class ModuleHandler extends MCPToolHandler {
       },
     ]
   }
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }

@@ -1,9 +1,6 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
-import {
-  currentCharacterStateSnapshot,
-  dispatchCompatibleCharacterUpdate,
-} from 'src/ts/characterCommands'
+import { currentCharacterStateSnapshot, dispatchUpdateCharacter } from 'src/ts/characterCommands'
 import { canUseServerCommands } from 'src/ts/server/commands'
 import {
   currentLorebookStateSnapshot,
@@ -569,13 +566,11 @@ export class CharacterHandler extends MCPToolHandler {
       backgroundEmbedding: 'backgroundHTML',
     } as const
 
-    const previous = currentCharacterStateSnapshot()
-    const previousCharacter = JSON.parse(JSON.stringify(char)) as character
+    const patch: Record<string, unknown> = {}
     for (const [field, value] of Object.entries(data)) {
       if (fieldRemap[field as keyof typeof fieldRemap]) {
         const realField = fieldRemap[field as keyof typeof fieldRemap]
-        // @ts-ignore
-        char[realField] = value
+        patch[realField] = value
       } else {
         return [
           {
@@ -585,7 +580,14 @@ export class CharacterHandler extends MCPToolHandler {
         ]
       }
     }
-    dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
+    if (canUseServerCommands()) {
+      dispatchUpdateCharacter(char.chaId, patch, currentCharacterStateSnapshot())
+    } else {
+      for (const [field, value] of Object.entries(patch)) {
+        // @ts-ignore
+        char[field] = value
+      }
+    }
 
     return [
       {
@@ -626,9 +628,9 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    char.globalLore ??= []
     const previous = currentLorebookStateSnapshot()
-    const entryIndex = char.globalLore.findIndex((entry) => {
+    const entries = cloneJsonValue(char.globalLore ?? [])
+    const entryIndex = entries.findIndex((entry) => {
       const displayName = entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content)
       return displayName === name
     })
@@ -644,10 +646,12 @@ export class CharacterHandler extends MCPToolHandler {
         insertorder: 100,
         mode: 'normal',
       }
-      char.globalLore.push(newEntry)
+      entries.push(newEntry)
       if (canUseServerCommands()) {
-        ensureClientLorebookEntryIds(char.globalLore)
-        dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore, previous, 0)
+        ensureClientLorebookEntryIds(entries)
+        dispatchReplaceCharacterLorebooks(char.chaId, entries, previous, 0)
+      } else {
+        char.globalLore = entries
       }
       return [
         {
@@ -657,7 +661,7 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const entry = char.globalLore[entryIndex]
+    const entry = entries[entryIndex]
 
     if (content !== undefined) {
       entry.content = content
@@ -676,8 +680,10 @@ export class CharacterHandler extends MCPToolHandler {
     }
 
     if (canUseServerCommands()) {
-      ensureClientLorebookEntryIds(char.globalLore)
-      dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore, previous, 0)
+      ensureClientLorebookEntryIds(entries)
+      dispatchReplaceCharacterLorebooks(char.chaId, entries, previous, 0)
+    } else {
+      char.globalLore = entries
     }
 
     return [
@@ -712,9 +718,9 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    char.globalLore ??= []
     const previous = currentLorebookStateSnapshot()
-    const entryIndex = char.globalLore.findIndex((entry) => {
+    const entries = cloneJsonValue(char.globalLore ?? [])
+    const entryIndex = entries.findIndex((entry) => {
       const displayName = entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content)
       return displayName === name
     })
@@ -727,10 +733,12 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    char.globalLore.splice(entryIndex, 1)
+    entries.splice(entryIndex, 1)
     if (canUseServerCommands()) {
-      ensureClientLorebookEntryIds(char.globalLore)
-      dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore, previous, 0)
+      ensureClientLorebookEntryIds(entries)
+      dispatchReplaceCharacterLorebooks(char.chaId, entries, previous, 0)
+    } else {
+      char.globalLore = entries
     }
 
     return [
@@ -805,12 +813,10 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    if (!char.customscript) {
-      char.customscript = []
-    }
     const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
+    const scripts = cloneJsonValue(char.customscript ?? [])
 
-    const scriptIndex = char.customscript.findIndex((script) => {
+    const scriptIndex = scripts.findIndex((script) => {
       const displayName = script.comment || 'Unnamed ' + pickHashRand(5515, script.in + script.out)
       return displayName === name
     })
@@ -824,10 +830,12 @@ export class CharacterHandler extends MCPToolHandler {
         ableFlag: ableFlag !== undefined ? ableFlag : true,
       }
 
-      char.customscript.push(newScript)
+      scripts.push(newScript)
       if (previous) {
-        ensureClientScriptDefinitionIds(char.customscript)
-        dispatchReplaceCharacterScripts(char.chaId, char.customscript, previous, 0)
+        ensureClientScriptDefinitionIds(scripts)
+        dispatchReplaceCharacterScripts(char.chaId, scripts, previous, 0)
+      } else {
+        char.customscript = scripts
       }
       return [
         {
@@ -837,7 +845,7 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const script = char.customscript[scriptIndex]
+    const script = scripts[scriptIndex]
 
     if (newName !== undefined) script.comment = newName
     if (regexIn !== undefined) script.in = regexIn
@@ -846,8 +854,10 @@ export class CharacterHandler extends MCPToolHandler {
     if (flag !== undefined) script.flag = flag
     if (ableFlag !== undefined) script.ableFlag = ableFlag
     if (previous) {
-      ensureClientScriptDefinitionIds(char.customscript)
-      dispatchReplaceCharacterScripts(char.chaId, char.customscript, previous, 0)
+      ensureClientScriptDefinitionIds(scripts)
+      dispatchReplaceCharacterScripts(char.chaId, scripts, previous, 0)
+    } else {
+      char.customscript = scripts
     }
 
     return [
@@ -883,12 +893,10 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    if (!char.customscript) {
-      char.customscript = []
-    }
     const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
+    const scripts = cloneJsonValue(char.customscript ?? [])
 
-    const scriptIndex = char.customscript.findIndex((script) => {
+    const scriptIndex = scripts.findIndex((script) => {
       const displayName = script.comment || 'Unnamed ' + pickHashRand(5515, script.in + script.out)
       return displayName === name
     })
@@ -901,10 +909,12 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    char.customscript.splice(scriptIndex, 1)
+    scripts.splice(scriptIndex, 1)
     if (previous) {
-      ensureClientScriptDefinitionIds(char.customscript)
-      dispatchReplaceCharacterScripts(char.chaId, char.customscript, previous, 0)
+      ensureClientScriptDefinitionIds(scripts)
+      dispatchReplaceCharacterScripts(char.chaId, scripts, previous, 0)
+    } else {
+      char.customscript = scripts
     }
 
     return [
@@ -1055,12 +1065,15 @@ export class CharacterHandler extends MCPToolHandler {
     }
 
     const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
-    const firstTrigger = char.triggerscript?.[0]
+    const triggers = cloneJsonValue(char.triggerscript ?? [])
+    const firstTrigger = triggers[0]
     if (firstTrigger?.effect?.[0]?.type === 'triggerlua') {
       firstTrigger.effect[0].code = code
       if (previous) {
-        ensureClientTriggerDefinitionIds(char.triggerscript)
-        dispatchReplaceCharacterTriggers(char.chaId, char.triggerscript, previous, 0)
+        ensureClientTriggerDefinitionIds(triggers)
+        dispatchReplaceCharacterTriggers(char.chaId, triggers, previous, 0)
+      } else {
+        char.triggerscript = triggers
       }
       return [
         {
@@ -1102,7 +1115,12 @@ function unsupportedServerBackedCharacterWrite(surface: string): RPCToolCallCont
   return [
     {
       type: 'text',
-      text: `Error: ${surface} are not supported in server-backed web mode until the Phase 9-4 command slice lands.`,
+      text: `Error: ${surface} are not supported in server-backed web mode yet.`,
     },
   ]
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }

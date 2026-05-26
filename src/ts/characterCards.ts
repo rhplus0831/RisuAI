@@ -64,7 +64,8 @@ import {
   dispatchCreateCharacter,
   dispatchUpdateCharacter,
 } from './characterCommands'
-import { currentModuleStateSnapshot, dispatchCreateModule } from './moduleCommands'
+import { createGlobalModule } from './moduleCommands'
+import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz'
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
@@ -117,7 +118,9 @@ export async function importCharacterProcess(f: {
     ) {
       const previous = currentCharacterStateSnapshot()
       const character = convertOffSpecCards(da)
-      DBState.db.characters.push(character)
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.characters.push(character)
+      })
       dispatchCreateCharacter(character, previous)
       alertNormal(language.importedCharacter)
       return
@@ -424,9 +427,7 @@ export async function characterURLImport() {
         return false
       }
     }
-    const previous = currentModuleStateSnapshot()
-    DBState.db.modules.push(importData)
-    dispatchCreateModule(importData, previous)
+    createGlobalModule(importData)
     alertNormal(language.successImport)
     SettingsMenuIndex.set(14)
     settingsOpen.set(true)
@@ -466,9 +467,7 @@ export async function characterURLImport() {
     const module = new Uint8Array(await data.arrayBuffer())
     const md = await readModule(Buffer.from(module))
     md.id = v4()
-    const previous = currentModuleStateSnapshot()
-    DBState.db.modules.push(md)
-    dispatchCreateModule(md, previous)
+    createGlobalModule(md)
     alertNormal(language.successImport)
     SettingsMenuIndex.set(14)
     settingsOpen.set(true)
@@ -559,9 +558,7 @@ export async function characterURLImport() {
       }
       const md = await readModule(Buffer.from(data))
       md.id = v4()
-      const previous = currentModuleStateSnapshot()
-      DBState.db.modules.push(md)
-      dispatchCreateModule(md, previous)
+      createGlobalModule(md)
       alertNormal(language.successImport)
       SettingsMenuIndex.set(14)
       settingsOpen.set(true)
@@ -711,7 +708,6 @@ async function importCharacterCardSpec(
 
   const data = card.data
   let im = img ? await saveAsset(img) : undefined
-  let db = DBState.db
   const previous = currentCharacterStateSnapshot()
 
   const risuext = safeStructuredClone(data.extensions.risuai)
@@ -1013,7 +1009,9 @@ async function importCharacterCardSpec(
     char.modification_date = card.data.modification_date ?? 0
   }
 
-  db.characters.push(char)
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characters.push(char)
+  })
   dispatchCreateCharacter(char, previous)
   alertNormal(language.importedCharacter)
   return true

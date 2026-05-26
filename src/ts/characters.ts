@@ -63,8 +63,10 @@ import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.
 export function createNewCharacter() {
   const previous = currentCharacterStateSnapshot()
   const character = createBlankChar()
-  DBState.db.characters.push(character)
-  checkCharOrder()
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characters.push(character)
+    checkCharOrder()
+  })
   dispatchCreateCharacter(character, previous)
   return DBState.db.characters.length - 1
 }
@@ -493,7 +495,9 @@ export async function importChat() {
         newChat.folderId = null
       }
 
-      DBState.db.characters[selectedID].chats.unshift(newChat)
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.characters[selectedID].chats.unshift(newChat)
+      })
       changeChatTo(0)
       if (characterId) {
         dispatchCreateChat(characterId, newChat, previous)
@@ -516,10 +520,12 @@ export async function importChat() {
             folderIdMap[folder.id] = folder.id
           }
         })
-        if (db.characters[selectedID].chatFolders === undefined) {
-          db.characters[selectedID].chatFolders = []
-        }
-        db.characters[selectedID].chatFolders.push(...folders)
+        withTrustedServerProjectionWrite(() => {
+          if (DBState.db.characters[selectedID].chatFolders === undefined) {
+            DBState.db.characters[selectedID].chatFolders = []
+          }
+          DBState.db.characters[selectedID].chatFolders.push(...folders)
+        })
         if (characterId) {
           for (const folder of folders) {
             dispatchCreateChatFolder(characterId, folder, previous)
@@ -531,7 +537,9 @@ export async function importChat() {
           }
           chat.id = v4()
         })
-        DBState.db.characters[selectedID].chats.unshift(...chats)
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[selectedID].chats.unshift(...chats)
+        })
         if (characterId) {
           for (const chat of chats) {
             dispatchCreateChat(characterId, chat, previous, false)
@@ -553,7 +561,9 @@ export async function importChat() {
             v.fmIndex ??= -1
             return v
           })
-          DBState.db.characters[selectedID].chats.unshift(...normalizedChats)
+          withTrustedServerProjectionWrite(() => {
+            DBState.db.characters[selectedID].chats.unshift(...normalizedChats)
+          })
           if (characterId) {
             for (const chat of normalizedChats) {
               dispatchCreateChat(characterId, chat, previous, false)
@@ -578,7 +588,9 @@ export async function importChat() {
         ) {
           das.fmIndex ??= -1
           das.id = v4()
-          DBState.db.characters[selectedID].chats.unshift(das)
+          withTrustedServerProjectionWrite(() => {
+            DBState.db.characters[selectedID].chats.unshift(das)
+          })
           if (characterId) {
             dispatchCreateChat(characterId, das, previous, false)
           }
@@ -601,7 +613,9 @@ export async function importChat() {
       const json = JSON.parse(chat)
       if (json.message && json.note && json.name && json.localLore) {
         json.id = typeof json.id === 'string' && json.id ? json.id : v4()
-        DBState.db.characters[selectedID].chats.unshift(json)
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[selectedID].chats.unshift(json)
+        })
         if (characterId) {
           dispatchCreateChat(characterId, json, previous, false)
         }
@@ -856,20 +870,26 @@ export async function removeChar(
   if (type === 'normal') {
     const previous = currentCharacterStateSnapshot()
     const characterId = chars[index]?.chaId
-    chars[index].trashTime = Date.now()
+    const trashTime = Date.now()
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[index].trashTime = trashTime
+      chars = DBState.db.characters
+    })
     if (characterId) {
-      dispatchUpdateCharacter(characterId, { trashTime: chars[index].trashTime }, previous)
+      dispatchUpdateCharacter(characterId, { trashTime }, previous)
     }
   } else {
     const previous = currentCharacterStateSnapshot()
     const characterId = chars[index]?.chaId
-    chars.splice(index, 1)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.splice(index, 1)
+      chars = DBState.db.characters
+    })
     if (characterId) {
       dispatchDeleteCharacter(characterId, previous)
     }
   }
   checkCharOrder()
-  DBState.db.characters = chars
   requiresFullEncoderReload.state = true
   selectedCharID.set(-1)
 }

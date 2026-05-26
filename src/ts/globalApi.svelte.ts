@@ -84,6 +84,7 @@ import { getNodeServerProxyAuth } from './storage/nodeStorage'
 import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
 import { readServerAssetBytes, serverAssetUrl } from './server/assets'
 import { listServerBackups, restoreServerBackup } from './server/backups'
+import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
 export const forageStorage = new AutoStorage()
 
@@ -1207,63 +1208,65 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
  * Ensures that all characters are properly ordered and removes any invalid entries.
  */
 export function checkCharOrder() {
-  DBState.db.characterOrder = DBState.db.characterOrder ?? []
-  let ordered = []
-  for (let i = 0; i < DBState.db.characterOrder.length; i++) {
-    const folder = DBState.db.characterOrder[i]
-    if (typeof folder !== 'string' && folder) {
-      for (const f of folder.data) {
-        ordered.push(f)
-      }
-    }
-    if (typeof folder === 'string') {
-      ordered.push(folder)
-    }
-  }
-
-  let charIdList: string[] = []
-
-  for (let i = 0; i < DBState.db.characters.length; i++) {
-    const char = DBState.db.characters[i]
-    const charId = char.chaId
-    if (!char.trashTime) {
-      charIdList.push(charId)
-    }
-    if (!ordered.includes(charId)) {
-      if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
-        DBState.db.characterOrder.push(charId)
-      }
-    }
-  }
-
-  for (let i = 0; i < DBState.db.characterOrder.length; i++) {
-    const data = DBState.db.characterOrder[i]
-    if (typeof data !== 'string') {
-      if (!data) {
-        DBState.db.characterOrder.splice(i, 1)
-        i--
-        continue
-      }
-      if (data.data.length === 0) {
-        DBState.db.characterOrder.splice(i, 1)
-        i--
-        continue
-      }
-      for (let i2 = 0; i2 < data.data.length; i2++) {
-        const data2 = data.data[i2]
-        if (!charIdList.includes(data2)) {
-          data.data.splice(i2, 1)
-          i2--
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characterOrder = DBState.db.characterOrder ?? []
+    let ordered = []
+    for (let i = 0; i < DBState.db.characterOrder.length; i++) {
+      const folder = DBState.db.characterOrder[i]
+      if (typeof folder !== 'string' && folder) {
+        for (const f of folder.data) {
+          ordered.push(f)
         }
       }
-      DBState.db.characterOrder[i] = data
-    } else {
-      if (!charIdList.includes(data)) {
-        DBState.db.characterOrder.splice(i, 1)
-        i--
+      if (typeof folder === 'string') {
+        ordered.push(folder)
       }
     }
-  }
+
+    let charIdList: string[] = []
+
+    for (let i = 0; i < DBState.db.characters.length; i++) {
+      const char = DBState.db.characters[i]
+      const charId = char.chaId
+      if (!char.trashTime) {
+        charIdList.push(charId)
+      }
+      if (!ordered.includes(charId)) {
+        if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
+          DBState.db.characterOrder.push(charId)
+        }
+      }
+    }
+
+    for (let i = 0; i < DBState.db.characterOrder.length; i++) {
+      const data = DBState.db.characterOrder[i]
+      if (typeof data !== 'string') {
+        if (!data) {
+          DBState.db.characterOrder.splice(i, 1)
+          i--
+          continue
+        }
+        if (data.data.length === 0) {
+          DBState.db.characterOrder.splice(i, 1)
+          i--
+          continue
+        }
+        for (let i2 = 0; i2 < data.data.length; i2++) {
+          const data2 = data.data[i2]
+          if (!charIdList.includes(data2)) {
+            data.data.splice(i2, 1)
+            i2--
+          }
+        }
+        DBState.db.characterOrder[i] = data
+      } else {
+        if (!charIdList.includes(data)) {
+          DBState.db.characterOrder.splice(i, 1)
+          i--
+        }
+      }
+    }
+  })
 }
 
 /**
@@ -2574,7 +2577,9 @@ export function changeChatTo(IdOrIndex: string | number) {
     return
   }
 
-  DBState.db.characters[selIdState.selId].chatPage = index
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characters[selIdState.selId].chatPage = index
+  })
   const chatId = currentCharacter.chats[index]?.id
   if (chatId) {
     dispatchUpdateChat(chatId, {}, previous, true)

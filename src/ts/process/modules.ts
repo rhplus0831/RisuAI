@@ -12,7 +12,6 @@ import {
   getCurrentCharacter,
   getCurrentChat,
   getDatabase,
-  setCurrentCharacter,
   setDatabase,
   type customscript,
   type loreBook,
@@ -38,7 +37,17 @@ import {
   ReloadGUIPointer,
 } from '../stores.svelte'
 import { get } from 'svelte/store'
-import { currentModuleStateSnapshot, dispatchCreateModule } from '../moduleCommands'
+import { createGlobalModule } from '../moduleCommands'
+import {
+  currentLorebookStateSnapshot,
+  dispatchReplaceCharacterLorebooks,
+} from '../server/lorebookBridge.svelte'
+import {
+  currentScriptDefinitionStateSnapshot,
+  dispatchReplaceCharacterScripts,
+  dispatchReplaceCharacterTriggers,
+} from '../server/scriptDefinitionBridge.svelte'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
 export interface MCPModule {
   url: string
@@ -283,9 +292,7 @@ export async function importModule() {
     try {
       const buf = Buffer.from(fileData)
       const module = await readModule(buf)
-      const previous = currentModuleStateSnapshot()
-      DBState.db.modules.push(module)
-      dispatchCreateModule(module, previous)
+      createGlobalModule(module)
     } catch (error) {
       console.error(error)
       alertError(language.errors.noData)
@@ -307,9 +314,7 @@ export async function importModule() {
           return false
         }
       }
-      const previous = currentModuleStateSnapshot()
-      DBState.db.modules.push(importData)
-      dispatchCreateModule(importData, previous)
+      createGlobalModule(importData)
       return
     }
     // importData.type === 'risu' in conflict with HypaV3 preset exports
@@ -322,9 +327,7 @@ export async function importModule() {
         lorebook: lores,
         id: v4(),
       }
-      const previous = currentModuleStateSnapshot()
-      DBState.db.modules.push(importModule)
-      dispatchCreateModule(importModule, previous)
+      createGlobalModule(importModule)
       return
     }
     if (importData.entries) {
@@ -335,9 +338,7 @@ export async function importModule() {
         lorebook: lores,
         id: v4(),
       }
-      const previous = currentModuleStateSnapshot()
-      DBState.db.modules.push(importModule)
-      dispatchCreateModule(importModule, previous)
+      createGlobalModule(importModule)
       return
     }
     if (importData.type === 'regex' && importData.data) {
@@ -348,9 +349,7 @@ export async function importModule() {
         regex: regexs,
         id: v4(),
       }
-      const previous = currentModuleStateSnapshot()
-      DBState.db.modules.push(importModule)
-      dispatchCreateModule(importModule, previous)
+      createGlobalModule(importModule)
       return
     }
   } catch (error) {
@@ -517,23 +516,36 @@ export async function applyModule() {
     return
   }
 
-  if (module.lorebook) {
-    for (const lore of module.lorebook) {
-      currentChar.globalLore.push(lore)
-    }
-  }
-  if (module.regex) {
-    for (const regex of module.regex) {
-      currentChar.customscript.push(regex)
-    }
-  }
-  if (module.trigger) {
-    for (const trigger of module.trigger) {
-      currentChar.triggerscript.push(trigger)
-    }
-  }
+  const characterId = currentChar.chaId
+  const nextLorebooks = module.lorebook
+    ? [...(currentChar.globalLore ?? []), ...safeStructuredClone(module.lorebook)]
+    : undefined
+  const nextScripts = module.regex
+    ? [...(currentChar.customscript ?? []), ...safeStructuredClone(module.regex)]
+    : undefined
+  const nextTriggers = module.trigger
+    ? [...(currentChar.triggerscript ?? []), ...safeStructuredClone(module.trigger)]
+    : undefined
+  const lorePrevious = nextLorebooks ? currentLorebookStateSnapshot() : null
+  const scriptPrevious = nextScripts || nextTriggers ? currentScriptDefinitionStateSnapshot() : null
 
-  setCurrentCharacter(currentChar)
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.characters.find((character) => character.chaId === characterId)
+    if (!target) return
+    if (nextLorebooks) target.globalLore = safeStructuredClone(nextLorebooks)
+    if (nextScripts) target.customscript = safeStructuredClone(nextScripts)
+    if (nextTriggers) target.triggerscript = safeStructuredClone(nextTriggers)
+  })
+
+  if (characterId && nextLorebooks && lorePrevious) {
+    dispatchReplaceCharacterLorebooks(characterId, nextLorebooks, lorePrevious, 0)
+  }
+  if (characterId && nextScripts && scriptPrevious) {
+    dispatchReplaceCharacterScripts(characterId, nextScripts, scriptPrevious, 0)
+  }
+  if (characterId && nextTriggers && scriptPrevious) {
+    dispatchReplaceCharacterTriggers(characterId, nextTriggers, scriptPrevious, 0)
+  }
 
   alertNormal(language.successApplyModule)
 }

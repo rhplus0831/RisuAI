@@ -18,22 +18,17 @@ and add any longer closeout note under `../phases-completed/`.
 
 Recommended order:
 
-1. Clear the Phase 9 projection-write tails:
-   [`../phases/phase-9-projection-write-tails-alpha.md`](../phases/phase-9-projection-write-tails-alpha.md).
-   9A is closed, but character/chat/module import helpers, character
-   ordering/chat selection, module apply, MCP `risuaccess`, and helper
-   coverage still need a focused guard-enabled pass.
-2. Clear the Phase 5 sendChat boundary drift:
+1. Clear the Phase 5 sendChat boundary drift:
    [`../phases/phase-5-sendchat-boundary-alpha.md`](../phases/phase-5-sendchat-boundary-alpha.md).
    The historical extraction closed, but the current coordinator has
    grown from the 445-line closeout shape to 703 lines after later
    server-backed adapter work.
-3. Clear the broad closeout typecheck blocker:
+2. Clear the broad closeout typecheck blocker:
    [`../phases/broad-closeout-typecheck-alpha.md`](../phases/broad-closeout-typecheck-alpha.md).
    Start with `pnpm check`; the 2026-05-27 closeout pass failed with 57
    diagnostics across 17 files while the rest of the closeout matrix
    passed.
-4. After `pnpm check` passes, rerun broad alpha closeout verification.
+3. After `pnpm check` passes, rerun broad alpha closeout verification.
 
 Recently closed:
 
@@ -50,8 +45,10 @@ Recently closed:
   event blocks before truncated-tail detection.
 - Phase 9A - converted the reopened projection-write blockers in
   module settings, `SideChatList`, Hypa/supa memory toggles, and
-  lorebook page selection to command-first or draft-first flows. Phase
-  9 is reopened for the 9B projection-write tails.
+  lorebook page selection to command-first or draft-first flows.
+- Phase 9B - closed the remaining character/chat/module import,
+  ordering/selection, module-apply, MCP `risuaccess`, and helper
+  coverage projection-write tails.
 
 Latest broad closeout attempt on 2026-05-27:
 
@@ -60,6 +57,16 @@ Latest broad closeout attempt on 2026-05-27:
 - `pnpm api:test` passed: 68 files, 1212 passed.
 - `pnpm build` passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
+
+Latest focused Phase 9B closeout on 2026-05-27:
+
+- Direct-bind sweep had no hits.
+- Focused client/helper suites passed: 9 files, 73 tests.
+- Focused Fastify command/event/bootstrap API suite passed: 68 files,
+  1217 tests.
+- `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
+- `pnpm check` still failed with the known broad alpha blocker: 57
+  errors, 0 warnings, 17 files.
 
 ## Focused Verification
 
@@ -108,11 +115,11 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm test -- src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/process/request/tests/serverMemory.test.ts
 ```
 
-Phase 9 projection-write tails:
+Phase 9 projection-write tails (closed, re-run only for regression checks):
 
 ```bash
 rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts
-pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/commands.test.ts src/ts/moduleCommands.test.ts src/ts/characterCommands.test.ts
+pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/commands.test.ts src/ts/moduleCommands.test.ts src/ts/characterCommands.test.ts src/ts/chatCommands.test.ts src/ts/compatibilityAdapters.test.ts src/ts/characters.importChat.test.ts src/ts/process/modules.test.ts src/ts/process/mcp/risuaccess/tests/modules.test.ts
 pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/events.test.ts server/fastify/__tests__/bootstrap.test.ts
 pnpm smoke:fastify-browser
 ```
@@ -133,3 +140,5 @@ pnpm build
 - Original Fastify status: `docs/fastify/status.md`
 - Original Phase 9 command map:
   `docs/fastify/status/phase-9-command-map.md`
+- Phase 9B closeout:
+  [`../phases-completed/phase-9-projection-write-tails-9b.md`](../phases-completed/phase-9-projection-write-tails-9b.md)

@@ -37,7 +37,7 @@ import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { Chat, character } from './storage/database.svelte'
-import { changeChar, changeCharImage, rmCharEmotion } from './characters'
+import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
 import { alertError } from './alert'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 
@@ -284,6 +284,36 @@ describe('Phase 9-3f compatibility adapters', () => {
     })
   })
 
+  it('creates characters through trusted optimistic projection writes under the guard', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.characters.push({ chaId: 'direct', name: 'Direct', chats: [] } as any)
+    }).toThrow()
+
+    const index = createNewCharacter()
+
+    expect(index).toBe(1)
+    expect(DBState.db.characters[1].name).toBe('')
+    expect(() => {
+      DBState.db.characters.push({ chaId: 'direct-2', name: 'Direct', chats: [] } as any)
+    }).toThrow()
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters')).toBe(true)
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters')).toMatchObject({
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        character: expect.objectContaining({
+          name: '',
+        }),
+      },
+    })
+  })
+
   it('rejects cold-storage character hydration in server-backed web mode', async () => {
     const calls = stubCommandFetch()
     DBState.db.characters[0].coldstorage = 'cold-char-a'
@@ -302,6 +332,11 @@ describe('Phase 9-3f compatibility adapters', () => {
   it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {
     const calls = stubCommandFetch()
     const handler = new CharacterHandler()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.characters[0].globalLore = []
+    }).toThrow()
 
     const result = await handler.setCharacterLorebook('char-a', 'Lore', 'content', ['key'])
 
@@ -333,7 +368,20 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('routes MCP character regex and Lua writes through script definition commands', async () => {
     const calls = stubCommandFetch()
+    DBState.db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [{ type: 'triggerlua', code: '' }],
+      },
+    ]
     const handler = new CharacterHandler()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.characters[0].customscript = []
+    }).toThrow()
 
     const regexResult = await handler.setCharacterRegexScripts(
       'char-a',
@@ -369,14 +417,6 @@ describe('Phase 9-3f compatibility adapters', () => {
       },
     })
 
-    DBState.db.characters[0].triggerscript = [
-      {
-        comment: '',
-        type: 'start',
-        conditions: [],
-        effect: [{ type: 'triggerlua', code: '' }],
-      },
-    ]
     const luaResult = await handler.setCharacterLuaScript('char-a', 'print("hi")')
     expect(luaResult[0]).toMatchObject({
       type: 'text',
@@ -421,6 +461,11 @@ describe('Phase 9-3f compatibility adapters', () => {
       },
     ]
     const handler = new ModuleHandler()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.modules[0].regex = []
+    }).toThrow()
 
     const regexResult = await handler.setModuleRegexScript(
       'mod-a',
@@ -484,6 +529,11 @@ describe('Phase 9-3f compatibility adapters', () => {
     DBState.db.modules = [{ id: 'mod-a', name: 'Module', description: '' }]
     DBState.db.enabledModules = []
     const handler = new ModuleHandler()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.enabledModules.push('mod-a')
+    }).toThrow()
 
     const result = await handler.setModuleInfo('mod-a', {
       name: 'Renamed module',

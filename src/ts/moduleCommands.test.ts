@@ -21,6 +21,7 @@ import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGu
 import { DBState, selectedCharID } from './stores.svelte'
 import {
   createGlobalModule,
+  deleteGlobalModule,
   setGlobalModuleEnabled,
   toggledModuleIds,
   toggleSelectedCharacterModule,
@@ -84,7 +85,11 @@ function stubCommandFetch(): CapturedFetch[] {
       if (url === '/api/v1/commands/modules/mod-a') {
         return jsonResponse({
           revision: 11,
-          event: { type: 'module.updated', revision: 11, resource: 'module' },
+          event: {
+            type: init.method === 'DELETE' ? 'module.deleted' : 'module.updated',
+            revision: 11,
+            resource: 'module',
+          },
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -222,11 +227,13 @@ describe('module command projection helpers', () => {
     createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
     await waitForCallCount(calls, 3)
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Module A renamed', description: '' })
+    await waitForCallCount(calls, 4)
+    deleteGlobalModule('mod-a')
 
     expect(DBState.db.enabledModules).toEqual([])
     expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
 
-    await waitForCallCount(calls, 4)
+    await waitForCallCount(calls, 5)
     expect(calls).toEqual([
       {
         url: '/api/v1/bootstrap',
@@ -260,6 +267,14 @@ describe('module command projection helpers', () => {
         body: {
           baseRevision: expect.any(Number),
           patch: { name: 'Module A renamed', description: '' },
+        },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a',
+        method: 'DELETE',
+        authHeader: 'module-command-token',
+        body: {
+          baseRevision: expect.any(Number),
         },
       },
     ])
