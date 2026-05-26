@@ -12,35 +12,29 @@ shapes.
 
 ## Last Done
 
-**9-9a - Server-backed browser smoke harness** is the latest landed slice.
+**9-9b - Generation and memory fixture closeout** is the latest landed slice.
 
-- Added `pnpm smoke:fastify-browser`, backed by
-  `playwright.fastify-smoke.config.ts` and
-  `server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts`.
-- The smoke command builds the SPA with `VITE_FASTIFY_BROWSER_SMOKE=TRUE` and
-  `VITE_RISU_LEGAL_CONFIGURED=TRUE`, then starts Fastify against a temporary
-  no-password data dir and serves the built `dist/` bundle.
-- The browser smoke verifies Fastify static flag injection, startup
-  `/api/v1/bootstrap`, `/api/v1/events` subscription, a representative
-  `PATCH /api/v1/commands/settings/runtime` mutation, and the debounced
-  projection refresh after the command event.
-- Added a smoke-only browser hook in `src/ts/server/browserSmoke.ts` plus a
-  smoke-only no-password auth shortcut in `getNodeServerProxyAuth()`. These are
-  gated by the smoke build flag and are not active in normal builds.
+- Re-ran server-backed `sendChat`, generation persistence, rollback, and Hypa
+  V3 memory fixture coverage with no production code changes required.
+- Confirmed the existing guarded `/chat` fixture path, generation result
+  command coverage, Hypa V3 progress side effects, and memory/generation helper
+  tests remain green.
+- Re-ran the 9-9a browser smoke as the top-level Fastify-served web startup
+  sanity check.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-9b - Generation and memory fixture closeout**.
+Immediate pickup: **9-9c - Server-backed storage-write audit**.
 
-- Re-run and reconcile server-backed sendChat, generation persistence,
-  rollback, and Hypa V3 memory fixture coverage.
-- Start from the fixture families already used by 9-3d, 9-5e-iii, and Phase 8
-  closeout rather than adding new command surfaces.
-- Keep this slice to generation/memory fixture confidence. The full
-  server-backed storage-write audit remains 9-9c.
-- Preserve the 9-9a browser smoke as the top-level web startup sanity check;
-  do not fold fixture-specific assertions into that smoke unless browser-level
-  startup itself regresses.
+- Prove integrated Fastify web paths do not touch localForage, OPFS,
+  AutoStorage, or legacy NodeStorage write paths during server-backed startup,
+  commands, import/export, assets, generation, or memory.
+- Start from the closed 9-6 storage gates and the 9-9a/9-9b verification
+  surfaces; this is an integrated audit, not a new storage abstraction.
+- Keep Tauri/local storage behavior unchanged and keep runtime-only browser
+  caches local when they are not authoritative server database state.
+- Do not add compatibility migrations for intermediate Fastify shapes; there
+  are no actual Fastify users yet.
 
 ## Implementation Notes
 
@@ -77,10 +71,9 @@ Immediate pickup: **9-9b - Generation and memory fixture closeout**.
 
 ## Later Queue
 
-1. 9-9b - Generation and memory fixture closeout.
-2. 9-9c - Server-backed storage-write audit.
-3. 9-9d - Manual Fastify web and Tauri local verification.
-4. 9-9e - Phase 9 docs closeout.
+1. 9-9c - Server-backed storage-write audit.
+2. 9-9d - Manual Fastify web and Tauri local verification.
+3. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -93,14 +86,15 @@ Immediate pickup: **9-9b - Generation and memory fixture closeout**.
 
 ## Verification
 
-For the current 9-9b slice, start with the server-backed generation and memory
-fixtures. Keep the 9-9a browser smoke as the web startup harness, and keep the
-9-8 bundle/export/import baselines available when touching `.risu` or asset
-bundle code:
+For the current 9-9c slice, start with the integrated server-backed
+storage-write surfaces. Keep the 9-9a browser smoke as the web startup harness,
+and keep the 9-9b generation/memory baselines available while auditing
+generation and memory paths:
 
 ```bash
 pnpm smoke:fastify-browser
 pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
+pnpm exec vitest run src/ts/process/__tests__/buildMemoryWindow.test.ts src/ts/process/__tests__/streamResponse.test.ts src/ts/process/__tests__/nonStreamResponse.test.ts src/ts/process/__tests__/stage4Finalize.test.ts src/ts/process/__tests__/sendChatContext.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts
 pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 pnpm check
@@ -116,17 +110,20 @@ pnpm api:test
 pnpm build
 ```
 
-Latest recorded focused baseline, after 9-9a:
+Latest recorded focused baseline, after 9-9b:
 
 - `pnpm smoke:fastify-browser`
   - passed; built the SPA and ran the Playwright browser smoke through Fastify
     startup, bootstrap, events, one runtime settings command, and projection
     refresh. Build emitted existing CSS `::highlight`, browser
-    externalization, plugin-timing, and chunk-size warnings.
-- `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts src/ts/server/events.test.ts src/ts/server/commands.test.ts`
+    externalization, plugin-timing, ineffective dynamic import, and chunk-size
+    warnings.
+- `pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
   - command selected the full client suite: 65 files, 734 tests passed, 4
     skipped.
-- `pnpm api:test -- server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/commands.test.ts`
+- `pnpm exec vitest run src/ts/process/__tests__/buildMemoryWindow.test.ts src/ts/process/__tests__/streamResponse.test.ts src/ts/process/__tests__/nonStreamResponse.test.ts src/ts/process/__tests__/stage4Finalize.test.ts src/ts/process/__tests__/sendChatContext.test.ts`
+  - 5 files and 56 tests passed.
+- `pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/memory.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryReadRoutes.test.ts`
   - command selected the full Fastify API suite: 68 files and 1162 tests
     passed.
 - `pnpm check` - clean.
@@ -150,7 +147,7 @@ Last recorded broader baselines:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-9a.md`](../phases-completed/phase-9-client-thinning-9-9a.md)
+  [`../phases-completed/phase-9-client-thinning-9-9b.md`](../phases-completed/phase-9-client-thinning-9-9b.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

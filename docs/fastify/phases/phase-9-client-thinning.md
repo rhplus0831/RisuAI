@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-9a - Server-backed browser smoke harness**. Next pickup:
-**9-9b - Generation and memory fixture closeout**.
+**9-9b - Generation and memory fixture closeout**. Next pickup:
+**9-9c - Server-backed storage-write audit**.
 
 ## Goal
 
@@ -364,6 +364,8 @@ surfaces.
   - **9-9b - Generation and memory fixture closeout.** Re-run and reconcile
     server-backed sendChat, generation persistence, rollback, and Hypa V3
     memory fixture coverage.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-9b.md`](../phases-completed/phase-9-client-thinning-9-9b.md).
   - **9-9c - Server-backed storage-write audit.** Prove Fastify web mode does
     not touch localForage, OPFS, AutoStorage, or legacy NodeStorage write paths
     during startup, commands, import/export, assets, generation, or memory.

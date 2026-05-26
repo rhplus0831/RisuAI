@@ -107,6 +107,7 @@ track the next piece of work.
 | 9-8c - Asset reference walker           | [`phase-9-client-thinning-9-8c.md`](phase-9-client-thinning-9-8c.md)                   | Pure server asset reference report helper and populated import asset counts.     |
 | 9-8d - Bundle export route              | [`phase-9-client-thinning-9-8d.md`](phase-9-client-thinning-9-8d.md)                   | ZIP bundle export route with `.risu`, manifest, and walked present assets.       |
 | 9-9a - Browser smoke harness            | [`phase-9-client-thinning-9-9a.md`](phase-9-client-thinning-9-9a.md)                   | Playwright Fastify-served browser startup, events, command, and refresh smoke.   |
+| 9-9b - Generation/memory fixtures        | [`phase-9-client-thinning-9-9b.md`](phase-9-client-thinning-9-9b.md)                   | Server-backed sendChat, generation persistence, rollback, and Hypa V3 fixtures.  |
 
 ## Historical Status Logs
 
