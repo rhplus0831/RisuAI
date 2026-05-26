@@ -60,6 +60,15 @@ export async function emitProviderChunks(
         emit({ type: 'token', content })
         continue
       }
+      if (frame.kind === 'error') {
+        emit({
+          type: 'error',
+          error: frame.error ?? 'provider stream failed',
+          restoration: normalizedOptions.errorRestoration?.(),
+        })
+        emit({ type: 'done', ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
+        return { status: 'error', result }
+      }
 
       emitSideEffects()
       emit({ type: 'done', result, ...(normalizedOptions.doneMetadata?.(result) ?? {}) })

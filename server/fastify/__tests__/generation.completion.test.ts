@@ -294,10 +294,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
 
   it('non-streaming propagates upstream error.message as a 200 + type=fail', async () => {
     globalThis.fetch = (async () => {
-      return new Response(
-        JSON.stringify({ error: { message: 'rate limit hit' } }),
-        { status: 429 },
-      )
+      return new Response(JSON.stringify({ error: { message: 'rate limit hit' } }), { status: 429 })
     }) as unknown as typeof globalThis.fetch
 
     const { assertion } = await setupAuthedClient(harness.app)
@@ -345,6 +342,80 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
         `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'lo' })}\n\n` +
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
     )
+  })
+
+  it('streaming emits an error event when upstream returns non-OK', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: { message: 'upstream broke', code: 'boom' } }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...openaiPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: error\ndata: ${JSON.stringify({
+        type: 'provider_error',
+        error: 'upstream broke',
+        status: 500,
+        code: 'boom',
+      })}\n\n`,
+    )
+  })
+
+  it('streaming emits an error event when upstream has no body', async () => {
+    globalThis.fetch = (async () =>
+      new Response(null, { status: 200 })) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...openaiPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe(
+      `event: error\ndata: ${JSON.stringify({
+        type: 'provider_error',
+        error: 'upstream returned no stream body',
+        status: 200,
+      })}\n\n`,
+    )
+  })
+
+  it('streaming emits an error event for invalid upstream stream JSON', async () => {
+    const enc = new TextEncoder()
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode('data: {nope}\n\n'))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...openaiPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('event: error')
+    expect(res.body).toContain('invalid upstream stream JSON')
   })
 })
 
@@ -422,9 +493,7 @@ describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', (
         options: { nanogpt: { apiKey: 'nk-test', useSubscription: true } },
       },
     })
-    expect(capturedUrl).toBe(
-      'https://nano-gpt.com/api/subscription/v1/chat/completions',
-    )
+    expect(capturedUrl).toBe('https://nano-gpt.com/api/subscription/v1/chat/completions')
   })
 
   it('openrouter 400s when options.openrouter.apiKey is missing', async () => {
@@ -1143,9 +1212,7 @@ describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () =>
       return new Response(
         JSON.stringify({
           model: 'gpt-5',
-          output: [
-            { type: 'message', content: [{ type: 'output_text', text: 'resp ok' }] },
-          ],
+          output: [{ type: 'message', content: [{ type: 'output_text', text: 'resp ok' }] }],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       )
@@ -1168,9 +1235,7 @@ describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () =>
     expect(res.json()).toMatchObject({ type: 'success', result: 'resp ok' })
     expect(captured!.url).toBe('https://api.openai.com/v1/responses')
     const sent = JSON.parse(captured!.init.body as string)
-    expect(sent.input).toEqual([
-      { role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
-    ])
+    expect(sent.input).toEqual([{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }])
     expect(sent.max_output_tokens).toBe(128)
   })
 })
@@ -1183,9 +1248,7 @@ describe('Phase 6-25 POST /api/v1/generate/completion (openai-responses addition
       return new Response(
         JSON.stringify({
           model: 'gpt-on-proxy',
-          output: [
-            { type: 'message', content: [{ type: 'output_text', text: 'rp ok' }] },
-          ],
+          output: [{ type: 'message', content: [{ type: 'output_text', text: 'rp ok' }] }],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       )
@@ -1570,9 +1633,7 @@ describe('Phase 6-21 POST /api/v1/generate/completion (bedrock)', () => {
       'https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke',
     )
     const headers = captured!.init.headers as Record<string, string>
-    expect(headers['Authorization']).toContain(
-      'AWS4-HMAC-SHA256 Credential=AKIA/',
-    )
+    expect(headers['Authorization']).toContain('AWS4-HMAC-SHA256 Credential=AKIA/')
     expect(headers['Authorization']).toContain('us-east-1/bedrock/aws4_request')
     expect(headers['x-amz-date']).toMatch(/^\d{8}T\d{6}Z$/)
     const body = JSON.parse(captured!.init.body as string)
@@ -1613,9 +1674,7 @@ describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     })
-    const { _resetVertexTokenCacheForTesting } = await import(
-      '../src/generation/vertexAuth.js'
-    )
+    const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
     _resetVertexTokenCacheForTesting()
 
     const calls: Array<{ url: string; init: RequestInit }> = []
@@ -1630,9 +1689,7 @@ describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
       return new Response(
         JSON.stringify({
           modelVersion: 'gemini-2.5-pro',
-          candidates: [
-            { content: { parts: [{ text: 'vertex route ok' }] }, finishReason: 'STOP' },
-          ],
+          candidates: [{ content: { parts: [{ text: 'vertex route ok' }] }, finishReason: 'STOP' }],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       )
@@ -1839,14 +1896,10 @@ describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(
-            enc.encode(
-              `${JSON.stringify({ message: { content: 'hi' }, done: false })}\n`,
-            ),
+            enc.encode(`${JSON.stringify({ message: { content: 'hi' }, done: false })}\n`),
           )
           controller.enqueue(
-            enc.encode(
-              `${JSON.stringify({ message: { content: ' there' }, done: false })}\n`,
-            ),
+            enc.encode(`${JSON.stringify({ message: { content: ' there' }, done: false })}\n`),
           )
           controller.enqueue(
             enc.encode(
@@ -1878,4 +1931,3 @@ describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
     )
   })
 })
-

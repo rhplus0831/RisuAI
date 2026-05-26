@@ -1,8 +1,8 @@
 # Phase 6 Follow-Up - Server-Side Generation
 
-Date: 2026-05-26
+Date: 2026-05-27
 
-Status: reopened by audit.
+Status: reopened by audit. Slice 6A landed; continue with 6B.
 
 ## Goal
 
@@ -21,23 +21,23 @@ no useful error.
 
 ## Tasks
 
-- Extend the streaming frame contract with a typed provider error frame,
-  or fail before writing the SSE headers when the upstream failure is
-  known synchronously.
-- Update OpenAI-compatible streaming so non-OK and bodyless upstream
-  responses surface the upstream status/message.
-- Audit other streaming providers for the same silent-return pattern and
-  align them with the chosen error semantics.
-- Add focused tests for upstream 500, upstream invalid stream body, and
-  missing upstream body.
+- [x] Extend the streaming frame contract with a typed provider error frame,
+      or fail before writing the SSE headers when the upstream failure is
+      known synchronously.
+- [x] Update OpenAI-compatible streaming so non-OK and bodyless upstream
+      responses surface the upstream status/message.
+- [ ] Audit other streaming providers for the same silent-return pattern and
+      align them with the chosen error semantics.
+- [ ] Add focused tests for upstream 500, upstream invalid stream body,
+      and missing upstream body for the remaining streaming providers.
 
 ## Session Slices
 
-- 6A - Stream error contract and OpenAI-compatible path. Add the typed
+- 6A - Landed. Stream error contract and OpenAI-compatible path. Added the typed
   provider error frame or pre-header failure path, serialize it in
   `/api/v1/generate/completion`, and update OpenAI stream handling for
   upstream non-OK, invalid stream body, and missing body cases.
-- 6B - Anthropic, Mistral, and Gemini stream failures. Apply the chosen
+- 6B - Next. Anthropic, Mistral, and Gemini stream failures. Apply the chosen
   6A semantics to these SSE-style stream providers and add provider or
   route tests that prove they cannot finish as empty success streams.
 - 6C - Ollama and final stream audit. Apply the chosen semantics to the

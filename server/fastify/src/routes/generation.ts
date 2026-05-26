@@ -5,11 +5,7 @@ import {
   runAnthropic,
   runAnthropicStream,
 } from '../generation/anthropic.js'
-import {
-  resolveEchoRequest,
-  runEcho,
-  runEchoStream,
-} from '../generation/echo.js'
+import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import {
   coerceBedrockCredentials,
@@ -18,16 +14,8 @@ import {
 } from '../generation/bedrock.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
-import {
-  resolveGeminiRequest,
-  runGemini,
-  runGeminiStream,
-} from '../generation/gemini.js'
-import {
-  resolveMistralRequest,
-  runMistral,
-  runMistralStream,
-} from '../generation/mistral.js'
+import { resolveGeminiRequest, runGemini, runGeminiStream } from '../generation/gemini.js'
+import { resolveMistralRequest, runMistral, runMistralStream } from '../generation/mistral.js'
 import { coerceAdditionalParams } from '../generation/additionalParams.js'
 import type {
   NanoGPTOptions,
@@ -37,25 +25,14 @@ import type {
   OpenRouterOptions,
 } from '../generation/openaiCompatible.js'
 import { resolveOpenAICompatibleVariant } from '../generation/openaiCompatible.js'
-import {
-  resolveOpenAIRequest,
-  runOpenAI,
-  runOpenAIStream,
-} from '../generation/openai.js'
+import { resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../generation/openai.js'
 import {
   resolveOpenAILegacyInstructRequest,
   runOpenAILegacyInstruct,
 } from '../generation/openaiLegacyInstruct.js'
-import {
-  resolveOpenAIResponsesRequest,
-  runOpenAIResponses,
-} from '../generation/openaiResponses.js'
+import { resolveOpenAIResponsesRequest, runOpenAIResponses } from '../generation/openaiResponses.js'
 import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
-import {
-  resolveOllamaRequest,
-  runOllama,
-  runOllamaStream,
-} from '../generation/ollama.js'
+import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
 import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import { requireAuth } from '../http.js'
 
@@ -258,10 +235,7 @@ interface VertexAuthCoerced {
  */
 function coerceVertexAuth(
   raw: unknown,
-):
-  | null
-  | { ok: true; value: VertexAuthCoerced }
-  | { ok: false; error: string } {
+): null | { ok: true; value: VertexAuthCoerced } | { ok: false; error: string } {
   if (raw === undefined || raw === null) return null
   if (typeof raw !== 'object') {
     return { ok: false, error: 'options.gemini.vertex must be an object' }
@@ -309,11 +283,18 @@ function badRequest(reply: FastifyReply, error: string): void {
 }
 
 function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void {
-  const event = frame.kind === 'done' ? 'done' : 'chunk'
+  const event = frame.kind === 'done' ? 'done' : frame.kind === 'error' ? 'error' : 'chunk'
   const data =
     frame.kind === 'done'
       ? JSON.stringify({ finishReason: frame.finishReason ?? 'stop' })
-      : JSON.stringify({ type: 'token', content: frame.content ?? '' })
+      : frame.kind === 'error'
+        ? JSON.stringify({
+            type: 'provider_error',
+            error: frame.error ?? 'provider stream failed',
+            status: frame.status,
+            code: frame.code,
+          })
+        : JSON.stringify({ type: 'token', content: frame.content ?? '' })
   reply.raw.write(`event: ${event}\ndata: ${data}\n\n`)
 }
 
@@ -1143,10 +1124,7 @@ async function handleOpenAICompatibleBuffered(
   }
 }
 
-export function registerGenerationRoutes(
-  app: FastifyInstance,
-  authState: AuthState,
-): void {
+export function registerGenerationRoutes(app: FastifyInstance, authState: AuthState): void {
   app.post('/api/v1/generate/completion', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -1251,8 +1229,7 @@ export function registerGenerationRoutes(
         // The local browser path doesn't stream the legacy /v1/completions
         // endpoint either. Defer until justified by a fixture.
         reply.code(400).send({
-          error:
-            'openai-legacy-instruct streaming is not yet supported; set stream: false',
+          error: 'openai-legacy-instruct streaming is not yet supported; set stream: false',
         })
         return
       }

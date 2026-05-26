@@ -49,9 +49,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
   const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0
-      ? input.baseUrl
-      : DEFAULT_BASE_URL
+    typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
@@ -131,7 +129,10 @@ function buildHeaders(req: OpenAIRequest): Record<string, string> {
  * Build the outgoing body + headers and apply the additionalParams DSL.
  * Centralizes the order: defaults first, extraHeaders second, user DSL last.
  */
-function buildRequestInit(req: OpenAIRequest, stream: boolean): {
+function buildRequestInit(
+  req: OpenAIRequest,
+  stream: boolean,
+): {
   body: string
   headers: Record<string, string>
 } {
@@ -186,9 +187,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
 
   if (!response.ok) {
     const upstreamMsg =
-      typeof body.error?.message === 'string'
-        ? body.error.message
-        : `HTTP ${response.status}`
+      typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
     return { type: 'fail', result: upstreamMsg }
   }
 
@@ -216,6 +215,10 @@ interface OpenAIStreamFrame {
   choices?: OpenAIStreamChoice[]
 }
 
+interface OpenAIErrorResponse {
+  error?: { message?: unknown; code?: unknown }
+}
+
 function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   if (typeof raw !== 'string' || raw.length === 0) return 'stop'
   return raw
@@ -235,6 +238,30 @@ export function parseOpenAIStyleSseData(block: string): string | null {
   return data.length > 0 ? data : null
 }
 
+async function readOpenAIStreamError(response: Response): Promise<CompletionStreamFrame> {
+  let error = `HTTP ${response.status}`
+  let code: string | undefined
+  try {
+    const text = await response.text()
+    if (text.length > 0) {
+      try {
+        const parsed = JSON.parse(text) as OpenAIErrorResponse
+        if (typeof parsed.error?.message === 'string' && parsed.error.message.length > 0) {
+          error = parsed.error.message
+        }
+        if (typeof parsed.error?.code === 'string' && parsed.error.code.length > 0) {
+          code = parsed.error.code
+        }
+      } catch {
+        error = text
+      }
+    }
+  } catch {
+    // Keep the HTTP status fallback.
+  }
+  return { kind: 'error', error, status: response.status, code }
+}
+
 export async function* runOpenAIStream(
   req: OpenAIRequest,
 ): AsyncGenerator<CompletionStreamFrame, void, void> {
@@ -249,11 +276,20 @@ export async function* runOpenAIStream(
       body: init.body,
       signal: req.signal,
     })
-  } catch {
+  } catch (err) {
+    if (req.signal.aborted) return
+    const msg = err instanceof Error ? err.message : String(err)
+    yield { kind: 'error', error: `upstream fetch failed: ${msg}`, code: 'fetch_failed' }
     return
   }
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
+    yield await readOpenAIStreamError(response)
+    return
+  }
+
+  if (!response.body) {
+    yield { kind: 'error', error: 'upstream returned no stream body', status: response.status }
     return
   }
 
@@ -265,7 +301,16 @@ export async function* runOpenAIStream(
   try {
     while (true) {
       if (req.signal.aborted) return
-      const { value, done } = await reader.read()
+      let readResult: ReadableStreamReadResult<Uint8Array>
+      try {
+        readResult = await reader.read()
+      } catch (err) {
+        if (req.signal.aborted) return
+        const msg = err instanceof Error ? err.message : String(err)
+        yield { kind: 'error', error: `upstream stream read failed: ${msg}` }
+        return
+      }
+      const { value, done } = readResult
       if (done) break
       buf += decoder.decode(value, { stream: true })
 
@@ -283,8 +328,10 @@ export async function* runOpenAIStream(
         let frame: OpenAIStreamFrame
         try {
           frame = JSON.parse(data) as OpenAIStreamFrame
-        } catch {
-          continue
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
+          return
         }
         const choice = Array.isArray(frame.choices) ? frame.choices[0] : undefined
         const delta = choice?.delta?.content

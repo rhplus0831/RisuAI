@@ -2414,19 +2414,17 @@ describe('requestServerCompletion - non-streaming', () => {
     let captured: { url: string; init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
       captured = { url, init }
-      return new Response(
-        JSON.stringify({ type: 'success', result: 'pong' }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
+      return new Response(JSON.stringify({ type: 'success', result: 'pong' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
     })
 
     const r = await requestServerCompletion(makeTarg(), 'echo', null)
     expect(r).toEqual({ type: 'success', result: 'pong' })
 
     expect(captured!.url).toBe('/api/v1/generate/completion')
-    expect((captured!.init.headers as Record<string, string>)['risu-auth']).toBe(
-      'test-auth-token',
-    )
+    expect((captured!.init.headers as Record<string, string>)['risu-auth']).toBe('test-auth-token')
     expect((captured!.init.headers as Record<string, string>)['content-type']).toBe(
       'application/json',
     )
@@ -2461,10 +2459,9 @@ describe('requestServerCompletion - non-streaming', () => {
 
   it('returns fail when the server returns {type: "fail"}', async () => {
     vi.stubGlobal('fetch', async () => {
-      return new Response(
-        JSON.stringify({ type: 'fail', result: 'upstream broke' }),
-        { status: 200 },
-      )
+      return new Response(JSON.stringify({ type: 'fail', result: 'upstream broke' }), {
+        status: 200,
+      })
     })
     const r = await requestServerCompletion(makeTarg(), 'echo', null)
     expect(r).toEqual({ type: 'fail', result: 'upstream broke' })
@@ -2542,11 +2539,7 @@ describe('requestServerCompletion - streaming', () => {
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
       ])
     })
-    const r = await requestServerCompletion(
-      makeTarg({ useStreaming: true }),
-      'echo',
-      null,
-    )
+    const r = await requestServerCompletion(makeTarg({ useStreaming: true }), 'echo', null)
     expect(r).toEqual({ type: 'success', result: 'hello' })
   })
 
@@ -2558,11 +2551,7 @@ describe('requestServerCompletion - streaming', () => {
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
       ])
     })
-    const r = await requestServerCompletion(
-      makeTarg({ useStreaming: true }),
-      'echo',
-      null,
-    )
+    const r = await requestServerCompletion(makeTarg({ useStreaming: true }), 'echo', null)
     expect(r).toEqual({ type: 'success', result: 'foo bar' })
   })
 
@@ -2574,11 +2563,7 @@ describe('requestServerCompletion - streaming', () => {
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
       ])
     })
-    const r = await requestServerCompletion(
-      makeTarg({ useStreaming: true }),
-      'echo',
-      null,
-    )
+    const r = await requestServerCompletion(makeTarg({ useStreaming: true }), 'echo', null)
     expect(r).toEqual({ type: 'success', result: 'foobar' })
   })
 
@@ -2611,23 +2596,26 @@ describe('requestServerCompletion - streaming', () => {
       })
     })
 
-    const r = await requestServerCompletion(
-      makeTarg({ useStreaming: true }),
-      'echo',
-      c.signal,
-    )
+    const r = await requestServerCompletion(makeTarg({ useStreaming: true }), 'echo', c.signal)
     expect(r).toEqual({ type: 'fail', result: 'Aborted' })
+  })
+
+  it('returns fail when the stream emits a provider error event', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return makeSseResponse([
+        `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'partial' })}\n\n`,
+        `event: error\ndata: ${JSON.stringify({ type: 'provider_error', error: 'upstream broke' })}\n\n`,
+      ])
+    })
+    const r = await requestServerCompletion(makeTarg({ useStreaming: true }), 'echo', null)
+    expect(r).toEqual({ type: 'fail', result: 'upstream broke' })
   })
 
   it('returns fail when streaming response has no body', async () => {
     vi.stubGlobal('fetch', async () => {
       return new Response(null, { status: 200 })
     })
-    const r = await requestServerCompletion(
-      makeTarg({ useStreaming: true }),
-      'echo',
-      null,
-    )
+    const r = await requestServerCompletion(makeTarg({ useStreaming: true }), 'echo', null)
     expect(r).toEqual({ type: 'fail', result: 'No streaming body returned' })
   })
 })

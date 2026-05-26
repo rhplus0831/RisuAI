@@ -203,7 +203,10 @@ function resolveReverseProxyAnthropicUrl(rawUrl: string, autofill: boolean): str
  * in `src/ts/process/request/openAI/requests.ts:596-614` plus the `risu::`
  * prefix → `X-Proxy-Risu` header handoff.
  */
-function resolveReverseProxyUrl(rawUrl: string, autofill: boolean): {
+function resolveReverseProxyUrl(
+  rawUrl: string,
+  autofill: boolean,
+): {
   baseUrl: string
   risuIdentify: boolean
 } {
@@ -516,18 +519,13 @@ function isVanillaLegacyInstruct(targ: RequestDataArgumentExtended): boolean {
   }
   // NanoGPTLegacy carries a fixed-format model id; it's still server-routable.
   // OpenAILegacyInstruct with a modelInfo.endpoint override is deferred.
-  if (
-    targ.modelInfo?.endpoint &&
-    targ.modelInfo?.format !== LLMFormat.NanoGPTLegacy
-  ) {
+  if (targ.modelInfo?.endpoint && targ.modelInfo?.format !== LLMFormat.NanoGPTLegacy) {
     return false
   }
   return true
 }
 
-export function getServerCompletionProvider(
-  targ: RequestDataArgumentExtended,
-): string | null {
+export function getServerCompletionProvider(targ: RequestDataArgumentExtended): string | null {
   if (!isFastifyServer) return null
   const db = getDatabase()
   if (db.useServerGeneration !== true) return null
@@ -582,10 +580,7 @@ function isOllamaCloud(targ: RequestDataArgumentExtended): boolean {
   return targ.aiModel === 'ollama-cloud'
 }
 
-export function resolveProviderModel(
-  targ: RequestDataArgumentExtended,
-  provider: string,
-): string {
+export function resolveProviderModel(targ: RequestDataArgumentExtended, provider: string): string {
   const db = getDatabase()
   if (isOllamaCloud(targ)) {
     return db.ollamaCloudModel ?? ''
@@ -649,9 +644,10 @@ export function resolveProviderModel(
  * return both pieces. Multimodal-content system messages are skipped (not
  * yet supported on the server-routed path).
  */
-export function extractAnthropicSystem(
-  formated: Array<{ role: string; content: unknown }>,
-): { messages: typeof formated; system?: string } {
+export function extractAnthropicSystem(formated: Array<{ role: string; content: unknown }>): {
+  messages: typeof formated
+  system?: string
+} {
   const systemTexts: string[] = []
   const messages: typeof formated = []
   for (const m of formated) {
@@ -821,9 +817,7 @@ function buildProviderOptions(
         // xcustom URL is stored as the full /v1/chat URL; strip the trailing
         // /chat so the server can re-append it.
         const trimmed = entry.url.replace(/\/+$/, '')
-        cohere.baseUrl = trimmed.endsWith('/chat')
-          ? trimmed.slice(0, -'/chat'.length)
-          : trimmed
+        cohere.baseUrl = trimmed.endsWith('/chat') ? trimmed.slice(0, -'/chat'.length) : trimmed
         const params = parseXcustomParams(entry.params)
         if (params.length > 0) cohere.additionalParams = params
       }
@@ -1044,6 +1038,20 @@ async function readSseStream(
         if (evt.event === 'done') {
           finished = true
           break
+        }
+        if (evt.event === 'error') {
+          let reason = 'provider stream failed'
+          try {
+            const payload = JSON.parse(evt.data) as { error?: unknown; message?: unknown }
+            if (typeof payload.error === 'string' && payload.error.length > 0) {
+              reason = payload.error
+            } else if (typeof payload.message === 'string' && payload.message.length > 0) {
+              reason = payload.message
+            }
+          } catch {
+            if (evt.data.length > 0) reason = evt.data
+          }
+          return { type: 'fail', result: reason }
         }
         if (evt.event === 'chunk') {
           try {

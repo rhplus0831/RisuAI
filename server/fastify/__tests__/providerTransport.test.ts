@@ -63,6 +63,25 @@ describe('emitProviderChunks', () => {
     expect(result).toEqual({ status: 'error', result: 'partial' })
   })
 
+  it('maps provider error frames to error then done', async () => {
+    const events: PromptChatEvent[] = []
+
+    const result = await emitProviderChunks(
+      frames([
+        { kind: 'token', content: 'partial' },
+        { kind: 'error', error: 'upstream refused', status: 500 },
+      ]),
+      (event) => events.push(event),
+    )
+
+    expect(events).toEqual([
+      { type: 'token', content: 'partial' },
+      { type: 'error', error: 'upstream refused' },
+      { type: 'done' },
+    ])
+    expect(result).toEqual({ status: 'error', result: 'partial' })
+  })
+
   it('does not emit after the request signal is already aborted', async () => {
     const controller = new AbortController()
     controller.abort()

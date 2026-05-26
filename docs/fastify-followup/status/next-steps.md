@@ -17,9 +17,10 @@ and add any longer closeout note under `../phases-completed/`.
 
 1. Phase 6 streaming errors should land before broad generation
    closeout.
-   - 6A: streaming error frame contract plus OpenAI-compatible failure
-     handling. Pick this next.
-   - 6B: Anthropic, Mistral, and Gemini stream failure alignment.
+   - 6A: landed streaming error frame contract plus OpenAI-compatible
+     failure handling.
+   - 6B: Anthropic, Mistral, and Gemini stream failure alignment. Pick
+     this next.
    - 6C: Ollama stream failure alignment and final provider audit.
 
 2. Phase 0 and Phase 3 are small independent cleanup slices.

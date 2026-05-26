@@ -334,9 +334,7 @@ function sseUpstream(chunks: string[]): Response {
 
 function tokenFrame(content: string, finish?: string): string {
   const frame = {
-    choices: [
-      finish ? { delta: { content }, finish_reason: finish } : { delta: { content } },
-    ],
+    choices: [finish ? { delta: { content }, finish_reason: finish } : { delta: { content } }],
   }
   return `data: ${JSON.stringify(frame)}\n\n`
 }
@@ -344,11 +342,7 @@ function tokenFrame(content: string, finish?: string): string {
 describe('runOpenAIStream', () => {
   it('translates upstream deltas into our token frames + a trailing done', async () => {
     vi.stubGlobal('fetch', async () => {
-      return sseUpstream([
-        tokenFrame('hello'),
-        tokenFrame(' world'),
-        `data: [DONE]\n\n`,
-      ])
+      return sseUpstream([tokenFrame('hello'), tokenFrame(' world'), `data: [DONE]\n\n`])
     })
     const frames: unknown[] = []
     for await (const f of runOpenAIStream({
@@ -425,11 +419,7 @@ describe('runOpenAIStream', () => {
   it('handles a partial frame split across reader chunks', async () => {
     vi.stubGlobal('fetch', async () => {
       const half = tokenFrame('chunky')
-      return sseUpstream([
-        half.slice(0, 10),
-        half.slice(10),
-        `data: [DONE]\n\n`,
-      ])
+      return sseUpstream([half.slice(0, 10), half.slice(10), `data: [DONE]\n\n`])
     })
     const frames: unknown[] = []
     for await (const f of runOpenAIStream({
@@ -445,5 +435,66 @@ describe('runOpenAIStream', () => {
       { kind: 'token', content: 'chunky' },
       { kind: 'done', finishReason: 'stop' },
     ])
+  })
+
+  it('surfaces upstream non-OK responses as error frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return new Response(
+        JSON.stringify({ error: { message: 'rate limited', code: 'rate_limit' } }),
+        {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        },
+      )
+    })
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'error', error: 'rate limited', status: 500, code: 'rate_limit' },
+    ])
+  })
+
+  it('surfaces a missing upstream stream body as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
+    ])
+  })
+
+  it('surfaces invalid upstream stream JSON as an error frame', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream(['data: {nope}\n\n']))
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toHaveLength(1)
+    expect(frames[0]).toMatchObject({
+      kind: 'error',
+      error: expect.stringContaining('invalid upstream stream JSON'),
+    })
   })
 })
