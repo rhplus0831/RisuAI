@@ -1,12 +1,13 @@
 import { BaseDirectory, readFile, readDir, writeFile } from '@tauri-apps/plugin-fs'
 import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from '../alert'
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from '../globalApi.svelte'
-import { isTauri } from 'src/ts/platform'
+import { isFastifyServer, isTauri } from 'src/ts/platform'
 import { decodeRisuSave, encodeRisuSaveLegacy } from './risuSave'
 import { getDatabase, setDatabaseLite } from './database.svelte'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { sleep } from '../util'
 import { language } from 'src/lang'
+import { createServerBackup } from '../server/backups'
 import {
   getColdStorageItem,
   listColdDataKeys,
@@ -14,6 +15,17 @@ import {
 } from '../process/coldstorage.svelte'
 
 export async function SaveLocalBackup() {
+  if (isFastifyServer) {
+    alertWait('Saving server backup...')
+    const result = await createServerBackup({ label: 'Manual backup' })
+    if (result.status === 'ok') {
+      alertNormal('Server backup saved')
+    } else if (result.status === 'error') {
+      alertError(result.error)
+    }
+    return
+  }
+
   alertWait('Saving local backup...')
   const writer = new LocalWriter()
   const r = await writer.init()
@@ -171,6 +183,11 @@ export async function SaveLocalBackup() {
  * - Ideal for backing up core visual identity without bulk data
  */
 export async function SavePartialLocalBackup() {
+  if (isFastifyServer) {
+    alertError('Partial local backup is not supported in server-backed web mode yet')
+    return
+  }
+
   const firstConfirm = await alertConfirm(language.partialBackupFirstConfirm)
 
   if (!firstConfirm) {
@@ -339,6 +356,11 @@ export async function SavePartialLocalBackup() {
 }
 
 export function LoadLocalBackup() {
+  if (isFastifyServer) {
+    alertError('Local backup file restore is not supported in server-backed web mode yet')
+    return
+  }
+
   try {
     const input = document.createElement('input')
     input.type = 'file'

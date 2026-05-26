@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import { buildApp } from '../src/app.js'
+import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
@@ -11,11 +12,13 @@ const subtle = webcrypto.subtle
 interface Harness {
   app: FastifyInstance
   dataDir: string
+  commandEvents: CommandEventSink
 }
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
+  const commandEvents = createCommandEventSink()
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -25,8 +28,9 @@ async function startHarness(): Promise<Harness> {
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
+    commandEvents,
   })
-  return { app, dataDir }
+  return { app, dataDir, commandEvents }
 }
 
 async function stopHarness(h: Harness): Promise<void> {
@@ -244,6 +248,16 @@ describe('Phase 2D backups', () => {
     })
     expect(restored.statusCode).toBe(200)
     const revisionAfter = restored.json().revision
+    expect(restored.json().event).toEqual({
+      type: 'state.restored',
+      resource: 'state',
+      revision: revisionAfter,
+    })
+    expect(harness.commandEvents.list()).toContainEqual({
+      type: 'state.restored',
+      resource: 'state',
+      revision: revisionAfter,
+    })
 
     const afterRestore = await harness.app.inject({
       method: 'GET',

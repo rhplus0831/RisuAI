@@ -293,6 +293,8 @@ surfaces.
   - **9-6c - Server backup/restore projection.** Route server-backed backup UI
     and helper paths through `/api/v1/backups`, block local backup/restore in
     Fastify mode, and emit/handle restore invalidation.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-6c.md`](../phases-completed/phase-9-client-thinning-9-6c.md).
   - **9-6d - Residual local cache classification.** Classify remaining
     localForage/cache helpers, including `.risu` cache/remotes, MCP helper
     storage, search credentials, cold-storage, and memory leftovers, as

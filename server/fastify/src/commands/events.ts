@@ -298,6 +298,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'pluginStorage.bulkUpdated',
     resource: 'pluginStorage',
   },
+  stateRestored: {
+    type: 'state.restored',
+    resource: 'state',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

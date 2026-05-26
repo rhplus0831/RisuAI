@@ -12,6 +12,8 @@ docs.
   are deleted.
 - Auth, health, storage, asset, backup, proxy, hub passthrough,
   stream-job, and crypto routes are on Fastify.
+- Backup restore emits a `state.restored` command-event payload after the
+  repository revision bump so server-backed browsers re-fetch bootstrap.
 - `POST /api/v1/generate/completion` owns the Phase 6 provider dispatch
   surface and normalized SSE envelope.
 - `POST /api/v1/generate/chat` owns Phase 7 prompt assembly SSE events.
@@ -45,7 +47,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-current pickup is 9-5d-i, the settings residual command sweep in
+current pickup is 9-6d, residual local cache classification in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

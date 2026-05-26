@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
+import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { requireAuth } from '../http.js'
 import {
   EntityNotFoundError,
@@ -19,6 +20,7 @@ export function registerBackupRoutes(
   db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
+  eventSink: CommandEventSink,
 ): void {
   app.post('/api/v1/backups', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -41,22 +43,21 @@ export function registerBackupRoutes(
     return { backups: listBackups(dataDir) }
   })
 
-  app.post<{ Params: { id: string } }>(
-    '/api/v1/backups/:id/restore',
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      try {
-        const { revision } = restoreBackup(db, dataDir, req.params.id)
-        return { revision }
-      } catch (err) {
-        if (err instanceof EntityNotFoundError) {
-          reply.code(404)
-          return { error: err.message }
-        }
-        throw err
+  app.post<{ Params: { id: string } }>('/api/v1/backups/:id/restore', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const { revision } = restoreBackup(db, dataDir, req.params.id)
+      const event = { ...COMMAND_EVENT_CATALOG.stateRestored, revision }
+      eventSink.emit(event)
+      return { revision, event }
+    } catch (err) {
+      if (err instanceof EntityNotFoundError) {
+        reply.code(404)
+        return { error: err.message }
       }
-    },
-  )
+      throw err
+    }
+  })
 
   app.delete<{ Params: { id: string } }>('/api/v1/backups/:id', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return

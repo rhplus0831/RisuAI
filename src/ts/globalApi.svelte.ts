@@ -83,6 +83,7 @@ import {
 import { getNodeServerProxyAuth } from './storage/nodeStorage'
 import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
 import { readServerAssetBytes, serverAssetUrl } from './server/assets'
+import { listServerBackups, restoreServerBackup } from './server/backups'
 
 export const forageStorage = new AutoStorage()
 
@@ -2168,6 +2169,38 @@ export class BlankWriter {
 }
 
 export async function loadInternalBackup() {
+  if (isFastifyServer) {
+    const list = await listServerBackups()
+    if (list.status === 'unavailable') return
+    if (list.status === 'error') {
+      alertError(list.error)
+      return
+    }
+    if (list.backups.length === 0) {
+      alertNormal('No server backups found')
+      return
+    }
+
+    const selectOptions = [
+      'Cancel',
+      ...list.backups.map((backup) => {
+        const label = backup.label ? `${backup.label} - ` : ''
+        return `${label}${new Date(backup.createdAt).toLocaleString()}`
+      }),
+    ]
+    const alertResult = parseInt(await alertSelect(selectOptions)) - 1
+    if (alertResult === -1) return
+
+    const selectedBackup = list.backups[alertResult]
+    const restored = await restoreServerBackup({ id: selectedBackup.id })
+    if (restored.status === 'ok') {
+      alertNormal('Loaded server backup')
+    } else if (restored.status === 'error') {
+      alertError(restored.error)
+    }
+    return
+  }
+
   const keys = isTauri
     ? (await readDir('database', { baseDir: BaseDirectory.AppData })).map((v) => {
         return v.name

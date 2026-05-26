@@ -15,15 +15,15 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-6b asset byte gate. Fastify-mode `loadAsset()` now
-  reads server asset bytes through `/api/v1/assets/:id`, sharing the same
-  server-backed byte reader as `readImage()` before local storage branches.
-- Current gap: server-backed backup and restore helper/UI paths still need
-  to route through the Fastify backup API instead of local backup storage.
-- Next default pickup: 9-6c, server backup/restore projection.
-- Last recorded full baselines after the 9-5d first pass: `pnpm check`
-  clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
-  tests, and `pnpm build` passing with existing CSS `::highlight`,
+- Last landed work: 9-6c server backup/restore projection. Fastify-mode
+  backup UI/helper paths now use `/api/v1/backups`; local backup file and
+  partial-backup paths are gated before local storage access.
+- Current gap: remaining local cache/storage helpers need classification
+  before provider secret masking can safely land.
+- Next default pickup: 9-6d, residual local cache classification.
+- Last recorded focused baselines after 9-6c: `pnpm check` clean,
+  client test command 730 tests plus 4 skipped, and `pnpm api:test`
+  1119 tests. Last full `pnpm build` baseline still passes with existing CSS `::highlight`,
   browser externalization, plugin-timing, and chunk-size warnings.
 
 ## Start Here
@@ -44,14 +44,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                   |
-| ------------------------------------------- | ----------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                     |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                              |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-6b landed; continue with 9-6c backup/restore projection.      |
+| Workstream                                  | State                                                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                          |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                             |
+| Client thinning                             | Active; 9-6c landed; continue with 9-6d residual local cache classification. |
 
 ## Maintenance Rules
 
