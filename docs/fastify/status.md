@@ -15,18 +15,19 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-8d bundle export route. The server now has
-  `GET /api/v1/export/bundle`, which packages the repository `.risu` export,
-  `manifest.json`, and only walked referenced asset files that exist in
-  repository metadata and on disk. Missing references, missing files, and
-  orphaned stored assets are reported in the manifest.
-- Current gap: Phase 9 needs the final server-backed fixture and storage-write
-  closeout sweep before docs closeout.
-- Next default pickup: 9-9a, server-backed browser smoke harness.
-- Last recorded focused baselines after 9-8d: focused Fastify
-  `risuSaveAssetReferences.test.ts` plus `risuSaveCodec.test.ts` passed with
-  23 tests, the Fastify API suite passed with 68 files and 1162 tests, and
-  `pnpm check` was clean.
+- Last landed work: 9-9a server-backed browser smoke harness. The repo now has
+  `pnpm smoke:fastify-browser`, which builds the SPA with smoke-only flags,
+  serves it from Fastify, verifies browser bootstrap and command-event
+  subscription, runs a representative runtime settings command, and observes
+  the SSE-triggered projection refresh.
+- Current gap: Phase 9 still needs generation/memory fixture closeout and the
+  final storage-write audit before manual verification and docs closeout.
+- Next default pickup: 9-9b, generation and memory fixture closeout.
+- Last recorded focused baselines after 9-9a: `pnpm smoke:fastify-browser`
+  passed, the focused client command/bootstrap/events test command selected 65
+  files and 734 passing tests with 4 skipped, and the focused Fastify
+  bootstrap/commands command selected the full API suite with 68 files and 1162
+  tests. `pnpm check` was clean.
   Broader baselines remain: 9-6c for full client/API test commands and
   9-5d for the last full `pnpm build`.
 
@@ -55,7 +56,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-8d landed; continue with 9-9a browser smoke harness.          |
+| Client thinning                             | Active; 9-9a landed; continue with 9-9b generation/memory fixture closeout. |
 
 ## Maintenance Rules
 

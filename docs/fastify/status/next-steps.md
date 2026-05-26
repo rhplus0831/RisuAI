@@ -12,32 +12,35 @@ shapes.
 
 ## Last Done
 
-**9-8d - Bundle export route** is the latest landed slice.
+**9-9a - Server-backed browser smoke harness** is the latest landed slice.
 
-- Added `server/fastify/src/risuSave/bundleExport.ts` and auth-gated
-  `GET /api/v1/export/bundle`.
-- The bundle route reuses the 9-8b repository `.risu` export query semantics
-  and the 9-8c asset walker.
-- ZIP contents are `database.risu`, `manifest.json`, and only referenced
-  asset files that exist in repository metadata and on disk.
-- The manifest reports compact asset counts, included assets, missing
-  references, metadata-present files missing from disk, and orphaned stored
-  assets. Orphaned assets are reported but not bundled.
-- No browser cache, localForage, Tauri remote, OPFS, AutoStorage, or Svelte
-  database state path was added.
+- Added `pnpm smoke:fastify-browser`, backed by
+  `playwright.fastify-smoke.config.ts` and
+  `server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts`.
+- The smoke command builds the SPA with `VITE_FASTIFY_BROWSER_SMOKE=TRUE` and
+  `VITE_RISU_LEGAL_CONFIGURED=TRUE`, then starts Fastify against a temporary
+  no-password data dir and serves the built `dist/` bundle.
+- The browser smoke verifies Fastify static flag injection, startup
+  `/api/v1/bootstrap`, `/api/v1/events` subscription, a representative
+  `PATCH /api/v1/commands/settings/runtime` mutation, and the debounced
+  projection refresh after the command event.
+- Added a smoke-only browser hook in `src/ts/server/browserSmoke.ts` plus a
+  smoke-only no-password auth shortcut in `getNodeServerProxyAuth()`. These are
+  gated by the smoke build flag and are not active in normal builds.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-9a - Server-backed browser smoke harness**.
+Immediate pickup: **9-9b - Generation and memory fixture closeout**.
 
-- Add or document a repeatable browser-level smoke path for Fastify-served web
-  startup.
-- Cover bootstrap projection load, command-event subscription/re-bootstrap,
-  and one representative command mutation through the server-backed web path.
-- Keep the harness focused on server-backed web behavior. Tauri local storage
-  remains local and should not be pulled into this smoke path.
-- Do not broaden this slice into the generation/memory fixture closeout or the
-  full storage-write audit; those remain 9-9b and 9-9c.
+- Re-run and reconcile server-backed sendChat, generation persistence,
+  rollback, and Hypa V3 memory fixture coverage.
+- Start from the fixture families already used by 9-3d, 9-5e-iii, and Phase 8
+  closeout rather than adding new command surfaces.
+- Keep this slice to generation/memory fixture confidence. The full
+  server-backed storage-write audit remains 9-9c.
+- Preserve the 9-9a browser smoke as the top-level web startup sanity check;
+  do not fold fixture-specific assertions into that smoke unless browser-level
+  startup itself regresses.
 
 ## Implementation Notes
 
@@ -74,11 +77,10 @@ Immediate pickup: **9-9a - Server-backed browser smoke harness**.
 
 ## Later Queue
 
-1. 9-9a - Server-backed browser smoke harness.
-2. 9-9b - Generation and memory fixture closeout.
-3. 9-9c - Server-backed storage-write audit.
-4. 9-9d - Manual Fastify web and Tauri local verification.
-5. 9-9e - Phase 9 docs closeout.
+1. 9-9b - Generation and memory fixture closeout.
+2. 9-9c - Server-backed storage-write audit.
+3. 9-9d - Manual Fastify web and Tauri local verification.
+4. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -91,12 +93,14 @@ Immediate pickup: **9-9a - Server-backed browser smoke harness**.
 
 ## Verification
 
-For the current 9-9a slice, start with the new or documented browser smoke
-harness plus the bootstrap/events/command surfaces it exercises. Keep the 9-8
-bundle/export/import baselines available when touching `.risu` or asset bundle
-code:
+For the current 9-9b slice, start with the server-backed generation and memory
+fixtures. Keep the 9-9a browser smoke as the web startup harness, and keep the
+9-8 bundle/export/import baselines available when touching `.risu` or asset
+bundle code:
 
 ```bash
+pnpm smoke:fastify-browser
+pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts
 pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 pnpm check
@@ -112,11 +116,17 @@ pnpm api:test
 pnpm build
 ```
 
-Latest recorded focused baseline, after 9-8d:
+Latest recorded focused baseline, after 9-9a:
 
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`
-  - 2 files and 23 Fastify `.risu` codec / asset-reference tests passed.
-- `pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
+- `pnpm smoke:fastify-browser`
+  - passed; built the SPA and ran the Playwright browser smoke through Fastify
+    startup, bootstrap, events, one runtime settings command, and projection
+    refresh. Build emitted existing CSS `::highlight`, browser
+    externalization, plugin-timing, and chunk-size warnings.
+- `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts src/ts/server/events.test.ts src/ts/server/commands.test.ts`
+  - command selected the full client suite: 65 files, 734 tests passed, 4
+    skipped.
+- `pnpm api:test -- server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/commands.test.ts`
   - command selected the full Fastify API suite: 68 files and 1162 tests
     passed.
 - `pnpm check` - clean.
@@ -140,7 +150,7 @@ Last recorded broader baselines:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-8d.md`](../phases-completed/phase-9-client-thinning-9-8d.md)
+  [`../phases-completed/phase-9-client-thinning-9-9a.md`](../phases-completed/phase-9-client-thinning-9-9a.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

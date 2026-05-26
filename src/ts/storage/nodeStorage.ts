@@ -257,6 +257,9 @@ export class NodeStorage {
 const sharedNodeStorage = new NodeStorage()
 
 export async function getNodeServerProxyAuth() {
+  if (isFastifyServer && import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE') {
+    return ''
+  }
   return await sharedNodeStorage.getProxyAuth()
 }
 

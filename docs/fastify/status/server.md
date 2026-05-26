@@ -56,7 +56,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-current pickup is 9-9a, the server-backed browser smoke harness in
+current pickup is 9-9b, generation and memory fixture closeout in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

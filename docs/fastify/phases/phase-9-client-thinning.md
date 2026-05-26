@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-8d - Bundle export route**. Next pickup:
-**9-9a - Server-backed browser smoke harness**.
+**9-9a - Server-backed browser smoke harness**. Next pickup:
+**9-9b - Generation and memory fixture closeout**.
 
 ## Goal
 
@@ -359,6 +359,8 @@ surfaces.
   - **9-9a - Server-backed browser smoke harness.** Add or document a
     repeatable browser-level smoke path for Fastify-served web startup,
     bootstrap/events, and one representative command mutation.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-9a.md`](../phases-completed/phase-9-client-thinning-9-9a.md).
   - **9-9b - Generation and memory fixture closeout.** Re-run and reconcile
     server-backed sendChat, generation persistence, rollback, and Hypa V3
     memory fixture coverage.

@@ -239,9 +239,9 @@ command; they must never replace the whole DB blob.
 Command families, projection events, residual write sweeps, projection
 guard integration, server-backed storage gates, asset-byte reads,
 backup/restore projection, residual local-cache gates, provider secret
-masking, and server `.risu` codec/import/export/bundle routes are
-complete through 9-8d.
+masking, server `.risu` codec/import/export/bundle routes, and the
+server-backed browser smoke harness are complete through 9-9a.
 
-Current pickup: **9-9a - Server-backed browser smoke harness**. Add or
-document a repeatable browser-level smoke path for Fastify-served web
-startup, bootstrap/events, and one representative command mutation.
+Current pickup: **9-9b - Generation and memory fixture closeout**. Re-run and
+reconcile server-backed sendChat, generation persistence, rollback, and Hypa V3
+memory fixture coverage.

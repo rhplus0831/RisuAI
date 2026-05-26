@@ -6,11 +6,15 @@ import { loadData } from './ts/bootstrap'
 import { initHotkey } from './ts/hotkey'
 import { preLoadCheck } from './preload'
 import { mount } from 'svelte'
+import { installFastifyBrowserSmokeHook } from './ts/server/browserSmoke'
 
 preLoadCheck()
 let app = mount(App, {
   target: document.getElementById('app'),
 })
+if (import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE') {
+  installFastifyBrowserSmokeHook()
+}
 loadData()
 initHotkey()
 document.getElementById('preloading').remove()

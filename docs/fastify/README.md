@@ -18,8 +18,8 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 Current status lives in [`status.md`](status.md). As of 2026-05-26,
 Phases 0-8 are closed and Phase 9, client thinning, is active. Phase 9
-has landed through 9-8d bundle export; the next pickup is 9-9a, the
-server-backed browser smoke harness. Fastify is the live server path,
+has landed through 9-9a server-backed browser smoke; the next pickup is
+9-9b, generation and memory fixture closeout. Fastify is the live server path,
 Express has been deleted, and the Dockerfile / compose file target port
 6002 with `/app/data` persisted.
 
