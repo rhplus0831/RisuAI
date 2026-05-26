@@ -13,7 +13,7 @@ events, and follow-up summary jobs.
 
 - Custom embedding follow-ups use the wrong model identifier. Assembly
   returns the custom wire model from
-  `server/fastify/src/prompt/assemble.ts:983`; follow-up jobs use the
+  `server/fastify/src/prompt/assemble.ts:984`; follow-up jobs use the
   value from selection at
   `server/fastify/src/prompt/memoryFollowups.ts:56`, while the embedding
   resolver only recognizes the literal custom selector in
@@ -76,7 +76,7 @@ pnpm api:test -- server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastif
 ## References
 
 - Original phase: `docs/fastify/phases/phase-8-memory.md`
-- custom model resolver in assembly: `server/fastify/src/prompt/assemble.ts:983`
+- custom model resolver in assembly: `server/fastify/src/prompt/assemble.ts:984`
 - follow-up summary enqueue: `server/fastify/src/prompt/memoryFollowups.ts:56`
 - memory diagnostics: `server/fastify/src/memorySelectionService.ts:117`
 - optional app memory events: `server/fastify/src/app.ts:50`

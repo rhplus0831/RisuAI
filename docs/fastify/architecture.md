@@ -227,10 +227,10 @@ At the target state, the server owns:
   Hypa V3 memory surfaces. Today the Phase 7 variable, static-section,
   plain-section, history, script, module, lorebook, token/budget,
   trigger, template renderer, memory/cache card, `assemblePrompt`, and
-  chat-route surfaces are server-side. Preview, preview-prompt, and
-  send-like calls can use `/chat` behind `db.useServerPromptAssembly`.
-  Phase 8 also includes live chunk planning for fresh server-backed
-  chats.
+  chat-route surfaces are server-side. Preview, preview-prompt, send,
+  and continue can use `/chat` behind `db.useServerPromptAssembly`;
+  regenerate parity remains reopened follow-up work. Phase 8 also
+  includes live chunk planning for fresh server-backed chats.
 
 Browser owns:
 

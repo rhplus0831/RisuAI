@@ -17,7 +17,9 @@ completion dispatch is server-routed for the covered provider matrix, and
 prompt assembly / chat dispatch can run through Fastify behind the
 server-backed gate. Phase 8 closed ready-memory reads, summarize/embed
 jobs, browser memory surfaces, and live chunk planning on the server. The
-ownership described below is the migration target.
+ownership described below is the migration target. Audit follow-up after
+the closeout is tracked in `docs/fastify-followup`; notably, regenerate
+and stop-trigger parity are still open there.
 
 ## Stage 0 - UI lease and dispatch
 
@@ -42,8 +44,8 @@ Owner (after migration): server.
   `preview_prompt` / `regenerate`).
 - Checks the `expectedRevision` cursor; rejects stale requests with
   `409` + the current revision.
-- Reset, regenerate truncation, route-created user rows, and
-  default say-nothing behavior all run here.
+- Reset, route-created user rows, and default say-nothing behavior run
+  here. Regenerate truncation remains an audit follow-up gap.
 - Persists the user row (for non-preview, non-reset modes) before
   prompt assembly begins.
 

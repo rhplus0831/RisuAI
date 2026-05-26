@@ -2,9 +2,12 @@
 
 Date: 2026-05-26
 
-Use this file as the day-to-day pickup runbook. Completed slice details
-live in [`../phases-completed/`](../phases-completed/), and the current
-status snapshot lives in [`../status.md`](../status.md).
+Use this file as the original Phase 9 closeout runbook. The active
+post-closeout audit pickup order lives in
+[`../../fastify-followup/status/next-steps.md`](../../fastify-followup/status/next-steps.md).
+Completed original migration slice details live in
+[`../phases-completed/`](../phases-completed/), and the closeout snapshot
+lives in [`../status.md`](../status.md).
 
 Policy note: no actual Fastify users exist yet; update current schemas
 and import paths directly instead of preserving intermediate Fastify
@@ -12,7 +15,9 @@ shapes.
 
 ## Last Done
 
-**9-9e - Phase 9 docs closeout** is the latest landed slice.
+**9-9e - Phase 9 docs closeout** is the latest landed original
+migration slice. Follow-up commits after `edbc2d07` are tracked in
+`docs/fastify-followup`.
 
 - Closed Phase 9 for the Fastify-served web client-thinning scope.
 - Recorded the already-green 9-9d automated preflight and Fastify-served web
@@ -23,10 +28,11 @@ shapes.
 
 ## Immediate Pickup
 
-Immediate pickup: **separate later task - Tauri / Desktop manual
-verification**.
+Immediate pickup: **follow the reopened audit work in
+`docs/fastify-followup`**.
 
-- Do not fold this task back into Phase 9 docs closeout.
+- Do not fold audit follow-up or Tauri / Desktop manual verification
+  back into the original Phase 9 docs closeout.
 - Do not add compatibility migrations for intermediate Fastify shapes; there
   are no actual Fastify users yet.
 - Keep Tauri/local storage behavior on the existing local path.
@@ -66,7 +72,8 @@ verification**.
 
 ## Later Queue
 
-1. Separate later task - Tauri / Desktop manual verification.
+1. Reopened audit follow-up in `docs/fastify-followup`.
+2. Separate later task - Tauri / Desktop manual verification.
 
 ## Parallel Or Deferred
 
@@ -114,54 +121,13 @@ pnpm api:test
 pnpm build
 ```
 
-Latest recorded focused baseline, after 9-9d partial:
-
-- `pnpm smoke:fastify-browser`
-  - passed; built the SPA and ran the Playwright browser smoke through Fastify
-    startup, bootstrap/events, one runtime settings command, server completion,
-    memory reads, `.risu` export, bundle export, asset upload/read, projection
-    refresh, and the no-local-storage-write audit. Build emitted existing CSS
-    `::highlight`, browser externalization, plugin-timing, ineffective dynamic
-    import, and chunk-size warnings.
-- `pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
-  - command selected the full client suite: 65 files, 734 tests passed, 4
-    skipped.
-- `pnpm exec vitest run src/ts/process/__tests__/buildMemoryWindow.test.ts src/ts/process/__tests__/streamResponse.test.ts src/ts/process/__tests__/nonStreamResponse.test.ts src/ts/process/__tests__/stage4Finalize.test.ts src/ts/process/__tests__/sendChatContext.test.ts`
-  - 5 files and 56 tests passed.
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`
-  - 2 files and 23 tests passed.
-- `pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
-  - command selected the full Fastify API suite: 68 files and 1162 tests
-    passed.
-- `pnpm check` - clean.
-- Fastify-served web manual command flow
-  - passed; isolated server data dir, import revision 1, chat `chat-manual-a`,
-    edited user message, regenerated assistant message, selected
-    `char-manual-b`, `useServerPromptAssembly: true` after reload, and no
-    IndexedDB/localForage or OPFS writes observed.
-- `pnpm tauribuild`
-  - passed with existing CSS `::highlight`, browser externalization,
-    plugin-timing, ineffective dynamic import, and chunk-size warnings.
-- `pnpm test -- src/ts/storage/backup.test.ts src/ts/server/backups.test.ts`
-  - passed; command selected the full client suite: 65 files, 734 tests
-    passed, 4 skipped.
-- Tauri desktop manual launch
-  - partially passed; after Cargo and Linux Tauri/WebKit/GTK libraries were
-    installed, `pnpm tauri dev` compiled the Rust target and launched
-    `target/debug/risuai` under Xvfb. Manual verification remains blocked
-    because the app logs `Cannot access 'appVer' before initialization` from
-    `src/ts/parser/parser.svelte.ts:109` and stays on the local app loading
-    path.
-
-Last recorded broader baselines:
-
-- 9-6c `pnpm test -- src/ts/storage/backup.test.ts src/ts/server/backups.test.ts`
-  - passed; command selected the full client suite: 730 tests, 4 skipped.
-- 9-6c `pnpm api:test -- server/fastify/__tests__/backups.test.ts`
-  - passed; command selected the full Fastify API suite: 1119 tests.
-- 9-6c `pnpm check` - clean.
-- 9-5d `pnpm build` - passed with existing CSS `::highlight`, browser
-  externalization, plugin-timing, and chunk-size warnings.
+Latest recorded baseline details are archived in
+[`../phases-completed/phase-9-client-thinning-9-9e.md`](../phases-completed/phase-9-client-thinning-9-9e.md).
+In short: the Fastify browser smoke, focused client/server suites,
+`pnpm check`, `pnpm tauribuild`, and Fastify-served manual command flow
+passed during 9-9d/9-9e. Tauri desktop manual launch compiled and opened
+under Xvfb but remained blocked by `Cannot access 'appVer' before
+initialization` from `src/ts/parser/parser.svelte.ts:109`.
 
 ## References
 

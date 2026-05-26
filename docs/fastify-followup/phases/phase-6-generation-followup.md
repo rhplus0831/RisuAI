@@ -14,7 +14,7 @@ instead of turning upstream failures into empty successful streams.
 `server/fastify/src/generation/openai.ts:256` returns from the stream
 generator when the upstream response is not OK or has no body.
 `server/fastify/src/routes/generation.ts:312` serializes only token and
-done frames, and `server/fastify/src/routes/generation.ts:333` pipes the
+done frames, and `server/fastify/src/routes/generation.ts:333` opens the
 stream without mapping provider failures to an SSE error frame. A
 streaming upstream failure can therefore become a 200 SSE response with
 no useful error.

@@ -14,13 +14,14 @@ and fixture inventories are archived or covered by the coverage docs.
 - Phase 7 preview paths are server-backed behind
   `db.useServerPromptAssembly`: `preview` fills `previewFormated`, and
   `previewPrompt` fills `previewBody` from `/api/v1/generate/chat`.
-- Server assembly now emits a typed `message_patch` payload for
+- Server assembly now emits a typed `message_patch` payload on successful
+  assembly for
   user-message appends, start-trigger / run-var message replacements,
   chat-var deltas, and `additonalSysPrompt` rows.
-- Behind `db.useServerPromptAssembly`, send-like calls consume the server
-  prompt payload, apply message/scriptstate patches, and then consume the
-  `/chat` provider token stream instead of calling local browser provider
-  dispatch.
+- Behind `db.useServerPromptAssembly`, send and continue calls consume
+  the server prompt payload, apply message/scriptstate patches, and then
+  consume the `/chat` provider token stream instead of calling local
+  browser provider dispatch. Regenerate remains follow-up work.
 - The gate defaults off and is independent of `db.useServerGeneration`.
 - `/chat` now emits `info.generationId`, `info.generationInfo`, provider
   `token` events, terminal `error` events, and enriched terminal `done`
@@ -28,23 +29,22 @@ and fixture inventories are archived or covered by the coverage docs.
 
 ## Active Boundary
 
-Phase 7 prompt assembly is closed. Rollback and side effects are covered
-for server-dispatched `/chat`: TTS arrives as typed `side_effect` events,
-and terminal provider errors can restore the pre-dispatch chat
-message/scriptstate snapshot before the existing error path reports the
-failure.
+Phase 7 prompt assembly was closed for the original migration scope.
+Follow-up work remains for browser regenerate wiring, server regenerate
+semantics, deferred-provider guards, stop-trigger mutation delivery, and
+route-backed fixture coverage.
 
 Phase 7 closeout detail lives in
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md);
-Phase 8 memory and Phase 9 client thinning are closed. The remaining handoff
-in [`next-steps.md`](next-steps.md) is separate Tauri / Desktop manual
-verification.
+Phase 8 memory and Phase 9 client thinning were closed in the original
+docs; current reopened work is tracked in `docs/fastify-followup`.
 
 ## Guardrails
 
 - Local `sendChat` fixture sweep.
 - Server-backed provider parity sweep, including the `/chat` dispatch path
-  proving send-like fixtures do not escape to `/api/v1/generate/completion`.
+  proving server-backed send/continue fixtures do not escape to
+  `/api/v1/generate/completion`.
 - Fastify generation route tests.
 - `pnpm check`, `pnpm test`, `pnpm api:test`, and `pnpm build` before
   closing a slice.

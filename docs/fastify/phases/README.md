@@ -2,8 +2,10 @@
 
 Date: 2026-05-26
 
-These files track current or remaining migration work. Completed
-details, landed slice tables, and old status logs live in
+These files track the original migration phase scope and closeout state.
+Active post-closeout audit work lives in
+[`../../fastify-followup/phases/`](../../fastify-followup/phases/).
+Completed details, landed slice tables, and old status logs live in
 [`../phases-completed/`](../phases-completed/).
 
 Use this directory for:
@@ -39,9 +41,10 @@ the phase file.
 0 -> 4 -> 5 -> 6 -> 7
 ```
 
-Phase 9 is closed for the Fastify-served web client-thinning scope. Tauri /
-Desktop manual verification is deferred to a separate later task and does not
-change the closed Fastify web phase state.
+Phases 0, 3, 6, 7, 8, and 9 have reopened audit follow-up in
+`docs/fastify-followup`. Tauri / Desktop manual verification remains a
+separate deferred task and does not change the original Fastify web
+closeout state.
 
 ## Completed Detail
 

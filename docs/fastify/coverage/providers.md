@@ -15,7 +15,10 @@ For each provider that lands in `/api/v1/generate/completion`:
 - Streaming-capable providers: chunks normalized into the SSE
   envelope. Buffered-only providers document and test their
   `stream: true` rejection.
-- Error: upstream 4xx / 5xx maps to a documented error frame.
+- Error: buffered upstream 4xx / 5xx maps to a documented failure.
+  Streaming upstream failures are reopened in
+  `docs/fastify-followup/phases/phase-6-generation-followup.md` until
+  the route emits typed error frames or fails before SSE headers.
 - Abort: client disconnect aborts upstream within ~1s.
 - Headers: API key sourced from the same database setting the
   current browser request path uses; never echoed in upstream body

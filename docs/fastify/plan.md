@@ -27,9 +27,11 @@ End state:
 
 ## Current Baseline
 
-The live pickup snapshot belongs in [`status.md`](status.md). As of
-2026-05-26, Phases 0-9 are closed for the Fastify-served web migration scope;
-Tauri / Desktop manual verification is deferred to a separate later task.
+The original closeout snapshot belongs in [`status.md`](status.md).
+Phases 0-9 were closed for the Fastify-served web migration scope in
+`edbc2d07`; audit follow-up discovered reopened work afterward and is
+tracked in [`../fastify-followup/`](../fastify-followup/). Tauri /
+Desktop manual verification remains deferred to a separate later task.
 
 Stable baseline facts:
 
@@ -110,7 +112,8 @@ rules. The headline order:
    async job queue on the server. Closed 2026-05-25.
 9. **Client thinning** - replace remaining `DBState.db.*` mutation
    with commands; cut the whole-state save bridge; client becomes a
-   projection of server events. Active.
+   projection of server events. Closed for the original Fastify web
+   scope; audit follow-up slices continue in `docs/fastify-followup`.
 
 ## Non-goals
 
@@ -136,8 +139,8 @@ rules. The headline order:
   here" cleanups into each phase. Phase boundaries are exit
   criteria, not invitations to refactor unrelated code.
 - **Tauri silently breaking.** Tauri is out of scope but shares many
-  source files. Each phase must confirm Tauri still builds before
-  closing.
+  source files. Keep desktop behavior on the local-storage path and run
+  Tauri checks only when the slice touches shared desktop-sensitive code.
 
 ## Verification commands
 
@@ -151,7 +154,8 @@ pnpm build          # vite build
 
 Run `pnpm api:test` as well for Fastify server slices.
 
-Tauri build is verified manually at phase boundaries.
+Tauri / Desktop manual verification is a deferred follow-up, not a
+Phase 9 Fastify web closeout requirement.
 
 ## Reference notes
 

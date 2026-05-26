@@ -17,21 +17,7 @@ and add any longer closeout note under `../phases-completed/`.
 
 1. Phase 9 client thinning remains first because it protects all
    Fastify-served browser work from silent client persistence.
-   - 9A (landed 2026-05-26): provider routing and model scalar settings in
-     `BotSettings.svelte`.
-   - 9B (landed 2026-05-26): OpenRouter, auxiliary model, and
-     separate-parameter selectors, including matching EasyPanel model /
-     parameter shortcuts.
-   - 9C (landed 2026-05-26): image provider settings in
-     `OtherBotSettings.svelte`.
-   - 9D (landed 2026-05-26): memory and audio provider settings in
-     `OtherBotSettings.svelte` and `PlaygroundEmbedding.svelte`.
-   - 9E (landed 2026-05-26): persona, display/theme, global regex, lore
-     preset, and bot preset editors.
-   - 9F (landed 2026-05-26): plugin settings, custom models, and
-     advanced setting editors.
-   - 9G (landed 2026-05-26): character core profile, media, and basic
-     option editors.
+   - 9A-9G landed on 2026-05-26; commit anchors are in `../status.md`.
    - 9H (next): character lore, script, prompt, TTS, and chat-name
      editors.
    - 9I: sidebar toggles, custom sidebar/loadout helpers, welcome setup,
@@ -66,98 +52,19 @@ and add any longer closeout note under `../phases-completed/`.
 
 ## Suggested Verification
 
-Focused Phase 9:
+Focused Phase 9 direct-write slice:
 
 ```bash
-pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts
-pnpm exec vitest run src/ts/moduleCommands.test.ts src/ts/server/commands.test.ts
-pnpm smoke:fastify-browser
-pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/events.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
-```
-
-Latest Phase 9 event-slice verification, 2026-05-26:
-
-```bash
-pnpm api:test
-pnpm smoke:fastify-browser
-pnpm check
-```
-
-Latest Phase 9 settings-draft verification, 2026-05-26:
-
-```bash
-pnpm exec vitest run src/ts/server/commands.test.ts
-pnpm api:test -- server/fastify/__tests__/commands.test.ts
-pnpm check
-pnpm smoke:fastify-browser
-```
-
-Latest Phase 9 prompt-settings verification, 2026-05-26:
-
-```bash
-pnpm exec vitest run src/ts/server/commands.test.ts
-pnpm api:test -- server/fastify/__tests__/commands.test.ts
-pnpm check
-pnpm smoke:fastify-browser
-```
-
-Latest Phase 9 provider/model scalar verification, 2026-05-26:
-
-```bash
-pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm exec vitest run src/ts/server/commands.test.ts src/ts/compatibilityAdapters.test.ts
 pnpm api:test -- server/fastify/__tests__/commands.test.ts
 pnpm exec svelte-check --tsconfig ./tsconfig.json
 ```
 
-Latest Phase 9 OpenRouter / auxiliary selector verification, 2026-05-26:
+Add focused suites when the touched surface has one:
 
 ```bash
-pnpm exec vitest run src/ts/server/commands.test.ts
-pnpm api:test -- server/fastify/__tests__/commands.test.ts
-pnpm exec svelte-check --tsconfig ./tsconfig.json
-```
-
-Latest Phase 9 image-provider settings verification, 2026-05-26:
-
-```bash
-pnpm exec vitest run src/ts/server/commands.test.ts
-pnpm api:test -- server/fastify/__tests__/commands.test.ts
-pnpm exec svelte-check --tsconfig ./tsconfig.json
+pnpm exec vitest run src/ts/plugins/plugins.test.ts
 pnpm smoke:fastify-browser
-```
-
-Latest Phase 9 memory/audio settings verification, 2026-05-26:
-
-```bash
-pnpm exec vitest run src/ts/server/commands.test.ts
-pnpm api:test -- server/fastify/__tests__/commands.test.ts
-pnpm exec svelte-check --tsconfig ./tsconfig.json
-pnpm smoke:fastify-browser
-```
-
-Latest Phase 9 persona/display/regex/preset verification, 2026-05-26:
-
-```bash
-pnpm exec vitest run src/ts/server/commands.test.ts
-pnpm api:test -- server/fastify/__tests__/commands.test.ts
-pnpm exec svelte-check --tsconfig ./tsconfig.json
-pnpm smoke:fastify-browser
-```
-
-Latest Phase 9 plugin/custom-model/advanced verification, 2026-05-26:
-
-```bash
-pnpm exec vitest run src/ts/server/commands.test.ts src/ts/plugins/plugins.test.ts
-pnpm api:test -- server/fastify/__tests__/commands.test.ts
-pnpm exec svelte-check --tsconfig ./tsconfig.json
-```
-
-Latest Phase 9 character core/media verification, 2026-05-26:
-
-```bash
-pnpm exec vitest run src/ts/compatibilityAdapters.test.ts src/ts/server/commands.test.ts
-pnpm api:test -- server/fastify/__tests__/commands.test.ts
-pnpm exec svelte-check --tsconfig ./tsconfig.json
 ```
 
 Focused Phase 7:

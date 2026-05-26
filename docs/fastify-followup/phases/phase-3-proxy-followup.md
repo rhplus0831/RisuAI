@@ -11,10 +11,10 @@ path.
 
 ## Audit Finding
 
-The direct proxy strips response headers in
-`server/fastify/src/proxy.ts:11`, including cache and encoding headers.
-The stream-job path has a separate allow/strip set at
-`server/fastify/src/streamJobs.ts:18` and forwards upstream headers at
+The direct proxy strips response headers via
+`server/fastify/src/proxy.ts:89`, with the strip set at
+`server/fastify/src/proxy.ts:11`. The stream-job path has a separate
+filter at `server/fastify/src/streamJobs.ts:124` and forwards upstream headers at
 `server/fastify/src/streamJobs.ts:311`. The sets are not aligned, so
 stream-job responses can preserve headers the direct proxy removes.
 
@@ -53,6 +53,6 @@ pnpm api:test -- server/fastify/__tests__/proxy.test.ts server/fastify/__tests__
 ## References
 
 - Original phase: `docs/fastify/phases/phase-3-proxy.md`
-- Direct proxy filter: `server/fastify/src/proxy.ts:11`
-- Stream-job filter: `server/fastify/src/streamJobs.ts:18`
+- Direct proxy filter: `server/fastify/src/proxy.ts:89`
+- Stream-job filter: `server/fastify/src/streamJobs.ts:124`
 - Stream-job forwarding: `server/fastify/src/streamJobs.ts:311`

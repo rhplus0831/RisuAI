@@ -9,9 +9,11 @@ Phase 6 moved provider dispatch behind the auth-gated
 SSE envelope, the routed provider matrix, and the current server-side
 request shaping tests.
 
-Current work: none in Phase 6. Provider paths still waiting on
-server-side prompt flattening or fixture demand are tracked in the
-provider coverage matrix.
+Original closeout work is complete. Post-closeout audit work for
+streaming provider failure frames is tracked in
+[`../../fastify-followup/phases/phase-6-generation-followup.md`](../../fastify-followup/phases/phase-6-generation-followup.md).
+Provider paths still waiting on server-side prompt flattening or fixture
+demand are tracked in the provider coverage matrix.
 
 Completed detail: [`../phases-completed/phase-6-server-generation.md`](../phases-completed/phase-6-server-generation.md).
 Provider matrix: [`../coverage/providers.md`](../coverage/providers.md).

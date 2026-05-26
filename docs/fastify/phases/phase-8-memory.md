@@ -3,7 +3,9 @@
 Date: 2026-05-26
 
 Status: closed. Completed through **8-9 - Phase 8 closeout**.
-Next phase: **Phase 9 - Client thinning**.
+Post-closeout audit work for custom embedding follow-ups, production
+memory progress events, and missing-summary diagnostics is tracked in
+[`../../fastify-followup/phases/phase-8-memory-followup.md`](../../fastify-followup/phases/phase-8-memory-followup.md).
 
 ## Goal
 

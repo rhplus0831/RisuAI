@@ -2,8 +2,9 @@
 
 Date: 2026-05-26
 
-This is the live Fastify migration handoff: current state, blockers,
-and links to the detailed runbook.
+This is the original Fastify migration closeout snapshot. The active
+post-closeout audit handoff now lives in
+[`../fastify-followup/status.md`](../fastify-followup/status.md).
 
 Policy note: there are no actual Fastify users yet, so this process does
 not need compatibility migrations. Update the current schema and import
@@ -14,30 +15,27 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Snapshot
 
-- Active phase: none. Phase 9, Client thinning, is closed for the
-  Fastify-served web scope.
-- Last landed work: 9-9e Phase 9 docs closeout. Automated preflight and
-  Fastify-served web manual checks passed during 9-9d; Tauri / Desktop manual
-  verification is deferred to a separate later task.
-- Current gap: none for Phase 9 Fastify web closeout.
-- Next default pickup: separate later task - Tauri / Desktop manual
-  verification. Do not fold that task back into Phase 9 docs closeout.
-- Last recorded focused baselines after 9-9d: `pnpm smoke:fastify-browser`
-  passed with the storage-write audit, the server-backed sendChat fixture
-  command selected 65 files and 734 passing tests with 4 skipped, the focused
-  memory/generation helper command passed 5 files and 56 tests, the focused
-  server `.risu` codec/reference command passed 2 files and 23 tests, the
-  focused Fastify import/export/bootstrap command selected the full API suite
-  with 68 files and 1162 tests, `pnpm check` was clean, `pnpm tauribuild`
-  passed with existing warnings, and the focused local backup command selected
-  65 files with 734 passing tests and 4 skipped.
-  Broader baselines remain: 9-6c for full client/API test commands and 9-5d
-  for the last standalone `pnpm build`.
+- Original migration phase: none. Phase 9, Client thinning, was closed
+  for the Fastify-served web scope in `edbc2d07`.
+- Active handoff: audit follow-up for Phases 0, 3, 6, 7, 8, and 9 in
+  [`../fastify-followup/`](../fastify-followup/).
+- Latest follow-up reference: commits through `7acf0cee` route the
+  Phase 9 direct-write slices through 9G; the next Phase 9 pickup is 9H
+  in [`../fastify-followup/status/next-steps.md`](../fastify-followup/status/next-steps.md).
+- Tauri / Desktop manual verification remains deferred and should not
+  be folded back into the original Phase 9 closeout.
+- Last original closeout baselines are archived in
+  [`phases-completed/phase-9-client-thinning-9-9e.md`](phases-completed/phase-9-client-thinning-9-9e.md):
+  Fastify browser smoke, focused client/server suites, `pnpm check`,
+  `pnpm tauribuild`, and Fastify-served manual command flow passed during
+  9-9d/9-9e.
 
 ## Start Here
 
-- [`status/next-steps.md`](status/next-steps.md) - current handoff and
-  verification commands.
+- [`status/next-steps.md`](status/next-steps.md) - original handoff and
+  original closeout verification notes.
+- [`../fastify-followup/status/next-steps.md`](../fastify-followup/status/next-steps.md) -
+  active follow-up pickup order.
 - [`status/phase-9-command-map.md`](status/phase-9-command-map.md) -
   locked Phase 9 mutation inventory and command map.
 - [`phases/phase-9-client-thinning.md`](phases/phase-9-client-thinning.md) -
@@ -52,14 +50,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                           |
-| ------------------------------------------- | ------------------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                             |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                      |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.         |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                                |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                                |
-| Client thinning                             | Closed for Fastify web; Tauri / Desktop manual verification deferred separately. |
+| Workstream                                  | State                                                                                               |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                                                 |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                                          |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.                             |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                                                    |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                                                    |
+| Client thinning                             | Original Phase 9 closed for Fastify web; audit follow-up remains active in `docs/fastify-followup`. |
 
 ## Maintenance Rules
 

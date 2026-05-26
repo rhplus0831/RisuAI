@@ -3,16 +3,21 @@
 Date: 2026-05-24
 
 Phase 7 is closed. The final pass verified that server-side prompt
-assembly covers send-like and preview paths behind
+assembly covers send/continue and preview paths behind
 `db.useServerPromptAssembly`, and that the `/chat` SSE taxonomy is pinned
 for the browser adapter.
 
+Post-closeout audit note: regenerate browser wiring / assembly
+semantics, deferred-provider guards, stop-trigger mutation delivery, and
+route-backed fixture coverage were reopened in
+`docs/fastify-followup/phases/phase-7-prompt-assembly-followup.md`.
+
 ## Confirmed
 
-- `send`, `continue`, and `regenerate` route through the server prompt
-  assembly mode contract, with route validation covering required payload
-  differences and server-backed fixture coverage proving send-like calls
-  do not fall back to `/api/v1/generate/completion`.
+- `send` and `continue` route through the server prompt assembly mode
+  contract, with server-backed fixture coverage proving those calls do
+  not fall back to `/api/v1/generate/completion`. The route validates
+  `regenerate`, but full regenerate semantics are follow-up work.
 - `preview` and `preview-prompt` use `/api/v1/generate/chat` in
   server-backed mode; `preview` fills `previewFormated`, and
   `preview-prompt` fills `previewBody`.

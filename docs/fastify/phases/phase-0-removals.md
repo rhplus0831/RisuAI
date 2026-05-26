@@ -10,7 +10,9 @@ Google Drive sync, and the Supa / Hypa V2 / Hanurai memory-engine entry
 points. Hypa V3 may still consume legacy field names and shared embedding
 helpers.
 
-Current work: none. Do not reintroduce these surfaces during later
-phases.
+Original closeout work is complete. A post-closeout audit found a tracked
+Google Drive public worker artifact; that follow-up is tracked in
+[`../../fastify-followup/phases/phase-0-removals-followup.md`](../../fastify-followup/phases/phase-0-removals-followup.md).
+Do not reintroduce removed live surfaces during later phases.
 
 Completed detail: [`../phases-completed/phase-0-removals.md`](../phases-completed/phase-0-removals.md).

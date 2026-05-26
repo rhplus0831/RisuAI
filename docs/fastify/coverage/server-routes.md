@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 
-Status: Phase 1, Phase 2, Phase 3, the closed Phase 6
+Status: Phase 1, Phase 2, Phase 3, the original Phase 6
 completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
 memory job/read routes have coverage under `server/fastify/__tests__/`.
 Phase 9 command routes are covered through the 9-4 resource families, the
@@ -12,6 +12,8 @@ codec / import / export / bundle behavior is covered by focused Fastify
 tests.
 Browser projection, storage gates, and residual-sweep coverage live in
 the frontend test suite when they are not route behavior.
+Audit follow-up for completion streaming errors, `/chat` regenerate /
+stop-trigger parity, and memory events is tracked in `docs/fastify-followup`.
 
 ## Phase 1: Foundation
 
@@ -72,7 +74,7 @@ repository export route, and bundle export route wiring landed in Phase 9.
 
 | Route                                      | Pinned behavior                            | Status      |
 | ------------------------------------------ | ------------------------------------------ | ----------- |
-| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, and buffered/streaming dispatch for the closed Phase 6 provider matrix. Stable Horde text is provider `horde` on this route; no separate Horde route exists. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `vertexAuth.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`, `bedrock.test.ts`, `sigv4.test.ts`, `horde.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
+| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, and buffered/streaming dispatch for the original Phase 6 provider matrix. Streaming upstream error frames are a follow-up gap. Stable Horde text is provider `horde` on this route; no separate Horde route exists. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `vertexAuth.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`, `bedrock.test.ts`, `sigv4.test.ts`, `horde.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
 | `POST /api/v1/generate/translate`          | DeepL / DeepLX / Google.                   | not started |
 | `POST /api/v1/generate/tts`                | OpenAI / ElevenLabs / NovelAI / Hugging Face API Inference. | not started |
 | `POST /api/v1/generate/image`              | Provider routing + body shaping for current `sdProvider` values. | not started |
@@ -88,13 +90,13 @@ Per-provider request / response coverage lives in
 | Route                                       | Pinned behavior                           | Status      |
 | ------------------------------------------- | ----------------------------------------- | ----------- |
 | `POST /api/v1/generate/chat` (validation)   | Auth, body validation for modes/ids/options (pre-stream 400), `text/event-stream` response. | covered by `server/fastify/__tests__/generation.chat.test.ts` |
-| `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> `message_patch` -> `stage(prompt,end)` -> `info` -> `done`; `stopSending`/bad-ID/missing-DB -> terminal SSE `error` + `done` with no `info`; builds and emits the 7-12d mutation payload. | covered (7-11g/i, 7-12d-i/ii) by `generation.chat.test.ts` and `assemble.test.ts` |
-| `POST /api/v1/generate/chat` (`varChanged`) | Persists chat variable writes for `send` / `continue` / `regenerate` requests while keeping preview modes read-only. | covered (7-12d-i) by `generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; successful assembly streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> optional `message_patch` -> `stage(prompt,end)` -> `info` -> `done`. `stopSending`/bad-ID/missing-DB returns terminal SSE `error` + `done` with no `info`; stop-trigger mutation delivery is a follow-up gap. | covered (7-11g/i, 7-12d-i/ii) by `generation.chat.test.ts` and `assemble.test.ts` |
+| `POST /api/v1/generate/chat` (`varChanged`) | Persists chat variable writes for send/continue requests while keeping preview modes read-only; regenerate-specific semantics are follow-up work. | covered (7-12d-i) by `generation.chat.test.ts` |
 | `POST /api/v1/generate/chat` (transport)    | Internal provider chunk transport maps `CompletionStreamFrame` sources to chat `token`, `error`, and enriched `done` after `prompt` / `message_patch` / `info`. | covered (7-12d-iii-a/b) by `providerTransport.test.ts` and `generation.chat.test.ts` |
 | `POST /api/v1/generate/chat` (dispatch)     | Real provider dispatch behind `db.useServerPromptAssembly`, browser send orchestration, `generationId`, `generationInfo`, enriched `done`, and `addRerolls` accumulation. | covered (7-12d-iii-b) by `generation.chat.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `sendChat.serverPreview.test.ts`, and `sendChat.fixtures.serverBacked.test.ts` |
 | `POST /api/v1/generate/chat` (side effects / restoration) | Typed `tts` `side_effect` and `error.restoration` rollback after browser-visible mutations begin. | covered (7-12d-iv) by `generation.chat.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `serverMessagePatch.test.ts`, and `sendChat.fixtures.serverBacked.test.ts` |
-| `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled and server-dispatched through the common send-like path |
-| `POST /api/v1/generate/chat` (regenerate)   | Truncates + rerolls.                      | assembled and server-dispatched through the common send-like path |
+| `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled and server-dispatched through the common send/continue path |
+| `POST /api/v1/generate/chat` (regenerate)   | Route validates `regenerateMessageId`; browser wiring and assembly semantics remain follow-up work. | open in `docs/fastify-followup/phases/phase-7-prompt-assembly-followup.md` |
 | `POST /api/v1/generate/preview-prompt`      | One-shot JSON assembled prompt; `result.prompt` on success, `{ stopSending }` on abort, HTTP 404 for bad IDs / missing DB. | covered (7-11h) by `generation.chat.test.ts` |
 
 Plus: prompt snapshot tests - given a canned DB + preset + chat

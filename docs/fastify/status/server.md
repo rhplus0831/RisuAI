@@ -15,11 +15,14 @@ docs.
 - Backup restore emits a `state.restored` command-event payload after the
   repository revision bump so server-backed browsers re-fetch bootstrap.
 - `POST /api/v1/generate/completion` owns the Phase 6 provider dispatch
-  surface and normalized SSE envelope.
+  surface and normalized SSE envelope. Streaming provider failure frames
+  are reopened in
+  [`../../fastify-followup/phases/phase-6-generation-followup.md`](../../fastify-followup/phases/phase-6-generation-followup.md).
 - `POST /api/v1/generate/chat` owns Phase 7 prompt assembly SSE events.
   It streams assembled prompt payloads and metadata, builds an internal
   typed mutation payload on `AssembleResult`, emits that payload as
-  `message_patch`, persists `varChanged` for send-like requests, and can
+  `message_patch` on successful assembly, persists `varChanged` for send
+  and continue requests, and can
   dispatch production providers through the chat `token`, `error`, and
   enriched `done` events when `db.useServerPromptAssembly` is enabled.
 - `POST /api/v1/generate/preview-prompt` is the JSON shortcut for preview
@@ -55,10 +58,10 @@ docs.
 
 ## Current Server Work
 
-Phase 8 Hypa V3 memory and Phase 9 client thinning are closed. The remaining
-handoff is a separate later Tauri / Desktop manual verification task in
-[`next-steps.md`](next-steps.md); it does not change the Fastify server route
-surface.
+Original Phase 8 Hypa V3 memory and Phase 9 client thinning are closed.
+Audit follow-up for Phase 6 streaming errors, Phase 7 regenerate /
+provider / stop-trigger gaps, Phase 8 memory follow-ups, and Phase 9
+direct-write slices lives in `docs/fastify-followup`.
 
 ## Watch Points
 

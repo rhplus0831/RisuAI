@@ -6,20 +6,24 @@ Date: 2026-05-24
 `db.useServerPromptAssembly` from local provider dispatch onto the
 server-dispatched `/chat` stream.
 
+Post-closeout audit note: the send-path dispatch work landed here, but
+explicit regenerate wiring and assembly semantics were later reopened in
+`docs/fastify-followup/phases/phase-7-prompt-assembly-followup.md`.
+
 ## Landed
 
 - Added a server-local chat dispatch resolver that builds Phase 6 provider
   requests from the assembled prompt and persisted `Database` settings.
 - `/api/v1/generate/chat` now dispatches production providers after
-  successful send-like assembly when `db.useServerPromptAssembly` is
+  successful send/continue assembly when `db.useServerPromptAssembly` is
   enabled, while preserving the internal test hook.
 - `/chat` emits additive `info.generationId`,
   `info.generationInfo`, provider `token` events, and enriched terminal
   `done` metadata for server-dispatched sends.
-- Browser send-like calls now use `requestServerChatGeneration`, consume
-  the `/chat` token stream, keep the existing response orchestration, and
-  merge terminal generation metadata.
-- The server-backed fixture sweep proves send-like calls avoid
+- Browser send/continue calls now use `requestServerChatGeneration`,
+  consume the `/chat` token stream, keep the existing response
+  orchestration, and merge terminal generation metadata.
+- The server-backed fixture sweep proves send/continue calls avoid
   `/api/v1/generate/completion` and still preserve message output,
   generation metadata, stages, and `addRerolls`.
 

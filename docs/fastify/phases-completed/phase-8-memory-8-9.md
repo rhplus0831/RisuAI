@@ -7,6 +7,10 @@ memory has storage, planning, async summarize/embed jobs, prompt
 selection, browser read/progress surfaces, and live chunk planning wired
 behind the Fastify path.
 
+Post-closeout audit note: custom embedding follow-up routing, production
+memory progress events, and no-embedding/no-summary diagnostics were
+reopened in `docs/fastify-followup/phases/phase-8-memory-followup.md`.
+
 ## Confirmed
 
 - The `hypav3-memory` fixture remains pinned through the server-backed

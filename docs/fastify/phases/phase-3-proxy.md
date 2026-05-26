@@ -8,8 +8,9 @@ Phase 3 moved the proxy, hub passthrough, stream-job WebSocket, storage,
 auth, and crypto surfaces onto Fastify, then deleted the Express server
 and its `runserver` script.
 
-Current work: none in Phase 3. The known follow-up is hub-route session
-auth for browser-loaded hub resources that cannot send `risu-auth`
-headers; that is tracked in [`../status/next-steps.md`](../status/next-steps.md).
+Original closeout work is complete. Post-closeout audit work for
+stream-job response-header filtering is tracked in
+[`../../fastify-followup/phases/phase-3-proxy-followup.md`](../../fastify-followup/phases/phase-3-proxy-followup.md).
+Hub-route session auth for browser-loaded resources remains deferred.
 
 Completed detail: [`../phases-completed/phase-3-proxy.md`](../phases-completed/phase-3-proxy.md).

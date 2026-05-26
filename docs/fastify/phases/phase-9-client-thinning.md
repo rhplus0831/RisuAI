@@ -3,8 +3,10 @@
 Date: 2026-05-26
 
 Status: closed. Completed through **9-9e - Phase 9 docs closeout**.
-Fastify-served web client thinning is complete; Tauri / Desktop manual
-verification is deferred to a separate later task.
+Fastify-served web client thinning closed for the original migration
+scope. Post-closeout direct-write audit slices are tracked in
+[`../../fastify-followup/phases/phase-9-client-thinning-followup.md`](../../fastify-followup/phases/phase-9-client-thinning-followup.md);
+Tauri / Desktop manual verification remains a separate later task.
 
 ## Goal
 

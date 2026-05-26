@@ -14,61 +14,29 @@ directly.
 
 - Active work: audit follow-up for Phases 0, 3, 6, 7, 8, and 9.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Highest-risk gap: Phase 9 still needs a broader direct-write audit
-  beyond the named guard slice.
-- The reopened work is now split into session-sized slices. Use
-  `status/next-steps.md` for pickup order and the affected phase file
-  for slice scope, boundaries, and exit criteria.
-- Landed 2026-05-26: Phase 9 import/export event semantics now emit
-  `state.imported` / `state.exported` in line with the command map, and
-  Fastify browser smoke covers multipart `.risu` import.
-- Landed 2026-05-26: Phase 9 module-selection writes now use
-  command-backed trusted optimistic helpers for chat and character
-  module toggles.
-- Landed 2026-05-26: Phase 9 Bot/Ooba settings for `ooba`,
-  `reverseProxyOobaArgs`, and `localStopStrings` now bind to local
-  command-backed drafts instead of mutating the Fastify projection
-  directly.
-- Landed 2026-05-26: Phase 9 Bot parameter settings for `NAIsettings`,
-  `ainconfig`, `bias`, and `additionalParams` now bind to command-backed
-  drafts, with grouped provider-command allowlist coverage.
-- Landed 2026-05-26: Phase 9 Prompt settings and prompt-template editor
-  writes now use local command-backed drafts/trusted optimistic projection
-  writes instead of binding directly to the Fastify projection.
-- Landed 2026-05-26: Phase 9 provider routing and model scalar settings
-  in `BotSettings.svelte` now use command-backed drafts for model
-  selection, provider credentials, provider model fields, and related
-  reset side effects.
-- Landed 2026-05-26: Phase 9 OpenRouter settings, auxiliary model
-  selectors, separate-parameter selectors, and EasyPanel shortcuts now
-  bind to command-backed drafts for provider routing arrays, auxiliary
-  models, separate parameter overrides, and EasyPanel setup toggles.
-- Landed 2026-05-26: Phase 9 image provider settings in
-  `OtherBotSettings.svelte` now use command-backed drafts for Stable
-  Diffusion WebUI, NovelAI image, Dall-E, Stability, ComfyUI, Fal,
-  Imagen, OpenAI-compatible image, and WaveSpeed settings.
-- Landed 2026-05-26: Phase 9 memory and audio provider settings in
-  `OtherBotSettings.svelte` and `PlaygroundEmbedding.svelte` now bind
-  through command-backed drafts for TTS provider keys, emotion processor
-  selection, Hypa V3 presets, embedding provider settings, custom
-  embedding settings, and Voyage keys.
-- Landed 2026-05-26: Phase 9 persona, display/theme, global regex, lore
-  preset, and bot preset editors now route Fastify-web mutations through
-  command-backed settings, persona, preset, or lorebook helpers.
-- Landed 2026-05-26: Phase 9 plugin settings, custom models, and
-  advanced setting editors now avoid raw Fastify projection mutation.
-  Plugin argument/edit/install paths use trusted optimistic plugin
-  commands, custom models and ban-character-set bind through
-  command-backed drafts, and advanced command classification now covers
-  `allowAllExtentionFiles` and `auxModelUnderModelSettings`.
-- Landed 2026-05-26: Phase 9 character core profile, media, and basic
-  option editors in `CharConfig.svelte` now bind through a local
-  server-backed character draft or trusted media helpers instead of
-  mutating the Fastify projection directly.
+- Highest-risk gap: Phase 9 still needs the remaining direct-write sweep
+  after the completed settings/editor slices.
+- Phase 9 follow-up has landed guard/import-event work plus slices 9A-9G;
+  use the table below for commit anchors and `status/next-steps.md` for
+  pickup order.
 - Next default pickup: Phase 9 Slice 9H, character lore, script, prompt,
   TTS, and chat-name editors.
-- Closeout rule: update this file and the affected phase file when each
-  reopened phase closes. Keep long landed notes out of this directory.
+- Closeout rule: keep this file to the current snapshot. Put landed
+  slice detail under `phases-completed/`.
+
+## Recent Phase 9 Anchors
+
+| Commit                                            | Scope                                                                         |
+| ------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `79b77f18` / `3fdb16d6`                           | Projection guard plus `.risu` import/export events.                           |
+| `cb6eb430` / `0cb57753` / `76d46a0a` / `bdcc40bd` | Module selection, Ooba, bot parameter, and prompt settings.                   |
+| `92a5b83c`                                        | 9A provider routing and model scalar settings.                                |
+| `997468f7`                                        | 9B OpenRouter, auxiliary model, separate-parameter, and EasyPanel selectors.  |
+| `ef750089`                                        | 9C image provider settings.                                                   |
+| `e655f27e`                                        | 9D memory and audio provider settings.                                        |
+| `2321516b`                                        | 9E persona, display/theme, global regex, lore preset, and bot preset editors. |
+| `668ea890`                                        | 9F plugin, custom model, and advanced setting editors.                        |
+| `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                   |
 
 ## Phase Status
 

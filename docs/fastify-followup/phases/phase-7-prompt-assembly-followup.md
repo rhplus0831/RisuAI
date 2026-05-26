@@ -20,8 +20,9 @@ and dispatch.
   has the field in the input type at `server/fastify/src/prompt/assemble.ts:153`.
 - Deferred/local providers are not guarded on `/chat`. Unknown
   OpenAI-compatible model IDs can fall through to OpenAI dispatch in
-  `server/fastify/src/prompt/chatDispatch.ts:411` and
-  `server/fastify/src/prompt/chatDispatch.ts:520`.
+  `server/fastify/src/prompt/chatDispatch.ts:407` and model strings for
+  custom reverse-proxy paths still flatten at
+  `server/fastify/src/prompt/chatDispatch.ts:967`.
 - Stop-trigger mutations are produced by assembly at
   `server/fastify/src/prompt/assemble.ts:1066` but the route emits only
   an error in the stop branch at
@@ -92,6 +93,7 @@ pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
 - regenerate route validation: `server/fastify/src/routes/generationChat.ts:87`
 - regenerate route copy: `server/fastify/src/routes/generationChat.ts:158`
 - assembly input type: `server/fastify/src/prompt/assemble.ts:153`
-- provider fallback: `server/fastify/src/prompt/chatDispatch.ts:411`
+- provider fallback: `server/fastify/src/prompt/chatDispatch.ts:407`
+- custom reverse-proxy model string: `server/fastify/src/prompt/chatDispatch.ts:967`
 - stop-trigger return payload: `server/fastify/src/prompt/assemble.ts:1066`
 - stop-trigger route branch: `server/fastify/src/routes/generationChat.ts:352`

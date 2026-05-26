@@ -4,6 +4,11 @@ Date: 2026-05-24
 
 Status: closed 2026-05-24.
 
+Post-closeout audit work for regenerate semantics, deferred-provider
+guards, stop-trigger mutation delivery, and route-backed fixture coverage
+is tracked in
+[`../../fastify-followup/phases/phase-7-prompt-assembly-followup.md`](../../fastify-followup/phases/phase-7-prompt-assembly-followup.md).
+
 Closeout archive:
 [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md).
 
@@ -38,11 +43,10 @@ without requiring the browser to own mutable send-time state.
 
 ## Closeout Summary
 
-Phase 7 closeout confirmed send, continue, regenerate, preview, and
-preview-prompt can use the server prompt assembly path behind
-`db.useServerPromptAssembly`. The locked `/chat` SSE taxonomy covers
-prompt metadata, `message_patch`, provider tokens, TTS side effects,
-restoration errors, and enriched terminal `done` metadata.
+Phase 7 closeout confirmed the original `/chat` assembly and dispatch
+baseline behind `db.useServerPromptAssembly`. A later audit reopened
+regenerate, provider-guard, stop-trigger, and route-backed fixture gaps;
+use the follow-up doc for the current contract.
 
 ## Optional Or Parallel Work
 
@@ -67,12 +71,13 @@ restoration errors, and enriched terminal `done` metadata.
 
 ## Exit Criteria
 
-- Closed: `send`, `continue`, `regenerate`, preview, and preview-prompt
-  can use the server prompt assembly path behind
-  `db.useServerPromptAssembly`.
-- Closed: browser-visible chat mutations are represented as typed server
-  events and applied without relying on hidden local assembly side
-  effects.
+- Original scope closed: `send`, `continue`, preview, and
+  preview-prompt can use the server prompt assembly path behind
+  `db.useServerPromptAssembly`; regenerate completion is tracked in
+  follow-up.
+- Original scope closed: browser-visible chat mutations for successful
+  assembly are represented as typed server events; stop-trigger mutation
+  delivery remains follow-up work.
 - Closed: server-side dispatch streams through the locked SSE taxonomy.
 - Closed: the local `sendChat` fixtures, server-backed sweep, Fastify API
   tests, type check, and build pass.
