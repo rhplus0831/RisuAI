@@ -1027,10 +1027,7 @@ function resolveHypaV3PresetSettings(database: Database): unknown {
 }
 
 function resolvePromptMemoryEmbeddingModel(database: Database): string {
-  if (database.hypaModel === 'custom') {
-    const customModel = database.hypaCustomSettings?.model?.trim()
-    return customModel && customModel.length > 0 ? customModel : 'custom'
-  }
+  if (database.hypaModel === 'custom') return 'custom'
   return database.hypaModel || 'MiniLM'
 }
 

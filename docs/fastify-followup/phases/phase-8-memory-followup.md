@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 
-Status: reopened by audit.
+Status: reopened by audit. Slice 8A landed; slices 8B and 8C remain.
 
 ## Goal
 
@@ -46,7 +46,7 @@ events, and follow-up summary jobs.
 
 ## Session Slices
 
-- 8A - Custom embedding follow-up routing. Preserve a stable repository
+- 8A - Landed. Custom embedding follow-up routing. Preserve a stable repository
   and job model key for custom embeddings, pass the custom wire model
   separately to the adapter, and prove prompt-time and deferred jobs call
   the intended custom model.

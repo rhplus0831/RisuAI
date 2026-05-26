@@ -128,7 +128,7 @@ describe('embed memory job handler', () => {
           provider: 'custom',
           endpoint: 'https://example.test/v1/embeddings',
           apiKey: 'sk-test',
-          model: 'custom-embed',
+          model: 'custom',
           wireModel: 'custom-embed',
         },
         input: ['assistant: first\nassistant: second'],

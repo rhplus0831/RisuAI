@@ -62,7 +62,7 @@ describe('memory embedding model resolver', () => {
       ok: true,
       request: {
         provider: 'custom',
-        model: 'custom-model',
+        model: 'custom',
         wireModel: 'custom-model',
         endpoint: 'https://embeddings.example.test/v1/embeddings',
         apiKey: 'custom-key',

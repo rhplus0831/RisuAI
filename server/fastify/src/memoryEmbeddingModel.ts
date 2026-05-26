@@ -55,7 +55,7 @@ export function resolveMemoryEmbeddingModel(
       ok: true,
       request: {
         provider: 'custom',
-        model: wireModel ?? 'custom',
+        model: 'custom',
         wireModel,
         endpoint: embeddingEndpoint(rawUrl),
         ...(apiKey ? { apiKey } : {}),

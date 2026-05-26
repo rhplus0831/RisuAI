@@ -196,7 +196,7 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
 
 function seedPromptMemory(
   db: ReturnType<typeof openDatabase>,
-  input: { summaryId: string; chunkId: string; text: string },
+  input: { summaryId: string; chunkId: string; text: string; embeddingModel?: string },
 ): void {
   createMemoryChunk(db, {
     id: input.chunkId,
@@ -218,7 +218,7 @@ function seedPromptMemory(
     id: `embedding-${input.chunkId}`,
     chatId: 'chat-1',
     chunkId: input.chunkId,
-    model: 'embedding-model',
+    model: input.embeddingModel ?? 'embedding-model',
     vector: [1, 0],
   })
 }
@@ -672,6 +672,56 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
+  it('selects prompt memory with the stable custom embedding model key', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      seedPromptMemory(memoryDb, {
+        summaryId: 'summary-custom',
+        chunkId: 'chunk-custom',
+        text: 'selected custom summary',
+        embeddingModel: 'custom',
+      })
+      const db = memoryEnabledDatabase({
+        hypaModel: 'custom',
+        hypaCustomSettings: {
+          url: 'https://embeddings.example.test/v1',
+          key: 'custom-key',
+          model: 'custom-wire-model',
+        },
+      } as Partial<Database>)
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.promptMemoryRows).toEqual([
+        {
+          role: 'system',
+          content: '<Previous Conversation>selected custom summary</Previous Conversation>',
+          memo: 'hypaMemory',
+        },
+      ])
+      expect(state.promptMemorySelectionDiagnostics?.missingMemory).toMatchObject({
+        hasMissingMemory: false,
+        chunkIdsMissingEmbeddings: [],
+      })
+      expect(state.promptMemoryFollowUpDiagnostics).toMatchObject({
+        attempted: false,
+        jobsCreated: 0,
+      })
+    } finally {
+      memoryDb.close()
+    }
+  })
+
   it('plans missing Hypa chunks and summarize jobs before prompt memory selection', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
@@ -813,6 +863,71 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' })).toEqual([])
       expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' })).toEqual([])
       expect(state.unformated.lastChat.at(-1)?.content).toBe('charlie '.repeat(80))
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('enqueues custom embedding follow-ups with the stable model key', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(memoryDb, {
+        id: 'chunk-needs-custom-embed',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'summary without custom embedding',
+        status: 'summarized',
+      })
+      createMemorySummary(memoryDb, {
+        id: 'summary-needs-custom-embed',
+        chatId: 'chat-1',
+        chunkId: 'chunk-needs-custom-embed',
+        model: 'summary-model',
+        text: 'summary without custom embedding',
+        tokens: 5,
+      })
+      const db = memoryEnabledDatabase({
+        hypaModel: 'custom',
+        hypaCustomSettings: {
+          url: 'https://embeddings.example.test/v1',
+          key: 'custom-key',
+          model: 'custom-wire-model',
+        },
+      } as Partial<Database>)
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.promptMemorySelectionDiagnostics?.missingMemory).toMatchObject({
+        hasMissingMemory: true,
+        summaryIdsMissingEmbeddings: ['summary-needs-custom-embed'],
+        chunkIdsMissingEmbeddings: ['chunk-needs-custom-embed'],
+      })
+      expect(state.promptMemoryFollowUpDiagnostics).toMatchObject({
+        attempted: true,
+        jobsCreated: 1,
+        embedChunkIds: ['chunk-needs-custom-embed'],
+        errors: [],
+      })
+      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'embed' })).toMatchObject([
+        {
+          payload: {
+            schemaVersion: 1,
+            chunkId: 'chunk-needs-custom-embed',
+            model: 'custom',
+          },
+        },
+      ])
     } finally {
       memoryDb.close()
     }
