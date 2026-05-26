@@ -600,6 +600,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           ainconfig: { top_p: 0.7, top_k: 90 },
           bias: [['token', -10]],
           additionalParams: [['stop', 'value']],
+          huggingfaceKey: 'huggingface-secret',
         },
       },
     })
@@ -678,17 +679,55 @@ describe('Phase 9-2a scalar settings groups', () => {
             model: 'flux',
             loras: [{ path: 'owner/model', scale: 1.2 }],
           },
+          ttsAutoSpeech: true,
+          elevenLabKey: 'eleven-secret',
+          voicevoxUrl: 'https://voicevox.example.test',
+          fishSpeechKey: 'fish-secret',
+          emotionProcesser: 'embedding',
         },
       },
     })
     expect(media.statusCode).toBe(200)
+
+    const memory = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: media.json().revision,
+        patch: {
+          hypaV3: true,
+          hypaV3PresetId: 0,
+          hypaV3Presets: [
+            {
+              name: 'Fastify memory',
+              settings: {
+                summarizationModel: 'subModel',
+                summarizationPrompt: 'Summarize',
+                recentMemoryRatio: 0.4,
+                similarMemoryRatio: 0.5,
+              },
+            },
+          ],
+          hypaModel: 'custom',
+          hypaV3Key: 'hypa-openai-secret',
+          hypaCustomSettings: {
+            url: 'https://embedding.example.test/v1/embeddings',
+            key: 'custom-embedding-secret',
+            model: 'embedding-model',
+          },
+          voyageApiKey: 'voyage-secret',
+        },
+      },
+    })
+    expect(memory.statusCode).toBe(200)
 
     const account = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/account',
       headers: { 'risu-auth': assertion },
       payload: {
-        baseRevision: media.json().revision,
+        baseRevision: memory.json().revision,
         patch: {
           username: 'Fastify User',
           didFirstSetup: true,
@@ -778,6 +817,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       ainconfig: { top_p: 0.7, top_k: 90 },
       bias: [['token', -10]],
       additionalParams: [['stop', 'value']],
+      huggingfaceKey: MASKED_PROVIDER_SECRET,
       maxContext: 12000,
       useStreaming: true,
       streamGeminiThoughts: true,
@@ -832,6 +872,32 @@ describe('Phase 9-2a scalar settings groups', () => {
         model: 'flux',
         loras: [{ path: 'owner/model', scale: 1.2 }],
       },
+      ttsAutoSpeech: true,
+      elevenLabKey: MASKED_PROVIDER_SECRET,
+      voicevoxUrl: 'https://voicevox.example.test',
+      fishSpeechKey: MASKED_PROVIDER_SECRET,
+      emotionProcesser: 'embedding',
+      hypaV3: true,
+      hypaV3PresetId: 0,
+      hypaV3Presets: [
+        {
+          name: 'Fastify memory',
+          settings: {
+            summarizationModel: 'subModel',
+            summarizationPrompt: 'Summarize',
+            recentMemoryRatio: 0.4,
+            similarMemoryRatio: 0.5,
+          },
+        },
+      ],
+      hypaModel: 'custom',
+      hypaV3Key: MASKED_PROVIDER_SECRET,
+      hypaCustomSettings: {
+        url: 'https://embedding.example.test/v1/embeddings',
+        key: MASKED_PROVIDER_SECRET,
+        model: 'embedding-model',
+      },
+      voyageApiKey: MASKED_PROVIDER_SECRET,
       username: 'Fastify User',
       didFirstSetup: true,
       moduleIntergration: 'module-ns',

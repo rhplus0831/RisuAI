@@ -47,8 +47,13 @@ directly.
   `OtherBotSettings.svelte` now use command-backed drafts for Stable
   Diffusion WebUI, NovelAI image, Dall-E, Stability, ComfyUI, Fal,
   Imagen, OpenAI-compatible image, and WaveSpeed settings.
-- Next default pickup: Phase 9 Slice 9D, memory and audio provider
-  settings in `OtherBotSettings.svelte` and `PlaygroundEmbedding.svelte`.
+- Landed 2026-05-26: Phase 9 memory and audio provider settings in
+  `OtherBotSettings.svelte` and `PlaygroundEmbedding.svelte` now bind
+  through command-backed drafts for TTS provider keys, emotion processor
+  selection, Hypa V3 presets, embedding provider settings, custom
+  embedding settings, and Voyage keys.
+- Next default pickup: Phase 9 Slice 9E, persona, display/theme, global
+  regex, lore preset, and bot preset editors.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.
 

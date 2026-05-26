@@ -24,10 +24,10 @@ and add any longer closeout note under `../phases-completed/`.
      parameter shortcuts.
    - 9C (landed 2026-05-26): image provider settings in
      `OtherBotSettings.svelte`.
-   - 9D (next): memory and audio provider settings in
+   - 9D (landed 2026-05-26): memory and audio provider settings in
      `OtherBotSettings.svelte` and `PlaygroundEmbedding.svelte`.
-   - 9E: persona, display/theme, global regex, lore preset, and bot
-     preset editors.
+   - 9E (next): persona, display/theme, global regex, lore preset, and
+     bot preset editors.
    - 9F: plugin settings, custom models, and advanced setting editors.
    - 9G: character core profile, media, and basic option editors.
    - 9H: character lore, script, prompt, TTS, and chat-name editors.
@@ -115,6 +115,15 @@ pnpm exec svelte-check --tsconfig ./tsconfig.json
 ```
 
 Latest Phase 9 image-provider settings verification, 2026-05-26:
+
+```bash
+pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm api:test -- server/fastify/__tests__/commands.test.ts
+pnpm exec svelte-check --tsconfig ./tsconfig.json
+pnpm smoke:fastify-browser
+```
+
+Latest Phase 9 memory/audio settings verification, 2026-05-26:
 
 ```bash
 pnpm exec vitest run src/ts/server/commands.test.ts

@@ -124,14 +124,16 @@ client mutation.
   command-backed drafts, removed duplicate watcher keys, and extended
   focused client / Fastify command tests for media-group allowlists and
   masked image-provider secrets.
-- 9D - Memory and audio provider settings. Cover the Hypa V3 and audio /
-  TTS portions of `OtherBotSettings.svelte` plus
-  `PlaygroundEmbedding.svelte`, including `hypaCustomSettings`, Hypa
-  provider keys/models, Voyage, ElevenLabs, VoiceVox, OpenAI TTS, NAI
-  TTS, Hugging Face, and Fish Speech. Shared `openAIKey` and `NAIApiKey`
-  binds are already command-backed from 9C; continue with the remaining
-  audio and memory-specific keys. Coordinate with Phase 8 if memory
-  model-key semantics change.
+- 9D - Completed 2026-05-26: Memory and audio provider settings.
+  Converted the Hypa V3 and audio / TTS portions of
+  `OtherBotSettings.svelte` plus `PlaygroundEmbedding.svelte` to
+  command-backed drafts. Covered `ttsAutoSpeech`, `elevenLabKey`,
+  `voicevoxUrl`, `huggingfaceKey`, `fishSpeechKey`, `emotionProcesser`,
+  `hypaV3`, `hypaV3Presets`, `hypaV3PresetId`, `hypaModel`,
+  `hypaV3Key`, `hypaCustomSettings`, and `voyageApiKey`; shared
+  `openAIKey` and `NAIApiKey` remained on the 9C drafts. Extended client
+  command grouping and Fastify route tests for media / memory groups and
+  masked provider secrets.
 - 9E - Persona, display/theme, global regex, lore preset, and bot preset
   editors. Cover `PersonaSettings.svelte`, `GlobalRegex.svelte`,
   `lorepreset.svelte`, `botpreset.svelte`, custom background/color/text

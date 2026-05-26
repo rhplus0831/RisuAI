@@ -34,20 +34,6 @@
   } from 'src/ts/server/settingsBridge.svelte'
 
   const stopServerSettingsWatch = watchServerBackedSettings([
-    'ttsAutoSpeech',
-    'elevenLabKey',
-    'voicevoxUrl',
-    'huggingfaceKey',
-    'fishSpeechKey',
-    'emotionProcesser',
-    'hypaV3',
-    'hypaV3Presets',
-    'hypaV3PresetId',
-    'hypaV3Settings',
-    'hypaModel',
-    'hypaV3Key',
-    'hypaCustomSettings',
-    'voyageApiKey',
     'hideApiKey',
     'useLegacyGUI',
   ])
@@ -90,12 +76,31 @@
     'wavespeedImage',
     {},
   )
+  const ttsAutoSpeechDraft = createServerBackedSettingDraft<boolean>('ttsAutoSpeech', false)
+  const elevenLabKeyDraft = createServerBackedSettingDraft<string>('elevenLabKey', '')
+  const voicevoxUrlDraft = createServerBackedSettingDraft<string>('voicevoxUrl', '')
+  const huggingfaceKeyDraft = createServerBackedSettingDraft<string>('huggingfaceKey', '')
+  const fishSpeechKeyDraft = createServerBackedSettingDraft<string>('fishSpeechKey', '')
+  const emotionProcesserDraft = createServerBackedSettingDraft<string>(
+    'emotionProcesser',
+    'submodel',
+  )
+  const hypaV3Draft = createServerBackedSettingDraft<boolean>('hypaV3', false)
+  const hypaV3PresetsDraft = createServerBackedSettingDraft<any[]>('hypaV3Presets', [])
+  const hypaV3PresetIdDraft = createServerBackedSettingDraft<number>('hypaV3PresetId', 0)
+  const hypaModelDraft = createServerBackedSettingDraft<string>('hypaModel', 'MiniLM')
+  const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
+  const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>(
+    'hypaCustomSettings',
+    { url: '', key: '', model: '' },
+  )
+  const voyageApiKeyDraft = createServerBackedSettingDraft<string>('voyageApiKey', '')
 
   let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
 
   // HypaV3
   $effect(() => {
-    const settings = DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings
+    const settings = hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings
     const currentValue = settings?.similarMemoryRatio
 
     if (!currentValue) return
@@ -112,7 +117,7 @@
   })
 
   $effect(() => {
-    const settings = DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings
+    const settings = hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings
     const currentValue = settings?.recentMemoryRatio
 
     if (!currentValue) return
@@ -1259,13 +1264,13 @@
 {#if submenu === 1 || submenu === -1}
   <Accordion name="TTS" styled disabled={submenu !== -1}>
     <span class="text-textcolor mt-2">Auto Speech</span>
-    <CheckInput bind:check={DBState.db.ttsAutoSpeech} />
+    <CheckInput bind:check={ttsAutoSpeechDraft.value} />
 
     <span class="text-textcolor mt-2">ElevenLabs API key</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.elevenLabKey} />
+    <TextInput size="sm" marginBottom bind:value={elevenLabKeyDraft.value} />
 
     <span class="text-textcolor mt-2">VOICEVOX URL</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.voicevoxUrl} />
+    <TextInput size="sm" marginBottom bind:value={voicevoxUrlDraft.value} />
 
     <span class="text-textcolor">OpenAI Key</span>
     <TextInput size="sm" marginBottom bind:value={openAIKeyDraft.value} />
@@ -1274,10 +1279,10 @@
     <TextInput size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
 
     <span class="text-textcolor">Huggingface Key</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.huggingfaceKey} placeholder="hf_..." />
+    <TextInput size="sm" marginBottom bind:value={huggingfaceKeyDraft.value} placeholder="hf_..." />
 
     <span class="text-textcolor">fish-speech API Key</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.fishSpeechKey} />
+    <TextInput size="sm" marginBottom bind:value={fishSpeechKeyDraft.value} />
   </Accordion>
 {/if}
 
@@ -1285,7 +1290,7 @@
   <Accordion name={language.emotionImage} styled disabled={submenu !== -1}>
     <span class="text-textcolor mt-2">{language.emotionMethod}</span>
 
-    <SelectInput className="mt-2 mb-4" bind:value={DBState.db.emotionProcesser}>
+    <SelectInput className="mt-2 mb-4" bind:value={emotionProcesserDraft.value}>
       <OptionInput value="submodel">Ax. Model</OptionInput>
       <OptionInput value="embedding">MiniLM-L6-v2</OptionInput>
     </SelectInput>
@@ -1295,19 +1300,19 @@
 {#if submenu === 0 || submenu === -1}
   <Accordion name={language.longTermMemory} styled disabled={submenu !== -1}>
     <div class="flex mb-4">
-      <Check bind:check={DBState.db.hypaV3} name="{language.HypaMemory} V3" />
+      <Check bind:check={hypaV3Draft.value} name="{language.HypaMemory} V3" />
     </div>
 
-    {#if DBState.db.hypaV3}
+    {#if hypaV3Draft.value}
       <span class="max-w-full mb-6 text-sm text-wrap wrap-break-word text-textcolor2"
         >{language.hypaV3Settings.descriptionLabel}</span
       >
       <span class="text-textcolor">Preset</span>
       <select
         class={'border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1'}
-        bind:value={DBState.db.hypaV3PresetId}
+        bind:value={hypaV3PresetIdDraft.value}
       >
-        {#each DBState.db.hypaV3Presets as preset, i}
+        {#each hypaV3PresetsDraft.value as preset, i}
           <option class="bg-darkbg appearance-none" value={i}>{preset.name}</option>
         {/each}
       </select>
@@ -1317,11 +1322,11 @@
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={() => {
             const newPreset = createHypaV3Preset()
-            const presets = DBState.db.hypaV3Presets
+            const presets = [...hypaV3PresetsDraft.value]
 
             presets.push(newPreset)
-            DBState.db.hypaV3Presets = presets
-            DBState.db.hypaV3PresetId = DBState.db.hypaV3Presets.length - 1
+            hypaV3PresetsDraft.value = presets
+            hypaV3PresetIdDraft.value = presets.length - 1
           }}
         >
           <PlusIcon size={24} />
@@ -1330,21 +1335,21 @@
         <button
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
-            const presets = DBState.db.hypaV3Presets
+            const presets = [...hypaV3PresetsDraft.value]
 
             if (presets.length === 0) {
               alertError('There must be least one preset.')
               return
             }
 
-            const id = DBState.db.hypaV3PresetId
+            const id = hypaV3PresetIdDraft.value
             const preset = presets[id]
             const newName = await alertInput(`Enter new name for ${preset.name}`, [], preset.name)
 
             if (!newName || newName.trim().length === 0) return
 
-            preset.name = newName
-            DBState.db.hypaV3Presets = presets
+            presets[id] = { ...preset, name: newName }
+            hypaV3PresetsDraft.value = presets
           }}
         >
           <PencilIcon size={24} />
@@ -1353,22 +1358,22 @@
         <button
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async (e) => {
-            const presets = DBState.db.hypaV3Presets
+            const presets = [...hypaV3PresetsDraft.value]
 
             if (presets.length <= 1) {
               alertError('There must be least one preset.')
               return
             }
 
-            const id = DBState.db.hypaV3PresetId
+            const id = hypaV3PresetIdDraft.value
             const preset = presets[id]
             const confirmed = await alertConfirm(`${language.removeConfirm}${preset.name}`)
 
             if (!confirmed) return
 
-            DBState.db.hypaV3PresetId = 0
             presets.splice(id, 1)
-            DBState.db.hypaV3Presets = presets
+            hypaV3PresetIdDraft.value = 0
+            hypaV3PresetsDraft.value = presets
           }}
         >
           <TrashIcon size={24} />
@@ -1380,14 +1385,14 @@
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             try {
-              const presets = DBState.db.hypaV3Presets
+              const presets = hypaV3PresetsDraft.value
 
               if (presets.length === 0) {
                 alertError('There must be least one preset.')
                 return
               }
 
-              const id = DBState.db.hypaV3PresetId
+              const id = hypaV3PresetIdDraft.value
               const preset = presets[id]
               const bytesExport = Buffer.from(
                 JSON.stringify({
@@ -1424,11 +1429,11 @@
                 objImport.data.name || 'Imported Preset',
                 objImport.data.settings || {},
               )
-              const presets = DBState.db.hypaV3Presets
+              const presets = [...hypaV3PresetsDraft.value]
 
               presets.push(newPreset)
-              DBState.db.hypaV3Presets = presets
-              DBState.db.hypaV3PresetId = DBState.db.hypaV3Presets.length - 1
+              hypaV3PresetsDraft.value = presets
+              hypaV3PresetIdDraft.value = presets.length - 1
 
               alertNormal(language.successImport)
             } catch (error) {
@@ -1440,8 +1445,8 @@
         </button>
       </div>
 
-      {#if DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings}
-        {@const settings = DBState.db.hypaV3Presets[DBState.db.hypaV3PresetId].settings}
+      {#if hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings}
+        {@const settings = hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value].settings}
 
         <span class="text-textcolor">{language.SuperMemory} {language.model}</span>
         <SelectInput className="mb-4" bind:value={settings.summarizationModel}>
@@ -1642,7 +1647,7 @@
     {/if}
 
     <span class="text-textcolor">{language.embedding} <Help key="embedding" /></span>
-    <SelectInput className="mb-4" bind:value={DBState.db.hypaModel}>
+    <SelectInput className="mb-4" bind:value={hypaModelDraft.value}>
       {#if 'gpu' in navigator}
         <OptionInput value="MiniLMGPU">MiniLM L6 v2 (GPU)</OptionInput>
         <OptionInput value="nomicGPU">Nomic Embed Text v1.5 (GPU)</OptionInput>
@@ -1664,27 +1669,27 @@
       <OptionInput value="custom">Custom (OpenAI-compatible)</OptionInput>
     </SelectInput>
 
-    {#if DBState.db.hypaModel === 'openai3small' || DBState.db.hypaModel === 'openai3large' || DBState.db.hypaModel === 'ada'}
+    {#if hypaModelDraft.value === 'openai3small' || hypaModelDraft.value === 'openai3large' || hypaModelDraft.value === 'ada'}
       <span class="text-textcolor">OpenAI API Key</span>
-      <TextInput size="sm" marginBottom bind:value={DBState.db.hypaV3Key} />
+      <TextInput size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
     {/if}
 
-    {#if DBState.db.hypaModel === 'custom'}
+    {#if hypaModelDraft.value === 'custom'}
       <span class="text-textcolor">URL</span>
-      <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.url} />
+      <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} />
       <span class="text-textcolor">Key/Password</span>
-      <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.key} />
+      <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} />
       <span class="text-textcolor">Request Model</span>
-      <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.model} />
+      <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} />
     {/if}
 
-    {#if DBState.db.hypaModel === 'voyageContext3'}
+    {#if hypaModelDraft.value === 'voyageContext3'}
       <span class="text-textcolor">Voyage API Key</span>
       <TextInput
         size="sm"
         marginBottom
         hideText={DBState.db.hideApiKey}
-        bind:value={DBState.db.voyageApiKey}
+        bind:value={voyageApiKeyDraft.value}
       />
     {/if}
   </Accordion>

@@ -5,7 +5,7 @@
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { HypaProcesser } from 'src/ts/process/memory/hypamemory'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
   let query = $state('')
   let model = $state('MiniLM')
@@ -13,6 +13,11 @@
   let data: string[] = $state([])
   let dataresult: [string, number][] = $state([])
   let running = $state(false)
+  const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
+  const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>(
+    'hypaCustomSettings',
+    { url: '', key: '', model: '' },
+  )
 
   const run = async () => {
     if (running) return
@@ -51,16 +56,16 @@
 
 {#if model === 'openai3small' || model === 'openai3large' || model === 'ada'}
   <span class="text-textcolor text-lg">OpenAI API Key</span>
-  <TextInput size="sm" marginBottom bind:value={DBState.db.hypaV3Key} />
+  <TextInput size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
 {/if}
 
 {#if model === 'custom'}
   <span class="text-textcolor text-lg">URL</span>
-  <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.url} />
+  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} />
   <span class="text-textcolor text-lg">Key/Password</span>
-  <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.key} />
+  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} />
   <span class="text-textcolor text-lg">Request Model</span>
-  <TextInput size="sm" marginBottom bind:value={DBState.db.hypaCustomSettings.model} />
+  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} />
 {/if}
 
 <div class="mb-4"></div>
