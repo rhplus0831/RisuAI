@@ -18,20 +18,17 @@ and add any longer closeout note under `../phases-completed/`.
 
 Recommended order:
 
-1. Clear the Phase 5 sendChat boundary drift:
-   [`../phases/phase-5-sendchat-boundary-alpha.md`](../phases/phase-5-sendchat-boundary-alpha.md).
-   The historical extraction closed, but the current coordinator has
-   grown from the 445-line closeout shape to 703 lines after later
-   server-backed adapter work.
-2. Clear the broad closeout typecheck blocker:
+1. Clear the broad closeout typecheck blocker:
    [`../phases/broad-closeout-typecheck-alpha.md`](../phases/broad-closeout-typecheck-alpha.md).
-   Start with `pnpm check`; the 2026-05-27 closeout pass failed with 57
-   diagnostics across 17 files while the rest of the closeout matrix
-   passed.
-3. After `pnpm check` passes, rerun broad alpha closeout verification.
+   Start with `pnpm check`; the latest 2026-05-27 check failed with 58
+   diagnostics across 18 files while focused Phase 5 tests passed.
+2. After `pnpm check` passes, rerun broad alpha closeout verification.
 
 Recently closed:
 
+- Phase 5 - `sendChat` is back to a 358-line coordinator, with
+  server-backed `/chat` adapter logic and the local prompt assembly
+  wrapper extracted into focused browser-side helpers.
 - Phase 8 - memory event delivery is now best-effort across external
   sinks, SSE subscribers, worker progress emits, and memory job routes.
 - Phase 3 - hub passthrough responses now reuse the shared proxy
@@ -52,11 +49,20 @@ Recently closed:
 
 Latest broad closeout attempt on 2026-05-27:
 
-- `pnpm check` failed: 57 errors, 0 warnings, 17 files.
+- `pnpm check` failed: 58 errors, 0 warnings, 18 files.
 - `pnpm test` passed: 67 files, 742 passed, 4 skipped.
 - `pnpm api:test` passed: 68 files, 1212 passed.
 - `pnpm build` passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
+
+Latest focused Phase 5 closeout on 2026-05-27:
+
+- Local Phase 5 fixture/helper sweep passed: 28 files, 316 tests.
+- Server-backed sendChat fixture/preview sweep passed: 2 files, 26
+  tests.
+- `pnpm check` still failed with the known broad alpha blocker: 58
+  errors, 0 warnings, 18 files. There are no diagnostics in the new
+  extracted sendChat helper files.
 
 Latest focused Phase 9B closeout on 2026-05-27:
 
@@ -65,8 +71,8 @@ Latest focused Phase 9B closeout on 2026-05-27:
 - Focused Fastify command/event/bootstrap API suite passed: 68 files,
   1217 tests.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
-- `pnpm check` still failed with the known broad alpha blocker: 57
-  errors, 0 warnings, 17 files.
+- `pnpm check` still failed with the known broad alpha blocker: 58
+  errors, 0 warnings, 18 files.
 
 ## Focused Verification
 
@@ -79,10 +85,11 @@ pnpm api:test -- server/fastify/__tests__/generation.completion.test.ts
 
 Phase 5 sendChat boundary drift:
 
+Closed; rerun only for regression checks.
+
 ```bash
 pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts src/ts/process/__tests__/sendChatErrors.test.ts src/ts/process/__tests__/notification.test.ts src/ts/process/__tests__/igp.test.ts src/ts/process/__tests__/stage4Finalize.test.ts src/ts/process/__tests__/emotionFromResponse.test.ts src/ts/process/__tests__/charEmotionStore.test.ts src/ts/process/__tests__/emotionFallbackLlm.test.ts src/ts/process/__tests__/emotionFallbackEmbedding.test.ts src/ts/process/__tests__/imggenStableDiff.test.ts src/ts/process/__tests__/outputTrigger.test.ts src/ts/process/__tests__/nonStreamResponse.test.ts src/ts/process/__tests__/streamResponse.test.ts src/ts/process/__tests__/finalizeRequestBudget.test.ts src/ts/process/__tests__/preflightTemplateTokens.test.ts src/ts/process/__tests__/buildDescription.test.ts src/ts/process/__tests__/buildPlainPromptSections.test.ts src/ts/process/__tests__/normalizeTemplate.test.ts src/ts/process/__tests__/buildStaticPromptSections.test.ts src/ts/process/__tests__/buildLorebookContext.test.ts src/ts/process/__tests__/formatHistoryMessage.test.ts src/ts/process/__tests__/buildHistoryWindow.test.ts src/ts/process/__tests__/buildMemoryWindow.test.ts src/ts/process/__tests__/renderFinalPrompt.test.ts src/ts/process/__tests__/dispatchRequest.test.ts src/ts/process/__tests__/orchestrateResponse.test.ts src/ts/process/__tests__/runStage4.test.ts src/ts/process/__tests__/sendChatContext.test.ts
 pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts
-pnpm check
 ```
 
 Broad closeout typecheck blocker:

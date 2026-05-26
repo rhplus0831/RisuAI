@@ -12,14 +12,11 @@ current server schema, command surface, and import/export paths directly.
 
 ## Current Snapshot
 
-- Active work: Phase 5 sendChat boundary cleanup and broad alpha
-  closeout typecheck cleanup.
+- Active work: broad alpha closeout typecheck cleanup.
 - Broad alpha closeout verification is blocked by `pnpm check`
   diagnostics found on 2026-05-27.
 - No follow-up found in this audit: Phases 0, 1, 2, 4, and 7.
 - Next default pickup: clear
-  [`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md),
-  then clear
   [`phases/broad-closeout-typecheck-alpha.md`](phases/broad-closeout-typecheck-alpha.md),
   then rerun broad alpha closeout verification.
 - Closeout rule: keep this file to the current snapshot. Put landed
@@ -38,23 +35,23 @@ current server schema, command surface, and import/export paths directly.
 
 ## Audit Findings
 
-| Phase                                   | State        | Finding                                                                                                                                                    | Task Doc                                                                                                         |
-| --------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 0 - Removals                            | No follow-up | Google Drive public artifact removal still appears complete.                                                                                               | None                                                                                                             |
-| 1 - Foundation                          | No follow-up | Fastify foundation shape still matches the phase goals.                                                                                                    | None                                                                                                             |
-| 2 - Storage / import / assets / backups | No follow-up | Baseline storage, import, asset, backup, and static route work still appears complete.                                                                     | None                                                                                                             |
-| 3 - Proxy migration                     | Closed       | Hub passthrough now reuses the shared proxy response-header strip policy, with hub-only transport header stripping retained.                               | [`phases-completed/phase-3-hub-response-headers.md`](phases-completed/phase-3-hub-response-headers.md)           |
-| 4 - sendChat tests                      | No follow-up | Fixture harness and coverage inventory still appear complete.                                                                                              | None                                                                                                             |
-| 5 - sendChat extraction                 | Open         | Historical extraction closed, but later server-backed sendChat adapter logic grew the current coordinator from the 445-line closeout shape to 703 lines.   | [`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md)                         |
-| 6 - Server-side generation              | Closed       | Provider SSE parsers now handle unterminated tails as typed provider errors and accept CRLF-delimited complete event blocks.                               | [`phases-completed/phase-6-sse-line-endings.md`](phases-completed/phase-6-sse-line-endings.md)                   |
-| 7 - Server-side prompt assembly         | No follow-up | Regenerate, provider guards, stop-trigger payloads, and route-backed fixture coverage still appear complete.                                               | None                                                                                                             |
-| 8 - Hypa V3 memory                      | Closed       | Memory event delivery is now best-effort across external sinks, SSE subscribers, worker progress emits, and memory job routes.                             | [`phases-completed/phase-8-memory-event-isolation.md`](phases-completed/phase-8-memory-event-isolation.md)       |
-| 9 - Client thinning                     | Closed       | Character/chat/module import, ordering/selection, module-apply, MCP risuaccess, and helper-coverage projection-write tails are closed for this alpha pass. | [`phases-completed/phase-9-projection-write-tails-9b.md`](phases-completed/phase-9-projection-write-tails-9b.md) |
+| Phase                                   | State        | Finding                                                                                                                                                                                           | Task Doc                                                                                                         |
+| --------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 0 - Removals                            | No follow-up | Google Drive public artifact removal still appears complete.                                                                                                                                      | None                                                                                                             |
+| 1 - Foundation                          | No follow-up | Fastify foundation shape still matches the phase goals.                                                                                                                                           | None                                                                                                             |
+| 2 - Storage / import / assets / backups | No follow-up | Baseline storage, import, asset, backup, and static route work still appears complete.                                                                                                            | None                                                                                                             |
+| 3 - Proxy migration                     | Closed       | Hub passthrough now reuses the shared proxy response-header strip policy, with hub-only transport header stripping retained.                                                                      | [`phases-completed/phase-3-hub-response-headers.md`](phases-completed/phase-3-hub-response-headers.md)           |
+| 4 - sendChat tests                      | No follow-up | Fixture harness and coverage inventory still appear complete.                                                                                                                                     | None                                                                                                             |
+| 5 - sendChat extraction                 | Closed       | The current coordinator is back to a thin 358-line boundary; server-backed `/chat` adapter logic, terminal handling, persistence, and local prompt assembly wrappers now live in focused helpers. | [`phases-completed/phase-5-sendchat-boundary-alpha.md`](phases-completed/phase-5-sendchat-boundary-alpha.md)     |
+| 6 - Server-side generation              | Closed       | Provider SSE parsers now handle unterminated tails as typed provider errors and accept CRLF-delimited complete event blocks.                                                                      | [`phases-completed/phase-6-sse-line-endings.md`](phases-completed/phase-6-sse-line-endings.md)                   |
+| 7 - Server-side prompt assembly         | No follow-up | Regenerate, provider guards, stop-trigger payloads, and route-backed fixture coverage still appear complete.                                                                                      | None                                                                                                             |
+| 8 - Hypa V3 memory                      | Closed       | Memory event delivery is now best-effort across external sinks, SSE subscribers, worker progress emits, and memory job routes.                                                                    | [`phases-completed/phase-8-memory-event-isolation.md`](phases-completed/phase-8-memory-event-isolation.md)       |
+| 9 - Client thinning                     | Closed       | Character/chat/module import, ordering/selection, module-apply, MCP risuaccess, and helper-coverage projection-write tails are closed for this alpha pass.                                        | [`phases-completed/phase-9-projection-write-tails-9b.md`](phases-completed/phase-9-projection-write-tails-9b.md) |
 
 ## Broad Closeout Finding
 
-The 2026-05-27 closeout pass found that `pnpm check` fails with 57
-diagnostics across 17 files. The failures are typecheck-only so far:
+The latest 2026-05-27 closeout pass found that `pnpm check` fails with
+58 diagnostics across 18 files. The failures are typecheck-only so far:
 `pnpm test`, `pnpm api:test`, `pnpm build`, and
 `pnpm smoke:fastify-browser` all passed in the same pass. Track the
 cleanup in
@@ -68,16 +65,14 @@ Anthropic, Mistral, and Gemini streams, while preserving typed
 provider errors for unterminated SSE tails. The closeout log lives in
 [`phases-completed/phase-6-sse-line-endings.md`](phases-completed/phase-6-sse-line-endings.md).
 
-## Phase 5 Alpha Finding
+## Phase 5 Alpha Closeout
 
-The 2026-05-27 re-audit found that Phase 5 did close historically at
-commit `a7e2831d`, with `src/ts/process/index.svelte.ts` at 445 lines
-and the extraction helpers in place. The current coordinator is 703
-lines after later server-backed prompt-assembly, patch-replay,
-terminal side-effect, restoration, and generation-result persistence
-logic landed inline. Local Phase 5 fixtures and helper tests still
-passed, and server-backed sendChat tests also passed, so this is
-tracked as boundary drift rather than a confirmed behavior regression.
+The 2026-05-27 Phase 5 alpha slice restored the `sendChat` coordinator
+boundary. `src/ts/process/index.svelte.ts` is now 358 lines, with
+server-backed `/chat` assembly, patch replay, terminal handling,
+generation-result persistence, and the local prompt assembly wrapper
+extracted into focused browser-side helpers. The closeout log lives in
+[`phases-completed/phase-5-sendchat-boundary-alpha.md`](phases-completed/phase-5-sendchat-boundary-alpha.md).
 
 ## Phase 9 Alpha Closeout
 
@@ -103,7 +98,7 @@ coverage.
 
 Latest broad closeout attempt on 2026-05-27:
 
-- `pnpm check` failed: 57 errors, 0 warnings, 17 files.
+- `pnpm check` failed: 58 errors, 0 warnings, 18 files.
 - `pnpm test` passed: 67 files, 742 passed, 4 skipped.
 - `pnpm api:test` passed: 68 files, 1212 passed.
 - `pnpm build` passed with nonblocking build warnings.
@@ -116,16 +111,17 @@ Latest focused Phase 9B closeout on 2026-05-27:
 - Focused Fastify command/event/bootstrap API suite passed: 68 files,
   1217 tests.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
-- `pnpm check` still failed with the known broad alpha blocker: 57
-  errors, 0 warnings, 17 files.
+- `pnpm check` still failed with the known broad alpha blocker: 58
+  errors, 0 warnings, 18 files.
 
 Latest focused Phase 5 re-audit on 2026-05-27:
 
 - Local Phase 5 fixture/helper sweep passed: 28 files, 316 tests.
 - Server-backed sendChat fixture/preview sweep passed: 2 files, 26
   tests.
-- `pnpm check` still failed with the known broad alpha blocker,
-  including the server-backed sendChat fixture typing bucket.
+- `pnpm check` still failed with the known broad alpha blocker: 58
+  errors, 0 warnings, 18 files. The current failure list has no
+  diagnostics in the new extracted sendChat helper files.
 
 ## Closeout Expectations
 

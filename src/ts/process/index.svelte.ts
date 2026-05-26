@@ -1,49 +1,24 @@
 import { get, writable } from 'svelte/store'
-import { type character, type MessageGenerationInfo, type Chat } from '../storage/database.svelte'
+import { type character, type MessageGenerationInfo } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
-import { language } from '../../lang'
-import { alertError } from '../alert'
-import { findCharacterbyId, trimUntilPunctuation } from '../util'
-import { risuChatParser } from './scripts'
-import { getModelInfo, LLMFlags } from '../model/modellist'
 import { reportSendChatError } from './sendChatErrors'
 import { setupSendChatContext } from './sendChatContext'
 import { orchestrateResponse } from './postGeneration/orchestrateResponse'
 import { runStage4 } from './postGeneration/runStage4'
-import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
-import { buildDescription } from './promptAssembly/buildDescription'
-import { buildPlainPromptSections } from './promptAssembly/buildPlainPromptSections'
-import { normalizeTemplate } from './promptAssembly/normalizeTemplate'
-import {
-  buildAuthorNote,
-  buildCotInstruction,
-  buildInlayViewInstruction,
-  buildPersona,
-} from './promptAssembly/buildStaticPromptSections'
-import { buildLorebookContext } from './promptAssembly/buildLorebookContext'
-import { buildHistoryWindow } from './promptAssembly/buildHistoryWindow'
-import { buildMemoryWindow } from './promptAssembly/buildMemoryWindow'
-import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
-import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 import { dispatchRequest } from './dispatch/dispatchRequest'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import { isFastifyServer } from '../platform'
 import {
-  currentChatStateSnapshot,
-  dispatchPatchChatScriptstate,
-  dispatchPersistGenerationResult,
-  ensureMessageId,
-} from '../chatCommands'
+  applyServerBackedTerminal,
+  assembleServerBackedSendChat,
+  persistServerBackedGenerationResult,
+  type ServerBackedDispatch,
+} from './serverBackedSendChat'
 import {
-  requestServerChat,
-  requestServerChatGeneration,
-  type ServerChatInput,
-  type ServerChatTerminal,
-} from './request/serverChat'
-import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
-import { applyServerHypaV3Progress } from './request/serverMemory'
-import { sayTTS } from './tts'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+  assembleLocalSendChatPrompt,
+  createSendChatCharacterCache,
+  runSendChatMessageVariables,
+} from './sendChatPromptAssembly'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -75,30 +50,6 @@ export const abortChat = writable(false)
 export let requestTokenParts: { [key: string]: requestTokenPart[] } = {}
 export let previewFormated: OpenAIChat[] = []
 export let previewBody: string = ''
-
-function numberFrom(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-}
-
-type ServerChatAnyResult =
-  | Awaited<ReturnType<typeof requestServerChat>>
-  | Awaited<ReturnType<typeof requestServerChatGeneration>>
-
-function isServerChatGenerationOk(
-  served: ServerChatAnyResult,
-): served is Extract<Awaited<ReturnType<typeof requestServerChatGeneration>>, { status: 'ok' }> {
-  return served.status === 'ok' && 'req' in served
-}
-
-function findGeneratedAssistantMessage(chat: Chat, generationId: string) {
-  const byId = chat.message.find((message) => message.chatId === generationId)
-  if (byId?.role === 'char') return byId
-  return [...chat.message]
-    .reverse()
-    .find(
-      (message) => message.role === 'char' && message.generationInfo?.generationId === generationId,
-    )
-}
 
 export async function sendChat(
   chatProcessIndex = -1,
@@ -133,25 +84,9 @@ export async function sendChat(
     stage4Duration: 0,
   }
 
-  let findCharCache: { [key: string]: character } = {}
-  function findCharacterbyIdwithCache(id: string) {
-    const d = findCharCache[id]
-    if (!!d) {
-      return d
-    } else {
-      const r = findCharacterbyId(id)
-      findCharCache[id] = r
-      return r
-    }
-  }
-
-  function runCurrentChatFunction(chat: Chat) {
-    chat.message = chat.message.map((v) => {
-      v.data = risuChatParser(v.data, { chara: currentChar, runVar: true })
-      return v
-    })
-    return chat
-  }
+  const findCharacterbyIdwithCache = createSendChatCharacterCache()
+  const runCurrentChatFunction = (chat: Parameters<typeof runSendChatMessageVariables>[0]) =>
+    runSendChatMessageVariables(chat, currentChar)
 
   function reformatContent(data: string) {
     if (chatProcessIndex === -1) {
@@ -195,27 +130,6 @@ export async function sendChat(
 
   try {
     const setProcessStage = (stage: number) => chatProcessStage.set(stage)
-    const applyServerTerminalSideEffects = async (terminal: ServerChatTerminal): Promise<void> => {
-      for (const sideEffect of terminal.sideEffects ?? []) {
-        switch (sideEffect.kind) {
-          case 'tts': {
-            const payload = sideEffect.payload
-            if (!payload || typeof payload !== 'object') continue
-            const text = (payload as { text?: unknown }).text
-            if (typeof text === 'string' && text.length > 0) {
-              await sayTTS(currentChar, text)
-            }
-            break
-          }
-          case 'hypav3_progress':
-            applyServerHypaV3Progress(sideEffect.payload)
-            break
-          default:
-            break
-        }
-      }
-    }
-
     const ctx = setupSendChatContext({
       chatProcessIndex,
       chatAdditonalTokens: arg.chatAdditonalTokens,
@@ -235,329 +149,80 @@ export async function sendChat(
     let inputTokens = 0
     let outputTokens = DBState.db.maxResponse
     let assembledByServer = false
-    let serverDispatch:
-      | {
-          req: DispatchSuccessReq
-          generationId: string
-          generationInfo: MessageGenerationInfo
-          terminal: Promise<ServerChatTerminal>
-        }
-      | undefined
+    let serverDispatch: ServerBackedDispatch | undefined
 
     // Server-side prompt assembly with browser-side patch replay. Send-like
     // calls now consume the `/chat` provider stream; preview modes still only
     // read the assembled prompt payload.
     if (isFastifyServer && DBState.db.useServerPromptAssembly) {
-      const mode: ServerChatInput['mode'] = arg.previewPrompt
-        ? 'preview_prompt'
-        : arg.preview
-          ? 'preview'
-          : typeof arg.regenerateMessageId === 'string'
-            ? 'regenerate'
-            : arg.continue
-              ? 'continue'
-              : 'send'
-      const lastMessage = currentChat.message.at(-1)
-      const userMessage =
-        mode === 'send' && lastMessage?.role === 'user' ? lastMessage.data : undefined
-      const canUseServerAssembly = mode !== 'send' || typeof userMessage === 'string'
-      if (canUseServerAssembly) {
-        setProcessStage(1)
-        stageTimings.stage1Start = Date.now()
-        const input: ServerChatInput = {
-          chatId: currentChat.id ?? '',
-          characterId: currentChar.chaId,
-          mode,
-        }
-        if (typeof userMessage === 'string') {
-          input.userMessage = userMessage
-        }
-        if (mode === 'regenerate') {
-          input.regenerateMessageId = arg.regenerateMessageId
-        }
-        const wantsServerDispatch = !arg.preview && !arg.previewPrompt
-        const served = wantsServerDispatch
-          ? await requestServerChatGeneration(input, abortSignal)
-          : await requestServerChat(input, abortSignal)
-        if (served.status === 'aborted') {
-          return false
-        }
-        if (served.status === 'error') {
-          for (const patch of served.messagePatches ?? []) {
-            const previous =
-              patch.chatVarMutations.length > 0 ? currentChatStateSnapshot() : undefined
-            withTrustedServerProjectionWrite(() => {
-              const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
-              applyServerMessagePatch(liveChat, patch)
-              if (previous && liveChat.id) {
-                const scriptstatePatch: Record<string, string | number | boolean> = {}
-                const deleteKeys: string[] = []
-                for (const mutation of patch.chatVarMutations) {
-                  if (mutation.after === null) {
-                    deleteKeys.push(mutation.key)
-                  } else {
-                    scriptstatePatch[mutation.key] = mutation.after
-                  }
-                }
-                dispatchPatchChatScriptstate(liveChat.id, scriptstatePatch, deleteKeys, previous)
-              }
-            })
-          }
-          currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-          throwError(served.error)
-          return false
-        }
-        stageTimings.stage1Duration =
-          numberFrom(served.info?.timings?.prompt) ?? Date.now() - stageTimings.stage1Start
-        if (arg.preview || arg.previewPrompt) {
-          if (arg.previewPrompt) {
-            const promptText = served.prompt.promptInfo?.promptText
-            previewBody = typeof promptText === 'string' ? promptText : ''
-          } else {
-            previewFormated = (served.prompt.formated as OpenAIChat[]) ?? []
-          }
-          return true
-        }
-
-        for (const patch of served.messagePatches) {
-          const previous =
-            patch.chatVarMutations.length > 0 ? currentChatStateSnapshot() : undefined
-          withTrustedServerProjectionWrite(() => {
-            const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
-            applyServerMessagePatch(liveChat, patch)
-            if (previous && liveChat.id) {
-              const scriptstatePatch: Record<string, string | number | boolean> = {}
-              const deleteKeys: string[] = []
-              for (const mutation of patch.chatVarMutations) {
-                if (mutation.after === null) {
-                  deleteKeys.push(mutation.key)
-                } else {
-                  scriptstatePatch[mutation.key] = mutation.after
-                }
-              }
-              dispatchPatchChatScriptstate(liveChat.id, scriptstatePatch, deleteKeys, previous)
-            }
-          })
-        }
-        currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-
-        if (!served.prompt.formated) {
-          throwError('server prompt assembly did not return formated rows')
-          return false
-        }
-        formated = served.prompt.formated
-        biases = served.prompt.biases ?? []
-        const promptText = served.prompt.promptInfo?.promptText
-        if (Array.isArray(promptText)) {
-          promptInfo.promptText = promptText as OpenAIChat[]
-        }
-        inputTokens =
-          numberFrom(served.info?.tokens?.prompt) ??
-          numberFrom(served.prompt.promptInfo?.inputTokens) ??
-          0
-        outputTokens =
-          numberFrom(served.info?.responseBudget) ??
-          numberFrom(served.prompt.promptInfo?.outputTokens) ??
-          DBState.db.maxResponse
+      const serverAssembly = await assembleServerBackedSendChat({
+        selectedChar,
+        selectedChat,
+        currentChar,
+        currentChat,
+        promptInfo,
+        stageTimings,
+        abortSignal,
+        setProcessStage,
+        preview: arg.preview,
+        previewPrompt: arg.previewPrompt,
+        continue: arg.continue,
+        regenerateMessageId: arg.regenerateMessageId,
+      })
+      if (serverAssembly.status === 'aborted') {
+        return false
+      }
+      if (serverAssembly.status === 'failed') {
+        currentChat = serverAssembly.currentChat
+        throwError(serverAssembly.error)
+        return false
+      }
+      if (serverAssembly.status === 'preview') {
+        if (serverAssembly.body !== undefined) previewBody = serverAssembly.body
+        if (serverAssembly.formated !== undefined) previewFormated = serverAssembly.formated
+        return true
+      }
+      if (serverAssembly.status === 'assembled') {
+        currentChat = serverAssembly.currentChat
+        formated = serverAssembly.formated
+        biases = serverAssembly.biases
+        inputTokens = serverAssembly.inputTokens
+        outputTokens = serverAssembly.outputTokens
         assembledByServer = true
-        if (wantsServerDispatch && isServerChatGenerationOk(served)) {
-          serverDispatch = {
-            req: served.req,
-            generationId: served.generationId,
-            generationInfo: served.generationInfo,
-            terminal: served.terminal,
-          }
-          generationInfo = served.generationInfo
-        }
+        serverDispatch = serverAssembly.dispatch
+        generationInfo = serverAssembly.dispatch?.generationInfo
       }
     }
 
     if (!assembledByServer) {
-      withTrustedServerProjectionWrite(() => {
-        const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
-        currentChat = runCurrentChatFunction(liveChat)
-        DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
-      })
-      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-
-      setProcessStage(1)
-      stageTimings.stage1Start = Date.now()
-      const unformated = {
-        main: [] as OpenAIChat[],
-        jailbreak: [] as OpenAIChat[],
-        chats: [] as OpenAIChat[],
-        lorebook: [] as OpenAIChat[],
-        globalNote: [] as OpenAIChat[],
-        authorNote: [] as OpenAIChat[],
-        lastChat: [] as OpenAIChat[],
-        description: [] as OpenAIChat[],
-        postEverything: [] as OpenAIChat[],
-        personaPrompt: [] as OpenAIChat[],
-      }
-
-      const { promptTemplate, usingPromptTemplate } = normalizeTemplate(currentChar)
-
-      if (!currentChar.utilityBot && !promptTemplate) {
-        const sections = buildPlainPromptSections(currentChar)
-        unformated.main.push(...sections.main)
-        unformated.jailbreak.push(...sections.jailbreak)
-        unformated.globalNote.push(...sections.globalNote)
-      }
-
-      unformated.authorNote.push(...buildAuthorNote(currentChar, currentChat))
-      unformated.postEverything.push(...buildCotInstruction(usingPromptTemplate))
-
-      unformated.description.push(await buildDescription(currentChar, currentChat))
-      unformated.personaPrompt.push(...buildPersona(currentChar))
-      unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
-
-      const lore = await buildLorebookContext(currentChar, unformated)
-      const { resolvePosition, positionParser, depthPrompts } = lore
-
-      //await tokenize currernt
-      let currentTokens = DBState.db.maxResponse
-
-      //for unexpected error
-      currentTokens += 50
-
-      const preflight = await preflightTemplateTokens(
-        promptTemplate,
-        usingPromptTemplate,
-        unformated,
-        tokenizer,
+      const localAssembly = await assembleLocalSendChatPrompt({
         currentChar,
-        positionParser,
-      )
-      currentTokens += preflight.addedTokens
-      const memoryCardUsed = preflight.memoryCardUsed
-      const hasCachePoint = preflight.hasCachePoint
-
-      const history = await buildHistoryWindow({
-        currentChar,
-        currentChat,
-        usingPromptTemplate,
-        tokenizer,
-        findCharacterbyIdwithCache,
-        depthPrompts,
-        resolvePosition,
-      })
-      if (history.stopSending === true) {
-        return false
-      }
-      currentTokens += history.addedTokens
-      currentChat = history.currentChat
-      const triggerResult = history.triggerResult
-
-      const memWindow = await buildMemoryWindow({
-        chats: history.chats,
-        currentTokens,
-        maxContextTokens,
         currentChat,
         nowChatroom,
-        tokenizer,
         selectedChar,
         selectedChat,
-        memoryCardUsed,
-        promptTemplate,
-        unformated,
+        tokenizer,
+        promptInfo,
+        maxContextTokens,
         stageTimings,
+        isContinue: !!arg.continue,
+        findCharacterbyIdwithCache,
         throwError,
         setProcessStage,
       })
-      if (memWindow.stopSending === true) {
+      if (localAssembly.status === 'stopped') {
         return false
       }
-      currentChat = memWindow.currentChat
-      const memories = memWindow.memories
-
-      biases = DBState.db.bias.concat(currentChar.bias).map((v) => {
-        return [
-          risuChatParser(
-            v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'),
-            { chara: currentChar },
-          ),
-          v[1],
-        ]
-      })
-
-      for (const depthPrompt of depthPrompts) {
-        const chat: OpenAIChat = {
-          role: depthPrompt.role,
-          content: risuChatParser(resolvePosition(depthPrompt.prompt), { chara: currentChar }),
-        }
-        const depth =
-          depthPrompt.pos === 'depth'
-            ? depthPrompt.depth
-            : unformated.chats.length - depthPrompt.depth
-        unformated.chats.splice(depth, 0, chat)
-      }
-
-      if (triggerResult) {
-        if (triggerResult.additonalSysPrompt.promptend) {
-          unformated.postEverything.push({
-            role: 'system',
-            content: triggerResult.additonalSysPrompt.promptend,
-          })
-        }
-        if (triggerResult.additonalSysPrompt.historyend) {
-          unformated.lastChat.push({
-            role: 'system',
-            content: triggerResult.additonalSysPrompt.historyend,
-          })
-        }
-        if (triggerResult.additonalSysPrompt.start) {
-          unformated.lastChat.unshift({
-            role: 'system',
-            content: triggerResult.additonalSysPrompt.start,
-          })
-        }
-      }
-
-      //make into one
-
-      const formatOrder = safeStructuredClone(DBState.db.formatingOrder)
-      if (formatOrder) {
-        formatOrder.push('postEverything')
-      }
-
-      const render = await renderFinalPrompt({
-        currentChar,
-        unformated,
-        promptTemplate,
-        usingPromptTemplate,
-        formatOrder: formatOrder ?? [],
-        memories,
-        positionParser,
-        hasCachePoint,
-        isContinue: !!arg.continue,
-      })
-      formated = render.formated
-      if (render.promptText) {
-        promptInfo.promptText = render.promptText
-      }
-
-      const budget = await finalizeRequestBudget(
-        formated,
-        maxContextTokens,
-        DBState.db.maxResponse,
-        tokenizer,
-      )
-      if (!budget.ok) {
-        throwError(
-          language.errors.toomuchtoken +
-            '\n\nAt token rechecking. Required Tokens: ' +
-            budget.inputTokens,
-        )
-        return false
-      }
-      formated = budget.formated
-      inputTokens = budget.inputTokens
-      outputTokens = budget.outputTokens
+      currentChat = localAssembly.currentChat
+      formated = localAssembly.formated
+      biases = localAssembly.biases
+      inputTokens = localAssembly.inputTokens
+      outputTokens = localAssembly.outputTokens
     }
 
     let req: DispatchSuccessReq
     let generationId: string
-    let serverTerminal: Promise<ServerChatTerminal> | undefined
+    let serverTerminal: ServerBackedDispatch['terminal'] | undefined
     const serverGenerationTargetMessageId =
       serverDispatch && arg.continue ? currentChat.message.at(-1)?.chatId : undefined
     if (serverDispatch) {
@@ -641,22 +306,18 @@ export async function sendChat(
 
     if (serverTerminal) {
       const terminal = await serverTerminal
-      const terminalInfo = terminal.done?.generationInfo
-      if (terminalInfo && typeof terminalInfo === 'object') {
-        Object.assign(generationInfo, terminalInfo)
-      }
-      if (terminal.status === 'error') {
-        if (terminal.restoration) {
-          withTrustedServerProjectionWrite(() => {
-            const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
-            applyServerChatRestoration(liveChat, terminal.restoration)
-          })
-          currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
-        }
-        throwError(terminal.error ?? 'provider dispatch failed')
+      const terminalResult = await applyServerBackedTerminal({
+        terminal,
+        currentChar,
+        selectedChar,
+        selectedChat,
+        generationInfo,
+      })
+      currentChat = terminalResult.currentChat
+      if (terminalResult.status === 'failed') {
+        throwError(terminalResult.error)
         return false
       }
-      await applyServerTerminalSideEffects(terminal)
     }
 
     const stage4 = await runStage4({
@@ -681,18 +342,12 @@ export async function sendChat(
         signal: abortSignal,
       })
     }
-    if (serverDispatch && currentChat.id) {
-      const assistantMessage = findGeneratedAssistantMessage(currentChat, generationId)
-      if (assistantMessage) {
-        const previous = currentChatStateSnapshot()
-        ensureMessageId(assistantMessage)
-        dispatchPersistGenerationResult(
-          currentChat.id,
-          assistantMessage,
-          previous,
-          serverGenerationTargetMessageId,
-        )
-      }
+    if (serverDispatch) {
+      persistServerBackedGenerationResult({
+        currentChat,
+        generationId,
+        targetMessageId: serverGenerationTargetMessageId,
+      })
     }
     return true
   } finally {

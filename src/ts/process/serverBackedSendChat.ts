@@ -1,0 +1,300 @@
+import { DBState } from '../stores.svelte'
+import type {
+  character,
+  Chat,
+  Message,
+  MessageGenerationInfo,
+  MessagePresetInfo,
+} from '../storage/database.svelte'
+import {
+  currentChatStateSnapshot,
+  dispatchPatchChatScriptstate,
+  dispatchPersistGenerationResult,
+  ensureMessageId,
+} from '../chatCommands'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { applyServerHypaV3Progress } from './request/serverMemory'
+import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
+import {
+  requestServerChat,
+  requestServerChatGeneration,
+  type ServerChatInput,
+  type ServerChatTerminal,
+} from './request/serverChat'
+import type { ServerChatMessagePatch } from './request/serverChatEvents'
+import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
+import type { OpenAIChat } from './index.svelte'
+import { sayTTS } from './tts'
+
+export interface ServerBackedStageTimings {
+  stage1Start: number
+  stage1Duration: number
+}
+
+type ServerChatAnyResult =
+  | Awaited<ReturnType<typeof requestServerChat>>
+  | Awaited<ReturnType<typeof requestServerChatGeneration>>
+
+export type ServerBackedDispatch = {
+  req: DispatchSuccessReq
+  generationId: string
+  generationInfo: MessageGenerationInfo
+  terminal: Promise<ServerChatTerminal>
+}
+
+export type ServerBackedAssemblyResult =
+  | { status: 'unavailable' }
+  | { status: 'aborted' }
+  | { status: 'failed'; error: string; currentChat: Chat }
+  | { status: 'preview'; formated?: OpenAIChat[]; body?: string }
+  | {
+      status: 'assembled'
+      currentChat: Chat
+      formated: OpenAIChat[]
+      biases: [string, number][]
+      inputTokens: number
+      outputTokens: number
+      dispatch?: ServerBackedDispatch
+    }
+
+export type ServerBackedTerminalResult =
+  | { status: 'ok'; currentChat: Chat }
+  | { status: 'failed'; error: string; currentChat: Chat }
+
+function numberFrom(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function isServerChatGenerationOk(
+  served: ServerChatAnyResult,
+): served is Extract<Awaited<ReturnType<typeof requestServerChatGeneration>>, { status: 'ok' }> {
+  return served.status === 'ok' && 'req' in served
+}
+
+function findGeneratedAssistantMessage(chat: Chat, generationId: string): Message | undefined {
+  const byId = chat.message.find((message) => message.chatId === generationId)
+  if (byId?.role === 'char') return byId
+  return [...chat.message]
+    .reverse()
+    .find(
+      (message) => message.role === 'char' && message.generationInfo?.generationId === generationId,
+    )
+}
+
+function serverChatMode(args: {
+  preview?: boolean
+  previewPrompt?: boolean
+  regenerateMessageId?: string
+  continue?: boolean
+}): ServerChatInput['mode'] {
+  if (args.previewPrompt) return 'preview_prompt'
+  if (args.preview) return 'preview'
+  if (typeof args.regenerateMessageId === 'string') return 'regenerate'
+  if (args.continue) return 'continue'
+  return 'send'
+}
+
+function applyServerMessagePatches(args: {
+  patches: ServerChatMessagePatch[]
+  selectedChar: number
+  selectedChat: number
+}): Chat {
+  const { patches, selectedChar, selectedChat } = args
+  for (const patch of patches) {
+    const previous = patch.chatVarMutations.length > 0 ? currentChatStateSnapshot() : undefined
+    withTrustedServerProjectionWrite(() => {
+      const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
+      applyServerMessagePatch(liveChat, patch)
+      if (previous && liveChat.id) {
+        const scriptstatePatch: Record<string, string | number | boolean> = {}
+        const deleteKeys: string[] = []
+        for (const mutation of patch.chatVarMutations) {
+          if (mutation.after === null) {
+            deleteKeys.push(mutation.key)
+          } else {
+            scriptstatePatch[mutation.key] = mutation.after
+          }
+        }
+        dispatchPatchChatScriptstate(liveChat.id, scriptstatePatch, deleteKeys, previous)
+      }
+    })
+  }
+  return DBState.db.characters[selectedChar].chats[selectedChat]
+}
+
+export async function assembleServerBackedSendChat(args: {
+  selectedChar: number
+  selectedChat: number
+  currentChar: character
+  currentChat: Chat
+  promptInfo: MessagePresetInfo
+  stageTimings: ServerBackedStageTimings
+  abortSignal: AbortSignal
+  setProcessStage: (stage: number) => void
+  preview?: boolean
+  previewPrompt?: boolean
+  continue?: boolean
+  regenerateMessageId?: string
+}): Promise<ServerBackedAssemblyResult> {
+  const mode = serverChatMode(args)
+  const lastMessage = args.currentChat.message.at(-1)
+  const userMessage = mode === 'send' && lastMessage?.role === 'user' ? lastMessage.data : undefined
+  const canUseServerAssembly = mode !== 'send' || typeof userMessage === 'string'
+  if (!canUseServerAssembly) return { status: 'unavailable' }
+
+  args.setProcessStage(1)
+  args.stageTimings.stage1Start = Date.now()
+  const input: ServerChatInput = {
+    chatId: args.currentChat.id ?? '',
+    characterId: args.currentChar.chaId,
+    mode,
+  }
+  if (typeof userMessage === 'string') {
+    input.userMessage = userMessage
+  }
+  if (mode === 'regenerate') {
+    input.regenerateMessageId = args.regenerateMessageId
+  }
+
+  const wantsServerDispatch = !args.preview && !args.previewPrompt
+  const served = wantsServerDispatch
+    ? await requestServerChatGeneration(input, args.abortSignal)
+    : await requestServerChat(input, args.abortSignal)
+
+  if (served.status === 'aborted') return { status: 'aborted' }
+  if (served.status === 'error') {
+    const currentChat = applyServerMessagePatches({
+      patches: served.messagePatches ?? [],
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+    })
+    return { status: 'failed', error: served.error, currentChat }
+  }
+
+  args.stageTimings.stage1Duration =
+    numberFrom(served.info?.timings?.prompt) ?? Date.now() - args.stageTimings.stage1Start
+
+  if (args.preview || args.previewPrompt) {
+    if (args.previewPrompt) {
+      const promptText = served.prompt.promptInfo?.promptText
+      return { status: 'preview', body: typeof promptText === 'string' ? promptText : '' }
+    }
+    return {
+      status: 'preview',
+      formated: (served.prompt.formated as OpenAIChat[]) ?? [],
+    }
+  }
+
+  const currentChat = applyServerMessagePatches({
+    patches: served.messagePatches,
+    selectedChar: args.selectedChar,
+    selectedChat: args.selectedChat,
+  })
+
+  if (!served.prompt.formated) {
+    return {
+      status: 'failed',
+      error: 'server prompt assembly did not return formated rows',
+      currentChat,
+    }
+  }
+
+  const promptText = served.prompt.promptInfo?.promptText
+  if (Array.isArray(promptText)) {
+    args.promptInfo.promptText = promptText as OpenAIChat[]
+  }
+
+  const dispatch =
+    wantsServerDispatch && isServerChatGenerationOk(served)
+      ? {
+          req: served.req,
+          generationId: served.generationId,
+          generationInfo: served.generationInfo,
+          terminal: served.terminal,
+        }
+      : undefined
+
+  return {
+    status: 'assembled',
+    currentChat,
+    formated: served.prompt.formated,
+    biases: served.prompt.biases ?? [],
+    inputTokens:
+      numberFrom(served.info?.tokens?.prompt) ??
+      numberFrom(served.prompt.promptInfo?.inputTokens) ??
+      0,
+    outputTokens:
+      numberFrom(served.info?.responseBudget) ??
+      numberFrom(served.prompt.promptInfo?.outputTokens) ??
+      DBState.db.maxResponse,
+    ...(dispatch ? { dispatch } : {}),
+  }
+}
+
+export async function applyServerBackedTerminal(args: {
+  terminal: ServerChatTerminal
+  currentChar: character
+  selectedChar: number
+  selectedChat: number
+  generationInfo: MessageGenerationInfo
+}): Promise<ServerBackedTerminalResult> {
+  const terminalInfo = args.terminal.done?.generationInfo
+  if (terminalInfo && typeof terminalInfo === 'object') {
+    Object.assign(args.generationInfo, terminalInfo)
+  }
+  if (args.terminal.status === 'error') {
+    if (args.terminal.restoration) {
+      withTrustedServerProjectionWrite(() => {
+        const liveChat = DBState.db.characters[args.selectedChar].chats[args.selectedChat]
+        applyServerChatRestoration(liveChat, args.terminal.restoration!)
+      })
+    }
+    return {
+      status: 'failed',
+      error: args.terminal.error ?? 'provider dispatch failed',
+      currentChat: DBState.db.characters[args.selectedChar].chats[args.selectedChat],
+    }
+  }
+
+  for (const sideEffect of args.terminal.sideEffects ?? []) {
+    switch (sideEffect.kind) {
+      case 'tts': {
+        const payload = sideEffect.payload
+        if (!payload || typeof payload !== 'object') break
+        const text = (payload as { text?: unknown }).text
+        if (typeof text === 'string' && text.length > 0) {
+          await sayTTS(args.currentChar, text)
+        }
+        break
+      }
+      case 'hypav3_progress':
+        applyServerHypaV3Progress(sideEffect.payload)
+        break
+      default:
+        break
+    }
+  }
+
+  return {
+    status: 'ok',
+    currentChat: DBState.db.characters[args.selectedChar].chats[args.selectedChat],
+  }
+}
+
+export function persistServerBackedGenerationResult(args: {
+  currentChat: Chat
+  generationId: string
+  targetMessageId?: string
+}): void {
+  if (!args.currentChat.id) return
+  const assistantMessage = findGeneratedAssistantMessage(args.currentChat, args.generationId)
+  if (!assistantMessage) return
+  const previous = currentChatStateSnapshot()
+  ensureMessageId(assistantMessage)
+  dispatchPersistGenerationResult(
+    args.currentChat.id,
+    assistantMessage,
+    previous,
+    args.targetMessageId,
+  )
+}

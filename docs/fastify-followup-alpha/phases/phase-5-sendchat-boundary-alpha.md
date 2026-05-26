@@ -2,7 +2,8 @@
 
 Date: 2026-05-27
 
-Status: open.
+Status: closed. Closeout log:
+[`../phases-completed/phase-5-sendchat-boundary-alpha.md`](../phases-completed/phase-5-sendchat-boundary-alpha.md).
 
 ## Goal
 
@@ -37,6 +38,11 @@ The 2026-05-27 alpha re-audit found:
   `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
   typing diagnostics, which should be handled with the broad typecheck
   cleanup unless this refactor touches that harness.
+
+## Closed Scope
+
+The alpha boundary cleanup landed on 2026-05-27. Keep any detailed
+slice notes in the completed closeout log linked above.
 
 ## Tasks
 
@@ -97,5 +103,5 @@ The 2026-05-27 re-audit ran:
 - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts`:
   passed, 2 files and 26 tests.
 - `pnpm check`: failed with the known broad alpha typecheck blocker
-  (57 errors, 0 warnings, 17 files), including the
-  server-backed sendChat fixture typing bucket.
+  (58 errors, 0 warnings, 18 files). The current failure list has no
+  diagnostics in the extracted sendChat helper files.

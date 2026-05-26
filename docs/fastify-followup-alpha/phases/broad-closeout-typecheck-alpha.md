@@ -11,9 +11,9 @@ expanding the focused Phase 5, 6, or 9 functional slices.
 
 ## Closeout Finding
 
-The 2026-05-27 broad verification pass failed at `pnpm check` with 57
-diagnostics across 17 files. The rest of the matrix passed in the same
-workspace:
+The latest 2026-05-27 broad verification pass failed at `pnpm check`
+with 58 diagnostics across 18 files. The rest of the matrix passed in
+the same workspace:
 
 - `pnpm test`: passed, 67 files, 742 tests passed, 4 skipped.
 - `pnpm api:test`: passed, 68 files, 1212 tests passed.
@@ -46,6 +46,8 @@ workspace:
   `server/fastify/src/prompt/triggers.ts`.
 - Server-backed sendChat fixture typing:
   `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.
+- Client test fixture typing:
+  `src/ts/process/modules.test.ts`.
 
 ## Tasks
 
