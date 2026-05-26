@@ -15,17 +15,16 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-7d decode normalization and validation. The server now
-  has a pure `.risu` import snapshot normalizer that consumes production legacy
-  and RISUSAVE block codecs, assembles block saves into current Phase 9
-  resource shapes, runs command-owned stable-id normalizers, validates
-  malformed decoded rows, and preserves remote/cache-only unsupported-reference
-  reports without repository or browser-storage access.
-- Current gap: repository-backed export snapshots are not built from server
-  persistence yet.
-- Next default pickup: 9-7e, repository-backed export adapter.
-- Last recorded focused baselines after 9-7d: focused Fastify
-  `risuSaveCodec.test.ts` passed with 16 tests and `pnpm check` clean.
+- Last landed work: 9-7e repository-backed export adapter. The server now
+  builds pure `.risu` export bytes from persisted `db.json`, preserves server
+  asset ids as JSON references, emits route-ready legacy and RISUSAVE block
+  envelopes, and validates export snapshots against the current Phase 9 import
+  shape without route wiring or asset-byte walking.
+- Current gap: multipart `.risu` import route wiring is not connected to the
+  server codec yet.
+- Next default pickup: 9-8a, multipart `.risu` import route.
+- Last recorded focused baselines after 9-7e: focused Fastify
+  `risuSaveCodec.test.ts` passed with 20 tests and `pnpm check` clean.
   Broader baselines remain: 9-6c for full client/API test commands and
   `pnpm check`, and 9-5d for the last full `pnpm build`.
 
@@ -54,7 +53,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-7d landed; continue with 9-7e export adapter.                 |
+| Client thinning                             | Active; 9-7e landed; continue with 9-8a multipart import route.         |
 
 ## Maintenance Rules
 

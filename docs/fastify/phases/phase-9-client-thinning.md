@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-7d - Decode normalization and validation**. Next pickup:
-**9-7e - Repository-backed export adapter**.
+**9-7e - Repository-backed export adapter**. Next pickup:
+**9-8a - Multipart `.risu` import route**.
 
 ## Goal
 
@@ -331,6 +331,8 @@ surfaces.
   - **9-7e - Repository-backed export adapter.** Build export snapshots from
     server persistence with server asset ids preserved as references. ZIP
     bundle generation and multipart import stay in 9-8.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-7e.md`](../phases-completed/phase-9-client-thinning-9-7e.md).
 - **9-8 - Import/export routes and bundle assets.** Wire the server codec to
   routes and real asset walking after 9-7 lands.
   - **9-8a - Multipart `.risu` import route.** Accept multipart uploads at

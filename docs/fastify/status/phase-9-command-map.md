@@ -182,7 +182,7 @@ move.
 | Bootstrap projection | `GET /api/v1/bootstrap`, `src/ts/server/bootstrap.ts`                         | Web startup uses server bootstrap in server-backed mode. `DBState.db` guard turns on after replacement sweep through trusted projection writes.       | N/A                                                                             | 9-5b, 9-5e-i-iii |
 | Storage gating       | Browser helpers, not a command route                                          | Prevent server-backed web startup/save/backup/asset/cache paths from reaching localForage, OPFS, AutoStorage, or NodeStorage.                         | N/A                                                                             | 9-6a-d           |
 | Provider masking     | `GET /api/v1/bootstrap`, settings command placeholders                        | Bootstrap masks provider/media/memory secrets; grouped settings commands resolve the shared masked placeholder as "leave unchanged".                  | N/A                                                                             | 9-6e             |
-| Server `.risu` codec | Server codec modules                                                          | Legacy and RISUSAVE decode core moved to server-safe code; decoded saves normalize into current import snapshots; repository export is 9-7e and route wiring stays in 9-8. | N/A                                                   | 9-7a-e           |
+| Server `.risu` codec | Server codec modules                                                          | Legacy and RISUSAVE codec core moved to server-safe code; decoded saves normalize into current import snapshots; repository-backed export snapshots are route-ready; route wiring stays in 9-8. | N/A                                                   | 9-7a-e           |
 | Import/export routes | `/api/v1/import/risusave`, `/api/v1/export/risusave`, `/api/v1/export/bundle` | Multipart import, repository `.risu` export, asset reference walking, and bundle export. Existing JSON import is replaced when the codec route lands. | `state.imported`, `state.exported` for event stream visibility where applicable | 9-8a-d           |
 | Backup restore       | Existing `/api/v1/backups/:id/restore`                                        | Keep backup routes administrative. Restore emits `state.restored` after the repository revision bump so browser projection re-fetches bootstrap.       | `state.restored`                                                                | 9-6c             |
 
@@ -241,13 +241,12 @@ guard integration, server-backed storage gates, asset-byte reads,
 backup/restore projection, residual local-cache gates, and provider
 secret masking are complete through 9-6e.
 
-Server `.risu` core work is complete through **9-7d - Decode
-normalization and validation**: the fixture harness, legacy envelope
-codec, RISUSAVE block codec, and import snapshot normalizer now live
-under `server/fastify/src/risuSave/`.
+Server `.risu` core work is complete through **9-7e - Repository-backed
+export adapter**: the fixture harness, legacy envelope codec, RISUSAVE
+block codec, import snapshot normalizer, and repository export adapter
+now live under `server/fastify/src/risuSave/`.
 
-Current pickup: **9-7e - Repository-backed export adapter**. Build export
-snapshots from server persistence, preserving server asset ids as
-references only. Multipart import/export routes, repository imports,
-asset walking, bundle export, and browser smoke closeout remain in 9-8
-and 9-9.
+Current pickup: **9-8a - Multipart `.risu` import route**. Wire uploaded
+`.risu` files through the 9-7 import snapshot API and repository import
+application. Repository export route, asset walking, bundle export, and
+browser smoke closeout remain in 9-8 and 9-9.

@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import {
   classifyRisuSaveEnvelope,
@@ -17,6 +18,12 @@ import {
   encodeLegacyRisuSaveEnvelope,
 } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
+import {
+  buildRisuSaveExportBlocks,
+  encodeRepositoryRisuSaveBlockExport,
+  encodeRepositoryRisuSaveLegacyExport,
+} from '../src/risuSave/exportSnapshot.js'
+import { writePersisted } from '../src/repository.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const harnessSource = readFileSync(path.join(here, '../src/risuSave/fixtureHarness.ts'), 'utf8')
@@ -29,10 +36,34 @@ const importSnapshotSource = readFileSync(
   path.join(here, '../src/risuSave/importSnapshot.ts'),
   'utf8',
 )
+const exportSnapshotSource = readFileSync(
+  path.join(here, '../src/risuSave/exportSnapshot.ts'),
+  'utf8',
+)
+
+const dataDirs: string[] = []
+
+function makeDataDir(): string {
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-risu-export-'))
+  dataDirs.push(dataDir)
+  return dataDir
+}
+
+afterEach(() => {
+  for (const dataDir of dataDirs.splice(0)) {
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
 
 describe('server .risu fixture harness', () => {
   it('keeps codec helpers server-safe and detached from browser storage modules', () => {
-    for (const source of [harnessSource, legacyCodecSource, blockCodecSource, importSnapshotSource]) {
+    for (const source of [
+      harnessSource,
+      legacyCodecSource,
+      blockCodecSource,
+      importSnapshotSource,
+      exportSnapshotSource,
+    ]) {
       expect(source).not.toContain('localforage')
       expect(source).not.toContain('@tauri-apps')
       expect(source).not.toContain('database.svelte')
@@ -363,5 +394,131 @@ describe('server .risu fixture harness', () => {
     expect(() => decodeRisuSaveImportSnapshot(invalidRootComponent)).toThrow(
       /bad-component block key must be a non-empty string/,
     )
+  })
+
+  it('exports repository snapshots as legacy .risu envelopes', () => {
+    const dataDir = makeDataDir()
+    const assetId = 'a'.repeat(64)
+    const database = {
+      version: 1,
+      characters: [
+        {
+          chaId: 'export-char',
+          name: 'Export Character',
+          image: assetId,
+          chats: [
+            {
+              id: 'export-chat',
+              name: 'Export Chat',
+              note: '',
+              localLore: [],
+              message: [{ role: 'user', data: 'hello', chatId: 'export-message' }],
+            },
+          ],
+        },
+      ],
+      characterOrder: ['export-char'],
+      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      modules: [{ id: 'module-a', name: 'Module A' }],
+      loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
+      plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+      pluginCustomStorage: { 'plugin-a:key': { assetId } },
+    }
+    writePersisted(dataDir, {
+      _version: 1,
+      database,
+      assets: [{ id: assetId, ext: 'png', size: 12, contentType: 'image/png' }],
+    })
+
+    const encoded = encodeRepositoryRisuSaveLegacyExport(dataDir, 'legacy-raw')
+    const decoded = decodeRisuSaveImportSnapshot(encoded)
+
+    expect(decoded.envelope).toBe('legacy-raw')
+    expect(decoded.unsupportedReferences).toEqual([])
+    expect(decoded.database.characters).toHaveLength(1)
+    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(assetId)
+    expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { assetId } })
+  })
+
+  it('exports repository snapshots as RISUSAVE block envelopes', () => {
+    const dataDir = makeDataDir()
+    const assetId = 'b'.repeat(64)
+    writePersisted(dataDir, {
+      _version: 1,
+      database: {
+        version: 1,
+        selectedCharID: 0,
+        characters: [
+          {
+            chaId: 'block-export-char',
+            name: 'Block Export Character',
+            image: assetId,
+            chats: [],
+          },
+        ],
+        botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+        modules: [{ id: 'module-a', name: 'Module A' }],
+        loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
+        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+        pluginCustomStorage: { 'plugin-a:key': { assetId } },
+      },
+      assets: [{ id: assetId, ext: 'webp', size: 44, contentType: 'image/webp' }],
+    })
+
+    const encoded = encodeRepositoryRisuSaveBlockExport(dataDir, { compression: true })
+    const blocks = decodeRisuSaveBlockEnvelope(encoded)
+    const decoded = decodeRisuSaveImportSnapshot(encoded)
+
+    expect(blocks.unsupportedReferences).toEqual([])
+    expect(
+      blocks.blocks.map((block) => ({
+        name: block.name,
+        type: block.type,
+        compression: block.compression,
+      })),
+    ).toEqual([
+      { name: 'root', type: RisuSaveBlockType.ROOT, compression: true },
+      { name: 'preset', type: RisuSaveBlockType.BOTPRESET, compression: true },
+      { name: 'modules', type: RisuSaveBlockType.MODULES, compression: true },
+      { name: 'loadouts', type: RisuSaveBlockType.LOADOUTS, compression: true },
+      { name: 'plugins', type: RisuSaveBlockType.PLUGINS, compression: true },
+      { name: 'pluginStorage', type: RisuSaveBlockType.PLUGIN_STORAGE, compression: true },
+      {
+        name: 'block-export-char',
+        type: RisuSaveBlockType.CHARACTER_WITH_CHAT,
+        compression: true,
+      },
+      { name: 'config', type: RisuSaveBlockType.CONFIG, compression: true },
+    ])
+    expect(JSON.parse(blocks.blocks[0].content!).__directory).toEqual([
+      'preset',
+      'modules',
+      'loadouts',
+      'plugins',
+      'pluginStorage',
+      'block-export-char',
+      'config',
+    ])
+    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(assetId)
+    expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { assetId } })
+  })
+
+  it('rejects repository export when no persisted database exists', () => {
+    expect(() => encodeRepositoryRisuSaveLegacyExport(makeDataDir())).toThrow(
+      /database payload missing/,
+    )
+  })
+
+  it('validates block export inputs before encoding', () => {
+    expect(() =>
+      buildRisuSaveExportBlocks({
+        characters: [{ name: 'Missing stable id', chats: [] }],
+        botPresets: [],
+        modules: [],
+        loadouts: [],
+        plugins: [],
+        pluginCustomStorage: {},
+      }),
+    ).toThrow(/character\.chaId must be a non-empty string/)
   })
 })
