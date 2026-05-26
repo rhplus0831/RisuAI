@@ -28,6 +28,38 @@ export interface WatchServerBackedSettingsOptions {
   delayMs?: number
 }
 
+export function applyServerBackedSetting(key: string, value: unknown): void {
+  applyServerBackedSettingsPatch({ [key]: value })
+}
+
+export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
+  const commandPatch: SettingsPatch = {}
+  const previous: SettingsPatch = {}
+  const attempted: SettingsPatch = {}
+
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db as unknown as Record<string, unknown>
+    for (const [key, value] of Object.entries(patch)) {
+      if (!settingsGroupForKey(key) || value === undefined) continue
+      previous[key] = cloneJsonValue(target[key])
+      attempted[key] = cloneJsonValue(value)
+      commandPatch[key] = cloneJsonValue(value)
+      target[key] = cloneJsonValue(value)
+    }
+  })
+
+  if (Object.keys(commandPatch).length === 0) return
+
+  void patchServerBackedSettings({
+    patch: commandPatch,
+    rollback: () => {
+      withTrustedServerProjectionWrite(() => {
+        rollbackSettings(previous, attempted)
+      })
+    },
+  })
+}
+
 export function watchServerBackedSettings(
   keys: readonly string[],
   options: WatchServerBackedSettingsOptions = {},

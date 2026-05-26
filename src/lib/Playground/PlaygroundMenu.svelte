@@ -8,7 +8,7 @@
   import PlaygroundSyntax from './PlaygroundSyntax.svelte'
   import { findCharacterIndexbyId } from 'src/ts/util'
   import { characterFormatUpdate, createBlankChar } from 'src/ts/characters'
-  import { type character } from 'src/ts/storage/database.svelte'
+  import { setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import PlaygroundImageGen from './PlaygroundImageGen.svelte'
   import PlaygroundParser from './PlaygroundParser.svelte'
@@ -23,8 +23,8 @@
     currentCharacterStateSnapshot,
     dispatchCreateCharacter,
     dispatchSelectCharacter,
-    dispatchUpdateCharacter,
   } from 'src/ts/characterCommands'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   let easterEggTouch = $state(0)
 
@@ -34,20 +34,15 @@
 
     if (charIndex !== -1) {
       const previous = currentCharacterStateSnapshot()
-      const char = DBState.db.characters[charIndex] as character
+      const char = structuredClone(DBState.db.characters[charIndex]) as character
       char.utilityBot = true
       char.name = 'assistant'
       char.firstMessage = '{{none}}'
-      DBState.db.characters[charIndex] = char
-      characterFormatUpdate(charIndex)
+      const formattedChar = characterFormatUpdate(char)
+      setCharacterByIndex(charIndex, formattedChar)
 
       selectedCharID.set(charIndex)
-      dispatchUpdateCharacter(
-        char.chaId,
-        { utilityBot: true, name: 'assistant', firstMessage: '{{none}}' },
-        previous,
-      )
-      dispatchSelectCharacter(char.chaId, previous)
+      dispatchSelectCharacter(formattedChar.chaId, previous)
       return
     }
 
@@ -55,7 +50,9 @@
     const character = createBlankChar()
     character.chaId = '§playground'
 
-    DBState.db.characters.push(character)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.push(character)
+    })
     dispatchCreateCharacter(character, previous)
 
     playgroundChat()

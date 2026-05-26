@@ -6,6 +6,7 @@ import { patchRuntimeSettings, runServerCommand, type ServerCommandResult } from
 declare global {
   interface Window {
     __RISU_FASTIFY_BROWSER_SMOKE__?: {
+      assertDirectProjectionWriteRejected: () => boolean
       getDatabaseSnapshot: () => Database
       isLoaded: () => boolean
       patchRuntimeSettings: (
@@ -18,6 +19,15 @@ declare global {
 
 export function installFastifyBrowserSmokeHook() {
   window.__RISU_FASTIFY_BROWSER_SMOKE__ = {
+    assertDirectProjectionWriteRejected: () => {
+      try {
+        ;(getDatabase() as unknown as Record<string, unknown>).language =
+          'fastify-smoke-direct-write'
+      } catch {
+        return true
+      }
+      return false
+    },
     getDatabaseSnapshot: () => getDatabase({ snapshot: true }),
     isLoaded: () => get(loadedStore),
     patchRuntimeSettings: (patch) =>

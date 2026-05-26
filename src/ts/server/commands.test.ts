@@ -78,6 +78,7 @@ import {
   replaceModuleScriptsCommand,
   replaceModuleTriggersCommand,
   selectCharacterCommand,
+  settingsGroupForKey,
   selectPersonaCommand,
   selectPluginProviderCommand,
   selectTranslatorPresetCommand,
@@ -201,6 +202,12 @@ describe('server command API adapter', () => {
         },
       },
     ])
+  })
+
+  it('maps projection-sweep toggles to server-backed settings groups', () => {
+    expect(settingsGroupForKey('notification')).toBe('display')
+    expect(settingsGroupForKey('useAutoSuggestions')).toBe('runtime')
+    expect(settingsGroupForKey('useAutoTranslateInput')).toBe('language')
   })
 
   it('reads and caches the command base revision from bootstrap', async () => {

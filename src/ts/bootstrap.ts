@@ -15,7 +15,9 @@ import {
   setDatabase,
   defaultSdDataFunc,
   getDatabase,
+  setServerProjectionWriteGuardEnabled,
   type Database,
+  withTrustedServerProjectionWrite,
 } from './storage/database.svelte'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { checkRisuUpdate } from './update'
@@ -156,7 +158,7 @@ export async function loadData() {
         }
       } catch (error) {}
       LoadingStatusState.text = 'Checking For Format Update...'
-      await checkNewFormat()
+      await withTrustedServerProjectionWrite(() => checkNewFormat())
       const db = getDatabase()
 
       LoadingStatusState.text = 'Updating States...'
@@ -191,7 +193,7 @@ export async function loadData() {
       loadedStore.set(true)
       selectedCharID.set(-1)
       startObserveDom()
-      assignIds()
+      withTrustedServerProjectionWrite(assignIds)
       registerModelDynamic()
       if (!isFastifyServer) {
         saveDb()
@@ -218,6 +220,7 @@ export async function loadWebInitialDatabase() {
       )
     }
     applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
+    setServerProjectionWriteGuardEnabled(true)
     await startServerProjectionEvents()
     return
   }

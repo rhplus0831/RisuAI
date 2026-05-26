@@ -11,13 +11,15 @@ Fastify shapes.
 
 ## Immediate Pickup
 
-1. Close the Phase 9 projection gap.
-   - Enable the server projection write guard in Fastify-served web
-     startup after trusted bootstrap replacement is wired correctly.
-   - Replace or explicitly route the remaining direct `DBState.db`
-     mutations through commands or trusted projection helpers.
-   - Add smoke coverage that proves a direct projection write fails in
-     Fastify web mode.
+1. Continue Phase 9 client thinning.
+   - Wire `.risu` import/export events so behavior matches
+     `docs/fastify/status/phase-9-command-map.md`, or deliberately
+     update the command map and follow-up docs if export visibility is
+     not needed.
+   - Continue the broader Fastify-web direct `DBState.db` write audit
+     beyond the named guard slice landed on 2026-05-26.
+   - Extend smoke coverage for `.risu` import; direct projection-write
+     rejection is now covered by `pnpm smoke:fastify-browser`.
 
 2. Close Phase 7 server prompt assembly parity gaps.
    - Implement the server regenerate path end to end.
@@ -50,8 +52,9 @@ Focused Phase 9:
 
 ```bash
 pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts
+pnpm exec vitest run src/ts/server/commands.test.ts
 pnpm smoke:fastify-browser
-pnpm api:test -- server/fastify/__tests__/events.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
+pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/events.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 ```
 
 Focused Phase 7:

@@ -22,6 +22,12 @@ declare global {
     __RISU_FASTIFY_STORAGE_WRITE_AUDIT__?: {
       records: StorageAuditRecord[]
     }
+    __RISU_FASTIFY_BROWSER_SMOKE__?: {
+      assertDirectProjectionWriteRejected: () => boolean
+      getDatabaseSnapshot: () => Record<string, unknown>
+      patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>
+      waitForLoaded: () => Promise<void>
+    }
   }
 }
 
@@ -136,7 +142,10 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   try {
     await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
   } catch (err) {
-    const bodyText = await page.locator('body').innerText().catch(() => '<body unavailable>')
+    const bodyText = await page
+      .locator('body')
+      .innerText()
+      .catch(() => '<body unavailable>')
     throw new Error(
       [
         err instanceof Error ? err.message : String(err),
@@ -153,10 +162,15 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     .poll(() => apiRequests.filter((entry) => entry === 'GET /api/v1/events').length)
     .toBeGreaterThanOrEqual(1)
 
-  const initialProjection = await page.evaluate(
-    () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot(),
+  const initialProjection = await page.evaluate(() =>
+    window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot(),
   )
   expect(initialProjection?.useServerPromptAssembly).toBe(false)
+  expect(
+    await page.evaluate(() =>
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.assertDirectProjectionWriteRejected(),
+    ),
+  ).toBe(true)
 
   const commandResult = await page.evaluate(() =>
     window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({
@@ -220,9 +234,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   await expect
     .poll(() =>
       page.evaluate(
-        () =>
-          window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
-            .useServerPromptAssembly,
+        () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().useServerPromptAssembly,
       ),
     )
     .toBe(true)
@@ -234,12 +246,10 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   expect(apiRequests).toContain('GET /api/v1/export/bundle')
   expect(apiRequests).toContain('GET /api/v1/memory/chunks/chat-smoke')
   expect(apiRequests).toContain('GET /api/v1/memory/summaries/chat-smoke')
-  expect(apiRequests.filter((entry) => entry === 'GET /api/v1/bootstrap').length).toBeGreaterThan(
-    1,
+  expect(apiRequests.filter((entry) => entry === 'GET /api/v1/bootstrap').length).toBeGreaterThan(1)
+  expect(apiRequests.filter((entry) => /^((GET)|(POST)) \/api\/v1\/storage\//.test(entry))).toEqual(
+    [],
   )
-  expect(
-    apiRequests.filter((entry) => /^((GET)|(POST)) \/api\/v1\/storage\//.test(entry)),
-  ).toEqual([])
   await expect
     .poll(() => page.evaluate(() => window.__RISU_FASTIFY_STORAGE_WRITE_AUDIT__?.records ?? []))
     .toEqual([])

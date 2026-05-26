@@ -172,6 +172,10 @@ describe('web bootstrap startup source', () => {
 
     expect(DBState.db.language).toBe('en')
     expect(DBState.db.characters).toEqual([])
+    expect(isServerProjectionWriteGuardEnabled()).toBe(true)
+    expect(() => {
+      DBState.db.language = 'ja'
+    }).toThrow()
     expect(LoadingStatusState.text).toBe('Loading Server Projection...')
     expect(forageSpies.Init).not.toHaveBeenCalled()
     expect(forageSpies.getItem).not.toHaveBeenCalled()
@@ -219,7 +223,6 @@ describe('web bootstrap startup source', () => {
     vi.useFakeTimers()
     try {
       await loadWebInitialDatabase()
-      setServerProjectionWriteGuardEnabled(true)
 
       expect(isServerProjectionWriteGuardEnabled()).toBe(true)
       expect(() => {
@@ -263,9 +266,7 @@ describe('web bootstrap startup source', () => {
     })
 
     expect(DBState.db.language).toBe('ja')
-    expect(DBState.db.characters).toEqual([
-      { chaId: 'char-command', name: 'Command', chats: [] },
-    ])
+    expect(DBState.db.characters).toEqual([{ chaId: 'char-command', name: 'Command', chats: [] }])
     expect(() => {
       DBState.db.language = 'ko'
     }).toThrow()
@@ -314,6 +315,10 @@ describe('web bootstrap startup source', () => {
 
     await loadData()
 
+    expect(isServerProjectionWriteGuardEnabled()).toBe(true)
+    expect(() => {
+      DBState.db.language = 'ja'
+    }).toThrow()
     expect(forageSpies.Init).not.toHaveBeenCalled()
     expect(forageSpies.getItem).not.toHaveBeenCalled()
     expect(forageSpies.setItem).not.toHaveBeenCalled()

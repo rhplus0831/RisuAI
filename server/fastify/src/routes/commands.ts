@@ -446,6 +446,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'chainOfThought',
     'rememberToolUsage',
     'simplifiedToolUse',
+    'useAutoSuggestions',
   ],
   display: [
     'theme',
@@ -491,6 +492,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'customQuotesData',
     'betaMobileGUI',
     'menuSideBar',
+    'notification',
     'useChatSticker',
     'customCSS',
     'customGUI',
@@ -752,6 +754,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'ttsAutoSpeech',
   'unformatQuotes',
   'useAdditionalAssetsPreview',
+  'useAutoSuggestions',
   'useAutoTranslateInput',
   'useChatCopy',
   'useChatSticker',

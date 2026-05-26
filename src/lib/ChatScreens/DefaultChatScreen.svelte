@@ -69,6 +69,7 @@
     dispatchUpdateMessage,
     ensureMessageId,
   } from 'src/ts/chatCommands'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -343,9 +344,7 @@
     }
     const previous = currentChatStateSnapshot()
     const currentChatRecord =
-      DBState.db.characters[$selectedCharID].chats[
-        DBState.db.characters[$selectedCharID].chatPage
-      ]
+      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
     currentChatRecord.message = cha
     if (currentChatRecord.id) {
       dispatchReplaceMessages(currentChatRecord.id, cha, previous)
@@ -1185,7 +1184,7 @@
               class={'flex items-center cursor-pointer ' +
                 (DBState.db.useAutoTranslateInput ? 'text-green-500' : 'lg:hover:text-green-500')}
               onclick={() => {
-                DBState.db.useAutoTranslateInput = !DBState.db.useAutoTranslateInput
+                applyServerBackedSetting('useAutoTranslateInput', !DBState.db.useAutoTranslateInput)
               }}
             >
               <GlobeIcon />
@@ -1227,7 +1226,7 @@
             class={'flex items-center cursor-pointer ' +
               (DBState.db.useAutoSuggestions ? 'text-green-500' : 'lg:hover:text-green-500')}
             onclick={async () => {
-              DBState.db.useAutoSuggestions = !DBState.db.useAutoSuggestions
+              applyServerBackedSetting('useAutoSuggestions', !DBState.db.useAutoSuggestions)
             }}
           >
             <ReplyIcon />

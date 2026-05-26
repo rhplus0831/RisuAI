@@ -342,6 +342,56 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('accepts projection-sweep settings through grouped commands', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      notification: false,
+      useAutoSuggestions: false,
+      useAutoTranslateInput: false,
+    })
+
+    const display = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { notification: true } },
+    })
+    expect(display.statusCode).toBe(200)
+
+    const runtime = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: display.json().revision,
+        patch: { useAutoSuggestions: true },
+      },
+    })
+    expect(runtime.statusCode).toBe(200)
+
+    const language = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/language',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: runtime.json().revision,
+        patch: { useAutoTranslateInput: true },
+      },
+    })
+    expect(language.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      notification: true,
+      useAutoSuggestions: true,
+      useAutoTranslateInput: true,
+    })
+  })
+
   it('allows provider scalar updates and masks them in bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -433,7 +483,12 @@ describe('Phase 9-2a scalar settings groups', () => {
       claudeAPIKey: 'new-claude',
       OaiCompAPIKeys: { deepseek: 'old-deepseek', deepinfra: 'new-deepinfra' },
       customModels: [
-        { id: 'xcustom:::a', name: 'Custom A renamed', key: 'old-custom', url: 'https://new.example.com' },
+        {
+          id: 'xcustom:::a',
+          name: 'Custom A renamed',
+          key: 'old-custom',
+          url: 'https://new.example.com',
+        },
       ],
       authRefreshes: [
         {
@@ -3806,7 +3861,10 @@ describe('Phase 9-4c module record and enablement commands', () => {
       method: 'PATCH',
       url: '/api/v1/commands/modules/mod-a',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, patch: { assets: [['bad.png', 'assets/bad.png', 'png']] } },
+      payload: {
+        baseRevision: revision,
+        patch: { assets: [['bad.png', 'assets/bad.png', 'png']] },
+      },
     })
     expect(badPatch.statusCode).toBe(400)
     expect(badPatch.json().error).toBe('patch.assets[0][1] must be a server asset id')
@@ -4162,11 +4220,7 @@ describe('Phase 9-4f plugin-storage commands', () => {
         .list()
         .slice(-3)
         .map((event) => event.type),
-    ).toEqual([
-      'pluginStorage.updated',
-      'pluginStorage.deleted',
-      'pluginStorage.bulkUpdated',
-    ])
+    ).toEqual(['pluginStorage.updated', 'pluginStorage.deleted', 'pluginStorage.bulkUpdated'])
   })
 
   it('rejects malformed plugin-storage commands without bumping revision', async () => {
