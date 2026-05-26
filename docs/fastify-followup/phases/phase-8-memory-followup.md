@@ -1,8 +1,8 @@
 # Phase 8 Follow-Up - Hypa V3 Memory
 
-Date: 2026-05-26
+Date: 2026-05-27
 
-Status: reopened by audit. Slice 8A landed; slices 8B and 8C remain.
+Status: reopened by audit. Slices 8A and 8B landed; slice 8C remains.
 
 ## Goal
 
@@ -50,7 +50,7 @@ events, and follow-up summary jobs.
   and job model key for custom embeddings, pass the custom wire model
   separately to the adapter, and prove prompt-time and deferred jobs call
   the intended custom model.
-- 8B - Production memory progress events. Wire memory job progress into
+- 8B - Landed. Production memory progress events. Wire memory job progress into
   `/api/v1/events` and the browser subscriber, or document a separate
   production subscriber path with tests that exercise it.
 - 8C - Missing-summary diagnostics. Update diagnostics and follow-up
@@ -70,6 +70,8 @@ events, and follow-up summary jobs.
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/assemble.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/events.test.ts
+pnpm test -- src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/process/request/tests/serverMemory.test.ts
 pnpm api:test -- server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts
 ```
 

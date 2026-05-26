@@ -61,6 +61,7 @@ async function startHarness(): Promise<Harness> {
       hubUrl: 'https://sv.risuai.xyz',
     },
     commandEvents,
+    memoryWorker: false,
   })
   return { app, dataDir, commandEvents }
 }
@@ -244,6 +245,64 @@ describe('Phase 9-5a command events stream', () => {
         type: 'settings.updated',
         revision: 2,
         resource: 'settings',
+      })
+    } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
+  it('delivers memory progress events from memory job mutations', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+
+    const res = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+    await readUntil(reader!, (chunk) => chunk.includes(': connected\n\n'))
+
+    const memoryJob = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: { chunkId: 'chunk-1', model: 'model-a' },
+      },
+    })
+    expect(memoryJob.statusCode).toBe(201)
+    const jobId = memoryJob.json().job.id as string
+
+    try {
+      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory'))
+      expect(text).toContain('event: memory')
+      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      expect(dataLine).toBeDefined()
+      expect(JSON.parse(dataLine!.slice('data: '.length))).toMatchObject({
+        type: 'memory.job',
+        chatId: 'chat-1',
+        jobId,
+        kind: 'summarize',
+        status: 'pending',
+        attemptCount: 0,
+        maxAttempts: 3,
+        error: null,
+        sideEffect: {
+          kind: 'hypav3_progress',
+          payload: {
+            open: true,
+            miniMsg: '1',
+            msg: '[Hypa V3] Waiting to summarize...',
+            subMsg: '1 queued',
+            status: 'pending',
+            queuedCount: 1,
+          },
+        },
       })
     } finally {
       abort.abort()

@@ -18,8 +18,9 @@ and add any longer closeout note under `../phases-completed/`.
 1. Phase 8 memory ownership is the next default pickup now that Phase 7
    prompt assembly has closed.
    - 8A: stable custom embedding job model key. Landed.
-   - 8B: production memory progress event delivery. Pick this next.
+   - 8B: production memory progress event delivery. Landed.
    - 8C: missing-summary follow-ups for chunks with no embedding yet.
+     Pick this next.
 
 2. Phase 6 streaming errors should land before broad generation
    closeout.
@@ -50,6 +51,8 @@ Phase 8 memory follow-up has started.
 
 - 8A: stable custom embedding job model key and custom wire-model
   routing.
+- 8B: production memory progress events over `/api/v1/events`, parsed by
+  the browser event subscriber and applied to the Hypa V3 progress store.
 
 ## Suggested Verification
 
@@ -81,6 +84,8 @@ Focused Phase 8:
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/assemble.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memoryEmbeddingModel.test.ts server/fastify/__tests__/memoryEmbedJobHandler.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/events.test.ts
+pnpm test -- src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/process/request/tests/serverMemory.test.ts
 ```
 
 Focused Phase 6:

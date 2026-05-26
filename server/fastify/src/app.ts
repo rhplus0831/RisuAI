@@ -31,7 +31,7 @@ import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES, loadPersisted } from './repository.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
-import type { MemoryEventSink } from './memoryEvents.js'
+import { createMemoryEventBus, type MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import {
@@ -89,6 +89,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   const db = openDatabase(config.dataDir)
   backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
+  const memoryEventBus = createMemoryEventBus()
+  const emitMemoryEvent: MemoryEventSink = (event) => {
+    opts.memoryEvents?.(event)
+    memoryEventBus.emit(event)
+  }
   const defaultSummarizeOptions = { db, dataDir: config.dataDir }
   const defaultEmbedOptions = { db, dataDir: config.dataDir }
   const defaultMemoryHandlers = {
@@ -109,7 +114,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
       ? null
       : new MemoryWorker({
           db,
-          onEvent: opts.memoryEvents,
+          onEvent: emitMemoryEvent,
           ...memoryWorkerOptions,
           handlers: {
             ...defaultMemoryHandlers,
@@ -143,7 +148,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerBootstrapRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
-  registerEventsRoutes(app, authState, commandEventSink)
+  registerEventsRoutes(app, authState, commandEventSink, memoryEventBus)
   registerAssetsRoutes(app, db, authState, config.dataDir)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerProxyRoutes(app, authState)
@@ -152,7 +157,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerLegacyStorageRoutes(app, authState, config.dataDir)
   registerGenerationRoutes(app, authState)
   registerGenerationChatRoutes(app, db, authState, config.dataDir, opts.generationChat)
-  registerMemoryJobRoutes(app, db, authState, { onEvent: opts.memoryEvents })
+  registerMemoryJobRoutes(app, db, authState, { onEvent: emitMemoryEvent })
   registerMemoryReadRoutes(app, db, authState)
   bootPromptVariables()
 

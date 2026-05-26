@@ -63,6 +63,7 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { fetchServerBootstrapProjection } from './server/bootstrap'
 import { subscribeServerCommandEvents } from './server/events'
+import { applyServerHypaV3Progress } from './process/request/serverMemory'
 
 const appWindow = isTauri ? getCurrentWebviewWindow() : null
 const SERVER_PROJECTION_REFRESH_DEBOUNCE_MS = 100
@@ -286,12 +287,19 @@ async function startServerProjectionEvents() {
   stopServerProjectionEvents()
   const subscription = await subscribeServerCommandEvents({
     onCommandEvent: scheduleServerProjectionRefresh,
+    onMemoryEvent: applyServerMemoryEvent,
     onError: (error) => console.warn(error),
   })
   if (subscription.status === 'ok') {
     serverProjectionEventSubscription = subscription
   } else if (subscription.status === 'error') {
     console.warn(`Server event subscription failed: ${subscription.error}`)
+  }
+}
+
+function applyServerMemoryEvent(event: { sideEffect?: { kind: string; payload: unknown } }) {
+  if (event.sideEffect?.kind === 'hypav3_progress') {
+    applyServerHypaV3Progress(event.sideEffect.payload)
   }
 }
 

@@ -15,16 +15,15 @@ directly.
 - Active work: audit follow-up for Phases 0, 3, 6, and 8.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
 - Highest-risk remaining gap: Phase 8 memory ownership still needs
-  production memory progress event delivery and missing-summary
-  follow-ups.
-- Phase 8 follow-up has landed slice 8A for stable custom embedding
-  model routing.
+  missing-summary follow-ups for chunks with no embedding yet.
+- Phase 8 follow-up has landed slices 8A and 8B for stable custom
+  embedding routing and production memory progress events.
 - Phase 7 follow-up has landed slices 7A-7E and is closed again.
 - Phase 9 follow-up has landed guard/import-event work plus slices
   9A-9J; use the table below for prior commit anchors and
   `status/next-steps.md` for pickup order.
-- Next default pickup: Phase 8 Slice 8B, production memory progress
-  event delivery.
+- Next default pickup: Phase 8 Slice 8C, missing-summary follow-ups
+  for chunks with no embedding yet.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 

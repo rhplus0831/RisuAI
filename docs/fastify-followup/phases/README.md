@@ -21,7 +21,7 @@ context; use this directory for remaining tasks and closeout criteria.
 
 ```text
 Phase 7 and Phase 9 follow-up are closed again.
-Phase 8 should close before relying on memory progress or custom embedding follow-ups.
+Phase 8 should close before relying on missing-summary follow-ups.
 Phase 6 can close independently but should land before broad generation closeout.
 Phase 0 and Phase 3 cleanup can land independently.
 ```

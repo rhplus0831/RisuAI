@@ -30,6 +30,29 @@ export interface MemoryJobEvent {
 export type MemoryEvent = MemoryJobEvent
 
 export type MemoryEventSink = (event: MemoryEvent) => void
+export type MemoryEventListener = (event: MemoryEvent) => void
+
+export interface MemoryEventBus {
+  emit(event: MemoryEvent): void
+  subscribe(listener: MemoryEventListener): () => void
+}
+
+export function createMemoryEventBus(): MemoryEventBus {
+  const listeners = new Set<MemoryEventListener>()
+  return {
+    emit(event) {
+      for (const listener of listeners) {
+        listener(event)
+      }
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+}
 
 export function buildMemoryJobEvent(
   job: MemoryJob,

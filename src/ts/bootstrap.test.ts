@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const serverBootstrapState = vi.hoisted(() => ({
@@ -25,6 +26,10 @@ const serverEventsState = vi.hoisted(() => ({
       id?: string
       parentId?: string
     }) => void
+    onMemoryEvent?: (event: {
+      type: 'memory.job'
+      sideEffect?: { kind: string; payload: unknown }
+    }) => void
     onError?: (error: string) => void
   }>,
   unsubscribe: vi.fn(),
@@ -36,6 +41,10 @@ const serverEventsState = vi.hoisted(() => ({
         resource: string
         id?: string
         parentId?: string
+      }) => void
+      onMemoryEvent?: (event: {
+        type: 'memory.job'
+        sideEffect?: { kind: string; payload: unknown }
       }) => void
       onError?: (error: string) => void
     }) => {
@@ -134,7 +143,7 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './storage/database.svelte'
-import { DBState, LoadingStatusState, loadedStore } from './stores.svelte'
+import { DBState, LoadingStatusState, hypaV3ProgressStore, loadedStore } from './stores.svelte'
 
 beforeEach(() => {
   platformState.isFastifyServer = true
@@ -163,6 +172,12 @@ beforeEach(() => {
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = {} as any
   LoadingStatusState.text = ''
+  hypaV3ProgressStore.set({
+    open: false,
+    miniMsg: '',
+    msg: '',
+    subMsg: '',
+  })
   loadedStore.set(false)
 })
 
@@ -217,6 +232,34 @@ describe('web bootstrap startup source', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('applies server memory progress events without refreshing the projection', async () => {
+    await loadWebInitialDatabase()
+    const subscription = serverEventsState.subscriptions[0]
+
+    subscription.onMemoryEvent?.({
+      type: 'memory.job',
+      sideEffect: {
+        kind: 'hypav3_progress',
+        payload: {
+          open: true,
+          miniMsg: '2',
+          msg: '[Hypa V3] Summarizing...',
+          subMsg: '2 queued',
+          status: 'running',
+          queuedCount: 2,
+        },
+      },
+    })
+
+    expect(get(hypaV3ProgressStore)).toEqual({
+      open: true,
+      miniMsg: '2',
+      msg: '[Hypa V3] Summarizing...',
+      subMsg: '2 queued',
+    })
+    expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
   })
 
   it('blocks direct Fastify projection writes after the guard is enabled', async () => {

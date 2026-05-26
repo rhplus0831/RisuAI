@@ -2,13 +2,38 @@ import { isFastifyServer } from '../platform'
 import { getNodeServerProxyAuth } from '../storage/nodeStorage'
 import { iterateSseEvents } from '../process/request/sseParse'
 import type { CommandEvent } from './commands'
+import type {
+  ServerHypaV3ProgressPayload,
+  ServerMemoryJobKind,
+  ServerMemoryJobStatus,
+} from '../process/request/serverMemory'
 
 const EVENTS_ENDPOINT = '/api/v1/events'
 
 export type ServerCommandEventHandler = (event: CommandEvent) => void
 
+export interface ServerMemoryJobEvent {
+  type: 'memory.job'
+  chatId: string
+  jobId: string
+  kind: ServerMemoryJobKind
+  status: ServerMemoryJobStatus
+  attemptCount: number
+  maxAttempts: number
+  nextRunAt: string
+  error: string | null
+  sideEffect?: {
+    kind: 'hypav3_progress'
+    payload: ServerHypaV3ProgressPayload
+  }
+}
+
+export type ServerMemoryEvent = ServerMemoryJobEvent
+export type ServerMemoryEventHandler = (event: ServerMemoryEvent) => void
+
 export interface SubscribeServerCommandEventsInput {
   onCommandEvent: ServerCommandEventHandler
+  onMemoryEvent?: ServerMemoryEventHandler
   onError?: (error: string) => void
   signal?: AbortSignal | null
 }
@@ -71,9 +96,14 @@ export async function subscribeServerCommandEvents(
   void (async () => {
     try {
       for await (const frame of iterateSseEvents(response.body!, controller.signal)) {
-        if (stopped || frame.event !== 'command') continue
-        const event = parseCommandEvent(frame.data)
-        if (event) input.onCommandEvent(event)
+        if (stopped) continue
+        if (frame.event === 'command') {
+          const event = parseCommandEvent(frame.data)
+          if (event) input.onCommandEvent(event)
+        } else if (frame.event === 'memory') {
+          const event = parseMemoryEvent(frame.data)
+          if (event) input.onMemoryEvent?.(event)
+        }
       }
     } catch (err) {
       if (!stopped && !controller.signal.aborted) {
@@ -89,6 +119,89 @@ export async function subscribeServerCommandEvents(
     status: 'ok',
     unsubscribe: stop,
   }
+}
+
+function parseMemoryEvent(data: string): ServerMemoryEvent | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(data)
+  } catch {
+    return null
+  }
+
+  if (!parsed || typeof parsed !== 'object') return null
+  const record = parsed as Record<string, unknown>
+  if (record.type !== 'memory.job') return null
+  if (typeof record.chatId !== 'string') return null
+  if (typeof record.jobId !== 'string') return null
+  if (!isMemoryJobKind(record.kind)) return null
+  if (!isMemoryJobStatus(record.status)) return null
+  if (!Number.isInteger(record.attemptCount) || (record.attemptCount as number) < 0) return null
+  if (!Number.isInteger(record.maxAttempts) || (record.maxAttempts as number) <= 0) return null
+  if (typeof record.nextRunAt !== 'string') return null
+  if (record.error !== null && typeof record.error !== 'string') return null
+
+  const kind = record.kind
+  const status = record.status
+  const nextRunAt = record.nextRunAt
+  const error = record.error as string | null
+
+  const event: ServerMemoryJobEvent = {
+    type: 'memory.job',
+    chatId: record.chatId,
+    jobId: record.jobId,
+    kind,
+    status,
+    attemptCount: record.attemptCount as number,
+    maxAttempts: record.maxAttempts as number,
+    nextRunAt,
+    error,
+  }
+
+  if (record.sideEffect !== undefined) {
+    const sideEffect = parseMemorySideEffect(record.sideEffect)
+    if (!sideEffect) return null
+    event.sideEffect = sideEffect
+  }
+
+  return event
+}
+
+function parseMemorySideEffect(value: unknown): ServerMemoryJobEvent['sideEffect'] | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  if (record.kind !== 'hypav3_progress') return null
+  if (!isHypaV3ProgressPayload(record.payload)) return null
+  return {
+    kind: 'hypav3_progress',
+    payload: record.payload,
+  }
+}
+
+function isHypaV3ProgressPayload(value: unknown): value is ServerHypaV3ProgressPayload {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  if (typeof record.open !== 'boolean') return false
+  if (typeof record.miniMsg !== 'string') return false
+  if (typeof record.msg !== 'string') return false
+  if (typeof record.subMsg !== 'string') return false
+  if (record.status !== undefined && !isMemoryJobStatus(record.status)) return false
+  if (record.queuedCount !== undefined && !Number.isInteger(record.queuedCount)) return false
+  return true
+}
+
+function isMemoryJobKind(value: unknown): value is ServerMemoryJobKind {
+  return value === 'chunk' || value === 'embed' || value === 'summarize'
+}
+
+function isMemoryJobStatus(value: unknown): value is ServerMemoryJobStatus {
+  return (
+    value === 'pending' ||
+    value === 'running' ||
+    value === 'completed' ||
+    value === 'failed' ||
+    value === 'cancelled'
+  )
 }
 
 function parseCommandEvent(data: string): CommandEvent | null {

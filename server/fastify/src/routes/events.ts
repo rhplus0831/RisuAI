@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import type { AuthState } from '../auth.js'
 import type { CommandEvent, CommandEventSink } from '../commands/events.js'
 import { requireAuth } from '../http.js'
+import type { MemoryEvent, MemoryEventBus } from '../memoryEvents.js'
 
 function writeSseComment(raw: NodeJS.WritableStream, comment: string): void {
   raw.write(`: ${comment}\n\n`)
@@ -11,10 +12,15 @@ function writeCommandEvent(raw: NodeJS.WritableStream, event: CommandEvent): voi
   raw.write(`event: command\ndata: ${JSON.stringify(event)}\n\n`)
 }
 
+function writeMemoryEvent(raw: NodeJS.WritableStream, event: MemoryEvent): void {
+  raw.write(`event: memory\ndata: ${JSON.stringify(event)}\n\n`)
+}
+
 export function registerEventsRoutes(
   app: FastifyInstance,
   authState: AuthState,
   commandEvents: CommandEventSink,
+  memoryEvents: MemoryEventBus,
 ): void {
   app.get('/api/v1/events', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -35,15 +41,21 @@ export function registerEventsRoutes(
     }, 25_000)
     heartbeat.unref()
 
-    const unsubscribe = commandEvents.subscribe((event) => {
+    const unsubscribeCommand = commandEvents.subscribe((event) => {
       if (!reply.raw.writableEnded) {
         writeCommandEvent(reply.raw, event)
+      }
+    })
+    const unsubscribeMemory = memoryEvents.subscribe((event) => {
+      if (!reply.raw.writableEnded) {
+        writeMemoryEvent(reply.raw, event)
       }
     })
 
     const cleanup = (): void => {
       clearInterval(heartbeat)
-      unsubscribe()
+      unsubscribeCommand()
+      unsubscribeMemory()
     }
 
     req.raw.once('close', cleanup)

@@ -18,6 +18,7 @@ vi.mock('../storage/nodeStorage', () => ({
 
 import { canUseServerEvents, subscribeServerCommandEvents } from './events'
 import type { CommandEvent } from './commands'
+import type { ServerMemoryEvent } from './events'
 
 interface CapturedFetch {
   url: string
@@ -82,11 +83,33 @@ describe('server command event subscription helper', () => {
     ).resolves.toEqual({ status: 'unavailable' })
   })
 
-  it('fetches the event stream with auth and emits command events only', async () => {
+  it('fetches the event stream with auth and emits command and memory events', async () => {
     const commandEvent: CommandEvent = {
       type: 'settings.updated',
       revision: 3,
       resource: 'settings',
+    }
+    const memoryEvent: ServerMemoryEvent = {
+      type: 'memory.job',
+      chatId: 'chat-1',
+      jobId: 'job-1',
+      kind: 'summarize',
+      status: 'pending',
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRunAt: '2026-05-27T00:00:00.000Z',
+      error: null,
+      sideEffect: {
+        kind: 'hypav3_progress',
+        payload: {
+          open: true,
+          miniMsg: '1',
+          msg: '[Hypa V3] Waiting to summarize...',
+          subMsg: '1 queued',
+          status: 'pending',
+          queuedCount: 1,
+        },
+      },
     }
     const calls = stubEventsFetch(
       [
@@ -101,17 +124,27 @@ describe('server command event subscription helper', () => {
         'event: command',
         'data: {"type":"broken"}',
         '',
+        'event: memory',
+        `data: ${JSON.stringify(memoryEvent)}`,
+        '',
+        'event: memory',
+        'data: {"type":"memory.job","chatId":"chat-1"}',
+        '',
       ].join('\n'),
     )
     const seen: CommandEvent[] = []
+    const memorySeen: ServerMemoryEvent[] = []
 
     const subscription = await subscribeServerCommandEvents({
       onCommandEvent: (event) => seen.push(event),
+      onMemoryEvent: (event) => memorySeen.push(event),
     })
 
     expect(subscription.status).toBe('ok')
     await waitFor(() => seen.length === 1)
+    await waitFor(() => memorySeen.length === 1)
     expect(seen).toEqual([commandEvent])
+    expect(memorySeen).toEqual([memoryEvent])
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       url: '/api/v1/events',
