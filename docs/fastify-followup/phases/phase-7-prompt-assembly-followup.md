@@ -2,8 +2,7 @@
 
 Date: 2026-05-27
 
-Status: reopened by audit. Slices 7A, 7B, 7C, and 7D have landed;
-continue with 7E.
+Status: closed. Slices 7A-7E have landed.
 
 ## Goal
 
@@ -24,8 +23,8 @@ and dispatch.
 - Stop-trigger mutation delivery was completed in Slice 7D. The route
   now emits the assembly-produced `message_patch` and restoration
   metadata before the terminal stop-trigger error.
-- Server-backed fixture coverage seeds expected prompt snapshots instead
-  of proving the real route handles continue and regenerate paths.
+- Server-backed fixture coverage now exercises a real Fastify `/chat`
+  route for send, continue, regenerate, preview, and preview-prompt.
 
 ## Tasks
 
@@ -45,8 +44,8 @@ and dispatch.
 - Done in 7D: emit `message_patch` and restoration metadata for
   stop-trigger aborts before the terminal error/done event, and keep
   the browser adapter replay path visible before surfacing the error.
-- Replace mocked fixture expectations with route-backed coverage for at
-  least send, continue, regenerate, preview, and preview-prompt.
+- Done in 7E: replace mocked fixture expectations with route-backed
+  coverage for send, continue, regenerate, preview, and preview-prompt.
 
 ## Session Slices
 
@@ -69,7 +68,7 @@ and dispatch.
   before the terminal stop-trigger error, and the browser adapter keeps
   pre-error patches available so `sendChat` can replay them before
   reporting the abort.
-- 7E - Route-backed fixture coverage. Replace seeded prompt snapshots
+- 7E - Landed: route-backed fixture coverage. Replaced seeded prompt snapshots
   with real Fastify route-backed fixture coverage for send, continue,
   regenerate, preview, and preview-prompt.
 

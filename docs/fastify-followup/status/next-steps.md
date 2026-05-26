@@ -15,30 +15,33 @@ Pick one slice per work session. Each slice should leave the worktree in
 a reviewable state with focused tests, update the affected phase file,
 and add any longer closeout note under `../phases-completed/`.
 
-1. Phase 7 prompt assembly is the next default pickup now that Phase 9
-   client thinning has closed.
-   - 7A: landed browser regenerate request wiring.
-   - 7B: landed server regenerate assembly semantics.
-   - 7C: landed `/chat` provider dispatch guards.
-   - 7D: landed stop-trigger mutation payload delivery.
-   - 7E: route-backed fixture coverage for send, continue, regenerate,
-     preview, and preview-prompt. Pick this next.
-
-2. Phase 8 memory ownership has three independent server slices.
-   - 8A: stable custom embedding job model key.
+1. Phase 8 memory ownership is the next default pickup now that Phase 7
+   prompt assembly has closed.
+   - 8A: stable custom embedding job model key. Pick this next.
    - 8B: production memory progress event delivery.
    - 8C: missing-summary follow-ups for chunks with no embedding yet.
 
-3. Phase 6 streaming errors should land before broad generation
+2. Phase 6 streaming errors should land before broad generation
    closeout.
    - 6A: streaming error frame contract plus OpenAI-compatible failure
      handling.
    - 6B: Anthropic, Mistral, and Gemini stream failure alignment.
    - 6C: Ollama stream failure alignment and final provider audit.
 
-4. Phase 0 and Phase 3 are small independent cleanup slices.
+3. Phase 0 and Phase 3 are small independent cleanup slices.
    - 0A: Google Drive public artifact removal.
    - 3A: shared or explicitly aligned proxy response-header filtering.
+
+## Recently Closed
+
+Phase 7 prompt assembly follow-up closed in slices 7A-7E.
+
+- 7A: landed browser regenerate request wiring.
+- 7B: landed server regenerate assembly semantics.
+- 7C: landed `/chat` provider dispatch guards.
+- 7D: landed stop-trigger mutation payload delivery.
+- 7E: route-backed fixture coverage for send, continue, regenerate,
+  preview, and preview-prompt.
 
 ## Suggested Verification
 

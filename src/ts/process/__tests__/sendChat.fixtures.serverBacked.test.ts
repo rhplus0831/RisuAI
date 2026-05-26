@@ -1,8 +1,11 @@
 import { readFile } from 'node:fs/promises'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
+import type { FastifyInstance } from 'fastify'
 
 // Server-backed dual-mode sweep (Phase 6-3). Unlike sendChat.fixtures.test.ts,
 // this file does NOT vi.mock('../request/request') — the real request module
@@ -101,13 +104,28 @@ import {
   setServerChatPrompt,
   setServerChatSideEffects,
 } from '../__fixtures__/mocks/serverChatFetch'
+import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/tokenizerFetch'
 import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { loadProviderScript, resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
 import { DBState, hypaV3ProgressStore } from '../../stores.svelte'
 import type { Chat } from '../../storage/database.svelte'
 import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
-import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelte'
+import { defaultMainPrompt } from '../../storage/defaultPrompts'
+import {
+  abortChat,
+  chatProcessStage,
+  doingChat,
+  previewBody,
+  previewFormated,
+  sendChat,
+} from '../index.svelte'
+import { buildApp } from '../../../../server/fastify/src/app'
+import type {
+  ChatProviderDispatchContext,
+  GenerationChatRouteOptions,
+} from '../../../../server/fastify/src/routes/generationChat'
+import { clearCachedServerCommandRevision } from '../../server/commands'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -124,6 +142,14 @@ const DUAL_MODE_FIXTURES = [
   'horde-basic',
   'mistral-reverse-proxy-basic',
   'anthropic-reverse-proxy-basic',
+] as const
+
+const ROUTE_BACKED_CHAT_FIXTURES = [
+  'simple-send',
+  'continue',
+  'regenerate',
+  'preview',
+  'preview-prompt',
 ] as const
 
 interface ExpectedCall {
@@ -303,6 +329,198 @@ const RESULT_SETTERS: Record<string, ((text: string) => void) | undefined> = {
 // any future deepseek-specific override.
 void setDeepSeekResult
 
+interface RouteBackedChatCall {
+  url: string
+  method: string
+  authHeader: string | null
+  body: Record<string, unknown>
+}
+
+interface RouteBackedDispatchCall {
+  inputMode: string
+  formated: unknown
+  generationInfo: Record<string, unknown>
+}
+
+interface RouteBackedHarness {
+  app: FastifyInstance
+  dataDir: string
+  chatCalls: RouteBackedChatCall[]
+  dispatchCalls: RouteBackedDispatchCall[]
+  setDispatchText(text: string): void
+  seed(database: unknown): Promise<void>
+  close(): Promise<void>
+  fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
+}
+
+function headersRecord(headers: RequestInit['headers']): Record<string, string> {
+  if (!headers) return {}
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries())
+  if (Array.isArray(headers)) return Object.fromEntries(headers)
+  return headers as Record<string, string>
+}
+
+async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
+  process.env.LOG_LEVEL = 'silent'
+  const dataDir = mkdtempSync(resolve(tmpdir(), 'risu-fastify-route-fixtures-'))
+  let dispatchText = 'route-backed reply'
+  const chatCalls: RouteBackedChatCall[] = []
+  const dispatchCalls: RouteBackedDispatchCall[] = []
+  const generationChat: GenerationChatRouteOptions = {
+    dispatchProvider(context: ChatProviderDispatchContext) {
+      dispatchCalls.push({
+        inputMode: context.input.mode,
+        formated: context.result.formated ?? context.result.prompt.formated ?? [],
+        generationInfo: context.generationInfo,
+      })
+      async function* frames() {
+        yield { kind: 'token' as const, content: dispatchText }
+        yield { kind: 'done' as const, finishReason: 'stop' as const }
+      }
+      return frames()
+    },
+  }
+  const { app } = await buildApp({
+    config: {
+      host: '127.0.0.1',
+      port: 0,
+      dataDir,
+      bodyLimit: 1024 * 1024,
+      trustProxy: false,
+      hubUrl: 'https://sv.risuai.xyz',
+    },
+    generationChat,
+    memoryWorker: false,
+  })
+
+  const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const rawUrl =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    if (isTokenizerUrl(rawUrl)) return serveTokenizerFetch(rawUrl)
+    const url = rawUrl.startsWith('http') ? new URL(rawUrl).pathname : rawUrl
+    const method = init?.method ?? 'GET'
+    const headers = headersRecord(init?.headers)
+    const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+    if (url === '/api/v1/generate/chat') {
+      chatCalls.push({
+        url,
+        method,
+        authHeader: headers['risu-auth'] ?? null,
+        body: (payload ?? {}) as Record<string, unknown>,
+      })
+    }
+    if (url.startsWith('/api/v1/commands/')) {
+      return new Response(
+        JSON.stringify({
+          revision: 2,
+          event: { type: 'fixture.command', revision: 2, resource: 'fixture' },
+          chatId: 'chat-route-backed',
+          messageId: 'route-backed-message',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    const res = await app.inject({
+      method,
+      url,
+      headers,
+      payload,
+    })
+    return new Response(res.body, {
+      status: res.statusCode,
+      headers: res.headers as Record<string, string>,
+    })
+  }
+
+  return {
+    app,
+    dataDir,
+    chatCalls,
+    dispatchCalls,
+    setDispatchText(text: string) {
+      dispatchText = text
+    },
+    async seed(database: unknown) {
+      const cloned = JSON.parse(JSON.stringify(database))
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        payload: { database: cloned },
+      })
+      expect(res.statusCode).toBe(200)
+    },
+    async close() {
+      await app.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    },
+    fetch,
+  }
+}
+
+function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[number]): void {
+  const char = DBState.db.characters[0]
+  const chat = char.chats[char.chatPage ?? 0]
+  chat.id = 'chat-route-backed'
+  DBState.db.currentChar = 0
+  DBState.db.mainPrompt = defaultMainPrompt
+  DBState.db.formatingOrder = [
+    'main',
+    'description',
+    'personaPrompt',
+    'chats',
+    'lastChat',
+    'jailbreak',
+    'lorebook',
+    'globalNote',
+    'authorNote',
+  ]
+  DBState.db.promptSettings = {
+    assistantPrefill: '',
+    postEndInnerFormat: '',
+    sendChatAsSystem: false,
+    sendName: false,
+    utilOverride: false,
+    ...(DBState.db.promptSettings ?? {}),
+  }
+  DBState.db.useServerPromptAssembly = true
+  if (name === 'regenerate') {
+    chat.message.push({
+      role: 'char',
+      data: 'old reply to replace',
+      chatId: 'msg-char-1',
+      saying: char.chaId,
+    })
+  }
+}
+
+async function drainRouteBackedCommands(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  await new Promise<void>((resolve) => setImmediate(resolve))
+}
+
+function messageTexts(
+  snapshot: FixtureSnapshot,
+): Array<{ role: string; data: string; saying?: string }> {
+  return snapshot.messages.map((message) => ({
+    role: message.role,
+    data: message.data,
+    ...(message.saying ? { saying: message.saying } : {}),
+  }))
+}
+
+function firstRerollText(snapshot: FixtureSnapshot): string | null {
+  for (const sideEffect of snapshot.sideEffects) {
+    if (sideEffect.fn !== 'addRerolls') continue
+    const args = sideEffect.args as unknown[]
+    const rerolls = args[1]
+    if (Array.isArray(rerolls) && typeof rerolls[0] === 'string') return rerolls[0]
+  }
+  return null
+}
+
 describe('sendChat fixtures (server-backed)', () => {
   beforeAll(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -394,7 +612,110 @@ describe('sendChat fixtures (server-backed)', () => {
   })
 })
 
-describe('sendChat fixtures (/chat server dispatch)', () => {
+describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
+  beforeAll(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+  })
+
+  afterAll(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  beforeEach(() => {
+    vi.stubGlobal('safeStructuredClone', (v: unknown) =>
+      v === undefined ? undefined : JSON.parse(JSON.stringify(v)),
+    )
+    platformState.isFastifyServer = true
+    resetProviderState()
+    resetSideEffectCalls()
+    resetServerCompletionCalls()
+    doingChat.set(false)
+    abortChat.set(false)
+    chatProcessStage.set(0)
+    uuidState.counter = 0
+    setServerProjectionWriteGuardEnabled(false)
+  })
+
+  let cleanups: (() => void)[] = []
+  afterEach(() => {
+    setServerProjectionWriteGuardEnabled(false)
+    while (cleanups.length > 0) cleanups.pop()!()
+    vi.unstubAllGlobals()
+  })
+
+  it.each(ROUTE_BACKED_CHAT_FIXTURES)('%s', async (name) => {
+    const harness = await createRouteBackedHarness()
+    try {
+      const loaded = await loadFixture(name)
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture(name)
+      await harness.seed(DBState.db)
+      vi.stubGlobal('fetch', harness.fetch)
+
+      const expected = await loadExpected(name)
+      const expectedProviderCall = expected.providerCalls[0]
+      const assistant = [...expected.messages].reverse().find((m) => m.role === 'char')
+      harness.setDispatchText(
+        name === 'continue'
+          ? (firstRerollText(expected) ?? ' route-backed continuation')
+          : (assistant?.data ?? 'route-backed reply'),
+      )
+
+      const args: Parameters<typeof sendChat>[1] = { ...(loaded.fixture.sendChatArgs ?? {}) }
+      if (name === 'regenerate') {
+        args.regenerateMessageId = 'msg-char-1'
+      }
+
+      const stageRecorder = recordStages()
+      clearCachedServerCommandRevision()
+      setServerProjectionWriteGuardEnabled(true)
+      const ok = await sendChat(-1, args)
+      const stages = stageRecorder.stop()
+      const captured = captureSnapshot(stages)
+
+      expect(ok).toBe(true)
+      expect(messageTexts(captured)).toEqual(messageTexts(expected))
+      expect(captured.stages).toEqual(
+        name === 'preview' || name === 'preview-prompt' ? [1] : expected.stages,
+      )
+      expect(captured.doingChat).toBe(false)
+      expect(harness.chatCalls).toHaveLength(1)
+      expect(harness.chatCalls[0]).toMatchObject({
+        url: '/api/v1/generate/chat',
+        method: 'POST',
+        authHeader: 'fixture-auth-token',
+      })
+
+      if (name === 'preview') {
+        expect(harness.chatCalls[0].body).toMatchObject({ mode: 'preview' })
+        expect(Array.isArray(previewFormated)).toBe(true)
+        expect(harness.dispatchCalls).toEqual([])
+      } else if (name === 'preview-prompt') {
+        expect(harness.chatCalls[0].body).toMatchObject({ mode: 'preview_prompt' })
+        expect(typeof previewBody).toBe('string')
+        expect(harness.dispatchCalls).toEqual([])
+      } else {
+        const expectedMode =
+          name === 'continue' ? 'continue' : name === 'regenerate' ? 'regenerate' : 'send'
+        expect(harness.chatCalls[0].body).toMatchObject({ mode: expectedMode })
+        expect(harness.dispatchCalls).toHaveLength(1)
+        expect(harness.dispatchCalls[0].inputMode).toBe(expectedMode)
+        if (expectedProviderCall) {
+          expect(Array.isArray(harness.dispatchCalls[0].formated)).toBe(true)
+        }
+        expect(harness.dispatchCalls[0].generationInfo.model).toBe('gpt-4o')
+        expect(getServerCompletionCalls()).toEqual([])
+      }
+    } finally {
+      await drainRouteBackedCommands()
+      await harness.close()
+    }
+  })
+})
+
+describe('sendChat fixtures (/chat adapter replay)', () => {
   beforeAll(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
@@ -426,63 +747,6 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
   afterEach(() => {
     setServerProjectionWriteGuardEnabled(false)
     while (cleanups.length > 0) cleanups.pop()!()
-  })
-
-  it.each(DUAL_MODE_FIXTURES)('%s', async (name) => {
-    const loaded = await loadFixture(name)
-    cleanups.push(loaded.cleanup)
-    DBState.db.useServerPromptAssembly = true
-
-    const expected = await loadExpected(name)
-    const providerCall = expected.providerCalls[0]
-    expect(providerCall).toBeDefined()
-    const formated = providerCall.formated as Array<{ role: string; content: unknown }>
-    setServerChatPrompt(
-      formated.map((row) => ({ role: row.role, content: row.content })),
-      {},
-      { formated: formated as Array<Record<string, unknown>> },
-    )
-
-    const expectedGenerationInfo = expected.generationInfo as {
-      generationId?: string
-      inputTokens?: number
-      outputTokens?: number
-    }
-    setServerChatInfo(
-      expectedGenerationInfo.inputTokens ?? 0,
-      expectedGenerationInfo.outputTokens ?? DBState.db.maxResponse,
-    )
-    const assistant = [...expected.messages].reverse().find((m) => m.role === 'char')
-    expect(assistant).toBeDefined()
-    setServerChatDispatchResult(
-      assistant?.data ?? '',
-      expected.generationInfo as Record<string, unknown>,
-      expectedGenerationInfo.generationId ?? 'uuid-0',
-    )
-
-    const stageRecorder = recordStages()
-    const args: Parameters<typeof sendChat>[1] = { ...(loaded.fixture.sendChatArgs ?? {}) }
-    setServerProjectionWriteGuardEnabled(true)
-    await sendChat(-1, args)
-    const stages = stageRecorder.stop()
-    const captured = captureSnapshot(stages)
-
-    expect(captured.messages).toEqual(expected.messages)
-    expect(captured.generationInfo).toEqual(expected.generationInfo)
-    expect(captured.stages).toEqual(expected.stages)
-    expect(captured.doingChat).toBe(false)
-    expect(captured.sideEffects).toContainEqual({
-      fn: 'addRerolls',
-      args: [expectedGenerationInfo.generationId ?? 'uuid-0', [assistant?.data ?? '']],
-    })
-    expect(getServerChatCalls()).toHaveLength(1)
-    expect(getServerChatCalls()[0]).toMatchObject({
-      url: '/api/v1/generate/chat',
-      method: 'POST',
-      authHeader: 'fixture-auth-token',
-      mode: loaded.fixture.sendChatArgs?.continue ? 'continue' : 'send',
-    })
-    expect(getServerCompletionCalls()).toEqual([])
   })
 
   it('pins hypav3-memory server-backed prompt rows and progress side effects', async () => {
@@ -574,9 +838,13 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
     const originalMessages = JSON.parse(
       JSON.stringify(DBState.db.characters[0].chats[0].message),
     ) as Chat['message']
-    setServerChatPrompt([{ role: 'user', content: 'Hi there' }], {}, {
-      formated: [{ role: 'user', content: 'Hi there' }],
-    })
+    setServerChatPrompt(
+      [{ role: 'user', content: 'Hi there' }],
+      {},
+      {
+        formated: [{ role: 'user', content: 'Hi there' }],
+      },
+    )
     setServerChatMessagePatch({
       chatId: DBState.db.characters[0].chats[0].id ?? '',
       characterId: DBState.db.characters[0].chaId,
@@ -633,9 +901,13 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
     DBState.db.useServerPromptAssembly = true
     DBState.db.ttsAutoSpeech = true
 
-    setServerChatPrompt([{ role: 'user', content: 'Hi there' }], {}, {
-      formated: [{ role: 'user', content: 'Hi there' }],
-    })
+    setServerChatPrompt(
+      [{ role: 'user', content: 'Hi there' }],
+      {},
+      {
+        formated: [{ role: 'user', content: 'Hi there' }],
+      },
+    )
     setServerChatInfo(233, 200)
     setServerChatDispatchResult(
       'Hello there!',

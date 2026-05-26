@@ -12,17 +12,17 @@ directly.
 
 ## Current Snapshot
 
-- Active work: audit follow-up for Phases 0, 3, 6, 7, and 8.
+- Active work: audit follow-up for Phases 0, 3, 6, and 8.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Highest-risk remaining gap: Phase 7 still needs route-backed fixture
-  coverage before chat-path closeout. Browser regenerate request wiring
-  landed in Slice 7A, server regenerate assembly semantics landed in
-  Slice 7B, `/chat` provider dispatch guards landed in Slice 7C, and
-  stop-trigger mutation payload delivery landed in Slice 7D.
+- Highest-risk remaining gap: Phase 8 memory ownership still needs
+  custom embedding model routing, production memory progress event
+  delivery, and missing-summary follow-ups.
+- Phase 7 follow-up has landed slices 7A-7E and is closed again.
 - Phase 9 follow-up has landed guard/import-event work plus slices
   9A-9J; use the table below for prior commit anchors and
   `status/next-steps.md` for pickup order.
-- Next default pickup: Phase 7 Slice 7E, route-backed fixture coverage.
+- Next default pickup: Phase 8 Slice 8A, stable custom embedding job
+  model key.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 
@@ -45,18 +45,18 @@ directly.
 
 ## Phase Status
 
-| Phase                                   | State        | Why Reopened                                                                                                            | Task Doc                                                                                   |
-| --------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 0 - Removals                            | Reopened     | Tracked Google Drive OAuth worker remains under `public/`.                                                              | [`phases/phase-0-removals-followup.md`](phases/phase-0-removals-followup.md)               |
-| 1 - Foundation                          | No follow-up | Audit found Fastify foundation shape complete.                                                                          | None                                                                                       |
-| 2 - Storage / import / assets / backups | No follow-up | Audit found storage route baseline complete.                                                                            | None                                                                                       |
-| 3 - Proxy migration                     | Reopened     | Stream-job proxy response header filtering diverges from direct proxy filtering.                                        | [`phases/phase-3-proxy-followup.md`](phases/phase-3-proxy-followup.md)                     |
-| 4 - sendChat tests                      | No follow-up | Audit found test scaffold complete for the migration slice.                                                             | None                                                                                       |
-| 5 - sendChat extraction                 | No follow-up | Audit found browser extraction baseline complete.                                                                       | None                                                                                       |
-| 6 - Server-side generation              | Reopened     | `/api/v1/generate/completion` streaming provider failures can be emitted as empty successful SSE streams.               | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |
-| 7 - Server-side prompt assembly         | Reopened     | Route-level fixture coverage remains incomplete for the send, continue, regenerate, preview, and preview-prompt paths.  | [`phases/phase-7-prompt-assembly-followup.md`](phases/phase-7-prompt-assembly-followup.md) |
-| 8 - Hypa V3 memory                      | Reopened     | Custom embedding model routing, memory progress events, and missing-summary follow-ups need fixes.                      | [`phases/phase-8-memory-followup.md`](phases/phase-8-memory-followup.md)                   |
-| 9 - Client thinning                     | Closed       | 9J removed the remaining focused direct-bind hits, covered allowlist gaps, and passed browser smoke.                    | [`phases/phase-9-client-thinning-followup.md`](phases/phase-9-client-thinning-followup.md) |
+| Phase                                   | State        | Why Reopened                                                                                              | Task Doc                                                                                   |
+| --------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 0 - Removals                            | Reopened     | Tracked Google Drive OAuth worker remains under `public/`.                                                | [`phases/phase-0-removals-followup.md`](phases/phase-0-removals-followup.md)               |
+| 1 - Foundation                          | No follow-up | Audit found Fastify foundation shape complete.                                                            | None                                                                                       |
+| 2 - Storage / import / assets / backups | No follow-up | Audit found storage route baseline complete.                                                              | None                                                                                       |
+| 3 - Proxy migration                     | Reopened     | Stream-job proxy response header filtering diverges from direct proxy filtering.                          | [`phases/phase-3-proxy-followup.md`](phases/phase-3-proxy-followup.md)                     |
+| 4 - sendChat tests                      | No follow-up | Audit found test scaffold complete for the migration slice.                                               | None                                                                                       |
+| 5 - sendChat extraction                 | No follow-up | Audit found browser extraction baseline complete.                                                         | None                                                                                       |
+| 6 - Server-side generation              | Reopened     | `/api/v1/generate/completion` streaming provider failures can be emitted as empty successful SSE streams. | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |
+| 7 - Server-side prompt assembly         | Closed       | 7E added route-backed fixture coverage for send, continue, regenerate, preview, and preview-prompt paths. | [`phases/phase-7-prompt-assembly-followup.md`](phases/phase-7-prompt-assembly-followup.md) |
+| 8 - Hypa V3 memory                      | Reopened     | Custom embedding model routing, memory progress events, and missing-summary follow-ups need fixes.        | [`phases/phase-8-memory-followup.md`](phases/phase-8-memory-followup.md)                   |
+| 9 - Client thinning                     | Closed       | 9J removed the remaining focused direct-bind hits, covered allowlist gaps, and passed browser smoke.      | [`phases/phase-9-client-thinning-followup.md`](phases/phase-9-client-thinning-followup.md) |
 
 ## Closeout Expectations
 
