@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 
-Status: reopened by audit.
+Status: closed again by Slice 0A.
 
 ## Goal
 
@@ -17,20 +17,22 @@ it into built assets even though Google Drive sync is listed as removed.
 
 ## Tasks
 
-- Delete `public/functions/drive.js` and any build or deployment
+- [x] Delete `public/functions/drive.js` and any build or deployment
   references that keep it reachable.
-- Search for remaining Google Drive sync entry points and remove only
+- [x] Search for remaining Google Drive sync entry points and remove only
   live code paths. Static language strings or historical docs can remain
   if they are not shipped as an active feature.
-- Add or update a focused test or build assertion if the project already
-  has a public-asset inventory guard.
+- [x] Add or update a focused test or build assertion if the project already
+  has a public-asset inventory guard. No existing public-asset inventory
+  guard was found, so Slice 0A used the focused `rg` audit plus `pnpm build`.
 
 ## Session Slices
 
 - 0A - Google Drive public artifact removal. Delete the public function
   file, remove only live build/deploy references that keep it reachable,
   rerun the focused search, and run the build. This is intentionally a
-  single cleanup session.
+  single cleanup session. Landed 2026-05-27; see
+  `../phases-completed/phase-0-google-drive-public-artifact-removal-2026-05-27.md`.
 
 ## Exit Criteria
 
@@ -43,7 +45,8 @@ it into built assets even though Google Drive sync is listed as removed.
 ## Verification
 
 ```bash
-rg -n "CLIENT_SECRET|CLIENT_ID|drive\\.js|Google Drive sync" public src server docs/fastify-followup
+rg -n "functions/drive|/drive(?:\\.|$)|drive\\.js|CLIENT_SECRET|CLIENT_ID|Google Drive sync|savebackup|loadbackup" public src server --glob '!public/token/**' --glob '!src/lang/**'
+rg -n "CLIENT_SECRET|CLIENT_ID|functions/drive|drive\\.js" dist public src server --glob '!public/token/**'
 pnpm build
 ```
 

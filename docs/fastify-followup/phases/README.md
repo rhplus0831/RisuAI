@@ -10,7 +10,7 @@ context; use this directory for remaining tasks and closeout criteria.
 
 | Phase                           | State    | Doc                                                                          |
 | ------------------------------- | -------- | ---------------------------------------------------------------------------- |
-| 0 - Removals                    | Reopened | [`phase-0-removals-followup.md`](phase-0-removals-followup.md)               |
+| 0 - Removals                    | Closed   | [`phase-0-removals-followup.md`](phase-0-removals-followup.md)               |
 | 3 - Proxy migration             | Reopened | [`phase-3-proxy-followup.md`](phase-3-proxy-followup.md)                     |
 | 6 - Server-side generation      | Closed   | [`phase-6-generation-followup.md`](phase-6-generation-followup.md)           |
 | 7 - Server-side prompt assembly | Closed   | [`phase-7-prompt-assembly-followup.md`](phase-7-prompt-assembly-followup.md) |
@@ -23,7 +23,7 @@ context; use this directory for remaining tasks and closeout criteria.
 Phase 7 and Phase 9 follow-up are closed again.
 Phase 8 follow-up is closed again after missing-summary follow-ups.
 Phase 6 follow-up is closed again after Ollama stream failure alignment.
-Phase 0 and Phase 3 cleanup can land independently; pick Phase 0 Slice 0A next by default.
+Phase 0 follow-up is closed again after 0A. Pick Phase 3 Slice 3A next by default.
 ```
 
 ## Session Slice Index

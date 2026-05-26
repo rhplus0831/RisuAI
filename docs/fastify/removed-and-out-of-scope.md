@@ -37,8 +37,8 @@ is not actively maintained.
   helper moved to `storage/backup.ts` with Account Sync branches
   stripped. The replacement for cloud backup snapshots is the
   Fastify server's own `/api/v1/backups` (Phase 2); portable bundle
-  download is `GET /api/v1/export/bundle` (Phase 9). A tracked
-  `public/functions/drive.js` artifact still needs removal in the
+  download is `GET /api/v1/export/bundle` (Phase 9). The tracked
+  `public/functions/drive.js` OAuth worker artifact was removed in the
   Phase 0 follow-up; the live Drive UI and client code remain removed.
 - **Supa memory, Hypa V2, Hanurai.** Legacy memory engines are no
   longer selectable live modes. The dedicated Supa / Hypa V2 / Hanurai

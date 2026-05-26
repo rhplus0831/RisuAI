@@ -21,8 +21,10 @@ and add any longer closeout note under `../phases-completed/`.
    - 6B: landed Anthropic, Mistral, and Gemini stream failure alignment.
    - 6C: landed Ollama stream failure alignment and final provider audit.
 
-2. Phase 0 and Phase 3 are small independent cleanup slices.
-   - 0A: Google Drive public artifact removal. Pick this next by default.
+2. Phase 0 removals are closed again.
+   - 0A: landed Google Drive public artifact removal.
+
+3. Phase 3 proxy cleanup is the next default pickup.
    - 3A: shared or explicitly aligned proxy response-header filtering.
 
 ## Recently Closed
@@ -93,8 +95,15 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 Focused Phase 0:
 
 ```bash
-rg -n "CLIENT_SECRET|CLIENT_ID|drive\\.js|Google Drive sync" public src server docs/fastify-followup
+rg -n "functions/drive|/drive(?:\\.|$)|drive\\.js|CLIENT_SECRET|CLIENT_ID|Google Drive sync|savebackup|loadbackup" public src server --glob '!public/token/**' --glob '!src/lang/**'
+rg -n "CLIENT_SECRET|CLIENT_ID|functions/drive|drive\\.js" dist public src server --glob '!public/token/**'
 pnpm build
+```
+
+Focused Phase 3:
+
+```bash
+pnpm api:test -- server/fastify/__tests__/proxy.test.ts
 ```
 
 Broad closeout:

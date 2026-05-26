@@ -12,16 +12,17 @@ directly.
 
 ## Current Snapshot
 
-- Active work: audit follow-up for Phases 0 and 3.
+- Active work: audit follow-up for Phase 3.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
+- Phase 0 follow-up has landed Slice 0A and is closed again.
 - Phase 6 follow-up has landed slices 6A-6C and is closed again.
 - Phase 8 follow-up has landed slices 8A-8C and is closed again.
 - Phase 7 follow-up has landed slices 7A-7E and is closed again.
 - Phase 9 follow-up has landed guard/import-event work plus slices
   9A-9J; use the table below for prior commit anchors and
   `status/next-steps.md` for pickup order.
-- Next default pickup: Phase 0 Slice 0A, Google Drive public artifact
-  removal. Phase 3 Slice 3A can also land independently.
+- Next default pickup: Phase 3 Slice 3A, shared or explicitly aligned
+  proxy response-header filtering.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 
@@ -46,7 +47,7 @@ directly.
 
 | Phase                                   | State        | Why Reopened                                                                                              | Task Doc                                                                                   |
 | --------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 0 - Removals                            | Reopened     | Tracked Google Drive OAuth worker remains under `public/`.                                                | [`phases/phase-0-removals-followup.md`](phases/phase-0-removals-followup.md)               |
+| 0 - Removals                            | Closed       | 0A removed the tracked Google Drive OAuth worker from `public/` and verified the build.                   | [`phases/phase-0-removals-followup.md`](phases/phase-0-removals-followup.md)               |
 | 1 - Foundation                          | No follow-up | Audit found Fastify foundation shape complete.                                                            | None                                                                                       |
 | 2 - Storage / import / assets / backups | No follow-up | Audit found storage route baseline complete.                                                              | None                                                                                       |
 | 3 - Proxy migration                     | Reopened     | Stream-job proxy response header filtering diverges from direct proxy filtering.                          | [`phases/phase-3-proxy-followup.md`](phases/phase-3-proxy-followup.md)                     |
