@@ -98,6 +98,7 @@ track the next piece of work.
 | 9-6d - Residual local cache gates       | [`phase-9-client-thinning-9-6d.md`](phase-9-client-thinning-9-6d.md)                   | RISUSAVE cache/remotes, cold-storage, and Google Search credential gates.        |
 | 9-6e - Provider secret masking          | [`phase-9-client-thinning-9-6e.md`](phase-9-client-thinning-9-6e.md)                   | Bootstrap masks provider secrets and settings commands preserve placeholders.    |
 | 9-7a - `.risu` fixture harness          | [`phase-9-client-thinning-9-7a.md`](phase-9-client-thinning-9-7a.md)                   | Server-safe `.risu` fixture corpus and codec harness for legacy/block inputs.    |
+| 9-7b - Legacy envelope codec            | [`phase-9-client-thinning-9-7b.md`](phase-9-client-thinning-9-7b.md)                   | Production server-safe legacy raw/compressed/stream `.risu` envelope codec.      |
 
 ## Historical Status Logs
 

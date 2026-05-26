@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-7a - `.risu` fixture corpus and codec harness**. Next pickup:
-**9-7b - Legacy envelope codec port**.
+**9-7b - Legacy envelope codec port**. Next pickup:
+**9-7c - RISUSAVE block codec port**.
 
 ## Goal
 
@@ -315,6 +315,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-7a.md`](../phases-completed/phase-9-client-thinning-9-7a.md).
   - **9-7b - Legacy envelope codec port.** Port raw and compressed legacy
     envelope encode/decode to server-safe APIs. No RISUSAVE block support yet.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-7b.md`](../phases-completed/phase-9-client-thinning-9-7b.md).
   - **9-7c - RISUSAVE block codec port.** Implement server-safe block
     encode/decode for root, character, preset, module, loadout, plugin,
     plugin-storage, config, and root-component blocks. Reject or report

@@ -227,19 +227,33 @@ existing settings command bridge:
   and proves the harness avoids browser storage, Tauri, and Svelte database
   imports.
 
+9-7b then ported the legacy envelope codec:
+
+- `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` now owns the production
+  server-safe legacy `.risu` envelope API for raw msgpack, fflate-compressed
+  msgpack, and gzip stream-compressed msgpack saves.
+- `server/fastify/src/risuSave/fixtureHarness.ts` now delegates legacy fixture
+  envelope work to the production codec while keeping RISUSAVE block inspection
+  fixture-only.
+- Focused coverage in `server/fastify/__tests__/risuSaveCodec.test.ts` now
+  proves legacy fixture parity, encode/decode round-trips, non-legacy rejection,
+  and browser-storage/Tauri/Svelte/global compression-stream detachment.
+
 ## Immediate Pickup
 
-Immediate pickup: **9-7b - Legacy envelope codec port**.
+Immediate pickup: **9-7c - RISUSAVE block codec port**.
 
-- Turn the 9-7a legacy fixture helpers into the real server-side legacy
-  envelope codec API for raw, fflate-compressed, and gzip stream `.risu`
-  envelopes.
+- Turn the 9-7a RISUSAVE block fixture inspector into the real server-side
+  block codec API for root, character, preset, module, loadout, plugin,
+  plugin-storage, config, and root-component blocks.
 - Keep the API server-safe: no `localforage`, Tauri APIs, Svelte database
   state, browser globals, import/export routes, or repository writes.
 - Use the existing fixture corpus in
   `server/fastify/__fixtures__/risuSave/fixtures.ts` as the parity target.
-- Leave RISUSAVE block production decode, remote/cache-only rejection, decode
-  normalization, and validation to 9-7c/9-7d.
+- Reject or report remote/cache-only block references instead of falling
+  through to browser local cache or Tauri paths.
+- Leave decode normalization, validation, and current Phase 9 import snapshot
+  conversion to 9-7d.
 - Keep provider dispatch flattening, plugin server execution, asset bundle
   walking, and multipart import/export routes out of this slice.
 - Treat decoded shapes as current Phase 9 schema targets; there are no actual
@@ -275,10 +289,10 @@ Implementation notes:
   `resolveMaskedProviderSecretPlaceholders()` from
   `server/fastify/src/providerSecrets.ts` if later server routes need the same
   projection or placeholder semantics.
-- 9-7a added the fixture harness and corpus. The helper decode functions there
-  are fixture support only; 9-7b should expose the production legacy envelope
-  codec surface and keep block decoding behind the existing inspector until
-  9-7c.
+- 9-7a added the fixture harness and corpus. 9-7b added
+  `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` for the production
+  legacy envelope API. 9-7c should keep that API intact and move only RISUSAVE
+  block handling from fixture inspector behavior to production codec behavior.
 - Character scalar patches reject child collections, while 9-4d owns
   character asset-reference fields and Fastify-mode `saveAsset` returns
   raw server asset ids.
@@ -305,19 +319,18 @@ Implementation notes:
 
 ## Later Queue
 
-1. 9-7b - Legacy envelope codec port.
-2. 9-7c - RISUSAVE block codec port.
-3. 9-7d - Decode normalization and validation.
-4. 9-7e - Repository-backed export adapter.
-5. 9-8a - Multipart `.risu` import route.
-6. 9-8b - Repository `.risu` export route.
-7. 9-8c - Asset reference walker.
-8. 9-8d - Bundle export route.
-9. 9-9a - Server-backed browser smoke harness.
-10. 9-9b - Generation and memory fixture closeout.
-11. 9-9c - Server-backed storage-write audit.
-12. 9-9d - Manual Fastify web and Tauri local verification.
-13. 9-9e - Phase 9 docs closeout.
+1. 9-7c - RISUSAVE block codec port.
+2. 9-7d - Decode normalization and validation.
+3. 9-7e - Repository-backed export adapter.
+4. 9-8a - Multipart `.risu` import route.
+5. 9-8b - Repository `.risu` export route.
+6. 9-8c - Asset reference walker.
+7. 9-8d - Bundle export route.
+8. 9-9a - Server-backed browser smoke harness.
+9. 9-9b - Generation and memory fixture closeout.
+10. 9-9c - Server-backed storage-write audit.
+11. 9-9d - Manual Fastify web and Tauri local verification.
+12. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
