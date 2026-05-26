@@ -14,14 +14,14 @@ context; use this directory for remaining tasks and closeout criteria.
 | 3 - Proxy migration             | Reopened | [`phase-3-proxy-followup.md`](phase-3-proxy-followup.md)                     |
 | 6 - Server-side generation      | Reopened | [`phase-6-generation-followup.md`](phase-6-generation-followup.md)           |
 | 7 - Server-side prompt assembly | Closed   | [`phase-7-prompt-assembly-followup.md`](phase-7-prompt-assembly-followup.md) |
-| 8 - Hypa V3 memory server-side  | Reopened | [`phase-8-memory-followup.md`](phase-8-memory-followup.md)                   |
+| 8 - Hypa V3 memory server-side  | Closed   | [`phase-8-memory-followup.md`](phase-8-memory-followup.md)                   |
 | 9 - Client thinning             | Closed   | [`phase-9-client-thinning-followup.md`](phase-9-client-thinning-followup.md) |
 
 ## Dependency Order
 
 ```text
 Phase 7 and Phase 9 follow-up are closed again.
-Phase 8 should close before relying on missing-summary follow-ups.
+Phase 8 follow-up is closed again after missing-summary follow-ups.
 Phase 6 can close independently but should land before broad generation closeout.
 Phase 0 and Phase 3 cleanup can land independently.
 ```

@@ -15,21 +15,14 @@ Pick one slice per work session. Each slice should leave the worktree in
 a reviewable state with focused tests, update the affected phase file,
 and add any longer closeout note under `../phases-completed/`.
 
-1. Phase 8 memory ownership is the next default pickup now that Phase 7
-   prompt assembly has closed.
-   - 8A: stable custom embedding job model key. Landed.
-   - 8B: production memory progress event delivery. Landed.
-   - 8C: missing-summary follow-ups for chunks with no embedding yet.
-     Pick this next.
-
-2. Phase 6 streaming errors should land before broad generation
+1. Phase 6 streaming errors should land before broad generation
    closeout.
    - 6A: streaming error frame contract plus OpenAI-compatible failure
-     handling.
+     handling. Pick this next.
    - 6B: Anthropic, Mistral, and Gemini stream failure alignment.
    - 6C: Ollama stream failure alignment and final provider audit.
 
-3. Phase 0 and Phase 3 are small independent cleanup slices.
+2. Phase 0 and Phase 3 are small independent cleanup slices.
    - 0A: Google Drive public artifact removal.
    - 3A: shared or explicitly aligned proxy response-header filtering.
 
@@ -47,12 +40,15 @@ Phase 7 prompt assembly follow-up closed in slices 7A-7E.
 - 7E: route-backed fixture coverage for send, continue, regenerate,
   preview, and preview-prompt.
 
-Phase 8 memory follow-up has started.
+Phase 8 memory follow-up closed in slices 8A-8C.
 
 - 8A: stable custom embedding job model key and custom wire-model
   routing.
 - 8B: production memory progress events over `/api/v1/events`, parsed by
   the browser event subscriber and applied to the Hypa V3 progress store.
+- 8C: missing-summary diagnostics now include chunks with neither
+  summary nor embedding, so prompt follow-ups schedule summarize jobs for
+  those chunks.
 
 ## Suggested Verification
 

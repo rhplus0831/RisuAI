@@ -968,6 +968,15 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         model: 'embedding-model',
         vector: [1, 0],
       })
+      createMemoryChunk(memoryDb, {
+        id: 'chunk-needs-summary-without-embedding',
+        chatId: 'chat-1',
+        messageId: 'memo-c',
+        rangeStartSeq: 4,
+        rangeEndSeq: 5,
+        text: 'chunk without summary or embedding',
+        status: 'pending',
+      })
       const db = memoryEnabledDatabase()
 
       const first = beginAssembly(
@@ -988,19 +997,25 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         summaryIdsMissingChunks: [],
         summaryIdsMissingEmbeddings: ['summary-needs-embed'],
         chunkIdsMissingEmbeddings: ['chunk-needs-embed'],
-        chunkIdsMissingSummaries: ['chunk-needs-summary'],
+        chunkIdsMissingSummaries: [
+          'chunk-needs-summary',
+          'chunk-needs-summary-without-embedding',
+        ],
         followUpEligible: true,
       })
       expect(first.promptMemoryFollowUpDiagnostics).toMatchObject({
         attempted: true,
-        jobsCreated: 2,
+        jobsCreated: 3,
         existingJobs: 0,
-        summarizeChunkIds: ['chunk-needs-summary'],
+        summarizeChunkIds: [
+          'chunk-needs-summary',
+          'chunk-needs-summary-without-embedding',
+        ],
         embedChunkIds: ['chunk-needs-embed'],
         errors: [],
       })
       expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' }).map((job) => job.kind).sort()).toEqual(
-        ['embed', 'summarize'],
+        ['embed', 'summarize', 'summarize'],
       )
 
       const second = beginAssembly(
@@ -1018,10 +1033,10 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       expect(second.promptMemoryFollowUpDiagnostics).toMatchObject({
         attempted: true,
         jobsCreated: 0,
-        existingJobs: 2,
+        existingJobs: 3,
         errors: [],
       })
-      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' })).toHaveLength(2)
+      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' })).toHaveLength(3)
     } finally {
       memoryDb.close()
     }

@@ -2,7 +2,7 @@
 
 Date: 2026-05-27
 
-Status: reopened by audit. Slices 8A and 8B landed; slice 8C remains.
+Status: closed again. Slices 8A-8C landed.
 
 ## Goal
 
@@ -53,7 +53,7 @@ events, and follow-up summary jobs.
 - 8B - Landed. Production memory progress events. Wire memory job progress into
   `/api/v1/events` and the browser subscriber, or document a separate
   production subscriber path with tests that exercise it.
-- 8C - Missing-summary diagnostics. Update diagnostics and follow-up
+- 8C - Landed. Missing-summary diagnostics. Update diagnostics and follow-up
   enqueue logic so chunks missing both embedding and summary still
   schedule summary jobs, with focused no-embedding/no-summary coverage.
 
@@ -66,10 +66,13 @@ events, and follow-up summary jobs.
 - Missing summaries are scheduled even when the chunk has no embedding
   yet.
 
+All exit criteria are satisfied as of slice 8C.
+
 ## Verification
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/assemble.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memoryEmbeddingModel.test.ts server/fastify/__tests__/memoryEmbedJobHandler.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/events.test.ts
 pnpm test -- src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/process/request/tests/serverMemory.test.ts
 pnpm api:test -- server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts

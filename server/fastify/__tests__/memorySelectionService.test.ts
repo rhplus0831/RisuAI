@@ -174,6 +174,14 @@ describe('memory selection service', () => {
         model: 'embedding-model',
         vector: [1, 0],
       })
+      createMemoryChunk(db, {
+        id: 'chunk-without-summary-or-embedding',
+        chatId: 'chat-1',
+        rangeStartSeq: 4,
+        rangeEndSeq: 5,
+        text: 'chunk without summary or embedding',
+        status: 'pending',
+      })
 
       const result = selectMemorySummaries({
         db,
@@ -190,7 +198,10 @@ describe('memory selection service', () => {
       expect(result.diagnostics.repository).toMatchObject({
         summaryIdsMissingEmbeddings: ['summary-without-embedding'],
         chunkIdsMissingEmbeddings: ['chunk-with-summary'],
-        chunkIdsMissingSummaries: ['chunk-with-embedding'],
+        chunkIdsMissingSummaries: [
+          'chunk-with-embedding',
+          'chunk-without-summary-or-embedding',
+        ],
       })
       expect(result.diagnostics.ranking.missingSummaries).toEqual(['chunk-with-embedding'])
       expect(result.diagnostics.allocation.missingCategories).toContainEqual({

@@ -127,9 +127,9 @@ function buildRepositoryDiagnostics(input: {
     }
   }
 
-  for (const embedding of input.embeddings) {
-    if (chunkIds.has(embedding.chunkId) && !summaryChunkIds.has(embedding.chunkId)) {
-      chunkIdsMissingSummaries.add(embedding.chunkId)
+  for (const chunk of input.chunks) {
+    if (!summaryChunkIds.has(chunk.id)) {
+      chunkIdsMissingSummaries.add(chunk.id)
     }
   }
 

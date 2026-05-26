@@ -207,6 +207,14 @@ describe('prompt memory adapter', () => {
         model: 'embedding-model',
         vector: [1, 0],
       })
+      createMemoryChunk(db, {
+        id: 'chunk-without-summary-or-embedding',
+        chatId: 'chat-1',
+        rangeStartSeq: 4,
+        rangeEndSeq: 5,
+        text: 'chunk without summary or embedding',
+        status: 'pending',
+      })
 
       const result = selectPromptMemory({
         db,
@@ -222,7 +230,10 @@ describe('prompt memory adapter', () => {
       expect(result.diagnostics.selection?.repository).toMatchObject({
         summaryIdsMissingEmbeddings: ['summary-without-embedding'],
         chunkIdsMissingEmbeddings: ['chunk-with-summary'],
-        chunkIdsMissingSummaries: ['chunk-with-embedding'],
+        chunkIdsMissingSummaries: [
+          'chunk-with-embedding',
+          'chunk-without-summary-or-embedding',
+        ],
       })
       expect(result.diagnostics.selection?.ranking.missingSummaries).toEqual([
         'chunk-with-embedding',
@@ -237,7 +248,10 @@ describe('prompt memory adapter', () => {
         summaryIdsMissingChunks: [],
         summaryIdsMissingEmbeddings: ['summary-without-embedding'],
         chunkIdsMissingEmbeddings: ['chunk-with-summary'],
-        chunkIdsMissingSummaries: ['chunk-with-embedding'],
+        chunkIdsMissingSummaries: [
+          'chunk-with-embedding',
+          'chunk-without-summary-or-embedding',
+        ],
         followUpEligible: true,
       })
     } finally {
