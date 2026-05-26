@@ -6,10 +6,10 @@ Status: closed. Completed through **9-9e - Phase 9 docs closeout**.
 Fastify-served web client thinning closed for the original migration
 scope. Post-closeout direct-write audit slices closed through 9J and are
 tracked in
-[`../../fastify-followup/phases/phase-9-client-thinning-followup.md`](../../fastify-followup/phases/phase-9-client-thinning-followup.md);
+[`phase-9-client-thinning-followup.md`](phase-9-client-thinning-followup.md);
 the alpha pass reopened and closed additional projection-write blockers
 in
-[`../../fastify-followup-alpha/phases-completed/phase-9-client-thinning-9a.md`](../../fastify-followup-alpha/phases-completed/phase-9-client-thinning-9a.md).
+[`../phases-completed/phase-9-client-thinning-9a.md`](../phases-completed/phase-9-client-thinning-9a.md).
 Tauri / Desktop manual verification remains a separate later task.
 
 ## Goal
@@ -405,7 +405,7 @@ surfaces.
 
 These were satisfied for the original Fastify-served web closeout. The
 later alpha broad typecheck blocker is also closed and tracked in
-[`../../fastify-followup-alpha/`](../../fastify-followup-alpha/).
+[`../phases-completed/broad-closeout-typecheck-alpha.md`](../phases-completed/broad-closeout-typecheck-alpha.md).
 
 - Every direct `DBState.db.*` mutation in `src/lib/` and `src/ts/`
   outside Tauri/local-only code is replaced by a command call.
@@ -424,6 +424,6 @@ later alpha broad typecheck blocker is also closed and tracked in
 
 - Original closeout runbook: [`../status/next-steps.md`](../status/next-steps.md)
 - Current post-closeout handoff:
-  [`../../fastify-followup-alpha/status/next-steps.md`](../../fastify-followup-alpha/status/next-steps.md)
+  [`../status/next-steps.md`](../status/next-steps.md)
 - `move-to-fastify`'s `COMMANDS.md` and projection store are references,
   not binding API contracts.

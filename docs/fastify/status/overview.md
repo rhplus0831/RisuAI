@@ -3,7 +3,7 @@
 Date: 2026-05-27
 
 Concise snapshot of each original migration workstream. The
-post-closeout audit handoff lives in `docs/fastify-followup`;
+post-closeout audit is archived under `phases-completed/`;
 historical detail is in [`../phases-completed/`](../phases-completed/).
 
 ## Phase Progress

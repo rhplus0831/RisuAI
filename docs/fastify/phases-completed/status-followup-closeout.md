@@ -3,8 +3,7 @@
 Date: 2026-05-27
 
 This is the first audit follow-up snapshot after Phases 0-9 were
-reported closed in `docs/fastify`. The closed second-pass record lives in
-[`../fastify-followup-alpha/status.md`](../fastify-followup-alpha/status.md).
+reported closed. The current live status is [`../status.md`](../status.md).
 
 Policy note: there are no actual Fastify users yet, so do not add
 compatibility migrations for intermediate Fastify shapes. Update the
@@ -16,7 +15,7 @@ directly.
 - Active work in this first follow-up: none. All identified first-audit
   slices are closed.
 - Current handoff: none open. The second-pass alpha audit is closed in
-  [`../fastify-followup-alpha/`](../fastify-followup-alpha/).
+  [`../status.md`](../status.md).
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
 - Next default pickup here: none. Start a new focused handoff only after
   a fresh audit finding is recorded.
@@ -55,16 +54,16 @@ directly.
 
 | Phase                                   | State        | Why Reopened                                                                                              | Task Doc                                                                                   |
 | --------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 0 - Removals                            | Closed       | 0A removed the tracked Google Drive OAuth worker from `public/` and verified the build.                   | [`phases/phase-0-removals-followup.md`](phases/phase-0-removals-followup.md)               |
+| 0 - Removals                            | Closed       | 0A removed the tracked Google Drive OAuth worker from `public/` and verified the build.                   | [`../phases/phase-0-removals-followup.md`](../phases/phase-0-removals-followup.md)               |
 | 1 - Foundation                          | No follow-up | Audit found Fastify foundation shape complete.                                                            | None                                                                                       |
 | 2 - Storage / import / assets / backups | No follow-up | Audit found storage route baseline complete.                                                              | None                                                                                       |
-| 3 - Proxy migration                     | Closed       | 3A shared direct proxy response-header filtering with stream-job `upstream_headers` events.               | [`phases/phase-3-proxy-followup.md`](phases/phase-3-proxy-followup.md)                     |
+| 3 - Proxy migration                     | Closed       | 3A shared direct proxy response-header filtering with stream-job `upstream_headers` events.               | [`../phases/phase-3-proxy-followup.md`](../phases/phase-3-proxy-followup.md)                     |
 | 4 - sendChat tests                      | No follow-up | Audit found test scaffold complete for the migration slice.                                               | None                                                                                       |
 | 5 - sendChat extraction                 | No follow-up | Audit found browser extraction baseline complete.                                                         | None                                                                                       |
-| 6 - Server-side generation              | Closed       | 6C aligned Ollama NDJSON stream failures with typed error frames and completed the final stream audit.    | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |
-| 7 - Server-side prompt assembly         | Closed       | 7E added route-backed fixture coverage for send, continue, regenerate, preview, and preview-prompt paths. | [`phases/phase-7-prompt-assembly-followup.md`](phases/phase-7-prompt-assembly-followup.md) |
-| 8 - Hypa V3 memory                      | Closed       | 8C added missing-summary diagnostics and follow-ups for chunks with no embedding yet.                     | [`phases/phase-8-memory-followup.md`](phases/phase-8-memory-followup.md)                   |
-| 9 - Client thinning                     | Closed       | 9J removed the remaining focused direct-bind hits, covered allowlist gaps, and passed browser smoke.      | [`phases/phase-9-client-thinning-followup.md`](phases/phase-9-client-thinning-followup.md) |
+| 6 - Server-side generation              | Closed       | 6C aligned Ollama NDJSON stream failures with typed error frames and completed the final stream audit.    | [`../phases/phase-6-generation-followup.md`](../phases/phase-6-generation-followup.md)           |
+| 7 - Server-side prompt assembly         | Closed       | 7E added route-backed fixture coverage for send, continue, regenerate, preview, and preview-prompt paths. | [`../phases/phase-7-prompt-assembly-followup.md`](../phases/phase-7-prompt-assembly-followup.md) |
+| 8 - Hypa V3 memory                      | Closed       | 8C added missing-summary diagnostics and follow-ups for chunks with no embedding yet.                     | [`../phases/phase-8-memory-followup.md`](../phases/phase-8-memory-followup.md)                   |
+| 9 - Client thinning                     | Closed       | 9J removed the remaining focused direct-bind hits, covered allowlist gaps, and passed browser smoke.      | [`../phases/phase-9-client-thinning-followup.md`](../phases/phase-9-client-thinning-followup.md) |
 
 ## Closeout Expectations
 

@@ -5,9 +5,9 @@ Date: 2026-05-27
 Status: closed. Completed through **8-9 - Phase 8 closeout**.
 Post-closeout audit work for custom embedding follow-ups, production
 memory progress events, and missing-summary diagnostics closed in
-[`../../fastify-followup/phases/phase-8-memory-followup.md`](../../fastify-followup/phases/phase-8-memory-followup.md).
+[`phase-8-memory-followup.md`](phase-8-memory-followup.md).
 The alpha pass also closed memory event delivery isolation in
-[`../../fastify-followup-alpha/phases-completed/phase-8-memory-event-isolation.md`](../../fastify-followup-alpha/phases-completed/phase-8-memory-event-isolation.md).
+[`../phases-completed/phase-8-memory-event-isolation.md`](../phases-completed/phase-8-memory-event-isolation.md).
 
 ## Goal
 

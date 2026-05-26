@@ -16,15 +16,12 @@ paths directly instead of preserving old intermediate Fastify shapes.
 
 ## Scope
 
-Current status for the original migration closeout lives in
-[`status.md`](status.md). Phases 0-9 were closed for the
-Fastify-served web migration scope in `edbc2d07`. The first audit
-follow-up is archived in [`../fastify-followup/`](../fastify-followup/);
-the closed second-pass record lives in
-[`../fastify-followup-alpha/`](../fastify-followup-alpha/), where the
-alpha broad closeout is closed by `50d55b97`. Fastify is the live server
-path, Express has been deleted, and the Dockerfile / compose file target
-port 6002 with `/app/data` persisted.
+Current status lives in [`status.md`](status.md). Phases 0-9 were
+closed for the Fastify-served web migration scope in `edbc2d07`. The
+first audit follow-up and the second-pass alpha audit are both closed;
+the alpha broad closeout landed in `50d55b97`. Fastify is the live
+server path, Express has been deleted, and the Dockerfile / compose file
+target port 6002 with `/app/data` persisted.
 
 Historical phase logs live in [`phases-completed/`](phases-completed/).
 Route and test inventories live under [`coverage/`](coverage/).

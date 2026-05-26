@@ -12,7 +12,7 @@ helpers.
 
 Original closeout work is complete. A post-closeout audit found a tracked
 Google Drive public worker artifact; that follow-up is tracked in
-[`../../fastify-followup/phases/phase-0-removals-followup.md`](../../fastify-followup/phases/phase-0-removals-followup.md).
+[`phase-0-removals-followup.md`](phase-0-removals-followup.md).
 Do not reintroduce removed live surfaces during later phases.
 
 Completed detail: [`../phases-completed/phase-0-removals.md`](../phases-completed/phase-0-removals.md).

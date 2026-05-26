@@ -7,7 +7,7 @@ Status: closed 2026-05-24.
 Post-closeout audit work for regenerate semantics, deferred-provider
 guards, stop-trigger mutation delivery, and route-backed fixture coverage
 closed in follow-up slices 7A-7E and is archived in
-[`../../fastify-followup/phases/phase-7-prompt-assembly-followup.md`](../../fastify-followup/phases/phase-7-prompt-assembly-followup.md).
+[`phase-7-prompt-assembly-followup.md`](phase-7-prompt-assembly-followup.md).
 
 Closeout archive:
 [`../phases-completed/phase-7-prompt-assembly-closeout.md`](../phases-completed/phase-7-prompt-assembly-closeout.md).

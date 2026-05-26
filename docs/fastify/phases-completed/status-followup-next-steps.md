@@ -4,8 +4,8 @@ Date: 2026-05-27
 
 Use this file as the closed first-audit runbook. The phase files under
 `../phases/` hold source evidence and exit criteria for that audit; the
-closed alpha audit record lives in
-[`../../fastify-followup-alpha/status/next-steps.md`](../../fastify-followup-alpha/status/next-steps.md).
+current next-steps runbook lives in
+[`../status/next-steps.md`](../status/next-steps.md).
 
 Policy note: no actual Fastify users exist yet. Update current schemas,
 commands, and import paths directly rather than preserving intermediate
@@ -100,8 +100,8 @@ pnpm build
 
 ## References
 
-- Reopened status: [`../status.md`](../status.md)
-- Follow-up phase index: [`../phases/README.md`](../phases/README.md)
-- Original Fastify status: `docs/fastify/status.md`
-- Original Phase 9 command map:
-  `docs/fastify/status/phase-9-command-map.md`
+- Follow-up status: [`status-followup-closeout.md`](status-followup-closeout.md)
+- Phase index: [`../phases/README.md`](../phases/README.md)
+- Current live status: [`../status.md`](../status.md)
+- Phase 9 command map:
+  [`../status/phase-9-command-map.md`](../status/phase-9-command-map.md)

@@ -18,8 +18,8 @@ prompt assembly / chat dispatch can run through Fastify behind the
 server-backed gate. Phase 8 closed ready-memory reads, summarize/embed
 jobs, browser memory surfaces, and live chunk planning on the server. The
 ownership described below is the migration target. Audit follow-up after
-the closeout is tracked in `docs/fastify-followup`; Phase 7 regenerate
-and stop-trigger parity closed again on 2026-05-27.
+the closeout is tracked in the follow-up phases under `phases/`;
+Phase 7 regenerate and stop-trigger parity closed again on 2026-05-27.
 
 ## Stage 0 - UI lease and dispatch
 

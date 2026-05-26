@@ -24,4 +24,4 @@ pnpm api:test -- server/fastify/__tests__/proxy.test.ts server/fastify/__tests__
 
 - Phase 3 is closed again.
 - No immediate pickup remains from the first follow-up audit. The alpha
-  audit is also closed in `docs/fastify-followup-alpha/`.
+  audit is also closed in the alpha audit phases.

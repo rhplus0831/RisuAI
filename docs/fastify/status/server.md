@@ -64,7 +64,7 @@ docs.
 
 Original Phase 8 Hypa V3 memory and Phase 9 client thinning are closed.
 Audit follow-up for Phases 0, 3, 6, 7, 8, and 9 is closed again in
-`docs/fastify-followup`.
+the follow-up phase docs.
 
 ## Watch Points
 

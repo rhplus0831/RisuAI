@@ -14,7 +14,7 @@ Browser projection, storage gates, and residual-sweep coverage live in
 the frontend test suite when they are not route behavior.
 Audit follow-up for completion streaming errors, proxy header alignment,
 the public Drive artifact, and memory events is closed in
-`docs/fastify-followup`.
+the follow-up phase docs.
 
 ## Phase 1: Foundation
 
