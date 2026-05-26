@@ -89,7 +89,7 @@ shards under [`coverage/`](coverage/).
 
 ## Where to look
 
-| Concern                                           | Open                                                           |
+| Concern                                           | Doc                                                            |
 | ------------------------------------------------- | -------------------------------------------------------------- |
 | `sendChat` characterization fixtures (Phases 4-5) | [coverage/sendchat-fixtures.md](coverage/sendchat-fixtures.md) |
 | Fastify route tests (Phases 1-3, 6-9)             | [coverage/server-routes.md](coverage/server-routes.md)         |

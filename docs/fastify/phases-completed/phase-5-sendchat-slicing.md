@@ -7,15 +7,16 @@ Date: 2026-05-22
 fixtures listed below). Phase 6 has since added 12 provider parity
 fixtures, tracked in
 [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md).
-The coordinator at
-`src/ts/process/index.svelte.ts` is 445 lines (down from 1625 at
-Phase 5 start, a 73% reduction). This document is now historical
-reference; current pickup work is tracked in
+At the Phase 5 closeout, the coordinator at
+`src/ts/process/index.svelte.ts` was 445 lines (down from 1625 at
+Phase 5 start, a 73% reduction). This document is historical reference;
+current status is tracked in
 [`../status/next-steps.md`](../status/next-steps.md).
 
 ## Closed Code Map
 
-`src/ts/process/index.svelte.ts` is 445 lines. Phase 5-1 through
+At the Phase 5 closeout, `src/ts/process/index.svelte.ts` was 445
+lines. Phase 5-1 through
 5-28 extracted auto-continue, owned `doingChat` lifecycle,
 error reporting, response loops, most post-generation helpers, final
 request-budget recheck, character description, plain-prompt main /

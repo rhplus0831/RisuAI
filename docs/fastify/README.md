@@ -20,12 +20,11 @@ Current status for the original migration closeout lives in
 [`status.md`](status.md). Phases 0-9 were closed for the
 Fastify-served web migration scope in `edbc2d07`. The first audit
 follow-up is archived in [`../fastify-followup/`](../fastify-followup/);
-the current second-pass handoff lives in
-[`../fastify-followup-alpha/`](../fastify-followup-alpha/), where broad
-alpha closeout is open on the `pnpm check` blocker recorded by
-`6137b782`. Fastify is the live server path, Express has been deleted,
-and the Dockerfile / compose file target port 6002 with `/app/data`
-persisted.
+the closed second-pass record lives in
+[`../fastify-followup-alpha/`](../fastify-followup-alpha/), where the
+alpha broad closeout is closed by `50d55b97`. Fastify is the live server
+path, Express has been deleted, and the Dockerfile / compose file target
+port 6002 with `/app/data` persisted.
 
 Historical phase logs live in [`phases-completed/`](phases-completed/).
 Route and test inventories live under [`coverage/`](coverage/).
@@ -85,7 +84,7 @@ short form.
 ## Read order
 
 1. [`plan.md`](plan.md) - goal, baseline, sequence, non-goals.
-2. [`status.md`](status.md) - current progress and next work; routes into
+2. [`status.md`](status.md) - current progress and pickup state; routes into
    `status/` shards.
 3. [`runtime-stages.md`](runtime-stages.md) - client vs server
    responsibility per generation stage.

@@ -5,7 +5,7 @@ Date: 2026-05-27
 This is the original Fastify migration closeout snapshot. The
 first post-closeout audit is archived in
 [`../fastify-followup/status.md`](../fastify-followup/status.md). The
-current second-pass handoff lives in
+closed second-pass audit status lives in
 [`../fastify-followup-alpha/status.md`](../fastify-followup-alpha/status.md).
 
 Policy note: there are no actual Fastify users yet, so this process does
@@ -19,14 +19,14 @@ Completed phase detail and old landed-slice logs live in
 
 - Original migration phase: none. Phase 9, Client thinning, was closed
   for the Fastify-served web scope in `edbc2d07`.
-- Active handoff: broad alpha closeout typecheck cleanup in
-  [`../fastify-followup-alpha/phases/broad-closeout-typecheck-alpha.md`](../fastify-followup-alpha/phases/broad-closeout-typecheck-alpha.md).
+- Active handoff: none open. The second-pass alpha audit is closed in
+  [`../fastify-followup-alpha/status.md`](../fastify-followup-alpha/status.md).
 - First follow-up closeout: Phase 3 Slice 3A aligned stream-job proxy
   headers with direct proxy output in `e92e2d7e`.
-- Latest alpha trail: `7bc0e8f6` closed Phase 9A projection writes,
-  `d570f482` closed Phase 6 SSE tails, `0cee686d` closed Phase 3 hub
-  headers, `ed4d53a8` closed Phase 8 memory event isolation, and
-  `6137b782` recorded the remaining `pnpm check` blocker.
+- Latest alpha trail: `0c429fe8` closed Phase 6 CRLF SSE handling,
+  `cf830b9e` closed Phase 9B projection-write tails, `bd7a4712`
+  restored the Phase 5 `sendChat` boundary, and `50d55b97` closed the
+  broad typecheck blocker and verification matrix.
 - Tauri / Desktop manual verification remains deferred and should not
   be folded back into the original Phase 9 closeout.
 - Last original closeout baselines are archived in
@@ -40,7 +40,7 @@ Completed phase detail and old landed-slice logs live in
 - [`status/next-steps.md`](status/next-steps.md) - original handoff and
   original closeout verification notes.
 - [`../fastify-followup-alpha/status/next-steps.md`](../fastify-followup-alpha/status/next-steps.md) -
-  current alpha pickup state and verification commands.
+  closed alpha audit state and verification commands.
 - [`../fastify-followup/status/next-steps.md`](../fastify-followup/status/next-steps.md) -
   first follow-up archive and reference verification commands.
 - [`status/phase-9-command-map.md`](status/phase-9-command-map.md) -
@@ -65,15 +65,15 @@ Completed phase detail and old landed-slice logs live in
 | Server-side prompt assembly                 | Closed; follow-up regenerate/provider/stop-trigger/fixture gaps closed again 2026-05-27. |
 | Hypa V3 memory                              | Closed; custom embedding, progress event, and missing-summary follow-up closed again 2026-05-27. |
 | Client thinning                             | Closed for Fastify web; direct-write follow-up closed again 2026-05-27.                  |
-| Alpha broad closeout                        | Open; `pnpm check` fails with 57 errors across 17 files while the rest of the recorded matrix passed. |
+| Alpha broad closeout                        | Closed; `pnpm check` and the full broad matrix passed in `50d55b97`. |
 
 ## Maintenance Rules
 
-- Keep this file short: last done, current blocker, next pickup, and links.
+- Keep this file short: last done, current pickup, and links.
 - Keep the no-compatibility-migrations policy visible while there are no
   actual Fastify users.
 - Put the original runbook in [`status/next-steps.md`](status/next-steps.md);
-  current alpha work belongs under [`../fastify-followup-alpha/`](../fastify-followup-alpha/).
+  any future alpha work belongs under [`../fastify-followup-alpha/`](../fastify-followup-alpha/).
 - Put completed logs and old status snapshots in
   [`phases-completed/`](phases-completed/).
 - Keep phase files focused on remaining work and closeout summaries, not

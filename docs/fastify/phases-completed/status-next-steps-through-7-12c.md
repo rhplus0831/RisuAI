@@ -47,7 +47,7 @@ gate; the send path stays local). The tokens / budget chain (7-8a/b/c) is
 fully landed, `preflight` covers every card type the SPA emits, and
 `history` (now async, closing 7-5d) and `lorebook` are feature-complete.
 Historical note: the root handoff and roadmap files were later removed;
-current pickup state now lives in [`../status/next-steps.md`](../status/next-steps.md).
+the later status record lives in [`../status/next-steps.md`](../status/next-steps.md).
 
 ## Immediate
 

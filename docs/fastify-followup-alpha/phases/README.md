@@ -2,10 +2,15 @@
 
 Date: 2026-05-27
 
-This directory keeps the open alpha work items plus a concise index to
-completed alpha slice logs. Completed detail belongs in
-`../phases-completed/`; do not turn active phase docs into long work
-logs.
+This directory is reserved for active or remaining alpha scope. The
+2026-05-27 alpha audit has no open phase docs; completed detail belongs
+in `../phases-completed/`, not here.
+
+## Open Phase Docs
+
+None.
+
+## Completed Alpha Slices
 
 | Phase                      | Status | Doc                                                                                                                    |
 | -------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |

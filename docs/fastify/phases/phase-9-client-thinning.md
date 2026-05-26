@@ -404,7 +404,7 @@ surfaces.
 ## Original Exit Criteria
 
 These were satisfied for the original Fastify-served web closeout. The
-current broad `pnpm check` blocker is tracked in
+later alpha broad typecheck blocker is also closed and tracked in
 [`../../fastify-followup-alpha/`](../../fastify-followup-alpha/).
 
 - Every direct `DBState.db.*` mutation in `src/lib/` and `src/ts/`

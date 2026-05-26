@@ -14,18 +14,16 @@ current server schema, command surface, and import/export paths directly.
 ## Read Order
 
 1. [`status.md`](status.md) - current alpha snapshot and commit anchors.
-2. [`status/next-steps.md`](status/next-steps.md) - active pickup
-   runbook and verification commands.
+2. [`status/next-steps.md`](status/next-steps.md) - closed alpha runbook
+   and verification commands.
 3. [`phases/`](phases/) - open or remaining alpha scope only.
 4. [`phases-completed/`](phases-completed/) - completed alpha slice
    notes.
 
 ## Current State
 
-Phase 3, 6, 8, and 9 alpha findings are closed. Phase 9B closed the
-remaining projection-write tails in
-[`phases-completed/phase-9-projection-write-tails-9b.md`](phases-completed/phase-9-projection-write-tails-9b.md).
-The remaining active work is Phase 5 sendChat boundary cleanup in
-[`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md)
-and broad closeout typecheck cleanup in
-[`phases/broad-closeout-typecheck-alpha.md`](phases/broad-closeout-typecheck-alpha.md).
+The alpha audit is closed. Phase 3, 5, 6, 8, and 9 findings, plus the
+broad typecheck closeout, are archived under
+[`phases-completed/`](phases-completed/). No active alpha pickup remains;
+create a new focused phase doc under [`phases/`](phases/) only after a
+new audit finding is recorded.

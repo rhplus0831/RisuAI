@@ -47,10 +47,11 @@ tokenizer and maxContextTokens setup), and the coordinator closeout
 (dead-locals cleanup, single hoisted `setProcessStage` callback,
 `let → const` conversions where no reassignment happens).
 
-`src/ts/process/index.svelte.ts` went from **1625 -> 445 lines**
-across 28 slices (a **73% reduction**), with 29 extracted modules
-under `src/ts/process/` and its `promptAssembly/`, `promptBudget/`,
-`postGeneration/`, and `dispatch/` subdirectories. Phase 5 closed
+At the Phase 5 closeout, `src/ts/process/index.svelte.ts` went from
+**1625 -> 445 lines** across 28 slices (a **73% reduction**), with 29
+extracted modules under `src/ts/process/` and these subdirectories:
+`promptAssembly/`, `promptBudget/`, `postGeneration/`, and `dispatch/`.
+Phase 5 closed
 with 26 sendChat fixtures. Phase 6 has since raised the local
 fixture count to 38 and added a 12-fixture server-backed sweep.
 
@@ -82,13 +83,14 @@ instead of a count. A later cleanup also added the final
 `doingChat` boolean to every snapshot so the fixture harness pins
 the owned lease reset. Existing fixtures were re-recorded.
 
-## Current state
+## Historical State
 
-`src/ts/process/index.svelte.ts` is currently 445 lines. It is
-still the main `sendChat` coordinator, but Phase 5 has pulled
-all of the prompt assembly, dispatch, response orchestration,
-and stage-4 closeout into focused helpers. The visible timing
-markers are:
+At this 2026-05-24 snapshot, `src/ts/process/index.svelte.ts` was 445
+lines. The 2026-05-27 alpha boundary cleanup later restored the current
+coordinator to 358 lines. At this snapshot, it was still the main
+`sendChat` coordinator, with prompt assembly, dispatch, response
+orchestration, and stage-4 closeout split into focused helpers. The
+visible timing markers were:
 
 - `stage1Start` at `src/ts/process/index.svelte.ts:176` -
   validation, lorebook prep, persona, description assembly.

@@ -5,7 +5,8 @@ Date: 2026-05-27
 These files track first-audit follow-up work found after Phases 0-9.
 Use the original `docs/fastify/phases/` files for scope and boundary
 context; use this directory for first-audit task scope and closeout
-criteria. Current alpha work is in `docs/fastify-followup-alpha/phases/`.
+criteria. The closed alpha audit record is in
+`docs/fastify-followup-alpha/`.
 
 ## Phase Index
 

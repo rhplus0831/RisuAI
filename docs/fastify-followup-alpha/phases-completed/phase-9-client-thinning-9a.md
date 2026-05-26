@@ -30,8 +30,9 @@ pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__test
 pnpm smoke:fastify-browser
 ```
 
-## Broad Closeout
+## Current Status
 
-Functional Phase 9A alpha work is closed. `pnpm check` still fails on
-broader Fastify/server type errors outside this slice; the current
-blocker lives in [`../status.md`](../status.md).
+Functional Phase 9A alpha work is closed. At the 9A closeout, broader
+Fastify/server type errors remained outside this slice; they were later
+closed by `50d55b97`. Current alpha status lives in
+[`../status.md`](../status.md).

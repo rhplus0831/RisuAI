@@ -52,11 +52,12 @@ Results:
 - Focused Fastify API command/event/bootstrap suite: 68 files, 1217
   tests passed.
 - Browser smoke: 1 test passed.
-- `pnpm check` still fails with the known broad alpha typecheck blocker:
-  57 errors, 0 warnings, 17 files.
+- At this slice closeout (`cf830b9e`), `pnpm check` still failed with
+  the broad alpha typecheck blocker: 57 errors, 0 warnings, 17 files.
 
-## Follow-Up
+## Current Status
 
-Phase 9 projection-write tails are closed for this alpha pass. Continue
-with Phase 5 sendChat boundary drift, then the broad closeout typecheck
-blocker.
+Phase 9 projection-write tails are closed for this alpha pass. Phase 5
+boundary drift closed in `bd7a4712`, and the broad typecheck blocker
+closed in `50d55b97`; current alpha status lives in
+[`../status.md`](../status.md).

@@ -17,7 +17,7 @@ server one at a time in later phases.
 ## Status
 
 Closed 2026-05-22. All 28 slices landed, ending with coordinator
-closeout commit `a7e2831d`. The current coordinator is
+closeout commit `a7e2831d`. At that closeout, the coordinator was
 `src/ts/process/index.svelte.ts` (445 lines), with extracted
 helpers in `src/ts/process/autoContinue.ts`,
 `src/ts/process/sendChatContext.ts`,

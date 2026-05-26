@@ -30,8 +30,8 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm api:test -- server/fastify/__tests__/generation.completion.test.ts
 ```
 
-## Next Pickup
+## Current Status
 
-Phase 6 is closed for the alpha audit. Continue with Phase 9 projection
-write tails, then Phase 5 sendChat boundary drift, then the broad
-closeout typecheck blocker.
+Phase 6 is closed for the alpha audit. The later Phase 9 projection
+tails, Phase 5 boundary drift, and broad typecheck blocker are also
+closed; current alpha status lives in [`../status.md`](../status.md).

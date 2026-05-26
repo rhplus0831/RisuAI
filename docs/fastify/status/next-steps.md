@@ -5,7 +5,7 @@ Date: 2026-05-27
 Use this file as the original Phase 9 closeout runbook. The
 first post-closeout audit is archived in
 [`../../fastify-followup/status/next-steps.md`](../../fastify-followup/status/next-steps.md);
-the current alpha pickup state lives in
+the closed alpha audit state lives in
 [`../../fastify-followup-alpha/status/next-steps.md`](../../fastify-followup-alpha/status/next-steps.md).
 Completed original migration slice details live in
 [`../phases-completed/`](../phases-completed/), and the closeout snapshot
@@ -31,10 +31,9 @@ tracked in `docs/fastify-followup`; the second-pass alpha trail is in
 
 ## Immediate Pickup
 
-Immediate pickup: **none for the original migration**. The current
-post-closeout pickup is the alpha broad typecheck cleanup in
-`docs/fastify-followup-alpha`; start there before treating this original
-runbook as current.
+Immediate pickup: **none for the original migration**. The first
+follow-up and alpha audit are also closed; start new work only from a
+fresh recorded finding.
 
 - Do not fold audit follow-up or Tauri / Desktop manual verification
   back into the original Phase 9 docs closeout.
@@ -77,7 +76,8 @@ runbook as current.
 
 ## Later Queue
 
-1. Broad alpha closeout in `docs/fastify-followup-alpha`.
+1. New alpha follow-up only if a fresh finding specifically belongs to
+   the second-pass audit record.
 2. New first-audit follow-up only if a fresh finding specifically
    belongs to that archive.
 3. Separate later task - Tauri / Desktop manual verification.

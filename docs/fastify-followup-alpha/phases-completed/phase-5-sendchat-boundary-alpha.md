@@ -43,13 +43,13 @@ Results:
 - Local Phase 5 helper/fixture sweep: 28 files, 316 tests passed.
 - Server-backed sendChat fixture/preview sweep: 2 files, 26 tests
   passed.
-- `pnpm check` still fails with the known broad alpha typecheck blocker:
-  58 errors, 0 warnings, 18 files. The current failure list has no
-  diagnostics in the new extracted sendChat helper files.
+- At this slice closeout (`bd7a4712`), `pnpm check` still failed with
+  the broad alpha typecheck blocker: 58 errors, 0 warnings, 18 files.
+  The failure list had no diagnostics in the new extracted sendChat
+  helper files.
 
-## Follow-Up
+## Current Status
 
-Phase 5 sendChat boundary drift is closed for this alpha pass. Continue
-with the broad closeout typecheck blocker in
-`../phases/broad-closeout-typecheck-alpha.md`, then rerun the full
-closeout matrix after `pnpm check` passes.
+Phase 5 sendChat boundary drift is closed for this alpha pass. The
+later broad typecheck blocker was closed by `50d55b97`; current alpha
+status lives in [`../status.md`](../status.md).
