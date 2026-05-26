@@ -61,6 +61,14 @@ import/export events match the command map.
   `seperateParameters`, `seperateParametersEnabled`,
   `seperateParametersByModel`, `epEnabled`, and
   `disableSeperateParameterChangeOnPresetChange`.
+- Landed 2026-05-26: Image provider settings in `OtherBotSettings.svelte`
+  now bind through `createServerBackedSettingDraft`, including
+  `sdProvider`, `webUiUrl`, `sdSteps`, `sdCFG`, `sdConfig`,
+  `NAIImgUrl`, `NAIApiKey`, `NAIImgModel`, `NAII2I`,
+  `NAIImgConfig`, `openAIKey`, `dallEQuality`, Stability, ComfyUI,
+  Fal, `google`, Imagen, `openaiCompatImage`, and `wavespeedImage`.
+  WaveSpeed and NovelAI image upload/reset side effects now mutate local
+  command-backed drafts instead of the Fastify projection directly.
 
 ## Tasks
 
@@ -108,16 +116,21 @@ client mutation.
   / Fastify command tests for provider order/only/ignore arrays,
   auxiliary models, separate parameter overrides, and EasyPanel setup
   toggles.
-- 9C - Image provider settings. Cover the image-generation portions of
+- 9C - Completed 2026-05-26: Image provider settings. Covered the
+  image-generation portions of
   `OtherBotSettings.svelte`: `sdConfig`, `NAIImgConfig`, `comfyConfig`,
   `openaiCompatImage`, `wavespeedImage`, `fal*`, Imagen, Stability, and
-  related provider keys/models. Use nested drafts or narrow commands for
-  each durable setting group.
+  related provider keys/models. Converted the surface to nested
+  command-backed drafts, removed duplicate watcher keys, and extended
+  focused client / Fastify command tests for media-group allowlists and
+  masked image-provider secrets.
 - 9D - Memory and audio provider settings. Cover the Hypa V3 and audio /
   TTS portions of `OtherBotSettings.svelte` plus
   `PlaygroundEmbedding.svelte`, including `hypaCustomSettings`, Hypa
   provider keys/models, Voyage, ElevenLabs, VoiceVox, OpenAI TTS, NAI
-  TTS, Hugging Face, and Fish Speech. Coordinate with Phase 8 if memory
+  TTS, Hugging Face, and Fish Speech. Shared `openAIKey` and `NAIApiKey`
+  binds are already command-backed from 9C; continue with the remaining
+  audio and memory-specific keys. Coordinate with Phase 8 if memory
   model-key semantics change.
 - 9E - Persona, display/theme, global regex, lore preset, and bot preset
   editors. Cover `PersonaSettings.svelte`, `GlobalRegex.svelte`,

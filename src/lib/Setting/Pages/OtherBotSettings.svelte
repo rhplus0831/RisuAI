@@ -28,39 +28,12 @@
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
   import { createHypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import {
+    createServerBackedSettingDraft,
+    watchServerBackedSettings,
+  } from 'src/ts/server/settingsBridge.svelte'
 
   const stopServerSettingsWatch = watchServerBackedSettings([
-    'sdProvider',
-    'webUiUrl',
-    'sdSteps',
-    'sdCFG',
-    'sdConfig',
-    'NAIImgUrl',
-    'NAIApiKey',
-    'NAIImgModel',
-    'NAII2I',
-    'NAIREF',
-    'NAIImgConfig',
-    'openAIKey',
-    'dallEQuality',
-    'stabilityKey',
-    'stabilityModel',
-    'stabllityStyle',
-    'comfyConfig',
-    'comfyUiUrl',
-    'falToken',
-    'falModel',
-    'falLora',
-    'falLoraName',
-    'falLoraScale',
-    'google',
-    'ImagenModel',
-    'ImagenImageSize',
-    'ImagenAspectRatio',
-    'ImagenPersonGeneration',
-    'openaiCompatImage',
-    'wavespeedImage',
     'ttsAutoSpeech',
     'elevenLabKey',
     'voicevoxUrl',
@@ -79,6 +52,44 @@
     'useLegacyGUI',
   ])
   onDestroy(stopServerSettingsWatch)
+
+  const sdProviderDraft = createServerBackedSettingDraft<string>('sdProvider', '')
+  const webUiUrlDraft = createServerBackedSettingDraft<string>('webUiUrl', '')
+  const sdStepsDraft = createServerBackedSettingDraft<number>('sdSteps', 20)
+  const sdCFGDraft = createServerBackedSettingDraft<number>('sdCFG', 7)
+  const sdConfigDraft = createServerBackedSettingDraft<Record<string, any>>('sdConfig', {})
+  const NAIImgUrlDraft = createServerBackedSettingDraft<string>('NAIImgUrl', '')
+  const NAIApiKeyDraft = createServerBackedSettingDraft<string>('NAIApiKey', '')
+  const NAIImgModelDraft = createServerBackedSettingDraft<string>('NAIImgModel', '')
+  const NAII2IDraft = createServerBackedSettingDraft<boolean>('NAII2I', false)
+  const NAIImgConfigDraft = createServerBackedSettingDraft<Record<string, any>>('NAIImgConfig', {})
+  const openAIKeyDraft = createServerBackedSettingDraft<string>('openAIKey', '')
+  const dallEQualityDraft = createServerBackedSettingDraft<string>('dallEQuality', 'standard')
+  const stabilityKeyDraft = createServerBackedSettingDraft<string>('stabilityKey', '')
+  const stabilityModelDraft = createServerBackedSettingDraft<string>('stabilityModel', '')
+  const stabllityStyleDraft = createServerBackedSettingDraft<string>('stabllityStyle', '')
+  const comfyConfigDraft = createServerBackedSettingDraft<Record<string, any>>('comfyConfig', {})
+  const comfyUiUrlDraft = createServerBackedSettingDraft<string>('comfyUiUrl', '')
+  const falTokenDraft = createServerBackedSettingDraft<string>('falToken', '')
+  const falModelDraft = createServerBackedSettingDraft<string>('falModel', '')
+  const falLoraDraft = createServerBackedSettingDraft<string>('falLora', '')
+  const falLoraScaleDraft = createServerBackedSettingDraft<number>('falLoraScale', 1)
+  const googleDraft = createServerBackedSettingDraft<Record<string, any>>('google', {})
+  const ImagenModelDraft = createServerBackedSettingDraft<string>('ImagenModel', '')
+  const ImagenImageSizeDraft = createServerBackedSettingDraft<string>('ImagenImageSize', '1K')
+  const ImagenAspectRatioDraft = createServerBackedSettingDraft<string>('ImagenAspectRatio', '1:1')
+  const ImagenPersonGenerationDraft = createServerBackedSettingDraft<string>(
+    'ImagenPersonGeneration',
+    'allow_all',
+  )
+  const openaiCompatImageDraft = createServerBackedSettingDraft<Record<string, any>>(
+    'openaiCompatImage',
+    {},
+  )
+  const wavespeedImageDraft = createServerBackedSettingDraft<Record<string, any>>(
+    'wavespeedImage',
+    {},
+  )
 
   let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
 
@@ -166,7 +177,7 @@
    * https://wavespeed.ai/docs/docs-common-api/models
    */
   async function fetchWavespeedModels() {
-    if (!DBState.db.wavespeedImage.key || DBState.db.wavespeedImage.key.trim() === '') {
+    if (!wavespeedImageDraft.value.key || wavespeedImageDraft.value.key.trim() === '') {
       alertError('WaveSpeed API Key not set')
       return []
     }
@@ -176,7 +187,7 @@
       const result = await globalFetch('https://api.wavespeed.ai/api/v3/models', {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${DBState.db.wavespeedImage.key}`,
+          Authorization: `Bearer ${wavespeedImageDraft.value.key}`,
         },
       })
 
@@ -233,19 +244,19 @@
    */
   function handleModelChange() {
     const selectedModel = wavespeedModels.find(
-      (m) => m.model_id === DBState.db.wavespeedImage.model,
+      (m) => m.model_id === wavespeedImageDraft.value.model,
     )
 
     // Reset reference_mode for text-to-image models
     if (selectedModel?.supportsImageInput) {
-      DBState.db.wavespeedImage.reference_mode = ''
-      DBState.db.wavespeedImage.reference_image = undefined
-      DBState.db.wavespeedImage.reference_base64image = undefined
+      wavespeedImageDraft.value.reference_mode = ''
+      wavespeedImageDraft.value.reference_image = undefined
+      wavespeedImageDraft.value.reference_base64image = undefined
     }
 
     // Reset loras if model doesn't support them
     if (!selectedModel?.supportsLoras) {
-      DBState.db.wavespeedImage.loras = undefined
+      wavespeedImageDraft.value.loras = undefined
     }
   }
 
@@ -272,10 +283,21 @@
     })
   }
 
+  function getVibeEncodingEntries(): Array<
+    [string, { params: { information_extracted: number } }]
+  > {
+    const config = NAIImgConfigDraft.value
+    const selection = config.vibe_model_selection
+    const encodings = selection ? config.vibe_data?.encodings?.[selection] : undefined
+    return Object.entries(encodings ?? {}) as Array<
+      [string, { params: { information_extracted: number } }]
+    >
+  }
+
   $effect(() => {
     // Sync loras to DB, filtering out empty URLs
-    if (DBState.db.wavespeedImage) {
-      DBState.db.wavespeedImage.loras = wavespeedLoras
+    if (wavespeedImageDraft.value) {
+      wavespeedImageDraft.value.loras = wavespeedLoras
         .filter((item) => item.path && item.path.trim() !== '')
         .map((item) => ({
           path: item.path,
@@ -334,7 +356,7 @@
     <span class="text-textcolor mt-2"
       >{language.imageGeneration} {language.provider} <Help key="sdProvider" /></span
     >
-    <SelectInput className="mt-2 mb-4" bind:value={DBState.db.sdProvider}>
+    <SelectInput className="mt-2 mb-4" bind:value={sdProviderDraft.value}>
       <OptionInput value="">None</OptionInput>
       <OptionInput value="webui">Stable Diffusion WebUI</OptionInput>
       <OptionInput value="novelai">Novel AI</OptionInput>
@@ -347,12 +369,12 @@
       <OptionInput value="wavespeed">WaveSpeedAI</OptionInput>
 
       <!-- Legacy -->
-      {#if DBState.db.sdProvider === 'comfy'}
+      {#if sdProviderDraft.value === 'comfy'}
         <OptionInput value="comfy">ComfyUI (Legacy)</OptionInput>
       {/if}
     </SelectInput>
 
-    {#if DBState.db.sdProvider === 'webui'}
+    {#if sdProviderDraft.value === 'webui'}
       <span class="text-draculared text-xs mb-2">You must use WebUI with --api flag</span>
       <span class="text-draculared text-xs mb-2"
         >You must use WebUI without agpl license or use unmodified version with agpl license to
@@ -368,13 +390,13 @@
         size="sm"
         marginBottom
         placeholder="https://..."
-        bind:value={DBState.db.webUiUrl}
+        bind:value={webUiUrlDraft.value}
       />
       <span class="text-textcolor">Steps</span>
-      <NumberInput size="sm" marginBottom min={0} max={100} bind:value={DBState.db.sdSteps} />
+      <NumberInput size="sm" marginBottom min={0} max={100} bind:value={sdStepsDraft.value} />
 
       <span class="text-textcolor">CFG Scale</span>
-      <NumberInput size="sm" marginBottom min={0} max={20} bind:value={DBState.db.sdCFG} />
+      <NumberInput size="sm" marginBottom min={0} max={20} bind:value={sdCFGDraft.value} />
 
       <span class="text-textcolor">Width</span>
       <NumberInput
@@ -382,7 +404,7 @@
         marginBottom
         min={0}
         max={2048}
-        bind:value={DBState.db.sdConfig.width}
+        bind:value={sdConfigDraft.value.width}
       />
       <span class="text-textcolor">Height</span>
       <NumberInput
@@ -390,22 +412,22 @@
         marginBottom
         min={0}
         max={2048}
-        bind:value={DBState.db.sdConfig.height}
+        bind:value={sdConfigDraft.value.height}
       />
       <span class="text-textcolor">Sampler</span>
-      <TextInput size="sm" marginBottom bind:value={DBState.db.sdConfig.sampler_name} />
+      <TextInput size="sm" marginBottom bind:value={sdConfigDraft.value.sampler_name} />
 
       <div class="flex items-center mt-2">
-        <Check bind:check={DBState.db.sdConfig.enable_hr} name="Enable Hires" />
+        <Check bind:check={sdConfigDraft.value.enable_hr} name="Enable Hires" />
       </div>
-      {#if DBState.db.sdConfig.enable_hr === true}
+      {#if sdConfigDraft.value.enable_hr === true}
         <span class="text-textcolor">denoising_strength</span>
         <NumberInput
           size="sm"
           marginBottom
           min={0}
           max={10}
-          bind:value={DBState.db.sdConfig.denoising_strength}
+          bind:value={sdConfigDraft.value.denoising_strength}
         />
         <span class="text-textcolor">hr_scale</span>
         <NumberInput
@@ -413,26 +435,26 @@
           marginBottom
           min={0}
           max={10}
-          bind:value={DBState.db.sdConfig.hr_scale}
+          bind:value={sdConfigDraft.value.hr_scale}
         />
         <span class="text-textcolor">Upscaler</span>
-        <TextInput size="sm" marginBottom bind:value={DBState.db.sdConfig.hr_upscaler} />
+        <TextInput size="sm" marginBottom bind:value={sdConfigDraft.value.hr_upscaler} />
       {/if}
     {/if}
 
-    {#if DBState.db.sdProvider === 'novelai'}
+    {#if sdProviderDraft.value === 'novelai'}
       <span class="text-textcolor mt-2">Novel AI {language.providerURL}</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="https://image.novelai.net"
-        bind:value={DBState.db.NAIImgUrl}
+        bind:value={NAIImgUrlDraft.value}
       />
       <span class="text-textcolor">API Key</span>
-      <TextInput size="sm" marginBottom placeholder="pst-..." bind:value={DBState.db.NAIApiKey} />
+      <TextInput size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
 
       <span class="text-textcolor">Model</span>
-      <SelectInput className="mb-4" bind:value={DBState.db.NAIImgModel}>
+      <SelectInput className="mb-4" bind:value={NAIImgModelDraft.value}>
         <OptionInput value="nai-diffusion-4-5-full">nai-diffusion-4-5-full</OptionInput>
         <OptionInput value="nai-diffusion-4-5-curated">nai-diffusion-4-5-curated</OptionInput>
         <OptionInput value="nai-diffusion-4-full">nai-diffusion-4-full</OptionInput>
@@ -450,7 +472,7 @@
         marginBottom
         min={0}
         max={2048}
-        bind:value={DBState.db.NAIImgConfig.width}
+        bind:value={NAIImgConfigDraft.value.width}
       />
       <span class="text-textcolor">Height</span>
       <NumberInput
@@ -458,12 +480,12 @@
         marginBottom
         min={0}
         max={2048}
-        bind:value={DBState.db.NAIImgConfig.height}
+        bind:value={NAIImgConfigDraft.value.height}
       />
       <span class="text-textcolor">Sampler</span>
 
-      {#if DBState.db.NAIImgModel === 'nai-diffusion-4-full' || DBState.db.NAIImgModel === 'nai-diffusion-4-curated-preview' || DBState.db.NAIImgModel === 'nai-diffusion-4-5-full' || DBState.db.NAIImgModel === 'nai-diffusion-4-5-curated'}
-        <SelectInput className="mb-4" bind:value={DBState.db.NAIImgConfig.sampler}>
+      {#if NAIImgModelDraft.value === 'nai-diffusion-4-full' || NAIImgModelDraft.value === 'nai-diffusion-4-curated-preview' || NAIImgModelDraft.value === 'nai-diffusion-4-5-full' || NAIImgModelDraft.value === 'nai-diffusion-4-5-curated'}
+        <SelectInput className="mb-4" bind:value={NAIImgConfigDraft.value.sampler}>
           <OptionInput value="k_euler_ancestral">Euler Ancestral</OptionInput>
           <OptionInput value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</OptionInput>
           <OptionInput value="k_dpmpp_2m_sde">DPM++ 2M SDE</OptionInput>
@@ -472,7 +494,7 @@
           <OptionInput value="k_dpmpp_sde">DPM++ SDE</OptionInput>
         </SelectInput>
       {:else}
-        <SelectInput className="mb-4" bind:value={DBState.db.NAIImgConfig.sampler}>
+        <SelectInput className="mb-4" bind:value={NAIImgConfigDraft.value.sampler}>
           <OptionInput value="k_euler_ancestral">Euler Ancestral</OptionInput>
           <OptionInput value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</OptionInput>
           <OptionInput value="k_dpmpp_sde">DPM++ SDE</OptionInput>
@@ -484,7 +506,7 @@
       {/if}
 
       <span class="text-textcolor">Noise Schedule</span>
-      <SelectInput className="mb-4" bind:value={DBState.db.NAIImgConfig.noise_schedule}>
+      <SelectInput className="mb-4" bind:value={NAIImgConfigDraft.value.noise_schedule}>
         <OptionInput value="native">native</OptionInput>
         <OptionInput value="karras">karras</OptionInput>
         <OptionInput value="exponential">exponential</OptionInput>
@@ -497,7 +519,7 @@
         marginBottom
         min={0}
         max={2048}
-        bind:value={DBState.db.NAIImgConfig.steps}
+        bind:value={NAIImgConfigDraft.value.steps}
       />
       <span class="text-textcolor">CFG scale</span>
       <NumberInput
@@ -505,7 +527,7 @@
         marginBottom
         min={0}
         max={2048}
-        bind:value={DBState.db.NAIImgConfig.scale}
+        bind:value={NAIImgConfigDraft.value.scale}
       />
       <span class="text-textcolor">CFG rescale</span>
       <NumberInput
@@ -513,19 +535,19 @@
         marginBottom
         min={0}
         max={1}
-        bind:value={DBState.db.NAIImgConfig.cfg_rescale}
+        bind:value={NAIImgConfigDraft.value.cfg_rescale}
       />
 
       <span class="text-textcolor">Image Reference</span>
-      <SelectInput className="mb-4" bind:value={DBState.db.NAIImgConfig.reference_mode}>
+      <SelectInput className="mb-4" bind:value={NAIImgConfigDraft.value.reference_mode}>
         <OptionInput value="">None</OptionInput>
         <OptionInput value="vibe">Vibe Trasfer</OptionInput>
-        {#if DBState.db.NAIImgModel === 'nai-diffusion-4-5-full' || DBState.db.NAIImgModel === 'nai-diffusion-4-5-curated'}
+        {#if NAIImgModelDraft.value === 'nai-diffusion-4-5-full' || NAIImgModelDraft.value === 'nai-diffusion-4-5-curated'}
           <OptionInput value="character">Character Reference</OptionInput>
         {/if}
       </SelectInput>
 
-      {#if DBState.db.NAIImgConfig.reference_mode === 'vibe'}
+      {#if NAIImgConfigDraft.value.reference_mode === 'vibe'}
         <div class="relative">
           <button
             class="mb-4"
@@ -542,31 +564,31 @@
                 }
 
                 // Store the vibe data
-                DBState.db.NAIImgConfig.vibe_data = vibeData
+                NAIImgConfigDraft.value.vibe_data = vibeData
 
                 // Set the thumbnail as preview image for display
                 if (vibeData.thumbnail) {
                   // Clear the array and add the thumbnail
-                  DBState.db.NAIImgConfig.reference_image_multiple = []
+                  NAIImgConfigDraft.value.reference_image_multiple = []
 
                   // Set default model selection based on current model
-                  if (DBState.db.NAIImgModel.includes('nai-diffusion-4-full')) {
-                    DBState.db.NAIImgConfig.vibe_model_selection = 'v4full'
-                  } else if (DBState.db.NAIImgModel.includes('nai-diffusion-4-curated')) {
-                    DBState.db.NAIImgConfig.vibe_model_selection = 'v4curated'
-                  } else if (DBState.db.NAIImgModel.includes('nai-diffusion-4-5-full')) {
-                    DBState.db.NAIImgConfig.vibe_model_selection = 'v4-5full'
-                  } else if (DBState.db.NAIImgModel.includes('nai-diffusion-4-5-curated')) {
-                    DBState.db.NAIImgConfig.vibe_model_selection = 'v4-5curated'
+                  if (NAIImgModelDraft.value.includes('nai-diffusion-4-full')) {
+                    NAIImgConfigDraft.value.vibe_model_selection = 'v4full'
+                  } else if (NAIImgModelDraft.value.includes('nai-diffusion-4-curated')) {
+                    NAIImgConfigDraft.value.vibe_model_selection = 'v4curated'
+                  } else if (NAIImgModelDraft.value.includes('nai-diffusion-4-5-full')) {
+                    NAIImgConfigDraft.value.vibe_model_selection = 'v4-5full'
+                  } else if (NAIImgModelDraft.value.includes('nai-diffusion-4-5-curated')) {
+                    NAIImgConfigDraft.value.vibe_model_selection = 'v4-5curated'
                   }
 
                   // Set InfoExtracted to the first value for the selected model
-                  const selectedModel = DBState.db.NAIImgConfig.vibe_model_selection
+                  const selectedModel = NAIImgConfigDraft.value.vibe_model_selection
                   if (selectedModel && vibeData.encodings[selectedModel]) {
                     const encodings = vibeData.encodings[selectedModel]
                     const firstKey = Object.keys(encodings)[0]
                     if (firstKey) {
-                      DBState.db.NAIImgConfig.InfoExtracted = Number(
+                      NAIImgConfigDraft.value.InfoExtracted = Number(
                         encodings[firstKey].params.information_extracted,
                       )
                     }
@@ -575,17 +597,17 @@
 
                 // Initialize reference_strength_multiple if not set
                 if (
-                  !DBState.db.NAIImgConfig.reference_strength_multiple ||
-                  !Array.isArray(DBState.db.NAIImgConfig.reference_strength_multiple)
+                  !NAIImgConfigDraft.value.reference_strength_multiple ||
+                  !Array.isArray(NAIImgConfigDraft.value.reference_strength_multiple)
                 ) {
-                  DBState.db.NAIImgConfig.reference_strength_multiple = [0.7]
+                  NAIImgConfigDraft.value.reference_strength_multiple = [0.7]
                 }
               } catch (error) {
                 alertError('Error parsing vibe file: ' + error)
               }
             }}
           >
-            {#if !DBState.db.NAIImgConfig.vibe_data || !DBState.db.NAIImgConfig.vibe_data.thumbnail}
+            {#if !NAIImgConfigDraft.value.vibe_data || !NAIImgConfigDraft.value.vibe_data.thumbnail}
               <div
                 class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
               >
@@ -593,18 +615,18 @@
               </div>
             {:else}
               <img
-                src={DBState.db.NAIImgConfig.vibe_data.thumbnail}
+                src={NAIImgConfigDraft.value.vibe_data.thumbnail}
                 alt="Vibe Preview"
                 class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
               />
             {/if}
           </button>
 
-          {#if DBState.db.NAIImgConfig.vibe_data}
+          {#if NAIImgConfigDraft.value.vibe_data}
             <button
               onclick={() => {
-                DBState.db.NAIImgConfig.vibe_data = undefined
-                DBState.db.NAIImgConfig.vibe_model_selection = undefined
+                NAIImgConfigDraft.value.vibe_data = undefined
+                NAIImgConfigDraft.value.vibe_model_selection = undefined
               }}
               class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm"
             >
@@ -613,51 +635,51 @@
           {/if}
         </div>
 
-        {#if DBState.db.NAIImgConfig.vibe_data}
+        {#if NAIImgConfigDraft.value.vibe_data}
           <span class="text-textcolor">Vibe Model</span>
           <SelectInput
             className="mb-2"
-            bind:value={DBState.db.NAIImgConfig.vibe_model_selection}
+            bind:value={NAIImgConfigDraft.value.vibe_model_selection}
             onchange={(e) => {
               // When vibe model changes, set InfoExtracted to the first value
               if (
-                DBState.db.NAIImgConfig.vibe_data?.encodings &&
-                DBState.db.NAIImgConfig.vibe_model_selection &&
-                DBState.db.NAIImgConfig.vibe_data.encodings[
-                  DBState.db.NAIImgConfig.vibe_model_selection
+                NAIImgConfigDraft.value.vibe_data?.encodings &&
+                NAIImgConfigDraft.value.vibe_model_selection &&
+                NAIImgConfigDraft.value.vibe_data.encodings[
+                  NAIImgConfigDraft.value.vibe_model_selection
                 ]
               ) {
                 const encodings =
-                  DBState.db.NAIImgConfig.vibe_data.encodings[
-                    DBState.db.NAIImgConfig.vibe_model_selection
+                  NAIImgConfigDraft.value.vibe_data.encodings[
+                    NAIImgConfigDraft.value.vibe_model_selection
                   ]
                 const firstKey = Object.keys(encodings)[0]
                 if (firstKey) {
-                  DBState.db.NAIImgConfig.InfoExtracted = Number(
+                  NAIImgConfigDraft.value.InfoExtracted = Number(
                     encodings[firstKey].params.information_extracted,
                   )
                 }
               }
             }}
           >
-            {#if DBState.db.NAIImgConfig.vibe_data.encodings?.v4full}
+            {#if NAIImgConfigDraft.value.vibe_data.encodings?.v4full}
               <OptionInput value="v4full">nai-diffusion-4-full</OptionInput>
             {/if}
-            {#if DBState.db.NAIImgConfig.vibe_data.encodings?.v4curated}
+            {#if NAIImgConfigDraft.value.vibe_data.encodings?.v4curated}
               <OptionInput value="v4curated">nai-diffusion-4-curated</OptionInput>
             {/if}
-            {#if DBState.db.NAIImgConfig.vibe_data.encodings?.['v4-5full']}
+            {#if NAIImgConfigDraft.value.vibe_data.encodings?.['v4-5full']}
               <OptionInput value="v4-5full">nai-diffusion-4-5-full</OptionInput>
             {/if}
-            {#if DBState.db.NAIImgConfig.vibe_data.encodings?.['v4-5curated']}
+            {#if NAIImgConfigDraft.value.vibe_data.encodings?.['v4-5curated']}
               <OptionInput value="v4-5curated">nai-diffusion-4-5-curated</OptionInput>
             {/if}
           </SelectInput>
 
           <span class="text-textcolor">Information Extracted</span>
-          <SelectInput className="mb-2" bind:value={DBState.db.NAIImgConfig.InfoExtracted}>
-            {#if DBState.db.NAIImgConfig.vibe_model_selection && DBState.db.NAIImgConfig.vibe_data.encodings[DBState.db.NAIImgConfig.vibe_model_selection]}
-              {#each Object.entries(DBState.db.NAIImgConfig.vibe_data.encodings[DBState.db.NAIImgConfig.vibe_model_selection]) as [key, value]}
+          <SelectInput className="mb-2" bind:value={NAIImgConfigDraft.value.InfoExtracted}>
+            {#if getVibeEncodingEntries().length > 0}
+              {#each getVibeEncodingEntries() as [key, value]}
                 <OptionInput value={value.params.information_extracted}
                   >{value.params.information_extracted}</OptionInput
                 >
@@ -672,12 +694,12 @@
             max={1}
             step={0.1}
             fixed={2}
-            bind:value={DBState.db.NAIImgConfig.reference_strength_multiple[0]}
+            bind:value={NAIImgConfigDraft.value.reference_strength_multiple[0]}
           />
         {/if}
       {/if}
 
-      {#if DBState.db.NAIImgConfig.reference_mode === 'character' && (DBState.db.NAIImgModel === 'nai-diffusion-4-5-full' || DBState.db.NAIImgModel === 'nai-diffusion-4-5-curated')}
+      {#if NAIImgConfigDraft.value.reference_mode === 'character' && (NAIImgModelDraft.value === 'nai-diffusion-4-5-full' || NAIImgModelDraft.value === 'nai-diffusion-4-5-curated')}
         <div class="relative">
           <button
             class="mb-2"
@@ -689,21 +711,21 @@
 
               const imageData = img.data
 
-              DBState.db.NAIImgConfig.character_base64image =
+              NAIImgConfigDraft.value.character_base64image =
                 Buffer.from(imageData).toString('base64')
               const saveId = await saveAsset(imageData)
-              DBState.db.NAIImgConfig.character_image = saveId
-              console.log('Character image set:', DBState.db.NAIImgConfig.character_image)
+              NAIImgConfigDraft.value.character_image = saveId
+              console.log('Character image set:', NAIImgConfigDraft.value.character_image)
             }}
           >
-            {#if !DBState.db.NAIImgConfig.character_image || DBState.db.NAIImgConfig.character_image === ''}
+            {#if !NAIImgConfigDraft.value.character_image || NAIImgConfigDraft.value.character_image === ''}
               <div
                 class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
               >
                 <span class="text-sm">Upload<br />Image</span>
               </div>
             {:else}
-              {#await getCharImage(DBState.db.NAIImgConfig.character_image, 'plain')}
+              {#await getCharImage(NAIImgConfigDraft.value.character_image, 'plain')}
                 <div
                   class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
                 >
@@ -719,11 +741,11 @@
             {/if}
           </button>
 
-          {#if DBState.db.NAIImgConfig.character_image && DBState.db.NAIImgConfig.character_image !== ''}
+          {#if NAIImgConfigDraft.value.character_image && NAIImgConfigDraft.value.character_image !== ''}
             <button
               onclick={() => {
-                DBState.db.NAIImgConfig.character_image = undefined
-                DBState.db.NAIImgConfig.character_base64image = undefined
+                NAIImgConfigDraft.value.character_image = undefined
+                NAIImgConfigDraft.value.character_base64image = undefined
               }}
               class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm"
             >
@@ -738,34 +760,34 @@
 
         <Check
           className="mb-4"
-          bind:check={DBState.db.NAIImgConfig.style_aware}
+          bind:check={NAIImgConfigDraft.value.style_aware}
           name="Style Aware"
         />
       {/if}
 
-      {#if (DBState.db.NAIImgModel === 'nai-diffusion-3' || DBState.db.NAIImgModel === 'nai-diffusion-furry-3' || DBState.db.NAIImgModel === 'nai-diffusion-2') && DBState.db.NAIImgConfig.sampler !== 'ddim_v3'}
-        <Check bind:check={DBState.db.NAIImgConfig.sm} name="Use SMEA" />
+      {#if (NAIImgModelDraft.value === 'nai-diffusion-3' || NAIImgModelDraft.value === 'nai-diffusion-furry-3' || NAIImgModelDraft.value === 'nai-diffusion-2') && NAIImgConfigDraft.value.sampler !== 'ddim_v3'}
+        <Check bind:check={NAIImgConfigDraft.value.sm} name="Use SMEA" />
       {/if}
 
-      {#if DBState.db.NAIImgModel === 'nai-diffusion-3' && DBState.db.NAIImgConfig.sampler !== 'ddim_v3'}
-        <Check bind:check={DBState.db.NAIImgConfig.sm_dyn} name="Use DYN" />
+      {#if NAIImgModelDraft.value === 'nai-diffusion-3' && NAIImgConfigDraft.value.sampler !== 'ddim_v3'}
+        <Check bind:check={NAIImgConfigDraft.value.sm_dyn} name="Use DYN" />
       {/if}
 
-      {#if DBState.db.NAIImgModel === 'nai-diffusion-4-5-full' || DBState.db.NAIImgModel === 'nai-diffusion-4-5-curated' || DBState.db.NAIImgModel === 'nai-diffusion-4-full' || DBState.db.NAIImgModel === 'nai-diffusion-4-curated-preview' || DBState.db.NAIImgModel === 'nai-diffusion-3' || DBState.db.NAIImgModel === 'nai-diffusion-furry-3'}
-        <Check bind:check={DBState.db.NAIImgConfig.variety_plus} name="Variety+" />
+      {#if NAIImgModelDraft.value === 'nai-diffusion-4-5-full' || NAIImgModelDraft.value === 'nai-diffusion-4-5-curated' || NAIImgModelDraft.value === 'nai-diffusion-4-full' || NAIImgModelDraft.value === 'nai-diffusion-4-curated-preview' || NAIImgModelDraft.value === 'nai-diffusion-3' || NAIImgModelDraft.value === 'nai-diffusion-furry-3'}
+        <Check bind:check={NAIImgConfigDraft.value.variety_plus} name="Variety+" />
       {/if}
 
-      {#if DBState.db.NAIImgModel === 'nai-diffusion-3' || DBState.db.NAIImgModel === 'nai-diffusion-furry-3' || DBState.db.NAIImgModel === 'nai-diffusion-2'}
-        <Check bind:check={DBState.db.NAIImgConfig.decrisp} name="Decrisp" />
+      {#if NAIImgModelDraft.value === 'nai-diffusion-3' || NAIImgModelDraft.value === 'nai-diffusion-furry-3' || NAIImgModelDraft.value === 'nai-diffusion-2'}
+        <Check bind:check={NAIImgConfigDraft.value.decrisp} name="Decrisp" />
       {/if}
 
-      {#if DBState.db.NAIImgModel === 'nai-diffusion-4-full' || DBState.db.NAIImgModel === 'nai-diffusion-4-curated-preview'}
-        <Check bind:check={DBState.db.NAIImgConfig.legacy_uc} name="Use legacy uc" />
+      {#if NAIImgModelDraft.value === 'nai-diffusion-4-full' || NAIImgModelDraft.value === 'nai-diffusion-4-curated-preview'}
+        <Check bind:check={NAIImgConfigDraft.value.legacy_uc} name="Use legacy uc" />
       {/if}
 
-      <Check className="mt-4 mb-4" bind:check={DBState.db.NAII2I} name="Enable I2I" />
+      <Check className="mt-4 mb-4" bind:check={NAII2IDraft.value} name="Enable I2I" />
 
-      {#if DBState.db.NAII2I}
+      {#if NAII2IDraft.value}
         <div class="relative">
           <button
             class="mb-2"
@@ -774,19 +796,19 @@
               if (!img) {
                 return null
               }
-              DBState.db.NAIImgConfig.base64image = Buffer.from(img.data).toString('base64')
+              NAIImgConfigDraft.value.base64image = Buffer.from(img.data).toString('base64')
               const saveId = await saveAsset(img.data)
-              DBState.db.NAIImgConfig.image = saveId
+              NAIImgConfigDraft.value.image = saveId
             }}
           >
-            {#if !DBState.db.NAIImgConfig.image || DBState.db.NAIImgConfig.image === ''}
+            {#if !NAIImgConfigDraft.value.image || NAIImgConfigDraft.value.image === ''}
               <div
                 class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
               >
                 <span class="text-sm">Upload<br />Image</span>
               </div>
             {:else}
-              {#await getCharImage(DBState.db.NAIImgConfig.image, 'plain')}
+              {#await getCharImage(NAIImgConfigDraft.value.image, 'plain')}
                 <div
                   class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
                 >
@@ -802,11 +824,11 @@
             {/if}
           </button>
 
-          {#if DBState.db.NAIImgConfig.image && DBState.db.NAIImgConfig.image !== ''}
+          {#if NAIImgConfigDraft.value.image && NAIImgConfigDraft.value.image !== ''}
             <button
               onclick={() => {
-                DBState.db.NAIImgConfig.image = undefined
-                DBState.db.NAIImgConfig.base64image = undefined
+                NAIImgConfigDraft.value.image = undefined
+                NAIImgConfigDraft.value.base64image = undefined
               }}
               class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm"
             >
@@ -824,7 +846,7 @@
           max={0.99}
           step={0.01}
           fixed={2}
-          bind:value={DBState.db.NAIImgConfig.strength}
+          bind:value={NAIImgConfigDraft.value.strength}
         />
         <span class="text-textcolor mt-2">Noise</span>
         <SliderInput
@@ -832,37 +854,37 @@
           max={0.99}
           step={0.01}
           fixed={2}
-          bind:value={DBState.db.NAIImgConfig.noise}
+          bind:value={NAIImgConfigDraft.value.noise}
         />
       {/if}
     {/if}
 
-    {#if DBState.db.sdProvider === 'dalle'}
+    {#if sdProviderDraft.value === 'dalle'}
       <span class="text-textcolor">OpenAI API Key</span>
-      <TextInput size="sm" marginBottom placeholder="sk-..." bind:value={DBState.db.openAIKey} />
+      <TextInput size="sm" marginBottom placeholder="sk-..." bind:value={openAIKeyDraft.value} />
 
       <span class="text-textcolor mt-4">Dall-E Quality</span>
-      <SelectInput className="mt-2 mb-4" bind:value={DBState.db.dallEQuality}>
+      <SelectInput className="mt-2 mb-4" bind:value={dallEQualityDraft.value}>
         <OptionInput value="standard">Standard</OptionInput>
         <OptionInput value="hd">HD</OptionInput>
       </SelectInput>
     {/if}
 
-    {#if DBState.db.sdProvider === 'stability'}
+    {#if sdProviderDraft.value === 'stability'}
       <span class="text-textcolor">Stability API Key</span>
-      <TextInput size="sm" marginBottom placeholder="..." bind:value={DBState.db.stabilityKey} />
+      <TextInput size="sm" marginBottom placeholder="..." bind:value={stabilityKeyDraft.value} />
 
       <span class="text-textcolor">Stability Model</span>
-      <SelectInput className="mt-2 mb-4" bind:value={DBState.db.stabilityModel}>
+      <SelectInput className="mt-2 mb-4" bind:value={stabilityModelDraft.value}>
         <OptionInput value="ultra">SD Ultra</OptionInput>
         <OptionInput value="core">SD Core</OptionInput>
         <OptionInput value="sd3-large">SD3 Large</OptionInput>
         <OptionInput value="sd3-medium">SD3 Medium</OptionInput>
       </SelectInput>
 
-      {#if DBState.db.stabilityModel === 'core'}
+      {#if stabilityModelDraft.value === 'core'}
         <span class="text-textcolor">SD Core Style</span>
-        <SelectInput className="mt-2 mb-4" bind:value={DBState.db.stabllityStyle}>
+        <SelectInput className="mt-2 mb-4" bind:value={stabllityStyleDraft.value}>
           <OptionInput value="">Unspecified</OptionInput>
           <OptionInput value="3d-model">3D Model</OptionInput>
           <OptionInput value="analog-film">Analog Film</OptionInput>
@@ -885,29 +907,29 @@
       {/if}
     {/if}
 
-    {#if DBState.db.sdProvider === 'comfyui'}
+    {#if sdProviderDraft.value === 'comfyui'}
       <span class="text-textcolor mt-2">ComfyUI {language.providerURL}</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="http://127.0.0.1:8188"
-        bind:value={DBState.db.comfyUiUrl}
+        bind:value={comfyUiUrlDraft.value}
       />
 
       <span class="text-textcolor">Workflow <Help key="comfyWorkflow" /></span>
-      <TextInput size="sm" marginBottom bind:value={DBState.db.comfyConfig.workflow} />
+      <TextInput size="sm" marginBottom bind:value={comfyConfigDraft.value.workflow} />
 
       <span class="text-textcolor">Timeout (sec)</span>
       <NumberInput
         size="sm"
         marginBottom
-        bind:value={DBState.db.comfyConfig.timeout}
+        bind:value={comfyConfigDraft.value.timeout}
         min={1}
         max={120}
       />
     {/if}
 
-    {#if DBState.db.sdProvider === 'comfy'}
+    {#if sdProviderDraft.value === 'comfy'}
       <span class="text-draculared text-xs mb-2"
         >The first image generated by the prompt will be selected.
       </span>
@@ -921,14 +943,14 @@
         size="sm"
         marginBottom
         placeholder="http://127.0.0.1:8188"
-        bind:value={DBState.db.comfyUiUrl}
+        bind:value={comfyUiUrlDraft.value}
       />
       <span class="text-textcolor">Workflow</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="valid ComfyUI API json (Enable Dev mode Options in ComfyUI)"
-        bind:value={DBState.db.comfyConfig.workflow}
+        bind:value={comfyConfigDraft.value.workflow}
       />
 
       <span class="text-textcolor">Positive Text Node: ID</span>
@@ -936,42 +958,42 @@
         size="sm"
         marginBottom
         placeholder="eg. 1, 3, etc"
-        bind:value={DBState.db.comfyConfig.posNodeID}
+        bind:value={comfyConfigDraft.value.posNodeID}
       />
       <span class="text-textcolor">Positive Text Node: Input Field Name</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="eg. text"
-        bind:value={DBState.db.comfyConfig.posInputName}
+        bind:value={comfyConfigDraft.value.posInputName}
       />
       <span class="text-textcolor">Negative Text Node: ID</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="eg. 1, 3, etc"
-        bind:value={DBState.db.comfyConfig.negNodeID}
+        bind:value={comfyConfigDraft.value.negNodeID}
       />
       <span class="text-textcolor">Positive Text Node: Input Field Name</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="eg. text"
-        bind:value={DBState.db.comfyConfig.negInputName}
+        bind:value={comfyConfigDraft.value.negInputName}
       />
       <span class="text-textcolor">Timeout (sec)</span>
       <NumberInput
         size="sm"
         marginBottom
-        bind:value={DBState.db.comfyConfig.timeout}
+        bind:value={comfyConfigDraft.value.timeout}
         min={1}
         max={120}
       />
     {/if}
 
-    {#if DBState.db.sdProvider === 'fal'}
+    {#if sdProviderDraft.value === 'fal'}
       <span class="text-textcolor">Fal.ai API Key</span>
-      <TextInput size="sm" marginBottom placeholder="..." bind:value={DBState.db.falToken} />
+      <TextInput size="sm" marginBottom placeholder="..." bind:value={falTokenDraft.value} />
 
       <span class="text-textcolor mt-4">Width</span>
       <NumberInput
@@ -979,7 +1001,7 @@
         marginBottom
         min={0}
         max={2048}
-        bind:value={DBState.db.sdConfig.width}
+        bind:value={sdConfigDraft.value.width}
       />
       <span class="text-textcolor mt-4">Height</span>
       <NumberInput
@@ -987,54 +1009,54 @@
         marginBottom
         min={0}
         max={2048}
-        bind:value={DBState.db.sdConfig.height}
+        bind:value={sdConfigDraft.value.height}
       />
 
       <span class="text-textcolor mt-4">Model</span>
-      <SelectInput className="mt-2" bind:value={DBState.db.falModel}>
+      <SelectInput className="mt-2" bind:value={falModelDraft.value}>
         <OptionInput value="fal-ai/flux/dev">Flux[Dev]</OptionInput>
         <OptionInput value="fal-ai/flux-lora">Flux[Dev] with Lora</OptionInput>
         <OptionInput value="fal-ai/flux-pro">Flux[Pro]</OptionInput>
         <OptionInput value="fal-ai/flux/schnell">Flux[Schnell]</OptionInput>
       </SelectInput>
 
-      {#if DBState.db.falModel === 'fal-ai/flux-lora'}
+      {#if falModelDraft.value === 'fal-ai/flux-lora'}
         <span class="text-textcolor mt-4">Lora Model URL <Help key="urllora" /></span>
-        <TextInput size="sm" marginBottom bind:value={DBState.db.falLora} />
+        <TextInput size="sm" marginBottom bind:value={falLoraDraft.value} />
 
         <span class="text-textcolor mt-4">Lora Weight</span>
-        <SliderInput fixed={2} min={0} max={2} step={0.01} bind:value={DBState.db.falLoraScale} />
+        <SliderInput fixed={2} min={0} max={2} step={0.01} bind:value={falLoraScaleDraft.value} />
       {/if}
     {/if}
 
-    {#if DBState.db.sdProvider === 'Imagen'}
+    {#if sdProviderDraft.value === 'Imagen'}
       <span class="text-textcolor mt-2">GoogleAI API Key</span>
       <TextInput
         marginBottom={true}
         size={'sm'}
         placeholder="..."
         hideText={DBState.db.hideApiKey}
-        bind:value={DBState.db.google.accessToken}
+        bind:value={googleDraft.value.accessToken}
       />
 
       <span class="text-textcolor">Model</span>
-      <SelectInput className="mb-4" bind:value={DBState.db.ImagenModel}>
+      <SelectInput className="mb-4" bind:value={ImagenModelDraft.value}>
         <OptionInput value="imagen-4.0-generate-001">Imagen 4</OptionInput>
         <OptionInput value="imagen-4.0-ultra-generate-001">Imagen 4 Ultra</OptionInput>
         <OptionInput value="imagen-4.0-fast-generate-001">Imagen 4 Fast</OptionInput>
         <OptionInput value="imagen-3.0-generate-002">Imagen 3.0</OptionInput>
       </SelectInput>
 
-      {#if DBState.db.ImagenModel === 'imagen-4.0-generate-001' || DBState.db.ImagenModel === 'imagen-4.0-ultra-generate-001'}
+      {#if ImagenModelDraft.value === 'imagen-4.0-generate-001' || ImagenModelDraft.value === 'imagen-4.0-ultra-generate-001'}
         <span class="text-textcolor">Image size</span>
-        <SelectInput className="mb-4" bind:value={DBState.db.ImagenImageSize}>
+        <SelectInput className="mb-4" bind:value={ImagenImageSizeDraft.value}>
           <OptionInput value="1K">1K</OptionInput>
           <OptionInput value="2K">2K</OptionInput>
         </SelectInput>
       {/if}
 
       <span class="text-textcolor">Aspect ratio</span>
-      <SelectInput className="mb-4" bind:value={DBState.db.ImagenAspectRatio}>
+      <SelectInput className="mb-4" bind:value={ImagenAspectRatioDraft.value}>
         <OptionInput value="1:1">1:1</OptionInput>
         <OptionInput value="3:4">3:4</OptionInput>
         <OptionInput value="4:3">4:3</OptionInput>
@@ -1043,20 +1065,20 @@
       </SelectInput>
 
       <span class="text-textcolor">Person generation</span>
-      <SelectInput className="mb-4" bind:value={DBState.db.ImagenPersonGeneration}>
+      <SelectInput className="mb-4" bind:value={ImagenPersonGenerationDraft.value}>
         <OptionInput value="allow_all">Allow all</OptionInput>
         <OptionInput value="allow_adult">Allow adult</OptionInput>
         <OptionInput value="dont_allow">Don't allow</OptionInput>
       </SelectInput>
     {/if}
 
-    {#if DBState.db.sdProvider === 'openai-compat'}
+    {#if sdProviderDraft.value === 'openai-compat'}
       <span class="text-textcolor mt-2">API URL</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="https://api.example.com/v1/images/generations"
-        bind:value={DBState.db.openaiCompatImage.url}
+        bind:value={openaiCompatImageDraft.value.url}
       />
 
       <span class="text-textcolor">API Key</span>
@@ -1065,7 +1087,7 @@
         marginBottom
         placeholder="sk-..."
         hideText={DBState.db.hideApiKey}
-        bind:value={DBState.db.openaiCompatImage.key}
+        bind:value={openaiCompatImageDraft.value.key}
       />
 
       <span class="text-textcolor">Model</span>
@@ -1073,11 +1095,11 @@
         size="sm"
         marginBottom
         placeholder="dall-e-3"
-        bind:value={DBState.db.openaiCompatImage.model}
+        bind:value={openaiCompatImageDraft.value.model}
       />
 
       <span class="text-textcolor">Image Size</span>
-      <SelectInput className="mb-4" bind:value={DBState.db.openaiCompatImage.size}>
+      <SelectInput className="mb-4" bind:value={openaiCompatImageDraft.value.size}>
         <OptionInput value="1024x1024">1024x1024</OptionInput>
         <OptionInput value="1536x1024">1536x1024</OptionInput>
         <OptionInput value="1024x1536">1024x1536</OptionInput>
@@ -1086,7 +1108,7 @@
       </SelectInput>
 
       <span class="text-textcolor">Quality</span>
-      <SelectInput className="mb-4" bind:value={DBState.db.openaiCompatImage.quality}>
+      <SelectInput className="mb-4" bind:value={openaiCompatImageDraft.value.quality}>
         <OptionInput value="auto">Auto</OptionInput>
         <OptionInput value="low">Low</OptionInput>
         <OptionInput value="medium">Medium</OptionInput>
@@ -1094,14 +1116,14 @@
       </SelectInput>
     {/if}
 
-    {#if DBState.db.sdProvider === 'wavespeed'}
+    {#if sdProviderDraft.value === 'wavespeed'}
       <span class="text-textcolor">API Key</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="sk-..."
         hideText={DBState.db.hideApiKey}
-        bind:value={DBState.db.wavespeedImage.key}
+        bind:value={wavespeedImageDraft.value.key}
       />
 
       <span class="text-textcolor">Model</span>
@@ -1120,7 +1142,7 @@
       />
       <SelectInput
         className="mb-4"
-        bind:value={DBState.db.wavespeedImage.model}
+        bind:value={wavespeedImageDraft.value.model}
         onchange={handleModelChange}
       >
         <OptionInput value="">Select a model...</OptionInput>
@@ -1130,15 +1152,15 @@
               {getModelDisplayName(model)}
             </OptionInput>
           {/each}
-        {:else if DBState.db.wavespeedImage.model}
-          <OptionInput value={DBState.db.wavespeedImage.model}>
-            {DBState.db.wavespeedImage.model}
+        {:else if wavespeedImageDraft.value.model}
+          <OptionInput value={wavespeedImageDraft.value.model}>
+            {wavespeedImageDraft.value.model}
           </OptionInput>
         {/if}
       </SelectInput>
 
       <span class="text-textcolor mt-4">LoRAs</span>
-      {#if wavespeedModels.find((m) => m.model_id === DBState.db.wavespeedImage.model)?.supportsLoras}
+      {#if wavespeedModels.find((m) => m.model_id === wavespeedImageDraft.value.model)?.supportsLoras}
         {#each wavespeedLoras as lora, index}
           <TextInput
             size="sm"
@@ -1160,14 +1182,14 @@
       {/if}
 
       <span class="text-textcolor">Image Reference</span>
-      {#if wavespeedModels.find((m) => m.model_id === DBState.db.wavespeedImage.model)?.supportsImageInput}
-        <SelectInput className="mb-4" bind:value={DBState.db.wavespeedImage.reference_mode}>
+      {#if wavespeedModels.find((m) => m.model_id === wavespeedImageDraft.value.model)?.supportsImageInput}
+        <SelectInput className="mb-4" bind:value={wavespeedImageDraft.value.reference_mode}>
           <OptionInput value="">None</OptionInput>
           <OptionInput value="image">Upload Image</OptionInput>
           <OptionInput value="character">Use Character Image</OptionInput>
         </SelectInput>
 
-        {#if DBState.db.wavespeedImage.reference_mode === 'image'}
+        {#if wavespeedImageDraft.value.reference_mode === 'image'}
           <div class="relative">
             <button
               class="mb-2"
@@ -1179,21 +1201,21 @@
 
                 const imageData = img.data
 
-                DBState.db.wavespeedImage.reference_base64image =
+                wavespeedImageDraft.value.reference_base64image =
                   Buffer.from(imageData).toString('base64')
                 const saveId = await saveAsset(imageData)
-                DBState.db.wavespeedImage.reference_image = saveId
-                console.log('Character image set:', DBState.db.wavespeedImage.reference_image)
+                wavespeedImageDraft.value.reference_image = saveId
+                console.log('Character image set:', wavespeedImageDraft.value.reference_image)
               }}
             >
-              {#if !DBState.db.wavespeedImage.reference_image || DBState.db.wavespeedImage.reference_image === ''}
+              {#if !wavespeedImageDraft.value.reference_image || wavespeedImageDraft.value.reference_image === ''}
                 <div
                   class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
                 >
                   <span class="text-sm">Upload<br />Image</span>
                 </div>
               {:else}
-                {#await getCharImage(DBState.db.wavespeedImage.reference_image, 'plain')}
+                {#await getCharImage(wavespeedImageDraft.value.reference_image, 'plain')}
                   <div
                     class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
                   >
@@ -1209,11 +1231,11 @@
               {/if}
             </button>
 
-            {#if DBState.db.wavespeedImage.reference_image && DBState.db.wavespeedImage.reference_image !== ''}
+            {#if wavespeedImageDraft.value.reference_image && wavespeedImageDraft.value.reference_image !== ''}
               <button
                 onclick={() => {
-                  DBState.db.wavespeedImage.reference_image = undefined
-                  DBState.db.wavespeedImage.reference_base64image = undefined
+                  wavespeedImageDraft.value.reference_image = undefined
+                  wavespeedImageDraft.value.reference_base64image = undefined
                 }}
                 class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm"
               >
@@ -1222,7 +1244,7 @@
             {/if}
           </div>
         {/if}
-        {#if DBState.db.wavespeedImage.reference_mode === 'character'}
+        {#if wavespeedImageDraft.value.reference_mode === 'character'}
           <span class="text-textcolor2 text-xs mb-2 block">Use the character's default image.</span>
         {/if}
       {:else}
@@ -1246,10 +1268,10 @@
     <TextInput size="sm" marginBottom bind:value={DBState.db.voicevoxUrl} />
 
     <span class="text-textcolor">OpenAI Key</span>
-    <TextInput size="sm" marginBottom bind:value={DBState.db.openAIKey} />
+    <TextInput size="sm" marginBottom bind:value={openAIKeyDraft.value} />
 
     <span class="text-textcolor mt-2">NovelAI API key</span>
-    <TextInput size="sm" marginBottom placeholder="pst-..." bind:value={DBState.db.NAIApiKey} />
+    <TextInput size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
 
     <span class="text-textcolor">Huggingface Key</span>
     <TextInput size="sm" marginBottom bind:value={DBState.db.huggingfaceKey} placeholder="hf_..." />
