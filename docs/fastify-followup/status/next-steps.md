@@ -13,11 +13,18 @@ Fastify shapes.
 
 1. Continue Phase 9 client thinning.
    - Continue the broader Fastify-web direct `DBState.db` write audit
-     beyond the named guard slice landed on 2026-05-26.
+     beyond the named guard and module-selection slices landed on
+     2026-05-26.
+   - Next good audit targets are the remaining settings and editor
+     binding surfaces found by `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`,
+     especially Bot/OtherBot/Prompt settings and `CharConfig`.
    - Landed 2026-05-26: `.risu` import/export routes emit
      `state.imported` / `state.exported`, and `pnpm smoke:fastify-browser`
      covers multipart `.risu` import plus direct projection-write
      rejection.
+   - Landed 2026-05-26: module menu chat/character toggles dispatch
+     chat update and character-module reorder commands under the
+     projection guard.
 
 2. Close Phase 7 server prompt assembly parity gaps.
    - Implement the server regenerate path end to end.
@@ -50,7 +57,7 @@ Focused Phase 9:
 
 ```bash
 pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts
-pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm exec vitest run src/ts/moduleCommands.test.ts src/ts/server/commands.test.ts
 pnpm smoke:fastify-browser
 pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/events.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 ```

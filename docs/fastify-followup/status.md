@@ -19,6 +19,9 @@ directly.
 - Landed 2026-05-26: Phase 9 import/export event semantics now emit
   `state.imported` / `state.exported` in line with the command map, and
   Fastify browser smoke covers multipart `.risu` import.
+- Landed 2026-05-26: Phase 9 module-selection writes now use
+  command-backed trusted optimistic helpers for chat and character
+  module toggles.
 - Next default pickup: Phase 9 remaining direct-write sweep.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.

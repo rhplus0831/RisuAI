@@ -1,3 +1,4 @@
+import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
 import {
   canUseServerCommands,
   createModuleCommand,
@@ -11,9 +12,10 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
-import { DBState, ReloadGUIPointer } from './stores.svelte'
+import { DBState, ReloadGUIPointer, selectedCharID } from './stores.svelte'
 import type { RisuModule } from './process/modules'
 import type { character } from './storage/database.svelte'
+import { get } from 'svelte/store'
 
 export interface ModuleStateSnapshot {
   modules: RisuModule[]
@@ -135,6 +137,56 @@ export function dispatchReorderCharacterModules(
       }),
     () => restoreModuleState(previous),
   )
+}
+
+export function toggleSelectedChatModule(moduleId: string): void {
+  const selectedIndex = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedIndex]
+  const chatIndex = character?.chatPage
+  const chat = Number.isInteger(chatIndex) ? character?.chats?.[chatIndex] : undefined
+  if (!chat?.id) return
+
+  const previous = currentChatStateSnapshot()
+  const nextModules = toggledModuleIds(chat.modules, moduleId)
+
+  withTrustedServerProjectionWrite(() => {
+    const targetCharacter = DBState.db.characters?.[selectedIndex]
+    const targetChat = Number.isInteger(chatIndex) ? targetCharacter?.chats?.[chatIndex] : undefined
+    if (!targetChat || targetChat.id !== chat.id) return
+    targetChat.modules = cloneJsonValue(nextModules)
+  })
+
+  dispatchUpdateChat(chat.id, { modules: nextModules }, previous)
+  ReloadGUIPointer.set(Math.random())
+}
+
+export function toggleSelectedCharacterModule(moduleId: string): void {
+  const selectedIndex = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedIndex]
+  if (!character?.chaId) return
+
+  const previous = currentModuleStateSnapshot()
+  const nextModules = toggledModuleIds(character.modules, moduleId)
+
+  withTrustedServerProjectionWrite(() => {
+    const targetCharacter = DBState.db.characters?.[selectedIndex]
+    if (!targetCharacter || targetCharacter.chaId !== character.chaId) return
+    targetCharacter.modules = cloneJsonValue(nextModules)
+  })
+
+  dispatchReorderCharacterModules(character.chaId, previous)
+  ReloadGUIPointer.set(Math.random())
+}
+
+export function toggledModuleIds(
+  current: readonly string[] | undefined,
+  moduleId: string,
+): string[] {
+  const existing = current ?? []
+  if (existing.includes(moduleId)) {
+    return existing.filter((candidate) => candidate !== moduleId)
+  }
+  return [...existing, moduleId]
 }
 
 export function toModuleSnapshot(module: RisuModule): ModuleSnapshot {

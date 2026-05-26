@@ -30,6 +30,9 @@ import/export events match the command map.
   cover success and failure silence.
 - Landed 2026-05-26: browser smoke/storage-write audit now proves both
   projection guard enforcement and multipart `.risu` import coverage.
+- Landed 2026-05-26: chat and character module-selection writes in the
+  module menu now run through command-backed trusted optimistic helpers
+  instead of mutating the Fastify projection directly.
 
 ## Tasks
 
@@ -39,9 +42,13 @@ import/export events match the command map.
   mode. Route durable settings, character, chat, memory-toggle, and
   playground writes through commands or explicitly disable them when they
   are unsupported.
+- Continue with settings/editor binding surfaces after the module-menu
+  slice. Current high-yield grep:
+  `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`.
 - Add any remaining command allowlist coverage found by the broader
   direct-write audit. The named slice added coverage for `notification`
-  and `useAutoSuggestions`.
+  and `useAutoSuggestions`; module-selection reused existing chat and
+  character-module command coverage.
 - Event wiring is complete for `state.imported` and `state.exported`.
 - Browser smoke/storage audit covers `.risu` import.
 
@@ -63,7 +70,7 @@ import/export events match the command map.
 
 ```bash
 pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts
-pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm exec vitest run src/ts/moduleCommands.test.ts src/ts/server/commands.test.ts
 pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/events.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 pnpm smoke:fastify-browser
 pnpm check

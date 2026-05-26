@@ -1236,9 +1236,6 @@
           <div
             class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
             onclick={() => {
-              DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].modules ??= []
               openModuleList = true
               openMenu = false
             }}

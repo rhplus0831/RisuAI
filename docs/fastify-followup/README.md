@@ -23,9 +23,11 @@ intermediate Fastify shapes.
    order and verification commands.
 3. [`phases/`](phases/) - phase-scoped tasks, source evidence, and exit
    criteria.
-4. `docs/fastify/status/phase-9-command-map.md` - original Phase 9
+4. [`phases-completed/`](phases-completed/) - completed follow-up slice
+   notes that are too detailed for the live status files.
+5. `docs/fastify/status/phase-9-command-map.md` - original Phase 9
    command/event contract.
-5. `docs/fastify/phases/` - original phase boundaries when a follow-up
+6. `docs/fastify/phases/` - original phase boundaries when a follow-up
    needs more context.
 
 ## Audit Summary
