@@ -2,36 +2,25 @@
 
 Date: 2026-05-27
 
-These files track migration phase scope and closeout state, including
-the original phases, the first-audit follow-up phases (suffixed
-`-followup`), and the alpha audit phase docs. Completed details, landed
-slice tables, and old status logs live in
-[`../phases-completed/`](../phases-completed/).
+All phases (0-9) are closed. Completed plans, slice tables, and
+historical logs live in [`../phases-completed/`](../phases-completed/).
 
-Use this directory for:
-
-- Goals and boundaries for active or future phases.
-- Remaining work and exit criteria.
-- Short closeout summaries for phases with no remaining work.
-
-Do not keep long landed-slice logs here. When a phase closes, move the
-historical detail into `phases-completed/` and leave a brief summary in
-the phase file.
+This directory is reserved for future phase docs if new work is opened.
 
 ## Phase Index
 
-| Phase                                   | Status            | Doc                                                            |
-| --------------------------------------- | ----------------- | -------------------------------------------------------------- |
-| 0 - Removals                            | Closed 2026-05-20 | [`phase-0-removals.md`](phase-0-removals.md)                   |
-| 1 - Foundation                          | Closed 2026-05-20 | [`phase-1-foundation.md`](phase-1-foundation.md)               |
-| 2 - Storage / import / assets / backups | Closed 2026-05-20 | [`phase-2-storage.md`](phase-2-storage.md)                     |
-| 3 - Proxy migration                     | Closed 2026-05-21 | [`phase-3-proxy.md`](phase-3-proxy.md)                         |
-| 4 - sendChat tests                      | Closed 2026-05-20 | [`phase-4-sendchat-tests.md`](phase-4-sendchat-tests.md)       |
-| 5 - sendChat extraction                 | Closed 2026-05-22 | [`phase-5-sendchat-extract.md`](phase-5-sendchat-extract.md)   |
-| 6 - Server-side generation              | Closed 2026-05-22 | [`phase-6-server-generation.md`](phase-6-server-generation.md) |
-| 7 - Server-side prompt assembly         | Closed 2026-05-24 | [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md)     |
-| 8 - Hypa V3 memory server-side          | Closed 2026-05-25 | [`phase-8-memory.md`](phase-8-memory.md)                       |
-| 9 - Client thinning                     | Closed 2026-05-26 | [`phase-9-client-thinning.md`](phase-9-client-thinning.md)     |
+| Phase | Closed | Archive |
+|-------|--------|---------|
+| 0 - Removals | 2026-05-20 | [`../phases-completed/phase-0-removals-scope.md`](../phases-completed/phase-0-removals-scope.md) |
+| 1 - Foundation | 2026-05-20 | [`../phases-completed/phase-1-foundation-scope.md`](../phases-completed/phase-1-foundation-scope.md) |
+| 2 - Storage | 2026-05-20 | [`../phases-completed/phase-2-storage-scope.md`](../phases-completed/phase-2-storage-scope.md) |
+| 3 - Proxy | 2026-05-21 | [`../phases-completed/phase-3-proxy-scope.md`](../phases-completed/phase-3-proxy-scope.md) |
+| 4 - sendChat tests | 2026-05-20 | [`../phases-completed/phase-4-sendchat-tests-scope.md`](../phases-completed/phase-4-sendchat-tests-scope.md) |
+| 5 - sendChat extraction | 2026-05-22 | [`../phases-completed/phase-5-sendchat-extract-scope.md`](../phases-completed/phase-5-sendchat-extract-scope.md) |
+| 6 - Server-side generation | 2026-05-22 | [`../phases-completed/phase-6-server-generation-scope.md`](../phases-completed/phase-6-server-generation-scope.md) |
+| 7 - Prompt assembly | 2026-05-24 | [`../phases-completed/phase-7-prompt-assembly.md`](../phases-completed/phase-7-prompt-assembly.md) |
+| 8 - Hypa V3 memory | 2026-05-25 | [`../phases-completed/phase-8-memory.md`](../phases-completed/phase-8-memory.md) |
+| 9 - Client thinning | 2026-05-26 | [`../phases-completed/phase-9-client-thinning.md`](../phases-completed/phase-9-client-thinning.md) |
 
 ## Dependency Order
 
@@ -40,13 +29,3 @@ the phase file.
 0 -> 1 -> 3 -> 6 -> 7 -> 8
 0 -> 4 -> 5 -> 6 -> 7
 ```
-
-The first audit follow-up and the alpha audit are both closed. Any
-future audit work should stay separate from the original Fastify web
-closeout. Tauri / Desktop manual verification remains a separate
-deferred task.
-
-## Completed Detail
-
-The archived versions of the closed phase docs are indexed in
-[`../phases-completed/README.md`](../phases-completed/README.md).

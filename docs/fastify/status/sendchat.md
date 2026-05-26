@@ -2,59 +2,17 @@
 
 Date: 2026-05-27
 
-This file tracks the current `sendChat` boundary. Historical extraction
-and fixture inventories are archived or covered by the coverage docs.
-
 ## Current State
 
-- Phase 5 extraction is closed. The coordinator remains in
-  `src/ts/process/index.svelte.ts`, with prompt assembly, request
-  budgeting, dispatch, response orchestration, Stage 4 closeout, and
-  entry-context setup split into helper modules.
-- Phase 7 preview paths are server-backed behind
-  `db.useServerPromptAssembly`: `preview` fills `previewFormated`, and
-  `previewPrompt` fills `previewBody` from `/api/v1/generate/chat`.
-- Server assembly now emits a typed `message_patch` payload on successful
-  assembly for
-  user-message appends, start-trigger / run-var message replacements,
-  chat-var deltas, and `additonalSysPrompt` rows.
-- Behind `db.useServerPromptAssembly`, send, continue, and regenerate
-  calls consume the server prompt payload, apply message/scriptstate
-  patches, and then consume the `/chat` provider token stream instead of
-  calling local browser provider dispatch.
+- Phase 5 extraction closed. The coordinator remains in
+  `src/ts/process/index.svelte.ts` with helpers split into focused
+  modules.
+- Server-backed send, continue, regenerate, preview, and preview-prompt
+  work through `/api/v1/generate/chat` behind
+  `db.useServerPromptAssembly`.
 - The gate defaults off and is independent of `db.useServerGeneration`.
-- `/chat` now emits `info.generationId`, `info.generationInfo`, provider
-  `token` events, terminal `error` events, and enriched terminal `done`
-  events for server-dispatched sends. Stop-trigger aborts replay
-  `message_patch` data and restoration metadata before the terminal
-  error.
-
-## Active Boundary
-
-Phase 7 prompt assembly was closed for the original migration scope and
-its follow-up gaps are closed again in slices 7A-7E. Server-backed
-fixture coverage now exercises the real Fastify `/chat` route for send,
-continue, regenerate, preview, and preview-prompt.
-
-Phase 7 closeout detail lives in
-[`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md);
-Phase 8 memory and Phase 9 client thinning were closed in the original
-docs; post-closeout audit records are tracked in the follow-up phase docs.
-
-## Guardrails
-
-- Local `sendChat` fixture sweep.
-- Server-backed provider parity sweep, including the `/chat` dispatch path
-  proving server-backed send/continue fixtures do not escape to
-  `/api/v1/generate/completion`.
-- Fastify generation route tests.
-- `pnpm check`, `pnpm test`, `pnpm api:test`, and `pnpm build` before
-  closing a slice.
 
 ## References
 
-- Archived detailed status:
-  [`../phases-completed/status-sendchat-2026-05-24.md`](../phases-completed/status-sendchat-2026-05-24.md)
-- Archived Phase 5 slicing:
-  [`../phases-completed/phase-5-sendchat-slicing.md`](../phases-completed/phase-5-sendchat-slicing.md)
 - Fixture coverage: [`../coverage/sendchat-fixtures.md`](../coverage/sendchat-fixtures.md)
+- Phase archive: [`../phases-completed/`](../phases-completed/)
