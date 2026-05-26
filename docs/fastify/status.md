@@ -15,17 +15,17 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-7b legacy envelope codec port. The server now has a
-  production-safe legacy `.risu` envelope codec for raw msgpack,
-  fflate-compressed msgpack, and gzip stream-compressed msgpack saves, with the
-  9-7a fixture corpus proving parity.
-- Current gap: the production RISUSAVE block codec has not been ported yet; the
-  block inspector remains fixture harness support only.
-- Next default pickup: 9-7c, RISUSAVE block codec port.
-- Last recorded focused baselines after 9-7b: focused Fastify
-  `risuSaveCodec.test.ts` passed and `pnpm check` clean. Last full client test
-  command, full `pnpm api:test`, and `pnpm build` baselines remain the 9-6c
-  records.
+- Last landed work: 9-7c RISUSAVE block codec port. The server now has
+  production-safe legacy envelope and RISUSAVE block codecs, with block
+  encode/decode covering current Phase 9 resource block families and explicit
+  remote/cache-only unsupported-reference reporting.
+- Current gap: decoded `.risu` payloads are not normalized or validated into
+  current Phase 9 import snapshots yet.
+- Next default pickup: 9-7d, decode normalization and validation.
+- Last recorded focused baselines after 9-7c: focused Fastify
+  `risuSaveCodec.test.ts` passed with 11 tests and `pnpm check` clean. Last
+  full client test command, full `pnpm api:test`, and `pnpm build` baselines
+  remain the 9-6c records.
 
 ## Start Here
 
@@ -52,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-7b landed; continue with 9-7c RISUSAVE block codec port.      |
+| Client thinning                             | Active; 9-7c landed; continue with 9-7d decode normalization.           |
 
 ## Maintenance Rules
 

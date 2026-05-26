@@ -239,21 +239,42 @@ existing settings command bridge:
   proves legacy fixture parity, encode/decode round-trips, non-legacy rejection,
   and browser-storage/Tauri/Svelte/global compression-stream detachment.
 
+9-7c then ported the RISUSAVE block codec:
+
+- `server/fastify/src/risuSave/blockCodec.ts` now owns the production
+  server-safe block API for block envelope encode/decode, compressed block
+  payloads, and the current Phase 9 block type catalog.
+- `server/fastify/src/risuSave/fixtureHarness.ts` now delegates RISUSAVE block
+  fixture encoding/inspection to the production codec while preserving fixture
+  helper names for the existing corpus.
+- Remote and cache-only block references are reported as unsupported server
+  decode inputs instead of falling through to browser local cache or Tauri
+  remote-file paths.
+- Focused coverage in `server/fastify/__tests__/risuSaveCodec.test.ts` now
+  proves production block fixture parity, compressed block round-trips,
+  root-component block coverage, unsupported-reference reporting, malformed
+  block rejection, and browser-storage/Tauri/Svelte/global compression-stream
+  detachment.
+
 ## Immediate Pickup
 
-Immediate pickup: **9-7c - RISUSAVE block codec port**.
+Immediate pickup: **9-7d - Decode normalization and validation**.
 
-- Turn the 9-7a RISUSAVE block fixture inspector into the real server-side
-  block codec API for root, character, preset, module, loadout, plugin,
-  plugin-storage, config, and root-component blocks.
-- Keep the API server-safe: no `localforage`, Tauri APIs, Svelte database
-  state, browser globals, import/export routes, or repository writes.
-- Use the existing fixture corpus in
-  `server/fastify/__fixtures__/risuSave/fixtures.ts` as the parity target.
-- Reject or report remote/cache-only block references instead of falling
-  through to browser local cache or Tauri paths.
-- Leave decode normalization, validation, and current Phase 9 import snapshot
-  conversion to 9-7d.
+- Convert decoded legacy and RISUSAVE block payloads into current Phase 9 import
+  snapshot/resource shapes without adding import routes or repository writes.
+- Use the production codecs in
+  `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` and
+  `server/fastify/src/risuSave/blockCodec.ts` as inputs; do not reopen the
+  envelope/block wire-format implementation unless normalization exposes a
+  real codec bug.
+- Validate malformed rows and stable ids for the current schema targets,
+  including root/global fields, characters/chats, presets, modules, loadouts,
+  plugins, plugin-storage, config, and root-component blocks.
+- Preserve explicit remote/cache-only unsupported-reference reporting from
+  9-7c; do not read browser `risuSaveCache`, Tauri remote files, localForage,
+  OPFS, AutoStorage, or repository state.
+- Keep repository-backed export snapshots in 9-7e and multipart import/export
+  routes plus asset walking in 9-8.
 - Keep provider dispatch flattening, plugin server execution, asset bundle
   walking, and multipart import/export routes out of this slice.
 - Treat decoded shapes as current Phase 9 schema targets; there are no actual
@@ -291,8 +312,10 @@ Implementation notes:
   projection or placeholder semantics.
 - 9-7a added the fixture harness and corpus. 9-7b added
   `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` for the production
-  legacy envelope API. 9-7c should keep that API intact and move only RISUSAVE
-  block handling from fixture inspector behavior to production codec behavior.
+  legacy envelope API. 9-7c added
+  `server/fastify/src/risuSave/blockCodec.ts` for the production RISUSAVE block
+  API. 9-7d should consume those codecs and focus on import snapshot
+  normalization/validation.
 - Character scalar patches reject child collections, while 9-4d owns
   character asset-reference fields and Fastify-mode `saveAsset` returns
   raw server asset ids.
@@ -314,23 +337,22 @@ Implementation notes:
   dedicated server-owned paths.
 - Several direct-write search hits are expected rollback helpers,
   optimistic command updates, projection replacement writes, or runtime-only
-  state. 9-7b should focus on the pure legacy envelope codec instead of
-  reopening storage/provider masking gates.
+  state. 9-7d should focus on normalization/validation instead of reopening
+  storage/provider masking gates.
 
 ## Later Queue
 
-1. 9-7c - RISUSAVE block codec port.
-2. 9-7d - Decode normalization and validation.
-3. 9-7e - Repository-backed export adapter.
-4. 9-8a - Multipart `.risu` import route.
-5. 9-8b - Repository `.risu` export route.
-6. 9-8c - Asset reference walker.
-7. 9-8d - Bundle export route.
-8. 9-9a - Server-backed browser smoke harness.
-9. 9-9b - Generation and memory fixture closeout.
-10. 9-9c - Server-backed storage-write audit.
-11. 9-9d - Manual Fastify web and Tauri local verification.
-12. 9-9e - Phase 9 docs closeout.
+1. 9-7d - Decode normalization and validation.
+2. 9-7e - Repository-backed export adapter.
+3. 9-8a - Multipart `.risu` import route.
+4. 9-8b - Repository `.risu` export route.
+5. 9-8c - Asset reference walker.
+6. 9-8d - Bundle export route.
+7. 9-9a - Server-backed browser smoke harness.
+8. 9-9b - Generation and memory fixture closeout.
+9. 9-9c - Server-backed storage-write audit.
+10. 9-9d - Manual Fastify web and Tauri local verification.
+11. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -411,6 +433,12 @@ Focused 9-5 runs:
 - 9-7a: `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts`;
   `pnpm check`
   - 7 Fastify `.risu` fixture harness tests passed; check clean.
+- 9-7b: `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts`;
+  `pnpm check`
+  - 9 Fastify `.risu` legacy envelope codec tests passed; check clean.
+- 9-7c: `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts`;
+  `pnpm check`
+  - 11 Fastify `.risu` legacy/block codec tests passed; check clean.
 
 ## References
 
@@ -421,7 +449,7 @@ Focused 9-5 runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-7a.md`](../phases-completed/phase-9-client-thinning-9-7a.md)
+  [`../phases-completed/phase-9-client-thinning-9-7c.md`](../phases-completed/phase-9-client-thinning-9-7c.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

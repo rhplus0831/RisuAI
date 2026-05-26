@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-7b - Legacy envelope codec port**. Next pickup:
-**9-7c - RISUSAVE block codec port**.
+**9-7c - RISUSAVE block codec port**. Next pickup:
+**9-7d - Decode normalization and validation**.
 
 ## Goal
 
@@ -321,6 +321,8 @@ surfaces.
     encode/decode for root, character, preset, module, loadout, plugin,
     plugin-storage, config, and root-component blocks. Reject or report
     remote/cache-only blocks instead of using localForage or Tauri paths.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-7c.md`](../phases-completed/phase-9-client-thinning-9-7c.md).
   - **9-7d - Decode normalization and validation.** Convert decoded saves into
     current Phase 9 import snapshots/resource shapes and validate malformed
     rows and stable ids.
