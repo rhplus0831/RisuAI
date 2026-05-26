@@ -8,7 +8,7 @@ import {
   readDir,
 } from '@tauri-apps/plugin-fs'
 import { forageStorage } from '../globalApi.svelte'
-import { isTauri, isNodeServer } from 'src/ts/platform'
+import { isTauri, isNodeServer, isFastifyServer } from 'src/ts/platform'
 import { DBState } from '../stores.svelte'
 import type { NodeStorage } from '../storage/nodeStorage'
 import { compress as fflateCompress, decompress as fflateDecompress } from 'fflate'
@@ -374,6 +374,10 @@ async function makeColdDataForChat(i: number, j: number, coldTime: number) {
 }
 
 export async function makeColdData() {
+  if (isFastifyServer) {
+    return
+  }
+
   if (!DBState.db.coldstorage) {
     return
   }

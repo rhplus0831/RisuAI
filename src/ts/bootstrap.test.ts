@@ -49,6 +49,10 @@ const forageSpies = vi.hoisted(() => ({
   getItem: vi.fn(async () => undefined),
   setItem: vi.fn(async () => undefined),
 }))
+const persistenceSpies = vi.hoisted(() => ({
+  saveDb: vi.fn(async () => undefined),
+  makeColdData: vi.fn(async () => undefined),
+}))
 
 vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
@@ -72,7 +76,7 @@ vi.mock('./server/events', () => ({
 
 vi.mock('./globalApi.svelte', () => ({
   forageStorage: forageSpies,
-  saveDb: vi.fn(async () => undefined),
+  saveDb: persistenceSpies.saveDb,
   getDbBackups: vi.fn(async () => []),
   getUncleanables: vi.fn(() => []),
   getBasename: vi.fn((value: string) => value.split('/').pop() ?? value),
@@ -113,7 +117,7 @@ vi.mock('./process/modules', () => ({
   getModules: vi.fn(() => []),
   moduleUpdate: vi.fn(),
 }))
-vi.mock('./process/coldstorage.svelte', () => ({ makeColdData: vi.fn(async () => undefined) }))
+vi.mock('./process/coldstorage.svelte', () => ({ makeColdData: persistenceSpies.makeColdData }))
 vi.mock('./characters', () => ({ updateLorebooks: vi.fn((entries) => entries) }))
 vi.mock('./model/modellist', async (importActual) => {
   const actual = await importActual<typeof import('./model/modellist')>()
@@ -124,13 +128,13 @@ vi.mock('./model/modellist', async (importActual) => {
   }
 })
 
-import { loadWebInitialDatabase } from './bootstrap'
+import { loadData, loadWebInitialDatabase } from './bootstrap'
 import {
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './storage/database.svelte'
-import { DBState, LoadingStatusState } from './stores.svelte'
+import { DBState, LoadingStatusState, loadedStore } from './stores.svelte'
 
 beforeEach(() => {
   platformState.isFastifyServer = true
@@ -154,9 +158,12 @@ beforeEach(() => {
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
   forageSpies.setItem.mockClear()
+  persistenceSpies.saveDb.mockClear()
+  persistenceSpies.makeColdData.mockClear()
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = {} as any
   LoadingStatusState.text = ''
+  loadedStore.set(false)
 })
 
 describe('web bootstrap startup source', () => {
@@ -285,5 +292,33 @@ describe('web bootstrap startup source', () => {
 
     expect(serverEventsState.subscribe).not.toHaveBeenCalled()
     expect(forageSpies.Init).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips local persistence maintenance during Fastify-served startup', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [],
+          modules: [],
+          personas: [],
+          language: 'en',
+          formatversion: 5,
+          characterOrder: [],
+          mainPrompt: '',
+          loreBookToken: 8000,
+        } as any,
+      },
+    }
+
+    await loadData()
+
+    expect(forageSpies.Init).not.toHaveBeenCalled()
+    expect(forageSpies.getItem).not.toHaveBeenCalled()
+    expect(forageSpies.setItem).not.toHaveBeenCalled()
+    expect(persistenceSpies.makeColdData).not.toHaveBeenCalled()
+    expect(persistenceSpies.saveDb).not.toHaveBeenCalled()
+    expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
   })
 })

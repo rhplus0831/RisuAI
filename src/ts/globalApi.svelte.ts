@@ -397,6 +397,10 @@ export let requiresFullEncoderReload = $state({
   state: false,
 })
 export async function saveDb() {
+  if (isFastifyServer) {
+    return
+  }
+
   let changed = false
   let gotChannel = false
   const sessionID = v4()
@@ -597,6 +601,10 @@ export async function saveDb() {
  * @returns {Promise<number[]>} - A promise that resolves to an array of backup timestamps.
  */
 export async function getDbBackups() {
+  if (isFastifyServer) {
+    return []
+  }
+
   if (isTauri) {
     const keys = await readDir('database', { baseDir: BaseDirectory.AppData })
     let backups: number[] = []

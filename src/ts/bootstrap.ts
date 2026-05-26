@@ -185,13 +185,17 @@ export async function loadData() {
         initMobileGesture()
         MobileGUI.set(true)
       }
-      await makeColdData()
+      if (!isFastifyServer) {
+        await makeColdData()
+      }
       loadedStore.set(true)
       selectedCharID.set(-1)
       startObserveDom()
       assignIds()
       registerModelDynamic()
-      saveDb()
+      if (!isFastifyServer) {
+        saveDb()
+      }
       moduleUpdate()
       alertTOS().then((a) => {
         if (a === false) {

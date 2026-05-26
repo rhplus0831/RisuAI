@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5e-iii - Guard audit closeout**. Next pickup:
-**9-6a - Server-backed persistence gate**.
+**9-6a - Server-backed persistence gate**. Next pickup:
+**9-6b - Asset byte gate**.
 
 ## Goal
 
@@ -283,6 +283,8 @@ surfaces.
   - **9-6a - Server-backed persistence gate.** Stop Fastify-served web startup,
     save, and backup maintenance from initializing or writing AutoStorage,
     OPFS, NodeStorage, or localForage. Tauri/local mode stays unchanged.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-6a.md`](../phases-completed/phase-9-client-thinning-9-6a.md).
   - **9-6b - Asset byte gate.** Close remaining Fastify asset-helper gaps,
     especially reads that can still fall through to local storage. Durable
     asset references remain owned by 9-4d commands; bundle walking stays 9-8.
