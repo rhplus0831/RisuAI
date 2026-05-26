@@ -1,8 +1,9 @@
 # Phase 7 Follow-Up - Server-Side Prompt Assembly
 
-Date: 2026-05-26
+Date: 2026-05-27
 
-Status: reopened by audit. Slice 7A has landed; continue with 7B.
+Status: reopened by audit. Slices 7A and 7B have landed; continue with
+7C.
 
 ## Goal
 
@@ -11,13 +12,10 @@ and dispatch.
 
 ## Audit Findings
 
-- Server regenerate is declared but not implemented end to end.
-  Browser regenerate requests now send `mode: "regenerate"` with a
-  target `regenerateMessageId`, and focused client tests pin that
-  request shape. The route validates `regenerateMessageId` at
-  `server/fastify/src/routes/generationChat.ts:87` and copies it at
-  `server/fastify/src/routes/generationChat.ts:158`, but assembly only
-  has the field in the input type at `server/fastify/src/prompt/assemble.ts:153`.
+- Server regenerate was completed in Slice 7B. Browser regenerate
+  requests send `mode: "regenerate"` with a target
+  `regenerateMessageId`, and server assembly now consumes the target to
+  truncate the transcript and emit a `regenerate` `message_patch`.
 - Deferred/local providers are not guarded on `/chat`. Unknown
   OpenAI-compatible model IDs can fall through to OpenAI dispatch in
   `server/fastify/src/prompt/chatDispatch.ts:407` and model strings for
@@ -35,9 +33,10 @@ and dispatch.
 - Done in 7A: wire browser regenerate requests to
   `ServerChatInput.mode = "regenerate"` and pass the target
   `regenerateMessageId`.
-- Teach server assembly to consume `regenerateMessageId`, reconstruct the
-  same transcript and mutation semantics as local regenerate, and reject
-  invalid message IDs with the existing typed route error style.
+- Done in 7B: teach server assembly to consume `regenerateMessageId`,
+  reconstruct the same transcript and mutation semantics as local
+  regenerate, and reject invalid latest-message targets with the
+  existing typed route error style.
 - Add `/chat` provider dispatch guards for local-only or deferred
   providers, including NovelAI text, NovelList, Ooba OAI-compatible, and
   plugin/local provider families. They should either fall back to local
@@ -54,10 +53,11 @@ and dispatch.
   send path to send `mode: "regenerate"` with `regenerateMessageId`, and
   added focused client tests for the request shape. Server assembly
   semantics are intentionally left for 7B.
-- 7B - Server regenerate assembly semantics. Consume
-  `regenerateMessageId` in assembly, reconstruct the local regenerate
-  transcript/mutation behavior, and reject invalid message IDs with the
-  existing typed route error style.
+- 7B - Landed: server regenerate assembly semantics. Assembly consumes
+  `regenerateMessageId`, truncates the latest assistant response using
+  local reroll semantics, emits a `regenerate` `replace_all`
+  `message_patch`, and tolerates the browser-command race where the
+  persisted transcript is already truncated.
 - 7C - `/chat` provider dispatch guards. Block local-only or deferred
   provider families from falling through to OpenAI-compatible dispatch,
   covering NovelAI text, NovelList, Ooba OAI-compatible, plugin, and

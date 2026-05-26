@@ -14,14 +14,15 @@ directly.
 
 - Active work: audit follow-up for Phases 0, 3, 6, 7, and 8.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Highest-risk remaining gap: Phase 7 still needs server regenerate
-  assembly semantics before chat-path closeout. Browser regenerate
-  request wiring landed in Slice 7A.
+- Highest-risk remaining gap: Phase 7 still needs `/chat` provider
+  dispatch guards before chat-path closeout. Browser regenerate request
+  wiring landed in Slice 7A, and server regenerate assembly semantics
+  landed in Slice 7B.
 - Phase 9 follow-up has landed guard/import-event work plus slices
   9A-9J; use the table below for prior commit anchors and
   `status/next-steps.md` for pickup order.
-- Next default pickup: Phase 7 Slice 7B, server regenerate assembly
-  semantics.
+- Next default pickup: Phase 7 Slice 7C, `/chat` provider dispatch
+  guards.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 

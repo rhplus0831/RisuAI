@@ -1123,6 +1123,108 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     expect(result.formated?.some((r) => r.content === '[Continue the last response]')).toBe(true)
   })
 
+  it('truncates the latest assistant message before regenerate assembly', async () => {
+    const db = fullDb({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          desc: 'DESC',
+          firstMessage: 'Greetings.',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                msg('user', 'first prompt', 'msg-user-1'),
+                { ...msg('char', 'old reply', 'msg-char-1'), saying: 'char-tess' },
+              ] as never,
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(
+      baseInput({
+        mode: 'regenerate',
+        userMessage: undefined,
+        regenerateMessageId: 'msg-char-1',
+      }),
+      depsFor(db),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated?.some((row) => row.content === 'old reply')).toBe(false)
+    expect(result.mutations?.messageMutations).toEqual([
+      {
+        type: 'replace_all',
+        source: 'regenerate',
+        beforeLength: 2,
+        afterLength: 1,
+        messages: [msg('user', 'first prompt', 'msg-user-1')],
+      },
+    ])
+  })
+
+  it('rejects regenerate targets that are not the latest assistant message', async () => {
+    const db = fullDb({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                msg('user', 'first prompt', 'msg-user-1'),
+                msg('char', 'older reply', 'msg-char-1'),
+                msg('user', 'new prompt', 'msg-user-2'),
+              ] as never,
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    await expect(
+      assemblePrompt(
+        baseInput({
+          mode: 'regenerate',
+          userMessage: undefined,
+          regenerateMessageId: 'msg-char-1',
+        }),
+        depsFor(db),
+      ),
+    ).rejects.toThrow(/latest assistant message/)
+  })
+
+  it('accepts an already-truncated regenerate transcript from the browser command race', async () => {
+    const db = fullDb({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [msg('user', 'first prompt', 'msg-user-1')] as never,
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(
+      baseInput({
+        mode: 'regenerate',
+        userMessage: undefined,
+        regenerateMessageId: 'msg-char-1',
+      }),
+      depsFor(db),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations?.messageMutations).toEqual([])
+    expect(result.formated?.some((row) => row.content === 'old reply')).toBe(false)
+  })
+
   it('returns stopSending without a prompt when a start trigger aborts', async () => {
     const db = fullDb({
       characters: [

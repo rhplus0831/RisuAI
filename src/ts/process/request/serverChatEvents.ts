@@ -55,6 +55,7 @@ export interface TokenEvent {
 
 export type ServerChatMutationSource =
   | 'user_message'
+  | 'regenerate'
   | 'run_var'
   | 'history_normalize'
   | 'start_trigger'

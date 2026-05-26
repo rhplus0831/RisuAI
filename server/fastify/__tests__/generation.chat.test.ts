@@ -244,6 +244,122 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
+  it('streams a regenerate message patch and assembled prompt for the truncated transcript', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              id: 'chat-1',
+              message: [
+                { role: 'user', data: 'try again', chatId: 'msg-user-1' },
+                { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+              ],
+              note: '',
+              name: 'Chat',
+              localLore: [],
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'regenerate',
+        regenerateMessageId: 'msg-char-1',
+      },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    expect(events.map((e) => e.type)).toEqual([
+      'stage',
+      'stage',
+      'stage',
+      'prompt',
+      'message_patch',
+      'stage',
+      'info',
+      'done',
+    ])
+    const patch = events.find((e) => e.type === 'message_patch')?.data.patch as
+      | {
+          messageMutations?: Array<{
+            type?: string
+            source?: string
+            beforeLength?: number
+            afterLength?: number
+            messages?: unknown[]
+          }>
+        }
+      | undefined
+    expect(patch?.messageMutations).toEqual([
+      {
+        type: 'replace_all',
+        source: 'regenerate',
+        beforeLength: 2,
+        afterLength: 1,
+        messages: [{ role: 'user', data: 'try again', chatId: 'msg-user-1' }],
+      },
+    ])
+    const prompt = events.find((e) => e.type === 'prompt')!
+    const formated = prompt.data.formated as Array<{ content: unknown }>
+    expect(formated.some((row) => row.content === 'old reply')).toBe(false)
+  })
+
+  it('emits an SSE error for an invalid regenerate target', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              id: 'chat-1',
+              message: [
+                { role: 'user', data: 'first', chatId: 'msg-user-1' },
+                { role: 'char', data: 'old reply', chatId: 'msg-char-1' },
+                { role: 'user', data: 'second', chatId: 'msg-user-2' },
+              ],
+              note: '',
+              name: 'Chat',
+              localLore: [],
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'regenerate',
+        regenerateMessageId: 'msg-char-1',
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    expect(events.find((e) => e.type === 'prompt')).toBeUndefined()
+    expect(String(events.find((e) => e.type === 'error')?.data.error)).toMatch(
+      /latest assistant message/,
+    )
+    expect(events.at(-1)?.type).toBe('done')
+  })
+
   it('streams the assembled prompt for a seeded database', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)

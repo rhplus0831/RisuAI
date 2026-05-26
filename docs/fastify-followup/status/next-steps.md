@@ -18,8 +18,8 @@ and add any longer closeout note under `../phases-completed/`.
 1. Phase 7 prompt assembly is the next default pickup now that Phase 9
    client thinning has closed.
    - 7A: landed browser regenerate request wiring.
-   - 7B: server regenerate assembly semantics. Pick this next.
-   - 7C: `/chat` provider dispatch guards.
+   - 7B: landed server regenerate assembly semantics.
+   - 7C: `/chat` provider dispatch guards. Pick this next.
    - 7D: stop-trigger mutation payload delivery.
    - 7E: route-backed fixture coverage for send, continue, regenerate,
      preview, and preview-prompt.

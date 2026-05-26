@@ -159,6 +159,7 @@ export interface AssembleInput {
 
 export type AssembleMutationSource =
   | 'user_message'
+  | 'regenerate'
   | 'run_var'
   | 'history_normalize'
   | 'start_trigger'
@@ -526,6 +527,51 @@ function appendUserMessageRow(state: AssemblyState): void {
     message: structuredClone(message),
   })
   state.messageMutationCheckpoint = cloneMessages(messages)
+}
+
+function prepareRegenerateTranscript(state: AssemblyState): void {
+  if (state.input.mode !== 'regenerate') return
+
+  const regenerateMessageId = state.input.regenerateMessageId
+  if (typeof regenerateMessageId !== 'string' || regenerateMessageId.length === 0) {
+    throw new EntityNotFoundError('regenerate message not found')
+  }
+
+  const messages = (state.currentChat.message ??= [])
+  const targetIndex = messages.findIndex((message) => message.chatId === regenerateMessageId)
+  if (targetIndex === -1) {
+    const lastMessage = messages.at(-1)
+    if (lastMessage?.role === 'user') {
+      return
+    }
+    throw new EntityNotFoundError(`regenerate message not found: ${regenerateMessageId}`)
+  }
+
+  const target = messages[targetIndex]
+  if (target.role === 'user') {
+    throw new EntityNotFoundError(
+      `regenerate target must be an assistant message: ${regenerateMessageId}`,
+    )
+  }
+  if (targetIndex !== messages.length - 1) {
+    throw new EntityNotFoundError(
+      `regenerate target must be the latest assistant message: ${regenerateMessageId}`,
+    )
+  }
+
+  const saying = target.saying
+  let sayingQuota = 2
+  while (messages.length > 0 && messages.at(-1)?.role !== 'user') {
+    const last = messages.at(-1)
+    if (last?.saying === saying) {
+      sayingQuota -= 1
+      if (sayingQuota === 0) {
+        break
+      }
+    }
+    messages.pop()
+  }
+  captureMessageReplacement(state, 'regenerate')
 }
 
 function applyCurrentChatRunVars(state: AssemblyState): void {
@@ -1055,6 +1101,7 @@ export async function assemblePrompt(
   deps: AssembleDeps,
 ): Promise<AssembleResult> {
   const state = beginAssembly(input, deps)
+  prepareRegenerateTranscript(state)
   appendUserMessageRow(state)
   applyCurrentChatRunVars(state)
   fillStaticSlots(state)
