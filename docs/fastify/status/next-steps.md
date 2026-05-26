@@ -162,22 +162,34 @@ existing settings command bridge:
 - Focused bootstrap coverage proves Fastify-served startup does not
   initialize localForage or start local persistence maintenance.
 
+9-6b then added the asset byte gate:
+
+- Fastify-mode `loadAsset()` now reads raw server asset ids and legacy
+  `assets/<sha>.<ext>` references through `/api/v1/assets/:id` instead of
+  falling through to local web storage.
+- `readImage()` and `loadAsset()` share the same server asset-byte reader,
+  with `risu-auth` attached to server asset fetches.
+- Local web and Tauri asset-byte behavior remains unchanged.
+- Focused browser helper and Fastify asset route coverage stayed green in
+  `src/ts/server/assets.test.ts`, `src/ts/bootstrap.test.ts`, and
+  `server/fastify/__tests__/assets.test.ts`.
+
 ## Immediate Pickup
 
-Immediate pickup: **9-6b - Asset byte gate**.
+Immediate pickup: **9-6c - Server backup/restore projection**.
 
-- Close remaining Fastify asset-helper gaps, especially reads that can
-  still fall through to local storage.
-- Keep durable asset references owned by existing 9-4d commands.
-- Keep bundle walking and repository-backed `.risu` export/import in
-  9-8.
+- Route server-backed backup UI and helper paths through `/api/v1/backups`.
+- Block local backup restore/list/load paths in Fastify mode before they can
+  reach localForage, OPFS, AutoStorage, NodeStorage, or Tauri AppData.
+- Emit and handle a server restore invalidation event so the browser
+  projection refreshes after server-side restore.
 - Keep Tauri/local mode untouched.
-- Do not broaden this slice into server backup/restore projection,
-  residual local cache classification, provider secret masking,
-  server-side plugin execution, server `.risu` codec/import/export, or
-  per-event surgical browser patches.
-- Treat asset-byte reads/writes as server-backed web gates, not
-  compatibility migrations; there are no actual Fastify users yet.
+- Do not broaden this slice into residual local cache classification,
+  provider secret masking, server-side plugin execution, server `.risu`
+  codec/import/export, asset bundle walking, or per-event surgical browser
+  patches.
+- Treat backup/restore paths as server-backed web gates, not compatibility
+  migrations; there are no actual Fastify users yet.
 
 Implementation notes:
 
@@ -194,6 +206,8 @@ Implementation notes:
   Phase 9 target, while per-event patches are future work.
 - Tauri keeps its local storage path. All Phase 9 gates should be
   server-backed web specific.
+- 9-6b closed the shared asset-byte helper gap: Fastify `loadAsset()` and
+  `readImage()` now resolve server asset ids through `/api/v1/assets/:id`.
 - Character scalar patches reject child collections, while 9-4d owns
   character asset-reference fields and Fastify-mode `saveAsset` returns
   raw server asset ids.
@@ -215,29 +229,28 @@ Implementation notes:
   dedicated server-owned paths.
 - Several direct-write search hits are expected rollback helpers,
   optimistic command updates, projection replacement writes, or
-  runtime-only state. 9-6b should focus on asset-byte helper entry points
+  runtime-only state. 9-6c should focus on backup/restore helper entry points
   instead of mechanically deleting every local assignment.
 
 ## Later Queue
 
-1. 9-6b - Asset byte gate.
-2. 9-6c - Server backup/restore projection.
-3. 9-6d - Residual local cache classification.
-4. 9-6e - Provider secret masking.
-5. 9-7a - `.risu` fixture corpus and codec harness.
-6. 9-7b - Legacy envelope codec port.
-7. 9-7c - RISUSAVE block codec port.
-8. 9-7d - Decode normalization and validation.
-9. 9-7e - Repository-backed export adapter.
-10. 9-8a - Multipart `.risu` import route.
-11. 9-8b - Repository `.risu` export route.
-12. 9-8c - Asset reference walker.
-13. 9-8d - Bundle export route.
-14. 9-9a - Server-backed browser smoke harness.
-15. 9-9b - Generation and memory fixture closeout.
-16. 9-9c - Server-backed storage-write audit.
-17. 9-9d - Manual Fastify web and Tauri local verification.
-18. 9-9e - Phase 9 docs closeout.
+1. 9-6c - Server backup/restore projection.
+2. 9-6d - Residual local cache classification.
+3. 9-6e - Provider secret masking.
+4. 9-7a - `.risu` fixture corpus and codec harness.
+5. 9-7b - Legacy envelope codec port.
+6. 9-7c - RISUSAVE block codec port.
+7. 9-7d - Decode normalization and validation.
+8. 9-7e - Repository-backed export adapter.
+9. 9-8a - Multipart `.risu` import route.
+10. 9-8b - Repository `.risu` export route.
+11. 9-8c - Asset reference walker.
+12. 9-8d - Bundle export route.
+13. 9-9a - Server-backed browser smoke harness.
+14. 9-9b - Generation and memory fixture closeout.
+15. 9-9c - Server-backed storage-write audit.
+16. 9-9d - Manual Fastify web and Tauri local verification.
+17. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 

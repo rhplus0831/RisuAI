@@ -15,13 +15,12 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-6a server-backed persistence gate. Fastify-served
-  startup now skips local cold-storage maintenance and the browser save
-  loop, and direct save/backup maintenance helpers no-op before reaching
-  local persistence in Fastify mode.
-- Current gap: remaining asset-byte paths can still fall through to local
-  storage helpers.
-- Next default pickup: 9-6b, asset byte gate.
+- Last landed work: 9-6b asset byte gate. Fastify-mode `loadAsset()` now
+  reads server asset bytes through `/api/v1/assets/:id`, sharing the same
+  server-backed byte reader as `readImage()` before local storage branches.
+- Current gap: server-backed backup and restore helper/UI paths still need
+  to route through the Fastify backup API instead of local backup storage.
+- Next default pickup: 9-6c, server backup/restore projection.
 - Last recorded full baselines after the 9-5d first pass: `pnpm check`
   clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
   tests, and `pnpm build` passing with existing CSS `::highlight`,
@@ -52,7 +51,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-6a landed; continue with 9-6b asset byte gating.          |
+| Client thinning                             | Active; 9-6b landed; continue with 9-6c backup/restore projection.      |
 
 ## Maintenance Rules
 

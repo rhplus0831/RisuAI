@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-6a - Server-backed persistence gate**. Next pickup:
-**9-6b - Asset byte gate**.
+**9-6b - Asset byte gate**. Next pickup:
+**9-6c - Server backup/restore projection**.
 
 ## Goal
 
@@ -288,6 +288,8 @@ surfaces.
   - **9-6b - Asset byte gate.** Close remaining Fastify asset-helper gaps,
     especially reads that can still fall through to local storage. Durable
     asset references remain owned by 9-4d commands; bundle walking stays 9-8.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-6b.md`](../phases-completed/phase-9-client-thinning-9-6b.md).
   - **9-6c - Server backup/restore projection.** Route server-backed backup UI
     and helper paths through `/api/v1/backups`, block local backup/restore in
     Fastify mode, and emit/handle restore invalidation.

@@ -82,6 +82,7 @@ import {
 } from './network/proxyJobWs'
 import { getNodeServerProxyAuth } from './storage/nodeStorage'
 import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
+import { readServerAssetBytes, serverAssetUrl } from './server/assets'
 
 export const forageStorage = new AutoStorage()
 
@@ -141,8 +142,6 @@ let fileCache: {
 let pathCache: { [key: string]: string } = {}
 let checkedPaths: string[] = []
 
-const SERVER_ASSET_ID_RE = /^[a-f0-9]{64}$/
-const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
 const SERVER_ASSET_CONTENT_TYPES: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -162,17 +161,6 @@ const SERVER_ASSET_CONTENT_TYPES: Record<string, string> = {
   otf: 'font/otf',
   woff: 'font/woff',
   woff2: 'font/woff2',
-}
-
-function serverAssetIdFromReference(loc: string): string | null {
-  if (SERVER_ASSET_ID_RE.test(loc)) return loc
-  const localPathMatch = LOCAL_ASSET_PATH_RE.exec(loc)
-  return localPathMatch?.[1] ?? null
-}
-
-function serverAssetUrl(loc: string): string | null {
-  const assetId = serverAssetIdFromReference(loc)
-  return assetId ? `/api/v1/assets/${encodeURIComponent(assetId)}` : null
 }
 
 /**
@@ -278,17 +266,7 @@ let appDataDirPath = ''
  */
 export async function readImage(data: string) {
   if (isFastifyServer) {
-    const assetUrl = serverAssetUrl(data) ?? data
-    const auth = await getNodeServerProxyAuth()
-    const response = await fetch(assetUrl, {
-      headers: {
-        'risu-auth': auth,
-      },
-    })
-    if (!response.ok) {
-      throw new Error(`Failed to read server asset: ${response.status}`)
-    }
-    return new Uint8Array(await response.arrayBuffer())
+    return readServerAssetBytes(data)
   }
   if (isTauri) {
     if (data.startsWith('assets')) {
@@ -376,6 +354,9 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the loaded asset file.
  */
 export async function loadAsset(id: string) {
+  if (isFastifyServer) {
+    return readServerAssetBytes(id)
+  }
   if (isTauri) {
     return await readFile(id, { baseDir: BaseDirectory.AppData })
   } else {
