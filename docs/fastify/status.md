@@ -2,8 +2,8 @@
 
 Date: 2026-05-26
 
-This is the live Fastify migration handoff: current pickup state,
-blockers, and links to the detailed runbook.
+This is the live Fastify migration handoff: current state, blockers,
+and links to the detailed runbook.
 
 Policy note: there are no actual Fastify users yet, so this process does
 not need compatibility migrations. Update the current schema and import
@@ -14,14 +14,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Snapshot
 
-- Active phase: Phase 9, Client thinning.
-- Last landed work: 9-9d manual verification, partial. Automated preflight and
-  Fastify-served web checks passed; Tauri / Desktop testing is deferred to a
-  separate later task, so do not proceed with it for now.
-- Current gap: Phase 9 needs the 9-9e docs closeout with the Tauri / Desktop
-  deferral recorded.
-- Next default pickup: 9-9e Phase 9 docs closeout. Do not run Tauri / Desktop
-  manual verification in this pickup.
+- Active phase: none. Phase 9, Client thinning, is closed for the
+  Fastify-served web scope.
+- Last landed work: 9-9e Phase 9 docs closeout. Automated preflight and
+  Fastify-served web manual checks passed during 9-9d; Tauri / Desktop manual
+  verification is deferred to a separate later task.
+- Current gap: none for Phase 9 Fastify web closeout.
+- Next default pickup: separate later task - Tauri / Desktop manual
+  verification. Do not fold that task back into Phase 9 docs closeout.
 - Last recorded focused baselines after 9-9d: `pnpm smoke:fastify-browser`
   passed with the storage-write audit, the server-backed sendChat fixture
   command selected 65 files and 734 passing tests with 4 skipped, the focused
@@ -36,12 +36,12 @@ Completed phase detail and old landed-slice logs live in
 
 ## Start Here
 
-- [`status/next-steps.md`](status/next-steps.md) - exact next slice and
+- [`status/next-steps.md`](status/next-steps.md) - current handoff and
   verification commands.
 - [`status/phase-9-command-map.md`](status/phase-9-command-map.md) -
   locked Phase 9 mutation inventory and command map.
 - [`phases/phase-9-client-thinning.md`](phases/phase-9-client-thinning.md) -
-  active Phase 9 scope, boundaries, and slice plan.
+  closed Phase 9 scope, boundaries, and slice plan.
 - [`phases/phase-8-memory.md`](phases/phase-8-memory.md) - closed Phase
   8 summary and exit criteria.
 - [`status/server.md`](status/server.md) - current Fastify route surface.
@@ -59,7 +59,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.         |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                                |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                                |
-| Client thinning                             | Active; 9-9d Fastify web checks landed; Tauri / Desktop testing deferred separately; proceed with 9-9e docs closeout. |
+| Client thinning                             | Closed for Fastify web; Tauri / Desktop manual verification deferred separately. |
 
 ## Maintenance Rules
 

@@ -55,9 +55,10 @@ docs.
 
 ## Current Server Work
 
-Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-current pickup is 9-9b, generation and memory fixture closeout in
-[`next-steps.md`](next-steps.md).
+Phase 8 Hypa V3 memory and Phase 9 client thinning are closed. The remaining
+handoff is a separate later Tauri / Desktop manual verification task in
+[`next-steps.md`](next-steps.md); it does not change the Fastify server route
+surface.
 
 ## Watch Points
 
@@ -74,5 +75,5 @@ current pickup is 9-9b, generation and memory fixture closeout in
   [`../phases-completed/status-server-2026-05-24.md`](../phases-completed/status-server-2026-05-24.md)
 - Provider matrix: [`../coverage/providers.md`](../coverage/providers.md)
 - Server route coverage: [`../coverage/server-routes.md`](../coverage/server-routes.md)
-- Active phase:
+- Closed phase:
   [`../phases/phase-9-client-thinning.md`](../phases/phase-9-client-thinning.md)

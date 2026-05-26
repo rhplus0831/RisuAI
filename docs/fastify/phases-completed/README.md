@@ -110,6 +110,7 @@ track the next piece of work.
 | 9-9b - Generation/memory fixtures       | [`phase-9-client-thinning-9-9b.md`](phase-9-client-thinning-9-9b.md)                   | Server-backed sendChat, generation persistence, rollback, and Hypa V3 fixtures.  |
 | 9-9c - Storage-write audit              | [`phase-9-client-thinning-9-9c.md`](phase-9-client-thinning-9-9c.md)                   | Integrated browser storage-write audit plus focused import/export baselines.     |
 | 9-9d - Manual verification              | [`phase-9-client-thinning-9-9d.md`](phase-9-client-thinning-9-9d.md)                   | Fastify web manual checks; Tauri/local blocked by frontend `appVer` init error.  |
+| 9-9e - Phase 9 docs closeout            | [`phase-9-client-thinning-9-9e.md`](phase-9-client-thinning-9-9e.md)                   | Phase 9 closed for Fastify web; Tauri/Desktop manual verification deferred.      |
 
 ## Historical Status Logs
 

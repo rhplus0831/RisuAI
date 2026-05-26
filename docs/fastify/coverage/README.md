@@ -15,9 +15,10 @@ tests. Phase 8 now has memory job/read route coverage, focused memory
 service tests, browser memory adapter tests, and server-backed
 `hypav3-memory` fixture parity. Phase 9 coverage now spans command
 routes through the 9-4 resource families, 9-5 projection events /
-bootstrap / guard behavior, 9-6 storage and provider-secret gates, and
+bootstrap / guard behavior, 9-6 storage and provider-secret gates,
 9-7/9-8 server `.risu` codec, import, export, asset-report, and bundle
-tests.
+tests, plus the 9-9 integrated Fastify-served browser smoke and
+storage-write audit.
 
 ## Shards
 

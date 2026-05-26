@@ -28,7 +28,8 @@ End state:
 ## Current Baseline
 
 The live pickup snapshot belongs in [`status.md`](status.md). As of
-2026-05-26, Phases 0-8 are closed and Phase 9 is active.
+2026-05-26, Phases 0-9 are closed for the Fastify-served web migration scope;
+Tauri / Desktop manual verification is deferred to a separate later task.
 
 Stable baseline facts:
 
@@ -46,11 +47,12 @@ Stable baseline facts:
   the 9-5 projection stream/guard work, the 9-6 server-backed storage and
   provider-secret gates, and the 9-7/9-8 server `.risu` codec,
   multipart import, repository export, asset-reference, and bundle export
-  work. Covered command families include settings, presets, prompt items,
-  personas, translator presets, loadouts, characters, chats, messages,
-  generation persistence, scriptstate, lorebooks, scripts/triggers,
-  modules, asset references, plugins, plugin storage, and compatibility
-  adapters.
+  work, with 9-9 browser smoke/storage-write coverage and Fastify-served web
+  manual verification recorded. Covered command families include settings,
+  presets, prompt items, personas, translator presets, loadouts, characters,
+  chats, messages, generation persistence, scriptstate, lorebooks,
+  scripts/triggers, modules, asset references, plugins, plugin storage, and
+  compatibility adapters.
 - Domain state still uses the migration-window `data/db.json` blob for
   resources not yet extracted to SQL. Memory uses dedicated SQL tables
   added in Phase 8.

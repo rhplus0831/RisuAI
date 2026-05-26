@@ -12,34 +12,24 @@ shapes.
 
 ## Last Done
 
-**9-9d - Manual verification, partial** is the latest landed slice.
+**9-9e - Phase 9 docs closeout** is the latest landed slice.
 
-- Re-ran the 9-9d automated preflight: browser smoke/storage audit,
-  server-backed sendChat fixtures, focused memory/generation helpers, focused
-  server `.risu` codec/reference tests, focused Fastify
-  import/export/bootstrap coverage, and `pnpm check`.
-- Manually drove the Fastify-served web path against an isolated server data
-  directory for import, chat/message persistence, regenerate replacement,
-  message edit, character switch, settings mutation, projection refresh, and
-  reload persistence.
-- Confirmed the Fastify-served web pass performed no IndexedDB/localForage or
-  OPFS writes.
-- `pnpm tauribuild` and the focused local backup regression command passed.
-- Tauri / Desktop testing is deferred to a separate later task. Do not proceed
-  with Tauri / Desktop manual verification for now.
+- Closed Phase 9 for the Fastify-served web client-thinning scope.
+- Recorded the already-green 9-9d automated preflight and Fastify-served web
+  manual verification as the Phase 9 closeout baseline.
+- Recorded that Tauri / Desktop manual verification is deferred to a separate
+  later task and is not part of Phase 9 closeout.
+- Refreshed live status, coverage, and completed-phase archive docs.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-9e - Phase 9 docs closeout**.
+Immediate pickup: **separate later task - Tauri / Desktop manual
+verification**.
 
-- The Fastify-served web half of 9-9d is already recorded in
-  [`../phases-completed/phase-9-client-thinning-9-9d.md`](../phases-completed/phase-9-client-thinning-9-9d.md).
-- Record that Tauri / Desktop testing is out of scope for the current pickup
-  and will be handled as its own later task.
-- Do not run, fix, or work around Tauri / Desktop manual verification as part
-  of this task.
+- Do not fold this task back into Phase 9 docs closeout.
 - Do not add compatibility migrations for intermediate Fastify shapes; there
   are no actual Fastify users yet.
+- Keep Tauri/local storage behavior on the existing local path.
 
 ## Implementation Notes
 
@@ -76,8 +66,7 @@ Immediate pickup: **9-9e - Phase 9 docs closeout**.
 
 ## Later Queue
 
-1. 9-9e - Phase 9 docs closeout.
-2. Separate later task - Tauri / Desktop manual verification.
+1. Separate later task - Tauri / Desktop manual verification.
 
 ## Parallel Or Deferred
 
@@ -90,8 +79,8 @@ Immediate pickup: **9-9e - Phase 9 docs closeout**.
 
 ## Verification
 
-For the current 9-9e docs closeout, use the already-green automated preflight
-as the baseline. Do not perform Tauri / Desktop testing now:
+For the closed Phase 9 Fastify web scope, the already-green 9-9d automated
+preflight remains the baseline:
 
 ```bash
 pnpm smoke:fastify-browser
@@ -102,7 +91,7 @@ pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts serv
 pnpm check
 ```
 
-Deferred Tauri / Desktop task, not for the current pickup:
+Deferred Tauri / Desktop task:
 
 - App loads the expected persisted state after startup.
 - Import succeeds or shows the expected unsupported message for the mode.
@@ -176,14 +165,14 @@ Last recorded broader baselines:
 
 ## References
 
-- Active phase:
+- Closed phase:
   [`../phases/phase-9-client-thinning.md`](../phases/phase-9-client-thinning.md)
 - Command map:
   [`phase-9-command-map.md`](phase-9-command-map.md)
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-9d.md`](../phases-completed/phase-9-client-thinning-9-9d.md)
+  [`../phases-completed/phase-9-client-thinning-9-9e.md`](../phases-completed/phase-9-client-thinning-9-9e.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

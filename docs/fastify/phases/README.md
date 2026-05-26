@@ -29,7 +29,7 @@ the phase file.
 | 6 - Server-side generation              | Closed 2026-05-22 | [`phase-6-server-generation.md`](phase-6-server-generation.md) |
 | 7 - Server-side prompt assembly         | Closed 2026-05-24 | [`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md)     |
 | 8 - Hypa V3 memory server-side          | Closed 2026-05-25 | [`phase-8-memory.md`](phase-8-memory.md)                       |
-| 9 - Client thinning                     | Active            | [`phase-9-client-thinning.md`](phase-9-client-thinning.md)     |
+| 9 - Client thinning                     | Closed 2026-05-26 | [`phase-9-client-thinning.md`](phase-9-client-thinning.md)     |
 
 ## Dependency Order
 
@@ -39,10 +39,9 @@ the phase file.
 0 -> 4 -> 5 -> 6 -> 7
 ```
 
-Phase 9 is the active phase. Phase 8 is closed, so server-owned
-generation, prompt assembly, and memory surfaces are ready for the client
-thinning workstream. Phase 9 has landed through 9-9a browser smoke; the
-current pickup is 9-9b, generation and memory fixture closeout.
+Phase 9 is closed for the Fastify-served web client-thinning scope. Tauri /
+Desktop manual verification is deferred to a separate later task and does not
+change the closed Fastify web phase state.
 
 ## Completed Detail
 

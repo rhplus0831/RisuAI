@@ -2,10 +2,9 @@
 
 Date: 2026-05-26
 
-Status: active. Last landed work:
-**9-9d - Manual verification, partial**. Next pickup:
-**9-9e - Phase 9 docs closeout**. Tauri / Desktop testing is deferred to a
-separate later task, so do not proceed with it for now.
+Status: closed. Completed through **9-9e - Phase 9 docs closeout**.
+Fastify-served web client thinning is complete; Tauri / Desktop manual
+verification is deferred to a separate later task.
 
 ## Goal
 
@@ -79,8 +78,7 @@ owner of a full mutable database snapshot:
 
 Tauri keeps its current localForage path. Phase 9 gates server-backed web
 behavior without changing the local desktop storage path. Tauri / Desktop
-testing is deferred to a separate later task and should not be run during the
-current pickup.
+testing is deferred to a separate later task outside this Phase 9 closeout.
 
 ## Difficulty Re-Check
 
@@ -379,11 +377,13 @@ surfaces.
     reload checks for both modes.
     - Status: partial. Fastify-served web checks and automated preflight are
       complete; Tauri / Desktop testing is deferred to a separate later task
-      and should not be attempted in the current pickup. Closeout:
+      outside Phase 9 closeout. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-9d.md`](../phases-completed/phase-9-client-thinning-9-9d.md).
   - **9-9e - Phase 9 docs closeout.** Update status, coverage, and completed
     phase docs after the Fastify web closeout is recorded, including the
     separate later-task deferral for Tauri / Desktop testing.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-9e.md`](../phases-completed/phase-9-client-thinning-9-9e.md).
 
 ## Boundaries
 

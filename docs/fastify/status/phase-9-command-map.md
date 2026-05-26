@@ -4,10 +4,10 @@ Date: 2026-05-26
 
 Status: locked by slice **9-0 - Mutation inventory and command map**.
 
-This is the active design artifact for Phase 9 command implementation.
-It records the durable browser mutation surfaces found during 9-0 and
-the command contract that later slices must implement. Completed slice
-logs stay in [`../phases-completed/`](../phases-completed/).
+This is the locked design artifact for the now-closed Phase 9 command
+implementation. It records the durable browser mutation surfaces found during
+9-0 and the command contract implemented by later slices. Completed slice logs
+stay in [`../phases-completed/`](../phases-completed/).
 
 Policy note: there are no actual Fastify users yet, so Phase 9 may
 update the current db shape and import paths directly. Do not add
