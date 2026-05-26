@@ -151,6 +151,19 @@ export function dispatchReorderCharacters(previous: CharacterStateSnapshot): voi
   )
 }
 
+export function setCharacterSupaMemory(characterId: string, enabled: boolean): void {
+  const previous = currentCharacterStateSnapshot()
+  if (canUseServerCommands()) {
+    dispatchUpdateCharacter(characterId, { supaMemory: enabled }, previous)
+    return
+  }
+
+  const character = DBState.db.characters.find((candidate) => candidate.chaId === characterId)
+  if (character) {
+    character.supaMemory = enabled
+  }
+}
+
 export function toCharacterSnapshot(character: character): CharacterSnapshot {
   return cloneJsonValue(character) as unknown as CharacterSnapshot
 }

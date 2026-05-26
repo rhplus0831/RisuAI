@@ -210,12 +210,28 @@ export function dispatchReorderChats(
     if (!chat.id) continue
     folderByChatId[chat.id] = chat.folderId ?? null
   }
+  dispatchReorderChatsByIds(
+    characterId,
+    character.chats.map((chat) => chat.id).filter(Boolean) as string[],
+    folderByChatId,
+    previous,
+    selectedChatId,
+  )
+}
+
+export function dispatchReorderChatsByIds(
+  characterId: string,
+  chatIds: string[],
+  folderByChatId: Record<string, string | null>,
+  previous: ChatStateSnapshot,
+  selectedChatId?: string,
+): void {
   runChatCommand(
     (baseRevision) =>
       reorderChatsCommand({
         baseRevision,
         characterId,
-        chatIds: character.chats.map((chat) => chat.id).filter(Boolean) as string[],
+        chatIds: cloneJsonValue(chatIds),
         folderByChatId,
         selectedChatId,
       }),
@@ -273,12 +289,26 @@ export function dispatchReorderChatFolders(
 ): void {
   const character = DBState.db.characters.find((candidate) => candidate.chaId === characterId)
   if (!character) return
+  dispatchReorderChatFoldersByIds(
+    characterId,
+    character.chatFolders.map((folder) => folder.id),
+    previous,
+    selectedChatId,
+  )
+}
+
+export function dispatchReorderChatFoldersByIds(
+  characterId: string,
+  folderIds: string[],
+  previous: ChatStateSnapshot,
+  selectedChatId?: string,
+): void {
   runChatCommand(
     (baseRevision) =>
       reorderChatFoldersCommand({
         baseRevision,
         characterId,
-        folderIds: character.chatFolders.map((folder) => folder.id),
+        folderIds: cloneJsonValue(folderIds),
         selectedChatId,
       }),
     () => restoreChatState(previous),

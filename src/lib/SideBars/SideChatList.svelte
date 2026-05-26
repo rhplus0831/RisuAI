@@ -42,11 +42,14 @@
     dispatchDeleteChat,
     dispatchDeleteChatFolder,
     dispatchForkChat,
+    dispatchReorderChatFoldersByIds,
     dispatchReorderChatFolders,
+    dispatchReorderChatsByIds,
     dispatchReorderChats,
     dispatchUpdateChat,
     dispatchUpdateChatFolder,
   } from 'src/ts/chatCommands'
+  import { canUseServerCommands } from 'src/ts/server/commands'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
 
   interface Props {
@@ -69,6 +72,65 @@
     return stop
   })
 
+  function selectChat(index: number): void {
+    const chatId = chara.chats[index]?.id
+    if (canUseServerCommands() && chatId) {
+      dispatchUpdateChat(chatId, {}, currentChatStateSnapshot(), true)
+      return
+    }
+    changeChatTo(index)
+  }
+
+  function createChat(): void {
+    const previous = currentChatStateSnapshot()
+    const len = chara.chats.length
+    const chat = {
+      message: [],
+      note: '',
+      name: `New Chat ${len + 1}`,
+      localLore: [],
+      fmIndex: -1,
+      id: v4(),
+    }
+    if (canUseServerCommands()) {
+      dispatchCreateChat(chara.chaId, chat, previous)
+      return
+    }
+    chara.chats.unshift(chat)
+    changeChatTo(0)
+    $ReloadGUIPointer += 1
+  }
+
+  function forkChat(sourceChat: Chat): void {
+    const previous = currentChatStateSnapshot()
+    const newChat = $state.snapshot(sourceChat)
+    newChat.name = createChatCopyName(newChat.name, 'Copy')
+    newChat.id = v4()
+    if (canUseServerCommands()) {
+      dispatchForkChat(sourceChat.id, previous, { chat: newChat })
+      return
+    }
+    chara.chats.unshift(newChat)
+    changeChatTo(0)
+    chara.chats = chara.chats
+  }
+
+  function updateChatName(chat: Chat, name: string): void {
+    if (canUseServerCommands()) {
+      dispatchUpdateChat(chat.id, { name }, currentChatStateSnapshot())
+      return
+    }
+    chat.name = name
+  }
+
+  function updateFolderName(folder: ChatFolder, name: string): void {
+    if (canUseServerCommands()) {
+      dispatchUpdateChatFolder(folder.id, { name }, currentChatStateSnapshot())
+      return
+    }
+    folder.name = name
+  }
+
   const createStb = () => {
     for (let chat of listEle.querySelectorAll('.risu-chat')) {
       chatsStb.push(
@@ -78,6 +140,8 @@
             const previous = currentChatStateSnapshot()
             const currentChatPage = chara.chatPage
             const newChats: Chat[] = []
+            const chatIds: string[] = []
+            const folderByChatId: Record<string, string | null> = {}
 
             // const chats: HTMLElement = event.to
             // chats.querySelectorAll()
@@ -87,7 +151,12 @@
               folder.querySelectorAll('[data-risu-chat-idx]').forEach((chatInFolder) => {
                 const chatIdx = parseInt(chatInFolder.getAttribute('data-risu-chat-idx'))
                 const newChat = chara.chats[chatIdx]
-                newChat.folderId = chara.chatFolders[folderIdx].id
+                const folderId = chara.chatFolders[folderIdx].id
+                if (newChat.id) {
+                  chatIds.push(newChat.id)
+                  folderByChatId[newChat.id] = folderId
+                }
+                if (!canUseServerCommands()) newChat.folderId = folderId
                 newChats.push(newChat)
               })
             })
@@ -96,14 +165,29 @@
               const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
               const newChat = chara.chats[idx]
               if (newChats.includes(newChat) == false) {
-                if (newChat.folderId != null) newChat.folderId = null
+                if (newChat.id) {
+                  chatIds.push(newChat.id)
+                  folderByChatId[newChat.id] = null
+                }
+                if (!canUseServerCommands() && newChat.folderId != null) newChat.folderId = null
                 newChats.push(newChat)
               }
             })
 
-            changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
-            chara.chats = newChats
-            dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
+            const selectedChatId = chara.chats[currentChatPage]?.id
+            if (canUseServerCommands()) {
+              dispatchReorderChatsByIds(
+                chara.chaId,
+                chatIds,
+                folderByChatId,
+                previous,
+                selectedChatId,
+              )
+            } else {
+              changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
+              chara.chats = newChats
+              dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
+            }
 
             try {
               this.destroy()
@@ -122,32 +206,53 @@
         const previous = currentChatStateSnapshot()
         const newFolders: ChatFolder[] = []
         const newChats: Chat[] = []
+        const folderIds: string[] = []
+        const chatIds: string[] = []
+        const folderByChatId: Record<string, string | null> = {}
         const folders: HTMLElement[] = Array.from<HTMLElement>(event.to.children)
 
         const currentChatPage = chara.chatPage
 
         folders.forEach((folder) => {
           const folderIdx = parseInt(folder.getAttribute('data-risu-chat-folder-idx'))
-          newFolders.push(chara.chatFolders[folderIdx])
+          const nextFolder = chara.chatFolders[folderIdx]
+          newFolders.push(nextFolder)
+          if (nextFolder?.id) folderIds.push(nextFolder.id)
 
           folder.querySelectorAll('[data-risu-chat-idx]').forEach((chatEle) => {
             const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
-            newChats.push(chara.chats[idx])
+            const chat = chara.chats[idx]
+            newChats.push(chat)
+            if (chat?.id) {
+              chatIds.push(chat.id)
+              folderByChatId[chat.id] = chat.folderId ?? null
+            }
           })
         })
 
         listEle.querySelectorAll('[data-risu-chat-idx]').forEach((chatEle) => {
           const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
           if (newChats.includes(chara.chats[idx]) == false) {
-            newChats.push(chara.chats[idx])
+            const chat = chara.chats[idx]
+            newChats.push(chat)
+            if (chat?.id) {
+              chatIds.push(chat.id)
+              folderByChatId[chat.id] = chat.folderId ?? null
+            }
           }
         })
 
-        chara.chatFolders = newFolders
-        changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
-        chara.chats = newChats
-        dispatchReorderChatFolders(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
-        dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
+        const selectedChatId = chara.chats[currentChatPage]?.id
+        if (canUseServerCommands()) {
+          dispatchReorderChatFoldersByIds(chara.chaId, folderIds, previous, selectedChatId)
+          dispatchReorderChatsByIds(chara.chaId, chatIds, folderByChatId, previous, selectedChatId)
+        } else {
+          chara.chatFolders = newFolders
+          changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
+          chara.chats = newChats
+          dispatchReorderChatFolders(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
+          dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
+        }
         try {
           folderStb.destroy()
         } catch (e) {}
@@ -176,27 +281,7 @@
 </script>
 
 <div class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]">
-  <Button
-    className="relative bottom-2"
-    onclick={() => {
-      const previous = currentChatStateSnapshot()
-      const len = chara.chats.length
-      let chats = chara.chats
-      const chat = {
-        message: [],
-        note: '',
-        name: `New Chat ${len + 1}`,
-        localLore: [],
-        fmIndex: -1,
-        id: v4(),
-      }
-      chats.unshift(chat)
-      chara.chats = chats
-      changeChatTo(0)
-      dispatchCreateChat(chara.chaId, chat, previous)
-      $ReloadGUIPointer += 1
-    }}>{language.newChat}</Button
-  >
+  <Button className="relative bottom-2" onclick={createChat}>{language.newChat}</Button>
 
   {#key sorted}
     <div class="flex flex-col mt-2 overflow-y-auto grow" bind:this={listEle}>
@@ -213,12 +298,11 @@
               onclick={() => {
                 if (!editMode) {
                   const previous = currentChatStateSnapshot()
-                  chara.chatFolders[i].folded = !folder.folded
-                  dispatchUpdateChatFolder(
-                    folder.id,
-                    { folded: chara.chatFolders[i].folded },
-                    previous,
-                  )
+                  const folded = !folder.folded
+                  if (!canUseServerCommands()) {
+                    chara.chatFolders[i].folded = folded
+                  }
+                  dispatchUpdateChatFolder(folder.id, { folded }, previous)
                   $ReloadGUIPointer += 1
                 }
               }}
@@ -233,7 +317,7 @@
             >
               {#if editMode}
                 <TextInput
-                  bind:value={chara.chatFolders[i].name}
+                  bind:value={() => folder.name, (value) => updateFolderName(folder, value)}
                   className="grow min-w-0"
                   padding={false}
                 />
@@ -269,8 +353,11 @@
                         ]
                         const sel = parseInt(await alertSelect(colors))
                         const previous = currentChatStateSnapshot()
-                        folder.color = colors[sel]
-                        dispatchUpdateChatFolder(folder.id, { color: folder.color }, previous)
+                        const color = colors[sel]
+                        if (!canUseServerCommands()) {
+                          folder.color = color
+                        }
+                        dispatchUpdateChatFolder(folder.id, { color }, previous)
                         break
                     }
                   }}
@@ -307,14 +394,16 @@
                     if (d) {
                       const previous = currentChatStateSnapshot()
                       $ReloadGUIPointer += 1
-                      const folders = chara.chatFolders
-                      folders.splice(i, 1)
-                      chara.chats.forEach((chat) => {
-                        if (chat.folderId == folder.id) {
-                          chat.folderId = null
-                        }
-                      })
-                      chara.chatFolders = folders
+                      if (!canUseServerCommands()) {
+                        const folders = chara.chatFolders
+                        folders.splice(i, 1)
+                        chara.chats.forEach((chat) => {
+                          if (chat.folderId == folder.id) {
+                            chat.folderId = null
+                          }
+                        })
+                        chara.chatFolders = folders
+                      }
                       dispatchDeleteChatFolder(folder.id, previous)
                     }
                   }}
@@ -338,7 +427,7 @@
                     data-risu-chat-idx={chara.chats.indexOf(chat)}
                     onclick={() => {
                       if (!editMode) {
-                        changeChatTo(chara.chats.indexOf(chat))
+                        selectChat(chara.chats.indexOf(chat))
                         $ReloadGUIPointer += 1
                       }
                     }}
@@ -346,7 +435,11 @@
                     class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}
                   >
                     {#if editMode}
-                      <TextInput bind:value={chat.name} className="grow min-w-0" padding={false} />
+                      <TextInput
+                        bind:value={() => chat.name, (value) => updateChatName(chat, value)}
+                        className="grow min-w-0"
+                        padding={false}
+                      />
                     {:else}
                       <span>{chat.name}</span>
                     {/if}
@@ -364,16 +457,7 @@
                           const option = await alertChatOptions()
                           switch (option) {
                             case 0: {
-                              const previous = currentChatStateSnapshot()
-                              const newChat = $state.snapshot(
-                                chara.chats[chara.chats.indexOf(chat)],
-                              )
-                              newChat.name = createChatCopyName(newChat.name, 'Copy')
-                              newChat.id = v4()
-                              chara.chats.unshift(newChat)
-                              changeChatTo(0)
-                              chara.chats = chara.chats
-                              dispatchForkChat(chat.id, previous, { chat: newChat })
+                              forkChat(chat)
                               break
                             }
                             case 1: {
@@ -383,7 +467,9 @@
                                   language.doYouWantToUnbindCurrentPersona,
                                 )
                                 if (confirm) {
-                                  chat.bindedPersona = ''
+                                  if (!canUseServerCommands()) {
+                                    chat.bindedPersona = ''
+                                  }
                                   dispatchUpdateChat(chat.id, { bindedPersona: '' }, previous)
                                   alertNormal(language.personaUnbindedSuccess)
                                 }
@@ -392,16 +478,15 @@
                                   language.doYouWantToBindCurrentPersona,
                                 )
                                 if (confirm) {
-                                  if (!DBState.db.personas[DBState.db.selectedPersona].id) {
-                                    DBState.db.personas[DBState.db.selectedPersona].id = v4()
+                                  const persona = DBState.db.personas[DBState.db.selectedPersona]
+                                  const bindedPersona = persona.id || v4()
+                                  if (!canUseServerCommands() && !persona.id) {
+                                    persona.id = bindedPersona
                                   }
-                                  chat.bindedPersona =
-                                    DBState.db.personas[DBState.db.selectedPersona].id
-                                  dispatchUpdateChat(
-                                    chat.id,
-                                    { bindedPersona: chat.bindedPersona },
-                                    previous,
-                                  )
+                                  if (!canUseServerCommands()) {
+                                    chat.bindedPersona = bindedPersona
+                                  }
+                                  dispatchUpdateChat(chat.id, { bindedPersona }, previous)
                                   console.log(DBState.db.personas[DBState.db.selectedPersona])
                                   alertNormal(language.personaBindedSuccess)
                                 }
@@ -462,11 +547,15 @@
                           const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
                           if (d) {
                             const previous = currentChatStateSnapshot()
-                            changeChatTo(0)
+                            if (!canUseServerCommands()) {
+                              changeChatTo(0)
+                            }
                             $ReloadGUIPointer += 1
-                            let chats = chara.chats
-                            chats.splice(chara.chats.indexOf(chat), 1)
-                            chara.chats = chats
+                            if (!canUseServerCommands()) {
+                              let chats = chara.chats
+                              chats.splice(chara.chats.indexOf(chat), 1)
+                              chara.chats = chats
+                            }
                             dispatchDeleteChat(chat.id, previous)
                           }
                         }}
@@ -489,7 +578,7 @@
               data-risu-chat-idx={i}
               onclick={() => {
                 if (!editMode) {
-                  changeChatTo(i)
+                  selectChat(i)
                   $ReloadGUIPointer += 1
                 }
               }}
@@ -498,7 +587,7 @@
             >
               {#if editMode}
                 <TextInput
-                  bind:value={chara.chats[i].name}
+                  bind:value={() => chat.name, (value) => updateChatName(chat, value)}
                   className="grow min-w-0"
                   padding={false}
                 />
@@ -519,14 +608,7 @@
                     const option = await alertChatOptions()
                     switch (option) {
                       case 0: {
-                        const previous = currentChatStateSnapshot()
-                        const newChat = $state.snapshot(chara.chats[i])
-                        newChat.name = createChatCopyName(newChat.name, 'Copy')
-                        newChat.id = v4()
-                        chara.chats.unshift(newChat)
-                        changeChatTo(0)
-                        chara.chats = chara.chats
-                        dispatchForkChat(chat.id, previous, { chat: newChat })
+                        forkChat(chat)
                         break
                       }
                       case 1: {
@@ -537,22 +619,24 @@
                             language.doYouWantToUnbindCurrentPersona,
                           )
                           if (confirm) {
-                            chat.bindedPersona = ''
+                            if (!canUseServerCommands()) {
+                              chat.bindedPersona = ''
+                            }
                             dispatchUpdateChat(chat.id, { bindedPersona: '' }, previous)
                             alertNormal(language.personaUnbindedSuccess)
                           }
                         } else {
                           const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                           if (confirm) {
-                            if (!DBState.db.personas[DBState.db.selectedPersona].id) {
-                              DBState.db.personas[DBState.db.selectedPersona].id = v4()
+                            const persona = DBState.db.personas[DBState.db.selectedPersona]
+                            const bindedPersona = persona.id || v4()
+                            if (!canUseServerCommands() && !persona.id) {
+                              persona.id = bindedPersona
                             }
-                            chat.bindedPersona = DBState.db.personas[DBState.db.selectedPersona].id
-                            dispatchUpdateChat(
-                              chat.id,
-                              { bindedPersona: chat.bindedPersona },
-                              previous,
-                            )
+                            if (!canUseServerCommands()) {
+                              chat.bindedPersona = bindedPersona
+                            }
+                            dispatchUpdateChat(chat.id, { bindedPersona }, previous)
                             console.log(DBState.db.personas[DBState.db.selectedPersona])
                             alertNormal(language.personaBindedSuccess)
                           }
@@ -613,11 +697,15 @@
                     const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
                     if (d) {
                       const previous = currentChatStateSnapshot()
-                      changeChatTo(0)
+                      if (!canUseServerCommands()) {
+                        changeChatTo(0)
+                      }
                       $ReloadGUIPointer += 1
-                      let chats = chara.chats
-                      chats.splice(i, 1)
-                      chara.chats = chats
+                      if (!canUseServerCommands()) {
+                        let chats = chara.chats
+                        chats.splice(i, 1)
+                        chara.chats = chats
+                      }
                       dispatchDeleteChat(chat.id, previous)
                     }
                   }}
@@ -681,18 +769,20 @@
         class="ml-auto text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           const previous = currentChatStateSnapshot()
-          if (!chara.chatFolders) {
-            chara.chatFolders = []
-          }
-          const folders = chara.chatFolders
-          const length = chara.chatFolders.length
-          folders.unshift({
+          const length = chara.chatFolders?.length ?? 0
+          const folder = {
             id: v4(),
             name: `New Folder ${length + 1}`,
             folded: false,
-          })
-          const folder = folders[0]
-          chara.chatFolders = folders
+          }
+          if (!canUseServerCommands()) {
+            if (!chara.chatFolders) {
+              chara.chatFolders = []
+            }
+            const folders = chara.chatFolders
+            folders.unshift(folder)
+            chara.chatFolders = folders
+          }
           dispatchCreateChatFolder(chara.chaId, folder, previous)
           $ReloadGUIPointer += 1
         }}

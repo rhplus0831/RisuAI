@@ -26,12 +26,10 @@
   import { onDestroy } from 'svelte'
   import { importMCPModule } from 'src/ts/process/mcp/mcp'
   import {
-    currentModuleStateSnapshot,
-    dispatchCreateModule,
-    dispatchDeleteModule,
-    dispatchEnableModule,
-    dispatchUpdateModule,
-    toModuleSnapshot,
+    createGlobalModule,
+    deleteGlobalModule,
+    setGlobalModuleEnabled,
+    updateGlobalModule,
   } from 'src/ts/moduleCommands'
 
   function cloneJsonValue<T>(value: T): T {
@@ -99,15 +97,8 @@
               use:tooltip={language.enableGlobal}
               onclick={async (e) => {
                 e.stopPropagation()
-                const previous = currentModuleStateSnapshot()
                 const enabled = !DBState.db.enabledModules.includes(rmodule.id)
-                if (DBState.db.enabledModules.includes(rmodule.id)) {
-                  DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
-                } else {
-                  DBState.db.enabledModules.push(rmodule.id)
-                }
-                DBState.db.enabledModules = DBState.db.enabledModules
-                dispatchEnableModule(rmodule.id, enabled, previous)
+                setGlobalModuleEnabled(rmodule.id, enabled)
               }}
             >
               <Globe size={18} />
@@ -151,18 +142,7 @@
                 e.stopPropagation()
                 const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
                 if (d) {
-                  const previous = currentModuleStateSnapshot()
-                  if (DBState.db.enabledModules.includes(rmodule.id)) {
-                    DBState.db.enabledModules.splice(
-                      DBState.db.enabledModules.indexOf(rmodule.id),
-                      1,
-                    )
-                    DBState.db.enabledModules = DBState.db.enabledModules
-                  }
-                  const index = DBState.db.modules.findIndex((v) => v.id === rmodule.id)
-                  DBState.db.modules.splice(index, 1)
-                  DBState.db.modules = DBState.db.modules
-                  dispatchDeleteModule(rmodule.id, previous)
+                  deleteGlobalModule(rmodule.id)
                 }
               }}
             >
@@ -216,9 +196,7 @@
   <Button
     className="mt-6"
     onclick={() => {
-      const previous = currentModuleStateSnapshot()
-      DBState.db.modules.push(tempModule)
-      dispatchCreateModule(tempModule, previous)
+      createGlobalModule(cloneJsonValue(tempModule))
       mode = 0
     }}>{language.createModule}</Button
   >
@@ -229,9 +207,7 @@
     <Button
       className="mt-6"
       onclick={() => {
-        const previous = currentModuleStateSnapshot()
-        DBState.db.modules[editModuleIndex] = tempModule
-        dispatchUpdateModule(tempModule.id, toModuleSnapshot(tempModule), previous)
+        updateGlobalModule(tempModule.id, cloneJsonValue(tempModule))
         mode = 0
       }}>{language.editModule}</Button
     >

@@ -3711,11 +3711,29 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(reordered.statusCode).toBe(200)
     expect(reordered.json().event.type).toBe('lorebook.reordered')
 
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks/book-a/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4 },
+    })
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json()).toMatchObject({
+      revision: 5,
+      event: {
+        type: 'lorebook.selected',
+        revision: 5,
+        resource: 'lorebook',
+        id: 'book-a',
+      },
+      selectedLorebookId: 'book-a',
+    })
+
     const deleted = await harness.app.inject({
       method: 'DELETE',
       url: '/api/v1/commands/lorebooks/book-a',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: 4 },
+      payload: { baseRevision: 5 },
     })
     expect(deleted.statusCode).toBe(200)
     expect(deleted.json().event.type).toBe('lorebook.deleted')
@@ -3725,7 +3743,7 @@ describe('Phase 9-4a lorebook commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().revision).toBe(5)
+    expect(bootstrap.json().revision).toBe(6)
     expect(
       bootstrap.json().database.loreBook.map((book: { id: string; name: string }) => ({
         id: book.id,
@@ -3735,9 +3753,15 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(
       harness.commandEvents
         .list()
-        .slice(-4)
+        .slice(-5)
         .map((event) => event.type),
-    ).toEqual(['lorebook.created', 'lorebook.updated', 'lorebook.reordered', 'lorebook.deleted'])
+    ).toEqual([
+      'lorebook.created',
+      'lorebook.updated',
+      'lorebook.reordered',
+      'lorebook.selected',
+      'lorebook.deleted',
+    ])
   })
 
   it('replaces global, character, chat, and module lorebook entry collections', async () => {

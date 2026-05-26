@@ -3225,6 +3225,40 @@ export function registerCommandRoutes(
     }
   })
 
+  app.post('/api/v1/commands/lorebooks/:lorebookId/select', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const result = applyJsonCommandMutation<{ selectedLorebookId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureLorebookDatabase(database)
+          const lorebooks = ensureGlobalLorebookCollection(target)
+          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          target.loreBookPage = index
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookSelected, id: lorebookId },
+            extra: { selectedLorebookId: lorebookId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.put('/api/v1/commands/lorebooks/:lorebookId/entries', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 

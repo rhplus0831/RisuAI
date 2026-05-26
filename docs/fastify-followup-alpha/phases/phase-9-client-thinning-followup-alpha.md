@@ -2,7 +2,7 @@
 
 Date: 2026-05-27
 
-Status: reopened by alpha audit.
+Status: closed by 9A.
 
 ## Goal
 
@@ -52,18 +52,43 @@ Representative blockers:
 
 ## Tasks
 
-- Convert module settings create/edit/delete/global enablement flows to
+- [x] Convert module settings create/edit/delete/global enablement flows to
   command-first or draft-state-first behavior that does not mutate
   `DBState.db` before dispatch.
-- Convert `SideChatList` chat/folder create, fork/copy, delete, fold,
+- [x] Convert `SideChatList` chat/folder create, fork/copy, delete, fold,
   and rename flows away from projection alias mutation before dispatch.
-- Route Hypa/supa memory toggles through the appropriate character
+- [x] Route Hypa/supa memory toggles through the appropriate character
   command or classify them as non-durable with tests and docs.
-- Decide whether `loreBookPage` is durable. If durable, route it through
+- [x] Decide whether `loreBookPage` is durable. If durable, route it through
   a command; if UI-local, update the command map and remove the trusted
   durable-looking write.
-- Add focused tests that run with projection guard enabled and exercise
+- [x] Add focused tests that run with projection guard enabled and exercise
   the affected workflows or their command bridges.
+
+## 9A Closeout
+
+Landed scope:
+
+- Module settings now use command-first helpers for global enablement,
+  create, edit, and delete in Fastify mode. Local mode keeps the old
+  direct mutation behavior.
+- `SideChatList` no longer mutates bound character chat/folder aliases
+  before dispatch in Fastify mode for create, fork/copy, delete, fold,
+  color/name edits, selection, or reorder. Sortable reorder dispatches
+  id-based command payloads derived from DOM order.
+- Hypa/supa memory toggle writes now dispatch a character patch command
+  in Fastify mode.
+- `loreBookPage` is treated as durable lorebook state and now uses
+  `POST /api/v1/commands/lorebooks/:lorebookId/select`.
+
+Remaining notes for future agents:
+
+- The lower sidebar import/export buttons still call the existing
+  import/export helpers and were outside this reopened blocker. Re-audit
+  them only if a later projection-write finding names import workflows.
+- The direct-bind search still reports local-mode mutation helpers and
+  read-only render expressions; inspect the surrounding `canUseServerCommands`
+  branch before treating those hits as reopened blockers.
 
 ## Exit Criteria
 

@@ -772,6 +772,10 @@ export interface ReorderGlobalLorebooksCommandInput extends LorebookCommandInput
   lorebookIds: string[]
 }
 
+export interface SelectGlobalLorebookCommandInput extends LorebookCommandInput {
+  lorebookId: string
+}
+
 export interface ReplaceGlobalLorebookEntriesCommandInput extends LorebookCommandInput {
   lorebookId: string
   entries: LorebookEntrySnapshot[]
@@ -1696,6 +1700,19 @@ export async function reorderGlobalLorebooksCommand(
     body: {
       baseRevision: input.baseRevision,
       lorebookIds: input.lorebookIds,
+    },
+    signal,
+  })
+}
+
+export async function selectGlobalLorebookCommand(
+  input: SelectGlobalLorebookCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedLorebookId: string }>> {
+  return requestCommandJson(`/lorebooks/${encodeURIComponent(input.lorebookId)}/select`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
     },
     signal,
   })

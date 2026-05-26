@@ -226,6 +226,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'lorebook.reordered',
     resource: 'lorebook',
   },
+  lorebookSelected: {
+    type: 'lorebook.selected',
+    resource: 'lorebook',
+  },
   lorebookEntriesReplaced: {
     type: 'lorebook.entries.replaced',
     resource: 'lorebook',

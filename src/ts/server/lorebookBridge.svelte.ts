@@ -14,6 +14,7 @@ import {
   replaceGlobalLorebookEntriesCommand,
   replaceModuleLorebooksCommand,
   runServerCommand,
+  selectGlobalLorebookCommand,
   updateGlobalLorebookCommand,
   type GlobalLorebookSnapshot,
   type LorebookEntrySnapshot,
@@ -152,6 +153,21 @@ export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot):
       reorderGlobalLorebooksCommand({
         baseRevision,
         lorebookIds,
+      }),
+    rollback: () => restoreLorebookState(previous),
+  })
+}
+
+export function dispatchSelectGlobalLorebook(
+  lorebookId: string,
+  previous: LorebookStateSnapshot,
+): void {
+  if (!canUseServerCommands()) return
+  void runServerCommand({
+    command: (baseRevision) =>
+      selectGlobalLorebookCommand({
+        baseRevision,
+        lorebookId,
       }),
     rollback: () => restoreLorebookState(previous),
   })

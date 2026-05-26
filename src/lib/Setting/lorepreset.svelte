@@ -5,10 +5,12 @@
   import { DBState } from 'src/ts/stores.svelte'
   import { SquarePenIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
+  import { canUseServerCommands } from 'src/ts/server/commands'
   import {
     currentLorebookStateSnapshot,
     dispatchCreateGlobalLorebook,
     dispatchDeleteGlobalLorebook,
+    dispatchSelectGlobalLorebook,
     ensureAllClientLorebookIds,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
@@ -24,9 +26,13 @@
   })
 
   function selectLorebook(index) {
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.loreBookPage = index
-    })
+    const lorebookId = DBState.db.loreBook?.[index]?.id
+    if (canUseServerCommands() && lorebookId) {
+      dispatchSelectGlobalLorebook(lorebookId, currentLorebookStateSnapshot())
+      return
+    }
+
+    DBState.db.loreBookPage = index
   }
 
   function renameLorebook(index, name) {

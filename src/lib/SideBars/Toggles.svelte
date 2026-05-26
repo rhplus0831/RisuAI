@@ -13,6 +13,7 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { setCharacterSupaMemory } from 'src/ts/characterCommands'
 
   interface Props {
     chara?: character
@@ -88,6 +89,11 @@
       [`toggle_${key}`]: value,
     }
   }
+
+  function setSupaMemoryValue(value: boolean): void {
+    if (!chara?.chaId) return
+    setCharacterSupaMemory(chara.chaId, value)
+  }
 </script>
 
 {#snippet toggles(items: sidebarToggle[], reverse: boolean = false)}
@@ -103,7 +109,9 @@
         <span>{toggle.value}</span>
         <SelectInput
           className="w-32"
-          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, String(value))}
+          bind:value={
+            () => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, String(value))
+          }
         >
           {#each toggle.options as option, i}
             <OptionInput value={i.toString()}>{option}</OptionInput>
@@ -115,7 +123,9 @@
         <span>{toggle.value}</span>
         <TextInput
           className="w-32"
-          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)}
+          bind:value={
+            () => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)
+          }
         />
       </div>
     {:else if toggle.type === 'textarea'}
@@ -124,7 +134,9 @@
         <TextAreaInput
           className="w-32"
           height="20"
-          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)}
+          bind:value={
+            () => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)
+          }
         />
       </div>
     {:else if toggle.type === 'caption'}
@@ -175,7 +187,12 @@
     {@render toggles(groupedToggles, true)}
     {#if chara && DBState.db.hypaV3}
       <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
-        <CheckInput bind:check={chara.supaMemory} reverse name={language.ToggleHypaMemory} />
+        <CheckInput
+          check={chara.supaMemory}
+          reverse
+          name={language.ToggleHypaMemory}
+          onChange={setSupaMemoryValue}
+        />
       </div>
     {/if}
   </div>
@@ -184,13 +201,17 @@
 
   {#if hasJailbreakPrompt}
     <div class="flex mt-2 items-center">
-    <CheckInput bind:check={jailbreakToggleDraft.value} name={language.jailbreakToggle} />
+      <CheckInput bind:check={jailbreakToggleDraft.value} name={language.jailbreakToggle} />
     </div>
   {/if}
   {@render toggles(groupedToggles)}
   {#if chara && DBState.db.hypaV3}
     <div class="flex mt-2 items-center">
-      <CheckInput bind:check={chara.supaMemory} name={language.ToggleHypaMemory} />
+      <CheckInput
+        check={chara.supaMemory}
+        name={language.ToggleHypaMemory}
+        onChange={setSupaMemoryValue}
+      />
     </div>
   {/if}
 {/if}

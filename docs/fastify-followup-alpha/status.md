@@ -12,11 +12,10 @@ current server schema, command surface, and import/export paths directly.
 
 ## Current Snapshot
 
-- Active work: Phases 3, 6, 8, and 9 have reopened findings.
+- Active work: Phases 3, 6, and 8 have reopened findings.
 - No follow-up found in this audit: Phases 0, 1, 2, 4, 5, and 7.
-- Next default pickup: Phase 9 projection-write blockers, then Phase 6
-  unterminated stream handling. Phase 3 and Phase 8 can proceed in
-  parallel if agents are available.
+- Next default pickup: Phase 6 unterminated stream handling. Phase 3
+  and Phase 8 can proceed in parallel if agents are available.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/` and keep focused scope,
   boundaries, and exit criteria under `phases/`.
@@ -34,7 +33,7 @@ current server schema, command surface, and import/export paths directly.
 | 6 - Server-side generation | Reopened | Unterminated provider SSE tails can still become successful `done` streams. | [`phases/phase-6-generation-followup-alpha.md`](phases/phase-6-generation-followup-alpha.md) |
 | 7 - Server-side prompt assembly | No follow-up | Regenerate, provider guards, stop-trigger payloads, and route-backed fixture coverage still appear complete. | None |
 | 8 - Hypa V3 memory | Reopened | Memory event subscriber failures can break committed memory work. | [`phases/phase-8-memory-followup-alpha.md`](phases/phase-8-memory-followup-alpha.md) |
-| 9 - Client thinning | Reopened | Reachable UI paths still mutate projection state or aliases before command dispatch. | [`phases/phase-9-client-thinning-followup-alpha.md`](phases/phase-9-client-thinning-followup-alpha.md) |
+| 9 - Client thinning | Closed | 9A converted module settings, side chat list, Hypa/supa memory toggles, and lorebook page selection to command-first/draft-first flows. | [`phases/phase-9-client-thinning-followup-alpha.md`](phases/phase-9-client-thinning-followup-alpha.md) |
 
 ## Verification From Audit
 

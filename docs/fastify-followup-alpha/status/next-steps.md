@@ -18,14 +18,18 @@ and add any longer closeout note under `../phases-completed/`.
 
 Recommended order:
 
-1. Phase 9 - projection-write blockers in module settings, side chat
-   list, toggles, and lorebook page selection.
-2. Phase 6 - unterminated provider SSE tails must emit typed provider
+1. Phase 6 - unterminated provider SSE tails must emit typed provider
    errors instead of `done`.
-3. Phase 3 - hub passthrough response-header filtering should match the
+2. Phase 3 - hub passthrough response-header filtering should match the
    shared direct proxy strip set.
-4. Phase 8 - memory event sinks and subscribers must not be able to
+3. Phase 8 - memory event sinks and subscribers must not be able to
    abort committed memory jobs/routes.
+
+Recently closed:
+
+- Phase 9 - 9A converted the reopened projection-write blockers in
+  module settings, `SideChatList`, Hypa/supa memory toggles, and
+  lorebook page selection to command-first or draft-first flows.
 
 ## Focused Verification
 

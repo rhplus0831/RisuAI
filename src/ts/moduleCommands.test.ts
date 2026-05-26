@@ -20,9 +20,12 @@ import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import {
+  createGlobalModule,
+  setGlobalModuleEnabled,
   toggledModuleIds,
   toggleSelectedCharacterModule,
   toggleSelectedChatModule,
+  updateGlobalModule,
 } from './moduleCommands'
 
 interface CapturedFetch {
@@ -64,6 +67,24 @@ function stubCommandFetch(): CapturedFetch[] {
         return jsonResponse({
           revision: 11,
           event: { type: 'character.modules.reordered', revision: 11, resource: 'character' },
+        })
+      }
+      if (url === '/api/v1/commands/modules/enable') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'module.enabled', revision: 11, resource: 'module' },
+        })
+      }
+      if (url === '/api/v1/commands/modules') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'module.created', revision: 11, resource: 'module' },
+        })
+      }
+      if (url === '/api/v1/commands/modules/mod-a') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'module.updated', revision: 11, resource: 'module' },
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -183,6 +204,62 @@ describe('module command projection helpers', () => {
         body: {
           baseRevision: 10,
           moduleIds: ['mod-a', 'mod-b'],
+        },
+      },
+    ])
+  })
+
+  it('routes global module edits through commands under the projection guard', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.enabledModules.push('direct')
+    }).toThrow()
+
+    setGlobalModuleEnabled('mod-a', true)
+    await waitForCallCount(calls, 2)
+    createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
+    await waitForCallCount(calls, 3)
+    updateGlobalModule('mod-a', { id: 'mod-a', name: 'Module A renamed', description: '' })
+
+    expect(DBState.db.enabledModules).toEqual([])
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
+
+    await waitForCallCount(calls, 4)
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        authHeader: 'module-command-token',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/modules/enable',
+        method: 'POST',
+        authHeader: 'module-command-token',
+        body: {
+          baseRevision: expect.any(Number),
+          moduleId: 'mod-a',
+          enabled: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/modules',
+        method: 'POST',
+        authHeader: 'module-command-token',
+        body: {
+          baseRevision: expect.any(Number),
+          module: { id: 'mod-c', name: 'Module C', description: '' },
+        },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a',
+        method: 'PATCH',
+        authHeader: 'module-command-token',
+        body: {
+          baseRevision: expect.any(Number),
+          patch: { name: 'Module A renamed', description: '' },
         },
       },
     ])

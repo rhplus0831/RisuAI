@@ -111,6 +111,60 @@ export function dispatchEnableModule(
   )
 }
 
+export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void {
+  const previous = currentModuleStateSnapshot()
+  if (canUseServerCommands()) {
+    dispatchEnableModule(moduleId, enabled, previous)
+    return
+  }
+
+  if (enabled) {
+    if (!DBState.db.enabledModules.includes(moduleId)) {
+      DBState.db.enabledModules.push(moduleId)
+    }
+  } else {
+    DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => id !== moduleId)
+  }
+  ReloadGUIPointer.set(Math.random())
+}
+
+export function createGlobalModule(module: RisuModule): void {
+  const previous = currentModuleStateSnapshot()
+  if (canUseServerCommands()) {
+    dispatchCreateModule(module, previous)
+    return
+  }
+
+  DBState.db.modules.push(module)
+  ReloadGUIPointer.set(Math.random())
+}
+
+export function updateGlobalModule(moduleId: string, module: RisuModule): void {
+  const previous = currentModuleStateSnapshot()
+  if (canUseServerCommands()) {
+    dispatchUpdateModule(moduleId, toModuleSnapshot(module), previous)
+    return
+  }
+
+  const index = DBState.db.modules.findIndex((candidate) => candidate.id === moduleId)
+  if (index !== -1) {
+    DBState.db.modules[index] = module
+    ReloadGUIPointer.set(Math.random())
+  }
+}
+
+export function deleteGlobalModule(moduleId: string): void {
+  const previous = currentModuleStateSnapshot()
+  if (canUseServerCommands()) {
+    dispatchDeleteModule(moduleId, previous)
+    return
+  }
+
+  DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => id !== moduleId)
+  DBState.db.modules = DBState.db.modules.filter((module) => module.id !== moduleId)
+  ReloadGUIPointer.set(Math.random())
+}
+
 export function dispatchReorderModules(previous: ModuleStateSnapshot): void {
   runModuleCommand(
     (baseRevision) =>
