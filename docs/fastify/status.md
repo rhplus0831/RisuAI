@@ -15,20 +15,18 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-8a multipart `.risu` import route. The server now
-  accepts one uploaded `.risu` file at `/api/v1/import/risusave`, decodes it
-  through the server codec, applies the normalized database through repository
-  import helpers, runs legacy Hypa V3 memory replacement, and reports
-  unsupported remote/cache-only block references without browser cache
-  recovery.
-- Current gap: repository `.risu` export route wiring is not connected to the
-  9-7e export adapter yet.
-- Next default pickup: 9-8b, repository `.risu` export route.
-- Last recorded focused baselines after 9-8a: focused Fastify
+- Last landed work: 9-8b repository `.risu` export route. The server now
+  serves `/api/v1/export/risusave` as downloadable `.risu` bytes from the
+  repository-backed export adapter, with RISUSAVE block export by default and
+  explicit legacy envelope support.
+- Current gap: exported `.risu` files still preserve server asset ids as JSON
+  references only; no asset reference walking or bundle inclusion exists yet.
+- Next default pickup: 9-8c, asset reference walker.
+- Last recorded focused baselines after 9-8b: focused Fastify
   `risuSaveCodec.test.ts` passed with 20 tests, the Fastify API suite passed
-  with 65 files and 1147 tests, and `pnpm check` was clean.
+  with 66 files and 1153 tests, and `pnpm check` was clean.
   Broader baselines remain: 9-6c for full client/API test commands and
-  `pnpm check`, and 9-5d for the last full `pnpm build`.
+  9-5d for the last full `pnpm build`.
 
 ## Start Here
 
@@ -55,7 +53,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-8a landed; continue with 9-8b repository export route.        |
+| Client thinning                             | Active; 9-8b landed; continue with 9-8c asset reference walker.         |
 
 ## Maintenance Rules
 

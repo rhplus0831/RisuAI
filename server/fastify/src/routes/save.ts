@@ -11,12 +11,25 @@ import { requireAuth } from '../http.js'
 import { ValidationError, applyImport } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRows } from '../memoryLegacyImport.js'
 import { decodeRisuSaveImportSnapshot } from '../risuSave/importSnapshot.js'
+import {
+  encodeRepositoryRisuSaveBlockExport,
+  encodeRepositoryRisuSaveLegacyExport,
+} from '../risuSave/exportSnapshot.js'
+import type { LegacyRisuSaveEnvelopeKind } from '../risuSave/legacyEnvelopeCodec.js'
 
 interface ImportBody {
   database?: unknown
 }
 
+type ExportEnvelope = LegacyRisuSaveEnvelopeKind | 'risusave-blocks'
+
+interface ExportQuery {
+  envelope?: unknown
+  compression?: unknown
+}
+
 const EMPTY_ASSET_REPORT = { referencedCount: 0, missingCount: 0, orphanedCount: 0 }
+const EXPORT_FILENAME = 'database.risu'
 
 export function registerSaveRoutes(
   app: FastifyInstance,
@@ -53,6 +66,58 @@ export function registerSaveRoutes(
       throw err
     }
   })
+
+  app.get<{ Querystring: ExportQuery }>('/api/v1/export/risusave', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const options = parseExportQuery(req.query)
+      const bytes =
+        options.envelope === 'risusave-blocks'
+          ? encodeRepositoryRisuSaveBlockExport(dataDir, { compression: options.compression })
+          : encodeRepositoryRisuSaveLegacyExport(dataDir, options.envelope)
+      reply.header('content-type', 'application/octet-stream')
+      reply.header('content-disposition', `attachment; filename="${EXPORT_FILENAME}"`)
+      return reply.send(Buffer.from(bytes))
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      throw err
+    }
+  })
+}
+
+function parseExportQuery(query: ExportQuery): {
+  envelope: ExportEnvelope
+  compression: boolean
+} {
+  const envelope = readExportEnvelope(query.envelope)
+  const compression = readOptionalBoolean(query.compression, 'compression') ?? false
+  if (envelope !== 'risusave-blocks' && query.compression !== undefined) {
+    throw new ValidationError('compression is only supported for risusave-blocks exports')
+  }
+  return { envelope, compression }
+}
+
+function readExportEnvelope(value: unknown): ExportEnvelope {
+  if (value === undefined) return 'risusave-blocks'
+  if (
+    value === 'risusave-blocks' ||
+    value === 'legacy-raw' ||
+    value === 'legacy-compressed' ||
+    value === 'legacy-stream'
+  ) {
+    return value
+  }
+  throw new ValidationError('envelope must be risusave-blocks or a legacy .risu envelope')
+}
+
+function readOptionalBoolean(value: unknown, label: string): boolean | undefined {
+  if (value === undefined) return undefined
+  if (value === true || value === 'true') return true
+  if (value === false || value === 'false') return false
+  throw new ValidationError(`${label} must be true or false`)
 }
 
 async function readUploadedRisuSave(req: FastifyRequest): Promise<Uint8Array> {

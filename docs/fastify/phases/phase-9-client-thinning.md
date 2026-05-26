@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-8a - Multipart `.risu` import route**. Next pickup:
-**9-8b - Repository `.risu` export route**.
+**9-8b - Repository `.risu` export route**. Next pickup:
+**9-8c - Asset reference walker**.
 
 ## Goal
 
@@ -343,6 +343,8 @@ surfaces.
   - **9-8b - Repository `.risu` export route.** Add
     `/api/v1/export/risusave` using the repository-backed export adapter. No
     ZIP bundle or asset file inclusion beyond codec references.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-8b.md`](../phases-completed/phase-9-client-thinning-9-8b.md).
   - **9-8c - Asset reference walker.** Add a pure server helper that scans
     persisted database state for real Fastify asset ids and reports referenced,
     missing, and orphaned assets without over-including stored assets.
