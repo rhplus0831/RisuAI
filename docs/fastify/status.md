@@ -15,15 +15,15 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-6e provider secret masking. Fastify bootstrap masks
-  provider/media/memory secret fields before returning the browser projection,
-  and settings commands preserve masked placeholders while accepting explicit
-  replacement secrets.
-- Current gap: server-side `.risu` codec core can start now that the
-  server-backed browser projection no longer exposes provider secrets.
-- Next default pickup: 9-7a, `.risu` fixture corpus and codec harness.
-- Last recorded focused baselines after 9-6e: `pnpm check` clean and
-  focused Fastify bootstrap/command tests passed. Last full client test
+- Last landed work: 9-7a `.risu` fixture corpus and codec harness. The
+  server-side fixture harness now covers legacy raw/compressed/stream envelopes,
+  RISUSAVE block saves, malformed inputs, and remote/cache-only references
+  without importing browser storage or Tauri modules.
+- Current gap: the real server-safe legacy envelope codec API has not been
+  ported yet; 9-7a only added fixture harness support.
+- Next default pickup: 9-7b, legacy envelope codec port.
+- Last recorded focused baselines after 9-7a: `pnpm check` clean and the
+  focused Fastify `.risu` fixture harness test passed. Last full client test
   command, `pnpm api:test`, and `pnpm build` baselines remain the 9-6c
   records.
 
@@ -45,14 +45,14 @@ Completed phase detail and old landed-slice logs live in
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                        |
-| ------------------------------------------- | ---------------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                          |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                   |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
-| Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
-| Hypa V3 memory                              | Closed; closeout notes archived.                                             |
-| Client thinning                             | Active; 9-6e landed; continue with 9-7a `.risu` codec fixtures.              |
+| Workstream                                  | State                                                                   |
+| ------------------------------------------- | ----------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                     |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                              |
+| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
+| Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
+| Hypa V3 memory                              | Closed; closeout notes archived.                                        |
+| Client thinning                             | Active; 9-7a landed; continue with 9-7b legacy envelope codec port.     |
 
 ## Maintenance Rules
 

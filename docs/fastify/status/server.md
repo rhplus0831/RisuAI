@@ -50,7 +50,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-current pickup is 9-7a, `.risu` fixture corpus and codec harness in
+current pickup is 9-7b, legacy `.risu` envelope codec port in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-6e - Provider secret masking**. Next pickup:
-**9-7a - `.risu` fixture corpus and codec harness**.
+**9-7a - `.risu` fixture corpus and codec harness**. Next pickup:
+**9-7b - Legacy envelope codec port**.
 
 ## Goal
 
@@ -311,6 +311,8 @@ surfaces.
   - **9-7a - `.risu` fixture corpus and codec harness.** Add server-side
     fixtures for legacy raw/compressed/stream envelopes and RISUSAVE block
     saves. No import/export routes or repository writes.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-7a.md`](../phases-completed/phase-9-client-thinning-9-7a.md).
   - **9-7b - Legacy envelope codec port.** Port raw and compressed legacy
     envelope encode/decode to server-safe APIs. No RISUSAVE block support yet.
   - **9-7c - RISUSAVE block codec port.** Implement server-safe block
