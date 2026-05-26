@@ -15,6 +15,10 @@ import {
   encodeRepositoryRisuSaveBlockExport,
   encodeRepositoryRisuSaveLegacyExport,
 } from '../risuSave/exportSnapshot.js'
+import {
+  buildRepositoryRisuSaveAssetReport,
+  summarizeRisuSaveAssetReport,
+} from '../risuSave/assetReferences.js'
 import type { LegacyRisuSaveEnvelopeKind } from '../risuSave/legacyEnvelopeCodec.js'
 
 interface ImportBody {
@@ -28,7 +32,6 @@ interface ExportQuery {
   compression?: unknown
 }
 
-const EMPTY_ASSET_REPORT = { referencedCount: 0, missingCount: 0, orphanedCount: 0 }
 const EXPORT_FILENAME = 'database.risu'
 
 export function registerSaveRoutes(
@@ -42,7 +45,7 @@ export function registerSaveRoutes(
     try {
       if (req.isMultipart()) {
         const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req))
-        const { revision } = applyImportedDatabase(db, dataDir, snapshot.database)
+        const { revision, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database)
         return {
           revision,
           envelope: snapshot.envelope,
@@ -50,14 +53,14 @@ export function registerSaveRoutes(
             unsupportedReferenceCount: snapshot.unsupportedReferences.length,
             unsupportedReferences: snapshot.unsupportedReferences,
           },
-          assetReport: EMPTY_ASSET_REPORT,
+          assetReport,
         }
       }
 
       const body = (req.body ?? {}) as ImportBody
       normalizeJsonImportDatabase(body.database)
-      const { revision } = applyImportedDatabase(db, dataDir, body.database)
-      return { revision, assetReport: EMPTY_ASSET_REPORT }
+      const { revision, assetReport } = applyImportedDatabase(db, dataDir, body.database)
+      return { revision, assetReport }
     } catch (err) {
       if (err instanceof ValidationError) {
         reply.code(400)
@@ -168,8 +171,11 @@ function applyImportedDatabase(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
-): { revision: number } {
+): { revision: number; assetReport: ReturnType<typeof summarizeRisuSaveAssetReport> } {
   const result = applyImport(db, dataDir, database)
   replaceLegacyHypaV3MemoryRows(db, database)
-  return result
+  return {
+    ...result,
+    assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir)),
+  }
 }

@@ -12,40 +12,38 @@ shapes.
 
 ## Last Done
 
-**9-8b - Repository `.risu` export route** is the latest landed slice.
+**9-8c - Asset reference walker** is the latest landed slice.
 
-- `GET /api/v1/export/risusave` is auth-gated and returns downloadable
-  `database.risu` bytes with `application/octet-stream`.
-- The route uses the repository-backed export adapter in
-  `server/fastify/src/risuSave/exportSnapshot.ts`. RISUSAVE block export is
-  the default, and the small query surface supports `envelope=legacy-raw`,
-  `legacy-compressed`, `legacy-stream`, or `risusave-blocks`; `compression`
-  is block-export-only.
-- Missing or malformed persisted databases return `400` validation responses.
-- Server asset ids are preserved as JSON references only. No asset walking,
-  asset-byte reads, ZIP bundles, browser cache, localForage, Tauri remote,
-  OPFS, AutoStorage, or Svelte database state was added.
-- Focused route coverage in
-  `server/fastify/__tests__/risuSaveExportRoute.test.ts` proves default block
-  download behavior, compressed block export, legacy export, auth, invalid
-  query rejection, missing persisted database rejection, malformed persisted
-  database rejection, and asset-id reference preservation.
+- Added the pure server helper in
+  `server/fastify/src/risuSave/assetReferences.ts`.
+- The helper scans current Phase 9 server asset-id fields and compares them
+  with repository asset metadata, returning referenced, missing, and orphaned
+  asset details plus compact counts.
+- Covered character images, emotion/additional assets, VITS files, character
+  card assets, GPT-SoVITS reference audio ids, prebuilt exclude ids, module
+  assets, user icon, custom background, persona icons, folder images, and bot
+  preset images.
+- The walker intentionally scans known fields only; it does not recursively
+  include arbitrary plugin/custom JSON strings.
+- `POST /api/v1/import/risusave` now returns populated `assetReport` counts
+  after JSON and multipart imports.
+- No asset-byte reads, ZIP bundles, bundle export route, browser cache,
+  localForage, Tauri remote, OPFS, AutoStorage, or Svelte database state was
+  added.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-8c - Asset reference walker**.
+Immediate pickup: **9-8d - Bundle export route**.
 
-- Add a pure server helper that scans the current persisted database for
-  Fastify server asset ids and compares them with repository asset metadata.
-- Report referenced, missing, and orphaned asset ids without over-including
-  stored assets. Keep the helper independent from HTTP, ZIP writing, browser
-  caches, Tauri remotes, OPFS, AutoStorage, localForage, and Svelte database
-  state.
-- Cover character images, emotion/additional assets, VITS files, character
-  card assets, user icon, custom background, persona icons, folder images,
-  bot preset images, and any other known Phase 9 server asset reference fields.
-- Keep bundle export route wiring and asset-byte inclusion in 9-8d.
-- Treat the scan target as the current Phase 9 schema. Do not add
+- Add `/api/v1/export/bundle` using the 9-8b repository `.risu` export and the
+  9-8c asset walker.
+- Include the `.risu` export, a manifest/report, and only walked asset files
+  that exist in repository asset metadata and on disk.
+- Surface missing asset references in the bundle report; do not silently add
+  orphaned stored assets.
+- Keep browser cache, localForage, Tauri remote, OPFS, AutoStorage, and Svelte
+  database state out of the server bundle path.
+- Treat the bundle target as the current Phase 9 schema. Do not add
   compatibility migrations for intermediate Fastify shapes.
 
 ## Implementation Notes
@@ -83,13 +81,12 @@ Immediate pickup: **9-8c - Asset reference walker**.
 
 ## Later Queue
 
-1. 9-8c - Asset reference walker.
-2. 9-8d - Bundle export route.
-3. 9-9a - Server-backed browser smoke harness.
-4. 9-9b - Generation and memory fixture closeout.
-5. 9-9c - Server-backed storage-write audit.
-6. 9-9d - Manual Fastify web and Tauri local verification.
-7. 9-9e - Phase 9 docs closeout.
+1. 9-8d - Bundle export route.
+2. 9-9a - Server-backed browser smoke harness.
+3. 9-9b - Generation and memory fixture closeout.
+4. 9-9c - Server-backed storage-write audit.
+5. 9-9d - Manual Fastify web and Tauri local verification.
+6. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -102,11 +99,11 @@ Immediate pickup: **9-8c - Asset reference walker**.
 
 ## Verification
 
-For the current 9-8c slice, start with focused asset-walker coverage plus
-the export/import route and `.risu` codec coverage:
+For the current 9-8d slice, start with focused bundle-route coverage plus
+the asset walker, export/import route, and `.risu` codec coverage:
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts
 pnpm api:test -- server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 pnpm check
 ```
@@ -120,6 +117,15 @@ pnpm test
 pnpm api:test
 pnpm build
 ```
+
+Last recorded focused baseline after 9-8c:
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`
+  - 2 files and 23 Fastify `.risu` codec / asset-reference tests passed.
+- `pnpm api:test -- server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
+  - command selected the full Fastify API suite: 67 files and 1157 tests
+    passed.
+- `pnpm check` - clean.
 
 Last recorded focused baseline after 9-8b:
 
@@ -161,7 +167,7 @@ Last recorded broader baselines:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-8b.md`](../phases-completed/phase-9-client-thinning-9-8b.md)
+  [`../phases-completed/phase-9-client-thinning-9-8c.md`](../phases-completed/phase-9-client-thinning-9-8c.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

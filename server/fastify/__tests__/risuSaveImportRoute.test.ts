@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
+import { writePersisted } from '../src/repository.js'
 
 interface Harness {
   app: FastifyInstance
@@ -97,6 +98,38 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.json()).toEqual({
       revision: 1,
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
+    })
+  })
+
+  it('reports referenced, missing, and orphaned server assets after JSON imports', async () => {
+    const present = 'a'.repeat(64)
+    const missing = 'b'.repeat(64)
+    const orphaned = 'c'.repeat(64)
+    writePersisted(harness.dataDir, {
+      _version: 1,
+      database: null,
+      assets: [
+        { id: present, ext: 'png', size: 12, contentType: 'image/png' },
+        { id: orphaned, ext: 'webp', size: 44, contentType: 'image/webp' },
+      ],
+    })
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          version: 1,
+          userIcon: present,
+          characters: [{ chaId: 'char-a', name: 'A', image: missing }],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toEqual({
+      revision: 1,
+      assetReport: { referencedCount: 2, missingCount: 1, orphanedCount: 1 },
     })
   })
 
