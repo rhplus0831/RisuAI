@@ -28,6 +28,14 @@ stream-job responses can preserve headers the direct proxy removes.
   headers that the direct proxy strips.
 - Add focused route or unit tests for stream-job header filtering.
 
+## Session Slices
+
+- 3A - Proxy response-header alignment. Extract or share the response
+  header filter used by direct proxy and stream jobs, or document a
+  deliberate difference in tests. Cover direct proxy behavior,
+  stream-job `upstream_headers`, and the WebSocket/route event path in
+  one focused session.
+
 ## Exit Criteria
 
 - Direct proxy and stream-job proxy header behavior is intentionally

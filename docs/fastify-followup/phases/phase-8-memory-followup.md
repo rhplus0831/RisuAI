@@ -44,6 +44,19 @@ events, and follow-up summary jobs.
 - Add regression tests for custom embedding follow-ups, progress event
   delivery, and no-embedding/no-summary chunk diagnostics.
 
+## Session Slices
+
+- 8A - Custom embedding follow-up routing. Preserve a stable repository
+  and job model key for custom embeddings, pass the custom wire model
+  separately to the adapter, and prove prompt-time and deferred jobs call
+  the intended custom model.
+- 8B - Production memory progress events. Wire memory job progress into
+  `/api/v1/events` and the browser subscriber, or document a separate
+  production subscriber path with tests that exercise it.
+- 8C - Missing-summary diagnostics. Update diagnostics and follow-up
+  enqueue logic so chunks missing both embedding and summary still
+  schedule summary jobs, with focused no-embedding/no-summary coverage.
+
 ## Exit Criteria
 
 - Custom Hypa V3 embedding settings work for prompt-time selection and
@@ -56,8 +69,8 @@ events, and follow-up summary jobs.
 ## Verification
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/memoryJobs.test.ts server/fastify/__tests__/assemble.test.ts
-pnpm api:test -- server/fastify/__tests__/memoryJobs.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/assemble.test.ts
+pnpm api:test -- server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts
 ```
 
 ## References

@@ -27,6 +27,37 @@ Phase 6 can close independently but should land before broad generation closeout
 Phase 0 and Phase 3 cleanup can land independently.
 ```
 
+## Session Slice Index
+
+Each slice is intended to fit in one focused work session with its own
+implementation, tests, and handoff update.
+
+| Slice | Phase | Scope |
+| ----- | ----- | ----- |
+| 9A | 9 | Provider routing and model scalar settings. |
+| 9B | 9 | OpenRouter, auxiliary model, and separate-parameter selectors. |
+| 9C | 9 | Image provider settings. |
+| 9D | 9 | Memory and audio provider settings. |
+| 9E | 9 | Persona, display/theme, global regex, lore preset, and bot preset editors. |
+| 9F | 9 | Plugin, custom model, and advanced setting editors. |
+| 9G | 9 | Character core profile, media, and basic option editors. |
+| 9H | 9 | Character lore, script, prompt, TTS, and chat-name editors. |
+| 9I | 9 | Sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API write classification. |
+| 9J | 9 | Final direct-write sweep and closeout. |
+| 7A | 7 | Browser regenerate request wiring. |
+| 7B | 7 | Server regenerate assembly semantics. |
+| 7C | 7 | `/chat` provider dispatch guards. |
+| 7D | 7 | Stop-trigger mutation payload delivery. |
+| 7E | 7 | Route-backed fixture coverage. |
+| 8A | 8 | Custom embedding follow-up routing. |
+| 8B | 8 | Production memory progress events. |
+| 8C | 8 | Missing-summary diagnostics. |
+| 6A | 6 | Stream error contract and OpenAI-compatible path. |
+| 6B | 6 | Anthropic, Mistral, and Gemini stream failures. |
+| 6C | 6 | Ollama and final stream audit. |
+| 0A | 0 | Google Drive public artifact removal. |
+| 3A | 3 | Proxy response-header alignment. |
+
 ## No Follow-Up Found
 
 The audit did not identify remaining tasks for Phases 1, 2, 4, or 5.

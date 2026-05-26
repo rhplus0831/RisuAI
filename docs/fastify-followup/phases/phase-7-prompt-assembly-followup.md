@@ -46,6 +46,27 @@ and dispatch.
 - Replace mocked fixture expectations with route-backed coverage for at
   least send, continue, regenerate, preview, and preview-prompt.
 
+## Session Slices
+
+- 7A - Browser regenerate request wiring. Teach the client server-backed
+  send path to send `mode: "regenerate"` with `regenerateMessageId`, and
+  add focused client tests for the request shape. Stop before changing
+  assembly semantics if that becomes large.
+- 7B - Server regenerate assembly semantics. Consume
+  `regenerateMessageId` in assembly, reconstruct the local regenerate
+  transcript/mutation behavior, and reject invalid message IDs with the
+  existing typed route error style.
+- 7C - `/chat` provider dispatch guards. Block local-only or deferred
+  provider families from falling through to OpenAI-compatible dispatch,
+  covering NovelAI text, NovelList, Ooba OAI-compatible, plugin, and
+  local provider families.
+- 7D - Stop-trigger mutation payload delivery. Ensure route streaming
+  emits the assembly-produced `message_patch` and restoration metadata
+  before the terminal error or done frame.
+- 7E - Route-backed fixture coverage. Replace seeded prompt snapshots
+  with real Fastify route-backed fixture coverage for send, continue,
+  regenerate, preview, and preview-prompt.
+
 ## Exit Criteria
 
 - Regenerate works through server prompt assembly and provider dispatch
@@ -60,7 +81,7 @@ and dispatch.
 ## Verification
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generationChat.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerTransport.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerTransport.test.ts
 pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
 ```
 

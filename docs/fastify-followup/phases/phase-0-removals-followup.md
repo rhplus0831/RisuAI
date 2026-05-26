@@ -25,6 +25,13 @@ it into built assets even though Google Drive sync is listed as removed.
 - Add or update a focused test or build assertion if the project already
   has a public-asset inventory guard.
 
+## Session Slices
+
+- 0A - Google Drive public artifact removal. Delete the public function
+  file, remove only live build/deploy references that keep it reachable,
+  rerun the focused search, and run the build. This is intentionally a
+  single cleanup session.
+
 ## Exit Criteria
 
 - No tracked public asset exposes the Google Drive OAuth exchange route.

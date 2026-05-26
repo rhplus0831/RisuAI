@@ -6,8 +6,8 @@ Status: reopened by audit.
 
 ## Goal
 
-Make streaming `/completion` failures visible and typed instead of
-turning upstream failures into empty successful streams.
+Make streaming `/api/v1/generate/completion` failures visible and typed
+instead of turning upstream failures into empty successful streams.
 
 ## Audit Finding
 
@@ -31,10 +31,24 @@ no useful error.
 - Add focused tests for upstream 500, upstream invalid stream body, and
   missing upstream body.
 
+## Session Slices
+
+- 6A - Stream error contract and OpenAI-compatible path. Add the typed
+  provider error frame or pre-header failure path, serialize it in
+  `/api/v1/generate/completion`, and update OpenAI stream handling for
+  upstream non-OK, invalid stream body, and missing body cases.
+- 6B - Anthropic, Mistral, and Gemini stream failures. Apply the chosen
+  6A semantics to these SSE-style stream providers and add provider or
+  route tests that prove they cannot finish as empty success streams.
+- 6C - Ollama and final stream audit. Apply the chosen semantics to the
+  NDJSON stream path, rerun a grep over all `run*Stream` providers for
+  silent `return` branches, and close any remaining gaps found by that
+  audit.
+
 ## Exit Criteria
 
-- `/api/v1/completion` streaming callers receive a typed error event or
-  non-200 HTTP response for upstream failures.
+- `/api/v1/generate/completion` streaming callers receive a typed error
+  event or non-200 HTTP response for upstream failures.
 - No provider stream can silently finish as a successful empty
   generation after an upstream failure.
 - Existing token and done SSE event names remain compatible with current
@@ -43,8 +57,8 @@ no useful error.
 ## Verification
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.test.ts
-pnpm api:test -- server/fastify/__tests__/generation.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts
+pnpm api:test -- server/fastify/__tests__/generation.completion.test.ts
 ```
 
 ## References

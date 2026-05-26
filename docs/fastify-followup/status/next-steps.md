@@ -11,59 +11,52 @@ Fastify shapes.
 
 ## Immediate Pickup
 
-1. Continue Phase 9 client thinning.
-   - Continue the broader Fastify-web direct `DBState.db` write audit
-     beyond the named guard and module-selection slices landed on
-     2026-05-26.
-   - Landed 2026-05-26: Bot/Ooba settings for `ooba`,
-     `reverseProxyOobaArgs`, and `localStopStrings` now use
-     `createServerBackedSettingDraft` so nested setting controls bind to
-     local drafts and dispatch grouped settings commands.
-   - Landed 2026-05-26: Bot parameter settings for `NAIsettings`,
-     `ainconfig`, `bias`, and `additionalParams` now use
-     `createServerBackedSettingDraft` and route through grouped provider
-     settings commands.
-   - Landed 2026-05-26: Prompt settings and the prompt-template editor now
-     edit local drafts and sync through `patchPromptSettingsCommand` /
-     prompt item commands with trusted optimistic projection writes.
-   - Next good audit targets are the remaining settings and editor
-     binding surfaces found by `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`,
-     especially the rest of Bot settings (prompt-format fields),
-     OtherBot media / memory settings (`sdConfig`, `NAIImgConfig`, `comfyConfig`,
-     `openaiCompatImage`, `wavespeedImage`, `hypaCustomSettings`),
-     `CharConfig`, plugin settings, lore presets, and sidebar toggles.
-   - Landed 2026-05-26: `.risu` import/export routes emit
-     `state.imported` / `state.exported`, and `pnpm smoke:fastify-browser`
-     covers multipart `.risu` import plus direct projection-write
-     rejection.
-   - Landed 2026-05-26: module menu chat/character toggles dispatch
-     chat update and character-module reorder commands under the
-     projection guard.
+Pick one slice per work session. Each slice should leave the worktree in
+a reviewable state with focused tests, update the affected phase file,
+and add any longer closeout note under `../phases-completed/`.
 
-2. Close Phase 7 server prompt assembly parity gaps.
-   - Implement the server regenerate path end to end.
-   - Reject or defer local-only provider families on `/chat` instead of
-     falling through to OpenAI-compatible dispatch.
-   - Emit stop-trigger mutation/restoration payloads before terminal
-     errors.
-   - Make fixture coverage exercise the real Fastify assembly route for
-     continue and regenerate cases.
+1. Phase 9 client thinning remains first because it protects all
+   Fastify-served browser work from silent client persistence.
+   - 9A: provider routing and model scalar settings in
+     `BotSettings.svelte`.
+   - 9B: OpenRouter, auxiliary model, and separate-parameter selectors.
+   - 9C: image provider settings in `OtherBotSettings.svelte`.
+   - 9D: memory and audio provider settings in `OtherBotSettings.svelte`
+     and `PlaygroundEmbedding.svelte`.
+   - 9E: persona, display/theme, global regex, lore preset, and bot
+     preset editors.
+   - 9F: plugin settings, custom models, and advanced setting editors.
+   - 9G: character core profile, media, and basic option editors.
+   - 9H: character lore, script, prompt, TTS, and chat-name editors.
+   - 9I: sidebar toggles, custom sidebar/loadout helpers, welcome setup,
+     and runtime API write classification.
+   - 9J: final direct-write sweep, allowlist gaps, browser smoke, and
+     Phase 9 closeout.
 
-3. Close Phase 8 memory ownership gaps.
-   - Preserve custom embedding routing for follow-up jobs.
-   - Connect memory job progress events to the production event stream,
-     or document and test a different production subscriber path.
-   - Enqueue summary follow-ups for chunks that lack both a summary and
-     an embedding.
+2. Phase 7 prompt assembly can proceed slice-by-slice after or alongside
+   Phase 9 slices that touch the same browser chat path.
+   - 7A: browser regenerate request wiring.
+   - 7B: server regenerate assembly semantics.
+   - 7C: `/chat` provider dispatch guards.
+   - 7D: stop-trigger mutation payload delivery.
+   - 7E: route-backed fixture coverage for send, continue, regenerate,
+     preview, and preview-prompt.
 
-4. Close Phase 6 streaming error semantics.
-   - Make upstream streaming failures produce a typed SSE error or a
-     pre-stream HTTP failure, never an empty successful stream.
+3. Phase 8 memory ownership has three independent server slices.
+   - 8A: stable custom embedding job model key.
+   - 8B: production memory progress event delivery.
+   - 8C: missing-summary follow-ups for chunks with no embedding yet.
 
-5. Close Phase 0 and Phase 3 cleanup.
-   - Remove the tracked Google Drive OAuth artifact.
-   - Share or align proxy response header filtering for stream-job and
-     direct proxy paths.
+4. Phase 6 streaming errors should land before broad generation
+   closeout.
+   - 6A: streaming error frame contract plus OpenAI-compatible failure
+     handling.
+   - 6B: Anthropic, Mistral, and Gemini stream failure alignment.
+   - 6C: Ollama stream failure alignment and final provider audit.
+
+5. Phase 0 and Phase 3 are small independent cleanup slices.
+   - 0A: Google Drive public artifact removal.
+   - 3A: shared or explicitly aligned proxy response-header filtering.
 
 ## Suggested Verification
 
@@ -105,20 +98,20 @@ pnpm smoke:fastify-browser
 Focused Phase 7:
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generationChat.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerTransport.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerTransport.test.ts
 pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
 ```
 
 Focused Phase 8:
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/memoryJobs.test.ts server/fastify/__tests__/assemble.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/assemble.test.ts
 ```
 
 Focused Phase 6:
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts
 ```
 
 Broad closeout:

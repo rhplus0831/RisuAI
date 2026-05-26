@@ -16,6 +16,9 @@ directly.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
 - Highest-risk gap: Phase 9 still needs a broader direct-write audit
   beyond the named guard slice.
+- The reopened work is now split into session-sized slices. Use
+  `status/next-steps.md` for pickup order and the affected phase file
+  for slice scope, boundaries, and exit criteria.
 - Landed 2026-05-26: Phase 9 import/export event semantics now emit
   `state.imported` / `state.exported` in line with the command map, and
   Fastify browser smoke covers multipart `.risu` import.
@@ -32,7 +35,8 @@ directly.
 - Landed 2026-05-26: Phase 9 Prompt settings and prompt-template editor
   writes now use local command-backed drafts/trusted optimistic projection
   writes instead of binding directly to the Fastify projection.
-- Next default pickup: Phase 9 remaining direct-write sweep.
+- Next default pickup: Phase 9 Slice 9A, provider routing and model
+  scalar settings.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.
 
@@ -46,7 +50,7 @@ directly.
 | 3 - Proxy migration                     | Reopened     | Stream-job proxy response header filtering diverges from direct proxy filtering.                                        | [`phases/phase-3-proxy-followup.md`](phases/phase-3-proxy-followup.md)                     |
 | 4 - sendChat tests                      | No follow-up | Audit found test scaffold complete for the migration slice.                                                             | None                                                                                       |
 | 5 - sendChat extraction                 | No follow-up | Audit found browser extraction baseline complete.                                                                       | None                                                                                       |
-| 6 - Server-side generation              | Reopened     | `/completion` streaming provider failures can be emitted as empty successful SSE streams.                               | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |
+| 6 - Server-side generation              | Reopened     | `/api/v1/generate/completion` streaming provider failures can be emitted as empty successful SSE streams.               | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |
 | 7 - Server-side prompt assembly         | Reopened     | Regenerate, deferred/local provider guards, stop-trigger mutations, and route-level fixture coverage remain incomplete. | [`phases/phase-7-prompt-assembly-followup.md`](phases/phase-7-prompt-assembly-followup.md) |
 | 8 - Hypa V3 memory                      | Reopened     | Custom embedding model routing, memory progress events, and missing-summary follow-ups need fixes.                      | [`phases/phase-8-memory-followup.md`](phases/phase-8-memory-followup.md)                   |
 | 9 - Client thinning                     | Reopened     | Remaining direct-write coverage does not yet meet the Phase 9 contract.                                                 | [`phases/phase-9-client-thinning-followup.md`](phases/phase-9-client-thinning-followup.md) |

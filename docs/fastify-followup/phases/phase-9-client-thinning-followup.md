@@ -68,6 +68,66 @@ import/export events match the command map.
 - Event wiring is complete for `state.imported` and `state.exported`.
 - Browser smoke/storage audit covers `.risu` import.
 
+## Session Slices
+
+Before each slice, refresh the line numbers with the focused grep for
+that slice. Not every `DBState.db` write is a bug: command replay,
+projection refresh, rollback, import, and local-only workflows can keep
+trusted writes when they are intentionally outside durable Fastify-web
+client mutation.
+
+- 9A - Provider routing and model scalar settings. Convert the remaining
+  `BotSettings.svelte` top-level model/provider/API-key fields and their
+  direct `oninput` assignments to local drafts plus grouped provider
+  settings commands. Keep optimistic projection updates behind
+  `withTrustedServerProjectionWrite`, remove duplicate
+  `watchServerBackedSettings` keys, and extend command allowlist tests.
+- 9B - OpenRouter, auxiliary model, and separate-parameter selectors.
+  Cover `OpenrouterSettings.svelte`, `AuxModelSelectors.svelte`,
+  `SeparateParametersSection.svelte`, and the matching EasyPanel model /
+  parameter shortcuts. Route provider order/only/ignore arrays,
+  auxiliary models, and separate parameter overrides through commands.
+- 9C - Image provider settings. Cover the image-generation portions of
+  `OtherBotSettings.svelte`: `sdConfig`, `NAIImgConfig`, `comfyConfig`,
+  `openaiCompatImage`, `wavespeedImage`, `fal*`, Imagen, Stability, and
+  related provider keys/models. Use nested drafts or narrow commands for
+  each durable setting group.
+- 9D - Memory and audio provider settings. Cover the Hypa V3 and audio /
+  TTS portions of `OtherBotSettings.svelte` plus
+  `PlaygroundEmbedding.svelte`, including `hypaCustomSettings`, Hypa
+  provider keys/models, Voyage, ElevenLabs, VoiceVox, OpenAI TTS, NAI
+  TTS, Hugging Face, and Fish Speech. Coordinate with Phase 8 if memory
+  model-key semantics change.
+- 9E - Persona, display/theme, global regex, lore preset, and bot preset
+  editors. Cover `PersonaSettings.svelte`, `GlobalRegex.svelte`,
+  `lorepreset.svelte`, `botpreset.svelte`, custom background/color/text
+  theme editors, and related helpers. Add or reuse persona, display, and
+  lorebook commands instead of direct projection mutation.
+- 9F - Plugin, custom model, and advanced setting editors. Cover
+  `PluginSettings.svelte`, `CustomModelsSettings.svelte`, advanced
+  setting pages, and plugin command bridges. Extend plugin/custom-model
+  commands and event allowlists where needed.
+- 9G - Character core profile, media, and basic option editors. Cover
+  the basic `CharConfig.svelte` fields such as name, description, first
+  message, portrait/media assets, view screen, and simple character
+  option toggles. Use character commands or debounced server-backed
+  drafts.
+- 9H - Character lore, script, prompt, TTS, and chat-name editors. Cover
+  the deeper `CharConfig.svelte` sections, `LoreBookSetting.svelte`,
+  `LoreBookList.svelte`, `ChatList.svelte`, and side-chat name editors.
+  Route character lore/script/prompt/TTS changes through character,
+  lorebook, or chat commands.
+- 9I - Sidebar toggles, custom sidebar/loadout helpers, welcome setup,
+  and runtime API write classification. Cover `Toggles.svelte`,
+  `CustomSidebar.svelte`, `CustomSidebarConfig.svelte`, `LoadoutModal`,
+  `WelcomeRisu.svelte`, `globalApi.svelte.ts`, plugin API writes, and
+  other helper writes found by the broader grep. Classify local runtime
+  state separately from durable Fastify-web persistence.
+- 9J - Final direct-write sweep and closeout. Rerun the broad
+  `DBState.db` direct-write searches, add any remaining command allowlist
+  coverage, run Fastify browser smoke, and move completed slice notes to
+  `../phases-completed/`.
+
 ## Exit Criteria
 
 - Fastify-served browser startup enables the projection guard. (Met by
