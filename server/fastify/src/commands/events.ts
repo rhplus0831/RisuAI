@@ -302,6 +302,14 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'state.restored',
     resource: 'state',
   },
+  stateImported: {
+    type: 'state.imported',
+    resource: 'state',
+  },
+  stateExported: {
+    type: 'state.exported',
+    resource: 'state',
+  },
 } as const satisfies Record<string, CommandEventDraft>
 
 export class InMemoryCommandEventSink implements CommandEventSink {

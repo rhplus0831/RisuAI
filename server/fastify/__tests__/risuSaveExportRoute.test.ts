@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { decodeRisuSaveBlockEnvelope } from '../src/risuSave/blockCodec.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { classifyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
@@ -12,6 +13,7 @@ import { writePersisted } from '../src/repository.js'
 interface Harness {
   app: FastifyInstance
   dataDir: string
+  commandEvents: CommandEventSink
 }
 
 const ASSET_ID = 'c'.repeat(64)
@@ -19,6 +21,7 @@ const ASSET_ID = 'c'.repeat(64)
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-risu-export-route-'))
+  const commandEvents = createCommandEventSink()
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -29,8 +32,9 @@ async function startHarness(): Promise<Harness> {
       hubUrl: 'https://sv.risuai.xyz',
     },
     memoryWorker: false,
+    commandEvents,
   })
-  return { app, dataDir }
+  return { app, dataDir, commandEvents }
 }
 
 async function stopHarness(h: Harness): Promise<void> {
@@ -101,21 +105,24 @@ describe('Phase 9-8b repository .risu export route', () => {
 
     expect(exported.statusCode).toBe(200)
     expect(exported.headers['content-type']).toContain('application/octet-stream')
-    expect(exported.headers['content-disposition']).toBe(
-      'attachment; filename="database.risu"',
-    )
+    expect(exported.headers['content-disposition']).toBe('attachment; filename="database.risu"')
 
     const bytes = new Uint8Array(exported.rawPayload)
     expect(classifyRisuSaveEnvelope(bytes)).toBe('risusave-blocks')
     expect(decodeRisuSaveBlockEnvelope(bytes).unsupportedReferences).toEqual([])
     const decoded = decodeRisuSaveImportSnapshot(bytes)
     expect(decoded.envelope).toBe('risusave-blocks')
-    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(
-      ASSET_ID,
-    )
+    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(ASSET_ID)
     expect(decoded.database.pluginCustomStorage).toEqual({
       'plugin-a:key': { assetId: ASSET_ID },
     })
+    expect(harness.commandEvents.list()).toEqual([
+      {
+        type: 'state.exported',
+        revision: 0,
+        resource: 'state',
+      },
+    ])
   })
 
   it('supports compressed block exports with explicit query parameters', async () => {
@@ -153,9 +160,7 @@ describe('Phase 9-8b repository .risu export route', () => {
     expect(classifyRisuSaveEnvelope(bytes)).toBe('legacy-raw')
     const decoded = decodeRisuSaveImportSnapshot(bytes)
     expect(decoded.envelope).toBe('legacy-raw')
-    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(
-      ASSET_ID,
-    )
+    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(ASSET_ID)
   })
 
   it('rejects unauthenticated exports once a password is set', async () => {
@@ -168,6 +173,7 @@ describe('Phase 9-8b repository .risu export route', () => {
     })
 
     expect(exported.statusCode).toBe(401)
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('rejects invalid export query parameters', async () => {
@@ -181,6 +187,7 @@ describe('Phase 9-8b repository .risu export route', () => {
     expect(badEnvelope.json()).toEqual({
       error: 'envelope must be risusave-blocks or a legacy .risu envelope',
     })
+    expect(harness.commandEvents.list()).toEqual([])
 
     const badCompression = await harness.app.inject({
       method: 'GET',
@@ -190,6 +197,7 @@ describe('Phase 9-8b repository .risu export route', () => {
     expect(badCompression.json()).toEqual({
       error: 'compression is only supported for risusave-blocks exports',
     })
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('returns validation errors for missing or malformed persisted databases', async () => {
@@ -199,6 +207,7 @@ describe('Phase 9-8b repository .risu export route', () => {
     })
     expect(missing.statusCode).toBe(400)
     expect(missing.json()).toEqual({ error: 'database payload missing' })
+    expect(harness.commandEvents.list()).toEqual([])
 
     writeFileSync(
       path.join(harness.dataDir, 'db.json'),
@@ -238,5 +247,6 @@ describe('Phase 9-8b repository .risu export route', () => {
     expect(malformed.json()).toEqual({
       error: 'message[0].role must be user or char',
     })
+    expect(harness.commandEvents.list()).toEqual([])
   })
 })

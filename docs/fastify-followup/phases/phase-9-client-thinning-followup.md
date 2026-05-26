@@ -23,14 +23,13 @@ import/export events match the command map.
   `src/ts/stores.svelte.ts:185`,
   `src/lib/Setting/Pages/Display/NotificationToggle.svelte:10`, and
   `src/lib/Playground/PlaygroundMenu.svelte:35`.
-- `.risu` import/export event semantics do not match the Phase 9 command
-  map. The command map expects `state.imported` and `state.exported` in
-  `docs/fastify/status/phase-9-command-map.md:186`; save routes do not
-  accept an event sink at `server/fastify/src/routes/save.ts:39`; the
-  event catalog only contains `state.restored` at
-  `server/fastify/src/commands/events.ts:302`.
-- Browser smoke/storage-write audit now proves projection guard
-  enforcement, but still does not prove `.risu` import coverage.
+- Landed 2026-05-26: `.risu` import/export event semantics now match the
+  Phase 9 command map. Save routes receive the command event sink,
+  import responses include and emit `state.imported`, export routes emit
+  `state.exported` with the current revision, and focused route tests
+  cover success and failure silence.
+- Landed 2026-05-26: browser smoke/storage-write audit now proves both
+  projection guard enforcement and multipart `.risu` import coverage.
 
 ## Tasks
 
@@ -43,12 +42,8 @@ import/export events match the command map.
 - Add any remaining command allowlist coverage found by the broader
   direct-write audit. The named slice added coverage for `notification`
   and `useAutoSuggestions`.
-- Add `state.imported` and `state.exported` event drafts, pass the
-  command event sink into save/import/export routes, and emit events
-  after repository revision changes where applicable. If export events
-  are intentionally not needed, update the command map and this
-  follow-up doc in the same change.
-- Extend browser smoke/storage audit to cover `.risu` import.
+- Event wiring is complete for `state.imported` and `state.exported`.
+- Browser smoke/storage audit covers `.risu` import.
 
 ## Exit Criteria
 
@@ -59,9 +54,10 @@ import/export events match the command map.
   slice and browser smoke.)
 - No reachable durable Fastify web workflow persists by direct client
   mutation.
-- `.risu` import/export event behavior matches the command map or the
-  command map has been deliberately corrected.
-- `pnpm smoke:fastify-browser` covers import and guard enforcement.
+- `.risu` import/export event behavior matches the command map. (Met by
+  the 2026-05-26 event slice.)
+- `pnpm smoke:fastify-browser` covers import and guard enforcement. (Met
+  by the 2026-05-26 event slice.)
 
 ## Verification
 

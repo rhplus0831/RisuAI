@@ -5,12 +5,14 @@ import path from 'node:path'
 import * as fflate from 'fflate'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { writePersisted, assetsDir } from '../src/repository.js'
 
 interface Harness {
   app: FastifyInstance
   dataDir: string
+  commandEvents: CommandEventSink
 }
 
 const INCLUDED_ASSET = 'a'.repeat(64)
@@ -21,6 +23,7 @@ const ORPHANED_ASSET = 'd'.repeat(64)
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-risu-bundle-route-'))
+  const commandEvents = createCommandEventSink()
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -31,8 +34,9 @@ async function startHarness(): Promise<Harness> {
       hubUrl: 'https://sv.risuai.xyz',
     },
     memoryWorker: false,
+    commandEvents,
   })
-  return { app, dataDir }
+  return { app, dataDir, commandEvents }
 }
 
 async function stopHarness(h: Harness): Promise<void> {
@@ -124,9 +128,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
 
     expect(exported.statusCode).toBe(200)
     expect(exported.headers['content-type']).toContain('application/zip')
-    expect(exported.headers['content-disposition']).toBe(
-      'attachment; filename="database.risu.zip"',
-    )
+    expect(exported.headers['content-disposition']).toBe('attachment; filename="database.risu.zip"')
 
     const files = unzipBundle(exported.rawPayload)
     expect(Object.keys(files).sort()).toEqual([
@@ -134,9 +136,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
       'database.risu',
       'manifest.json',
     ])
-    expect(Buffer.from(files[`assets/${INCLUDED_ASSET}.png`]).toString('utf8')).toBe(
-      'included-png',
-    )
+    expect(Buffer.from(files[`assets/${INCLUDED_ASSET}.png`]).toString('utf8')).toBe('included-png')
 
     const decoded = decodeRisuSaveImportSnapshot(files['database.risu'])
     expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(
@@ -181,6 +181,13 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     expect(manifest.orphanedAssets).toEqual([
       { id: ORPHANED_ASSET, ext: 'png', size: 7, contentType: 'image/png' },
     ])
+    expect(harness.commandEvents.list()).toEqual([
+      {
+        type: 'state.exported',
+        revision: 0,
+        resource: 'state',
+      },
+    ])
   })
 
   it('passes export query options through to the bundled .risu file and manifest', async () => {
@@ -212,6 +219,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     })
 
     expect(exported.statusCode).toBe(401)
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('rejects invalid bundle export query parameters', async () => {
@@ -225,6 +233,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     expect(badEnvelope.json()).toEqual({
       error: 'envelope must be risusave-blocks or a legacy .risu envelope',
     })
+    expect(harness.commandEvents.list()).toEqual([])
 
     const badCompression = await harness.app.inject({
       method: 'GET',
@@ -234,6 +243,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     expect(badCompression.json()).toEqual({
       error: 'compression is only supported for risusave-blocks exports',
     })
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('returns validation errors for missing persisted databases', async () => {
@@ -244,5 +254,6 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
 
     expect(exported.statusCode).toBe(400)
     expect(exported.json()).toEqual({ error: 'database payload missing' })
+    expect(harness.commandEvents.list()).toEqual([])
   })
 })

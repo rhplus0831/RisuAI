@@ -141,7 +141,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerHealthRoutes(app, db)
   registerAuthRoutes(app, authState)
   registerBootstrapRoutes(app, db, authState, config.dataDir)
-  registerSaveRoutes(app, db, authState, config.dataDir)
+  registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerEventsRoutes(app, authState, commandEventSink)
   registerAssetsRoutes(app, db, authState, config.dataDir)

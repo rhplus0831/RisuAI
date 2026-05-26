@@ -2,11 +2,13 @@ import type { FastifyInstance } from 'fastify'
 import type { FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
+import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
 import { normalizePresetCollection } from '../commands/presets.js'
 import { normalizeTranslatorPresetCollection } from '../commands/translatorPresets.js'
 import { normalizeLoadoutCollection } from '../commands/loadouts.js'
 import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitions.js'
+import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { ValidationError, applyImport } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRows } from '../memoryLegacyImport.js'
@@ -41,6 +43,7 @@ export function registerSaveRoutes(
   db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
+  eventSink: CommandEventSink,
 ): void {
   app.post('/api/v1/import/risusave', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -48,8 +51,11 @@ export function registerSaveRoutes(
       if (req.isMultipart()) {
         const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req))
         const { revision, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database)
+        const event = { ...COMMAND_EVENT_CATALOG.stateImported, revision }
+        eventSink.emit(event)
         return {
           revision,
+          event,
           envelope: snapshot.envelope,
           importReport: {
             unsupportedReferenceCount: snapshot.unsupportedReferences.length,
@@ -62,7 +68,9 @@ export function registerSaveRoutes(
       const body = (req.body ?? {}) as ImportBody
       normalizeJsonImportDatabase(body.database)
       const { revision, assetReport } = applyImportedDatabase(db, dataDir, body.database)
-      return { revision, assetReport }
+      const event = { ...COMMAND_EVENT_CATALOG.stateImported, revision }
+      eventSink.emit(event)
+      return { revision, event, assetReport }
     } catch (err) {
       if (err instanceof ValidationError) {
         reply.code(400)
@@ -77,6 +85,10 @@ export function registerSaveRoutes(
     try {
       const options = parseExportQuery(req.query)
       const bytes = encodeRepositoryRisuSaveExport(dataDir, options)
+      eventSink.emit({
+        ...COMMAND_EVENT_CATALOG.stateExported,
+        revision: getSchemaState(db).revision,
+      })
       reply.header('content-type', 'application/octet-stream')
       reply.header('content-disposition', `attachment; filename="${EXPORT_FILENAME}"`)
       return reply.send(Buffer.from(bytes))
@@ -99,6 +111,10 @@ export function registerSaveRoutes(
         risuBytes,
         envelope: options.envelope,
         compression: options.compression,
+      })
+      eventSink.emit({
+        ...COMMAND_EVENT_CATALOG.stateExported,
+        revision: getSchemaState(db).revision,
       })
       reply.header('content-type', 'application/zip')
       reply.header('content-disposition', `attachment; filename="${BUNDLE_EXPORT_FILENAME}"`)

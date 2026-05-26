@@ -12,14 +12,12 @@ Fastify shapes.
 ## Immediate Pickup
 
 1. Continue Phase 9 client thinning.
-   - Wire `.risu` import/export events so behavior matches
-     `docs/fastify/status/phase-9-command-map.md`, or deliberately
-     update the command map and follow-up docs if export visibility is
-     not needed.
    - Continue the broader Fastify-web direct `DBState.db` write audit
      beyond the named guard slice landed on 2026-05-26.
-   - Extend smoke coverage for `.risu` import; direct projection-write
-     rejection is now covered by `pnpm smoke:fastify-browser`.
+   - Landed 2026-05-26: `.risu` import/export routes emit
+     `state.imported` / `state.exported`, and `pnpm smoke:fastify-browser`
+     covers multipart `.risu` import plus direct projection-write
+     rejection.
 
 2. Close Phase 7 server prompt assembly parity gaps.
    - Implement the server regenerate path end to end.
@@ -55,6 +53,14 @@ pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts
 pnpm exec vitest run src/ts/server/commands.test.ts
 pnpm smoke:fastify-browser
 pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/events.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
+```
+
+Latest Phase 9 event-slice verification, 2026-05-26:
+
+```bash
+pnpm api:test
+pnpm smoke:fastify-browser
+pnpm check
 ```
 
 Focused Phase 7:

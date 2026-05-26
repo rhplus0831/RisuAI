@@ -199,6 +199,14 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     const chunks = await fetch('/api/v1/memory/chunks/chat-smoke')
     const summaries = await fetch('/api/v1/memory/summaries/chat-smoke')
     const exported = await fetch('/api/v1/export/risusave')
+    const exportedBytes = await exported.blob()
+    const importForm = new FormData()
+    importForm.append('file', exportedBytes, 'database.risu')
+    const imported = await fetch('/api/v1/import/risusave', {
+      body: importForm,
+      method: 'POST',
+    })
+    const importedBody = await imported.json()
     const bundle = await fetch('/api/v1/export/bundle')
 
     const uploaded = await fetch('/api/v1/assets', {
@@ -216,6 +224,8 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
       exported: exported.status,
       generated: generated.status,
       generatedBody,
+      imported: imported.status,
+      importedBody,
       summaries: summaries.status,
       uploaded: uploaded.status,
     }
@@ -227,6 +237,8 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     exported: 200,
     generated: 200,
     generatedBody: { type: 'success', result: 'pong' },
+    imported: 200,
+    importedBody: { event: { type: 'state.imported', resource: 'state' } },
     summaries: 200,
     uploaded: 201,
   })
@@ -244,6 +256,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   expect(apiRequests).toContain('POST /api/v1/generate/completion')
   expect(apiRequests).toContain('GET /api/v1/export/risusave')
   expect(apiRequests).toContain('GET /api/v1/export/bundle')
+  expect(apiRequests).toContain('POST /api/v1/import/risusave')
   expect(apiRequests).toContain('GET /api/v1/memory/chunks/chat-smoke')
   expect(apiRequests).toContain('GET /api/v1/memory/summaries/chat-smoke')
   expect(apiRequests.filter((entry) => entry === 'GET /api/v1/bootstrap').length).toBeGreaterThan(1)

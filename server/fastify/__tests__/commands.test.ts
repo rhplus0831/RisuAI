@@ -208,6 +208,7 @@ describe('Phase 9-1 command foundation', () => {
       useServerPromptAssembly: false,
       greeting: 'hi',
     })
+    harness.commandEvents.clear()
 
     const res = await harness.app.inject({
       method: 'PATCH',

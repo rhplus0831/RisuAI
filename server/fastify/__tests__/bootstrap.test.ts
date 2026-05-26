@@ -126,6 +126,11 @@ describe('Phase 2A bootstrap + import', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      event: {
+        type: 'state.imported',
+        revision: 1,
+        resource: 'state',
+      },
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
 

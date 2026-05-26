@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { writePersisted } from '../src/repository.js'
@@ -11,11 +12,13 @@ import { writePersisted } from '../src/repository.js'
 interface Harness {
   app: FastifyInstance
   dataDir: string
+  commandEvents: CommandEventSink
 }
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-risu-import-'))
+  const commandEvents = createCommandEventSink()
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -26,8 +29,9 @@ async function startHarness(): Promise<Harness> {
       hubUrl: 'https://sv.risuai.xyz',
     },
     memoryWorker: false,
+    commandEvents,
   })
-  return { app, dataDir }
+  return { app, dataDir, commandEvents }
 }
 
 async function stopHarness(h: Harness): Promise<void> {
@@ -97,8 +101,14 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      event: {
+        type: 'state.imported',
+        revision: 1,
+        resource: 'state',
+      },
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
+    expect(harness.commandEvents.list()).toEqual([imported.json().event])
   })
 
   it('reports referenced, missing, and orphaned server assets after JSON imports', async () => {
@@ -129,6 +139,11 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      event: {
+        type: 'state.imported',
+        revision: 1,
+        resource: 'state',
+      },
       assetReport: { referencedCount: 2, missingCount: 1, orphanedCount: 1 },
     })
   })
@@ -149,6 +164,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
 
     expect(imported.statusCode).toBe(401)
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('imports legacy .risu uploads through the server codec', async () => {
@@ -164,6 +180,11 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      event: {
+        type: 'state.imported',
+        revision: 1,
+        resource: 'state',
+      },
       envelope: 'legacy-raw',
       importReport: {
         unsupportedReferenceCount: 0,
@@ -171,6 +192,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       },
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
+    expect(harness.commandEvents.list()).toEqual([imported.json().event])
 
     const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     expect(persisted.database.characters).toHaveLength(1)
@@ -191,6 +213,11 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      event: {
+        type: 'state.imported',
+        revision: 1,
+        resource: 'state',
+      },
       envelope: 'risusave-blocks',
       importReport: {
         unsupportedReferenceCount: 1,
@@ -218,6 +245,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'risusave file missing' })
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('rejects malformed .risu uploads without mutating persistence', async () => {
@@ -236,5 +264,6 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
     expect(bootstrap.json().database).toBeNull()
+    expect(harness.commandEvents.list()).toEqual([])
   })
 })
