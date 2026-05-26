@@ -128,7 +128,7 @@ export async function orchestrateResponse(
     }
     const inlayr = runInlayScreen(currentChar, currentChat.message[stream.msgIndex].data)
     withTrustedServerProjectionWrite(() => {
-      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+      currentChat = streamTrigger.triggerChat ?? DBState.db.characters[selectedChar].chats[selectedChat]
       currentChat.message[stream.msgIndex].data = inlayr.text
       DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
     })
