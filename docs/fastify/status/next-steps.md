@@ -25,20 +25,19 @@ shapes.
 - Confirmed the Fastify-served web pass performed no IndexedDB/localForage or
   OPFS writes.
 - `pnpm tauribuild` and the focused local backup regression command passed.
-- Tauri desktop manual verification is still pending because the Tauri dev
-  webview now launches but stays blocked on the local frontend `appVer`
-  initialization error from `src/ts/parser/parser.svelte.ts:109`.
+- Tauri / Desktop testing is deferred to a separate later task. Do not proceed
+  with Tauri / Desktop manual verification for now.
 
 ## Immediate Pickup
 
-Immediate pickup: **finish 9-9d - Tauri/local manual verification**.
+Immediate pickup: **9-9e - Phase 9 docs closeout**.
 
-- Fix or work around the local/Tauri frontend `appVer` initialization error,
-  then run Tauri and record import, chat send, regenerate, edit, character
-  switch, settings mutation, persist, and reload checks.
 - The Fastify-served web half of 9-9d is already recorded in
   [`../phases-completed/phase-9-client-thinning-9-9d.md`](../phases-completed/phase-9-client-thinning-9-9d.md).
-- Do not advance to 9-9e until Tauri/local manual verification is recorded.
+- Record that Tauri / Desktop testing is out of scope for the current pickup
+  and will be handled as its own later task.
+- Do not run, fix, or work around Tauri / Desktop manual verification as part
+  of this task.
 - Do not add compatibility migrations for intermediate Fastify shapes; there
   are no actual Fastify users yet.
 
@@ -77,8 +76,8 @@ Immediate pickup: **finish 9-9d - Tauri/local manual verification**.
 
 ## Later Queue
 
-1. Finish 9-9d - Tauri/local manual verification.
-2. 9-9e - Phase 9 docs closeout.
+1. 9-9e - Phase 9 docs closeout.
+2. Separate later task - Tauri / Desktop manual verification.
 
 ## Parallel Or Deferred
 
@@ -91,8 +90,8 @@ Immediate pickup: **finish 9-9d - Tauri/local manual verification**.
 
 ## Verification
 
-For the current 9-9d remainder, use the already-green automated preflight as
-the baseline, then perform and record the manual Tauri/local checks:
+For the current 9-9e docs closeout, use the already-green automated preflight
+as the baseline. Do not perform Tauri / Desktop testing now:
 
 ```bash
 pnpm smoke:fastify-browser
@@ -103,7 +102,7 @@ pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts serv
 pnpm check
 ```
 
-Manual Tauri/local checks still to record:
+Deferred Tauri / Desktop task, not for the current pickup:
 
 - App loads the expected persisted state after startup.
 - Import succeeds or shows the expected unsupported message for the mode.

@@ -3,9 +3,8 @@
 Date: 2026-05-26
 
 Status: partial. Automated preflight and Fastify-served web verification
-passed. Tauri desktop manual verification is still pending because the Tauri
-dev webview now launches but the local app stays blocked on the frontend
-`appVer` initialization error.
+passed. Tauri / Desktop testing is deferred to a separate later task, so do
+not proceed with it for now.
 
 ## Summary
 
@@ -92,8 +91,7 @@ dev webview now launches but the local app stays blocked on the frontend
 
 ## Follow-Up
 
-- Fix or work around the local/Tauri frontend `appVer` initialization error,
-  then complete the Tauri desktop manual checks: import, chat send,
-  regenerate, edit, character switch, settings mutation, persist, and reload.
-- After Tauri/local manual verification is recorded, continue to 9-9e for
-  Phase 9 docs closeout.
+- Continue to 9-9e for Phase 9 docs closeout.
+- Handle Tauri / Desktop testing as a separate later task. Do not fix,
+  work around, or run the desktop manual verification during the current
+  pickup.

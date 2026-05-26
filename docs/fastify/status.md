@@ -16,12 +16,12 @@ Completed phase detail and old landed-slice logs live in
 
 - Active phase: Phase 9, Client thinning.
 - Last landed work: 9-9d manual verification, partial. Automated preflight and
-  Fastify-served web checks passed; Tauri desktop manual checks remain pending
-  because the Tauri dev webview now launches but stays blocked on the local
-  frontend `appVer` initialization error.
-- Current gap: Phase 9 still needs Tauri/local manual verification before final
-  docs closeout.
-- Next default pickup: finish the 9-9d Tauri/local manual verification.
+  Fastify-served web checks passed; Tauri / Desktop testing is deferred to a
+  separate later task, so do not proceed with it for now.
+- Current gap: Phase 9 needs the 9-9e docs closeout with the Tauri / Desktop
+  deferral recorded.
+- Next default pickup: 9-9e Phase 9 docs closeout. Do not run Tauri / Desktop
+  manual verification in this pickup.
 - Last recorded focused baselines after 9-9d: `pnpm smoke:fastify-browser`
   passed with the storage-write audit, the server-backed sendChat fixture
   command selected 65 files and 734 passing tests with 4 skipped, the focused
@@ -59,7 +59,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.         |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                                |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                                |
-| Client thinning                             | Active; 9-9d Fastify web checks landed; finish Tauri/local manual verification. |
+| Client thinning                             | Active; 9-9d Fastify web checks landed; Tauri / Desktop testing deferred separately; proceed with 9-9e docs closeout. |
 
 ## Maintenance Rules
 
