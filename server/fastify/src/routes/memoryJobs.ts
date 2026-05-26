@@ -13,7 +13,11 @@ import {
   type MemoryJobKind,
   type MemoryJobStatus,
 } from '../memoryRepository.js'
-import { buildMemoryJobEvent, type MemoryEventSink } from '../memoryEvents.js'
+import {
+  buildMemoryJobEvent,
+  emitMemoryEventSafely,
+  type MemoryEventSink,
+} from '../memoryEvents.js'
 import { ValidationError } from '../repository.js'
 
 interface CreateMemoryJobBody {
@@ -58,7 +62,8 @@ function emitRouteJobEvent(
   if (!onEvent) return
   const job = getMemoryJob(db, jobId)
   if (!job) return
-  onEvent(
+  emitMemoryEventSafely(
+    onEvent,
     buildMemoryJobEvent(job, {
       includeHypaV3Progress: true,
       queuedCount: activeJobCount(db, job.chatId),

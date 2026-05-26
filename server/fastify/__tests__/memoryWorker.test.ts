@@ -176,6 +176,40 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
+  it('continues claimed job execution when memory event delivery throws', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, {
+        id: 'job-event-throw',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        payload: {},
+      })
+      let handled = false
+      const worker = new MemoryWorker({
+        db,
+        onEvent: () => {
+          throw new Error('memory event sink exploded')
+        },
+        handlers: {
+          chunk: () => {
+            handled = true
+          },
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(handled).toBe(true)
+      expect(getMemoryJob(db, 'job-event-throw')).toMatchObject({
+        status: 'completed',
+        error: null,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
   it('claims only one job at a time', async () => {
     const db = openDatabase(makeDataDir())
     try {

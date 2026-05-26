@@ -37,12 +37,21 @@ export interface MemoryEventBus {
   subscribe(listener: MemoryEventListener): () => void
 }
 
+export function emitMemoryEventSafely(sink: MemoryEventSink, event: MemoryEvent): void {
+  try {
+    sink(event)
+  } catch {
+    // Memory events are best-effort progress notifications; delivery
+    // failures must not abort committed memory work.
+  }
+}
+
 export function createMemoryEventBus(): MemoryEventBus {
   const listeners = new Set<MemoryEventListener>()
   return {
     emit(event) {
       for (const listener of listeners) {
-        listener(event)
+        emitMemoryEventSafely(listener, event)
       }
     },
     subscribe(listener) {

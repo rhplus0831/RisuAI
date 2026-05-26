@@ -31,7 +31,11 @@ import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES, loadPersisted } from './repository.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
-import { createMemoryEventBus, type MemoryEventSink } from './memoryEvents.js'
+import {
+  createMemoryEventBus,
+  emitMemoryEventSafely,
+  type MemoryEventSink,
+} from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import {
@@ -91,7 +95,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {
-    opts.memoryEvents?.(event)
+    if (opts.memoryEvents) {
+      emitMemoryEventSafely(opts.memoryEvents, event)
+    }
     memoryEventBus.emit(event)
   }
   const defaultSummarizeOptions = { db, dataDir: config.dataDir }

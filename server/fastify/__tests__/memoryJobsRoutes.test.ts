@@ -5,7 +5,7 @@ import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import type { MemoryEvent } from '../src/memoryEvents.js'
+import type { MemoryEvent, MemoryEventSink } from '../src/memoryEvents.js'
 import type { MemoryJob } from '../src/memoryRepository.js'
 
 const subtle = webcrypto.subtle
@@ -16,7 +16,7 @@ interface Harness {
   events: MemoryEvent[]
 }
 
-async function startHarness(): Promise<Harness> {
+async function startHarness(opts: { memoryEvents?: MemoryEventSink } = {}): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-memory-jobs-routes-'))
   const events: MemoryEvent[] = []
@@ -30,7 +30,7 @@ async function startHarness(): Promise<Harness> {
       hubUrl: 'https://sv.risuai.xyz',
     },
     memoryWorker: false,
-    memoryEvents: (event) => events.push(event),
+    memoryEvents: opts.memoryEvents ?? ((event) => events.push(event)),
   })
   return { app, dataDir, events }
 }
@@ -174,6 +174,36 @@ describe('Phase 8-2e memory job routes', () => {
           },
         },
       },
+    ])
+  })
+
+  it('persists enqueue work when memory event delivery throws after mutation', async () => {
+    await stopHarness(harness)
+    harness = await startHarness({
+      memoryEvents: () => {
+        throw new Error('memory event sink exploded')
+      },
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/memory/jobs',
+      payload: {
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: { chunkId: 'chunk-1', model: 'model-a' },
+      },
+    })
+
+    expect(res.statusCode).toBe(201)
+    const job = (res.json() as { job: MemoryJob }).job
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/jobs?chatId=chat-1',
+    })
+    expect(listed.statusCode).toBe(200)
+    expect((listed.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
+      { id: job.id, chatId: 'chat-1', kind: 'summarize', status: 'pending' },
     ])
   })
 

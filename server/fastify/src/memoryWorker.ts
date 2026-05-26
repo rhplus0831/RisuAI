@@ -8,7 +8,7 @@ import {
   type MemoryJobKind,
   type MemoryJobRetryOptions,
 } from './memoryRepository.js'
-import { buildMemoryJobEvent, type MemoryEventSink } from './memoryEvents.js'
+import { buildMemoryJobEvent, emitMemoryEventSafely, type MemoryEventSink } from './memoryEvents.js'
 
 export const MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS = 1_000
 
@@ -179,7 +179,8 @@ export class MemoryWorker {
   }
 
   private emitJob(job: MemoryJob): void {
-    this.onEvent?.(buildMemoryJobEvent(job, { includeHypaV3Progress: true }))
+    if (!this.onEvent) return
+    emitMemoryEventSafely(this.onEvent, buildMemoryJobEvent(job, { includeHypaV3Progress: true }))
   }
 }
 

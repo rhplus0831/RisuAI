@@ -12,6 +12,11 @@ import {
   type CommandEventListener,
   type CommandEventSink,
 } from '../src/commands/events.js'
+import {
+  createMemoryEventBus,
+  type MemoryEvent,
+  type MemoryEventSink,
+} from '../src/memoryEvents.js'
 
 const subtle = webcrypto.subtle
 
@@ -47,7 +52,7 @@ interface Harness {
   commandEvents: TrackingCommandEventSink
 }
 
-async function startHarness(): Promise<Harness> {
+async function startHarness(opts: { memoryEvents?: MemoryEventSink } = {}): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-events-'))
   const commandEvents = new TrackingCommandEventSink()
@@ -61,6 +66,7 @@ async function startHarness(): Promise<Harness> {
       hubUrl: 'https://sv.risuai.xyz',
     },
     commandEvents,
+    memoryEvents: opts.memoryEvents,
     memoryWorker: false,
   })
   return { app, dataDir, commandEvents }
@@ -176,6 +182,32 @@ afterEach(async () => {
 })
 
 describe('Phase 9-5a command events stream', () => {
+  it('keeps memory event bus delivery best-effort across throwing subscribers', () => {
+    const bus = createMemoryEventBus()
+    const event: MemoryEvent = {
+      type: 'memory.job',
+      chatId: 'chat-1',
+      jobId: 'job-1',
+      kind: 'summarize',
+      status: 'pending',
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRunAt: '2026-05-24T00:00:00.000Z',
+      error: null,
+    }
+    const seen: MemoryEvent[] = []
+
+    bus.subscribe(() => {
+      throw new Error('memory subscriber exploded')
+    })
+    bus.subscribe((received) => {
+      seen.push(received)
+    })
+
+    expect(() => bus.emit(event)).not.toThrow()
+    expect(seen).toEqual([event])
+  })
+
   it('rejects unauthenticated event streams once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -303,6 +335,56 @@ describe('Phase 9-5a command events stream', () => {
             queuedCount: 1,
           },
         },
+      })
+    } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
+  it('continues memory SSE fanout when an external memory sink throws', async () => {
+    await stopHarness(harness)
+    harness = await startHarness({
+      memoryEvents: () => {
+        throw new Error('external memory sink exploded')
+      },
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+
+    const res = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+    await readUntil(reader!, (chunk) => chunk.includes(': connected\n\n'))
+
+    const memoryJob = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: { chunkId: 'chunk-1', model: 'model-a' },
+      },
+    })
+    expect(memoryJob.statusCode).toBe(201)
+    const jobId = memoryJob.json().job.id as string
+
+    try {
+      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory'))
+      expect(text).toContain('event: memory')
+      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      expect(dataLine).toBeDefined()
+      expect(JSON.parse(dataLine!.slice('data: '.length))).toMatchObject({
+        type: 'memory.job',
+        chatId: 'chat-1',
+        jobId,
+        status: 'pending',
       })
     } finally {
       abort.abort()

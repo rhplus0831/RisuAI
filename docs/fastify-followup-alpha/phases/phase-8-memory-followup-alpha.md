@@ -2,7 +2,8 @@
 
 Date: 2026-05-27
 
-Status: reopened by alpha audit.
+Status: closed. See
+`../phases-completed/phase-8-memory-event-isolation.md`.
 
 ## Goal
 

@@ -18,11 +18,14 @@ and add any longer closeout note under `../phases-completed/`.
 
 Recommended order:
 
-1. Phase 8 - memory event sinks and subscribers must not be able to
-   abort committed memory jobs/routes.
+1. No reopened alpha slices remain. Run broad alpha closeout
+   verification, or open a new phase doc if a fresh audit finding is
+   identified.
 
 Recently closed:
 
+- Phase 8 - memory event delivery is now best-effort across external
+  sinks, SSE subscribers, worker progress emits, and memory job routes.
 - Phase 3 - hub passthrough responses now reuse the shared proxy
   response-header strip policy, with hub-only transport header stripping
   retained.
@@ -49,7 +52,7 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm api:test -- server/fastify/__tests__/generation.completion.test.ts
 ```
 
-Phase 8:
+Phase 8 (closed, re-run only for regression checks):
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/events.test.ts
@@ -75,7 +78,7 @@ pnpm build
 
 ## References
 
-- Reopened status: [`../status.md`](../status.md)
+- Current status: [`../status.md`](../status.md)
 - Follow-up phase index: [`../phases/README.md`](../phases/README.md)
 - Original Fastify status: `docs/fastify/status.md`
 - Original Phase 9 command map:
