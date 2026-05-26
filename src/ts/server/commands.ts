@@ -78,6 +78,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   customProxyRequestModel: 'providers',
   customQuotes: 'display',
   customQuotesData: 'display',
+  customFlags: 'advanced',
   customTokenizer: 'providers',
   dallEQuality: 'media',
   deeplOptions: 'language',

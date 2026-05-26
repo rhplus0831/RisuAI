@@ -9,6 +9,12 @@ export interface PromptItemRecord extends JsonRecord {
 }
 
 export const PROMPT_SETTINGS_KEYS = [
+  'mainPrompt',
+  'jailbreak',
+  'globalNote',
+  'formatingOrder',
+  'promptPreprocess',
+  'presetRegex',
   'promptSettings',
   'promptTemplate',
   'jsonSchemaEnabled',
@@ -151,10 +157,19 @@ function validatePromptSettingValue(key: string, value: unknown): void {
       'autoSuggestPrompt',
       'systemContentReplacement',
       'systemRoleReplacement',
+      'mainPrompt',
+      'jailbreak',
+      'globalNote',
     ].includes(key) &&
     typeof value !== 'string'
   ) {
     throw new ValidationError(`${key} must be a string`)
+  }
+  if (key === 'promptPreprocess' && typeof value !== 'boolean') {
+    throw new ValidationError('promptPreprocess must be a boolean')
+  }
+  if (['formatingOrder', 'presetRegex'].includes(key) && !Array.isArray(value)) {
+    throw new ValidationError(`${key} must be an array`)
   }
   if (key === 'promptSettings' && (!value || typeof value !== 'object' || Array.isArray(value))) {
     throw new ValidationError('promptSettings must be an object')

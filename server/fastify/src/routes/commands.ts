@@ -591,6 +591,8 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'additionalPrompt',
     'descriptionPrefix',
     'emotionPrompt2',
+    'enableCustomFlags',
+    'customFlags',
     'keiServerURL',
     'presetChain',
     'assetMaxDifference',

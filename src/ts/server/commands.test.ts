@@ -286,6 +286,8 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('hypaV3Key')).toBe('memory')
     expect(settingsGroupForKey('hypaCustomSettings')).toBe('memory')
     expect(settingsGroupForKey('voyageApiKey')).toBe('memory')
+    expect(settingsGroupForKey('enableCustomFlags')).toBe('advanced')
+    expect(settingsGroupForKey('customFlags')).toBe('advanced')
   })
 
   it('reads and caches the command base revision from bootstrap', async () => {
@@ -422,6 +424,8 @@ describe('server command API adapter', () => {
         allowAllExtentionFiles: true,
         auxModelUnderModelSettings: true,
         showUnrecommended: true,
+        enableCustomFlags: true,
+        customFlags: [8],
       },
     })
 
@@ -464,6 +468,8 @@ describe('server command API adapter', () => {
             allowAllExtentionFiles: true,
             auxModelUnderModelSettings: true,
             showUnrecommended: true,
+            enableCustomFlags: true,
+            customFlags: [8],
           },
         },
       },
@@ -722,7 +728,15 @@ describe('server command API adapter', () => {
     await expect(
       patchPromptSettingsCommand({
         baseRevision: 1,
-        patch: { promptSettings: { sendName: true } },
+        patch: {
+          mainPrompt: 'MAIN',
+          jailbreak: 'JB',
+          globalNote: 'GN',
+          formatingOrder: ['main', 'jailbreak'],
+          promptPreprocess: true,
+          presetRegex: [{ id: 'regex-a', type: 'editinput', in: 'hello', out: 'hi' }],
+          promptSettings: { sendName: true },
+        },
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 2 })
 
@@ -761,7 +775,18 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/prompt-settings',
         method: 'PATCH',
-        body: { baseRevision: 1, patch: { promptSettings: { sendName: true } } },
+        body: {
+          baseRevision: 1,
+          patch: {
+            mainPrompt: 'MAIN',
+            jailbreak: 'JB',
+            globalNote: 'GN',
+            formatingOrder: ['main', 'jailbreak'],
+            promptPreprocess: true,
+            presetRegex: [{ id: 'regex-a', type: 'editinput', in: 'hello', out: 'hi' }],
+            promptSettings: { sendName: true },
+          },
+        },
       },
       {
         url: '/api/v1/commands/prompt-items',

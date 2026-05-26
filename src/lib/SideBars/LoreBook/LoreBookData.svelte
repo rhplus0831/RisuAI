@@ -42,6 +42,7 @@
     isOpen?: boolean
     openFolders?: number
     isLastInContainer?: boolean
+    onCollectionChange?: (entries: loreBook[]) => void
   }
 
   let {
@@ -56,9 +57,54 @@
     isOpen = false,
     openFolders = 0,
     isLastInContainer = false,
+    onCollectionChange = (entries: loreBook[]) => {
+      externalLoreBooks = entries
+    },
   }: Props = $props()
 
   let open = $derived(isOpen)
+  let draft = $state<loreBook>(cloneJsonValue(value))
+  let suppressDraftDispatch = false
+  let draftInitialized = false
+  let previousValueSnapshot = snapshotJson(value)
+
+  $effect(() => {
+    const valueSnapshot = snapshotJson(value)
+    const draftSnapshot = snapshotJson(draft)
+    if (valueSnapshot !== previousValueSnapshot && valueSnapshot !== draftSnapshot) {
+      suppressDraftDispatch = true
+      draft = cloneJsonValue(value)
+      queueMicrotask(() => {
+        suppressDraftDispatch = false
+      })
+    }
+    previousValueSnapshot = valueSnapshot
+  })
+
+  $effect(() => {
+    const draftSnapshot = snapshotJson(draft)
+    if (!draftInitialized) {
+      draftInitialized = true
+      return
+    }
+    if (suppressDraftDispatch) return
+    value = cloneJsonValue(draft)
+    previousValueSnapshot = draftSnapshot
+  })
+
+  function updateCollection(entries: loreBook[]): void {
+    onCollectionChange(cloneJsonValue(entries ?? []))
+  }
+
+  function snapshotJson(value: unknown): string {
+    const snapshot = JSON.stringify(value)
+    return snapshot === undefined ? '__undefined__' : snapshot
+  }
+
+  function cloneJsonValue<T>(value: T): T {
+    if (value === undefined) return value
+    return JSON.parse(JSON.stringify(value)) as T
+  }
 
   async function getTokens(data: string) {
     tokens = await tokenizeAccurate(data)
@@ -130,60 +176,62 @@
     (isLastInContainer
       ? 'pb-0 mb-0 border-0' // Last item in container: no border
       : 'pb-2 mb-2 border-b border-b-selected last:pb-0 last:mb-0 last:border-0')}
-  class:no-sort={value.mode === 'folder' && openFolders > 0}
+  class:no-sort={draft.mode === 'folder' && openFolders > 0}
   data-risu-idx={idx}
   data-risu-idgroup={idgroup}
 >
   <div class="flex items-center transition-colors w-full p-1">
-    {#if value.mode !== 'child'}
+    {#if draft.mode !== 'child'}
       <button
         class="endflex valuer border-darkborderc flex items-center"
         onclick={() => {
-          value.secondkey = value.secondkey ?? ''
+          draft.secondkey = draft.secondkey ?? ''
           if (!open) {
             open = true
-            onOpen(value.mode !== 'folder') // If not a folder, pass true
+            onOpen(draft.mode !== 'folder') // If not a folder, pass true
           } else {
             open = false
-            onClose(value.mode !== 'folder') // If not a folder, pass true
+            onClose(draft.mode !== 'folder') // If not a folder, pass true
           }
         }}
       >
-        {#if value.mode === 'folder'}
+        {#if draft.mode === 'folder'}
           {#if open}
             <FolderOpen size={20} class="mr-1" />
           {:else}
             <FolderIcon size={20} class="mr-1" />
           {/if}
         {/if}
-        {#if value.mode === 'folder'}
-          <span>{value.comment.length === 0 ? 'Unnamed Folder' : value.comment}</span>
+        {#if draft.mode === 'folder'}
+          <span>{draft.comment.length === 0 ? 'Unnamed Folder' : draft.comment}</span>
         {:else}
           <span
-            >{value.comment.length === 0
-              ? value.key.length === 0
+            >{draft.comment.length === 0
+              ? draft.key.length === 0
                 ? 'Unnamed Lore'
-                : value.key
-              : value.comment}</span
+                : draft.key
+              : draft.comment}</span
           >
         {/if}
       </button>
       <button
         class="mr-1"
-        class:text-textcolor2={!value.alwaysActive}
-        class:text-textcolor={value.alwaysActive}
+        class:text-textcolor2={!draft.alwaysActive}
+        class:text-textcolor={draft.alwaysActive}
         onclick={async () => {
-          if (value.mode === 'folder') {
-            for (let i = 0; i < externalLoreBooks.length; i++) {
-              if (externalLoreBooks[i].folder === value.key) {
-                externalLoreBooks[i].alwaysActive = !value.alwaysActive
-              }
-            }
+          if (draft.mode === 'folder') {
+            updateCollection(
+              (externalLoreBooks ?? []).map((entry) =>
+                entry.folder === draft.key
+                  ? { ...entry, alwaysActive: !draft.alwaysActive }
+                  : entry,
+              ),
+            )
           }
-          value.alwaysActive = !value.alwaysActive
+          draft.alwaysActive = !draft.alwaysActive
         }}
       >
-        {#if value.alwaysActive}
+        {#if draft.alwaysActive}
           <SunIcon size={20} />
         {:else}
           <LinkIcon size={20} />
@@ -193,7 +241,10 @@
         class="valuer"
         onclick={async () => {
           let shouldRemove = true
-          if (value.mode === 'folder' && externalLoreBooks.some((e) => e.folder === value.key)) {
+          if (
+            draft.mode === 'folder' &&
+            (externalLoreBooks ?? []).some((e) => e.folder === draft.key)
+          ) {
             const firstConfirm = await alertConfirm(language.folderRemoveConfirm)
             if (!firstConfirm) {
               shouldRemove = false
@@ -202,13 +253,13 @@
 
           if (shouldRemove) {
             const secondConfirm = await alertConfirm(
-              language.removeConfirm + (value.comment || 'Unnamed Folder'),
+              language.removeConfirm + (draft.comment || 'Unnamed Folder'),
             )
             if (secondConfirm) {
               if (!open) {
                 onClose()
               }
-              deactivateLocally(value)
+              deactivateLocally(draft)
               onRemove()
             }
           }
@@ -222,12 +273,12 @@
         onclick={() => alertMd(language.childLoreDesc)}
       >
         <BookCopyIcon size={20} class="mr-1" />
-        <span>{getParentLoreName(value)}</span>
+        <span>{getParentLoreName(draft)}</span>
       </button>
       <button
         class="valuer"
         onclick={async () => {
-          const d = await alertConfirm(language.removeConfirm + getParentLoreName(value))
+          const d = await alertConfirm(language.removeConfirm + getParentLoreName(draft))
           if (d) {
             if (!open) {
               onClose()
@@ -241,30 +292,33 @@
     {/if}
   </div>
   {#if open}
-    {#if value.mode === 'folder'}
+    {#if draft.mode === 'folder'}
       <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
         <span class="text-textcolor mt-6 mb-2">{language.folderName}</span>
-        <TextInput size="sm" bind:value={value.comment} />
+        <TextInput size="sm" bind:value={draft.comment} />
 
         <div class="mt-4">
-          <LoreBookList {externalLoreBooks} showFolder={value.key} />
+          <LoreBookList {externalLoreBooks} showFolder={draft.key} {onCollectionChange} />
         </div>
 
         <div class="mt-2 flex gap-1">
           <button
             class="text-textcolor2 hover:text-textcolor"
             onclick={() => {
-              externalLoreBooks.push({
-                key: '',
-                comment: '',
-                content: '',
-                mode: 'normal',
-                insertorder: 100,
-                alwaysActive: true,
-                secondkey: '',
-                selective: false,
-                folder: value.key,
-              })
+              updateCollection([
+                ...(externalLoreBooks ?? []),
+                {
+                  key: '',
+                  comment: '',
+                  content: '',
+                  mode: 'normal',
+                  insertorder: 100,
+                  alwaysActive: true,
+                  secondkey: '',
+                  selective: false,
+                  folder: draft.key,
+                },
+              ])
             }}
           >
             <PlusIcon size={20} />
@@ -274,38 +328,38 @@
     {:else}
       <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
         <span class="text-textcolor mt-6">{language.name} <Help key="loreName" /></span>
-        <TextInput size="sm" bind:value={value.comment} />
+        <TextInput size="sm" bind:value={draft.comment} />
         {#if !lorePlus}
-          {#if !value.alwaysActive}
+          {#if !draft.alwaysActive}
             <span class="text-textcolor mt-6"
               >{language.activationKeys} <Help key="loreActivationKey" /></span
             >
             <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
-            <TextInput size="sm" bind:value={value.key} />
+            <TextInput size="sm" bind:value={draft.key} />
 
-            {#if value.selective}
+            {#if draft.selective}
               <span class="text-textcolor mt-6">{language.SecondaryKeys}</span>
               <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
-              <TextInput size="sm" bind:value={value.secondkey} />
+              <TextInput size="sm" bind:value={draft.secondkey} />
             {/if}
           {/if}
         {/if}
         {#if !lorePlus}
-          {#if !(value.activationPercent === undefined || value.activationPercent === null)}
+          {#if !(draft.activationPercent === undefined || draft.activationPercent === null)}
             <span class="text-textcolor mt-6">{language.activationProbability}</span>
             <NumberInput
               size="sm"
-              bind:value={value.activationPercent}
+              bind:value={draft.activationPercent}
               onChange={() => {
                 if (
-                  isNaN(value.activationPercent) ||
-                  !value.activationPercent ||
-                  value.activationPercent < 0
+                  isNaN(draft.activationPercent) ||
+                  !draft.activationPercent ||
+                  draft.activationPercent < 0
                 ) {
-                  value.activationPercent = 0
+                  draft.activationPercent = 0
                 }
-                if (value.activationPercent > 100) {
-                  value.activationPercent = 100
+                if (draft.activationPercent > 100) {
+                  draft.activationPercent = 100
                 }
               }}
             />
@@ -313,36 +367,36 @@
         {/if}
         {#if !lorePlus}
           <span class="text-textcolor mt-4">{language.insertOrder} <Help key="loreorder" /></span>
-          <NumberInput size="sm" bind:value={value.insertorder} min={0} max={1000} />
+          <NumberInput size="sm" bind:value={draft.insertorder} min={0} max={1000} />
         {/if}
         <span class="text-textcolor mt-4 mb-2">{language.prompt}</span>
-        <TextAreaInput highlight autocomplete="off" bind:value={value.content} />
-        {#await getTokens(value.content)}
+        <TextAreaInput highlight autocomplete="off" bind:value={draft.content} />
+        {#await getTokens(draft.content)}
           <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens}</span>
         {:then e}
           <span class="text-textcolor2 mt-2 mb-2 text-sm">{e} {language.tokens}</span>
         {/await}
         <div class="flex items-center mt-4">
-          <Check bind:check={value.alwaysActive} name={language.alwaysActive} />
+          <Check bind:check={draft.alwaysActive} name={language.alwaysActive} />
         </div>
-        {#if !value.alwaysActive && getCurrentCharacter()?.globalLore?.includes(value) && DBState.db.localActivationInGlobalLorebook}
+        {#if !draft.alwaysActive && getCurrentCharacter()?.globalLore?.some((entry) => entry.id && draft.id && entry.id === draft.id) && DBState.db.localActivationInGlobalLorebook}
           <div class="flex items-center mt-2">
             <Check
-              check={isLocallyActivated(value)}
-              onChange={(check: boolean) => toggleLocalActive(check, value)}
+              check={isLocallyActivated(draft)}
+              onChange={(check: boolean) => toggleLocalActive(check, draft)}
               name={language.alwaysActiveInChat}
             />
           </div>
         {/if}
-        {#if !lorePlus && !value.useRegex}
+        {#if !lorePlus && !draft.useRegex}
           <div class="flex items-center mt-2">
-            <Check bind:check={value.selective} name={language.selective} />
+            <Check bind:check={draft.selective} name={language.selective} />
             <Help key="loreSelective" name={language.selective} />
           </div>
         {/if}
-        {#if !lorePlus && !value.alwaysActive}
+        {#if !lorePlus && !draft.alwaysActive}
           <div class="flex items-center mt-2">
-            <Check bind:check={value.useRegex} name={language.useRegexLorebook} />
+            <Check bind:check={draft.useRegex} name={language.useRegexLorebook} />
             <Help key="useRegexLorebook" name={language.useRegexLorebook} />
           </div>
         {/if}

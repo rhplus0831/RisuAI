@@ -2,7 +2,7 @@
 
 Date: 2026-05-27
 
-Status: reopened by audit.
+Status: closed by 9J follow-up.
 
 ## Goal
 
@@ -14,24 +14,19 @@ import/export events match the command map.
 
 - Projection guard and `.risu` import/export event follow-ups are
   complete (`79b77f18`, `3fdb16d6`).
-- Direct-write follow-up slices 9A-9I are complete through the 2026-05-27
-  sidebar/loadout/welcome/runtime API slice; commit anchors live in `../status.md`, and detailed
-  landed notes belong under `../phases-completed/`.
-- Remaining Phase 9 risk is the reachable durable `DBState.db` write
-  surface not yet classified by the final 9J sweep.
+- Direct-write follow-up slices 9A-9J are complete through the 2026-05-27
+  final direct-write sweep. Commit anchors live in `../status.md`, and
+  detailed landed notes belong under `../phases-completed/`.
+- The final 9J focused direct-bind sweep is clean:
+  `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`.
 
 ## Tasks
 
-- Continue keeping expected projection refresh, optimistic command
-  replay, or rollback behind `withTrustedServerProjectionWrite`.
-- Sweep remaining direct `DBState.db` writes reachable in Fastify web
-  mode. Route durable settings, character, chat, memory-toggle, and
-  playground writes through commands or explicitly disable them when they
-  are unsupported.
-- Continue with 9J final broad grep, allowlist cleanup, and browser smoke:
-  `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`.
-- Add command allowlist coverage for any remaining durable write found
-  by the broader direct-write audit.
+- Keep future expected projection refresh, optimistic command replay, or
+  rollback behind `withTrustedServerProjectionWrite`.
+- If a new durable `DBState.db` write appears in Fastify web mode, route
+  it through a command/import path or explicitly disable it when
+  unsupported.
 
 ## Session Slices
 
@@ -51,7 +46,7 @@ they are intentionally outside durable Fastify-web client mutation.
 | 9G    | Complete | Character core profile, media, and basic option editors.                                              |
 | 9H    | Complete | Character lore, script, prompt, TTS, and chat-name editors.                                           |
 | 9I    | Complete | Sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API write classification. |
-| 9J    | Next     | Final direct-write sweep, allowlist gaps, browser smoke, and closeout.                                |
+| 9J    | Complete | Final direct-write sweep, allowlist gaps, browser smoke, and closeout.                                |
 
 ## Exit Criteria
 
@@ -60,12 +55,12 @@ they are intentionally outside durable Fastify-web client mutation.
 - A direct write to `DBState.db` in Fastify web mode fails unless it is
   wrapped in the trusted projection helper. (Met by the 2026-05-26 guard
   slice and browser smoke.)
-- No reachable durable Fastify web workflow persists by direct client
-  mutation.
+- No reachable durable Fastify web workflow found by the final focused
+  direct-bind sweep persists by direct client mutation.
 - `.risu` import/export event behavior matches the command map. (Met by
   the 2026-05-26 event slice.)
 - `pnpm smoke:fastify-browser` covers import and guard enforcement. (Met
-  by the 2026-05-26 event slice.)
+  by the 2026-05-26 event slice and rerun during 9J closeout.)
 
 ## Verification
 

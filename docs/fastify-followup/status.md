@@ -12,15 +12,16 @@ directly.
 
 ## Current Snapshot
 
-- Active work: audit follow-up for Phases 0, 3, 6, 7, 8, and 9.
+- Active work: audit follow-up for Phases 0, 3, 6, 7, and 8.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Highest-risk gap: Phase 9 still needs the remaining direct-write sweep
-  after the completed settings/editor slices.
-- Phase 9 follow-up has landed guard/import-event work plus slices 9A-9I;
-  use the table below for commit anchors and `status/next-steps.md` for
-  pickup order.
-- Next default pickup: Phase 9 Slice 9J, final direct-write sweep,
-  allowlist gaps, browser smoke, and Phase 9 closeout.
+- Highest-risk remaining gap: Phase 7 still needs browser regenerate
+  wiring and server regenerate assembly semantics before chat-path
+  closeout.
+- Phase 9 follow-up has landed guard/import-event work plus slices
+  9A-9J; use the table below for prior commit anchors and
+  `status/next-steps.md` for pickup order.
+- Next default pickup: Phase 7 Slice 7A, browser regenerate request
+  wiring.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 
@@ -39,6 +40,7 @@ directly.
 | `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                   |
 | `007dbe3c`                                        | 9H character lore, script, prompt, TTS, and chat-name editors.                |
 | `c1966217`                                         | 9I sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API classification. |
+| current 9J change                                 | Final direct-write sweep, allowlist gaps, browser smoke, and Phase 9 closeout. |
 
 ## Phase Status
 
@@ -53,7 +55,7 @@ directly.
 | 6 - Server-side generation              | Reopened     | `/api/v1/generate/completion` streaming provider failures can be emitted as empty successful SSE streams.               | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |
 | 7 - Server-side prompt assembly         | Reopened     | Regenerate, deferred/local provider guards, stop-trigger mutations, and route-level fixture coverage remain incomplete. | [`phases/phase-7-prompt-assembly-followup.md`](phases/phase-7-prompt-assembly-followup.md) |
 | 8 - Hypa V3 memory                      | Reopened     | Custom embedding model routing, memory progress events, and missing-summary follow-ups need fixes.                      | [`phases/phase-8-memory-followup.md`](phases/phase-8-memory-followup.md)                   |
-| 9 - Client thinning                     | Reopened     | Remaining direct-write coverage does not yet meet the Phase 9 contract.                                                 | [`phases/phase-9-client-thinning-followup.md`](phases/phase-9-client-thinning-followup.md) |
+| 9 - Client thinning                     | Closed       | 9J removed the remaining focused direct-bind hits, covered allowlist gaps, and passed browser smoke.                    | [`phases/phase-9-client-thinning-followup.md`](phases/phase-9-client-thinning-followup.md) |
 
 ## Closeout Expectations
 

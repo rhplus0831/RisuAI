@@ -19,11 +19,17 @@
   } from 'src/ts/process/triggers'
   import { onDestroy, onMount } from 'svelte'
   import { DBState } from 'src/ts/stores.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
   interface Props {
     value?: triggerscript[]
     lowLevelAble?: boolean
   }
+
+  const showDeprecatedTriggerV2Draft = createServerBackedSettingDraft<boolean>(
+    'showDeprecatedTriggerV2',
+    false,
+  )
 
   const effectCategories = {
     Special: [
@@ -3119,7 +3125,7 @@
               <div class="hidden md:block p-4 border-t border-darkborderc">
                 <div class="text-textcolor2 text-xs">
                   <CheckInput
-                    bind:check={DBState.db.showDeprecatedTriggerV2}
+                    bind:check={showDeprecatedTriggerV2Draft.value}
                     name={language.showDeprecatedTriggerV2}
                     grayText
                   />
@@ -3160,7 +3166,7 @@
               <div class="md:hidden p-4 border-t border-darkborderc">
                 <div class="text-textcolor2 text-xs">
                   <CheckInput
-                    bind:check={DBState.db.showDeprecatedTriggerV2}
+                    bind:check={showDeprecatedTriggerV2Draft.value}
                     name={language.showDeprecatedTriggerV2}
                     grayText
                   />

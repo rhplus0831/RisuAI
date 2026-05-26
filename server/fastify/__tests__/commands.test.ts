@@ -804,6 +804,8 @@ describe('Phase 9-2a scalar settings groups', () => {
         baseRevision: account.json().revision,
         patch: {
           moduleIntergration: 'module-ns',
+          enableCustomFlags: true,
+          customFlags: [8, 21],
         },
       },
     })
@@ -961,6 +963,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       username: 'Fastify User',
       didFirstSetup: true,
       moduleIntergration: 'module-ns',
+      enableCustomFlags: true,
+      customFlags: [8, 21],
     })
   })
 
@@ -1270,6 +1274,12 @@ describe('Phase 9-2c prompt template and item commands', () => {
       payload: {
         baseRevision: revision,
         patch: {
+          mainPrompt: 'MAIN',
+          jailbreak: 'JB',
+          globalNote: 'GN',
+          formatingOrder: ['main', 'jailbreak', 'globalNote'],
+          promptPreprocess: true,
+          presetRegex: [{ id: 'regex-a', type: 'editinput', in: 'hello', out: 'hi' }],
           promptSettings: { sendName: true, maxThoughtTagDepth: 4 },
           jsonSchemaEnabled: true,
           jsonSchema: '{"type":"object"}',
@@ -1293,6 +1303,12 @@ describe('Phase 9-2c prompt template and item commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().database).toMatchObject({
+      mainPrompt: 'MAIN',
+      jailbreak: 'JB',
+      globalNote: 'GN',
+      formatingOrder: ['main', 'jailbreak', 'globalNote'],
+      promptPreprocess: true,
+      presetRegex: [{ id: 'regex-a', type: 'editinput', in: 'hello', out: 'hi' }],
       promptSettings: { sendName: true, maxThoughtTagDepth: 4 },
       jsonSchemaEnabled: true,
       jsonSchema: '{"type":"object"}',

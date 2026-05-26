@@ -61,6 +61,7 @@
     canUseServerCommands,
     patchPromptSettingsCommand,
     runServerCommand,
+    type SettingsPatch,
   } from 'src/ts/server/commands'
   import {
     currentPluginWatchSuppressionVersion,
@@ -70,13 +71,16 @@
 
   const stopServerSettingsWatch = watchServerBackedSettings([
     'proxyRequestModel',
-    'enableCustomFlags',
-    'modelTools',
     'hideApiKey',
     'useLegacyGUI',
-    'moduleIntergration',
   ])
   onDestroy(stopServerSettingsWatch)
+  const pendingPromptFieldPatch = {
+    patch: {} as SettingsPatch,
+    previous: {} as SettingsPatch,
+    attempted: {} as SettingsPatch,
+    timer: null as ReturnType<typeof setTimeout> | null,
+  }
   const oobaDraft = createServerBackedSettingDraft<Record<string, any>>('ooba', { formating: {} })
   const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>(
     'localStopStrings',
@@ -202,6 +206,19 @@
     'textgenWebUIBlockingURL',
     '',
   )
+  const enableCustomFlagsDraft = createServerBackedSettingDraft<boolean>(
+    'enableCustomFlags',
+    false,
+  )
+  const customFlagsDraft = createServerBackedSettingDraft<LLMFlags[]>('customFlags', [])
+  const moduleIntergrationDraft = createServerBackedSettingDraft<string>('moduleIntergration', '')
+  const modelToolsDraft = createServerBackedSettingDraft<string[]>('modelTools', [])
+  const presetRegexDraft = createPromptFieldDraft<any[]>('presetRegex', [])
+  const mainPromptDraft = createPromptFieldDraft<string>('mainPrompt', '')
+  const jailbreakDraft = createPromptFieldDraft<string>('jailbreak', '')
+  const globalNoteDraft = createPromptFieldDraft<string>('globalNote', '')
+  const formatingOrderDraft = createPromptFieldDraft<string[]>('formatingOrder', [])
+  const promptPreprocessDraft = createPromptFieldDraft<boolean>('promptPreprocess', false)
   let currentPluginProviderDraft = $state(DBState.db.currentPluginProvider ?? '')
 
   let initializedPluginProviderWatch = false
@@ -306,10 +323,140 @@
   let { goPromptTemplate = () => {} }: Props = $props()
 
   async function loadTokenize() {
-    tokens.mainPrompt = await tokenizeAccurate(DBState.db.mainPrompt, true)
-    tokens.jailbreak = await tokenizeAccurate(DBState.db.jailbreak, true)
-    tokens.globalNote = await tokenizeAccurate(DBState.db.globalNote, true)
+    tokens.mainPrompt = await tokenizeAccurate(mainPromptDraft.value, true)
+    tokens.jailbreak = await tokenizeAccurate(jailbreakDraft.value, true)
+    tokens.globalNote = await tokenizeAccurate(globalNoteDraft.value, true)
   }
+
+  function toggleCustomFlag(flag: number): void {
+    const typedFlag = flag as LLMFlags
+    const flags = customFlagsDraft.value ?? []
+    customFlagsDraft.value = flags.includes(typedFlag)
+      ? flags.filter((candidate) => candidate !== typedFlag)
+      : [...flags, typedFlag]
+  }
+
+  function customFlagEnabled(flag: number): boolean {
+    return (customFlagsDraft.value ?? []).includes(flag as LLMFlags)
+  }
+
+  function toggleModelTool(tool: string): void {
+    const tools = modelToolsDraft.value ?? []
+    modelToolsDraft.value = tools.includes(tool)
+      ? tools.filter((candidate) => candidate !== tool)
+      : [...tools, tool]
+  }
+
+  function createPromptFieldDraft<T>(key: string, fallback: T): { value: T } {
+    const initialValue = currentPromptFieldValue(key, fallback)
+    const draft = $state<{ value: T }>({ value: cloneJsonValue(initialValue) })
+    let initialized = false
+    let suppressDraftDispatch = false
+    let previousServerSnapshot = snapshotJson(initialValue)
+
+    $effect(() => {
+      const serverValue = currentPromptFieldValue(key, fallback)
+      const serverSnapshot = snapshotJson(serverValue)
+      const draftSnapshot = snapshotJson(draft.value)
+
+      if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
+        suppressDraftDispatch = true
+        draft.value = cloneJsonValue(serverValue)
+        queueMicrotask(() => {
+          suppressDraftDispatch = false
+        })
+      }
+
+      previousServerSnapshot = serverSnapshot
+    })
+
+    $effect(() => {
+      const snapshot = snapshotJson(draft.value)
+      if (!initialized) {
+        initialized = true
+        return
+      }
+      if (suppressDraftDispatch) return
+
+      untrack(() => {
+        const target = DBState.db as unknown as Record<string, unknown>
+        const attempted = cloneJsonValue(draft.value)
+        const previous = cloneJsonValue(target[key])
+        withTrustedServerProjectionWrite(() => {
+          target[key] = attempted
+        })
+        queuePromptFieldPatch({ [key]: attempted }, { [key]: previous })
+        previousServerSnapshot = snapshot
+      })
+    })
+
+    return draft
+  }
+
+  function queuePromptFieldPatch(patch: SettingsPatch, previous: SettingsPatch): void {
+    if (!canUseServerCommands()) return
+    for (const [key, value] of Object.entries(patch)) {
+      if (!(key in pendingPromptFieldPatch.previous)) {
+        pendingPromptFieldPatch.previous[key] = previous[key]
+      }
+      pendingPromptFieldPatch.patch[key] = value
+      pendingPromptFieldPatch.attempted[key] = value
+    }
+
+    if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
+    pendingPromptFieldPatch.timer = setTimeout(() => {
+      pendingPromptFieldPatch.timer = null
+      const commandPatch = pendingPromptFieldPatch.patch
+      const commandPrevious = pendingPromptFieldPatch.previous
+      const commandAttempted = pendingPromptFieldPatch.attempted
+      pendingPromptFieldPatch.patch = {}
+      pendingPromptFieldPatch.previous = {}
+      pendingPromptFieldPatch.attempted = {}
+
+      void runServerCommand({
+        command: (baseRevision) =>
+          patchPromptSettingsCommand({
+            baseRevision,
+            patch: commandPatch,
+          }),
+        rollback: () => rollbackPromptFields(commandPrevious, commandAttempted),
+      })
+    }, 250)
+  }
+
+  function rollbackPromptFields(previous: SettingsPatch, attempted: SettingsPatch): void {
+    withTrustedServerProjectionWrite(() => {
+      const target = DBState.db as unknown as Record<string, unknown>
+      for (const [key, previousValue] of Object.entries(previous)) {
+        if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
+          target[key] = cloneJsonValue(previousValue)
+        }
+      }
+    })
+  }
+
+  function currentPromptFieldValue<T>(key: string, fallback: T): T {
+    const target = DBState.db as unknown as Record<string, unknown> | undefined
+    const value = target?.[key]
+    return value === undefined ? fallback : (value as T)
+  }
+
+  function snapshotJson(value: unknown): string {
+    const snapshot = JSON.stringify(value)
+    return snapshot === undefined ? '__undefined__' : snapshot
+  }
+
+  function cloneJsonValue<T>(value: T): T {
+    if (value === undefined) return value
+    return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  $effect(() => {
+    mainPromptDraft.value
+    jailbreakDraft.value
+    globalNoteDraft.value
+    void loadTokenize()
+  })
 
   $effect.pre(() => {
     if (DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'mancer') {
@@ -322,6 +469,12 @@
     vertexAccessTokenExpiresDraft.value = 0
     console.log('Vertex AI token cleared')
   }
+
+  onDestroy(() => {
+    if (pendingPromptFieldPatch.timer) {
+      clearTimeout(pendingPromptFieldPatch.timer)
+    }
+  })
 
   let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
   let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
@@ -1302,7 +1455,9 @@
         check={false}
         name={language.usePromptTemplate}
         onChange={() => {
-          DBState.db.promptTemplate = []
+          withTrustedServerProjectionWrite(() => {
+            DBState.db.promptTemplate = []
+          })
           if (canUseServerCommands()) {
             void runServerCommand({
               command: (baseRevision) =>
@@ -1311,12 +1466,14 @@
                   patch: { promptTemplate: [] },
                 }),
               rollback: () => {
-                if (
-                  Array.isArray(DBState.db.promptTemplate) &&
-                  DBState.db.promptTemplate.length === 0
-                ) {
-                  DBState.db.promptTemplate = undefined
-                }
+                withTrustedServerProjectionWrite(() => {
+                  if (
+                    Array.isArray(DBState.db.promptTemplate) &&
+                    DBState.db.promptTemplate.length === 0
+                  ) {
+                    DBState.db.promptTemplate = undefined
+                  }
+                })
               },
             })
           }
@@ -1329,22 +1486,18 @@
     <Button
       className="mt-2"
       onclick={(e) => {
-        if (DBState.db.customFlags.includes(flag as LLMFlags)) {
-          DBState.db.customFlags = DBState.db.customFlags.filter((f) => f !== flag)
-        } else {
-          DBState.db.customFlags.push(flag as LLMFlags)
-        }
+        toggleCustomFlag(flag)
       }}
-      styled={DBState.db.customFlags.includes(flag as LLMFlags) ? 'primary' : 'outlined'}
+      styled={customFlagEnabled(flag) ? 'primary' : 'outlined'}
     >
       {name}
     </Button>
   {/snippet}
 
   <Accordion styled name={language.customFlags}>
-    <Check bind:check={DBState.db.enableCustomFlags} name={language.enableCustomFlags} />
+    <Check bind:check={enableCustomFlagsDraft.value} name={language.enableCustomFlags} />
 
-    {#if DBState.db.enableCustomFlags}
+    {#if enableCustomFlagsDraft.value}
       {@render CustomFlagButton('hasImageInput', 0)}
       {@render CustomFlagButton('hasImageOutput', 1)}
       {@render CustomFlagButton('hasAudioInput', 2)}
@@ -1373,7 +1526,7 @@
 
   <Accordion styled name={language.moduleIntergration} help="moduleIntergration">
     <TextAreaInput
-      bind:value={DBState.db.moduleIntergration}
+      bind:value={moduleIntergrationDraft.value}
       fullwidth
       height={'32'}
       autocomplete="off"
@@ -1383,19 +1536,15 @@
   <Accordion styled name={language.tools}>
     <Check
       name={language.search}
-      check={DBState.db.modelTools.includes('search')}
+      check={(modelToolsDraft.value ?? []).includes('search')}
       onChange={() => {
-        if (DBState.db.modelTools.includes('search')) {
-          DBState.db.modelTools = DBState.db.modelTools.filter((tool) => tool !== 'search')
-        } else {
-          DBState.db.modelTools.push('search')
-        }
+        toggleModelTool('search')
       }}
     />
   </Accordion>
 
   <Accordion styled name={language.regexScript}>
-    <RegexList bind:value={DBState.db.presetRegex} buttons />
+    <RegexList bind:value={presetRegexDraft.value} buttons />
   </Accordion>
 
   <Accordion styled name={language.icon}>
@@ -1452,23 +1601,23 @@
 {#if submenu === 2 || submenu === -1}
   {#if !DBState.db.promptTemplate}
     <span class="text-textcolor">{language.mainPrompt} <Help key="mainprompt" /></span>
-    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={DBState.db.mainPrompt}
+    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={mainPromptDraft.value}
     ></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.mainPrompt} {language.tokens}</span>
     <span class="text-textcolor">{language.jailbreakPrompt} <Help key="jailbreak" /></span>
-    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={DBState.db.jailbreak}
+    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={jailbreakDraft.value}
     ></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.jailbreak} {language.tokens}</span>
     <span class="text-textcolor">{language.globalNote} <Help key="globalNote" /></span>
-    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={DBState.db.globalNote}
+    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={globalNoteDraft.value}
     ></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.globalNote} {language.tokens}</span>
     <span class="text-textcolor mb-2 mt-4"
       >{language.formatingOrder} <Help key="formatOrder" /></span
     >
-    <DropList bind:list={DBState.db.formatingOrder} />
+    <DropList bind:list={formatingOrderDraft.value} />
     <div class="flex items-center mt-4">
-      <Check bind:check={DBState.db.promptPreprocess} name={language.promptPreprocess} />
+      <Check bind:check={promptPreprocessDraft.value} name={language.promptPreprocess} />
     </div>
   {:else if submenu === 2}
     <PromptSettings mode="inline" />

@@ -8,6 +8,13 @@
   import { sleep, sortableOptions } from 'src/ts/util'
   import { v4 } from 'uuid'
   import { alertError } from 'src/ts/alert'
+  import {
+    currentLorebookStateSnapshot,
+    dispatchReplaceCharacterLorebooks,
+    dispatchReplaceChatLorebooks,
+    dispatchReplaceGlobalLorebookEntries,
+  } from 'src/ts/server/lorebookBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   let reinitializeSortable = false
 
@@ -17,6 +24,7 @@
     lorePlus?: boolean
     externalLoreBooks?: loreBook[]
     showFolder?: string
+    onCollectionChange?: (entries: loreBook[]) => void
   }
 
   let {
@@ -25,11 +33,85 @@
     lorePlus = false,
     externalLoreBooks = $bindable(null),
     showFolder = '',
+    onCollectionChange = (entries: loreBook[]) => {
+      externalLoreBooks = entries
+    },
   }: Props = $props()
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
   let sorted = $state(0)
   let idgroup = 'a' + v4() //make should it starts with alphabetic character
+
+  function cloneLoreBooks(entries: loreBook[]): loreBook[] {
+    return JSON.parse(JSON.stringify(entries ?? []))
+  }
+
+  function updateExternalCollection(entries: loreBook[]): void {
+    const cloned = cloneLoreBooks(entries)
+    externalLoreBooks = cloned
+    onCollectionChange(cloned)
+  }
+
+  function updateExternalLoreValue(index: number, value: loreBook): void {
+    const entries = [...(externalLoreBooks ?? [])]
+    entries[index] = value
+    updateExternalCollection(entries)
+  }
+
+  function updateCharacterGlobalLoreValue(index: number, value: loreBook): void {
+    const entries = [...(DBState.db.characters[$selectedCharID]?.globalLore ?? [])]
+    entries[index] = value
+    updateCharacterGlobalLoreCollection(entries)
+  }
+
+  function updateCharacterGlobalLoreCollection(entries: loreBook[]): void {
+    const characterId = DBState.db.characters[$selectedCharID]?.chaId
+    if (!characterId) return
+    const previous = currentLorebookStateSnapshot()
+    const cloned = cloneLoreBooks(entries)
+    withTrustedServerProjectionWrite(() => {
+      const character = DBState.db.characters[$selectedCharID]
+      if (character) character.globalLore = cloned
+    })
+    dispatchReplaceCharacterLorebooks(characterId, cloned, previous)
+  }
+
+  function updateChatLoreValue(index: number, value: loreBook): void {
+    const chat = DBState.db.characters[$selectedCharID]?.chats?.[
+      DBState.db.characters[$selectedCharID]?.chatPage ?? 0
+    ]
+    const entries = [...(chat?.localLore ?? [])]
+    entries[index] = value
+    updateChatLoreCollection(entries)
+  }
+
+  function updateChatLoreCollection(entries: loreBook[]): void {
+    const character = DBState.db.characters[$selectedCharID]
+    const chatPage = character?.chatPage ?? 0
+    const chatId = character?.chats?.[chatPage]?.id
+    if (!chatId) return
+    const previous = currentLorebookStateSnapshot()
+    const cloned = cloneLoreBooks(entries)
+    withTrustedServerProjectionWrite(() => {
+      const targetCharacter = DBState.db.characters[$selectedCharID]
+      const targetChat = targetCharacter?.chats?.[targetCharacter.chatPage ?? 0]
+      if (targetChat) targetChat.localLore = cloned
+    })
+    dispatchReplaceChatLorebooks(chatId, cloned, previous)
+  }
+
+  function updateGlobalLorebookCollection(entries: loreBook[]): void {
+    const lorebook = DBState.db.loreBook?.[DBState.db.loreBookPage]
+    const lorebookId = (lorebook as { id?: string } | undefined)?.id
+    if (!lorebookId) return
+    const previous = currentLorebookStateSnapshot()
+    const cloned = cloneLoreBooks(entries)
+    withTrustedServerProjectionWrite(() => {
+      const target = DBState.db.loreBook?.[DBState.db.loreBookPage]
+      if (target) target.data = cloned
+    })
+    dispatchReplaceGlobalLorebookEntries(lorebookId, cloned, previous)
+  }
 
   // DOM stabilization waiting function
   const waitForDOMReady = async () => {
@@ -288,15 +370,13 @@
         // 4-4. Apply final changed array to appropriate data store
         if (externalLoreBooks) {
           // Arrays passed as props must be modified internally to reflect in parent
-          externalLoreBooks.splice(0, externalLoreBooks.length, ...newArray)
+          updateExternalCollection(newArray)
         } else if (submenu === 1) {
-          DBState.db.characters[$selectedCharID].chats[
-            DBState.db.characters[$selectedCharID].chatPage
-          ].localLore = newArray
+          updateChatLoreCollection(newArray)
         } else if (globalMode) {
-          DBState.db.loreBook[DBState.db.loreBookPage].data = newArray
+          updateGlobalLorebookCollection(newArray)
         } else {
-          DBState.db.characters[$selectedCharID].globalLore = newArray
+          updateCharacterGlobalLoreCollection(newArray)
         }
 
         // ===== Stage 5: Force UI synchronization and SortableJS reinitialization =====
@@ -382,7 +462,7 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              bind:value={externalLoreBooks[i]}
+              bind:value={() => externalLoreBooks[i], (value) => updateExternalLoreValue(i, value)}
               idx={i}
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
@@ -394,7 +474,7 @@
                   onClose(false, book)
                 }
 
-                let lore = externalLoreBooks
+                let lore = [...externalLoreBooks]
 
                 // When deleting a folder, also delete all items that belong to that folder
                 if (book.mode === 'folder') {
@@ -412,11 +492,12 @@
                   lore.splice(i, 1)
                 }
 
-                externalLoreBooks = lore
+                updateExternalCollection(lore)
               }}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
-              bind:externalLoreBooks
+              {externalLoreBooks}
+              {onCollectionChange}
             />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
@@ -436,7 +517,9 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              bind:value={DBState.db.characters[$selectedCharID].globalLore[i]}
+              bind:value={() =>
+                DBState.db.characters[$selectedCharID].globalLore[i], (value) =>
+                updateCharacterGlobalLoreValue(i, value)}
               idx={i}
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
@@ -448,7 +531,7 @@
                   onClose(false, book)
                 }
 
-                let lore = DBState.db.characters[$selectedCharID].globalLore
+                let lore = [...DBState.db.characters[$selectedCharID].globalLore]
 
                 // When deleting a folder, also delete all items that belong to that folder
                 if (book.mode === 'folder') {
@@ -466,12 +549,13 @@
                   lore.splice(i, 1)
                 }
 
-                DBState.db.characters[$selectedCharID].globalLore = lore
+                updateCharacterGlobalLoreCollection(lore)
               }}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}
-              bind:externalLoreBooks={DBState.db.characters[$selectedCharID].globalLore}
+              externalLoreBooks={DBState.db.characters[$selectedCharID].globalLore}
+              onCollectionChange={updateCharacterGlobalLoreCollection}
             />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
@@ -491,11 +575,10 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              bind:value={
+              bind:value={() =>
                 DBState.db.characters[$selectedCharID].chats[
                   DBState.db.characters[$selectedCharID].chatPage
-                ].localLore[i]
-              }
+                ].localLore[i], (value) => updateChatLoreValue(i, value)}
               idx={i}
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
@@ -507,10 +590,11 @@
                   onClose(false, book)
                 }
 
-                let lore =
-                  DBState.db.characters[$selectedCharID].chats[
+                let lore = [
+                  ...DBState.db.characters[$selectedCharID].chats[
                     DBState.db.characters[$selectedCharID].chatPage
-                  ].localLore
+                  ].localLore,
+                ]
 
                 // When deleting a folder, also delete all items that belong to that folder
                 if (book.mode === 'folder') {
@@ -528,18 +612,17 @@
                   lore.splice(i, 1)
                 }
 
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].localLore = lore
+                updateChatLoreCollection(lore)
               }}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}
-              bind:externalLoreBooks={
+              externalLoreBooks={
                 DBState.db.characters[$selectedCharID].chats[
                   DBState.db.characters[$selectedCharID].chatPage
                 ].localLore
               }
+              onCollectionChange={updateChatLoreCollection}
             />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
