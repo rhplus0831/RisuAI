@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { applyJsonCommandMutation, readBaseRevision } from '../commands/mutations.js'
+import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
@@ -4117,7 +4118,8 @@ function applySettingsPatch(database: unknown, patch: Record<string, unknown>): 
   }
 
   const target = database as Record<string, unknown>
-  for (const [key, value] of Object.entries(patch)) {
+  const resolvedPatch = resolveMaskedProviderSecretPlaceholders(database, patch)
+  for (const [key, value] of Object.entries(resolvedPatch)) {
     target[key] = value
   }
 }

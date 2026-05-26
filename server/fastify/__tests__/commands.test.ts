@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { applyJsonCommandMutation } from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
+import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersisted } from '../src/repository.js'
 
 const subtle = webcrypto.subtle
@@ -341,7 +342,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
-  it('allows provider scalar updates before provider-key masking lands', async () => {
+  it('allows provider scalar updates and masks them in bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       openAIKey: 'old',
@@ -366,8 +367,102 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().database).toEqual({
-      openAIKey: 'new-secret',
+      openAIKey: MASKED_PROVIDER_SECRET,
       aiModel: 'openrouter',
+    })
+  })
+
+  it('preserves masked provider placeholders while replacing explicit new secrets', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      openAIKey: 'old-openai',
+      claudeAPIKey: 'old-claude',
+      OaiCompAPIKeys: { deepseek: 'old-deepseek', deepinfra: 'old-deepinfra' },
+      customModels: [
+        { id: 'xcustom:::a', name: 'Custom A', key: 'old-custom', url: 'https://old.example.com' },
+      ],
+      authRefreshes: [
+        {
+          url: 'https://mcp.example.com',
+          tokenUrl: 'https://mcp.example.com/token',
+          refreshToken: 'old-refresh',
+          clientId: 'client-id',
+          clientSecret: 'old-client-secret',
+        },
+      ],
+      aiModel: 'gpt4o-chatgpt',
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          openAIKey: MASKED_PROVIDER_SECRET,
+          claudeAPIKey: 'new-claude',
+          OaiCompAPIKeys: {
+            deepseek: MASKED_PROVIDER_SECRET,
+            deepinfra: 'new-deepinfra',
+          },
+          customModels: [
+            {
+              id: 'xcustom:::a',
+              name: 'Custom A renamed',
+              key: MASKED_PROVIDER_SECRET,
+              url: 'https://new.example.com',
+            },
+          ],
+          authRefreshes: [
+            {
+              url: 'https://mcp.example.com',
+              tokenUrl: 'https://mcp.example.com/token',
+              refreshToken: MASKED_PROVIDER_SECRET,
+              clientId: 'client-id-new',
+              clientSecret: 'new-client-secret',
+            },
+          ],
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(loadPersisted(harness.dataDir).database).toEqual({
+      openAIKey: 'old-openai',
+      claudeAPIKey: 'new-claude',
+      OaiCompAPIKeys: { deepseek: 'old-deepseek', deepinfra: 'new-deepinfra' },
+      customModels: [
+        { id: 'xcustom:::a', name: 'Custom A renamed', key: 'old-custom', url: 'https://new.example.com' },
+      ],
+      authRefreshes: [
+        {
+          url: 'https://mcp.example.com',
+          tokenUrl: 'https://mcp.example.com/token',
+          refreshToken: 'old-refresh',
+          clientId: 'client-id-new',
+          clientSecret: 'new-client-secret',
+        },
+      ],
+      aiModel: 'gpt4o-chatgpt',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      openAIKey: MASKED_PROVIDER_SECRET,
+      claudeAPIKey: MASKED_PROVIDER_SECRET,
+      OaiCompAPIKeys: { deepseek: MASKED_PROVIDER_SECRET, deepinfra: MASKED_PROVIDER_SECRET },
+      customModels: [{ key: MASKED_PROVIDER_SECRET }],
+      authRefreshes: [
+        {
+          refreshToken: MASKED_PROVIDER_SECRET,
+          clientSecret: MASKED_PROVIDER_SECRET,
+        },
+      ],
     })
   })
 
@@ -470,7 +565,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       seperateModels: { memory: 'mem', translate: '', emotion: '', otherAx: '' },
       sdProvider: 'wavespeed',
       emotionProcesser: 'llm',
-      wavespeedImage: { key: 'wave-key', model: 'flux' },
+      wavespeedImage: { key: MASKED_PROVIDER_SECRET, model: 'flux' },
       username: 'Fastify User',
       didFirstSetup: true,
       moduleIntergration: 'module-ns',

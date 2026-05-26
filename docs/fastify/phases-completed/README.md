@@ -96,6 +96,7 @@ track the next piece of work.
 | 9-6b - Asset byte gate                   | [`phase-9-client-thinning-9-6b.md`](phase-9-client-thinning-9-6b.md)                   | Fastify asset reads use `/api/v1/assets` instead of browser local storage.       |
 | 9-6c - Backup/restore projection         | [`phase-9-client-thinning-9-6c.md`](phase-9-client-thinning-9-6c.md)                   | Server backup helpers/routes and restore projection invalidation.                |
 | 9-6d - Residual local cache gates        | [`phase-9-client-thinning-9-6d.md`](phase-9-client-thinning-9-6d.md)                   | RISUSAVE cache/remotes, cold-storage, and Google Search credential gates.        |
+| 9-6e - Provider secret masking           | [`phase-9-client-thinning-9-6e.md`](phase-9-client-thinning-9-6e.md)                   | Bootstrap masks provider secrets and settings commands preserve placeholders.    |
 
 ## Historical Status Logs
 

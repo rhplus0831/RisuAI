@@ -4,6 +4,7 @@ import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import { loadPersisted } from '../repository.js'
+import { maskProviderSecrets } from '../providerSecrets.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
 
@@ -20,7 +21,7 @@ export function registerBootstrapRoutes(
     return {
       revision,
       schemaVersion: version,
-      database: persisted.database,
+      database: maskProviderSecrets(persisted.database),
       assetBaseUrl: ASSET_BASE_URL,
     }
   })

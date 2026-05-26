@@ -5,6 +5,7 @@ import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import { buildApp } from '../src/app.js'
 import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
+import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
@@ -182,5 +183,73 @@ describe('Phase 2A bootstrap + import', () => {
     })
     expect(bootstrap.json().revision).toBe(2)
     expect(bootstrap.json().database).toEqual({ v: 2 })
+  })
+
+  it('masks provider secrets in bootstrap without changing persisted data', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sample = {
+      openAIKey: 'sk-openai',
+      aiModel: 'gpt4o-chatgpt',
+      OaiCompAPIKeys: { deepseek: 'ds-key' },
+      customModels: [
+        {
+          id: 'xcustom:::a',
+          name: 'custom',
+          key: 'custom-key',
+          url: 'https://example.com/v1',
+        },
+      ],
+      authRefreshes: [
+        {
+          url: 'https://mcp.example.com',
+          tokenUrl: 'https://mcp.example.com/token',
+          refreshToken: 'refresh-secret',
+          clientId: 'client-id',
+          clientSecret: 'client-secret',
+        },
+      ],
+      google: { accessToken: 'gemini-secret', projectId: 'project-a' },
+      hordeConfig: { apiKey: 'horde-key', model: 'horde-model' },
+      novelai: { token: 'novel-token', model: 'clio-v1' },
+      openaiCompatImage: { url: 'https://image.example.com', key: 'image-key' },
+      wavespeedImage: { key: 'wavespeed-key', model: 'speedy' },
+      characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }],
+    }
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: sample },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().database).toEqual({
+      ...sample,
+      openAIKey: MASKED_PROVIDER_SECRET,
+      OaiCompAPIKeys: { deepseek: MASKED_PROVIDER_SECRET },
+      customModels: [{ ...sample.customModels[0], key: MASKED_PROVIDER_SECRET }],
+      authRefreshes: [
+        {
+          ...sample.authRefreshes[0],
+          refreshToken: MASKED_PROVIDER_SECRET,
+          clientSecret: MASKED_PROVIDER_SECRET,
+        },
+      ],
+      google: { accessToken: MASKED_PROVIDER_SECRET, projectId: 'project-a' },
+      hordeConfig: { apiKey: MASKED_PROVIDER_SECRET, model: 'horde-model' },
+      novelai: { token: MASKED_PROVIDER_SECRET, model: 'clio-v1' },
+      openaiCompatImage: { url: 'https://image.example.com', key: MASKED_PROVIDER_SECRET },
+      wavespeedImage: { key: MASKED_PROVIDER_SECRET, model: 'speedy' },
+    })
+
+    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(onDisk.database).toEqual(sample)
   })
 })

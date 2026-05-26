@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-6d - Residual local cache classification**. Next pickup:
-**9-6e - Provider secret masking**.
+**9-6e - Provider secret masking**. Next pickup:
+**9-7a - `.risu` fixture corpus and codec harness**.
 
 ## Goal
 
@@ -304,6 +304,8 @@ surfaces.
   - **9-6e - Provider secret masking.** Mask provider secret fields in
     `/api/v1/bootstrap` only after server-backed provider paths no longer need
     client-visible keys. Preserve settings-command placeholder semantics.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-6e.md`](../phases-completed/phase-9-client-thinning-9-6e.md).
 - **9-7 - Server `.risu` codec core.** Move the codec to server-safe Node
   modules before route wiring.
   - **9-7a - `.risu` fixture corpus and codec harness.** Add server-side

@@ -15,17 +15,17 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-6d residual local cache classification. Fastify-mode
-  `.risu` cache/remotes, cold-storage helpers, and Google Search MCP
-  credentials now return before local persistence access; runtime-only caches
-  remain browser-local.
-- Current gap: provider secret masking can now land against the classified
-  storage/cache surface.
-- Next default pickup: 9-6e, provider secret masking.
-- Last recorded focused baselines after 9-6d: `pnpm check` clean and focused
-  client tests for RISUSAVE cache, cold storage, and Google Search MCP
-  credential gates passed. Last full client test command, `pnpm api:test`, and
-  `pnpm build` baselines remain the 9-6c records.
+- Last landed work: 9-6e provider secret masking. Fastify bootstrap masks
+  provider/media/memory secret fields before returning the browser projection,
+  and settings commands preserve masked placeholders while accepting explicit
+  replacement secrets.
+- Current gap: server-side `.risu` codec core can start now that the
+  server-backed browser projection no longer exposes provider secrets.
+- Next default pickup: 9-7a, `.risu` fixture corpus and codec harness.
+- Last recorded focused baselines after 9-6e: `pnpm check` clean and
+  focused Fastify bootstrap/command tests passed. Last full client test
+  command, `pnpm api:test`, and `pnpm build` baselines remain the 9-6c
+  records.
 
 ## Start Here
 
@@ -52,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.      |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                             |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                             |
-| Client thinning                             | Active; 9-6d landed; continue with 9-6e provider secret masking.             |
+| Client thinning                             | Active; 9-6e landed; continue with 9-7a `.risu` codec fixtures.              |
 
 ## Maintenance Rules
 

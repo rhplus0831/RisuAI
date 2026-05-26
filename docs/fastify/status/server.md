@@ -36,6 +36,9 @@ docs.
   stream. It sends committed command events as `event: command` frames
   with `{ type, revision, resource, id?, parentId? }` payloads for
   browser projection invalidation.
+- `GET /api/v1/bootstrap` masks provider/media/memory secrets before
+  returning the browser projection; grouped settings commands preserve the
+  shared masked placeholder as "leave unchanged".
 - Memory routes are auth-gated: `POST /api/v1/memory/jobs`,
   `GET /api/v1/memory/jobs`, `DELETE /api/v1/memory/jobs/:id`,
   `GET /api/v1/memory/chunks/:chatId`, and
@@ -47,7 +50,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-current pickup is 9-6e, provider secret masking in
+current pickup is 9-7a, `.risu` fixture corpus and codec harness in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

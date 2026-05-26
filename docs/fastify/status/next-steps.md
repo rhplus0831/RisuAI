@@ -205,23 +205,32 @@ existing settings command bridge:
   `src/ts/process/coldstorage.test.ts`, and
   `src/ts/process/mcp/googlesearchclient.test.ts`.
 
+9-6e then added provider secret masking:
+
+- Fastify bootstrap now masks provider/media/memory secret fields before
+  serving the browser projection, without changing persisted `db.json`.
+- Settings commands now resolve the shared masked-secret placeholder as
+  "leave unchanged" while explicit new secret values replace the stored
+  server secret.
+- Focused coverage landed in `server/fastify/__tests__/bootstrap.test.ts`
+  and `server/fastify/__tests__/commands.test.ts`.
+
 ## Immediate Pickup
 
-Immediate pickup: **9-6e - Provider secret masking**.
+Immediate pickup: **9-7a - `.risu` fixture corpus and codec harness**.
 
-- Mask provider secret fields in `GET /api/v1/bootstrap` now that
-  server-backed local cache/storage helpers have been classified and gated.
-- Preserve grouped settings command placeholder semantics: placeholder values
-  in settings patches mean "leave unchanged", while explicit new secret values
-  replace the stored server secret.
-- Confirm server-backed generation, memory, MCP refresh-token, proxy, and
-  provider helper paths do not require client-visible provider secrets before
-  masking each field family.
-- Keep Tauri/local mode unchanged and do not broaden this slice into provider
-  dispatch flattening, server-side plugin execution, server `.risu` codec/
-  import/export, asset bundle walking, or surgical event patches.
-- Treat masking as a current-schema update, not a compatibility migration;
-  there are no actual Fastify users yet.
+- Add a server-side fixture corpus for legacy raw/compressed/stream `.risu`
+  envelopes and RISUSAVE block saves.
+- Build the codec harness around pure server-safe modules only; do not wire
+  import/export routes or repository writes in this slice.
+- Include malformed/unsupported fixture cases for remote/cache-only block
+  references so 9-7c can reject them without touching browser localForage or
+  Tauri paths.
+- Keep provider dispatch flattening, plugin server execution, asset bundle
+  walking, and multipart import/export routes out of this slice.
+- Treat decoded shapes as current Phase 9 schema targets; there are no actual
+  Fastify users yet, so do not add compatibility migrations for intermediate
+  Fastify shapes.
 
 Implementation notes:
 
@@ -247,6 +256,11 @@ Implementation notes:
   remotes, cold-storage helpers, and Google Search MCP credential storage.
   Runtime-only local caches remain browser-local and are not server database
   authority.
+- 9-6e closed provider secret masking. Use
+  `MASKED_PROVIDER_SECRET` / `maskProviderSecrets()` /
+  `resolveMaskedProviderSecretPlaceholders()` from
+  `server/fastify/src/providerSecrets.ts` if later server routes need the same
+  projection or placeholder semantics.
 - Character scalar patches reject child collections, while 9-4d owns
   character asset-reference fields and Fastify-mode `saveAsset` returns
   raw server asset ids.
@@ -268,26 +282,25 @@ Implementation notes:
   dedicated server-owned paths.
 - Several direct-write search hits are expected rollback helpers,
   optimistic command updates, projection replacement writes, or runtime-only
-  state. 9-6e should focus on bootstrap masking and settings-command secret
-  semantics instead of reopening local cache classification.
+  state. 9-7a should focus on fixtures and a pure codec harness instead of
+  reopening storage/provider masking gates.
 
 ## Later Queue
 
-1. 9-6e - Provider secret masking.
-2. 9-7a - `.risu` fixture corpus and codec harness.
-3. 9-7b - Legacy envelope codec port.
-4. 9-7c - RISUSAVE block codec port.
-5. 9-7d - Decode normalization and validation.
-6. 9-7e - Repository-backed export adapter.
-7. 9-8a - Multipart `.risu` import route.
-8. 9-8b - Repository `.risu` export route.
-9. 9-8c - Asset reference walker.
-10. 9-8d - Bundle export route.
-11. 9-9a - Server-backed browser smoke harness.
-12. 9-9b - Generation and memory fixture closeout.
-13. 9-9c - Server-backed storage-write audit.
-14. 9-9d - Manual Fastify web and Tauri local verification.
-15. 9-9e - Phase 9 docs closeout.
+1. 9-7a - `.risu` fixture corpus and codec harness.
+2. 9-7b - Legacy envelope codec port.
+3. 9-7c - RISUSAVE block codec port.
+4. 9-7d - Decode normalization and validation.
+5. 9-7e - Repository-backed export adapter.
+6. 9-8a - Multipart `.risu` import route.
+7. 9-8b - Repository `.risu` export route.
+8. 9-8c - Asset reference walker.
+9. 9-8d - Bundle export route.
+10. 9-9a - Server-backed browser smoke harness.
+11. 9-9b - Generation and memory fixture closeout.
+12. 9-9c - Server-backed storage-write audit.
+13. 9-9d - Manual Fastify web and Tauri local verification.
+14. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -362,6 +375,9 @@ Focused 9-5 runs:
 - 9-6d: `pnpm test src/ts/storage/risuSave.test.ts src/ts/process/coldstorage.test.ts src/ts/process/mcp/googlesearchclient.test.ts`;
   `pnpm check`
   - 4 residual local cache/storage gate tests passed; check clean.
+- 9-6e: `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/commands.test.ts`;
+  `pnpm check`
+  - 72 Fastify bootstrap/command tests passed; check clean.
 
 ## References
 
@@ -372,7 +388,7 @@ Focused 9-5 runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-6d.md`](../phases-completed/phase-9-client-thinning-9-6d.md)
+  [`../phases-completed/phase-9-client-thinning-9-6e.md`](../phases-completed/phase-9-client-thinning-9-6e.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)
