@@ -2,8 +2,8 @@
 
 Date: 2026-05-27
 
-Status: reopened by audit. Slices 7A and 7B have landed; continue with
-7C.
+Status: reopened by audit. Slices 7A, 7B, and 7C have landed; continue
+with 7D.
 
 ## Goal
 
@@ -37,11 +37,12 @@ and dispatch.
   reconstruct the same transcript and mutation semantics as local
   regenerate, and reject invalid latest-message targets with the
   existing typed route error style.
-- Add `/chat` provider dispatch guards for local-only or deferred
-  providers, including NovelAI text, NovelList, Ooba OAI-compatible, and
-  plugin/local provider families. They should either fall back to local
-  client dispatch before server streaming begins or return an explicit
-  unsupported-provider error.
+- Done in 7C: add `/chat` provider dispatch guards for local-only or
+  deferred providers, including NovelAI text, NovelList, Ooba
+  OAI-compatible, plugin, local provider families, and unknown
+  OpenAI-compatible model ids. These now return explicit
+  unsupported-provider SSE errors instead of falling through to OpenAI
+  dispatch.
 - Emit `message_patch` and restoration metadata for stop-trigger aborts
   before the terminal error/done event.
 - Replace mocked fixture expectations with route-backed coverage for at
@@ -58,10 +59,11 @@ and dispatch.
   local reroll semantics, emits a `regenerate` `replace_all`
   `message_patch`, and tolerates the browser-command race where the
   persisted transcript is already truncated.
-- 7C - `/chat` provider dispatch guards. Block local-only or deferred
-  provider families from falling through to OpenAI-compatible dispatch,
-  covering NovelAI text, NovelList, Ooba OAI-compatible, plugin, and
-  local provider families.
+- 7C - Landed: `/chat` provider dispatch guards. Blocked local-only or
+  deferred provider families from falling through to OpenAI-compatible
+  dispatch, covering NovelAI text, NovelList, Ooba OAI-compatible,
+  plugin, local provider families, and unknown OpenAI-compatible model
+  ids.
 - 7D - Stop-trigger mutation payload delivery. Ensure route streaming
   emits the assembly-produced `message_patch` and restoration metadata
   before the terminal error or done frame.

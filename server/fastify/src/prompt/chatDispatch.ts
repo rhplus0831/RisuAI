@@ -5,6 +5,7 @@ import {
   LLMFormat,
   type LLMFormat as LLMFormatValue,
 } from '../../../../src/ts/model/types'
+import { OpenAIModels } from '../../../../src/ts/model/providers/openai'
 import type { CompletionResult, CompletionStreamFrame } from '../generation/frames.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
 import { resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../generation/openai.js'
@@ -56,6 +57,7 @@ interface ModelInfoLite {
   endpoint?: string
   keyIdentifier?: string
   flags: number[]
+  unsupportedReason?: string
 }
 
 interface OpenAICompatibleVariant {
@@ -77,6 +79,11 @@ const ALTERNATING_FLAGS = [
   LLMFlags.requiresAlternateRole,
   LLMFlags.mustStartWithUserInput,
 ]
+const OPENAI_MODEL_IDS = new Set(
+  OpenAIModels.flatMap((model) => [model.id, model.internalID]).filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  ),
+)
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
@@ -242,6 +249,21 @@ function resolveModelInfo(db: Database): ModelInfoLite {
   if (aiModel === 'nanogpt') {
     return { id: aiModel, format: LLMFormat.NanoGPT, flags: DEFAULT_OPENAI_FLAGS }
   }
+  if (aiModel === 'novelai' || aiModel === 'novelai_kayra') {
+    return { id: aiModel, format: LLMFormat.NovelAI, flags: DEFAULT_OPENAI_FLAGS }
+  }
+  if (aiModel === 'novellist' || aiModel === 'novellist_damsel') {
+    return { id: aiModel, format: LLMFormat.NovelList, flags: [] }
+  }
+  if (aiModel === 'ooba') {
+    return { id: aiModel, format: LLMFormat.Ooba, flags: FIRST_SYSTEM_FLAGS }
+  }
+  if (aiModel === 'custom' || aiModel.startsWith('pluginmodel:::')) {
+    return { id: aiModel, format: LLMFormat.Plugin, flags: DEFAULT_OPENAI_FLAGS }
+  }
+  if (aiModel.startsWith('hf:::')) {
+    return { id: aiModel, format: LLMFormat.WebLLM, flags: DEFAULT_OPENAI_FLAGS }
+  }
   if (aiModel === 'ollama-cloud') {
     return {
       id: aiModel,
@@ -314,6 +336,15 @@ function resolveModelInfo(db: Database): ModelInfoLite {
     return { id: aiModel, format: LLMFormat.OobaLegacy, flags: FIRST_SYSTEM_FLAGS }
   }
 
+  if (!OPENAI_MODEL_IDS.has(aiModel)) {
+    return {
+      id: aiModel,
+      format: LLMFormat.OpenAICompatible,
+      flags: DEFAULT_OPENAI_FLAGS,
+      unsupportedReason: `unsupported /chat provider: unknown OpenAI-compatible model "${aiModel}" cannot be dispatched by the server`,
+    }
+  }
+
   return { id: aiModel, format: LLMFormat.OpenAICompatible, flags: DEFAULT_OPENAI_FLAGS }
 }
 
@@ -383,6 +414,7 @@ function reformatMessages(db: Database, rows: OpenAIChat[], flags: number[]): Op
 }
 
 function resolveProvider(db: Database, info: ModelInfoLite): string | null {
+  if (info.unsupportedReason) return null
   if (info.format === LLMFormat.Echo) return 'echo'
   if (info.format === LLMFormat.NanoGPT) return 'nanogpt'
   if (
@@ -413,6 +445,30 @@ function resolveProvider(db: Database, info: ModelInfoLite): string | null {
   const aiModel = asString(db.aiModel) ?? ''
   if (aiModel === 'openrouter') return 'openrouter'
   return 'openai'
+}
+
+function unsupportedChatProviderReason(db: Database, info: ModelInfoLite): string | null {
+  if (info.unsupportedReason) return info.unsupportedReason
+
+  const aiModel = asString(db.aiModel) ?? ''
+  if (aiModel === 'reverse_proxy' && db.reverseProxyOobaMode === true) {
+    return 'unsupported /chat provider: Ooba OpenAI-compatible reverse proxy must use local dispatch'
+  }
+
+  switch (info.format) {
+    case LLMFormat.NovelAI:
+      return 'unsupported /chat provider: NovelAI text generation must use local dispatch'
+    case LLMFormat.NovelList:
+      return 'unsupported /chat provider: NovelList must use local dispatch'
+    case LLMFormat.Ooba:
+      return 'unsupported /chat provider: Ooba OpenAI-compatible chat must use local dispatch'
+    case LLMFormat.Plugin:
+      return 'unsupported /chat provider: plugin providers must use local dispatch'
+    case LLMFormat.WebLLM:
+      return 'unsupported /chat provider: local WebLLM models must use local dispatch'
+    default:
+      return null
+  }
 }
 
 function resolveBedrockWireModel(internalId: string): string {
@@ -588,9 +644,13 @@ export async function dispatchChatProvider(
 ): Promise<AsyncIterable<CompletionStreamFrame>> {
   const { database: db, outputTokens, signal } = args
   const info = resolveModelInfo(db)
+  const unsupportedReason = unsupportedChatProviderReason(db, info)
+  if (unsupportedReason) {
+    throw new Error(unsupportedReason)
+  }
   const provider = resolveProvider(db, info)
   if (provider === null) {
-    throw new Error(`provider not implemented yet for server chat dispatch: ${info.format}`)
+    throw new Error(`unsupported /chat provider: ${info.format}`)
   }
 
   const model = resolveProviderModel(db, info, provider)

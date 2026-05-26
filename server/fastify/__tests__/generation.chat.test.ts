@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
+import { LLMFormat } from '../../../src/ts/model/types'
 
 const subtle = webcrypto.subtle
 
@@ -651,6 +652,99 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       },
     })
   })
+
+  it.each([
+    {
+      label: 'NovelAI text',
+      database: { aiModel: 'novelai' },
+      error: 'unsupported /chat provider: NovelAI text generation must use local dispatch',
+    },
+    {
+      label: 'NovelList',
+      database: { aiModel: 'novellist' },
+      error: 'unsupported /chat provider: NovelList must use local dispatch',
+    },
+    {
+      label: 'Ooba OpenAI-compatible reverse proxy',
+      database: {
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'ooba-model',
+        customAPIFormat: LLMFormat.OpenAICompatible,
+        reverseProxyOobaMode: true,
+        forceReplaceUrl: 'https://proxy.example.com/v1',
+        proxyKey: 'sk-proxy',
+      },
+      error:
+        'unsupported /chat provider: Ooba OpenAI-compatible reverse proxy must use local dispatch',
+    },
+    {
+      label: 'plugin legacy',
+      database: { aiModel: 'custom' },
+      error: 'unsupported /chat provider: plugin providers must use local dispatch',
+    },
+    {
+      label: 'plugin V3',
+      database: { aiModel: 'pluginmodel:::provider-a' },
+      error: 'unsupported /chat provider: plugin providers must use local dispatch',
+    },
+    {
+      label: 'local WebLLM',
+      database: { aiModel: 'hf:::Xenova/opt-350m' },
+      error: 'unsupported /chat provider: local WebLLM models must use local dispatch',
+    },
+    {
+      label: 'unknown OpenAI-compatible model',
+      database: { aiModel: 'unregistered-local-model' },
+      error:
+        'unsupported /chat provider: unknown OpenAI-compatible model "unregistered-local-model" cannot be dispatched by the server',
+    },
+  ])(
+    'emits an explicit unsupported-provider error for $label without provider tokens',
+    async ({ database, error }) => {
+      const { assertion } = await setupAuthedClient(harness.app)
+      await seedDatabase(harness.app, assertion, {
+        ...fixtureDatabase,
+        useServerPromptAssembly: true,
+        ...database,
+      })
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+
+      const events = parseEvents(res.body)
+      expect(events.map((e) => e.type)).toEqual([
+        'stage',
+        'stage',
+        'stage',
+        'prompt',
+        'message_patch',
+        'stage',
+        'info',
+        'error',
+        'done',
+      ])
+      expect(events.some((e) => e.type === 'token')).toBe(false)
+      expect(events.at(-2)).toEqual({
+        type: 'error',
+        data: {
+          error,
+          restoration: {
+            chatId: 'chat-1',
+            characterId: 'char-1',
+            selectedCharID: 0,
+            chatPage: 0,
+            messages: [],
+          },
+        },
+      })
+      expect(typeof events.at(-1)?.data.generationId).toBe('string')
+    },
+  )
 
   it('emits a typed tts side_effect before done when auto speech is enabled', async () => {
     await restartHarness({

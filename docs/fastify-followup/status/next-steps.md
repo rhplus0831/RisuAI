@@ -19,8 +19,8 @@ and add any longer closeout note under `../phases-completed/`.
    client thinning has closed.
    - 7A: landed browser regenerate request wiring.
    - 7B: landed server regenerate assembly semantics.
-   - 7C: `/chat` provider dispatch guards. Pick this next.
-   - 7D: stop-trigger mutation payload delivery.
+   - 7C: landed `/chat` provider dispatch guards.
+   - 7D: stop-trigger mutation payload delivery. Pick this next.
    - 7E: route-backed fixture coverage for send, continue, regenerate,
      preview, and preview-prompt.
 
