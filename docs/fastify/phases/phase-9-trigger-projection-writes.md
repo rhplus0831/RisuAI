@@ -2,7 +2,8 @@
 
 Date: 2026-05-27
 
-Status: open. Recorded during the 2026-05-27 Phases 0-9 audit pass.
+Status: closed. Fixed 2026-05-27; see
+[`../phases-completed/phase-9-trigger-collection-chat-projection-writes.md`](../phases-completed/phase-9-trigger-collection-chat-projection-writes.md).
 
 ## Finding
 

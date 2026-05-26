@@ -13,15 +13,11 @@ Fastify shapes.
 
 ## Immediate Pickup
 
-One open finding from the 2026-05-27 Phases 0-9 audit: trigger
-collection/chat data effects (`globalLore`, chat `note`) in
-`src/ts/process/triggers.ts` still write `DBState.db` directly and throw
-under the server-backed projection guard. Scope and prescribed routing are
-in [`../phases/phase-9-trigger-projection-writes.md`](../phases/phase-9-trigger-projection-writes.md).
-
-The scalar trigger / scripting / UI projection writes from the same audit,
-the broad typecheck blocker, and the `LEFTOVER.md` Phase 3 / Phase 7 /
-Phase 9 pickup are closed; the full broad matrix passed on 2026-05-27.
+No open findings. All Phases 0-9 audit items are closed, including:
+- Trigger collection/chat projection writes (globalLore and author note)
+- Scalar trigger / scripting / UI projection writes
+- Broad typecheck blocker
+- `LEFTOVER.md` Phase 3 / Phase 7 / Phase 9 items
 
 For future work, pick one focused slice per work session only after a
 new finding is recorded. Each slice should leave the worktree in a
@@ -30,9 +26,10 @@ longer closeout note under `../phases-completed/`.
 
 ## Closed Alpha Slices
 
-| Slice                              | Anchor     | Closeout                                                                                                                             |
-| ---------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Scalar trigger/scripting/UI writes | pending    | [`../phases-completed/phase-9-trigger-scalar-projection-writes.md`](../phases-completed/phase-9-trigger-scalar-projection-writes.md) |
+| Slice                                  | Anchor     | Closeout                                                                                                                                                     |
+| -------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Trigger collection/chat writes         | pending    | [`../phases-completed/phase-9-trigger-collection-chat-projection-writes.md`](../phases-completed/phase-9-trigger-collection-chat-projection-writes.md)       |
+| Scalar trigger/scripting/UI writes     | pending    | [`../phases-completed/phase-9-trigger-scalar-projection-writes.md`](../phases-completed/phase-9-trigger-scalar-projection-writes.md)                         |
 | Leftover audit closeout            | pending    | [`../phases-completed/leftover-audit-closeout.md`](../phases-completed/leftover-audit-closeout.md)                                   |
 | Broad closeout typecheck cleanup   | `50d55b97` | [`../phases-completed/broad-closeout-typecheck-alpha.md`](../phases-completed/broad-closeout-typecheck-alpha.md)                     |
 | Phase 5 sendChat boundary cleanup  | `bd7a4712` | [`../phases-completed/phase-5-sendchat-boundary-alpha.md`](../phases-completed/phase-5-sendchat-boundary-alpha.md)                   |
@@ -53,10 +50,10 @@ pnpm build
 pnpm smoke:fastify-browser
 ```
 
-Results from 2026-05-27:
+Results from 2026-05-27 (trigger collection/chat closeout):
 
 - `pnpm check` passed: 0 errors, 0 warnings.
-- `pnpm test` passed: 69 files, 747 passed, 4 skipped.
+- `pnpm test` passed: 70 files, 754 passed, 4 skipped.
 - `pnpm api:test` passed: 68 files, 1217 passed.
 - `pnpm build` passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.

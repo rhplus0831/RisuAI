@@ -31,7 +31,15 @@ import { generateAIImage } from './stableDiff'
 import { writeInlayImage } from './files/inlays'
 import { runScripted } from './scriptings'
 import { calcString } from './infunctions'
-import { currentChatStateSnapshot, dispatchPatchChatScriptstate } from '../chatCommands'
+import {
+  currentChatStateSnapshot,
+  dispatchPatchChatScriptstate,
+  dispatchUpdateChat,
+} from '../chatCommands'
+import {
+  currentLorebookStateSnapshot,
+  dispatchReplaceCharacterLorebooks,
+} from '../server/lorebookBridge.svelte'
 
 export interface triggerscript {
   id?: string
@@ -2200,10 +2208,9 @@ export async function runTrigger(
             char.globalLore[index][1] = value
           }
 
-          const db = getDatabase()
-          const selectedCharId = get(selectedCharID)
-          db.characters[selectedCharId].globalLore = char.globalLore
-          setCurrentCharacter(db.characters[selectedCharId])
+          const lorebookSnapshotModify = currentLorebookStateSnapshot()
+          setCurrentCharacter(char)
+          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotModify, 0)
           break
         }
         case 'v2GetLorebook': {
@@ -2251,10 +2258,9 @@ export async function runTrigger(
           let value = effect.value
           char.globalLore[index][2] = value
 
-          const selectedCharId = get(selectedCharID)
-          const db = getDatabase()
-          db.characters[selectedCharId].globalLore = char.globalLore
+          const lorebookSnapshotActivation = currentLorebookStateSnapshot()
           setCurrentCharacter(char)
+          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotActivation, 0)
 
           break
         }
@@ -2922,10 +2928,9 @@ export async function runTrigger(
             selective: false,
           })
 
-          const selectedCharId = get(selectedCharID)
-          const db = getDatabase()
-          db.characters[selectedCharId].globalLore = char.globalLore
+          const lorebookSnapshotCreate = currentLorebookStateSnapshot()
           setCurrentCharacter(char)
+          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotCreate, 0)
           break
         }
         case 'v2ModifyLorebookByIndex': {
@@ -2980,10 +2985,9 @@ export async function runTrigger(
             char.globalLore[index].insertorder = insertOrderNum
           }
 
-          const selectedCharId = get(selectedCharID)
-          const db = getDatabase()
-          db.characters[selectedCharId].globalLore = char.globalLore
+          const lorebookSnapshotModifyByIndex = currentLorebookStateSnapshot()
           setCurrentCharacter(char)
+          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotModifyByIndex, 0)
           break
         }
         case 'v2DeleteLorebookByIndex': {
@@ -3004,10 +3008,9 @@ export async function runTrigger(
 
           char.globalLore.splice(index, 1)
 
-          const selectedCharId = get(selectedCharID)
-          const db = getDatabase()
-          db.characters[selectedCharId].globalLore = char.globalLore
+          const lorebookSnapshotDelete = currentLorebookStateSnapshot()
           setCurrentCharacter(char)
+          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotDelete, 0)
           break
         }
         case 'v2GetLorebookCountNew': {
@@ -3036,10 +3039,9 @@ export async function runTrigger(
 
           char.globalLore[index].alwaysActive = effect.value
 
-          const selectedCharId = get(selectedCharID)
-          const db = getDatabase()
-          db.characters[selectedCharId].globalLore = char.globalLore
+          const lorebookSnapshotAlwaysActive = currentLorebookStateSnapshot()
           setCurrentCharacter(char)
+          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotAlwaysActive, 0)
           break
         }
         case 'v2RegexTest': {
@@ -3076,12 +3078,19 @@ export async function runTrigger(
           chat.note = value
 
           if (!arg.displayMode) {
-            const selectedCharId = get(selectedCharID)
-            const currentCharacter = getCurrentCharacter()
-            const db = getDatabase()
-            currentCharacter.chats[currentCharacter.chatPage].note = value
-            db.characters[selectedCharId].chats[currentCharacter.chatPage].note = value
-            setCurrentCharacter(currentCharacter)
+            const chatStateSnapshot = currentChatStateSnapshot()
+            let chatId: string | undefined
+            withTrustedServerProjectionWrite(() => {
+              const currentCharacter = getCurrentCharacter()
+              const chatSlot = currentCharacter.chats?.[currentCharacter.chatPage]
+              if (chatSlot) {
+                chatSlot.note = value
+                chatId = chatSlot.id
+              }
+            })
+            if (chatId) {
+              dispatchUpdateChat(chatId, { note: value }, chatStateSnapshot)
+            }
           }
           break
         }

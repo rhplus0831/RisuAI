@@ -70,6 +70,18 @@ function stubCommandFetch(): CapturedFetch[] {
           event: { type: 'persona.updated', revision: 11, resource: 'persona' },
         })
       }
+      if (url.includes('/lorebooks')) {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'lorebook.replaced', revision: 11, resource: 'lorebook' },
+        })
+      }
+      if (url.startsWith('/api/v1/commands/chats/')) {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'chat.updated', revision: 11, resource: 'chat' },
+        })
+      }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
@@ -97,7 +109,7 @@ function seedDatabase(): void {
         name: 'Character',
         desc: '',
         chatPage: 0,
-        chats: [{ message: [], note: '', name: 'main', localLore: [], scriptstate: {} }],
+        chats: [{ id: 'chat-1', message: [], note: '', name: 'main', localLore: [], scriptstate: {} }],
         triggerscript: [],
         defaultVariables: '',
         globalLore: [],
@@ -186,5 +198,181 @@ describe('trigger durable writes under the projection guard', () => {
       (call) => call.url === '/api/v1/commands/personas/persona-a' && call.method === 'PATCH',
     )
     expect(patch.body.patch.personaPrompt).toBe('persona prompt')
+  })
+
+  it('routes v2ModifyLorebook through a lorebook command instead of a guarded direct write', async () => {
+    DBState.db.characters[0].globalLore = [['lore-key', 'old content']] as any
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const char = characterWithTriggers([
+      {
+        comment: 'lore',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          {
+            type: 'v2ModifyLorebook',
+            targetType: 'value',
+            target: 'lore-key',
+            valueType: 'value',
+            value: 'new content',
+          },
+        ],
+      },
+    ])
+    char.globalLore = [['lore-key', 'old content']] as any
+
+    await expect(
+      runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'lore' }),
+    ).resolves.not.toThrow()
+
+    const cmd = await waitForCommand(
+      calls,
+      (call) =>
+        call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+    )
+    expect(cmd.body.entries).toBeDefined()
+  })
+
+  it('routes v2CreateLorebook through a lorebook command instead of a guarded direct write', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const char = characterWithTriggers([
+      {
+        comment: 'create-lore',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          {
+            type: 'v2CreateLorebook',
+            nameType: 'value',
+            name: 'new-lore',
+            keyType: 'value',
+            key: 'my-key',
+            contentType: 'value',
+            content: 'my-content',
+            insertOrderType: 'value',
+            insertOrder: '100',
+          },
+        ],
+      },
+    ])
+
+    await expect(
+      runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'create-lore' }),
+    ).resolves.not.toThrow()
+
+    const cmd = await waitForCommand(
+      calls,
+      (call) =>
+        call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+    )
+    expect(cmd.body.entries).toBeDefined()
+    expect(cmd.body.entries.length).toBe(1)
+  })
+
+  it('routes v2DeleteLorebookByIndex through a lorebook command instead of a guarded direct write', async () => {
+    DBState.db.characters[0].globalLore = [
+      { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100 },
+    ] as any
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const char = characterWithTriggers([
+      {
+        comment: 'delete-lore',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          {
+            type: 'v2DeleteLorebookByIndex',
+            indexType: 'value',
+            index: '0',
+          },
+        ],
+      },
+    ])
+    char.globalLore = [
+      { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100 },
+    ] as any
+
+    await expect(
+      runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'delete-lore' }),
+    ).resolves.not.toThrow()
+
+    const cmd = await waitForCommand(
+      calls,
+      (call) =>
+        call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+    )
+    expect(cmd.body.entries).toBeDefined()
+    expect(cmd.body.entries.length).toBe(0)
+  })
+
+  it('routes v2SetLorebookAlwaysActive through a lorebook command instead of a guarded direct write', async () => {
+    DBState.db.characters[0].globalLore = [
+      { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100, alwaysActive: false },
+    ] as any
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const char = characterWithTriggers([
+      {
+        comment: 'always-active',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          {
+            type: 'v2SetLorebookAlwaysActive',
+            indexType: 'value',
+            index: '0',
+            value: true,
+          },
+        ],
+      },
+    ])
+    char.globalLore = [
+      { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100, alwaysActive: false },
+    ] as any
+
+    await expect(
+      runTrigger(char, 'manual', {
+        chat: char.chats[char.chatPage],
+        manualName: 'always-active',
+      }),
+    ).resolves.not.toThrow()
+
+    const cmd = await waitForCommand(
+      calls,
+      (call) =>
+        call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+    )
+    expect(cmd.body.entries).toBeDefined()
+  })
+
+  it('routes v2SetAuthorNote through a chat command instead of a guarded direct write', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const char = characterWithTriggers([
+      {
+        comment: 'note',
+        type: 'manual',
+        conditions: [],
+        effect: [{ type: 'v2SetAuthorNote', valueType: 'value', value: 'author note text' }],
+      },
+    ])
+
+    await expect(
+      runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'note' }),
+    ).resolves.not.toThrow()
+
+    const cmd = await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1' && call.method === 'PATCH',
+    )
+    expect(cmd.body.patch.note).toBe('author note text')
   })
 })

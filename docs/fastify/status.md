@@ -14,20 +14,15 @@ current server schema, command surface, and import/export paths directly.
 
 ## Current Snapshot
 
-- Active work: one open finding. The 2026-05-27 Phases 0-9 audit found
-  trigger collection/chat data effects still writing `DBState.db`
-  directly (guard throws in server-backed mode); tracked in
-  [`phases/phase-9-trigger-projection-writes.md`](phases/phase-9-trigger-projection-writes.md).
-- Latest closeout: the audit-driven slice routed the scalar character /
-  persona trigger effects, scripting `declareAPI` character setters, and
-  the Realm / creator-quote UI writes through commands, with a focused
-  `runTrigger` projection-guard regression test. Verification passed on
-  2026-05-27. See
-  [`phases-completed/phase-9-trigger-scalar-projection-writes.md`](phases-completed/phase-9-trigger-scalar-projection-writes.md).
-- No follow-up remains open for Phases 0, 1, 2, 4, or 7. Phases 0-8 and
-  the rest of Phase 9 verified clean against code in the 2026-05-27 audit.
-- Next default pickup: the open Phase 9 trigger collection/chat
-  projection-write finding above.
+- Active work: none. All Phases 0-9 findings are closed.
+- Latest closeout: the trigger collection/chat projection-write slice
+  routed the six `globalLore` trigger effects through
+  `dispatchReplaceCharacterLorebooks` and the `v2SetAuthorNote` effect
+  through `dispatchUpdateChat`, with five focused regression tests
+  (7 total in the file). Full verification matrix passed on 2026-05-27.
+  See
+  [`phases-completed/phase-9-trigger-collection-chat-projection-writes.md`](phases-completed/phase-9-trigger-collection-chat-projection-writes.md).
+- No follow-up remains open for any phase. Phases 0-9 verified clean.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`; use `phases/` only for active
   or remaining alpha scope.
@@ -36,6 +31,7 @@ current server schema, command surface, and import/export paths directly.
 
 | Commit     | Scope                                                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| pending    | Closed the trigger collection/chat projection-write finding (Phase 9 complete).                                           |
 | pending    | Routed scalar trigger / scripting / UI projection writes through commands; opened the trigger collection/chat follow-up. |
 | pending    | Closed the `LEFTOVER.md` Phase 3, Phase 7, and Phase 9 audit findings.                                                   |
 | `50d55b97` | Closed the broad alpha typecheck blocker and full verification matrix.                                                   |
@@ -61,21 +57,21 @@ current server schema, command surface, and import/export paths directly.
 | 6 - Server-side generation              | Closed       | Provider SSE parsers reject unterminated tails as typed provider errors and accept LF/CRLF-delimited complete event blocks.                                                                            | [`phases-completed/phase-6-sse-line-endings.md`](phases-completed/phase-6-sse-line-endings.md)               |
 | 7 - Server-side prompt assembly         | Closed       | Coverage docs now match the actual guardrail split: provider parity through `/completion`, real `/chat` route-backed coverage for send/continue/regenerate/preview/preview-prompt.                     | [`phases-completed/leftover-audit-closeout.md`](phases-completed/leftover-audit-closeout.md)                 |
 | 8 - Hypa V3 memory                      | Closed       | Memory event delivery is best-effort across external sinks, SSE subscribers, worker progress emits, and memory job routes.                                                                             | [`phases-completed/phase-8-memory-event-isolation.md`](phases-completed/phase-8-memory-event-isolation.md)   |
-| 9 - Client thinning                     | Open         | Scalar trigger / scripting / UI projection writes now route through commands. Trigger collection/chat effects (`globalLore`, chat `note`) still write `DBState.db` directly and throw under the guard. | [`phases/phase-9-trigger-projection-writes.md`](phases/phase-9-trigger-projection-writes.md)                 |
+| 9 - Client thinning                     | Closed       | All trigger projection writes route through commands: scalar via character/persona commands, collection/chat via lorebook-bridge and chat commands.                                                     | [`phases-completed/phase-9-trigger-collection-chat-projection-writes.md`](phases-completed/phase-9-trigger-collection-chat-projection-writes.md) |
 | Broad closeout                          | Closed       | The earlier `pnpm check` blocker with 58 diagnostics across 18 files is fixed.                                                                                                                         | [`phases-completed/broad-closeout-typecheck-alpha.md`](phases-completed/broad-closeout-typecheck-alpha.md)   |
 
 ## Verification
 
-Latest leftover closeout on 2026-05-27:
+Latest verification on 2026-05-27 (trigger collection/chat closeout):
 
 - `pnpm check` passed: 0 errors, 0 warnings.
-- `pnpm test` passed: 69 files, 747 passed, 4 skipped.
+- `pnpm test` passed: 70 files, 754 passed, 4 skipped.
 - `pnpm api:test` passed: 68 files, 1217 passed.
 - `pnpm build` passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser` passed: 1 browser smoke test.
 
-Focused verification for the closed Phase 3, 5, 6, 8, and 9 alpha
-slices is archived in the linked `phases-completed/` notes.
+Focused verification for the closed Phase 3, 5, 6, 8, and 9 slices
+is archived in the linked `phases-completed/` notes.
 
 ## Closeout Expectations
 
