@@ -35,8 +35,12 @@ directly.
 - Landed 2026-05-26: Phase 9 Prompt settings and prompt-template editor
   writes now use local command-backed drafts/trusted optimistic projection
   writes instead of binding directly to the Fastify projection.
-- Next default pickup: Phase 9 Slice 9A, provider routing and model
-  scalar settings.
+- Landed 2026-05-26: Phase 9 provider routing and model scalar settings
+  in `BotSettings.svelte` now use command-backed drafts for model
+  selection, provider credentials, provider model fields, and related
+  reset side effects.
+- Next default pickup: Phase 9 Slice 9B, OpenRouter, auxiliary model,
+  and separate-parameter selectors.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.
 

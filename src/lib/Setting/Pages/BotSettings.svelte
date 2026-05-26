@@ -56,6 +56,7 @@
     createServerBackedSettingDraft,
     watchServerBackedSettings,
   } from 'src/ts/server/settingsBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     canUseServerCommands,
     patchPromptSettingsCommand,
@@ -68,56 +69,6 @@
   } from 'src/ts/pluginCommands'
 
   const stopServerSettingsWatch = watchServerBackedSettings([
-    'aiModel',
-    'subModel',
-    'google',
-    'vertexClientEmail',
-    'vertexPrivateKey',
-    'vertexAccessToken',
-    'vertexAccessTokenExpires',
-    'vertexRegion',
-    'novellistAPI',
-    'mancerHeader',
-    'claudeAPIKey',
-    'mistralKey',
-    'novelai',
-    'forceReplaceUrl',
-    'proxyKey',
-    'customProxyRequestModel',
-    'customAPIFormat',
-    'cohereAPIKey',
-    'ollamaURL',
-    'ollamaInputMode',
-    'ollamaCloudModel',
-    'ollamaModelSource',
-    'ollamaCloudModelName',
-    'ollamaApiKey',
-    'ollamaRequestFormat',
-    'ollamaModel',
-    'ollamaModelName',
-    'ollamaThinkingMode',
-    'useStreaming',
-    'streamGeminiThoughts',
-    'nanogptKey',
-    'nanogptUseSubscriptionEndpoint',
-    'nanogptSubscriptionState',
-    'nanogptRequestModel',
-    'nanogptRequestModelName',
-    'nanogptProvider',
-    'openrouterKey',
-    'openrouterRequestModel',
-    'customTokenizer',
-    'openAIKey',
-    'OaiCompAPIKeys',
-    'reverseProxyOobaMode',
-    'NAIadventure',
-    'NAIappendName',
-    'koboldURL',
-    'echoMessage',
-    'echoDelay',
-    'hordeConfig',
-    'textgenWebUIStreamURL',
-    'textgenWebUIBlockingURL',
     'proxyRequestModel',
     'enableCustomFlags',
     'modelTools',
@@ -138,14 +89,136 @@
     'additionalParams',
     [],
   )
+  const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
+  const subModelDraft = createServerBackedSettingDraft<string>('subModel', '')
+  const googleDraft = createServerBackedSettingDraft<Record<string, string>>('google', {
+    accessToken: '',
+    projectId: '',
+  })
+  const vertexClientEmailDraft = createServerBackedSettingDraft<string>('vertexClientEmail', '')
+  const vertexPrivateKeyDraft = createServerBackedSettingDraft<string>('vertexPrivateKey', '')
+  const vertexAccessTokenDraft = createServerBackedSettingDraft<string>('vertexAccessToken', '')
+  const vertexAccessTokenExpiresDraft = createServerBackedSettingDraft<number>(
+    'vertexAccessTokenExpires',
+    0,
+  )
+  const vertexRegionDraft = createServerBackedSettingDraft<string>('vertexRegion', 'global')
+  const novellistAPIDraft = createServerBackedSettingDraft<string>('novellistAPI', '')
+  const mancerHeaderDraft = createServerBackedSettingDraft<string>('mancerHeader', '')
+  const claudeAPIKeyDraft = createServerBackedSettingDraft<string>('claudeAPIKey', '')
+  const mistralKeyDraft = createServerBackedSettingDraft<string>('mistralKey', '')
+  const novelaiDraft = createServerBackedSettingDraft<Record<string, string>>('novelai', {
+    token: '',
+    model: '',
+  })
+  const forceReplaceUrlDraft = createServerBackedSettingDraft<string>('forceReplaceUrl', '')
+  const proxyKeyDraft = createServerBackedSettingDraft<string>('proxyKey', '')
+  const customProxyRequestModelDraft = createServerBackedSettingDraft<string>(
+    'customProxyRequestModel',
+    '',
+  )
+  const customAPIFormatDraft = createServerBackedSettingDraft<LLMFormat>(
+    'customAPIFormat',
+    LLMFormat.OpenAICompatible,
+  )
+  const cohereAPIKeyDraft = createServerBackedSettingDraft<string>('cohereAPIKey', '')
+  const ollamaURLDraft = createServerBackedSettingDraft<string>('ollamaURL', '')
+  const ollamaInputModeDraft = createServerBackedSettingDraft<'list' | 'manual'>(
+    'ollamaInputMode',
+    'list',
+  )
+  const ollamaCloudModelDraft = createServerBackedSettingDraft<string>('ollamaCloudModel', '')
+  const ollamaModelSourceDraft = createServerBackedSettingDraft<'local' | 'cloud'>(
+    'ollamaModelSource',
+    'local',
+  )
+  const ollamaCloudModelNameDraft = createServerBackedSettingDraft<string>(
+    'ollamaCloudModelName',
+    '',
+  )
+  const ollamaApiKeyDraft = createServerBackedSettingDraft<string>('ollamaApiKey', '')
+  const ollamaRequestFormatDraft = createServerBackedSettingDraft<LLMFormat>(
+    'ollamaRequestFormat',
+    LLMFormat.Ollama,
+  )
+  const ollamaModelDraft = createServerBackedSettingDraft<string>('ollamaModel', '')
+  const ollamaModelNameDraft = createServerBackedSettingDraft<string>('ollamaModelName', '')
+  const ollamaThinkingModeDraft = createServerBackedSettingDraft<
+    'auto' | 'off' | 'on' | 'low' | 'medium' | 'high'
+  >('ollamaThinkingMode', 'auto')
+  const useStreamingDraft = createServerBackedSettingDraft<boolean>('useStreaming', false)
+  const streamGeminiThoughtsDraft = createServerBackedSettingDraft<boolean>(
+    'streamGeminiThoughts',
+    false,
+  )
+  const nanogptKeyDraft = createServerBackedSettingDraft<string>('nanogptKey', '')
+  const nanogptUseSubscriptionEndpointDraft = createServerBackedSettingDraft<boolean>(
+    'nanogptUseSubscriptionEndpoint',
+    false,
+  )
+  const nanogptSubscriptionStateDraft = createServerBackedSettingDraft<string>(
+    'nanogptSubscriptionState',
+    '',
+  )
+  const nanogptRequestModelDraft = createServerBackedSettingDraft<string>(
+    'nanogptRequestModel',
+    '',
+  )
+  const nanogptRequestModelNameDraft = createServerBackedSettingDraft<string>(
+    'nanogptRequestModelName',
+    '',
+  )
+  const nanogptProviderDraft = createServerBackedSettingDraft<string>('nanogptProvider', '')
+  const openrouterKeyDraft = createServerBackedSettingDraft<string>('openrouterKey', '')
+  const openrouterRequestModelDraft = createServerBackedSettingDraft<string>(
+    'openrouterRequestModel',
+    '',
+  )
+  const customTokenizerDraft = createServerBackedSettingDraft<string>('customTokenizer', '')
+  const openAIKeyDraft = createServerBackedSettingDraft<string>('openAIKey', '')
+  const OaiCompAPIKeysDraft = createServerBackedSettingDraft<Record<string, string>>(
+    'OaiCompAPIKeys',
+    {},
+  )
+  const reverseProxyOobaModeDraft = createServerBackedSettingDraft<boolean>(
+    'reverseProxyOobaMode',
+    false,
+  )
+  const NAIadventureDraft = createServerBackedSettingDraft<boolean>('NAIadventure', false)
+  const NAIappendNameDraft = createServerBackedSettingDraft<boolean>('NAIappendName', false)
+  const koboldURLDraft = createServerBackedSettingDraft<string>('koboldURL', '')
+  const echoMessageDraft = createServerBackedSettingDraft<string>('echoMessage', '')
+  const echoDelayDraft = createServerBackedSettingDraft<number>('echoDelay', 0)
+  const hordeConfigDraft = createServerBackedSettingDraft<Record<string, string>>('hordeConfig', {
+    apiKey: '',
+    model: '',
+    softPrompt: '',
+  })
+  const textgenWebUIStreamURLDraft = createServerBackedSettingDraft<string>(
+    'textgenWebUIStreamURL',
+    '',
+  )
+  const textgenWebUIBlockingURLDraft = createServerBackedSettingDraft<string>(
+    'textgenWebUIBlockingURL',
+    '',
+  )
+  let currentPluginProviderDraft = $state(DBState.db.currentPluginProvider ?? '')
 
   let initializedPluginProviderWatch = false
   let previousPluginProvider = ''
   let lastPluginWatchSuppressionVersion = currentPluginWatchSuppressionVersion()
+  let suppressPluginProviderDraftDispatch = false
   $effect(() => {
-    if (!canUseServerCommands()) return
     const provider = DBState.db.currentPluginProvider ?? ''
     const suppressionVersion = currentPluginWatchSuppressionVersion()
+    const draftProvider = untrack(() => currentPluginProviderDraft)
+    if (provider !== draftProvider) {
+      suppressPluginProviderDraftDispatch = true
+      currentPluginProviderDraft = provider
+      queueMicrotask(() => {
+        suppressPluginProviderDraftDispatch = false
+      })
+    }
     if (
       !initializedPluginProviderWatch ||
       suppressionVersion !== lastPluginWatchSuppressionVersion
@@ -155,9 +228,21 @@
       previousPluginProvider = provider
       return
     }
+  })
+  $effect(() => {
+    const provider = currentPluginProviderDraft
+    if (!canUseServerCommands()) {
+      DBState.db.currentPluginProvider = provider
+      previousPluginProvider = provider
+      return
+    }
+    if (suppressPluginProviderDraftDispatch) return
     if (provider === previousPluginProvider) return
     const previous = currentPluginStateSnapshot()
     previous.currentPluginProvider = previousPluginProvider
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.currentPluginProvider = provider
+    })
     previousPluginProvider = provider
     untrack(() => dispatchSelectPluginProvider(provider, previous))
   })
@@ -170,41 +255,41 @@
   // Reset model selection and display name when subscription mode toggles
   let _nanogptSubModeInitialized = false
   $effect(() => {
-    const _sub = DBState.db.nanogptUseSubscriptionEndpoint
+    const _sub = nanogptUseSubscriptionEndpointDraft.value
     if (!_nanogptSubModeInitialized) {
       _nanogptSubModeInitialized = true
       return
     }
-    DBState.db.nanogptRequestModel = ''
-    DBState.db.nanogptRequestModelName = ''
+    nanogptRequestModelDraft.value = ''
+    nanogptRequestModelNameDraft.value = ''
   })
 
   // Reset provider selection to Auto when the model or subscription mode changes
   let _nanogptProviderResetInitialized = false
   $effect(() => {
-    const _model = DBState.db.nanogptRequestModel
-    const _sub = DBState.db.nanogptUseSubscriptionEndpoint
+    const _model = nanogptRequestModelDraft.value
+    const _sub = nanogptUseSubscriptionEndpointDraft.value
     if (!_nanogptProviderResetInitialized) {
       _nanogptProviderResetInitialized = true
       return
     }
-    DBState.db.nanogptProvider = ''
+    nanogptProviderDraft.value = ''
   })
 
   // Reset subscription mode (and related state) when API key is cleared
   let _nanogptKeyInitialized = false
   $effect(() => {
-    const _key = DBState.db.nanogptKey
+    const _key = nanogptKeyDraft.value
     if (!_nanogptKeyInitialized) {
       _nanogptKeyInitialized = true
       return
     }
     if (!_key) {
-      DBState.db.nanogptUseSubscriptionEndpoint = false
-      DBState.db.nanogptSubscriptionState = ''
-      DBState.db.nanogptRequestModel = ''
-      DBState.db.nanogptRequestModelName = ''
-      DBState.db.nanogptProvider = ''
+      nanogptUseSubscriptionEndpointDraft.value = false
+      nanogptSubscriptionStateDraft.value = ''
+      nanogptRequestModelDraft.value = ''
+      nanogptRequestModelNameDraft.value = ''
+      nanogptProviderDraft.value = ''
     }
   })
 
@@ -228,13 +313,13 @@
 
   $effect.pre(() => {
     if (DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'mancer') {
-      DBState.db.useStreaming = DBState.db.textgenWebUIStreamURL.startsWith('wss://')
+      useStreamingDraft.value = textgenWebUIStreamURLDraft.value.startsWith('wss://')
     }
   })
 
   function clearVertexToken() {
-    DBState.db.vertexAccessToken = ''
-    DBState.db.vertexAccessTokenExpires = 0
+    vertexAccessTokenDraft.value = ''
+    vertexAccessTokenExpiresDraft.value = 0
     console.log('Vertex AI token cleared')
   }
 
@@ -248,8 +333,8 @@
   let prevNanogptInputMode = nanogptInputMode
   $effect(() => {
     if (nanogptInputMode !== prevNanogptInputMode) {
-      DBState.db.nanogptRequestModel = ''
-      DBState.db.nanogptRequestModelName = ''
+      nanogptRequestModelDraft.value = ''
+      nanogptRequestModelNameDraft.value = ''
       prevNanogptInputMode = nanogptInputMode
     }
   })
@@ -307,10 +392,10 @@
 
 {#if submenu === 0 || submenu === -1}
   <span class="text-textcolor mt-4">{language.model} <Help key="model" /></span>
-  <ModelList bind:value={DBState.db.aiModel} />
+  <ModelList bind:value={aiModelDraft.value} />
 
   <span class="text-textcolor mt-2">{language.submodel} <Help key="submodel" /></span>
-  <ModelList bind:value={DBState.db.subModel} />
+  <ModelList bind:value={subModelDraft.value} />
 
   {#if modelInfo.provider === LLMProvider.GoogleCloud || subModelInfo.provider === LLMProvider.GoogleCloud}
     <span class="text-textcolor">GoogleAI API Key</span>
@@ -319,7 +404,7 @@
       size={'sm'}
       placeholder="..."
       hideText={DBState.db.hideApiKey}
-      bind:value={DBState.db.google.accessToken}
+      bind:value={googleDraft.value.accessToken}
     />
   {/if}
   {#if modelInfo.provider === LLMProvider.VertexAI || subModelInfo.provider === LLMProvider.VertexAI}
@@ -328,7 +413,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={DBState.db.google.projectId}
+      bind:value={googleDraft.value.projectId}
       oninput={clearVertexToken}
     />
     <span class="text-textcolor">Vertex Client Email</span>
@@ -336,7 +421,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={DBState.db.vertexClientEmail}
+      bind:value={vertexClientEmailDraft.value}
       oninput={clearVertexToken}
     />
     <span class="text-textcolor">Vertex Private Key</span>
@@ -345,14 +430,14 @@
       size={'sm'}
       placeholder="..."
       hideText={DBState.db.hideApiKey}
-      bind:value={DBState.db.vertexPrivateKey}
+      bind:value={vertexPrivateKeyDraft.value}
       oninput={clearVertexToken}
     />
     <span class="text-textcolor">Region</span>
     <SelectInput
-      value={DBState.db.vertexRegion}
+      value={vertexRegionDraft.value}
       onchange={(e) => {
-        DBState.db.vertexRegion = e.currentTarget.value
+        vertexRegionDraft.value = e.currentTarget.value
         clearVertexToken()
       }}
     >
@@ -368,7 +453,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={DBState.db.novellistAPI}
+      bind:value={novellistAPIDraft.value}
     />
   {/if}
   {#if DBState.db.aiModel.startsWith('mancer') || DBState.db.subModel.startsWith('mancer')}
@@ -378,7 +463,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={DBState.db.mancerHeader}
+      bind:value={mancerHeaderDraft.value}
     />
   {/if}
   {#if modelInfo.provider === LLMProvider.Anthropic || subModelInfo.provider === LLMProvider.Anthropic || modelInfo.provider === LLMProvider.AWS || subModelInfo.provider === LLMProvider.AWS}
@@ -388,7 +473,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={DBState.db.claudeAPIKey}
+      bind:value={claudeAPIKeyDraft.value}
     />
   {/if}
   {#if modelInfo.provider === LLMProvider.Mistral || subModelInfo.provider === LLMProvider.Mistral}
@@ -398,19 +483,19 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={DBState.db.mistralKey}
+      bind:value={mistralKeyDraft.value}
     />
   {/if}
   {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
     <span class="text-textcolor">NovelAI Bearer Token</span>
-    <TextInput bind:value={DBState.db.novelai.token} />
+    <TextInput bind:value={novelaiDraft.value.token} />
   {/if}
   {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
     <span class="text-textcolor mt-2">URL <Help key="forceUrl" /></span>
     <TextInput
       marginBottom={false}
       size={'sm'}
-      bind:value={DBState.db.forceReplaceUrl}
+      bind:value={forceReplaceUrlDraft.value}
       placeholder="https//..."
     />
     <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
@@ -419,20 +504,20 @@
       marginBottom={false}
       size={'sm'}
       placeholder="leave it blank if it hasn't password"
-      bind:value={DBState.db.proxyKey}
+      bind:value={proxyKeyDraft.value}
     />
     <span class="text-textcolor mt-4"> {language.proxyRequestModel}</span>
     <TextInput
       marginBottom={false}
       size={'sm'}
-      bind:value={DBState.db.customProxyRequestModel}
+      bind:value={customProxyRequestModelDraft.value}
       placeholder="Name"
     />
     <span class="text-textcolor mt-4"> {language.format}</span>
     <SelectInput
-      value={DBState.db.customAPIFormat.toString()}
+      value={customAPIFormatDraft.value.toString()}
       onchange={(e) => {
-        DBState.db.customAPIFormat = parseInt(e.currentTarget.value) as LLMFormat
+        customAPIFormatDraft.value = parseInt(e.currentTarget.value) as LLMFormat
       }}
     >
       <OptionInput value={LLMFormat.OpenAICompatible.toString()}>OpenAI Compatible</OptionInput>
@@ -449,19 +534,19 @@
       hideText={DBState.db.hideApiKey}
       marginBottom={false}
       size={'sm'}
-      bind:value={DBState.db.cohereAPIKey}
+      bind:value={cohereAPIKeyDraft.value}
     />
   {/if}
   {#if usesOllamaLocal || usesOllamaCloud}
     {#if usesOllamaLocal}
       <span class="text-textcolor mt-4">Ollama URL</span>
-      <TextInput marginBottom={false} size={'sm'} bind:value={DBState.db.ollamaURL} />
+      <TextInput marginBottom={false} size={'sm'} bind:value={ollamaURLDraft.value} />
     {/if}
 
     {#if usesOllamaCloud}
       <span class="text-textcolor mt-4">Ollama {language.model}</span>
       <SegmentedControl
-        bind:value={DBState.db.ollamaInputMode}
+        bind:value={ollamaInputModeDraft.value}
         options={[
           { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
           { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' },
@@ -469,27 +554,27 @@
         size="md"
       />
 
-      {#if DBState.db.ollamaInputMode === 'manual'}
+      {#if ollamaInputModeDraft.value === 'manual'}
         <TextInput
           marginBottom={false}
           size={'sm'}
-          bind:value={DBState.db.ollamaCloudModel}
+          bind:value={ollamaCloudModelDraft.value}
           placeholder="Model"
-          oninput={() => (DBState.db.ollamaCloudModelName = '')}
+          oninput={() => (ollamaCloudModelNameDraft.value = '')}
         />
       {:else}
-        {#await getOllamaModels(DBState.db.ollamaURL, 'cloud', DBState.db.ollamaApiKey)}
-          <ModelGrid bind:value={DBState.db.ollamaCloudModel} loading={true} />
+        {#await getOllamaModels(ollamaURLDraft.value, 'cloud', ollamaApiKeyDraft.value)}
+          <ModelGrid bind:value={ollamaCloudModelDraft.value} loading={true} />
         {:then cloudModels}
           <ModelGrid
-            bind:value={DBState.db.ollamaCloudModel}
+            bind:value={ollamaCloudModelDraft.value}
             items={cloudModels ?? []}
-            selectedLabelOverride={DBState.db.ollamaCloudModel
-              ? `Cloud / ${DBState.db.ollamaCloudModelName || DBState.db.ollamaCloudModel}`
+            selectedLabelOverride={ollamaCloudModelDraft.value
+              ? `Cloud / ${ollamaCloudModelNameDraft.value || ollamaCloudModelDraft.value}`
               : undefined}
             onselect={(_id, name) => {
-              DBState.db.ollamaModelSource = 'cloud'
-              DBState.db.ollamaCloudModelName = name
+              ollamaModelSourceDraft.value = 'cloud'
+              ollamaCloudModelNameDraft.value = name
             }}
           />
         {/await}
@@ -500,14 +585,14 @@
         hideText={DBState.db.hideApiKey}
         marginBottom={false}
         size={'sm'}
-        bind:value={DBState.db.ollamaApiKey}
+        bind:value={ollamaApiKeyDraft.value}
       />
 
       <span class="text-textcolor mt-4">Ollama {language.format}</span>
       <SelectInput
-        value={DBState.db.ollamaRequestFormat.toString()}
+        value={ollamaRequestFormatDraft.value.toString()}
         onchange={(e) => {
-          DBState.db.ollamaRequestFormat = parseInt(e.currentTarget.value) as LLMFormat
+          ollamaRequestFormatDraft.value = parseInt(e.currentTarget.value) as LLMFormat
         }}
       >
         <OptionInput value={LLMFormat.Ollama.toString()}>Ollama SDK</OptionInput>
@@ -519,7 +604,7 @@
       </SelectInput>
 
       <div class="mt-2">
-        <CheckInput bind:check={DBState.db.useStreaming} name={`Response ${language.streaming}`} />
+        <CheckInput bind:check={useStreamingDraft.value} name={`Response ${language.streaming}`} />
       </div>
     {/if}
 
@@ -528,18 +613,18 @@
       <TextInput
         marginBottom={false}
         size={'sm'}
-        bind:value={DBState.db.ollamaModel}
+        bind:value={ollamaModelDraft.value}
         placeholder="Model"
         oninput={() => {
-          DBState.db.ollamaModelSource = 'local'
-          DBState.db.ollamaModelName = ''
+          ollamaModelSourceDraft.value = 'local'
+          ollamaModelNameDraft.value = ''
         }}
       />
     {/if}
 
-    {#if usesOllamaLocal || (usesOllamaCloud && DBState.db.ollamaRequestFormat === LLMFormat.Ollama)}
+    {#if usesOllamaLocal || (usesOllamaCloud && ollamaRequestFormatDraft.value === LLMFormat.Ollama)}
       <span class="text-textcolor mt-4">Ollama Thinking</span>
-      <SelectInput bind:value={DBState.db.ollamaThinkingMode}>
+      <SelectInput bind:value={ollamaThinkingModeDraft.value}>
         <OptionInput value="auto">Auto</OptionInput>
         <OptionInput value="off">Off</OptionInput>
         <OptionInput value="on">On</OptionInput>
@@ -555,15 +640,15 @@
       hideText={DBState.db.hideApiKey}
       marginBottom={false}
       size={'sm'}
-      bind:value={DBState.db.nanogptKey}
+      bind:value={nanogptKeyDraft.value}
     />
 
-    <NanoGPTDashboard apiKey={DBState.db.nanogptKey} />
+    <NanoGPTDashboard apiKey={nanogptKeyDraft.value} />
 
-    {#if DBState.db.nanogptSubscriptionState === 'active' || DBState.db.nanogptSubscriptionState === 'grace'}
+    {#if nanogptSubscriptionStateDraft.value === 'active' || nanogptSubscriptionStateDraft.value === 'grace'}
       <div class="flex items-center mt-3">
         <CheckInput
-          bind:check={DBState.db.nanogptUseSubscriptionEndpoint}
+          bind:check={nanogptUseSubscriptionEndpointDraft.value}
           name={language.nanoGPTUseSubscriptionEndpoint}
         />
       </div>
@@ -583,33 +668,33 @@
       <TextInput
         marginBottom={false}
         size={'sm'}
-        bind:value={DBState.db.nanogptRequestModel}
+        bind:value={nanogptRequestModelDraft.value}
         placeholder={(language as any).nanoGPTManualModelSelect || 'Manual Model Select'}
-        oninput={() => (DBState.db.nanogptRequestModelName = '')}
+        oninput={() => (nanogptRequestModelNameDraft.value = '')}
       />
     {:else}
-      {#await Promise.all( [getNanoGPTModels(), getNanoGPTSubscriptionModels(DBState.db.nanogptKey)], )}
-        <ModelGrid bind:value={DBState.db.nanogptRequestModel} loading={true} />
+      {#await Promise.all( [getNanoGPTModels(), getNanoGPTSubscriptionModels(nanogptKeyDraft.value)], )}
+        <ModelGrid bind:value={nanogptRequestModelDraft.value} loading={true} />
       {:then [regular, sub]}
         <ModelGrid
-          bind:value={DBState.db.nanogptRequestModel}
-          items={DBState.db.nanogptUseSubscriptionEndpoint
+          bind:value={nanogptRequestModelDraft.value}
+          items={nanogptUseSubscriptionEndpointDraft.value
             ? (sub ?? []).map(ngToGridItem)
             : (regular ?? []).map(ngToGridItem)}
-          showSubBadge={DBState.db.nanogptUseSubscriptionEndpoint}
-          selectedLabelOverride={DBState.db.nanogptRequestModel &&
-          !DBState.db.nanogptRequestModelName
-            ? DBState.db.nanogptRequestModel
+          showSubBadge={nanogptUseSubscriptionEndpointDraft.value}
+          selectedLabelOverride={nanogptRequestModelDraft.value &&
+          !nanogptRequestModelNameDraft.value
+            ? nanogptRequestModelDraft.value
             : undefined}
           onselect={(_id, name) => {
-            DBState.db.nanogptRequestModelName = name
+            nanogptRequestModelNameDraft.value = name
           }}
         />
-        {#if !DBState.db.nanogptUseSubscriptionEndpoint}
+        {#if !nanogptUseSubscriptionEndpointDraft.value}
           <NanoGPTProviderPicker
-            apiKey={DBState.db.nanogptKey}
-            modelId={DBState.db.nanogptRequestModel}
-            bind:value={DBState.db.nanogptProvider}
+            apiKey={nanogptKeyDraft.value}
+            modelId={nanogptRequestModelDraft.value}
+            bind:value={nanogptProviderDraft.value}
           />
         {/if}
       {/await}
@@ -621,19 +706,19 @@
       hideText={DBState.db.hideApiKey}
       marginBottom={false}
       size={'sm'}
-      bind:value={DBState.db.openrouterKey}
+      bind:value={openrouterKeyDraft.value}
     />
 
     <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
     {#await getOpenRouterModels()}
       <ModelGrid
-        bind:value={DBState.db.openrouterRequestModel}
+        bind:value={openrouterRequestModelDraft.value}
         pinnedItems={openrouterPinnedItems}
         loading={true}
       />
     {:then m}
       <ModelGrid
-        bind:value={DBState.db.openrouterRequestModel}
+        bind:value={openrouterRequestModelDraft.value}
         items={(m ?? []).map(orToGridItem)}
         pinnedItems={openrouterPinnedItems}
       />
@@ -641,7 +726,7 @@
   {/if}
   {#if DBState.db.aiModel === 'openrouter' || DBState.db.aiModel === 'reverse_proxy'}
     <span class="text-textcolor">{language.tokenizer}</span>
-    <SelectInput bind:value={DBState.db.customTokenizer}>
+    <SelectInput bind:value={customTokenizerDraft.value}>
       {#each tokenizerList as entry}
         <OptionInput value={entry[0]}>{entry[1]}</OptionInput>
       {/each}
@@ -653,7 +738,7 @@
       hideText={DBState.db.hideApiKey}
       marginBottom={false}
       size={'sm'}
-      bind:value={DBState.db.openAIKey}
+      bind:value={openAIKeyDraft.value}
       placeholder="sk-XXXXXXXXXXXXXXXXXXXX"
     />
   {/if}
@@ -664,7 +749,7 @@
       hideText={DBState.db.hideApiKey}
       marginBottom={false}
       size={'sm'}
-      bind:value={DBState.db.OaiCompAPIKeys[modelInfo.keyIdentifier]}
+      bind:value={OaiCompAPIKeysDraft.value[modelInfo.keyIdentifier]}
       placeholder="..."
     />
   {/if}
@@ -675,36 +760,36 @@
       hideText={DBState.db.hideApiKey}
       marginBottom={false}
       size={'sm'}
-      bind:value={DBState.db.OaiCompAPIKeys[subModelInfo.keyIdentifier]}
+      bind:value={OaiCompAPIKeysDraft.value[subModelInfo.keyIdentifier]}
       placeholder="..."
     />
   {/if}
 
   <div class="py-2 flex flex-col gap-2 mb-4">
     {#if !usesOllamaCloud && (modelInfo.flags.includes(LLMFlags.hasStreaming) || subModelInfo.flags.includes(LLMFlags.hasStreaming))}
-      <Check bind:check={DBState.db.useStreaming} name={`Response ${language.streaming}`} />
+      <Check bind:check={useStreamingDraft.value} name={`Response ${language.streaming}`} />
 
-      {#if DBState.db.useStreaming && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
-        <Check bind:check={DBState.db.streamGeminiThoughts} name={`Stream Gemini Thoughts`} />
+      {#if useStreamingDraft.value && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
+        <Check bind:check={streamGeminiThoughtsDraft.value} name={`Stream Gemini Thoughts`} />
       {/if}
     {/if}
 
     {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
       <Check
-        bind:check={DBState.db.reverseProxyOobaMode}
+        bind:check={reverseProxyOobaModeDraft.value}
         name={`${language.reverseProxyOobaMode}`}
       />
     {/if}
     {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
-      <Check bind:check={DBState.db.NAIadventure} name={language.textAdventureNAI} />
+      <Check bind:check={NAIadventureDraft.value} name={language.textAdventureNAI} />
 
-      <Check bind:check={DBState.db.NAIappendName} name={language.appendNameNAI} />
+      <Check bind:check={NAIappendNameDraft.value} name={language.appendNameNAI} />
     {/if}
   </div>
 
   {#if DBState.db.aiModel === 'custom' || DBState.db.subModel === 'custom'}
     <span class="text-textcolor mt-2">{language.plugin}</span>
-    <SelectInput className="mt-2 mb-4" bind:value={DBState.db.currentPluginProvider}>
+    <SelectInput className="mt-2 mb-4" bind:value={currentPluginProviderDraft}>
       <OptionInput value="">None</OptionInput>
       {#each $customProviderStore as plugin}
         <OptionInput value={plugin}>{plugin}</OptionInput>
@@ -714,18 +799,18 @@
 
   {#if DBState.db.aiModel === 'kobold' || DBState.db.subModel === 'kobold'}
     <span class="text-textcolor">Kobold URL</span>
-    <TextInput marginBottom={true} bind:value={DBState.db.koboldURL} />
+    <TextInput marginBottom={true} bind:value={koboldURLDraft.value} />
   {/if}
 
   {#if DBState.db.aiModel === 'echo_model' || DBState.db.subModel === 'echo_model'}
     <span class="text-textcolor mt-2">Echo Message</span>
     <TextAreaInput
       margin="bottom"
-      bind:value={DBState.db.echoMessage}
+      bind:value={echoMessageDraft.value}
       placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"}
     />
     <span class="text-textcolor mt-2">Echo Delay (Seconds)</span>
-    <NumberInput marginBottom={true} bind:value={DBState.db.echoDelay} min={0} />
+    <NumberInput marginBottom={true} bind:value={echoDelayDraft.value} min={0} />
   {/if}
 
   {#if DBState.db.aiModel.startsWith('horde') || DBState.db.subModel.startsWith('horde')}
@@ -733,21 +818,21 @@
     <TextInput
       hideText={DBState.db.hideApiKey}
       marginBottom={true}
-      bind:value={DBState.db.hordeConfig.apiKey}
+      bind:value={hordeConfigDraft.value.apiKey}
     />
   {/if}
   {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.subModel === 'mancer'}
     <span class="text-textcolor mt-2">Blocking {language.providerURL}</span>
     <TextInput
       marginBottom={true}
-      bind:value={DBState.db.textgenWebUIBlockingURL}
+      bind:value={textgenWebUIBlockingURLDraft.value}
       placeholder="https://..."
     />
     <span class="text-draculared text-xs mb-2">You must use textgen webui with --public-api</span>
     <span class="text-textcolor mt-2">Stream {language.providerURL}</span>
     <TextInput
       marginBottom={true}
-      bind:value={DBState.db.textgenWebUIStreamURL}
+      bind:value={textgenWebUIStreamURLDraft.value}
       placeholder="wss://..."
     />
     {#if !isTauri}
@@ -764,7 +849,7 @@
     <span class="text-textcolor mt-2">Ooba {language.providerURL}</span>
     <TextInput
       marginBottom={true}
-      bind:value={DBState.db.textgenWebUIBlockingURL}
+      bind:value={textgenWebUIBlockingURLDraft.value}
       placeholder="https://..."
     />
   {/if}

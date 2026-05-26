@@ -45,6 +45,13 @@ import/export events match the command map.
 - Landed 2026-05-26: Prompt settings now bind to local drafts that dispatch
   `patchPromptSettingsCommand`, and prompt-template editor changes keep
   optimistic updates / rollback behind trusted projection writes.
+- Landed 2026-05-26: Provider routing and model scalar settings in
+  `BotSettings.svelte` now bind through command-backed drafts, including
+  top-level model selection, provider credentials, provider model fields,
+  Google/Vertex/Ollama/NanoGPT/OpenRouter nested state, and related reset
+  side effects. Fastify grouped settings validation now treats
+  `customAPIFormat` and `ollamaRequestFormat` as numeric enum fields and
+  accepts `NAIadventure` / `NAIappendName` in the provider group.
 
 ## Tasks
 
@@ -76,12 +83,13 @@ projection refresh, rollback, import, and local-only workflows can keep
 trusted writes when they are intentionally outside durable Fastify-web
 client mutation.
 
-- 9A - Provider routing and model scalar settings. Convert the remaining
+- 9A - Completed 2026-05-26: Provider routing and model scalar settings.
+  Converted the remaining
   `BotSettings.svelte` top-level model/provider/API-key fields and their
   direct `oninput` assignments to local drafts plus grouped provider
-  settings commands. Keep optimistic projection updates behind
-  `withTrustedServerProjectionWrite`, remove duplicate
-  `watchServerBackedSettings` keys, and extend command allowlist tests.
+  settings commands. Kept optimistic projection updates behind
+  `withTrustedServerProjectionWrite`, removed duplicate
+  `watchServerBackedSettings` keys, and extended command allowlist tests.
 - 9B - OpenRouter, auxiliary model, and separate-parameter selectors.
   Cover `OpenrouterSettings.svelte`, `AuxModelSelectors.svelte`,
   `SeparateParametersSection.svelte`, and the matching EasyPanel model /
