@@ -350,12 +350,16 @@ async function streamAssembly(
           }
         }
       } else {
+        if (result.mutations) {
+          emit({ type: 'message_patch', patch: result.mutations })
+        }
         emit({
           type: 'error',
           error:
             result.abortReason === 'overflow'
               ? 'prompt exceeds the context budget'
               : 'prompt assembly was stopped by a trigger',
+          restoration: result.restoration,
         })
       }
     } catch (err) {

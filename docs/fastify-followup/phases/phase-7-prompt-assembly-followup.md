@@ -2,8 +2,8 @@
 
 Date: 2026-05-27
 
-Status: reopened by audit. Slices 7A, 7B, and 7C have landed; continue
-with 7D.
+Status: reopened by audit. Slices 7A, 7B, 7C, and 7D have landed;
+continue with 7E.
 
 ## Goal
 
@@ -21,10 +21,9 @@ and dispatch.
   `server/fastify/src/prompt/chatDispatch.ts:407` and model strings for
   custom reverse-proxy paths still flatten at
   `server/fastify/src/prompt/chatDispatch.ts:967`.
-- Stop-trigger mutations are produced by assembly at
-  `server/fastify/src/prompt/assemble.ts:1066` but the route emits only
-  an error in the stop branch at
-  `server/fastify/src/routes/generationChat.ts:352`.
+- Stop-trigger mutation delivery was completed in Slice 7D. The route
+  now emits the assembly-produced `message_patch` and restoration
+  metadata before the terminal stop-trigger error.
 - Server-backed fixture coverage seeds expected prompt snapshots instead
   of proving the real route handles continue and regenerate paths.
 
@@ -43,8 +42,9 @@ and dispatch.
   OpenAI-compatible model ids. These now return explicit
   unsupported-provider SSE errors instead of falling through to OpenAI
   dispatch.
-- Emit `message_patch` and restoration metadata for stop-trigger aborts
-  before the terminal error/done event.
+- Done in 7D: emit `message_patch` and restoration metadata for
+  stop-trigger aborts before the terminal error/done event, and keep
+  the browser adapter replay path visible before surfacing the error.
 - Replace mocked fixture expectations with route-backed coverage for at
   least send, continue, regenerate, preview, and preview-prompt.
 
@@ -64,9 +64,11 @@ and dispatch.
   dispatch, covering NovelAI text, NovelList, Ooba OAI-compatible,
   plugin, local provider families, and unknown OpenAI-compatible model
   ids.
-- 7D - Stop-trigger mutation payload delivery. Ensure route streaming
+- 7D - Landed: stop-trigger mutation payload delivery. Route streaming
   emits the assembly-produced `message_patch` and restoration metadata
-  before the terminal error or done frame.
+  before the terminal stop-trigger error, and the browser adapter keeps
+  pre-error patches available so `sendChat` can replay them before
+  reporting the abort.
 - 7E - Route-backed fixture coverage. Replace seeded prompt snapshots
   with real Fastify route-backed fixture coverage for send, continue,
   regenerate, preview, and preview-prompt.
@@ -86,6 +88,7 @@ and dispatch.
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerTransport.test.ts
+pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts
 pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
 ```
 

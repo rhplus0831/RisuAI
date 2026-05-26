@@ -58,6 +58,7 @@ import {
   resetServerChatState,
   serverChatFetch,
   setServerChatDispatchResult,
+  setServerChatError,
   setServerChatMessagePatch,
   setServerChatPrompt,
 } from '../__fixtures__/mocks/serverChatFetch'
@@ -227,5 +228,44 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       inputTokens: 7,
       outputTokens: 50,
     })
+  })
+
+  it('applies stop-trigger patches before surfacing the server assembly error', async () => {
+    await seedEcho()
+    setServerChatError('prompt assembly was stopped by a trigger', {
+      messagePatch: {
+        chatId: '',
+        characterId: 'char-tess',
+        selectedCharID: 0,
+        chatPage: 0,
+        varChanged: true,
+        messageMutations: [
+          {
+            type: 'replace_all',
+            source: 'start_trigger',
+            beforeLength: 1,
+            afterLength: 2,
+            messages: [
+              { role: 'user', data: 'patched ping', chatId: 'msg-user-1' },
+              { role: 'char', data: 'mutated before stop', chatId: 'msg-char-1' },
+            ],
+          },
+        ],
+        chatVarMutations: [{ key: '$mood', before: null, after: 'bright' }],
+        additionalSystemPrompt: [],
+      },
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const ok = await chatModule.sendChat(-1)
+    expect(ok).toBe(false)
+
+    const chat = DBState.db.characters[0].chats[0]
+    expect(chat.scriptstate?.$mood).toBe('bright')
+    expect(chat.message.map((m) => m.data)).toEqual([
+      'patched ping',
+      expect.stringContaining('mutated before stop'),
+    ])
+    expect(getServerCompletionCalls()).toEqual([])
   })
 })

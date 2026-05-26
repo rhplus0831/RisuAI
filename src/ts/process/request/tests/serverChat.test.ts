@@ -137,6 +137,39 @@ describe('requestServerChat', () => {
     expect(res).toEqual({ status: 'error', error: 'character not found' })
   })
 
+  it('keeps pre-error message patches visible for stop-trigger aborts', async () => {
+    const patch: ServerChatMessagePatch = {
+      chatId: 'chat-1',
+      characterId: 'char-1',
+      selectedCharID: 0,
+      chatPage: 0,
+      varChanged: true,
+      messageMutations: [
+        {
+          type: 'replace_all',
+          source: 'start_trigger',
+          beforeLength: 1,
+          afterLength: 2,
+          messages: [
+            { role: 'user', data: 'hi' },
+            { role: 'char', data: 'mutated before stop' },
+          ],
+        },
+      ],
+      chatVarMutations: [{ key: '$score', before: '1', after: '9' }],
+      additionalSystemPrompt: [],
+    }
+    setServerChatError('prompt assembly was stopped by a trigger', { messagePatch: patch })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChat(baseInput, null)
+    expect(res).toEqual({
+      status: 'error',
+      error: 'prompt assembly was stopped by a trigger',
+      messagePatches: [patch],
+    })
+  })
+
   it('maps a pre-stream 400 JSON body to status:error', async () => {
     vi.stubGlobal(
       'fetch',
@@ -296,6 +329,40 @@ describe('requestServerChat', () => {
     await expect(res.terminal).resolves.toMatchObject({
       status: 'error',
       error: 'provider exploded',
+      restoration,
+    })
+  })
+
+  it('surfaces pre-error patches and restoration before dispatch is ready', async () => {
+    const patch: ServerChatMessagePatch = {
+      chatId: 'chat-1',
+      characterId: 'char-1',
+      selectedCharID: 0,
+      chatPage: 0,
+      varChanged: true,
+      messageMutations: [],
+      chatVarMutations: [{ key: '$score', before: '1', after: '9' }],
+      additionalSystemPrompt: [],
+    }
+    const restoration = {
+      chatId: 'chat-1',
+      characterId: 'char-1',
+      selectedCharID: 0,
+      chatPage: 0,
+      messages: [{ role: 'user' as const, data: 'Hi there' }],
+      scriptstate: { $score: '1' },
+    }
+    setServerChatError('prompt assembly was stopped by a trigger', {
+      messagePatch: patch,
+      restoration,
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res).toEqual({
+      status: 'error',
+      error: 'prompt assembly was stopped by a trigger',
+      messagePatches: [patch],
       restoration,
     })
   })

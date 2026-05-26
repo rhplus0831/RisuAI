@@ -56,7 +56,7 @@ export type ServerChatResult =
       info?: ServerChatInfo
       messagePatches: ServerChatMessagePatch[]
     }
-  | { status: 'error'; error: string }
+  | { status: 'error'; error: string; messagePatches?: ServerChatMessagePatch[] }
   | { status: 'aborted' }
 
 export interface ServerChatTerminal {
@@ -78,7 +78,12 @@ export type ServerChatGenerationResult =
       generationInfo: MessageGenerationInfo
       terminal: Promise<ServerChatTerminal>
     }
-  | { status: 'error'; error: string }
+  | {
+      status: 'error'
+      error: string
+      messagePatches?: ServerChatMessagePatch[]
+      restoration?: ServerChatRestoration
+    }
   | { status: 'aborted' }
 
 function parseData(data: string): Record<string, unknown> | null {
@@ -186,7 +191,13 @@ export async function requestServerChat(
   }
 
   if (signal?.aborted) return { status: 'aborted' }
-  if (error !== null) return { status: 'error', error }
+  if (error !== null) {
+    return {
+      status: 'error',
+      error,
+      ...(messagePatches.length > 0 ? { messagePatches } : {}),
+    }
+  }
   if (!prompt) {
     return { status: 'error', error: 'stream ended without a prompt event' }
   }
@@ -327,14 +338,20 @@ export async function requestServerChatGeneration(
               case 'error': {
                 const error =
                   typeof data.error === 'string' ? data.error : 'provider dispatch failed'
-                resolveReadyOnce({ status: 'error', error })
+                const restoration =
+                  data.restoration && typeof data.restoration === 'object'
+                    ? (data.restoration as unknown as ServerChatRestoration)
+                    : undefined
+                resolveReadyOnce({
+                  status: 'error',
+                  error,
+                  ...(messagePatches.length > 0 ? { messagePatches } : {}),
+                  ...(restoration ? { restoration } : {}),
+                })
                 resolveTerminalOnce({
                   status: 'error',
                   error,
-                  restoration:
-                    data.restoration && typeof data.restoration === 'object'
-                      ? (data.restoration as unknown as ServerChatRestoration)
-                      : undefined,
+                  restoration,
                   sideEffects,
                 })
                 controller.close()

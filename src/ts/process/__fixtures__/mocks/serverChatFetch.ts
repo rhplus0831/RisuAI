@@ -106,8 +106,13 @@ export function setServerChatPrompt(
   if (opts.biases) state.biases = opts.biases
 }
 
-export function setServerChatError(message: string): void {
+export function setServerChatError(
+  message: string,
+  opts: { messagePatch?: ServerChatMessagePatch; restoration?: ServerChatRestoration } = {},
+): void {
   state.errorMessage = message
+  state.messagePatch = opts.messagePatch ?? null
+  state.restoration = opts.restoration ?? null
 }
 
 export function setServerChatMessagePatch(patch: ServerChatMessagePatch): void {
@@ -164,7 +169,10 @@ function sseChatResponse(): Response {
       push('stage', { stage: 'validate', status: 'end' })
       push('stage', { stage: 'prompt', status: 'start' })
       if (state.errorMessage !== null) {
-        push('error', { error: state.errorMessage })
+        if (state.messagePatch) {
+          push('message_patch', { patch: state.messagePatch })
+        }
+        push('error', { error: state.errorMessage, restoration: state.restoration ?? undefined })
         push('done', {})
         controller.close()
         return

@@ -473,6 +473,78 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
+  it('emits stop-trigger mutations and restoration before the terminal error', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
+    }
+    db.characters[0].chats[0].message = [
+      { role: 'user', data: 'before stop', chatId: 'msg-before-stop' },
+    ]
+    db.characters[0].chats[0].scriptstate = { $score: '1' }
+    db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [
+          { type: 'setvar', operator: '=', var: 'score', value: '9' },
+          { type: 'impersonate', role: 'char', value: 'mutated before stop' },
+          { type: 'stop' },
+        ],
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    expect(events.map((e) => e.type)).toEqual([
+      'stage',
+      'stage',
+      'stage',
+      'message_patch',
+      'error',
+      'done',
+    ])
+    const patch = events[3].data.patch as {
+      varChanged?: boolean
+      chatVarMutations?: unknown[]
+      messageMutations?: Array<{ type?: string; source?: string; messages?: unknown[] }>
+    }
+    expect(patch.varChanged).toBe(true)
+    expect(patch.chatVarMutations).toEqual([{ key: '$score', before: '1', after: '9' }])
+    expect(patch.messageMutations?.map((m) => [m.type, m.source])).toEqual([
+      ['append', 'user_message'],
+      ['replace_all', 'start_trigger'],
+    ])
+    expect(patch.messageMutations?.at(-1)?.messages).toMatchObject([
+      { role: 'user', data: 'before stop', chatId: 'msg-before-stop' },
+      { role: 'user', data: 'hi' },
+      { role: 'char', data: 'mutated before stop' },
+    ])
+    expect(events[4]).toEqual({
+      type: 'error',
+      data: {
+        error: 'prompt assembly was stopped by a trigger',
+        restoration: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          selectedCharID: 0,
+          chatPage: 0,
+          messages: [{ role: 'user', data: 'before stop', chatId: 'msg-before-stop' }],
+          scriptstate: { $score: '1' },
+        },
+      },
+    })
+  })
+
   it('keeps preview-mode assembly read-only even when triggers set variables', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {

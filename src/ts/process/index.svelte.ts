@@ -283,6 +283,27 @@ export async function sendChat(
           return false
         }
         if (served.status === 'error') {
+          for (const patch of served.messagePatches ?? []) {
+            const previous =
+              patch.chatVarMutations.length > 0 ? currentChatStateSnapshot() : undefined
+            withTrustedServerProjectionWrite(() => {
+              const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
+              applyServerMessagePatch(liveChat, patch)
+              if (previous && liveChat.id) {
+                const scriptstatePatch: Record<string, string | number | boolean> = {}
+                const deleteKeys: string[] = []
+                for (const mutation of patch.chatVarMutations) {
+                  if (mutation.after === null) {
+                    deleteKeys.push(mutation.key)
+                  } else {
+                    scriptstatePatch[mutation.key] = mutation.after
+                  }
+                }
+                dispatchPatchChatScriptstate(liveChat.id, scriptstatePatch, deleteKeys, previous)
+              }
+            })
+          }
+          currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
           throwError(served.error)
           return false
         }
