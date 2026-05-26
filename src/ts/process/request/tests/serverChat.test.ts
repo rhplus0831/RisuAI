@@ -108,6 +108,27 @@ describe('requestServerChat', () => {
     })
   })
 
+  it('sends regenerate intent with the target message id', async () => {
+    vi.stubGlobal('fetch', serverChatFetch)
+    await requestServerChat(
+      {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'regenerate',
+        regenerateMessageId: 'msg-assistant-1',
+      },
+      null,
+    )
+
+    const calls = getServerChatCalls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      mode: 'regenerate',
+      regenerateMessageId: 'msg-assistant-1',
+      userMessage: '',
+    })
+  })
+
   it('surfaces a terminal error event as a status:error result', async () => {
     setServerChatError('character not found')
     vi.stubGlobal('fetch', serverChatFetch)

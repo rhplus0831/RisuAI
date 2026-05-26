@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 
-Status: reopened by audit.
+Status: reopened by audit. Slice 7A has landed; continue with 7B.
 
 ## Goal
 
@@ -12,9 +12,9 @@ and dispatch.
 ## Audit Findings
 
 - Server regenerate is declared but not implemented end to end.
-  `src/ts/process/index.svelte.ts:250` selects only
-  `preview_prompt`, `preview`, `continue`, or `send`. The route
-  validates `regenerateMessageId` at
+  Browser regenerate requests now send `mode: "regenerate"` with a
+  target `regenerateMessageId`, and focused client tests pin that
+  request shape. The route validates `regenerateMessageId` at
   `server/fastify/src/routes/generationChat.ts:87` and copies it at
   `server/fastify/src/routes/generationChat.ts:158`, but assembly only
   has the field in the input type at `server/fastify/src/prompt/assemble.ts:153`.
@@ -32,8 +32,9 @@ and dispatch.
 
 ## Tasks
 
-- Wire browser regenerate requests to `ServerChatInput.mode =
-"regenerate"` and pass the target `regenerateMessageId`.
+- Done in 7A: wire browser regenerate requests to
+  `ServerChatInput.mode = "regenerate"` and pass the target
+  `regenerateMessageId`.
 - Teach server assembly to consume `regenerateMessageId`, reconstruct the
   same transcript and mutation semantics as local regenerate, and reject
   invalid message IDs with the existing typed route error style.
@@ -49,10 +50,10 @@ and dispatch.
 
 ## Session Slices
 
-- 7A - Browser regenerate request wiring. Teach the client server-backed
+- 7A - Landed: browser regenerate request wiring. Taught the client server-backed
   send path to send `mode: "regenerate"` with `regenerateMessageId`, and
-  add focused client tests for the request shape. Stop before changing
-  assembly semantics if that becomes large.
+  added focused client tests for the request shape. Server assembly
+  semantics are intentionally left for 7B.
 - 7B - Server regenerate assembly semantics. Consume
   `regenerateMessageId` in assembly, reconstruct the local regenerate
   transcript/mutation behavior, and reject invalid message IDs with the
@@ -90,6 +91,9 @@ pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
 
 - Original phase: `docs/fastify/phases/phase-7-prompt-assembly.md`
 - sendChat server mode selection: `src/ts/process/index.svelte.ts:250`
+- reroll caller wiring: `src/lib/ChatScreens/DefaultChatScreen.svelte:263`
+- browser request adapter tests: `src/ts/process/request/tests/serverChat.test.ts`
+- sendChat request-shape tests: `src/ts/process/__tests__/sendChat.serverPreview.test.ts`
 - regenerate route validation: `server/fastify/src/routes/generationChat.ts:87`
 - regenerate route copy: `server/fastify/src/routes/generationChat.ts:158`
 - assembly input type: `server/fastify/src/prompt/assemble.ts:153`

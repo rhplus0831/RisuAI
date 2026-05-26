@@ -109,6 +109,7 @@ export async function sendChat(
     usedContinueTokens?: number
     preview?: boolean
     previewPrompt?: boolean
+    regenerateMessageId?: string
   } = {},
 ): Promise<boolean> {
   chatProcessStage.set(0)
@@ -251,9 +252,11 @@ export async function sendChat(
         ? 'preview_prompt'
         : arg.preview
           ? 'preview'
-          : arg.continue
-            ? 'continue'
-            : 'send'
+          : typeof arg.regenerateMessageId === 'string'
+            ? 'regenerate'
+            : arg.continue
+              ? 'continue'
+              : 'send'
       const lastMessage = currentChat.message.at(-1)
       const userMessage =
         mode === 'send' && lastMessage?.role === 'user' ? lastMessage.data : undefined
@@ -268,6 +271,9 @@ export async function sendChat(
         }
         if (typeof userMessage === 'string') {
           input.userMessage = userMessage
+        }
+        if (mode === 'regenerate') {
+          input.regenerateMessageId = arg.regenerateMessageId
         }
         const wantsServerDispatch = !arg.preview && !arg.previewPrompt
         const served = wantsServerDispatch

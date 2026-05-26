@@ -129,6 +129,34 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview_prompt' })
   })
 
+  it('routes regenerate to /chat with regenerateMessageId and no userMessage', async () => {
+    await seedEcho()
+    setServerChatPrompt(
+      [{ role: 'user', content: 'hi' }],
+      { promptText: 'hi' },
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+      },
+    )
+    setServerChatDispatchResult('regenerated reply', {
+      model: 'echo_model',
+      generationId: 'uuid-regenerate',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const ok = await chatModule.sendChat(-1, { regenerateMessageId: 'msg-assistant-1' })
+    expect(ok).toBe(true)
+    expect(getServerChatCalls()[0]).toMatchObject({
+      mode: 'regenerate',
+      regenerateMessageId: 'msg-assistant-1',
+      userMessage: '',
+    })
+  })
+
   it('does not route to /chat when the gate is off', async () => {
     await seedEcho()
     DBState.db.useServerPromptAssembly = false

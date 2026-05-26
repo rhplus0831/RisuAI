@@ -17,8 +17,8 @@ and add any longer closeout note under `../phases-completed/`.
 
 1. Phase 7 prompt assembly is the next default pickup now that Phase 9
    client thinning has closed.
-   - 7A: browser regenerate request wiring.
-   - 7B: server regenerate assembly semantics.
+   - 7A: landed browser regenerate request wiring.
+   - 7B: server regenerate assembly semantics. Pick this next.
    - 7C: `/chat` provider dispatch guards.
    - 7D: stop-trigger mutation payload delivery.
    - 7E: route-backed fixture coverage for send, continue, regenerate,
@@ -60,6 +60,7 @@ pnpm smoke:fastify-browser
 Focused Phase 7:
 
 ```bash
+pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerTransport.test.ts
 pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
 ```

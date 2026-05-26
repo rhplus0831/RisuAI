@@ -327,6 +327,8 @@
     if (cha.length === 0) {
       return
     }
+    const regenerateMessageId =
+      cha[cha.length - 1].role === 'user' ? undefined : ensureMessageId(cha[cha.length - 1])
     openMenu = false
     const saying = cha[cha.length - 1].saying
     let sayingQu = 2
@@ -349,7 +351,7 @@
     if (currentChatRecord.id) {
       dispatchReplaceMessages(currentChatRecord.id, cha, previous)
     }
-    await sendChatMain()
+    await sendChatMain(false, regenerateMessageId)
   }
 
   async function unReroll() {
@@ -406,7 +408,7 @@
 
   let abortController: null | AbortController = null
 
-  async function sendChatMain(continued: boolean = false) {
+  async function sendChatMain(continued: boolean = false, regenerateMessageId?: string) {
     let previousLength =
       DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
         .message.length
@@ -416,6 +418,7 @@
       await sendChat(-1, {
         signal: abortController.signal,
         continue: continued,
+        regenerateMessageId,
       })
       if (
         previousLength <

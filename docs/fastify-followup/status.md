@@ -14,33 +14,33 @@ directly.
 
 - Active work: audit follow-up for Phases 0, 3, 6, 7, and 8.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Highest-risk remaining gap: Phase 7 still needs browser regenerate
-  wiring and server regenerate assembly semantics before chat-path
-  closeout.
+- Highest-risk remaining gap: Phase 7 still needs server regenerate
+  assembly semantics before chat-path closeout. Browser regenerate
+  request wiring landed in Slice 7A.
 - Phase 9 follow-up has landed guard/import-event work plus slices
   9A-9J; use the table below for prior commit anchors and
   `status/next-steps.md` for pickup order.
-- Next default pickup: Phase 7 Slice 7A, browser regenerate request
-  wiring.
+- Next default pickup: Phase 7 Slice 7B, server regenerate assembly
+  semantics.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 
 ## Recent Phase 9 Anchors
 
-| Commit                                            | Scope                                                                         |
-| ------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `79b77f18` / `3fdb16d6`                           | Projection guard plus `.risu` import/export events.                           |
-| `cb6eb430` / `0cb57753` / `76d46a0a` / `bdcc40bd` | Module selection, Ooba, bot parameter, and prompt settings.                   |
-| `92a5b83c`                                        | 9A provider routing and model scalar settings.                                |
-| `997468f7`                                        | 9B OpenRouter, auxiliary model, separate-parameter, and EasyPanel selectors.  |
-| `ef750089`                                        | 9C image provider settings.                                                   |
-| `e655f27e`                                        | 9D memory and audio provider settings.                                        |
-| `2321516b`                                        | 9E persona, display/theme, global regex, lore preset, and bot preset editors. |
-| `668ea890`                                        | 9F plugin, custom model, and advanced setting editors.                        |
-| `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                   |
-| `007dbe3c`                                        | 9H character lore, script, prompt, TTS, and chat-name editors.                |
-| `c1966217`                                         | 9I sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API classification. |
-| current 9J change                                 | Final direct-write sweep, allowlist gaps, browser smoke, and Phase 9 closeout. |
+| Commit                                            | Scope                                                                                              |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `79b77f18` / `3fdb16d6`                           | Projection guard plus `.risu` import/export events.                                                |
+| `cb6eb430` / `0cb57753` / `76d46a0a` / `bdcc40bd` | Module selection, Ooba, bot parameter, and prompt settings.                                        |
+| `92a5b83c`                                        | 9A provider routing and model scalar settings.                                                     |
+| `997468f7`                                        | 9B OpenRouter, auxiliary model, separate-parameter, and EasyPanel selectors.                       |
+| `ef750089`                                        | 9C image provider settings.                                                                        |
+| `e655f27e`                                        | 9D memory and audio provider settings.                                                             |
+| `2321516b`                                        | 9E persona, display/theme, global regex, lore preset, and bot preset editors.                      |
+| `668ea890`                                        | 9F plugin, custom model, and advanced setting editors.                                             |
+| `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                                        |
+| `007dbe3c`                                        | 9H character lore, script, prompt, TTS, and chat-name editors.                                     |
+| `c1966217`                                        | 9I sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API classification. |
+| current 9J change                                 | Final direct-write sweep, allowlist gaps, browser smoke, and Phase 9 closeout.                     |
 
 ## Phase Status
 
