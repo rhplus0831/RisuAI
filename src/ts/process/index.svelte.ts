@@ -43,6 +43,7 @@ import {
 import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
 import { applyServerHypaV3Progress } from './request/serverMemory'
 import { sayTTS } from './tts'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -294,21 +295,24 @@ export async function sendChat(
         for (const patch of served.messagePatches) {
           const previous =
             patch.chatVarMutations.length > 0 ? currentChatStateSnapshot() : undefined
-          applyServerMessagePatch(currentChat, patch)
-          if (previous && currentChat.id) {
-            const scriptstatePatch: Record<string, string | number | boolean> = {}
-            const deleteKeys: string[] = []
-            for (const mutation of patch.chatVarMutations) {
-              if (mutation.after === null) {
-                deleteKeys.push(mutation.key)
-              } else {
-                scriptstatePatch[mutation.key] = mutation.after
+          withTrustedServerProjectionWrite(() => {
+            const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
+            applyServerMessagePatch(liveChat, patch)
+            if (previous && liveChat.id) {
+              const scriptstatePatch: Record<string, string | number | boolean> = {}
+              const deleteKeys: string[] = []
+              for (const mutation of patch.chatVarMutations) {
+                if (mutation.after === null) {
+                  deleteKeys.push(mutation.key)
+                } else {
+                  scriptstatePatch[mutation.key] = mutation.after
+                }
               }
+              dispatchPatchChatScriptstate(liveChat.id, scriptstatePatch, deleteKeys, previous)
             }
-            dispatchPatchChatScriptstate(currentChat.id, scriptstatePatch, deleteKeys, previous)
-          }
+          })
         }
-        nowChatroom.chats[selectedChat] = currentChat
+        currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
 
         if (!served.prompt.formated) {
           throwError('server prompt assembly did not return formated rows')
@@ -342,8 +346,12 @@ export async function sendChat(
     }
 
     if (!assembledByServer) {
-      currentChat = runCurrentChatFunction(currentChat)
-      nowChatroom.chats[selectedChat] = currentChat
+      withTrustedServerProjectionWrite(() => {
+        const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
+        currentChat = runCurrentChatFunction(liveChat)
+        DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+      })
+      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
 
       setProcessStage(1)
       stageTimings.stage1Start = Date.now()
@@ -612,9 +620,11 @@ export async function sendChat(
       }
       if (terminal.status === 'error') {
         if (terminal.restoration) {
-          applyServerChatRestoration(currentChat, terminal.restoration)
-          nowChatroom.chats[selectedChat] = currentChat
-          DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+          withTrustedServerProjectionWrite(() => {
+            const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
+            applyServerChatRestoration(liveChat, terminal.restoration)
+          })
+          currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
         }
         throwError(terminal.error ?? 'provider dispatch failed')
         return false

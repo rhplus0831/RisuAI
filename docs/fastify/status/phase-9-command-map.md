@@ -259,9 +259,10 @@ residual command-replacement sub-slices:
 
 Later Phase 9 slices are pre-split by rollback surface:
 
-- **9-5e-i through 9-5e-iii.** Next pickup: 9-5e-i. Add the read-only
-  `DBState.db` guard foundation, integrate command bridge
-  optimistic/rollback writes, then audit guard failures.
+- **9-5e-i through 9-5e-iii.** Complete. The read-only `DBState.db` guard
+  foundation is in place, command bridge optimistic/rollback writes use
+  trusted scopes, and the guarded server-backed sendChat fixture path is
+  green.
 - **9-6a through 9-6e.** Gate server-backed persistence, asset bytes,
   backup/restore projection, residual local caches, and finally provider
   secret masking.

@@ -16,6 +16,7 @@ import {
 } from '../characterCommands'
 import { currentChatStateSnapshot, dispatchReplaceMessages } from '../chatCommands'
 import { canUseServerCommands } from '../server/commands'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { getModuleToggles } from './modules'
 
 export interface SendChatContextResult {
@@ -66,27 +67,41 @@ export function setupSendChatContext(args: {
     DBState.db.statics.messages += 1
   }
   const selectedChar = get(selectedCharID)
-  const nowChatroom = DBState.db.characters[selectedChar]
   const lastInteraction = Date.now()
-  if (serverBacked && nowChatroom.chaId) {
-    const previous = currentCharacterStateSnapshot()
-    nowChatroom.lastInteraction = lastInteraction
-    dispatchUpdateCharacter(nowChatroom.chaId, { lastInteraction }, previous)
+
+  if (serverBacked) {
+    withTrustedServerProjectionWrite(() => {
+      const nowChatroom = DBState.db.characters[selectedChar]
+      if (nowChatroom.chaId) {
+        const previous = currentCharacterStateSnapshot()
+        nowChatroom.lastInteraction = lastInteraction
+        dispatchUpdateCharacter(nowChatroom.chaId, { lastInteraction }, previous)
+      } else {
+        nowChatroom.lastInteraction = lastInteraction
+      }
+
+      const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
+      const needsMessageIdBackfill = selectedChatRecord.message.some((v) => v.chatId === undefined)
+      const previousChatState = needsMessageIdBackfill ? currentChatStateSnapshot() : null
+      selectedChatRecord.message = selectedChatRecord.message.map((v) => {
+        v.chatId = v.chatId ?? v4()
+        return v
+      })
+      if (previousChatState && selectedChatRecord.id) {
+        dispatchReplaceMessages(selectedChatRecord.id, selectedChatRecord.message, previousChatState)
+      }
+    })
   } else {
+    const nowChatroom = DBState.db.characters[selectedChar]
     nowChatroom.lastInteraction = lastInteraction
+    const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
+    selectedChatRecord.message = selectedChatRecord.message.map((v) => {
+      v.chatId = v.chatId ?? v4()
+      return v
+    })
   }
+  const nowChatroom = DBState.db.characters[selectedChar]
   const selectedChat = nowChatroom.chatPage
-  const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
-  const needsMessageIdBackfill = selectedChatRecord.message.some((v) => v.chatId === undefined)
-  const previousChatState =
-    serverBacked && needsMessageIdBackfill ? currentChatStateSnapshot() : null
-  selectedChatRecord.message = selectedChatRecord.message.map((v) => {
-    v.chatId = v.chatId ?? v4()
-    return v
-  })
-  if (previousChatState && selectedChatRecord.id) {
-    dispatchReplaceMessages(selectedChatRecord.id, selectedChatRecord.message, previousChatState)
-  }
 
   let promptInfo: MessagePresetInfo = {}
   if (DBState.db.promptInfoInsideChat) {

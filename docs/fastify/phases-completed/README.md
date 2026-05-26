@@ -90,6 +90,8 @@ track the next piece of work.
 | 9-5d-iv - 9-4 extension UI/API tails    | [`phase-9-client-thinning-9-5d-iv.md`](phase-9-client-thinning-9-5d-iv.md)             | Extension residual audit, plugin theme commands, and module-integration bridge.  |
 | 9-5d-v - Process/runtime writes         | [`phase-9-client-thinning-9-5d-v.md`](phase-9-client-thinning-9-5d-v.md)               | Generation/scriptstate classification, memory gating, and MCP refresh bridge.    |
 | 9-5e-i - Projection write gate           | [`phase-9-client-thinning-9-5e-i.md`](phase-9-client-thinning-9-5e-i.md)               | Opt-in read-only projection guard and trusted bootstrap/event refresh writes.    |
+| 9-5e-ii - Command bridge guard           | [`phase-9-client-thinning-9-5e-ii.md`](phase-9-client-thinning-9-5e-ii.md)             | Command bridge optimistic/rollback paths wrapped in trusted projection scopes.   |
+| 9-5e-iii - Guard audit closeout          | [`phase-9-client-thinning-9-5e-iii.md`](phase-9-client-thinning-9-5e-iii.md)           | Guarded server-backed sendChat fixture path and runtime write classification.    |
 
 ## Historical Status Logs
 

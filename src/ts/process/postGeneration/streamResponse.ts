@@ -5,6 +5,7 @@ import type {
 } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import { trimUntilPunctuation } from '../../util'
+import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
 
@@ -56,18 +57,22 @@ export async function consumeStreamResponse(
     msgIndex -= 1
     prefix = DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data
   } else {
-    DBState.db.characters[selectedChar].chats[selectedChat].message.push({
-      role: 'char',
-      data: '',
-      saying: currentChar.chaId,
-      time: Date.now(),
-      generationInfo,
-      promptInfo,
-      chatId: generationId,
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[selectedChar].chats[selectedChat].message.push({
+        role: 'char',
+        data: '',
+        saying: currentChar.chaId,
+        time: Date.now(),
+        generationInfo,
+        promptInfo,
+        chatId: generationId,
+      })
     })
   }
-  DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = true
-  DBState.db.characters[selectedChar].reloadKeys += 1
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = true
+    DBState.db.characters[selectedChar].reloadKeys += 1
+  })
   let lastResponseChunk: StreamResponseChunk = {}
   let streamAborted: boolean = abortSignal.aborted
   let result = ''
@@ -105,10 +110,12 @@ export async function consumeStreamResponse(
           'editoutput',
           msgIndex,
         )
-        DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data =
-          result2.data
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data =
+            result2.data
+          DBState.db.characters[selectedChar].reloadKeys += 1
+        })
         emoChanged = result2.emoChanged
-        DBState.db.characters[selectedChar].reloadKeys += 1
       }
       if (readed.done) {
         break
@@ -116,8 +123,10 @@ export async function consumeStreamResponse(
     }
   } finally {
     abortSignal.removeEventListener('abort', abortReader)
-    DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = false
-    DBState.db.characters[selectedChar].reloadKeys += 1
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = false
+      DBState.db.characters[selectedChar].reloadKeys += 1
+    })
     void reader.cancel().catch(() => {})
   }
 

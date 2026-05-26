@@ -7,6 +7,7 @@ import { evaluateIgp } from './igp'
 import { applyOutputTrigger } from './outputTrigger'
 import { applyNonStreamResponse } from './nonStreamResponse'
 import { consumeStreamResponse } from './streamResponse'
+import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import type {
   Chat,
   MessageGenerationInfo,
@@ -126,12 +127,18 @@ export async function orchestrateResponse(
       resendChat = true
     }
     const inlayr = runInlayScreen(currentChar, currentChat.message[stream.msgIndex].data)
-    currentChat.message[stream.msgIndex].data = inlayr.text
-    DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+    withTrustedServerProjectionWrite(() => {
+      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+      currentChat.message[stream.msgIndex].data = inlayr.text
+      DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+    })
     if (inlayr.promise) {
       const t = await inlayr.promise
-      currentChat.message[stream.msgIndex].data = t
-      DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+      withTrustedServerProjectionWrite(() => {
+        currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+        currentChat.message[stream.msgIndex].data = t
+        DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+      })
     }
     if (DBState.db.ttsAutoSpeech && !suppressStreamingTts) {
       await sayTTS(currentChar, result)
@@ -162,7 +169,9 @@ export async function orchestrateResponse(
       runCurrentChatFunction,
     })
     if (nonStreamTrigger.triggerChat) {
-      DBState.db.characters[selectedChar].chats[selectedChat] = nonStreamTrigger.triggerChat
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.characters[selectedChar].chats[selectedChat] = nonStreamTrigger.triggerChat!
+      })
     }
     if (nonStreamTrigger.resendChat) {
       resendChat = true

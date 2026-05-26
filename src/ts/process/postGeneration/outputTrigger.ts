@@ -1,5 +1,6 @@
 import type { Chat, character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
+import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import { runTrigger } from '../triggers'
 
 export interface ApplyOutputTriggerOptions {
@@ -19,9 +20,11 @@ export async function applyOutputTrigger(
   opts: ApplyOutputTriggerOptions,
 ): Promise<ApplyOutputTriggerResult> {
   const { currentChar, selectedChar, selectedChat, runCurrentChatFunction } = opts
-  DBState.db.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(
-    DBState.db.characters[selectedChar].chats[selectedChat],
-  )
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(
+      DBState.db.characters[selectedChar].chats[selectedChat],
+    )
+  })
   const chat = DBState.db.characters[selectedChar].chats[selectedChat]
   const triggerResult = await runTrigger(currentChar, 'output', { chat })
   return {

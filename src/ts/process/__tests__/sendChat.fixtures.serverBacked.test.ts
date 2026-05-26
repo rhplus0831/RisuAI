@@ -106,6 +106,7 @@ import { loadProviderScript, resetProviderState } from '../__fixtures__/provider
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
 import { DBState, hypaV3ProgressStore } from '../../stores.svelte'
 import type { Chat } from '../../storage/database.svelte'
+import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
 import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelte'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -332,10 +333,12 @@ describe('sendChat fixtures (server-backed)', () => {
     abortChat.set(false)
     chatProcessStage.set(0)
     uuidState.counter = 0
+    setServerProjectionWriteGuardEnabled(false)
   })
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
+    setServerProjectionWriteGuardEnabled(false)
     while (cleanups.length > 0) cleanups.pop()!()
   })
 
@@ -363,6 +366,7 @@ describe('sendChat fixtures (server-backed)', () => {
 
     const stageRecorder = recordStages()
     const args: Parameters<typeof sendChat>[1] = { ...(loaded.fixture.sendChatArgs ?? {}) }
+    setServerProjectionWriteGuardEnabled(true)
     await sendChat(-1, args)
     const stages = stageRecorder.stop()
     const captured = captureSnapshot(stages)
@@ -415,10 +419,12 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
     abortChat.set(false)
     chatProcessStage.set(0)
     uuidState.counter = 0
+    setServerProjectionWriteGuardEnabled(false)
   })
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
+    setServerProjectionWriteGuardEnabled(false)
     while (cleanups.length > 0) cleanups.pop()!()
   })
 
@@ -456,6 +462,7 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
 
     const stageRecorder = recordStages()
     const args: Parameters<typeof sendChat>[1] = { ...(loaded.fixture.sendChatArgs ?? {}) }
+    setServerProjectionWriteGuardEnabled(true)
     await sendChat(-1, args)
     const stages = stageRecorder.stop()
     const captured = captureSnapshot(stages)
@@ -533,6 +540,7 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
     ])
 
     const stageRecorder = recordStages()
+    setServerProjectionWriteGuardEnabled(true)
     await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
     const stages = stageRecorder.stop()
     const captured = captureSnapshot(stages)
@@ -605,6 +613,7 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
       'uuid-0',
     )
 
+    setServerProjectionWriteGuardEnabled(true)
     const result = await sendChat(-1, {})
 
     expect(result).toBe(false)
@@ -640,6 +649,7 @@ describe('sendChat fixtures (/chat server dispatch)', () => {
       { emitTtsSideEffect: true },
     )
 
+    setServerProjectionWriteGuardEnabled(true)
     const result = await sendChat(-1, {})
 
     expect(result).toBe(true)

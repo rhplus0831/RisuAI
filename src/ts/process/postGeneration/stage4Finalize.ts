@@ -1,4 +1,5 @@
 import { DBState } from '../../stores.svelte'
+import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import type { MessageGenerationInfo } from '../../storage/database.svelte'
 
 export interface StageTimings {
@@ -31,6 +32,10 @@ export function finalizeStage4(opts: FinalizeStage4Options): void {
   const messages = DBState.db.characters[selectedChar].chats[selectedChat].message
   const lastMessageIndex = messages.length - 1
   if (lastMessageIndex >= 0 && messages[lastMessageIndex].generationInfo) {
-    messages[lastMessageIndex].generationInfo = generationInfo
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[selectedChar].chats[selectedChat].message[
+        lastMessageIndex
+      ].generationInfo = generationInfo
+    })
   }
 }

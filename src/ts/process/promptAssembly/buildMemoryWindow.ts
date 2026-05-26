@@ -1,6 +1,8 @@
 import { language } from '../../../lang'
 import { canUseServerCommands } from '../../server/commands'
+import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import { DBState } from '../../stores.svelte'
+import { currentChatStateSnapshot, dispatchUpdateChat } from '../../chatCommands'
 import type { Chat, character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
@@ -132,7 +134,22 @@ export async function buildMemoryWindow(
       currentTokens -= await tokenizer.tokenizeChat(chats[0])
       chats.splice(0, 1)
     }
-    currentChat.lastMemory = chats[0].memo
+    const lastMemory = chats[0].memo
+    if (canUseServerCommands() && currentChat.id) {
+      const previous = currentChatStateSnapshot()
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.characters[selectedChar].chats[selectedChat].lastMemory = lastMemory
+      })
+      dispatchUpdateChat(currentChat.id, { lastMemory }, previous)
+      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+    } else if (canUseServerCommands()) {
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.characters[selectedChar].chats[selectedChat].lastMemory = lastMemory
+      })
+      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+    } else {
+      currentChat.lastMemory = lastMemory
+    }
   }
 
   const memories: OpenAIChat[] = []

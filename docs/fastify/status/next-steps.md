@@ -136,21 +136,34 @@ existing settings command bridge:
   projection and the projection is read-only again after the trusted scope
   exits.
 
+9-5e-iii then closed the guard audit:
+
+- The server-backed sendChat fixture path now enables the Fastify
+  projection write guard during both `/completion` and `/chat` dispatch
+  execution.
+- Entry-context optimistic `lastInteraction` and message-id backfill writes
+  run inside trusted scopes while dispatching existing character/message
+  commands where ids exist.
+- Server `/chat` message-patch replay, terminal restoration, response
+  streaming/non-streaming display updates, output-trigger replay, stage-4
+  generation metadata, and `lastMemory` updates no longer trip the guard.
+- No new command endpoints were added; no storage/provider gating,
+  server-side `.risu` import/export, asset-byte work, or surgical event
+  patching was folded into the guard audit.
+
 ## Immediate Pickup
 
-Immediate pickup: **9-5e-iii - Guard audit closeout**.
+Immediate pickup: **9-6a - Server-backed persistence gate**.
 
-- Enable the guard across the server-backed fixture path and classify
-  failures as missed 9-5d residuals, intentional local/runtime-only state,
-  or follow-up residual slices.
+- Stop Fastify-served web startup, save, and backup maintenance from
+  initializing or writing AutoStorage, OPFS, NodeStorage, or localForage.
 - Keep Tauri/local mode untouched.
-- Do not add new command endpoints.
-- Do not broaden this slice into storage/provider
-  gating, server-side `.risu` import/export, asset byte changes,
-  server-side plugin execution, per-event surgical browser patches, or
-  residual-write implementation.
-- If the fixture-path audit reveals missed durable writes, split them into
-  follow-up residual slices instead of folding them into 9-5e-iii.
+- Keep server `.risu` codec/import/export work in 9-7/9-8.
+- Do not broaden this slice into asset-byte gating, backup/restore
+  projection, residual local cache classification, provider secret masking,
+  server-side plugin execution, or per-event surgical browser patches.
+- Treat startup/save/backup storage calls as server-backed web gates, not
+  compatibility migrations; there are no actual Fastify users yet.
 
 Implementation notes:
 
@@ -188,31 +201,30 @@ Implementation notes:
   dedicated server-owned paths.
 - Several direct-write search hits are expected rollback helpers,
   optimistic command updates, projection replacement writes, or
-  runtime-only state. 9-5e-iii should distinguish those classes instead of
+  runtime-only state. 9-6a should focus on storage entry points instead of
   mechanically deleting every local assignment.
 
 ## Later Queue
 
-1. 9-5e-iii - Guard audit closeout.
-2. 9-6a - Server-backed persistence gate.
-3. 9-6b - Asset byte gate.
-4. 9-6c - Server backup/restore projection.
-5. 9-6d - Residual local cache classification.
-6. 9-6e - Provider secret masking.
-7. 9-7a - `.risu` fixture corpus and codec harness.
-8. 9-7b - Legacy envelope codec port.
-9. 9-7c - RISUSAVE block codec port.
-10. 9-7d - Decode normalization and validation.
-11. 9-7e - Repository-backed export adapter.
-12. 9-8a - Multipart `.risu` import route.
-13. 9-8b - Repository `.risu` export route.
-14. 9-8c - Asset reference walker.
-15. 9-8d - Bundle export route.
-16. 9-9a - Server-backed browser smoke harness.
-17. 9-9b - Generation and memory fixture closeout.
-18. 9-9c - Server-backed storage-write audit.
-19. 9-9d - Manual Fastify web and Tauri local verification.
-20. 9-9e - Phase 9 docs closeout.
+1. 9-6a - Server-backed persistence gate.
+2. 9-6b - Asset byte gate.
+3. 9-6c - Server backup/restore projection.
+4. 9-6d - Residual local cache classification.
+5. 9-6e - Provider secret masking.
+6. 9-7a - `.risu` fixture corpus and codec harness.
+7. 9-7b - Legacy envelope codec port.
+8. 9-7c - RISUSAVE block codec port.
+9. 9-7d - Decode normalization and validation.
+10. 9-7e - Repository-backed export adapter.
+11. 9-8a - Multipart `.risu` import route.
+12. 9-8b - Repository `.risu` export route.
+13. 9-8c - Asset reference walker.
+14. 9-8d - Bundle export route.
+15. 9-9a - Server-backed browser smoke harness.
+16. 9-9b - Generation and memory fixture closeout.
+17. 9-9c - Server-backed storage-write audit.
+18. 9-9d - Manual Fastify web and Tauri local verification.
+19. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -278,8 +290,12 @@ Focused 9-5 runs:
 - 9-5e-i: `pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts`;
   `pnpm check`
   - 9 bootstrap/projection tests passed; check clean.
-- 9-5e sub-slices: run the nearest focused guard/projection tests touched
-  by the sub-slice, then `pnpm check` before marking that sub-slice done.
+- 9-5e-ii: `pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/commands.test.ts src/ts/compatibilityAdapters.test.ts src/ts/process/modules.test.ts`;
+  `pnpm check`
+  - 51 guard/command/compatibility tests passed; check clean.
+- 9-5e-iii: `pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChatContext.test.ts`;
+  `pnpm check`
+  - 49 guarded fixture/bootstrap/context tests passed; check clean.
 
 ## References
 
@@ -290,7 +306,7 @@ Focused 9-5 runs:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-5e-i.md`](../phases-completed/phase-9-client-thinning-9-5e-i.md)
+  [`../phases-completed/phase-9-client-thinning-9-5e-iii.md`](../phases-completed/phase-9-client-thinning-9-5e-iii.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

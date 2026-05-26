@@ -15,13 +15,13 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-5e-ii command bridge guard integration. The
-  Fastify projection write guard now has a standalone trusted write scope,
-  and command-owned optimistic/rollback paths for the main bridges use it.
-- Current gap: the guard still needs the 9-5e-iii fixture-path audit to
-  classify remaining failures as missed residual writes or intentional
-  local/runtime-only state.
-- Next default pickup: 9-5e-iii, guard audit closeout.
+- Last landed work: 9-5e-iii guard audit closeout. The guarded
+  server-backed sendChat fixture path now covers `/completion` and `/chat`
+  dispatch flows, with remaining runtime projection writes classified and
+  routed through trusted scopes or existing commands.
+- Current gap: server-backed web persistence still needs to stop reaching
+  local browser storage paths.
+- Next default pickup: 9-6a, server-backed persistence gate.
 - Last recorded full baselines after the 9-5d first pass: `pnpm check`
   clean, `pnpm test` 709 tests plus 4 skipped, `pnpm api:test` 1119
   tests, and `pnpm build` passing with existing CSS `::highlight`,
@@ -52,7 +52,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-5e-ii landed; continue with 9-5e-iii guard audit closeout. |
+| Client thinning                             | Active; 9-5e-iii landed; continue with 9-6a persistence gating.      |
 
 ## Maintenance Rules
 

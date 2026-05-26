@@ -6,6 +6,7 @@ import type {
 } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import { trimUntilPunctuation } from '../../util'
+import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import { runInlayScreen } from '../inlayScreen'
 import type { requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
@@ -88,39 +89,49 @@ export async function applyNonStreamResponse(
     result = inlayResult.text
     emoChanged = result2.emoChanged
     if (i === 0 && arg.continue) {
-      messagesAt()[msgIndex] = {
-        role: 'char',
-        data: result,
-        saying: currentChar.chaId,
-        time: Date.now(),
-        generationInfo,
-        promptInfo,
-        chatId: generationId,
-      }
+      withTrustedServerProjectionWrite(() => {
+        messagesAt()[msgIndex] = {
+          role: 'char',
+          data: result,
+          saying: currentChar.chaId,
+          time: Date.now(),
+          generationInfo,
+          promptInfo,
+          chatId: generationId,
+        }
+      })
       if (inlayResult.promise) {
         const p = await inlayResult.promise
-        messagesAt()[msgIndex].data = p
+        withTrustedServerProjectionWrite(() => {
+          messagesAt()[msgIndex].data = p
+        })
       }
     } else if (i === 0) {
-      messagesAt().push({
-        role: msg[0],
-        data: result,
-        saying: currentChar.chaId,
-        time: Date.now(),
-        generationInfo,
-        promptInfo,
-        chatId: generationId,
+      withTrustedServerProjectionWrite(() => {
+        messagesAt().push({
+          role: msg[0],
+          data: result,
+          saying: currentChar.chaId,
+          time: Date.now(),
+          generationInfo,
+          promptInfo,
+          chatId: generationId,
+        })
       })
       const ind = messagesAt().length - 1
       if (inlayResult.promise) {
         const p = await inlayResult.promise
-        messagesAt()[ind].data = p
+        withTrustedServerProjectionWrite(() => {
+          messagesAt()[ind].data = p
+        })
       }
       mrerolls.push(result)
     } else {
       mrerolls.push(result)
     }
-    DBState.db.characters[selectedChar].reloadKeys += 1
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[selectedChar].reloadKeys += 1
+    })
     if (DBState.db.ttsAutoSpeech) {
       await sayTTS(currentChar, result)
     }

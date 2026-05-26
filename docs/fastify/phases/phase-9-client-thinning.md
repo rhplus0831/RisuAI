@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-5e-ii - Command bridge guard integration**. Next pickup:
-**9-5e-iii - Guard audit closeout**.
+**9-5e-iii - Guard audit closeout**. Next pickup:
+**9-6a - Server-backed persistence gate**.
 
 ## Goal
 
@@ -275,6 +275,8 @@ surfaces.
       server-backed fixture path and classify failures as missed 9-5d residuals
       or intentional local/runtime-only state. Large resource replacements go
       back to follow-up residual slices.
+      - Status: complete. Closeout:
+        [`../phases-completed/phase-9-client-thinning-9-5e-iii.md`](../phases-completed/phase-9-client-thinning-9-5e-iii.md).
 - **9-6 - Storage and provider-key gating.** Gate storage and key exposure in
   smaller rollback surfaces. Keep server `.risu` codec/import/export work in
   9-7/9-8.
