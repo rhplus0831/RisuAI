@@ -38,7 +38,7 @@ directly.
 | `668ea890`                                        | 9F plugin, custom model, and advanced setting editors.                        |
 | `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                   |
 | `007dbe3c`                                        | 9H character lore, script, prompt, TTS, and chat-name editors.                |
-| `48e9025b`                                         | 9I sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API classification. |
+| `c1966217`                                         | 9I sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API classification. |
 
 ## Phase Status
 
