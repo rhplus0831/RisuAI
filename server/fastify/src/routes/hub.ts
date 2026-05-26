@@ -2,6 +2,7 @@ import { Readable } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
+import { filterResponseHeaders } from '../proxy.js'
 
 const HUB_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
 
@@ -13,8 +14,7 @@ const STRIP_REQUEST_HEADERS = new Set([
   'x-risu-node-path',
 ])
 
-const STRIP_RESPONSE_HEADERS = new Set([
-  'content-encoding',
+const HUB_TRANSPORT_RESPONSE_HEADERS = new Set([
   'content-length',
   'transfer-encoding',
 ])
@@ -72,8 +72,8 @@ async function forwardOnce(
   }
   const upstream = await fetch(upstreamUrl, fetchInit)
 
-  for (const [k, v] of upstream.headers.entries()) {
-    if (STRIP_RESPONSE_HEADERS.has(k.toLowerCase())) continue
+  for (const [k, v] of Object.entries(filterResponseHeaders(upstream.headers))) {
+    if (HUB_TRANSPORT_RESPONSE_HEADERS.has(k.toLowerCase())) continue
     reply.header(k, v)
   }
   reply.code(upstream.status)

@@ -18,13 +18,14 @@ and add any longer closeout note under `../phases-completed/`.
 
 Recommended order:
 
-1. Phase 3 - hub passthrough response-header filtering should match the
-   shared direct proxy strip set.
-2. Phase 8 - memory event sinks and subscribers must not be able to
+1. Phase 8 - memory event sinks and subscribers must not be able to
    abort committed memory jobs/routes.
 
 Recently closed:
 
+- Phase 3 - hub passthrough responses now reuse the shared proxy
+  response-header strip policy, with hub-only transport header stripping
+  retained.
 - Phase 6 - unterminated OpenAI-compatible, Anthropic, Mistral, and
   Gemini SSE tails now emit typed provider errors instead of successful
   `done` streams.
@@ -34,7 +35,7 @@ Recently closed:
 
 ## Focused Verification
 
-Phase 3:
+Phase 3 (closed, re-run only for regression checks):
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/hub.test.ts server/fastify/__tests__/proxy.test.ts

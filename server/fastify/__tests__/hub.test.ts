@@ -202,10 +202,14 @@ describe('Phase 3C hub passthrough', () => {
     expect(echo.requests[0].headers['origin']).toBe(new URL(echo.url).origin)
   })
 
-  it('strips encoding / length headers from the upstream response', async () => {
+  it('uses the shared proxy response-header strip policy', async () => {
     echo.setResponder((_req, res) => {
       res.writeHead(200, {
         'content-type': 'text/plain',
+        'content-security-policy': "default-src 'none'",
+        'content-security-policy-report-only': "script-src 'none'",
+        'clear-site-data': '"cache"',
+        'cache-control': 'no-store',
         'content-encoding': 'identity',
         'x-passthrough': 'kept',
       })
@@ -218,11 +222,11 @@ describe('Phase 3C hub passthrough', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(200)
-    // content-encoding from upstream is stripped (fetch auto-decompresses).
+    expect(res.headers['content-security-policy']).toBeUndefined()
+    expect(res.headers['content-security-policy-report-only']).toBeUndefined()
+    expect(res.headers['clear-site-data']).toBeUndefined()
+    expect(res.headers['cache-control']).toBeUndefined()
     expect(res.headers['content-encoding']).toBeUndefined()
-    // Node's HTTP layer manages transfer-encoding on the outgoing response;
-    // we only ensure that the upstream value never appears verbatim in the
-    // header set we forward. The forwarded body still arrives intact.
     expect(res.headers['x-passthrough']).toBe('kept')
     expect(res.body).toBe('body')
   })
