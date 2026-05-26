@@ -20,6 +20,7 @@
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
   import { normalizePromptTemplateIds } from 'src/ts/storage/database.svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     canUseServerCommands,
     createPromptItemCommand,
@@ -42,6 +43,8 @@
   let draggedIndex = $state(-1)
   let dragOverIndex = $state(-1)
   let openedItemIndices = $state(new Set<number>())
+  type FallbackModelKey = 'model' | 'memory' | 'translate' | 'emotion' | 'otherAx'
+  type FallbackModelsDraft = Record<FallbackModelKey, string[]>
   const pendingPromptItemUpdates = new Map<string, ReturnType<typeof setTimeout>>()
   const pendingPromptSettingsPatch = {
     patch: {} as SettingsPatch,
@@ -49,11 +52,50 @@
     attempted: {} as SettingsPatch,
     timer: null as ReturnType<typeof setTimeout> | null,
   }
-  const promptSettingsPreviousSnapshots = new Map<string, string>()
-  const promptSettingsPreviousValues = new Map<string, unknown>()
-  let promptSettingsWatcherInitialized = false
-  let suppressPromptSettingsRollback = false
-  executeTokenize(DBState.db.promptTemplate)
+  const promptTemplateDraft = $state<{ value: PromptItem[] }>({
+    value: cloneJsonValue(DBState.db.promptTemplate ?? []),
+  })
+  let previousPromptTemplateServerSnapshot = snapshotJson(DBState.db.promptTemplate ?? [])
+  const promptSettingsDraft = createPromptSettingsDraft<Record<string, any>>('promptSettings', {})
+  const jsonSchemaEnabledDraft = createPromptSettingsDraft<boolean>('jsonSchemaEnabled', false)
+  const outputImageModalDraft = createPromptSettingsDraft<boolean>('outputImageModal', false)
+  const strictJsonSchemaDraft = createPromptSettingsDraft<boolean>('strictJsonSchema', false)
+  const customPromptTemplateToggleDraft = createPromptSettingsDraft<string>(
+    'customPromptTemplateToggle',
+    '',
+  )
+  const templateDefaultVariablesDraft = createPromptSettingsDraft<string>(
+    'templateDefaultVariables',
+    '',
+  )
+  const OAIPredictionDraft = createPromptSettingsDraft<string>('OAIPrediction', '')
+  const autoSuggestPromptDraft = createPromptSettingsDraft<string>('autoSuggestPrompt', '')
+  const systemContentReplacementDraft = createPromptSettingsDraft<string>(
+    'systemContentReplacement',
+    '',
+  )
+  const systemRoleReplacementDraft = createPromptSettingsDraft<string>(
+    'systemRoleReplacement',
+    'user',
+  )
+  const jsonSchemaDraft = createPromptSettingsDraft<string>('jsonSchema', '')
+  const extractJsonDraft = createPromptSettingsDraft<string>('extractJson', '')
+  const fallbackModelsDraft = createPromptSettingsDraft<FallbackModelsDraft>('fallbackModels', {
+    model: [],
+    memory: [],
+    translate: [],
+    emotion: [],
+    otherAx: [],
+  })
+  const fallbackWhenBlankResponseDraft = createPromptSettingsDraft<boolean>(
+    'fallbackWhenBlankResponse',
+    false,
+  )
+  const doNotChangeFallbackModelsDraft = createPromptSettingsDraft<boolean>(
+    'doNotChangeFallbackModels',
+    false,
+  )
+  executeTokenize(promptTemplateDraft.value)
   interface Props {
     onGoBack?: () => void
     mode?: 'independent' | 'inline'
@@ -68,7 +110,9 @@
   }
 
   function promptItemId(item: PromptItem): string {
-    normalizePromptTemplateIds(DBState.db)
+    withTrustedServerProjectionWrite(() => {
+      normalizePromptTemplateIds(DBState.db)
+    })
     item.id ??= crypto.randomUUID()
     return item.id
   }
@@ -84,12 +128,15 @@
   }
 
   function currentPromptTemplateSnapshot(): PromptItem[] {
-    return cloneJsonValue(DBState.db.promptTemplate ?? [])
+    return cloneJsonValue(promptTemplateDraft.value ?? [])
   }
 
   function rollbackPromptTemplate(previous: PromptItem[], attempted: PromptItem[]): void {
-    if (snapshotJson(DBState.db.promptTemplate ?? []) === snapshotJson(attempted)) {
-      DBState.db.promptTemplate = cloneJsonValue(previous)
+    if (snapshotJson(promptTemplateDraft.value ?? []) === snapshotJson(attempted)) {
+      promptTemplateDraft.value = cloneJsonValue(previous)
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.promptTemplate = cloneJsonValue(previous)
+      })
     }
   }
 
@@ -132,21 +179,29 @@
 
   function dispatchReorderPromptItems(previous: PromptItem[]): void {
     if (!canUseServerCommands()) return
-    normalizePromptTemplateIds(DBState.db)
+    withTrustedServerProjectionWrite(() => {
+      normalizePromptTemplateIds(DBState.db)
+    })
     const attempted = currentPromptTemplateSnapshot()
     void runServerCommand({
       command: (baseRevision) =>
         reorderPromptItemsCommand({
           baseRevision,
-          itemIds: DBState.db.promptTemplate.map((item) => promptItemId(item)),
+          itemIds: promptTemplateDraft.value.map((item) => promptItemId(item)),
         }),
       rollback: () => rollbackPromptTemplate(previous, attempted),
     })
   }
 
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem): void {
-    if (!canUseServerCommands()) return
     const itemId = promptItemId(promptItem)
+    const index = promptTemplateDraft.value.findIndex((item) => item.id === itemId)
+    if (index !== -1) {
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.promptTemplate = cloneJsonValue(promptTemplateDraft.value)
+      })
+    }
+    if (!canUseServerCommands()) return
     if (pendingPromptItemUpdates.has(itemId)) {
       clearTimeout(pendingPromptItemUpdates.get(itemId))
     }
@@ -163,11 +218,14 @@
               patch: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
             }),
           rollback: () => {
-            const index = DBState.db.promptTemplate.findIndex((item) => item.id === itemId)
+            const index = promptTemplateDraft.value.findIndex((item) => item.id === itemId)
             if (index === -1) return
-            if (snapshotJson(DBState.db.promptTemplate[index]) === snapshotJson(attemptedItem)) {
-              DBState.db.promptTemplate[index] = cloneJsonValue(previousItem)
-              DBState.db.promptTemplate = [...DBState.db.promptTemplate]
+            if (snapshotJson(promptTemplateDraft.value[index]) === snapshotJson(attemptedItem)) {
+              promptTemplateDraft.value[index] = cloneJsonValue(previousItem)
+              promptTemplateDraft.value = [...promptTemplateDraft.value]
+              withTrustedServerProjectionWrite(() => {
+                DBState.db.promptTemplate = cloneJsonValue(promptTemplateDraft.value)
+              })
             }
           },
         })
@@ -176,33 +234,25 @@
   }
 
   function movePromptItem(originalIndex: number, nextIndex: number): void {
-    if (nextIndex < 0 || nextIndex >= DBState.db.promptTemplate.length) return
+    if (nextIndex < 0 || nextIndex >= promptTemplateDraft.value.length) return
     const previous = currentPromptTemplateSnapshot()
-    const templates = [...DBState.db.promptTemplate]
+    const templates = [...promptTemplateDraft.value]
     const temp = templates[originalIndex]
     templates[originalIndex] = templates[nextIndex]
     templates[nextIndex] = temp
-    DBState.db.promptTemplate = templates
+    promptTemplateDraft.value = templates
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.promptTemplate = cloneJsonValue(templates)
+    })
     dispatchReorderPromptItems(previous)
   }
 
-  const promptSettingsKeys = [
-    'promptSettings',
-    'jsonSchemaEnabled',
-    'jsonSchema',
-    'strictJsonSchema',
-    'extractJson',
-    'customPromptTemplateToggle',
-    'templateDefaultVariables',
-    'OAIPrediction',
-    'autoSuggestPrompt',
-    'systemContentReplacement',
-    'systemRoleReplacement',
-    'outputImageModal',
-    'fallbackModels',
-    'fallbackWhenBlankResponse',
-    'doNotChangeFallbackModels',
-  ] as const
+  function applyPromptTemplateDraft(templates: PromptItem[]): void {
+    promptTemplateDraft.value = cloneJsonValue(templates)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.promptTemplate = cloneJsonValue(templates)
+    })
+  }
 
   function queuePromptSettingsPatch(patch: SettingsPatch, previous: SettingsPatch): void {
     if (!canUseServerCommands()) return
@@ -231,64 +281,98 @@
             patch: commandPatch,
           }),
         rollback: () => {
-          suppressPromptSettingsRollback = true
-          try {
+          withTrustedServerProjectionWrite(() => {
             const target = DBState.db as unknown as Record<string, unknown>
             for (const [key, previousValue] of Object.entries(commandPrevious)) {
               if (snapshotJson(target[key]) === snapshotJson(commandAttempted[key])) {
                 target[key] = cloneJsonValue(previousValue)
               }
             }
-          } finally {
-            queueMicrotask(() => {
-              suppressPromptSettingsRollback = false
-            })
-          }
+          })
         },
       })
     }, 250)
+  }
+
+  function createPromptSettingsDraft<T>(key: string, fallback: T): { value: T } {
+    const initialValue = currentPromptSettingValue(key, fallback)
+    const draft = $state<{ value: T }>({ value: cloneJsonValue(initialValue) })
+    let initialized = false
+    let suppressDraftDispatch = false
+    let previousServerSnapshot = snapshotJson(initialValue)
+
+    $effect(() => {
+      const serverValue = currentPromptSettingValue(key, fallback)
+      const serverSnapshot = snapshotJson(serverValue)
+      const draftSnapshot = snapshotJson(draft.value)
+
+      if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
+        suppressDraftDispatch = true
+        draft.value = cloneJsonValue(serverValue)
+        queueMicrotask(() => {
+          suppressDraftDispatch = false
+        })
+      }
+
+      previousServerSnapshot = serverSnapshot
+    })
+
+    $effect(() => {
+      const snapshot = snapshotJson(draft.value)
+      if (!initialized) {
+        initialized = true
+        return
+      }
+      if (suppressDraftDispatch) return
+
+      untrack(() => {
+        const target = DBState.db as unknown as Record<string, unknown>
+        const attempted = cloneJsonValue(draft.value)
+        const previous = cloneJsonValue(target[key])
+        withTrustedServerProjectionWrite(() => {
+          target[key] = attempted
+        })
+        queuePromptSettingsPatch({ [key]: attempted }, { [key]: previous })
+        previousServerSnapshot = snapshot
+      })
+    })
+
+    return draft
+  }
+
+  function currentPromptSettingValue<T>(key: string, fallback: T): T {
+    const target = DBState.db as unknown as Record<string, unknown> | undefined
+    const value = target?.[key]
+    return value === undefined ? fallback : (value as T)
   }
 
   $effect.pre(() => {
     warns = templateCheck(DBState.db)
   })
   $effect.pre(() => {
-    executeTokenize(DBState.db.promptTemplate)
+    executeTokenize(promptTemplateDraft.value)
   })
   $effect(() => {
-    normalizePromptTemplateIds(DBState.db)
+    const serverValue = DBState.db.promptTemplate ?? []
+    const serverSnapshot = snapshotJson(serverValue)
+    const draftSnapshot = snapshotJson(promptTemplateDraft.value)
+
+    if (
+      serverSnapshot !== previousPromptTemplateServerSnapshot &&
+      serverSnapshot !== draftSnapshot
+    ) {
+      promptTemplateDraft.value = cloneJsonValue(serverValue)
+    }
+    previousPromptTemplateServerSnapshot = serverSnapshot
   })
   $effect(() => {
-    if (!canUseServerCommands()) return
-    const changed: SettingsPatch = {}
-    const before: SettingsPatch = {}
-    const target = DBState.db as unknown as Record<string, unknown>
-
-    for (const key of promptSettingsKeys) {
-      const value = target[key]
-      const snapshot = snapshotJson(value)
-      const previousSnapshot = promptSettingsPreviousSnapshots.get(key)
-
-      if (promptSettingsWatcherInitialized && snapshot !== previousSnapshot) {
-        changed[key] = cloneJsonValue(value)
-        before[key] = cloneJsonValue(promptSettingsPreviousValues.get(key))
-      }
-
-      promptSettingsPreviousSnapshots.set(key, snapshot)
-      promptSettingsPreviousValues.set(key, cloneJsonValue(value))
-    }
-
-    if (!promptSettingsWatcherInitialized) {
-      promptSettingsWatcherInitialized = true
-      return
-    }
-    if (suppressPromptSettingsRollback || Object.keys(changed).length === 0) return
-
-    untrack(() => queuePromptSettingsPatch(changed, before))
+    withTrustedServerProjectionWrite(() => {
+      normalizePromptTemplateIds(DBState.db)
+    })
   })
 
   function getDisplayTemplate() {
-    return DBState.db.promptTemplate.map((item, i) => ({
+    return promptTemplateDraft.value.map((item, i) => ({
       item,
       originalIndex: i,
       displayIndex: i,
@@ -317,7 +401,7 @@
       return
     }
 
-    const templates = [...DBState.db.promptTemplate]
+    const templates = [...promptTemplateDraft.value]
     const previous = currentPromptTemplateSnapshot()
     const [movedItem] = templates.splice(draggedIndex, 1)
 
@@ -344,7 +428,7 @@
     })
     openedItemIndices = newOpenedIndices
 
-    DBState.db.promptTemplate = templates
+    applyPromptTemplateDraft(templates)
     dispatchReorderPromptItems(previous)
     draggedIndex = -1
     dragOverIndex = -1
@@ -352,10 +436,10 @@
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.ctrlKey && e.altKey && e.key === 'o') {
-      if (openedItemIndices.size === DBState.db.promptTemplate.length) {
+      if (openedItemIndices.size === promptTemplateDraft.value.length) {
         openedItemIndices = new Set<number>()
       } else {
-        openedItemIndices = new Set(DBState.db.promptTemplate.map((_, i) => i))
+        openedItemIndices = new Set(promptTemplateDraft.value.map((_, i) => i))
       }
     }
   }
@@ -416,13 +500,13 @@
 
 {#if subMenu === 0}
   <div class="contain w-full max-w-full mt-4 flex flex-col p-3 rounded-md">
-    {#if DBState.db.promptTemplate.length === 0}
+    {#if promptTemplateDraft.value.length === 0}
       <div class="text-textcolor2">No Format</div>
     {/if}
     {#key sorted}
       {#each getReorderedTemplate() as { item: prompt, originalIndex, displayIndex }}
         <PromptDataItem
-          bind:promptItem={DBState.db.promptTemplate[originalIndex]}
+          bind:promptItem={promptTemplateDraft.value[originalIndex]}
           isDragging={draggedIndex === originalIndex}
           isOpened={openedItemIndices.has(originalIndex)}
           bind:draggedIndex
@@ -434,10 +518,10 @@
           onDrop={handlePromptDrop}
           onRemove={() => {
             const previous = currentPromptTemplateSnapshot()
-            const removed = DBState.db.promptTemplate[originalIndex]
-            let templates = [...DBState.db.promptTemplate]
+            const removed = promptTemplateDraft.value[originalIndex]
+            let templates = [...promptTemplateDraft.value]
             templates.splice(originalIndex, 1)
-            DBState.db.promptTemplate = templates
+            applyPromptTemplateDraft(templates)
 
             const newOpenedIndices = new Set<number>()
             openedItemIndices.forEach((index) => {
@@ -456,7 +540,7 @@
             dispatchDeletePromptItem(removed, previous)
           }}
           moveDown={() => {
-            if (originalIndex === DBState.db.promptTemplate.length - 1) {
+            if (originalIndex === promptTemplateDraft.value.length - 1) {
               return
             }
             movePromptItem(originalIndex, originalIndex + 1)
@@ -501,7 +585,7 @@
     onclick={() => {
       const previous = currentPromptTemplateSnapshot()
       const promptItem = createPromptItem()
-      DBState.db.promptTemplate = [...(DBState.db.promptTemplate ?? []), promptItem]
+      applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
       dispatchCreatePromptItem(promptItem, previous)
     }}><PlusIcon /></button
   >
@@ -510,48 +594,48 @@
   <span class="text-textcolor2 mb-6 text-sm mt-2">{extokens} {language.exactTokens}</span>
 {:else}
   <span class="text-textcolor mt-4">{language.postEndInnerFormat}</span>
-  <TextInput bind:value={DBState.db.promptSettings.postEndInnerFormat} />
+  <TextInput bind:value={promptSettingsDraft.value.postEndInnerFormat} />
 
   <Check
-    bind:check={DBState.db.promptSettings.sendChatAsSystem}
+    bind:check={promptSettingsDraft.value.sendChatAsSystem}
     name={language.sendChatAsSystem}
     className="mt-4"
   />
   <Check
-    bind:check={DBState.db.promptSettings.sendName}
+    bind:check={promptSettingsDraft.value.sendName}
     name={language.formatGroupInSingle}
     className="mt-4"
   />
   <Check
-    bind:check={DBState.db.promptSettings.trimStartNewChat}
+    bind:check={promptSettingsDraft.value.trimStartNewChat}
     name={language.trimStartNewChat}
     className="mt-4"
   />
   <Check
-    bind:check={DBState.db.promptSettings.utilOverride}
+    bind:check={promptSettingsDraft.value.utilOverride}
     name={language.utilOverride}
     className="mt-4"
   />
   <Check
-    bind:check={DBState.db.jsonSchemaEnabled}
+    bind:check={jsonSchemaEnabledDraft.value}
     name={language.enableJsonSchema}
     className="mt-4"
   />
   <Check
-    bind:check={DBState.db.outputImageModal}
+    bind:check={outputImageModalDraft.value}
     name={language.outputImageModal}
     className="mt-4"
   />
 
   <Check
-    bind:check={DBState.db.strictJsonSchema}
+    bind:check={strictJsonSchemaDraft.value}
     name={language.strictJsonSchema}
     className="mt-4"
   />
 
   {#if DBState.db.showUnrecommended}
     <Check
-      bind:check={DBState.db.promptSettings.customChainOfThought}
+      bind:check={promptSettingsDraft.value.customChainOfThought}
       name={language.customChainOfThought}
       className="mt-4"
     >
@@ -559,64 +643,62 @@
     </Check>
   {/if}
   <span class="text-textcolor mt-4">{language.maxThoughtTagDepth}</span>
-  <NumberInput bind:value={DBState.db.promptSettings.maxThoughtTagDepth} />
+  <NumberInput bind:value={promptSettingsDraft.value.maxThoughtTagDepth} />
   <span class="text-textcolor mt-4"
     >{language.customPromptTemplateToggle} <Help key="customPromptTemplateToggle" /></span
   >
-  <TextAreaInput bind:value={DBState.db.customPromptTemplateToggle} />
+  <TextAreaInput bind:value={customPromptTemplateToggleDraft.value} />
   <span class="text-textcolor mt-4"
     >{language.defaultVariables} <Help key="defaultVariables" /></span
   >
-  <TextAreaInput bind:value={DBState.db.templateDefaultVariables} />
+  <TextAreaInput bind:value={templateDefaultVariablesDraft.value} />
   <span class="text-textcolor mt-4">{language.predictedOutput}</span>
-  <TextAreaInput bind:value={DBState.db.OAIPrediction} />
+  <TextAreaInput bind:value={OAIPredictionDraft.value} />
   <span class="text-textcolor mt-4">{language.autoSuggest} <Help key="autoSuggest" /></span>
-  <TextAreaInput bind:value={DBState.db.autoSuggestPrompt} placeholder={defaultAutoSuggestPrompt} />
+  <TextAreaInput bind:value={autoSuggestPromptDraft.value} placeholder={defaultAutoSuggestPrompt} />
   <span class="text-textcolor mt-4"
     >{language.systemContentReplacement} <Help key="systemContentReplacement" /></span
   >
-  <TextAreaInput bind:value={DBState.db.systemContentReplacement} />
+  <TextAreaInput bind:value={systemContentReplacementDraft.value} />
   <span class="text-textcolor mt-4"
     >{language.systemRoleReplacement} <Help key="systemRoleReplacement" /></span
   >
-  <SelectInput bind:value={DBState.db.systemRoleReplacement}>
+  <SelectInput bind:value={systemRoleReplacementDraft.value}>
     <OptionInput value="user">User</OptionInput>
     <OptionInput value="assistant">assistant</OptionInput>
   </SelectInput>
-  {#if DBState.db.jsonSchemaEnabled}
+  {#if jsonSchemaEnabledDraft.value}
     <span class="text-textcolor mt-4">{language.jsonSchema} <Help key="jsonSchema" /></span>
-    <TextAreaInput bind:value={DBState.db.jsonSchema} />
+    <TextAreaInput bind:value={jsonSchemaDraft.value} />
     <span class="text-textcolor mt-4">{language.extractJson} <Help key="extractJson" /></span>
-    <TextInput bind:value={DBState.db.extractJson} />
+    <TextInput bind:value={extractJsonDraft.value} />
   {/if}
 
   {#if !DBState.db.auxModelUnderModelSettings}
     <AuxModelSelectors />
   {/if}
 
-  {#snippet fallbackModelList(arg: 'model' | 'memory' | 'translate' | 'emotion' | 'otherAx')}
-    {#each DBState.db.fallbackModels[arg] as model, i}
+  {#snippet fallbackModelList(arg: FallbackModelKey)}
+    {#each fallbackModelsDraft.value[arg] as model, i}
       <span class="text-textcolor mt-4">
         {language.model}
         {i + 1}
       </span>
-      <ModelList bind:value={DBState.db.fallbackModels[arg][i]} blankable />
+      <ModelList bind:value={fallbackModelsDraft.value[arg][i]} blankable />
     {/each}
     <div class="flex gap-2">
       <button
         class="bg-selected text-textcolor p-2 rounded-md"
         onclick={() => {
-          let value = DBState.db.fallbackModels[arg] ?? []
-          value.push('')
-          DBState.db.fallbackModels[arg] = value
+          const value = fallbackModelsDraft.value[arg] ?? []
+          fallbackModelsDraft.value[arg] = [...value, '']
         }}><PlusIcon /></button
       >
       <button
         class="bg-red-500 text-white p-2 rounded-md"
         onclick={() => {
-          let value = DBState.db.fallbackModels[arg] ?? []
-          value.pop()
-          DBState.db.fallbackModels[arg] = value
+          const value = fallbackModelsDraft.value[arg] ?? []
+          fallbackModelsDraft.value[arg] = value.slice(0, -1)
         }}><TrashIcon /></button
       >
     </div>
@@ -624,12 +706,12 @@
 
   <Accordion name={language.fallbackModel} styled>
     <Check
-      bind:check={DBState.db.fallbackWhenBlankResponse}
+      bind:check={fallbackWhenBlankResponseDraft.value}
       name={language.fallbackWhenBlankResponse}
       className="mt-4"
     />
     <Check
-      bind:check={DBState.db.doNotChangeFallbackModels}
+      bind:check={doNotChangeFallbackModelsDraft.value}
       name={language.doNotChangeFallbackModels}
       className="mt-4"
     />

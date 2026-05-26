@@ -23,12 +23,15 @@ Fastify shapes.
      `ainconfig`, `bias`, and `additionalParams` now use
      `createServerBackedSettingDraft` and route through grouped provider
      settings commands.
+   - Landed 2026-05-26: Prompt settings and the prompt-template editor now
+     edit local drafts and sync through `patchPromptSettingsCommand` /
+     prompt item commands with trusted optimistic projection writes.
    - Next good audit targets are the remaining settings and editor
      binding surfaces found by `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`,
      especially the rest of Bot settings (prompt-format fields),
      OtherBot media / memory settings (`sdConfig`, `NAIImgConfig`, `comfyConfig`,
      `openaiCompatImage`, `wavespeedImage`, `hypaCustomSettings`),
-     Prompt settings, and `CharConfig`.
+     `CharConfig`, plugin settings, lore presets, and sidebar toggles.
    - Landed 2026-05-26: `.risu` import/export routes emit
      `state.imported` / `state.exported`, and `pnpm smoke:fastify-browser`
      covers multipart `.risu` import plus direct projection-write
@@ -82,6 +85,15 @@ pnpm check
 ```
 
 Latest Phase 9 settings-draft verification, 2026-05-26:
+
+```bash
+pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm api:test -- server/fastify/__tests__/commands.test.ts
+pnpm check
+pnpm smoke:fastify-browser
+```
+
+Latest Phase 9 prompt-settings verification, 2026-05-26:
 
 ```bash
 pnpm exec vitest run src/ts/server/commands.test.ts

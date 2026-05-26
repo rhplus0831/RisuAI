@@ -42,6 +42,9 @@ import/export events match the command map.
   `ainconfig`, `bias`, and `additionalParams` now use
   `createServerBackedSettingDraft`; provider command allowlists and
   focused client / Fastify command tests cover the mapping.
+- Landed 2026-05-26: Prompt settings now bind to local drafts that dispatch
+  `patchPromptSettingsCommand`, and prompt-template editor changes keep
+  optimistic updates / rollback behind trusted projection writes.
 
 ## Tasks
 
@@ -52,7 +55,7 @@ import/export events match the command map.
   playground writes through commands or explicitly disable them when they
   are unsupported.
 - Continue with settings/editor binding surfaces after the module-menu
-  and Bot/Ooba settings-draft slices. Current high-yield grep:
+  Bot/Ooba, and Prompt settings-draft slices. Current high-yield grep:
   `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`.
   The next settings targets should reuse `createServerBackedSettingDraft`
   for nested top-level setting objects and remove those keys from
@@ -107,5 +110,7 @@ pnpm check
 - Bot/Ooba settings draft consumers:
   `src/lib/Setting/Pages/BotSettings.svelte:128`,
   `src/lib/Setting/Pages/OobaSettings.svelte:12`
+- Prompt settings draft consumer:
+  `src/lib/Setting/Pages/PromptSettings.svelte:52`
 - save route registration: `server/fastify/src/routes/save.ts:39`
 - current state event catalog: `server/fastify/src/commands/events.ts:302`

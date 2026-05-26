@@ -29,6 +29,9 @@ directly.
 - Landed 2026-05-26: Phase 9 Bot parameter settings for `NAIsettings`,
   `ainconfig`, `bias`, and `additionalParams` now bind to command-backed
   drafts, with grouped provider-command allowlist coverage.
+- Landed 2026-05-26: Phase 9 Prompt settings and prompt-template editor
+  writes now use local command-backed drafts/trusted optimistic projection
+  writes instead of binding directly to the Fastify projection.
 - Next default pickup: Phase 9 remaining direct-write sweep.
 - Closeout rule: update this file and the affected phase file when each
   reopened phase closes. Keep long landed notes out of this directory.
