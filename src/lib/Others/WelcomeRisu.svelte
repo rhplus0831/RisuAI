@@ -9,7 +9,12 @@
   import { alertError } from 'src/ts/alert'
   import Airisu from '../../etc/Airisu.webp'
   import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import {
+    applyServerBackedSetting,
+    applyServerBackedSettingsPatch,
+    watchServerBackedSettings,
+  } from 'src/ts/server/settingsBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   const stopServerSettingsWatch = watchServerBackedSettings([
     'language',
@@ -38,15 +43,20 @@
   let input = $state('')
   let chatLang = $state(0)
   let chatMemorySelection = $state(0)
+  let setupApplied = false
+
+  function selectLanguage(lang: string): void {
+    changeLanguage(lang)
+    applyServerBackedSetting('language', lang)
+    step = 1
+  }
 
   {
     const browserLang = navigator.language
     const browserLangShort = browserLang.split('-')[0]
     const usableLangs = ['de', 'en', 'ko', 'cn', 'vi', 'zh-Hant']
     if (usableLangs.includes(browserLangShort)) {
-      changeLanguage(browserLangShort)
-      DBState.db.language = browserLangShort
-      step = 1
+      selectLanguage(browserLangShort)
     }
   }
   let start = $state(false)
@@ -55,7 +65,7 @@
     switch (step) {
       case 1: {
         if (input.length > 0) {
-          DBState.db.username = input
+          applyServerBackedSetting('username', input)
           step = 2
           input = ''
         }
@@ -78,13 +88,13 @@
           break
         }
         if (provider === 'openai') {
-          DBState.db.openAIKey = input
+          applyServerBackedSetting('openAIKey', input)
         }
         if (provider === 'openrouter') {
-          DBState.db.openrouterKey = input
+          applyServerBackedSetting('openrouterKey', input)
         }
         if (provider === 'claude') {
-          DBState.db.claudeAPIKey = input
+          applyServerBackedSetting('claudeAPIKey', input)
         }
         step = 5
         input = ''
@@ -94,92 +104,101 @@
   }
 
   $effect.pre(() => {
-    if (step === 10) {
+    if (step === 10 && !setupApplied) {
+      setupApplied = true
       setTimeout(() => {
-        DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
-        DBState.db.textTheme = 'highcontrast'
+        const patch: Record<string, unknown> = {
+          textTheme: 'highcontrast',
+          claudeCachingExperimental: true,
+        }
+        withTrustedServerProjectionWrite(() => {
+          DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
+          Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
+        })
         updateTextThemeAndCSS()
 
         switch (chatMemorySelection) {
           case 0: {
-            DBState.db.maxContext = 16000
-            DBState.db.maxResponse = 1000
+            patch.maxContext = 16000
+            patch.maxResponse = 1000
             break
           }
           case 1: {
-            DBState.db.maxContext = 8000
-            DBState.db.maxResponse = 500
+            patch.maxContext = 8000
+            patch.maxResponse = 500
             break
           }
           case 2: {
-            DBState.db.maxContext = 12000
-            DBState.db.maxResponse = 800
+            patch.maxContext = 12000
+            patch.maxResponse = 800
             break
           }
           case 3: {
-            DBState.db.maxContext = 100000
-            DBState.db.maxResponse = 1000
+            patch.maxContext = 100000
+            patch.maxResponse = 1000
             break
           }
         }
 
         if (provider === 'claude') {
-          DBState.db.aiModel = 'claude-3-5-sonnet-20241022'
-          DBState.db.subModel = 'claude-3-5-sonnet-20241022'
+          patch.aiModel = 'claude-3-5-sonnet-20241022'
+          patch.subModel = 'claude-3-5-sonnet-20241022'
         }
 
         if (provider === 'openai') {
-          DBState.db.aiModel = 'gpt4o-chatgpt'
-          DBState.db.subModel = 'gpt4o-chatgpt'
+          patch.aiModel = 'gpt4o-chatgpt'
+          patch.subModel = 'gpt4o-chatgpt'
         }
 
         if (provider === 'openrouter') {
-          DBState.db.aiModel = 'openrouter'
-          DBState.db.subModel = 'openrouter'
-          DBState.db.openrouterRequestModel = 'risu/free'
+          patch.aiModel = 'openrouter'
+          patch.subModel = 'openrouter'
+          patch.openrouterRequestModel = 'risu/free'
         }
         if (provider === 'horde') {
-          DBState.db.aiModel = 'horde:::auto'
-          DBState.db.subModel = 'horde:::auto'
+          patch.aiModel = 'horde:::auto'
+          patch.subModel = 'horde:::auto'
         }
         if (chatLang !== 0) {
           switch (DBState.db.language) {
             case 'de': {
-              DBState.db.translator = 'de'
+              patch.translator = 'de'
               break
             }
             case 'en': {
-              DBState.db.translator = 'en'
+              patch.translator = 'en'
               break
             }
             case 'ko': {
-              DBState.db.translator = 'ko'
+              patch.translator = 'ko'
               break
             }
             case 'cn': {
-              DBState.db.translator = 'zh'
+              patch.translator = 'zh'
               break
             }
             case 'vi': {
-              DBState.db.translator = 'vi'
+              patch.translator = 'vi'
               break
             }
             case 'zh-Hant': {
-              DBState.db.translator = 'zh-TW'
+              patch.translator = 'zh-TW'
               break
             }
           }
         }
         if (chatLang === 1) {
-          DBState.db.autoTranslate = true
-          DBState.db.translatorType = 'google'
-          DBState.db.useAutoTranslateInput = true
+          patch.autoTranslate = true
+          patch.translatorType = 'google'
+          patch.useAutoTranslateInput = true
         }
 
-        DBState.db.didFirstSetup = true
+        patch.didFirstSetup = true
+        withTrustedServerProjectionWrite(() => {
+          Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
+        })
+        void applyServerBackedSettingsPatch(patch)
       }, 1000)
-
-      DBState.db.claudeCachingExperimental = true
     }
   })
 </script>
@@ -208,49 +227,37 @@
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                changeLanguage('de')
-                DBState.db.language = 'de'
-                step = 1
+                selectLanguage('de')
               }}>• Deutsch</button
             >
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                changeLanguage('en')
-                DBState.db.language = 'en'
-                step = 1
+                selectLanguage('en')
               }}>• English</button
             >
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                changeLanguage('ko')
-                DBState.db.language = 'ko'
-                step = 1
+                selectLanguage('ko')
               }}>• 한국어</button
             >
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                changeLanguage('cn')
-                DBState.db.language = 'cn'
-                step = 1
+                selectLanguage('cn')
               }}>• 中文</button
             >
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                changeLanguage('zh-Hant')
-                DBState.db.language = 'zh-Hant'
-                step = 1
+                selectLanguage('zh-Hant')
               }}>• 中文(繁體)</button
             >
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                changeLanguage('vi')
-                DBState.db.language = 'vi'
-                step = 1
+                selectLanguage('vi')
               }}>• Tiếng Việt</button
             >
           </div>

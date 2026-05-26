@@ -19,6 +19,7 @@
     type Loadout,
   } from 'src/ts/loadout'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
@@ -77,8 +78,12 @@
   function toggleFavorite(loadout: Loadout, e: MouseEvent) {
     e.stopPropagation()
     const previous = currentLoadoutStateSnapshot()
-    loadout.favorite = !loadout.favorite
-    dispatchFavoriteLoadout(loadout.id, loadout.favorite, previous)
+    const favorite = !loadout.favorite
+    withTrustedServerProjectionWrite(() => {
+      const targetLoadout = DBState.db.loadouts.find((item) => item.id === loadout.id) ?? loadout
+      targetLoadout.favorite = favorite
+    })
+    dispatchFavoriteLoadout(loadout.id, favorite, previous)
   }
 
   function formatDate(ts: number): string {
@@ -95,7 +100,9 @@
     const index = DBState.db.loadouts.findIndex((l) => l.id === loadout.id)
     if (index !== -1) {
       const previous = currentLoadoutStateSnapshot()
-      DBState.db.loadouts.splice(index, 1)
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.loadouts.splice(index, 1)
+      })
       dispatchDeleteLoadout(loadout.id, previous)
     }
   }

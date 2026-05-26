@@ -1,6 +1,6 @@
 # Fastify Follow-Up Status
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 This is the live handoff for audit follow-up work after Phases 0-9 were
 reported closed in `docs/fastify`.
@@ -16,12 +16,11 @@ directly.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
 - Highest-risk gap: Phase 9 still needs the remaining direct-write sweep
   after the completed settings/editor slices.
-- Phase 9 follow-up has landed guard/import-event work plus slices 9A-9G;
+- Phase 9 follow-up has landed guard/import-event work plus slices 9A-9I;
   use the table below for commit anchors and `status/next-steps.md` for
   pickup order.
-- Next default pickup: Phase 9 Slice 9I, sidebar toggles, custom
-  sidebar/loadout helpers, welcome setup, and runtime API write
-  classification.
+- Next default pickup: Phase 9 Slice 9J, final direct-write sweep,
+  allowlist gaps, browser smoke, and Phase 9 closeout.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 
@@ -39,6 +38,7 @@ directly.
 | `668ea890`                                        | 9F plugin, custom model, and advanced setting editors.                        |
 | `7acf0cee`                                        | 9G character core profile, media, and basic option editors.                   |
 | `007dbe3c`                                        | 9H character lore, script, prompt, TTS, and chat-name editors.                |
+| `48e9025b`                                         | 9I sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API classification. |
 
 ## Phase Status
 

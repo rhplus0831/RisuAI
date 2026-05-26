@@ -18,6 +18,10 @@
   import { checkPersonaBinded, getUserName } from 'src/ts/util'
   import { v4 } from 'uuid'
   import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+
+  const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
+
   let configPage: 'list' | 'add' | 'addSettingsSubmenu' = $state('list')
   let search = $state('')
 
@@ -37,7 +41,7 @@
 <div class="rounded-sm flex flex-col w-full gap-2">
   {#each DBState.db.customSidebarItems as item}
     {#if item.type === 'model'}
-      <ModelList bind:value={DBState.db.aiModel} noMargin />
+      <ModelList bind:value={aiModelDraft.value} noMargin />
     {:else if item.type === 'preset'}
       <Button
         onclick={() => {

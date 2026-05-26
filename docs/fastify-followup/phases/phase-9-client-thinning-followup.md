@@ -1,6 +1,6 @@
 # Phase 9 Follow-Up - Client Thinning
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 Status: reopened by audit.
 
@@ -14,11 +14,11 @@ import/export events match the command map.
 
 - Projection guard and `.risu` import/export event follow-ups are
   complete (`79b77f18`, `3fdb16d6`).
-- Direct-write follow-up slices 9A-9H are complete through the 2026-05-26
-  character editor slice; commit anchors live in `../status.md`, and detailed
+- Direct-write follow-up slices 9A-9I are complete through the 2026-05-27
+  sidebar/loadout/welcome/runtime API slice; commit anchors live in `../status.md`, and detailed
   landed notes belong under `../phases-completed/`.
 - Remaining Phase 9 risk is the reachable durable `DBState.db` write
-  surface not yet classified by 9I and the final 9J sweep.
+  surface not yet classified by the final 9J sweep.
 
 ## Tasks
 
@@ -28,8 +28,7 @@ import/export events match the command map.
   mode. Route durable settings, character, chat, memory-toggle, and
   playground writes through commands or explicitly disable them when they
   are unsupported.
-- Continue with 9I sidebar/loadout/welcome/runtime API classification
-  before the final broad grep:
+- Continue with 9J final broad grep, allowlist cleanup, and browser smoke:
   `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`.
 - Add command allowlist coverage for any remaining durable write found
   by the broader direct-write audit.
@@ -51,8 +50,8 @@ they are intentionally outside durable Fastify-web client mutation.
 | 9F    | Complete | Plugin, custom model, and advanced setting editors.                                                   |
 | 9G    | Complete | Character core profile, media, and basic option editors.                                              |
 | 9H    | Complete | Character lore, script, prompt, TTS, and chat-name editors.                                           |
-| 9I    | Next     | Sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API write classification. |
-| 9J    | Open     | Final direct-write sweep, allowlist gaps, browser smoke, and closeout.                                |
+| 9I    | Complete | Sidebar toggles, custom sidebar/loadout helpers, welcome setup, and runtime API write classification. |
+| 9J    | Next     | Final direct-write sweep, allowlist gaps, browser smoke, and closeout.                                |
 
 ## Exit Criteria
 

@@ -1,6 +1,6 @@
 # Next Steps
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 Use this file as the pickup runbook for the reopened audit work. The
 phase files under `../phases/` hold source evidence and exit criteria.
@@ -17,10 +17,9 @@ and add any longer closeout note under `../phases-completed/`.
 
 1. Phase 9 client thinning remains first because it protects all
    Fastify-served browser work from silent client persistence.
-   - 9A-9H landed on 2026-05-26; commit anchors are in `../status.md`.
-   - 9I (next): sidebar toggles, custom sidebar/loadout helpers, welcome
-     setup, and runtime API write classification.
-   - 9J: final direct-write sweep, allowlist gaps, browser smoke, and
+   - 9A-9H landed on 2026-05-26; 9I landed on 2026-05-27. Commit
+     anchors are in `../status.md`.
+   - 9J (next): final direct-write sweep, allowlist gaps, browser smoke, and
      Phase 9 closeout.
 
 2. Phase 7 prompt assembly can proceed slice-by-slice after or alongside

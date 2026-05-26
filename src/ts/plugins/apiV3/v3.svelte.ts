@@ -839,14 +839,15 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         colorScheme: cloneJsonValue(DBState.db.colorScheme),
         colorSchemeName: DBState.db.colorSchemeName,
       }
-      const db = DBState.db
-      db.colorSchemeName = 'custom'
-      db.colorScheme = scheme
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.colorSchemeName = 'custom'
+        DBState.db.colorScheme = scheme
+      })
       updateColorScheme()
       dispatchPluginApiSettingsPatch(
         {
-          colorScheme: cloneJsonValue(db.colorScheme),
-          colorSchemeName: db.colorSchemeName,
+          colorScheme: cloneJsonValue(DBState.db.colorScheme),
+          colorSchemeName: DBState.db.colorSchemeName,
         },
         previous,
       )
@@ -867,10 +868,11 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       const previous = {
         textTheme: DBState.db.textTheme,
       }
-      const db = DBState.db
-      db.textTheme = name
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.textTheme = name
+      })
       updateTextThemeAndCSS()
-      dispatchPluginApiSettingsPatch({ textTheme: db.textTheme }, previous)
+      dispatchPluginApiSettingsPatch({ textTheme: DBState.db.textTheme }, previous)
     },
     setCustomTextTheme: (theme: {
       FontColorStandard: string
@@ -897,14 +899,15 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         textTheme: DBState.db.textTheme,
         customTextTheme: cloneJsonValue(DBState.db.customTextTheme),
       }
-      const db = DBState.db
-      db.textTheme = 'custom'
-      db.customTextTheme = theme
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.textTheme = 'custom'
+        DBState.db.customTextTheme = theme
+      })
       updateTextThemeAndCSS()
       dispatchPluginApiSettingsPatch(
         {
-          textTheme: db.textTheme,
-          customTextTheme: cloneJsonValue(db.customTextTheme),
+          textTheme: DBState.db.textTheme,
+          customTextTheme: cloneJsonValue(DBState.db.customTextTheme),
         },
         previous,
       )
@@ -957,7 +960,9 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (charId) {
         const previous = currentCharacterStateSnapshot()
         const previousCharacter = $state.snapshot(DBState.db.characters[charId])
-        DBState.db.characters[charId] = char
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[charId] = char
+        })
         dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
       }
     },
@@ -982,7 +987,9 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         if (chats && chats[chatIndex]) {
           const previous = currentChatStateSnapshot()
           const previousChat = $state.snapshot(DBState.db.characters[charId].chats[chatIndex])
-          DBState.db.characters[charId].chats[chatIndex] = chat
+          withTrustedServerProjectionWrite(() => {
+            DBState.db.characters[charId].chats[chatIndex] = chat
+          })
           dispatchCompatibleChatUpdate(previousChat, chat, previous)
         }
       }

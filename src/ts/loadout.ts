@@ -11,6 +11,7 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { applyServerBackedSetting } from './server/settingsBridge.svelte'
 import { changeToPreset, getCurrentCharacter } from './storage/database.svelte'
 import { DBState } from './stores.svelte'
 
@@ -143,8 +144,14 @@ export function applyLoadout(
 ) {
   const previous = currentLoadoutStateSnapshot()
   const currentCharacterId = getCurrentCharacter()?.chaId
-  loadout.lastUsed = Date.now()
-  loadout.characterIds.push(currentCharacterId as string)
+  const lastUsed = Date.now()
+  withTrustedServerProjectionWrite(() => {
+    const targetLoadout = DBState.db.loadouts.find((item) => item.id === loadout.id) ?? loadout
+    targetLoadout.lastUsed = lastUsed
+    if (currentCharacterId && !targetLoadout.characterIds.includes(currentCharacterId)) {
+      targetLoadout.characterIds.push(currentCharacterId)
+    }
+  })
   if (apply.includes('persona')) {
     let personaIndex = DBState.db.personas?.findIndex((p) => p.id === loadout.personaId)
     if (personaIndex !== -1) {
@@ -161,7 +168,9 @@ export function applyLoadout(
     const modulePrevious = currentModuleStateSnapshot()
     const previousModules = new Set(DBState.db.enabledModules ?? [])
     const nextModules = new Set(loadout.modules ?? [])
-    DBState.db.enabledModules = loadout.modules
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.enabledModules = loadout.modules
+    })
     for (const moduleId of nextModules) {
       if (!previousModules.has(moduleId)) {
         dispatchEnableModule(moduleId, true, modulePrevious)
@@ -174,16 +183,20 @@ export function applyLoadout(
     }
   }
   if (apply.includes('globalVariables')) {
-    DBState.db.globalChatVariables = loadout.globalVariables
+    applyServerBackedSetting('globalChatVariables', loadout.globalVariables)
   }
-  DBState.db.lastLoadedLoadoutName = loadout.name
-  dispatchTouchLoadout(loadout.id, loadout.lastUsed, currentCharacterId, previous)
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.lastLoadedLoadoutName = loadout.name
+  })
+  dispatchTouchLoadout(loadout.id, lastUsed, currentCharacterId, previous)
 }
 
 export function saveCurrentLoadout(name: string) {
   const previous = currentLoadoutStateSnapshot()
   const loadout = makeLoadout({ name })
-  DBState.db.loadouts.push(loadout)
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.loadouts.push(loadout)
+  })
   dispatchCreateLoadout(loadout, previous)
   return loadout
 }

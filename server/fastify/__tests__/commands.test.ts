@@ -404,6 +404,28 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(advanced.statusCode).toBe(200)
 
+    const sidebar = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/sidebar',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: advanced.json().revision,
+        patch: {
+          globalChatVariables: { toggle_mood: '1' },
+          jailbreakToggle: true,
+          customSidebarItems: [
+            {
+              id: 'sidebar-loadout',
+              type: 'loadout',
+              subType: 'none',
+              label: 'Loadouts',
+            },
+          ],
+        },
+      },
+    })
+    expect(sidebar.statusCode).toBe(200)
+
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
@@ -418,6 +440,16 @@ describe('Phase 9-2a scalar settings groups', () => {
       globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
       allowAllExtentionFiles: true,
       auxModelUnderModelSettings: true,
+      globalChatVariables: { toggle_mood: '1' },
+      jailbreakToggle: true,
+      customSidebarItems: [
+        {
+          id: 'sidebar-loadout',
+          type: 'loadout',
+          subType: 'none',
+          label: 'Loadouts',
+        },
+      ],
     })
   })
 

@@ -1,12 +1,33 @@
 <script lang="ts">
-  import { customSideBarConfigDialogStore, DBState } from 'src/ts/stores.svelte'
+  import { customSideBarConfigDialogStore } from 'src/ts/stores.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { language } from 'src/lang'
   import { getFullSettingsData } from 'src/ts/setting/utils'
   import TextInput from '../UI/GUI/TextInput.svelte'
+  import type { CustomSideBarItem } from 'src/ts/storage/database.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
   let configPage: 'list' | 'add' | 'addSettingsSubmenu' = $state('list')
   let search = $state('')
+  const customSidebarItemsDraft = createServerBackedSettingDraft<CustomSideBarItem[]>(
+    'customSidebarItems',
+    [],
+  )
+
+  function removeCustomSidebarItem(itemId: string): void {
+    customSidebarItemsDraft.value = customSidebarItemsDraft.value.filter((item) => item.id !== itemId)
+  }
+
+  function addCustomSidebarItem(item: Omit<CustomSideBarItem, 'id'>): void {
+    customSidebarItemsDraft.value = [
+      ...customSidebarItemsDraft.value,
+      {
+        id: crypto.randomUUID(),
+        ...item,
+      },
+    ]
+    configPage = 'list'
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -21,20 +42,18 @@
   >
     {#if configPage === 'list'}
       <div class="m-4 border-darkborderc p-2 border rounded-sm flex flex-col w-xl max-w-full">
-        {#if DBState.db.customSidebarItems.length === 0}
+        {#if customSidebarItemsDraft.value.length === 0}
           <div class="text-textcolor2">No custom sidebar items configured</div>
         {/if}
 
-        {#each DBState.db.customSidebarItems as item}
+        {#each customSidebarItemsDraft.value as item}
           <div class="border-darkborderc p-2 border rounded-sm flex items-start">
             <div class="flex-1">{item.label}</div>
 
             <button
               class="ml-2"
               onclick={() => {
-                DBState.db.customSidebarItems = DBState.db.customSidebarItems.filter(
-                  (i) => i.id !== item.id,
-                )
+                removeCustomSidebarItem(item.id)
               }}
             >
               Delete
@@ -63,13 +82,11 @@
     {#if configPage === 'add'}
       <Button
         onclick={() => {
-          DBState.db.customSidebarItems.push({
-            id: crypto.randomUUID(),
+          addCustomSidebarItem({
             type: 'model',
             subType: 'none',
             label: language.model,
           })
-          configPage = 'list'
         }}
       >
         {language.model}
@@ -77,13 +94,11 @@
 
       <Button
         onclick={() => {
-          DBState.db.customSidebarItems.push({
-            id: crypto.randomUUID(),
+          addCustomSidebarItem({
             type: 'preset',
             subType: 'none',
             label: language.presets,
           })
-          configPage = 'list'
         }}
       >
         {language.presets}
@@ -91,13 +106,11 @@
 
       <Button
         onclick={() => {
-          DBState.db.customSidebarItems.push({
-            id: crypto.randomUUID(),
+          addCustomSidebarItem({
             type: 'loadout',
             subType: 'none',
             label: language.loadouts,
           })
-          configPage = 'list'
         }}
       >
         {language.loadouts}
@@ -105,13 +118,11 @@
 
       <Button
         onclick={() => {
-          DBState.db.customSidebarItems.push({
-            id: crypto.randomUUID(),
+          addCustomSidebarItem({
             type: 'persona',
             subType: 'none',
             label: language.persona,
           })
-          configPage = 'list'
         }}
       >
         {language.persona}
@@ -149,13 +160,11 @@
         {#each getFullSettingsData(search) as type}
           <Button
             onclick={() => {
-              DBState.db.customSidebarItems.push({
-                id: crypto.randomUUID(),
+              addCustomSidebarItem({
                 type: 'setting',
                 subType: type.id,
                 label: language[type.labelKey] || type.id,
               })
-              configPage = 'list'
             }}
           >
             {language[type.labelKey] || type.id}

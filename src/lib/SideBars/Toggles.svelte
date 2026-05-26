@@ -12,6 +12,7 @@
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
   interface Props {
     chara?: character
@@ -19,6 +20,12 @@
   }
 
   let { chara = $bindable(), noContainer }: Props = $props()
+
+  const globalChatVariablesDraft = createServerBackedSettingDraft<Record<string, string>>(
+    'globalChatVariables',
+    {},
+  )
+  const jailbreakToggleDraft = createServerBackedSettingDraft<boolean>('jailbreakToggle', false)
 
   const jailbreakToggleToken = '{{jbtoggled}}'
   const usesJailbreakToggle = (value?: string) =>
@@ -70,6 +77,17 @@
       return acc
     }, [])
   })
+
+  function getToggleValue(key: string): string {
+    return globalChatVariablesDraft.value[`toggle_${key}`] ?? ''
+  }
+
+  function setToggleValue(key: string, value: string): void {
+    globalChatVariablesDraft.value = {
+      ...globalChatVariablesDraft.value,
+      [`toggle_${key}`]: value,
+    }
+  }
 </script>
 
 {#snippet toggles(items: sidebarToggle[], reverse: boolean = false)}
@@ -85,7 +103,7 @@
         <span>{toggle.value}</span>
         <SelectInput
           className="w-32"
-          bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]}
+          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, String(value))}
         >
           {#each toggle.options as option, i}
             <OptionInput value={i.toString()}>{option}</OptionInput>
@@ -97,7 +115,7 @@
         <span>{toggle.value}</span>
         <TextInput
           className="w-32"
-          bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]}
+          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)}
         />
       </div>
     {:else if toggle.type === 'textarea'}
@@ -106,7 +124,7 @@
         <TextAreaInput
           className="w-32"
           height="20"
-          bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]}
+          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)}
         />
       </div>
     {:else if toggle.type === 'caption'}
@@ -126,12 +144,11 @@
     {:else}
       <div class="w-full flex mt-2 items-center" class:justify-end={$MobileGUI}>
         <CheckInput
-          check={DBState.db.globalChatVariables[`toggle_${toggle.key}`] === '1'}
+          check={getToggleValue(toggle.key) === '1'}
           {reverse}
           name={toggle.value}
           onChange={() => {
-            DBState.db.globalChatVariables[`toggle_${toggle.key}`] =
-              DBState.db.globalChatVariables[`toggle_${toggle.key}`] === '1' ? '0' : '1'
+            setToggleValue(toggle.key, getToggleValue(toggle.key) === '1' ? '0' : '1')
           }}
         />
       </div>
@@ -148,7 +165,7 @@
     {#if hasJailbreakPrompt}
       <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
         <CheckInput
-          bind:check={DBState.db.jailbreakToggle}
+          bind:check={jailbreakToggleDraft.value}
           name={language.jailbreakToggle}
           reverse
         />
@@ -167,7 +184,7 @@
 
   {#if hasJailbreakPrompt}
     <div class="flex mt-2 items-center">
-      <CheckInput bind:check={DBState.db.jailbreakToggle} name={language.jailbreakToggle} />
+    <CheckInput bind:check={jailbreakToggleDraft.value} name={language.jailbreakToggle} />
     </div>
   {/if}
   {@render toggles(groupedToggles)}
