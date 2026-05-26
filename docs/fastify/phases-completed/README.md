@@ -108,6 +108,7 @@ track the next piece of work.
 | 9-8d - Bundle export route              | [`phase-9-client-thinning-9-8d.md`](phase-9-client-thinning-9-8d.md)                   | ZIP bundle export route with `.risu`, manifest, and walked present assets.       |
 | 9-9a - Browser smoke harness            | [`phase-9-client-thinning-9-9a.md`](phase-9-client-thinning-9-9a.md)                   | Playwright Fastify-served browser startup, events, command, and refresh smoke.   |
 | 9-9b - Generation/memory fixtures        | [`phase-9-client-thinning-9-9b.md`](phase-9-client-thinning-9-9b.md)                   | Server-backed sendChat, generation persistence, rollback, and Hypa V3 fixtures.  |
+| 9-9c - Storage-write audit              | [`phase-9-client-thinning-9-9c.md`](phase-9-client-thinning-9-9c.md)                   | Integrated browser storage-write audit plus focused import/export baselines.     |
 
 ## Historical Status Logs
 

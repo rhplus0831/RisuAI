@@ -11,13 +11,29 @@ interface Harness {
   dataDir: string
 }
 
+interface StorageAuditRecord {
+  surface: string
+  operation: string
+  detail?: string
+}
+
+declare global {
+  interface Window {
+    __RISU_FASTIFY_STORAGE_WRITE_AUDIT__?: {
+      records: StorageAuditRecord[]
+    }
+  }
+}
+
 let harness: Harness
 
 test.beforeAll(async () => {
   harness = await startHarness()
   await importDatabase(harness.app, {
+    version: 1,
     didFirstSetup: true,
     formatversion: 5,
+    selectedCharID: 0,
     characterOrder: [],
     characters: [
       {
@@ -33,8 +49,12 @@ test.beforeAll(async () => {
         emotionImages: [],
       },
     ],
+    botPresets: [],
+    loadouts: [],
     modules: [],
     personas: [],
+    plugins: [],
+    pluginCustomStorage: {},
     language: 'en',
     loreBookToken: 8000,
     mainPrompt: '',
@@ -52,6 +72,46 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
 }) => {
   const apiRequests: string[] = []
   const browserDiagnostics: string[] = []
+  await page.addInitScript(() => {
+    const audit: { records: StorageAuditRecord[] } = { records: [] }
+    Object.defineProperty(window, '__RISU_FASTIFY_STORAGE_WRITE_AUDIT__', {
+      configurable: true,
+      value: audit,
+    })
+
+    const record = (surface: string, operation: string, detail?: unknown) => {
+      audit.records.push({
+        surface,
+        operation,
+        detail: typeof detail === 'string' ? detail : undefined,
+      })
+    }
+    const patchMethod = (
+      target: unknown,
+      method: string,
+      surface: string,
+      operation = method,
+      detailIndex = 0,
+    ) => {
+      const holder = target as Record<string, unknown> | undefined
+      const original = holder?.[method]
+      if (typeof original !== 'function') return
+      holder[method] = function patchedStorageAuditMethod(this: unknown, ...args: unknown[]) {
+        record(surface, operation, args[detailIndex])
+        return original.apply(this, args)
+      }
+    }
+
+    patchMethod(window.indexedDB, 'open', 'indexedDB')
+    patchMethod(window.indexedDB, 'deleteDatabase', 'indexedDB')
+    patchMethod((window as any).IDBDatabase?.prototype, 'createObjectStore', 'indexedDB')
+    patchMethod((window as any).IDBDatabase?.prototype, 'deleteObjectStore', 'indexedDB')
+    patchMethod((window as any).IDBObjectStore?.prototype, 'add', 'indexedDB')
+    patchMethod((window as any).IDBObjectStore?.prototype, 'put', 'indexedDB')
+    patchMethod((window as any).IDBObjectStore?.prototype, 'delete', 'indexedDB')
+    patchMethod((window as any).IDBObjectStore?.prototype, 'clear', 'indexedDB')
+    patchMethod(Object.getPrototypeOf(window.navigator.storage), 'getDirectory', 'opfs')
+  })
   page.on('console', (message) => {
     browserDiagnostics.push(`console.${message.type()}: ${message.text()}`)
   })
@@ -108,6 +168,55 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     event: { type: 'settings.updated', resource: 'settings' },
   })
 
+  const apiRouteResults = await page.evaluate(async () => {
+    const generated = await fetch('/api/v1/generate/completion', {
+      body: JSON.stringify({
+        provider: 'echo',
+        model: 'echo_model',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { echo: { message: 'pong', delayMs: 0 } },
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const generatedBody = await generated.json()
+
+    const chunks = await fetch('/api/v1/memory/chunks/chat-smoke')
+    const summaries = await fetch('/api/v1/memory/summaries/chat-smoke')
+    const exported = await fetch('/api/v1/export/risusave')
+    const bundle = await fetch('/api/v1/export/bundle')
+
+    const uploaded = await fetch('/api/v1/assets', {
+      body: new Uint8Array([1, 2, 3]),
+      headers: { 'content-type': 'image/png' },
+      method: 'POST',
+    })
+    const uploadedBody = await uploaded.json()
+    const asset = await fetch(`/api/v1/assets/${uploadedBody.assetId}`)
+
+    return {
+      asset: asset.status,
+      bundle: bundle.status,
+      chunks: chunks.status,
+      exported: exported.status,
+      generated: generated.status,
+      generatedBody,
+      summaries: summaries.status,
+      uploaded: uploaded.status,
+    }
+  })
+  expect(apiRouteResults).toMatchObject({
+    asset: 200,
+    bundle: 200,
+    chunks: 200,
+    exported: 200,
+    generated: 200,
+    generatedBody: { type: 'success', result: 'pong' },
+    summaries: 200,
+    uploaded: 201,
+  })
+
   await expect
     .poll(() =>
       page.evaluate(
@@ -119,9 +228,21 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     .toBe(true)
 
   expect(apiRequests).toContain('PATCH /api/v1/commands/settings/runtime')
+  expect(apiRequests).toContain('POST /api/v1/assets')
+  expect(apiRequests).toContain('POST /api/v1/generate/completion')
+  expect(apiRequests).toContain('GET /api/v1/export/risusave')
+  expect(apiRequests).toContain('GET /api/v1/export/bundle')
+  expect(apiRequests).toContain('GET /api/v1/memory/chunks/chat-smoke')
+  expect(apiRequests).toContain('GET /api/v1/memory/summaries/chat-smoke')
   expect(apiRequests.filter((entry) => entry === 'GET /api/v1/bootstrap').length).toBeGreaterThan(
     1,
   )
+  expect(
+    apiRequests.filter((entry) => /^((GET)|(POST)) \/api\/v1\/storage\//.test(entry)),
+  ).toEqual([])
+  await expect
+    .poll(() => page.evaluate(() => window.__RISU_FASTIFY_STORAGE_WRITE_AUDIT__?.records ?? []))
+    .toEqual([])
 })
 
 async function startHarness(): Promise<Harness> {

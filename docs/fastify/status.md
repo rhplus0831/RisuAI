@@ -15,21 +15,22 @@ Completed phase detail and old landed-slice logs live in
 ## Current Snapshot
 
 - Active phase: Phase 9, Client thinning.
-- Last landed work: 9-9b generation and memory fixture closeout. No production
-  code changes were needed; the existing guarded server-backed sendChat,
-  generation persistence, rollback, and Hypa V3 memory fixture coverage stayed
-  green.
-- Current gap: Phase 9 still needs the final integrated server-backed
-  storage-write audit before manual verification and docs closeout.
-- Next default pickup: 9-9c, server-backed storage-write audit.
-- Last recorded focused baselines after 9-9b: `pnpm smoke:fastify-browser`
-  passed, the server-backed sendChat fixture command selected 65 files and 734
-  passing tests with 4 skipped, the focused memory/generation helper command
-  passed 5 files and 56 tests, the focused Fastify command/bootstrap/memory
-  command selected the full API suite with 68 files and 1162 tests, and
-  `pnpm check` was clean.
-  Broader baselines remain: 9-6c for full client/API test commands and
-  9-5d for the last full `pnpm build`.
+- Last landed work: 9-9c server-backed storage-write audit. No production code
+  changes were needed; the Fastify browser smoke now guards against
+  IndexedDB/localForage, OPFS, and legacy storage-route writes across startup,
+  commands, export, assets, generation, and memory read surfaces.
+- Current gap: Phase 9 still needs manual Fastify web and Tauri local
+  verification before final docs closeout.
+- Next default pickup: 9-9d, manual Fastify web and Tauri local verification.
+- Last recorded focused baselines after 9-9c: `pnpm smoke:fastify-browser`
+  passed with the storage-write audit, the server-backed sendChat fixture
+  command selected 65 files and 734 passing tests with 4 skipped, the focused
+  memory/generation helper command passed 5 files and 56 tests, the focused
+  server `.risu` codec/reference command passed 2 files and 23 tests, the
+  focused Fastify import/export/bootstrap command selected the full API suite
+  with 68 files and 1162 tests, and `pnpm check` was clean.
+  Broader baselines remain: 9-6c for full client/API test commands and 9-5d
+  for the last standalone `pnpm build`.
 
 ## Start Here
 
@@ -56,7 +57,7 @@ Completed phase detail and old landed-slice logs live in
 | Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; closeout notes archived.                                        |
 | Hypa V3 memory                              | Closed; closeout notes archived.                                        |
-| Client thinning                             | Active; 9-9b landed; continue with 9-9c server-backed storage-write audit.  |
+| Client thinning                             | Active; 9-9c landed; continue with 9-9d manual Fastify web and Tauri checks. |
 
 ## Maintenance Rules
 

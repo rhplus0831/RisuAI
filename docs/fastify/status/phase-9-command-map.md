@@ -240,8 +240,8 @@ Command families, projection events, residual write sweeps, projection
 guard integration, server-backed storage gates, asset-byte reads,
 backup/restore projection, residual local-cache gates, provider secret
 masking, server `.risu` codec/import/export/bundle routes, and the
-server-backed browser smoke harness are complete through 9-9a.
+server-backed browser smoke/storage-write audit are complete through 9-9c.
 
-Current pickup: **9-9b - Generation and memory fixture closeout**. Re-run and
-reconcile server-backed sendChat, generation persistence, rollback, and Hypa V3
-memory fixture coverage.
+Current pickup: **9-9d - Manual Fastify web and Tauri local verification**.
+Record manual import, chat, regenerate, edit, character switch, settings,
+persist, and reload checks for both modes.

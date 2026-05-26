@@ -12,27 +12,26 @@ shapes.
 
 ## Last Done
 
-**9-9b - Generation and memory fixture closeout** is the latest landed slice.
+**9-9c - Server-backed storage-write audit** is the latest landed slice.
 
-- Re-ran server-backed `sendChat`, generation persistence, rollback, and Hypa
-  V3 memory fixture coverage with no production code changes required.
-- Confirmed the existing guarded `/chat` fixture path, generation result
-  command coverage, Hypa V3 progress side effects, and memory/generation helper
-  tests remain green.
-- Re-ran the 9-9a browser smoke as the top-level Fastify-served web startup
-  sanity check.
+- Extended the Fastify browser smoke with an IndexedDB/localForage, OPFS, and
+  legacy storage-route write audit.
+- Exercised startup, bootstrap/events, one command mutation, server completion,
+  memory reads, `.risu` export, bundle export, asset upload/read, and projection
+  refresh with no server-backed local storage writes observed.
+- Re-ran the 9-9b server-backed generation and memory fixture baselines plus
+  focused `.risu` codec/import/export/bootstrap coverage.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-9c - Server-backed storage-write audit**.
+Immediate pickup: **9-9d - Manual Fastify web and Tauri local verification**.
 
-- Prove integrated Fastify web paths do not touch localForage, OPFS,
-  AutoStorage, or legacy NodeStorage write paths during server-backed startup,
-  commands, import/export, assets, generation, or memory.
-- Start from the closed 9-6 storage gates and the 9-9a/9-9b verification
-  surfaces; this is an integrated audit, not a new storage abstraction.
-- Keep Tauri/local storage behavior unchanged and keep runtime-only browser
-  caches local when they are not authoritative server database state.
+- Record manual Fastify web checks for import, chat send, regenerate, edit,
+  character switch, settings mutation, persist, and reload.
+- Record matching Tauri/local checks to prove Phase 9 server-backed gates did
+  not break the existing local storage path.
+- Use the 9-9c browser smoke and focused storage/generation/memory baselines as
+  the automated preflight before manual verification.
 - Do not add compatibility migrations for intermediate Fastify shapes; there
   are no actual Fastify users yet.
 
@@ -71,9 +70,8 @@ Immediate pickup: **9-9c - Server-backed storage-write audit**.
 
 ## Later Queue
 
-1. 9-9c - Server-backed storage-write audit.
-2. 9-9d - Manual Fastify web and Tauri local verification.
-3. 9-9e - Phase 9 docs closeout.
+1. 9-9d - Manual Fastify web and Tauri local verification.
+2. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -86,10 +84,9 @@ Immediate pickup: **9-9c - Server-backed storage-write audit**.
 
 ## Verification
 
-For the current 9-9c slice, start with the integrated server-backed
-storage-write surfaces. Keep the 9-9a browser smoke as the web startup harness,
-and keep the 9-9b generation/memory baselines available while auditing
-generation and memory paths:
+For the current 9-9d slice, start by re-running the automated preflight that
+was green after 9-9c, then perform and record the manual Fastify web and
+Tauri/local checks:
 
 ```bash
 pnpm smoke:fastify-browser
@@ -99,6 +96,15 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 pnpm check
 ```
+
+Manual checks to record for both Fastify web and Tauri/local mode:
+
+- App loads the expected persisted state after startup.
+- Import succeeds or shows the expected unsupported message for the mode.
+- Chat send, regenerate, message edit, and character switch behave correctly.
+- A representative settings change persists after reload.
+- Server-backed web keeps using the server projection; Tauri/local keeps using
+  the local storage path.
 
 Run the full matrix before closing a parent phase or a broad
 server-backed behavior surface:
@@ -110,20 +116,23 @@ pnpm api:test
 pnpm build
 ```
 
-Latest recorded focused baseline, after 9-9b:
+Latest recorded focused baseline, after 9-9c:
 
 - `pnpm smoke:fastify-browser`
   - passed; built the SPA and ran the Playwright browser smoke through Fastify
-    startup, bootstrap, events, one runtime settings command, and projection
-    refresh. Build emitted existing CSS `::highlight`, browser
-    externalization, plugin-timing, ineffective dynamic import, and chunk-size
-    warnings.
+    startup, bootstrap/events, one runtime settings command, server completion,
+    memory reads, `.risu` export, bundle export, asset upload/read, projection
+    refresh, and the no-local-storage-write audit. Build emitted existing CSS
+    `::highlight`, browser externalization, plugin-timing, ineffective dynamic
+    import, and chunk-size warnings.
 - `pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
   - command selected the full client suite: 65 files, 734 tests passed, 4
     skipped.
 - `pnpm exec vitest run src/ts/process/__tests__/buildMemoryWindow.test.ts src/ts/process/__tests__/streamResponse.test.ts src/ts/process/__tests__/nonStreamResponse.test.ts src/ts/process/__tests__/stage4Finalize.test.ts src/ts/process/__tests__/sendChatContext.test.ts`
   - 5 files and 56 tests passed.
-- `pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/memory.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryReadRoutes.test.ts`
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`
+  - 2 files and 23 tests passed.
+- `pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
   - command selected the full Fastify API suite: 68 files and 1162 tests
     passed.
 - `pnpm check` - clean.
@@ -147,7 +156,7 @@ Last recorded broader baselines:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-9b.md`](../phases-completed/phase-9-client-thinning-9-9b.md)
+  [`../phases-completed/phase-9-client-thinning-9-9c.md`](../phases-completed/phase-9-client-thinning-9-9c.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

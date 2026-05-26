@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-9b - Generation and memory fixture closeout**. Next pickup:
-**9-9c - Server-backed storage-write audit**.
+**9-9c - Server-backed storage-write audit**. Next pickup:
+**9-9d - Manual Fastify web and Tauri local verification**.
 
 ## Goal
 
@@ -369,6 +369,8 @@ surfaces.
   - **9-9c - Server-backed storage-write audit.** Prove Fastify web mode does
     not touch localForage, OPFS, AutoStorage, or legacy NodeStorage write paths
     during startup, commands, import/export, assets, generation, or memory.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-9c.md`](../phases-completed/phase-9-client-thinning-9-9c.md).
   - **9-9d - Manual Fastify web and Tauri local verification.** Record manual
     import, chat, regenerate, edit, character switch, settings, persist, and
     reload checks for both modes.
