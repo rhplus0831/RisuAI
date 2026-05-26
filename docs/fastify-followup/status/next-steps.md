@@ -15,6 +15,10 @@ Pick one slice per work session. Each slice should leave the worktree in
 a reviewable state with focused tests, update the affected phase file,
 and add any longer closeout note under `../phases-completed/`.
 
+No immediate pickup remains from the current audit. All identified
+follow-up slices are closed; continue only when a new audit finding is
+added to `../status.md` and the relevant phase file.
+
 1. Phase 6 streaming errors are closed again.
    - 6A: landed streaming error frame contract plus OpenAI-compatible
      failure handling.
@@ -24,10 +28,13 @@ and add any longer closeout note under `../phases-completed/`.
 2. Phase 0 removals are closed again.
    - 0A: landed Google Drive public artifact removal.
 
-3. Phase 3 proxy cleanup is the next default pickup.
+3. Phase 3 proxy cleanup is closed again.
    - 3A: shared or explicitly aligned proxy response-header filtering.
 
 ## Recently Closed
+
+Phase 3 proxy follow-up closed in Slice 3A. Stream-job
+`upstream_headers` now use the direct proxy response-header filter.
 
 Phase 9 client-thinning follow-up closed in slices 9A-9J. The final
 direct-write sweep is anchored at `67a9dab4`.
@@ -103,7 +110,8 @@ pnpm build
 Focused Phase 3:
 
 ```bash
-pnpm api:test -- server/fastify/__tests__/proxy.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/streamJobs.test.ts server/fastify/__tests__/streamJobsRoutes.test.ts
+pnpm api:test -- server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/streamJobs.test.ts
 ```
 
 Broad closeout:

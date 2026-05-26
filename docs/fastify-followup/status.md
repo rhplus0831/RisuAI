@@ -12,17 +12,17 @@ directly.
 
 ## Current Snapshot
 
-- Active work: audit follow-up for Phase 3.
+- Active work: all currently identified audit follow-up slices are
+  closed.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
 - Phase 0 follow-up has landed Slice 0A and is closed again.
 - Phase 6 follow-up has landed slices 6A-6C and is closed again.
 - Phase 8 follow-up has landed slices 8A-8C and is closed again.
 - Phase 7 follow-up has landed slices 7A-7E and is closed again.
+- Phase 3 follow-up has landed Slice 3A and is closed again.
 - Phase 9 follow-up has landed guard/import-event work plus slices
-  9A-9J; use the table below for prior commit anchors and
-  `status/next-steps.md` for pickup order.
-- Next default pickup: Phase 3 Slice 3A, shared or explicitly aligned
-  proxy response-header filtering.
+  9A-9J; use the table below for prior commit anchors.
+- Next default pickup: none. Reopen only if a new audit finding appears.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
 
@@ -50,7 +50,7 @@ directly.
 | 0 - Removals                            | Closed       | 0A removed the tracked Google Drive OAuth worker from `public/` and verified the build.                   | [`phases/phase-0-removals-followup.md`](phases/phase-0-removals-followup.md)               |
 | 1 - Foundation                          | No follow-up | Audit found Fastify foundation shape complete.                                                            | None                                                                                       |
 | 2 - Storage / import / assets / backups | No follow-up | Audit found storage route baseline complete.                                                              | None                                                                                       |
-| 3 - Proxy migration                     | Reopened     | Stream-job proxy response header filtering diverges from direct proxy filtering.                          | [`phases/phase-3-proxy-followup.md`](phases/phase-3-proxy-followup.md)                     |
+| 3 - Proxy migration                     | Closed       | 3A shared direct proxy response-header filtering with stream-job `upstream_headers` events.               | [`phases/phase-3-proxy-followup.md`](phases/phase-3-proxy-followup.md)                     |
 | 4 - sendChat tests                      | No follow-up | Audit found test scaffold complete for the migration slice.                                               | None                                                                                       |
 | 5 - sendChat extraction                 | No follow-up | Audit found browser extraction baseline complete.                                                         | None                                                                                       |
 | 6 - Server-side generation              | Closed       | 6C aligned Ollama NDJSON stream failures with typed error frames and completed the final stream audit.    | [`phases/phase-6-generation-followup.md`](phases/phase-6-generation-followup.md)           |

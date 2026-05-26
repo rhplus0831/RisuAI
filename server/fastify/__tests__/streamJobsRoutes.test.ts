@@ -297,7 +297,15 @@ describe('Phase 3B-2 DELETE /api/v1/proxy/stream-jobs/:id', () => {
 describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
   it('streams job_accepted, upstream_headers, chunk, done in order', async () => {
     echo.setResponder((_req, res) => {
-      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.writeHead(200, {
+        'content-type': 'text/plain',
+        'x-keep-me': 'yes',
+        'cache-control': 'no-store',
+        'content-encoding': 'identity',
+        'content-security-policy': "default-src 'none'",
+        'content-security-policy-report-only': 'whatever',
+        'clear-site-data': '"cache"',
+      })
       res.write('one')
       setTimeout(() => {
         res.write('two')
@@ -325,6 +333,17 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     expect(types).toContain('upstream_headers')
     expect(types).toContain('chunk')
     expect(types.at(-1)).toBe('done')
+    const head = events.find((e) => e.type === 'upstream_headers') as
+      | { type: 'upstream_headers'; status: number; headers: Record<string, string> }
+      | undefined
+    expect(head?.status).toBe(200)
+    expect(head?.headers['content-type']).toBe('text/plain')
+    expect(head?.headers['x-keep-me']).toBe('yes')
+    expect(head?.headers['cache-control']).toBeUndefined()
+    expect(head?.headers['content-encoding']).toBeUndefined()
+    expect(head?.headers['content-security-policy']).toBeUndefined()
+    expect(head?.headers['content-security-policy-report-only']).toBeUndefined()
+    expect(head?.headers['clear-site-data']).toBeUndefined()
     const chunks = events.filter((e) => e.type === 'chunk') as {
       type: 'chunk'
       dataBase64: string

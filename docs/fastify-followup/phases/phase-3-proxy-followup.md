@@ -1,8 +1,8 @@
 # Phase 3 Follow-Up - Proxy Migration
 
-Date: 2026-05-26
+Date: 2026-05-27
 
-Status: reopened by audit.
+Status: closed again after Slice 3A.
 
 ## Goal
 
@@ -34,7 +34,8 @@ stream-job responses can preserve headers the direct proxy removes.
   header filter used by direct proxy and stream jobs, or document a
   deliberate difference in tests. Cover direct proxy behavior,
   stream-job `upstream_headers`, and the WebSocket/route event path in
-  one focused session.
+  one focused session. Landed on 2026-05-27 by sharing the direct proxy
+  `filterResponseHeaders` helper with stream jobs.
 
 ## Exit Criteria
 
@@ -46,9 +47,15 @@ stream-job responses can preserve headers the direct proxy removes.
 ## Verification
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/streamJobs.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/streamJobs.test.ts server/fastify/__tests__/streamJobsRoutes.test.ts
 pnpm api:test -- server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/streamJobs.test.ts
 ```
+
+## Closeout
+
+All exit criteria are satisfied as of Slice 3A. Stream-job
+`upstream_headers` events now use the same response-header filtering as
+the direct proxy path.
 
 ## References
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import net from 'node:net'
 import { Readable } from 'node:stream'
-import { normalizeForwardHeaders } from './proxy.js'
+import { filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
 
 export const PROXY_STREAM_DEFAULT_TIMEOUT_MS = 600_000
 export const PROXY_STREAM_MAX_TIMEOUT_MS = 3_600_000
@@ -14,12 +14,6 @@ export const PROXY_STREAM_MAX_ACTIVE_JOBS = 64
 export const PROXY_STREAM_MAX_PENDING_EVENTS = 512
 export const PROXY_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024
 export const PROXY_STREAM_MAX_BODY_BASE64_BYTES = 8 * 1024 * 1024
-
-const STRIP_STREAM_RESPONSE_HEADERS = new Set([
-  'content-security-policy',
-  'content-security-policy-report-only',
-  'clear-site-data',
-])
 
 export type StreamJobEvent =
   | { type: 'job_accepted'; jobId: string }
@@ -119,15 +113,6 @@ export function normalizeHeartbeatSec(raw: unknown): number {
     PROXY_STREAM_HEARTBEAT_MAX_SEC,
     Math.max(PROXY_STREAM_HEARTBEAT_MIN_SEC, Math.floor(value)),
   )
-}
-
-function filterStreamResponseHeaders(source: Headers): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [k, v] of source.entries()) {
-    if (STRIP_STREAM_RESPONSE_HEADERS.has(k.toLowerCase())) continue
-    out[k] = v
-  }
-  return out
 }
 
 export interface CreateJobOptions {
@@ -308,7 +293,7 @@ export async function runStreamJob(
     registry.pushEvent(job, {
       type: 'upstream_headers',
       status: upstream.status,
-      headers: filterStreamResponseHeaders(upstream.headers),
+      headers: filterResponseHeaders(upstream.headers),
     })
 
     if (upstream.body) {

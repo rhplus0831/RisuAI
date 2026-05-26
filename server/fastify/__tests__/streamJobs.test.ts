@@ -319,7 +319,11 @@ describe('runStreamJob', () => {
       res.writeHead(200, {
         'content-type': 'text/plain',
         'x-keep-me': 'yes',
+        'cache-control': 'no-store',
+        'content-encoding': 'identity',
         'content-security-policy': "default-src 'none'",
+        'content-security-policy-report-only': 'whatever',
+        'clear-site-data': '"cache"',
       })
       res.end('hello world')
     })
@@ -331,7 +335,11 @@ describe('runStreamJob', () => {
     expect(head.status).toBe(200)
     expect(head.headers['content-type']).toBe('text/plain')
     expect(head.headers['x-keep-me']).toBe('yes')
+    expect(head.headers['cache-control']).toBeUndefined()
+    expect(head.headers['content-encoding']).toBeUndefined()
     expect(head.headers['content-security-policy']).toBeUndefined()
+    expect(head.headers['content-security-policy-report-only']).toBeUndefined()
+    expect(head.headers['clear-site-data']).toBeUndefined()
     const chunk = events[1] as { type: 'chunk'; dataBase64: string }
     expect(Buffer.from(chunk.dataBase64, 'base64').toString('utf8')).toBe('hello world')
   })
