@@ -3,9 +3,8 @@
 Date: 2026-05-27
 
 This directory records audit follow-up work found after
-`docs/fastify` marked Phases 0-9 closed. It is separate from the main
-roadmap so another agent can pick up the remaining work without turning
-the closed phase docs back into long work logs.
+`docs/fastify` marked Phases 0-9 closed. It stays separate from the
+main roadmap so closed phase docs remain concise.
 
 Use `docs/fastify` for original scope, boundaries, and historical
 closeout detail. Use this directory for reopened audit tasks, current
@@ -18,7 +17,7 @@ intermediate Fastify shapes.
 
 ## Read Order
 
-1. [`status.md`](status.md) - current reopened-phase snapshot.
+1. [`status.md`](status.md) - current follow-up snapshot.
 2. [`status/next-steps.md`](status/next-steps.md) - day-to-day pickup
    order and verification commands.
 3. [`phases/`](phases/) - phase-scoped tasks, source evidence, and exit
@@ -33,8 +32,8 @@ intermediate Fastify shapes.
 ## Audit Summary
 
 The audit did not identify actionable follow-up tasks for Phases 1, 2,
-4, or 5. Phases 7 and 9 have closed follow-up slices; Phases 0, 3, 6,
-and 8 remain open.
+4, or 5. Follow-up slices for Phases 0, 3, 6, 7, 8, and 9 are closed as
+of 2026-05-27.
 
-Treat this directory as the active handoff until every reopened phase
-is closed and the main `docs/fastify` status has a short closeout note.
+Treat `status.md` and `status/next-steps.md` as the live record for new
+audit findings; keep landed detail under `phases-completed/`.

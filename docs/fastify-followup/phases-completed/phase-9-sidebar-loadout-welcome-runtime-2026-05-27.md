@@ -37,8 +37,8 @@ pnpm exec svelte-check --tsconfig ./tsconfig.json
 
 ## Follow-Up
 
-- Continue with Phase 9 Slice 9J: final direct-write sweep, allowlist
-  gaps, browser smoke, and Phase 9 closeout.
+- At this slice closeout, Phase 9 Slice 9J was next: final direct-write
+  sweep, allowlist gaps, browser smoke, and Phase 9 closeout.
 - The current focused grep still reports remaining direct bindings in
   BotSettings prompt/manual settings, LoreBookList global lore fallback,
   and TriggerV2 deprecated-toggle controls:

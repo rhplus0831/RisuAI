@@ -2,9 +2,9 @@
 
 Date: 2026-05-27
 
-These files track reopened work found by the audit of Phases 0-9. Use
+These files track follow-up work found by the audit of Phases 0-9. Use
 the original `docs/fastify/phases/` files for scope and boundary
-context; use this directory for remaining tasks and closeout criteria.
+context; use this directory for task scope and closeout criteria.
 
 ## Phase Index
 

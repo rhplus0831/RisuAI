@@ -36,7 +36,7 @@ pnpm api:test -- server/fastify/__tests__/commands.test.ts
 pnpm exec svelte-check --tsconfig ./tsconfig.json
 ```
 
-## Next Pickup
+## Historical Next Pickup
 
-Continue with Phase 9 Slice 9G: character core profile, media, and basic
-option editors.
+At this slice closeout, Phase 9 Slice 9G was next: character core
+profile, media, and basic option editors.

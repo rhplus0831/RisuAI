@@ -28,8 +28,9 @@ pnpm api:test -- server/fastify/__tests__/commands.test.ts
 
 ## Follow-Up
 
-- Continue with Phase 9 Slice 9I: sidebar toggles, custom sidebar/loadout
-  helpers, welcome setup, and runtime API write classification.
+- At this slice closeout, Phase 9 Slice 9I was next: sidebar toggles,
+  custom sidebar/loadout helpers, welcome setup, and runtime API write
+  classification.
 - `LoreBookList.svelte` still contains legacy fallback branches that mention
   direct character/chat lore paths, but the active character/chat lore tab
   now passes drafts through `externalLoreBooks`. Revisit these fallback

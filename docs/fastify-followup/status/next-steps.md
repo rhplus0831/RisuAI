@@ -2,8 +2,8 @@
 
 Date: 2026-05-27
 
-Use this file as the pickup runbook for the reopened audit work. The
-phase files under `../phases/` hold source evidence and exit criteria.
+Use this file as the pickup runbook for reopened audit work. The phase
+files under `../phases/` hold source evidence and exit criteria.
 
 Policy note: no actual Fastify users exist yet. Update current schemas,
 commands, and import paths directly rather than preserving intermediate
@@ -15,48 +15,19 @@ Pick one slice per work session. Each slice should leave the worktree in
 a reviewable state with focused tests, update the affected phase file,
 and add any longer closeout note under `../phases-completed/`.
 
-No immediate pickup remains from the current audit. All identified
-follow-up slices are closed; continue only when a new audit finding is
-added to `../status.md` and the relevant phase file.
-
-1. Phase 6 streaming errors are closed again.
-   - 6A: landed streaming error frame contract plus OpenAI-compatible
-     failure handling.
-   - 6B: landed Anthropic, Mistral, and Gemini stream failure alignment.
-   - 6C: landed Ollama stream failure alignment and final provider audit.
-
-2. Phase 0 removals are closed again.
-   - 0A: landed Google Drive public artifact removal.
-
-3. Phase 3 proxy cleanup is closed again.
-   - 3A: shared or explicitly aligned proxy response-header filtering.
+No immediate pickup remains from the current audit. Continue only when a
+new audit finding is added to `../status.md` and the relevant phase file.
 
 ## Recently Closed
 
-Phase 3 proxy follow-up closed in Slice 3A. Stream-job
-`upstream_headers` now use the direct proxy response-header filter.
-
-Phase 9 client-thinning follow-up closed in slices 9A-9J. The final
-direct-write sweep is anchored at `67a9dab4`.
-
-Phase 7 prompt assembly follow-up closed in slices 7A-7E.
-
-- 7A: landed browser regenerate request wiring.
-- 7B: landed server regenerate assembly semantics.
-- 7C: landed `/chat` provider dispatch guards.
-- 7D: landed stop-trigger mutation payload delivery.
-- 7E: route-backed fixture coverage for send, continue, regenerate,
-  preview, and preview-prompt.
-
-Phase 8 memory follow-up closed in slices 8A-8C.
-
-- 8A: stable custom embedding job model key and custom wire-model
-  routing.
-- 8B: production memory progress events over `/api/v1/events`, parsed by
-  the browser event subscriber and applied to the Hypa V3 progress store.
-- 8C: missing-summary diagnostics now include chunks with neither
-  summary nor embedding, so prompt follow-ups schedule summarize jobs for
-  those chunks.
+| Phase | Closed Slice(s) | Closeout                                                                 |
+| ----- | --------------- | ------------------------------------------------------------------------ |
+| 0     | 0A              | Removed the tracked Google Drive public worker artifact.                 |
+| 3     | 3A              | Stream-job `upstream_headers` use the direct proxy response-header filter. |
+| 6     | 6A-6C           | OpenAI-compatible, Anthropic, Mistral, Gemini, and Ollama stream failures emit typed error frames. |
+| 7     | 7A-7E           | Regenerate, provider guards, stop-trigger payloads, and route-backed fixture coverage are closed. |
+| 8     | 8A-8C           | Custom embeddings, memory progress events, and missing-summary diagnostics are closed. |
+| 9     | Guard/import + 9A-9J | Direct-write follow-up closed; the final sweep is anchored at `67a9dab4`. |
 
 ## Suggested Verification
 

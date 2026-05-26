@@ -2,7 +2,7 @@
 
 Date: 2026-05-27
 
-This is the original Fastify migration closeout snapshot. The active
+This is the original Fastify migration closeout snapshot. The
 post-closeout audit handoff now lives in
 [`../fastify-followup/status.md`](../fastify-followup/status.md).
 
@@ -17,13 +17,12 @@ Completed phase detail and old landed-slice logs live in
 
 - Original migration phase: none. Phase 9, Client thinning, was closed
   for the Fastify-served web scope in `edbc2d07`.
-- Active handoff: audit follow-up for Phases 0, 3, 6, and 8 in
-  [`../fastify-followup/`](../fastify-followup/). Phase 7 follow-up
-  closed again at `e7425ab1`; Phase 9 follow-up closed again at
-  `67a9dab4`.
-- Latest follow-up pickup: Phase 8 Slice 8A, stable custom embedding job
-  model key, in
-  [`../fastify-followup/status/next-steps.md`](../fastify-followup/status/next-steps.md).
+- Active handoff: none. All audit follow-up slices identified so far are
+  closed in [`../fastify-followup/`](../fastify-followup/).
+- Latest follow-up closeout: Phase 3 Slice 3A aligned stream-job proxy
+  headers with direct proxy output in `e92e2d7e`. The immediately
+  preceding closeouts were Phase 0 Slice 0A (`3f421660`), Phase 6 Slice
+  6C (`f7970af4`), and Phase 8 Slice 8C (`e618766f`).
 - Tauri / Desktop manual verification remains deferred and should not
   be folded back into the original Phase 9 closeout.
 - Last original closeout baselines are archived in
@@ -37,7 +36,7 @@ Completed phase detail and old landed-slice logs live in
 - [`status/next-steps.md`](status/next-steps.md) - original handoff and
   original closeout verification notes.
 - [`../fastify-followup/status/next-steps.md`](../fastify-followup/status/next-steps.md) -
-  active follow-up pickup order.
+  follow-up pickup state and verification commands.
 - [`status/phase-9-command-map.md`](status/phase-9-command-map.md) -
   locked Phase 9 mutation inventory and command map.
 - [`phases/phase-9-client-thinning.md`](phases/phase-9-client-thinning.md) -
@@ -55,10 +54,10 @@ Completed phase detail and old landed-slice logs live in
 | Workstream                                  | State                                                                                    |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Removals                                    | Closed; historical detail archived.                                                      |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path.                                               |
-| Server-side generation                      | Closed for `/completion`; remaining provider flattening stays deferred.                  |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path and proxy header follow-up is closed.          |
+| Server-side generation                      | Closed for `/completion`; streaming error follow-up is closed and provider flattening stays deferred. |
 | Server-side prompt assembly                 | Closed; follow-up regenerate/provider/stop-trigger/fixture gaps closed again 2026-05-27. |
-| Hypa V3 memory                              | Original Phase 8 closed; audit follow-up remains active in `docs/fastify-followup`.      |
+| Hypa V3 memory                              | Closed; custom embedding, progress event, and missing-summary follow-up closed again 2026-05-27. |
 | Client thinning                             | Closed for Fastify web; direct-write follow-up closed again 2026-05-27.                  |
 
 ## Maintenance Rules

@@ -39,7 +39,7 @@ continue, regenerate, preview, and preview-prompt.
 Phase 7 closeout detail lives in
 [`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md);
 Phase 8 memory and Phase 9 client thinning were closed in the original
-docs; current reopened work is tracked in `docs/fastify-followup`.
+docs; post-closeout audit records are tracked in `docs/fastify-followup`.
 
 ## Guardrails
 

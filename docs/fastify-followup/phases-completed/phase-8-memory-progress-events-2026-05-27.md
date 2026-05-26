@@ -19,8 +19,9 @@ Slice 8B landed.
   refresh still listens to `event: command`.
 - No compatibility migration was added because there are no actual
   Fastify users yet.
-- Phase 8 still needs slice 8C: missing-summary diagnostics for chunks
-  that have neither embedding nor summary.
+- At this slice closeout, Phase 8 still needed slice 8C:
+  missing-summary diagnostics for chunks that have neither embedding nor
+  summary.
 
 ## Verification
 
@@ -29,8 +30,8 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm test -- src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/process/request/tests/serverMemory.test.ts
 ```
 
-## Next Pickup
+## Historical Next Pickup
 
-Phase 8 Slice 8C is now the default pickup: update memory diagnostics
-and follow-up enqueue logic so chunks missing both embedding and summary
-still schedule summary jobs.
+At this slice closeout, Phase 8 Slice 8C was the default pickup: update
+memory diagnostics and follow-up enqueue logic so chunks missing both
+embedding and summary still schedule summary jobs.

@@ -16,9 +16,10 @@ Date: 2026-05-27
 
 ## Deliberate Boundary
 
-Slice 7A only covers browser request wiring. Server prompt assembly still
-does not consume `regenerateMessageId` to reconstruct local regenerate
-transcript and mutation semantics. Continue with Slice 7B next.
+Slice 7A only covered browser request wiring. At this slice closeout,
+server prompt assembly still did not consume `regenerateMessageId` to
+reconstruct local regenerate transcript and mutation semantics; Slice 7B
+was next.
 
 ## Verification
 

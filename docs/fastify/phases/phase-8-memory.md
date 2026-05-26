@@ -1,10 +1,10 @@
 # Phase 8 - Hypa V3 Memory Server-Side
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 Status: closed. Completed through **8-9 - Phase 8 closeout**.
 Post-closeout audit work for custom embedding follow-ups, production
-memory progress events, and missing-summary diagnostics is tracked in
+memory progress events, and missing-summary diagnostics closed in
 [`../../fastify-followup/phases/phase-8-memory-followup.md`](../../fastify-followup/phases/phase-8-memory-followup.md).
 
 ## Goal

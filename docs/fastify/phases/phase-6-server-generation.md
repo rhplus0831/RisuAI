@@ -10,7 +10,7 @@ SSE envelope, the routed provider matrix, and the current server-side
 request shaping tests.
 
 Original closeout work is complete. Post-closeout audit work for
-streaming provider failure frames is tracked in
+streaming provider failure frames closed in
 [`../../fastify-followup/phases/phase-6-generation-followup.md`](../../fastify-followup/phases/phase-6-generation-followup.md).
 Provider paths still waiting on server-side prompt flattening or fixture
 demand are tracked in the provider coverage matrix.

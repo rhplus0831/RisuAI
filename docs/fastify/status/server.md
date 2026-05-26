@@ -15,9 +15,9 @@ docs.
 - Backup restore emits a `state.restored` command-event payload after the
   repository revision bump so server-backed browsers re-fetch bootstrap.
 - `POST /api/v1/generate/completion` owns the Phase 6 provider dispatch
-  surface and normalized SSE envelope. Streaming provider failure frames
-  are reopened in
-  [`../../fastify-followup/phases/phase-6-generation-followup.md`](../../fastify-followup/phases/phase-6-generation-followup.md).
+  surface and normalized SSE envelope. Streaming providers emit typed
+  `event: error` / `provider_error` frames for upstream failures while
+  preserving existing token and done events.
 - `POST /api/v1/generate/chat` owns Phase 7 prompt assembly SSE events.
   It streams assembled prompt payloads and metadata, builds an internal
   typed mutation payload on `AssembleResult`, emits that payload as
@@ -38,10 +38,11 @@ docs.
   resources, plugin records/configuration, and plugin storage.
   Implemented families use `baseRevision` / 409 conflict handling and
   emit their mapped command event.
-- `GET /api/v1/events` is the auth-gated Phase 9 command-event SSE
-  stream. It sends committed command events as `event: command` frames
-  with `{ type, revision, resource, id?, parentId? }` payloads for
-  browser projection invalidation.
+- `GET /api/v1/events` is the auth-gated command and memory SSE stream.
+  It sends committed command events as `event: command` frames with
+  `{ type, revision, resource, id?, parentId? }` payloads for browser
+  projection invalidation, and memory job progress as `event: memory`
+  frames for Hypa V3 progress updates.
 - `GET /api/v1/bootstrap` masks provider/media/memory secrets before
   returning the browser projection; grouped settings commands preserve the
   shared masked placeholder as "leave unchanged".
@@ -62,9 +63,8 @@ docs.
 ## Current Server Work
 
 Original Phase 8 Hypa V3 memory and Phase 9 client thinning are closed.
-Phase 7 and Phase 9 audit follow-up are closed again. Remaining audit
-follow-up for Phase 0 removals, Phase 3 proxy headers, Phase 6 streaming
-errors, and Phase 8 memory ownership lives in `docs/fastify-followup`.
+Audit follow-up for Phases 0, 3, 6, 7, 8, and 9 is closed again in
+`docs/fastify-followup`.
 
 ## Watch Points
 

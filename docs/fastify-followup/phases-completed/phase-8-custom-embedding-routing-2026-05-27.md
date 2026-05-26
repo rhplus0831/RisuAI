@@ -16,8 +16,8 @@ Slice 8A landed.
 
 - No compatibility migration was added; current Fastify schema and job
   payloads now use the stable custom key directly.
-- Phase 8 still needs production memory progress event delivery and
-  no-embedding/no-summary diagnostics.
+- At this slice closeout, Phase 8 still needed production memory
+  progress event delivery and no-embedding/no-summary diagnostics.
 
 ## Verification
 
@@ -26,7 +26,7 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/memoryEmbeddingModel.test.ts server/fastify/__tests__/memoryEmbedJobHandler.test.ts
 ```
 
-## Next Pickup
+## Historical Next Pickup
 
-Phase 8 Slice 8B is now the default pickup: production memory progress
-event delivery.
+At this slice closeout, Phase 8 Slice 8B was the default pickup:
+production memory progress event delivery.

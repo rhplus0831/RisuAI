@@ -33,7 +33,7 @@ pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/proc
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerTransport.test.ts
 ```
 
-## Next Pickup
+## Historical Next Pickup
 
-Phase 8 Slice 8A is now the default pickup: stable custom embedding job
-model key.
+At this slice closeout, Phase 8 Slice 8A was the default pickup: stable
+custom embedding job model key.

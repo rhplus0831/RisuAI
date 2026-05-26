@@ -31,9 +31,10 @@ pnpm api:test -- server/fastify/__tests__/commands.test.ts
 pnpm exec svelte-check --tsconfig ./tsconfig.json
 ```
 
-## Remaining Phase 9 Pickup
+## Historical Phase 9 Pickup
 
-Continue with 9B: OpenRouter, auxiliary model, and separate-parameter
-selectors. The next files called out by the runbook are
+At this slice closeout, 9B was next: OpenRouter, auxiliary model, and
+separate-parameter selectors. The next files called out by the runbook
+were
 `OpenrouterSettings.svelte`, `AuxModelSelectors.svelte`,
 `SeparateParametersSection.svelte`, and matching EasyPanel shortcuts.

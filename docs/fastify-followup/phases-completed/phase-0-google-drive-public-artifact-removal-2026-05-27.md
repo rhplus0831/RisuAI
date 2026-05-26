@@ -25,5 +25,5 @@ pnpm build
 ## Follow-Up
 
 - Phase 0 is closed again.
-- Continue with Phase 3 Slice 3A: shared or explicitly aligned proxy
-  response-header filtering.
+- At this slice closeout, Phase 3 Slice 3A was the next pickup: shared
+  or explicitly aligned proxy response-header filtering.

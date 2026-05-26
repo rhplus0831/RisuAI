@@ -30,9 +30,8 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts
 ```
 
-## Next Pickup
+## Historical Next Pickup
 
-Phase 0 Slice 0A is the next default pickup: remove the tracked Google Drive
-OAuth worker artifact under `public/`. Phase 3 Slice 3A can land
-independently if the next agent wants to take proxy response-header alignment
-first.
+At this slice closeout, Phase 0 Slice 0A was the next default pickup:
+remove the tracked Google Drive OAuth worker artifact under `public/`.
+Phase 3 Slice 3A could land independently.

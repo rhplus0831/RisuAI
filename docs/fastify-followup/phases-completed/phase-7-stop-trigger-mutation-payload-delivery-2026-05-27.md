@@ -26,8 +26,8 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts
 ```
 
-## Next
+## Historical Next
 
-Continue with 7E: replace seeded prompt snapshots with real Fastify
-route-backed fixture coverage for send, continue, regenerate, preview,
-and preview-prompt.
+At this slice closeout, 7E was next: replace seeded prompt snapshots
+with real Fastify route-backed fixture coverage for send, continue,
+regenerate, preview, and preview-prompt.

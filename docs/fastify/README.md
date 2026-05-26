@@ -1,6 +1,6 @@
 # Fastify Migration Roadmap
 
-Date: 2026-05-26
+Date: 2026-05-27
 
 This directory is the working roadmap for moving Risuai from a thick
 browser app to a Fastify backend with a display-only client. The
@@ -19,7 +19,8 @@ paths directly instead of preserving old intermediate Fastify shapes.
 Current status for the original migration closeout lives in
 [`status.md`](status.md). Phases 0-9 were closed for the
 Fastify-served web migration scope in `edbc2d07`; later audit follow-up
-work is tracked in [`../fastify-followup/`](../fastify-followup/).
+work is tracked in [`../fastify-followup/`](../fastify-followup/) and
+all currently identified follow-up slices are closed as of 2026-05-27.
 Fastify is the live server path, Express has been deleted, and the
 Dockerfile / compose file target port 6002 with `/app/data` persisted.
 

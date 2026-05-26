@@ -27,8 +27,8 @@ Date: 2026-05-27
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts
 ```
 
-## Next
+## Historical Next
 
-Continue with 7D: emit assembly-produced `message_patch` and
-restoration metadata for stop-trigger aborts before the terminal error
-or done frame.
+At this slice closeout, 7D was next: emit assembly-produced
+`message_patch` and restoration metadata for stop-trigger aborts before
+the terminal error or done frame.

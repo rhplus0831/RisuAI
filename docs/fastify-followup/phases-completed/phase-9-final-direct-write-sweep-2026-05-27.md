@@ -32,7 +32,8 @@ pnpm test
 pnpm build
 ```
 
-## Follow-Up
+## Historical Follow-Up
 
-- Phase 9 is closed again. Continue with Phase 7A as the next default
-  pickup from `../status/next-steps.md`.
+- At this slice closeout, Phase 9 was closed again and Phase 7A became
+  the next default pickup. Current follow-up status lives in
+  `../status.md`.

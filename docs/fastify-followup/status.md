@@ -12,19 +12,23 @@ directly.
 
 ## Current Snapshot
 
-- Active work: all currently identified audit follow-up slices are
+- Active work: none. All currently identified audit follow-up slices are
   closed.
 - No follow-up found in this audit: Phases 1, 2, 4, and 5.
-- Phase 0 follow-up has landed Slice 0A and is closed again.
-- Phase 6 follow-up has landed slices 6A-6C and is closed again.
-- Phase 8 follow-up has landed slices 8A-8C and is closed again.
-- Phase 7 follow-up has landed slices 7A-7E and is closed again.
-- Phase 3 follow-up has landed Slice 3A and is closed again.
-- Phase 9 follow-up has landed guard/import-event work plus slices
-  9A-9J; use the table below for prior commit anchors.
 - Next default pickup: none. Reopen only if a new audit finding appears.
 - Closeout rule: keep this file to the current snapshot. Put landed
   slice detail under `phases-completed/`.
+
+## Recent Follow-Up Anchors
+
+| Phase | Commit(s)                          | Scope                                                        |
+| ----- | ---------------------------------- | ------------------------------------------------------------ |
+| 0     | `3f421660`                         | 0A removed the tracked Google Drive public worker artifact.  |
+| 3     | `e92e2d7e`                         | 3A aligned stream-job proxy headers with direct proxy output. |
+| 6     | `db64bf28` / `a16f9c8d` / `f7970af4` | 6A-6C closed streaming provider error-frame handling.        |
+| 7     | `e49d21de` through `e7425ab1`      | 7A-7E closed regenerate, provider guard, stop-trigger, and route-backed fixture gaps. |
+| 8     | `4ba2895e` / `eb797ded` / `e618766f` | 8A-8C closed custom embedding, progress event, and missing-summary gaps. |
+| 9     | `79b77f18` through `67a9dab4`      | Guard/import-event work plus 9A-9J closed direct-write follow-up. |
 
 ## Recent Phase 9 Anchors
 

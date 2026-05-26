@@ -1,11 +1,12 @@
 # Provider Tests
 
-Date: 2026-05-25
+Date: 2026-05-27
 
 Status: Phase 6 completion routing closed in Phase 6-28
 (`398a3ae6`; hash backfilled by `a8cb123b`). The table below
 tracks the current implementation matrix and the remaining
-local-only provider families.
+local-only provider families. Post-closeout streaming error handling
+closed in follow-up slices 6A-6C.
 
 ## Required per provider
 
@@ -16,9 +17,8 @@ For each provider that lands in `/api/v1/generate/completion`:
   envelope. Buffered-only providers document and test their
   `stream: true` rejection.
 - Error: buffered upstream 4xx / 5xx maps to a documented failure.
-  Streaming upstream failures are reopened in
-  `docs/fastify-followup/phases/phase-6-generation-followup.md` until
-  the route emits typed error frames or fails before SSE headers.
+  Streaming upstream failures emit typed `provider_error` SSE frames or
+  fail before SSE headers when the failure is synchronous.
 - Abort: client disconnect aborts upstream within ~1s.
 - Headers: API key sourced from the same database setting the
   current browser request path uses; never echoed in upstream body

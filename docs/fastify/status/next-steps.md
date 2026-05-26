@@ -1,9 +1,9 @@
 # Next Steps
 
-Date: 2026-05-26
+Date: 2026-05-27
 
-Use this file as the original Phase 9 closeout runbook. The active
-post-closeout audit pickup order lives in
+Use this file as the original Phase 9 closeout runbook. The
+post-closeout audit pickup state lives in
 [`../../fastify-followup/status/next-steps.md`](../../fastify-followup/status/next-steps.md).
 Completed original migration slice details live in
 [`../phases-completed/`](../phases-completed/), and the closeout snapshot
@@ -28,8 +28,9 @@ migration slice. Follow-up commits after `edbc2d07` are tracked in
 
 ## Immediate Pickup
 
-Immediate pickup: **follow the reopened audit work in
-`docs/fastify-followup`**.
+Immediate pickup: **none for the original migration**. The reopened
+audit work in `docs/fastify-followup` is closed as of 2026-05-27; add a
+new follow-up slice there only when a fresh code finding appears.
 
 - Do not fold audit follow-up or Tauri / Desktop manual verification
   back into the original Phase 9 docs closeout.
@@ -72,7 +73,8 @@ Immediate pickup: **follow the reopened audit work in
 
 ## Later Queue
 
-1. Reopened audit follow-up in `docs/fastify-followup`.
+1. New audit follow-up in `docs/fastify-followup` if a fresh finding
+   appears.
 2. Separate later task - Tauri / Desktop manual verification.
 
 ## Parallel Or Deferred

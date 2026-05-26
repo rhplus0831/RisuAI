@@ -33,8 +33,9 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm exec vitest run src/ts/process/request/tests/serverChat.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts
 ```
 
-## Next
+## Historical Next
 
-Continue with 7C: add `/chat` provider dispatch guards for local-only or
-deferred provider families, including NovelAI text, NovelList, Ooba
-OAI-compatible, plugin, and local provider families.
+At this slice closeout, 7C was next: add `/chat` provider dispatch
+guards for local-only or deferred provider families, including NovelAI
+text, NovelList, Ooba OAI-compatible, plugin, and local provider
+families.

@@ -1,6 +1,7 @@
 # Phase 6 SSE Provider Stream Errors - 2026-05-27
 
-Slice 6B landed. Phase 6 remains reopened for slice 6C.
+Slice 6B landed. At this slice closeout, Phase 6 remained reopened for
+slice 6C.
 
 ## What Changed
 
@@ -32,8 +33,9 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm api:test -- server/fastify/__tests__/generation.completion.test.ts
 ```
 
-## Next Pickup
+## Historical Next Pickup
 
-Phase 6 Slice 6C is now the default pickup: align Ollama's NDJSON stream
-path with the typed error-frame contract, rerun the final `run*Stream`
-silent-return audit, and close any remaining stream failure gaps.
+At this slice closeout, Phase 6 Slice 6C was the default pickup: align
+Ollama's NDJSON stream path with the typed error-frame contract, rerun
+the final `run*Stream` silent-return audit, and close any remaining
+stream failure gaps.

@@ -10,10 +10,11 @@ Finish the Phase 0 removal contract for Google Drive sync artifacts.
 
 ## Audit Finding
 
-Google Drive OAuth exchange code remains in a tracked public asset:
-`public/functions/drive.js:25` posts the OAuth `code`, `CLIENT_ID`, and
-`CLIENT_SECRET`. Because the file lives under `public/`, Vite can copy
-it into built assets even though Google Drive sync is listed as removed.
+The audit found Google Drive OAuth exchange code in a tracked public
+asset: the former `public/functions/drive.js:25` posted the OAuth
+`code`, `CLIENT_ID`, and `CLIENT_SECRET`. Because the file lived under
+`public/`, Vite could copy it into built assets even though Google Drive
+sync was listed as removed.
 
 ## Tasks
 
@@ -53,4 +54,4 @@ pnpm build
 ## References
 
 - Original phase: `docs/fastify/phases/phase-0-removals.md`
-- Source finding: `public/functions/drive.js:25`
+- Former source finding: `public/functions/drive.js:25`

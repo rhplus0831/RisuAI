@@ -13,7 +13,7 @@ tests.
 Browser projection, storage gates, and residual-sweep coverage live in
 the frontend test suite when they are not route behavior.
 Audit follow-up for completion streaming errors, proxy header alignment,
-the public Drive artifact, and memory events is tracked in
+the public Drive artifact, and memory events is closed in
 `docs/fastify-followup`.
 
 ## Phase 1: Foundation
@@ -75,7 +75,7 @@ repository export route, and bundle export route wiring landed in Phase 9.
 
 | Route                                      | Pinned behavior                            | Status      |
 | ------------------------------------------ | ------------------------------------------ | ----------- |
-| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, and buffered/streaming dispatch for the original Phase 6 provider matrix. Streaming upstream error frames are a follow-up gap. Stable Horde text is provider `horde` on this route; no separate Horde route exists. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `vertexAuth.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`, `bedrock.test.ts`, `sigv4.test.ts`, `horde.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
+| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, buffered/streaming dispatch for the original Phase 6 provider matrix, and typed streaming `provider_error` frames for upstream failures. Stable Horde text is provider `horde` on this route; no separate Horde route exists. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `vertexAuth.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`, `bedrock.test.ts`, `sigv4.test.ts`, `horde.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
 | `POST /api/v1/generate/translate`          | DeepL / DeepLX / Google.                   | not started |
 | `POST /api/v1/generate/tts`                | OpenAI / ElevenLabs / NovelAI / Hugging Face API Inference. | not started |
 | `POST /api/v1/generate/image`              | Provider routing + body shaping for current `sdProvider` values. | not started |

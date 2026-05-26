@@ -33,7 +33,7 @@ pnpm test -- src/ts/server/events.test.ts src/ts/bootstrap.test.ts src/ts/proces
 pnpm api:test -- server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/memoryWorker.test.ts
 ```
 
-## Next Pickup
+## Historical Next Pickup
 
-Phase 6 Slice 6A is now the default pickup: streaming error frame
-contract plus OpenAI-compatible failure handling.
+At this slice closeout, Phase 6 Slice 6A was the default pickup:
+streaming error frame contract plus OpenAI-compatible failure handling.
