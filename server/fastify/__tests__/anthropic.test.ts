@@ -168,10 +168,9 @@ describe('runAnthropic (non-streaming)', () => {
 
   it('returns fail with upstream error.message on non-2xx', async () => {
     vi.stubGlobal('fetch', async () => {
-      return new Response(
-        JSON.stringify({ error: { message: 'invalid_api_key' } }),
-        { status: 401 },
-      )
+      return new Response(JSON.stringify({ error: { message: 'invalid_api_key' } }), {
+        status: 401,
+      })
     })
     const r = await runAnthropic({
       model: 'm',
@@ -186,8 +185,9 @@ describe('runAnthropic (non-streaming)', () => {
   })
 
   it('returns fail when no text content blocks are present', async () => {
-    vi.stubGlobal('fetch', async () =>
-      new Response(JSON.stringify({ content: [] }), { status: 200 }),
+    vi.stubGlobal(
+      'fetch',
+      async () => new Response(JSON.stringify({ content: [] }), { status: 200 }),
     )
     const r = await runAnthropic({
       model: 'm',
@@ -246,12 +246,15 @@ function deltaEvent(text: string): string {
 
 function messageDeltaEvent(stopReason: string): string {
   return (
-    `event: message_delta\n` +
-    `data: ${JSON.stringify({ delta: { stop_reason: stopReason } })}\n\n`
+    `event: message_delta\n` + `data: ${JSON.stringify({ delta: { stop_reason: stopReason } })}\n\n`
   )
 }
 
 const MESSAGE_STOP = `event: message_stop\ndata: {}\n\n`
+
+function crlf(s: string): string {
+  return s.replace(/\n/g, '\r\n')
+}
 
 describe('runAnthropicStream', () => {
   it('translates content_block_delta + message_stop into our envelope', async () => {
@@ -263,6 +266,34 @@ describe('runAnthropicStream', () => {
         deltaEvent(' world'),
         messageDeltaEvent('end_turn'),
         MESSAGE_STOP,
+      ])
+    })
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'claude-3-5-sonnet',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'hello' },
+      { kind: 'token', content: ' world' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('accepts CRLF-delimited upstream SSE frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return sseUpstream([
+        crlf(deltaEvent('hello')),
+        crlf(deltaEvent(' world')),
+        crlf(messageDeltaEvent('end_turn')),
+        crlf(MESSAGE_STOP),
       ])
     })
     const frames: unknown[] = []
@@ -425,9 +456,7 @@ describe('runAnthropicStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([
-      { kind: 'error', error: 'truncated upstream stream event' },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'truncated upstream stream event' }])
   })
 
   it('ignores ping and content_block_start/stop events', async () => {

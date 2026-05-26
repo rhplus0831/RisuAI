@@ -12,15 +12,12 @@ current server schema, command surface, and import/export paths directly.
 
 ## Current Snapshot
 
-- Active work: Phase 6 SSE line-ending handling, Phase 9 projection-write
-  tails, Phase 5 sendChat boundary cleanup, and broad alpha closeout
-  typecheck cleanup.
+- Active work: Phase 9 projection-write tails, Phase 5 sendChat
+  boundary cleanup, and broad alpha closeout typecheck cleanup.
 - Broad alpha closeout verification is blocked by `pnpm check`
   diagnostics found on 2026-05-27.
 - No follow-up found in this audit: Phases 0, 1, 2, 4, and 7.
 - Next default pickup: clear
-  [`phases/phase-6-sse-line-endings-alpha.md`](phases/phase-6-sse-line-endings-alpha.md),
-  then clear
   [`phases/phase-9-projection-write-tails-alpha.md`](phases/phase-9-projection-write-tails-alpha.md),
   then clear
   [`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md),
@@ -43,17 +40,17 @@ current server schema, command surface, and import/export paths directly.
 
 ## Audit Findings
 
-| Phase                                   | State        | Finding                                                                                                                                 | Task Doc                                                                                                   |
-| --------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| 0 - Removals                            | No follow-up | Google Drive public artifact removal still appears complete.                                                                            | None                                                                                                       |
-| 1 - Foundation                          | No follow-up | Fastify foundation shape still matches the phase goals.                                                                                 | None                                                                                                       |
-| 2 - Storage / import / assets / backups | No follow-up | Baseline storage, import, asset, backup, and static route work still appears complete.                                                  | None                                                                                                       |
-| 3 - Proxy migration                     | Closed       | Hub passthrough now reuses the shared proxy response-header strip policy, with hub-only transport header stripping retained.            | [`phases-completed/phase-3-hub-response-headers.md`](phases-completed/phase-3-hub-response-headers.md)     |
-| 4 - sendChat tests                      | No follow-up | Fixture harness and coverage inventory still appear complete.                                                                           | None                                                                                                       |
-| 5 - sendChat extraction                 | Open         | Historical extraction closed, but later server-backed sendChat adapter logic grew the current coordinator from the 445-line closeout shape to 703 lines. | [`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md)                   |
-| 6 - Server-side generation              | Open         | Unterminated provider SSE tails now emit typed provider errors, but CRLF-delimited complete SSE events can still be misclassified as truncated tails. | [`phases/phase-6-sse-line-endings-alpha.md`](phases/phase-6-sse-line-endings-alpha.md)                     |
-| 7 - Server-side prompt assembly         | No follow-up | Regenerate, provider guards, stop-trigger payloads, and route-backed fixture coverage still appear complete.                            | None                                                                                                       |
-| 8 - Hypa V3 memory                      | Closed       | Memory event delivery is now best-effort across external sinks, SSE subscribers, worker progress emits, and memory job routes.          | [`phases-completed/phase-8-memory-event-isolation.md`](phases-completed/phase-8-memory-event-isolation.md) |
+| Phase                                   | State        | Finding                                                                                                                                                                               | Task Doc                                                                                                   |
+| --------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 0 - Removals                            | No follow-up | Google Drive public artifact removal still appears complete.                                                                                                                          | None                                                                                                       |
+| 1 - Foundation                          | No follow-up | Fastify foundation shape still matches the phase goals.                                                                                                                               | None                                                                                                       |
+| 2 - Storage / import / assets / backups | No follow-up | Baseline storage, import, asset, backup, and static route work still appears complete.                                                                                                | None                                                                                                       |
+| 3 - Proxy migration                     | Closed       | Hub passthrough now reuses the shared proxy response-header strip policy, with hub-only transport header stripping retained.                                                          | [`phases-completed/phase-3-hub-response-headers.md`](phases-completed/phase-3-hub-response-headers.md)     |
+| 4 - sendChat tests                      | No follow-up | Fixture harness and coverage inventory still appear complete.                                                                                                                         | None                                                                                                       |
+| 5 - sendChat extraction                 | Open         | Historical extraction closed, but later server-backed sendChat adapter logic grew the current coordinator from the 445-line closeout shape to 703 lines.                              | [`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md)                   |
+| 6 - Server-side generation              | Closed       | Provider SSE parsers now handle unterminated tails as typed provider errors and accept CRLF-delimited complete event blocks.                                                          | [`phases-completed/phase-6-sse-line-endings.md`](phases-completed/phase-6-sse-line-endings.md)             |
+| 7 - Server-side prompt assembly         | No follow-up | Regenerate, provider guards, stop-trigger payloads, and route-backed fixture coverage still appear complete.                                                                          | None                                                                                                       |
+| 8 - Hypa V3 memory                      | Closed       | Memory event delivery is now best-effort across external sinks, SSE subscribers, worker progress emits, and memory job routes.                                                        | [`phases-completed/phase-8-memory-event-isolation.md`](phases-completed/phase-8-memory-event-isolation.md) |
 | 9 - Client thinning                     | Open         | 9A is closed, but the completion re-audit found remaining character/chat/module import, ordering/selection, module-apply, MCP risuaccess, and helper-coverage projection-write tails. | [`phases/phase-9-projection-write-tails-alpha.md`](phases/phase-9-projection-write-tails-alpha.md)         |
 
 ## Broad Closeout Finding
@@ -65,15 +62,13 @@ diagnostics across 17 files. The failures are typecheck-only so far:
 cleanup in
 [`phases/broad-closeout-typecheck-alpha.md`](phases/broad-closeout-typecheck-alpha.md).
 
-## Phase 6 Alpha Finding
+## Phase 6 Alpha Closeout
 
-The 2026-05-27 re-audit found that the truncated-tail fix is present
-and covered for OpenAI-compatible, Anthropic, Mistral, and Gemini SSE
-providers, but those parsers still find completed events only with
-`\n\n`. Standard CRLF-delimited SSE blocks (`\r\n\r\n`) can remain in
-the buffer until EOF and then be misreported as truncated tails. Track
-the narrow parser and regression-test work in
-[`phases/phase-6-sse-line-endings-alpha.md`](phases/phase-6-sse-line-endings-alpha.md).
+The 2026-05-27 CRLF line-ending slice added shared SSE event-block
+framing for LF and CRLF delimiters across OpenAI-compatible,
+Anthropic, Mistral, and Gemini streams, while preserving typed
+provider errors for unterminated SSE tails. The closeout log lives in
+[`phases-completed/phase-6-sse-line-endings.md`](phases-completed/phase-6-sse-line-endings.md).
 
 ## Phase 5 Alpha Finding
 
@@ -105,10 +100,9 @@ locally checked the critical findings. The Fastify API suite passed in
 subagent runs, focused Phase 7/8/9 suites passed, `pnpm build` passed,
 and `pnpm smoke:fastify-browser` passed. Phase 3 now has focused
 coverage for hub response-header filtering, Phase 6 has focused
-coverage for truncated provider SSE tails, and Phase 8 has focused
-coverage for best-effort memory event delivery. The latest local
-Phase 6 re-audit reopens CRLF-delimited SSE handling as a narrow
-remaining parser gap. The latest local Phase 9 completion re-audit
+coverage for truncated provider SSE tails and CRLF-delimited provider
+SSE event handling, and Phase 8 has focused coverage for best-effort
+memory event delivery. The latest local Phase 9 completion re-audit
 keeps 9A closed but reopens import/order/module-apply/MCP
 projection-write tails and helper coverage as Phase 9B.
 

@@ -31,7 +31,7 @@ pnpm api:test -- server/fastify/__tests__/generation.completion.test.ts
 
 ## Broad Closeout
 
-This truncated-tail slice is closed. Phase 6 is reopened for the
-narrow SSE line-ending parser gap in
-[`../phases/phase-6-sse-line-endings-alpha.md`](../phases/phase-6-sse-line-endings-alpha.md).
+This truncated-tail slice is closed. The later narrow SSE line-ending
+parser gap is also closed in
+[`phase-6-sse-line-endings.md`](phase-6-sse-line-endings.md).
 Broad verification status lives in [`../status.md`](../status.md).

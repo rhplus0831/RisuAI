@@ -1,6 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
-import { hasNonIgnorableSseTail } from './sse.js'
+import { hasNonIgnorableSseTail, popSseEventBlock } from './sse.js'
 
 export interface OpenAIRequest {
   model: string
@@ -315,12 +315,12 @@ export async function* runOpenAIStream(
       if (done) break
       buf += decoder.decode(value, { stream: true })
 
-      let sepIdx = buf.indexOf('\n\n')
-      while (sepIdx !== -1) {
-        const block = buf.slice(0, sepIdx)
-        buf = buf.slice(sepIdx + 2)
+      let evt = popSseEventBlock(buf)
+      while (evt !== null) {
+        const { block } = evt
+        buf = evt.rest
         const data = parseOpenAIStyleSseData(block)
-        sepIdx = buf.indexOf('\n\n')
+        evt = popSseEventBlock(buf)
         if (data === null) continue
         if (data.trim() === '[DONE]') {
           yield { kind: 'done', finishReason }

@@ -1,6 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
-import { hasNonIgnorableSseTail } from './sse.js'
+import { hasNonIgnorableSseTail, popSseEventBlock } from './sse.js'
 
 export interface AnthropicRequest {
   model: string
@@ -44,13 +44,9 @@ export function resolveAnthropicRequest(input: AnthropicResolveInput): Anthropic
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
   const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0
-      ? input.baseUrl
-      : DEFAULT_BASE_URL
+    typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const version =
-    typeof input.version === 'string' && input.version.length > 0
-      ? input.version
-      : DEFAULT_VERSION
+    typeof input.version === 'string' && input.version.length > 0 ? input.version : DEFAULT_VERSION
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
@@ -59,7 +55,8 @@ export function resolveAnthropicRequest(input: AnthropicResolveInput): Anthropic
     typeof input.temperature === 'number' && Number.isFinite(input.temperature)
       ? input.temperature
       : undefined
-  const system = typeof input.system === 'string' && input.system.length > 0 ? input.system : undefined
+  const system =
+    typeof input.system === 'string' && input.system.length > 0 ? input.system : undefined
 
   return {
     model: input.model,
@@ -156,9 +153,7 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
 
   if (!response.ok) {
     const upstreamMsg =
-      typeof body.error?.message === 'string'
-        ? body.error.message
-        : `HTTP ${response.status}`
+      typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
     return { type: 'fail', result: upstreamMsg }
   }
 
@@ -295,11 +290,11 @@ export async function* runAnthropicStream(
       if (done) break
       buf += decoder.decode(value, { stream: true })
 
-      let sepIdx = buf.indexOf('\n\n')
-      while (sepIdx !== -1) {
-        const block = buf.slice(0, sepIdx)
-        buf = buf.slice(sepIdx + 2)
-        sepIdx = buf.indexOf('\n\n')
+      let eventBlock = popSseEventBlock(buf)
+      while (eventBlock !== null) {
+        const { block } = eventBlock
+        buf = eventBlock.rest
+        eventBlock = popSseEventBlock(buf)
         const evt = parseUpstreamEvent(block)
         if (!evt) continue
 

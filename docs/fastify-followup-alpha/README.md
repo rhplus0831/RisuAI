@@ -22,13 +22,11 @@ current server schema, command surface, and import/export paths directly.
 
 ## Current State
 
-Phase 3 and 8 alpha findings are closed. Phase 9A is closed, but the
+Phase 3, 6, and 8 alpha findings are closed. Phase 9A is closed, but the
 latest completion re-audit reopened Phase 9 for projection-write tails
 in
 [`phases/phase-9-projection-write-tails-alpha.md`](phases/phase-9-projection-write-tails-alpha.md).
-The remaining active work is Phase 6 SSE line-ending handling in
-[`phases/phase-6-sse-line-endings-alpha.md`](phases/phase-6-sse-line-endings-alpha.md),
-Phase 9 projection-write tails in
+The remaining active work is Phase 9 projection-write tails in
 [`phases/phase-9-projection-write-tails-alpha.md`](phases/phase-9-projection-write-tails-alpha.md),
 Phase 5 sendChat boundary cleanup in
 [`phases/phase-5-sendchat-boundary-alpha.md`](phases/phase-5-sendchat-boundary-alpha.md)

@@ -1,7 +1,7 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { parseOpenAIStyleSseData } from './openai.js'
-import { hasNonIgnorableSseTail } from './sse.js'
+import { hasNonIgnorableSseTail, popSseEventBlock } from './sse.js'
 
 export interface MistralRequest {
   model: string
@@ -81,7 +81,11 @@ export function reformatForMistral(messages: RawChatMessage[]): MistralChatMessa
       continue
     }
     const prev = out[out.length - 1]
-    if (prev !== undefined && prev.role === role && (role === 'user' || role === 'assistant' || role === 'system')) {
+    if (
+      prev !== undefined &&
+      prev.role === role &&
+      (role === 'user' || role === 'assistant' || role === 'system')
+    ) {
       prev.content += `\n${content}`
       continue
     }
@@ -113,9 +117,7 @@ export function resolveMistralRequest(input: MistralResolveInput): MistralReques
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
   const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0
-      ? input.baseUrl
-      : DEFAULT_BASE_URL
+    typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const safePrompt = input.safePrompt === true
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
@@ -352,12 +354,12 @@ export async function* runMistralStream(
       if (done) break
       buf += decoder.decode(value, { stream: true })
 
-      let sepIdx = buf.indexOf('\n\n')
-      while (sepIdx !== -1) {
-        const block = buf.slice(0, sepIdx)
-        buf = buf.slice(sepIdx + 2)
+      let evt = popSseEventBlock(buf)
+      while (evt !== null) {
+        const { block } = evt
+        buf = evt.rest
         const data = parseOpenAIStyleSseData(block)
-        sepIdx = buf.indexOf('\n\n')
+        evt = popSseEventBlock(buf)
         if (data === null) continue
         if (data.trim() === '[DONE]') {
           yield { kind: 'done', finishReason }

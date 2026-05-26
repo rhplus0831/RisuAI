@@ -339,10 +339,39 @@ function tokenFrame(content: string, finish?: string): string {
   return `data: ${JSON.stringify(frame)}\n\n`
 }
 
+function crlf(s: string): string {
+  return s.replace(/\n/g, '\r\n')
+}
+
 describe('runOpenAIStream', () => {
   it('translates upstream deltas into our token frames + a trailing done', async () => {
     vi.stubGlobal('fetch', async () => {
       return sseUpstream([tokenFrame('hello'), tokenFrame(' world'), `data: [DONE]\n\n`])
+    })
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'hello' },
+      { kind: 'token', content: ' world' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('accepts CRLF-delimited upstream SSE frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return sseUpstream([
+        crlf(tokenFrame('hello')),
+        crlf(tokenFrame(' world')),
+        `data: [DONE]\r\n\r\n`,
+      ])
     })
     const frames: unknown[] = []
     for await (const f of runOpenAIStream({
@@ -510,8 +539,6 @@ describe('runOpenAIStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([
-      { kind: 'error', error: 'truncated upstream stream event' },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'truncated upstream stream event' }])
   })
 })

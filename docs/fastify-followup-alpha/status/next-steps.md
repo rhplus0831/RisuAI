@@ -18,26 +18,22 @@ and add any longer closeout note under `../phases-completed/`.
 
 Recommended order:
 
-1. Clear the Phase 6 SSE line-ending parser gap:
-   [`../phases/phase-6-sse-line-endings-alpha.md`](../phases/phase-6-sse-line-endings-alpha.md).
-   The truncated-tail fix is present, but completed CRLF-delimited SSE
-   events can still be misclassified as truncated tails.
-2. Clear the Phase 9 projection-write tails:
+1. Clear the Phase 9 projection-write tails:
    [`../phases/phase-9-projection-write-tails-alpha.md`](../phases/phase-9-projection-write-tails-alpha.md).
    9A is closed, but character/chat/module import helpers, character
    ordering/chat selection, module apply, MCP `risuaccess`, and helper
    coverage still need a focused guard-enabled pass.
-3. Clear the Phase 5 sendChat boundary drift:
+2. Clear the Phase 5 sendChat boundary drift:
    [`../phases/phase-5-sendchat-boundary-alpha.md`](../phases/phase-5-sendchat-boundary-alpha.md).
    The historical extraction closed, but the current coordinator has
    grown from the 445-line closeout shape to 703 lines after later
    server-backed adapter work.
-4. Clear the broad closeout typecheck blocker:
+3. Clear the broad closeout typecheck blocker:
    [`../phases/broad-closeout-typecheck-alpha.md`](../phases/broad-closeout-typecheck-alpha.md).
    Start with `pnpm check`; the 2026-05-27 closeout pass failed with 57
    diagnostics across 17 files while the rest of the closeout matrix
    passed.
-5. After `pnpm check` passes, rerun broad alpha closeout verification.
+4. After `pnpm check` passes, rerun broad alpha closeout verification.
 
 Recently closed:
 
@@ -48,8 +44,10 @@ Recently closed:
   retained.
 - Phase 6 truncated-tail slice - unterminated OpenAI-compatible,
   Anthropic, Mistral, and Gemini SSE tails now emit typed provider
-  errors instead of successful `done` streams. Phase 6 is reopened for
-  CRLF-delimited SSE block handling.
+  errors instead of successful `done` streams.
+- Phase 6 SSE line-ending slice - OpenAI-compatible, Anthropic,
+  Mistral, and Gemini stream parsers now accept CRLF-delimited SSE
+  event blocks before truncated-tail detection.
 - Phase 9A - converted the reopened projection-write blockers in
   module settings, `SideChatList`, Hypa/supa memory toggles, and
   lorebook page selection to command-first or draft-first flows. Phase
@@ -65,7 +63,7 @@ Latest broad closeout attempt on 2026-05-27:
 
 ## Focused Verification
 
-Phase 6 SSE line-ending handling:
+Phase 6 SSE line-ending handling (closed, re-run only for regression checks):
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/openai.test.ts server/fastify/__tests__/anthropic.test.ts server/fastify/__tests__/mistral.test.ts server/fastify/__tests__/gemini.test.ts

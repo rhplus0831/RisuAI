@@ -1,5 +1,5 @@
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
-import { hasNonIgnorableSseTail } from './sse.js'
+import { hasNonIgnorableSseTail, popSseEventBlock } from './sse.js'
 import { resolveVertexBearer } from './vertexAuth.js'
 
 export interface VertexAuthInput {
@@ -118,9 +118,7 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
   // Vertex requests don't take a baseUrl override — the URL is derived from
   // projectId + region. Only Studio respects baseUrl.
   const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0
-      ? input.baseUrl
-      : DEFAULT_BASE_URL
+    typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const maxOutputTokens =
     typeof input.maxOutputTokens === 'number' &&
     Number.isFinite(input.maxOutputTokens) &&
@@ -210,9 +208,9 @@ function headers(): Record<string, string> {
  * `Authorization: Bearer ...`. Returns `null` if the token exchange
  * failed; callers propagate the error to the caller as a `fail` result.
  */
-async function vertexHeaders(req: GeminiRequest): Promise<
-  { ok: true; headers: Record<string, string> } | { ok: false; error: string }
-> {
+async function vertexHeaders(
+  req: GeminiRequest,
+): Promise<{ ok: true; headers: Record<string, string> } | { ok: false; error: string }> {
   const base = headers()
   if (req.vertex === undefined) return { ok: true, headers: base }
   const bearer = await resolveVertexBearer(
@@ -416,11 +414,11 @@ export async function* runGeminiStream(
       if (done) break
       buf += decoder.decode(value, { stream: true })
 
-      let sepIdx = buf.indexOf('\n\n')
-      while (sepIdx !== -1) {
-        const block = buf.slice(0, sepIdx)
-        buf = buf.slice(sepIdx + 2)
-        sepIdx = buf.indexOf('\n\n')
+      let evt = popSseEventBlock(buf)
+      while (evt !== null) {
+        const { block } = evt
+        buf = evt.rest
+        evt = popSseEventBlock(buf)
         // Gemini SSE emits `data: <json>` lines. Concatenate any data lines
         // in the block then parse.
         let data = ''

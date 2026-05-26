@@ -387,10 +387,33 @@ function deltaFrame(text: string, finishReason?: string): string {
   return `data: ${JSON.stringify(payload)}\n\n`
 }
 
+function crlf(s: string): string {
+  return s.replace(/\n/g, '\r\n')
+}
+
 describe('runMistralStream', () => {
   it('relays token deltas and emits done with stop on [DONE] sentinel', async () => {
     vi.stubGlobal('fetch', async () =>
       sseUpstream([deltaFrame('hello'), deltaFrame(' world'), 'data: [DONE]\n\n']),
+    )
+    const resolved = resolveMistralRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runMistralStream(resolved)) frames.push(f)
+    expect(frames).toEqual([
+      { kind: 'token', content: 'hello' },
+      { kind: 'token', content: ' world' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('accepts CRLF-delimited upstream SSE frames', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([crlf(deltaFrame('hello')), crlf(deltaFrame(' world')), 'data: [DONE]\r\n\r\n']),
     )
     const resolved = resolveMistralRequest({
       model: 'm',
@@ -513,9 +536,7 @@ describe('runMistralStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runMistralStream(resolved)) frames.push(f)
-    expect(frames).toEqual([
-      { kind: 'error', error: 'truncated upstream stream event' },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'truncated upstream stream event' }])
   })
 
   it('reassembles partial frames split across reader reads', async () => {

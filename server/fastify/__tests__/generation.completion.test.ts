@@ -344,6 +344,42 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     )
   })
 
+  it('streaming relays CRLF-delimited upstream SSE deltas through the normalized envelope', async () => {
+    const enc = new TextEncoder()
+    const upstreamFrames = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'hel' } }] })}\r\n\r\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'lo' }, finish_reason: 'stop' }] })}\r\n\r\n`,
+      `data: [DONE]\r\n\r\n`,
+    ]
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const f of upstreamFrames) controller.enqueue(enc.encode(f))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: { ...openaiPayload, stream: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'hel' })}\n\n` +
+        `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'lo' })}\n\n` +
+        `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
+    )
+  })
+
   it('streaming emits an error event when upstream returns non-OK', async () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ error: { message: 'upstream broke', code: 'boom' } }), {

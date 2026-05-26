@@ -267,6 +267,10 @@ function geminiFrame(text: string, finishReason?: string): string {
   return `data: ${JSON.stringify(payload)}\n\n`
 }
 
+function crlf(s: string): string {
+  return s.replace(/\n/g, '\r\n')
+}
+
 describe('runGeminiStream', () => {
   it('hits :streamGenerateContent?alt=sse and translates per-frame text into kind:token', async () => {
     let capturedUrl = ''
@@ -283,6 +287,25 @@ describe('runGeminiStream', () => {
     const frames: unknown[] = []
     for await (const f of runGeminiStream(resolved)) frames.push(f)
     expect(capturedUrl).toContain(':streamGenerateContent?alt=sse&key=k')
+    expect(frames).toEqual([
+      { kind: 'token', content: 'hi' },
+      { kind: 'token', content: ' there' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('accepts CRLF-delimited upstream SSE frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return sseUpstream([crlf(geminiFrame('hi')), crlf(geminiFrame(' there', 'STOP'))])
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runGeminiStream(resolved)) frames.push(f)
     expect(frames).toEqual([
       { kind: 'token', content: 'hi' },
       { kind: 'token', content: ' there' },
@@ -383,9 +406,7 @@ describe('runGeminiStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runGeminiStream(resolved)) frames.push(f)
-    expect(frames).toEqual([
-      { kind: 'error', error: 'truncated upstream stream event' },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'truncated upstream stream event' }])
   })
 
   it('reassembles a frame split across two reader reads', async () => {
@@ -425,9 +446,7 @@ describe('Vertex AI Gemini routing', () => {
       return new Response(
         JSON.stringify({
           modelVersion: 'gemini-2.5-pro',
-          candidates: [
-            { content: { parts: [{ text: 'vertex ok' }] }, finishReason: 'STOP' },
-          ],
+          candidates: [{ content: { parts: [{ text: 'vertex ok' }] }, finishReason: 'STOP' }],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       )
@@ -438,9 +457,7 @@ describe('Vertex AI Gemini routing', () => {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     })
-    const { _resetVertexTokenCacheForTesting } = await import(
-      '../src/generation/vertexAuth.js'
-    )
+    const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
     _resetVertexTokenCacheForTesting()
 
     const resolved = resolveGeminiRequest({
@@ -472,10 +489,10 @@ describe('Vertex AI Gemini routing', () => {
     let predictionUrl = ''
     vi.stubGlobal('fetch', async (url: string) => {
       if (url === 'https://oauth2.googleapis.com/token') {
-        return new Response(
-          JSON.stringify({ access_token: 't', expires_in: 3599 }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        )
+        return new Response(JSON.stringify({ access_token: 't', expires_in: 3599 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
       }
       predictionUrl = url
       return new Response(
@@ -489,9 +506,7 @@ describe('Vertex AI Gemini routing', () => {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     })
-    const { _resetVertexTokenCacheForTesting } = await import(
-      '../src/generation/vertexAuth.js'
-    )
+    const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
     _resetVertexTokenCacheForTesting()
 
     const resolved = resolveGeminiRequest({
@@ -515,10 +530,9 @@ describe('Vertex AI Gemini routing', () => {
     let predictionUrl = ''
     vi.stubGlobal('fetch', async (url: string) => {
       if (url === 'https://oauth2.googleapis.com/token') {
-        return new Response(
-          JSON.stringify({ access_token: 't', expires_in: 3599 }),
-          { status: 200 },
-        )
+        return new Response(JSON.stringify({ access_token: 't', expires_in: 3599 }), {
+          status: 200,
+        })
       }
       predictionUrl = url
       return new Response(
@@ -532,9 +546,7 @@ describe('Vertex AI Gemini routing', () => {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     })
-    const { _resetVertexTokenCacheForTesting } = await import(
-      '../src/generation/vertexAuth.js'
-    )
+    const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
     _resetVertexTokenCacheForTesting()
 
     const resolved = resolveGeminiRequest({
@@ -549,7 +561,9 @@ describe('Vertex AI Gemini routing', () => {
       signal: new AbortController().signal,
     })!
     await runGemini(resolved)
-    expect(predictionUrl).toContain('https://aiplatform.googleapis.com/v1/projects/p/locations/global/')
+    expect(predictionUrl).toContain(
+      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/',
+    )
   })
 
   it('returns fail with the vertexAuth error when token exchange fails', async () => {
@@ -565,9 +579,7 @@ describe('Vertex AI Gemini routing', () => {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     })
-    const { _resetVertexTokenCacheForTesting } = await import(
-      '../src/generation/vertexAuth.js'
-    )
+    const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
     _resetVertexTokenCacheForTesting()
 
     const resolved = resolveGeminiRequest({
