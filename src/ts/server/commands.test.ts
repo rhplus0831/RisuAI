@@ -211,6 +211,10 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('ooba')).toBe('providers')
     expect(settingsGroupForKey('reverseProxyOobaArgs')).toBe('providers')
     expect(settingsGroupForKey('localStopStrings')).toBe('runtime')
+    expect(settingsGroupForKey('NAIsettings')).toBe('providers')
+    expect(settingsGroupForKey('ainconfig')).toBe('providers')
+    expect(settingsGroupForKey('bias')).toBe('providers')
+    expect(settingsGroupForKey('additionalParams')).toBe('providers')
   })
 
   it('reads and caches the command base revision from bootstrap', async () => {
@@ -338,6 +342,8 @@ describe('server command API adapter', () => {
       patch: {
         colorSchemeName: 'custom',
         customModels: [{ id: 'model-a', name: 'Model A' }],
+        bias: [['token', -10]],
+        additionalParams: [['stop', 'value']],
         moduleIntergration: 'module-ns',
         banCharacterset: ['Latn'],
         showUnrecommended: true,
@@ -365,7 +371,11 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/settings/providers',
         body: {
           baseRevision: 21,
-          patch: { customModels: [{ id: 'model-a', name: 'Model A' }] },
+          patch: {
+            customModels: [{ id: 'model-a', name: 'Model A' }],
+            bias: [['token', -10]],
+            additionalParams: [['stop', 'value']],
+          },
         },
       },
       {

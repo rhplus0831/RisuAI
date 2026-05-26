@@ -119,8 +119,6 @@
     'textgenWebUIStreamURL',
     'textgenWebUIBlockingURL',
     'proxyRequestModel',
-    'NAIsettings',
-    'ainconfig',
     'enableCustomFlags',
     'modelTools',
     'hideApiKey',
@@ -132,6 +130,13 @@
   const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>(
     'localStopStrings',
     null,
+  )
+  const NAIsettingsDraft = createServerBackedSettingDraft<Record<string, any>>('NAIsettings', {})
+  const ainconfigDraft = createServerBackedSettingDraft<Record<string, any>>('ainconfig', {})
+  const biasDraft = createServerBackedSettingDraft<Array<[string, number]>>('bias', [])
+  const additionalParamsDraft = createServerBackedSettingDraft<Array<[string, string]>>(
+    'additionalParams',
+    [],
   )
 
   let initializedPluginProviderWatch = false
@@ -894,9 +899,9 @@
   {:else if modelInfo.format === LLMFormat.NovelAI}
     <div class="flex flex-col p-3 bg-darkbg mt-4">
       <span class="text-textcolor">Starter</span>
-      <TextInput bind:value={DBState.db.NAIsettings.starter} placeholder={'⁂'} />
+      <TextInput bind:value={NAIsettingsDraft.value.starter} placeholder={'⁂'} />
       <span class="text-textcolor">Seperator</span>
-      <TextInput bind:value={DBState.db.NAIsettings.seperator} placeholder={'\\n'} />
+      <TextInput bind:value={NAIsettingsDraft.value.seperator} placeholder={'\\n'} />
     </div>
     <span class="text-textcolor">Top P</span>
     <SliderInput
@@ -905,10 +910,10 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.topP}
+      bind:value={NAIsettingsDraft.value.topP}
     />
     <span class="text-textcolor">Top K</span>
-    <SliderInput min={0} max={100} step={1} marginBottom bind:value={DBState.db.NAIsettings.topK} />
+    <SliderInput min={0} max={100} step={1} marginBottom bind:value={NAIsettingsDraft.value.topK} />
     <span class="text-textcolor">Top A</span>
     <SliderInput
       min={0}
@@ -916,7 +921,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.topA}
+      bind:value={NAIsettingsDraft.value.topA}
     />
     <span class="text-textcolor">Tailfree Sampling</span>
     <SliderInput
@@ -925,7 +930,7 @@
       step={0.001}
       marginBottom
       fixed={3}
-      bind:value={DBState.db.NAIsettings.tailFreeSampling}
+      bind:value={NAIsettingsDraft.value.tailFreeSampling}
     />
     <span class="text-textcolor">Typical P</span>
     <SliderInput
@@ -934,7 +939,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.typicalp}
+      bind:value={NAIsettingsDraft.value.typicalp}
     />
     <span class="text-textcolor">Repetition Penalty</span>
     <SliderInput
@@ -943,7 +948,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.repetitionPenalty}
+      bind:value={NAIsettingsDraft.value.repetitionPenalty}
     />
     <span class="text-textcolor">Repetition Penalty Range</span>
     <SliderInput
@@ -952,7 +957,7 @@
       step={1}
       marginBottom
       fixed={0}
-      bind:value={DBState.db.NAIsettings.repetitionPenaltyRange}
+      bind:value={NAIsettingsDraft.value.repetitionPenaltyRange}
     />
     <span class="text-textcolor">Repetition Penalty Slope</span>
     <SliderInput
@@ -961,7 +966,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.repetitionPenaltySlope}
+      bind:value={NAIsettingsDraft.value.repetitionPenaltySlope}
     />
     <span class="text-textcolor">Frequency Penalty</span>
     <SliderInput
@@ -970,7 +975,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.frequencyPenalty}
+      bind:value={NAIsettingsDraft.value.frequencyPenalty}
     />
     <span class="text-textcolor">Presence Penalty</span>
     <SliderInput
@@ -979,7 +984,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.presencePenalty}
+      bind:value={NAIsettingsDraft.value.presencePenalty}
     />
     <span class="text-textcolor">Mirostat LR</span>
     <SliderInput
@@ -988,7 +993,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.mirostat_lr}
+      bind:value={NAIsettingsDraft.value.mirostat_lr}
     />
     <span class="text-textcolor">Mirostat Tau</span>
     <SliderInput
@@ -997,7 +1002,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.mirostat_tau}
+      bind:value={NAIsettingsDraft.value.mirostat_tau}
     />
     <span class="text-textcolor">Cfg Scale</span>
     <SliderInput
@@ -1006,7 +1011,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.NAIsettings.cfg_scale}
+      bind:value={NAIsettingsDraft.value.cfg_scale}
     />
   {:else if modelInfo.format === LLMFormat.NovelList}
     <span class="text-textcolor">Top P</span>
@@ -1016,7 +1021,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ainconfig.top_p}
+      bind:value={ainconfigDraft.value.top_p}
     />
     <span class="text-textcolor">Reputation Penalty</span>
     <SliderInput
@@ -1025,7 +1030,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ainconfig.rep_pen}
+      bind:value={ainconfigDraft.value.rep_pen}
     />
     <span class="text-textcolor">Reputation Penalty Range</span>
     <SliderInput
@@ -1034,7 +1039,7 @@
       step={1}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ainconfig.rep_pen_range}
+      bind:value={ainconfigDraft.value.rep_pen_range}
     />
     <span class="text-textcolor">Reputation Penalty Slope</span>
     <SliderInput
@@ -1043,7 +1048,7 @@
       step={0.1}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ainconfig.rep_pen_slope}
+      bind:value={ainconfigDraft.value.rep_pen_slope}
     />
     <span class="text-textcolor">Top K</span>
     <SliderInput
@@ -1052,7 +1057,7 @@
       step={1}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ainconfig.top_k}
+      bind:value={ainconfigDraft.value.top_k}
     />
     <span class="text-textcolor">Top A</span>
     <SliderInput
@@ -1061,7 +1066,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ainconfig.top_a}
+      bind:value={ainconfigDraft.value.top_a}
     />
     <span class="text-textcolor">Typical P</span>
     <SliderInput
@@ -1070,7 +1075,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={DBState.db.ainconfig.typical_p}
+      bind:value={ainconfigDraft.value.typical_p}
     />
   {:else}
     <!-- Standard parameters now handled by SettingRenderer above -->
@@ -1099,26 +1104,24 @@
             <button
               class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
               onclick={() => {
-                let bia = DBState.db.bias
-                bia.push(['', 0])
-                DBState.db.bias = bia
+                biasDraft.value = [...biasDraft.value, ['', 0]]
               }}><PlusIcon /></button
             >
           </th>
         </tr>
-        {#if DBState.db.bias.length === 0}
+        {#if biasDraft.value.length === 0}
           <tr>
             <td colspan="3" class="text-textcolor2">{language.noBias}</td>
           </tr>
         {/if}
-        {#each DBState.db.bias as bias, i}
+        {#each biasDraft.value as bias, i}
           <tr>
             <td class="font-medium truncate">
-              <TextInput bind:value={DBState.db.bias[i][0]} size="lg" fullwidth />
+              <TextInput bind:value={biasDraft.value[i][0]} size="lg" fullwidth />
             </td>
             <td class="font-medium truncate">
               <NumberInput
-                bind:value={DBState.db.bias[i][1]}
+                bind:value={biasDraft.value[i][1]}
                 max={100}
                 min={-101}
                 size="lg"
@@ -1129,9 +1132,7 @@
               <button
                 class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                 onclick={() => {
-                  let bia = DBState.db.bias
-                  bia.splice(i, 1)
-                  DBState.db.bias = bia
+                  biasDraft.value = biasDraft.value.filter((_, index) => index !== i)
                 }}><TrashIcon /></button
               >
             </td>
@@ -1143,7 +1144,7 @@
       <button
         class="font-medium cursor-pointer hover:text-textcolor gap-2"
         onclick={() => {
-          const data = JSON.stringify(DBState.db.bias, null, 2)
+          const data = JSON.stringify(biasDraft.value, null, 2)
           downloadFile('bias.json', data)
         }}><DownloadIcon /></button
       >
@@ -1153,7 +1154,7 @@
           const sel = await selectSingleFile(['json'])
           const utf8 = new TextDecoder().decode(sel.data)
           if (Array.isArray(JSON.parse(utf8))) {
-            DBState.db.bias = JSON.parse(utf8)
+            biasDraft.value = JSON.parse(utf8)
           }
         }}><HardDriveUploadIcon /></button
       >
@@ -1171,33 +1172,31 @@
               <button
                 class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
                 onclick={() => {
-                  let additionalParams = DBState.db.additionalParams
-                  additionalParams.push(['', ''])
-                  DBState.db.additionalParams = additionalParams
+                  additionalParamsDraft.value = [...additionalParamsDraft.value, ['', '']]
                 }}><PlusIcon /></button
               >
             </th>
           </tr>
-          {#if DBState.db.bias.length === 0}
+          {#if additionalParamsDraft.value.length === 0}
             <tr class="text-textcolor2">
               <td colspan="3">{language.noData}</td>
             </tr>
           {/if}
-          {#each DBState.db.additionalParams as additionalParams, i}
+          {#each additionalParamsDraft.value as additionalParams, i}
             <tr>
               <td class="font-medium truncate">
-                <TextInput bind:value={DBState.db.additionalParams[i][0]} size="lg" fullwidth />
+                <TextInput bind:value={additionalParamsDraft.value[i][0]} size="lg" fullwidth />
               </td>
               <td class="font-medium truncate">
-                <TextInput bind:value={DBState.db.additionalParams[i][1]} size="lg" fullwidth />
+                <TextInput bind:value={additionalParamsDraft.value[i][1]} size="lg" fullwidth />
               </td>
               <td>
                 <button
                   class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                   onclick={() => {
-                    let additionalParams = DBState.db.additionalParams
-                    additionalParams.splice(i, 1)
-                    DBState.db.additionalParams = additionalParams
+                    additionalParamsDraft.value = additionalParamsDraft.value.filter(
+                      (_, index) => index !== i,
+                    )
                   }}><TrashIcon /></button
                 >
               </td>

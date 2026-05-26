@@ -330,6 +330,8 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'apiType',
     'openAIKey',
     'proxyKey',
+    'bias',
+    'additionalParams',
     'aiModel',
     'subModel',
     'textgenWebUIStreamURL',
@@ -912,8 +914,10 @@ const STRING_SETTING_KEYS = new Set([
 ])
 
 const ARRAY_SETTING_KEYS = new Set([
+  'additionalParams',
   'authRefreshes',
   'banCharacterset',
+  'bias',
   'customFlags',
   'customQuotesData',
   'customModels',

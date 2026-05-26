@@ -38,6 +38,10 @@ import/export events match the command map.
   `createServerBackedSettingDraft`; command allowlists cover `ooba`,
   `reverseProxyOobaArgs`, and `localStopStrings`, and focused client /
   Fastify command tests cover the mapping.
+- Landed 2026-05-26: Bot parameter settings for `NAIsettings`,
+  `ainconfig`, `bias`, and `additionalParams` now use
+  `createServerBackedSettingDraft`; provider command allowlists and
+  focused client / Fastify command tests cover the mapping.
 
 ## Tasks
 

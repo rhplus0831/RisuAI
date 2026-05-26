@@ -19,11 +19,14 @@ Fastify shapes.
      `reverseProxyOobaArgs`, and `localStopStrings` now use
      `createServerBackedSettingDraft` so nested setting controls bind to
      local drafts and dispatch grouped settings commands.
+   - Landed 2026-05-26: Bot parameter settings for `NAIsettings`,
+     `ainconfig`, `bias`, and `additionalParams` now use
+     `createServerBackedSettingDraft` and route through grouped provider
+     settings commands.
    - Next good audit targets are the remaining settings and editor
      binding surfaces found by `rg "bind:(value|check|list)=\\{DBState\\.db" src/lib src/ts`,
-     especially the rest of Bot settings (`NAIsettings`, `ainconfig`,
-     `bias`, `additionalParams`, prompt-format fields), OtherBot media /
-     memory settings (`sdConfig`, `NAIImgConfig`, `comfyConfig`,
+     especially the rest of Bot settings (prompt-format fields),
+     OtherBot media / memory settings (`sdConfig`, `NAIImgConfig`, `comfyConfig`,
      `openaiCompatImage`, `wavespeedImage`, `hypaCustomSettings`),
      Prompt settings, and `CharConfig`.
    - Landed 2026-05-26: `.risu` import/export routes emit
