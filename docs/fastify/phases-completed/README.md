@@ -105,6 +105,7 @@ track the next piece of work.
 | 9-8a - Multipart `.risu` import route   | [`phase-9-client-thinning-9-8a.md`](phase-9-client-thinning-9-8a.md)                   | Multipart `.risu` upload route, repository import application, and reports.      |
 | 9-8b - Repository `.risu` export route  | [`phase-9-client-thinning-9-8b.md`](phase-9-client-thinning-9-8b.md)                   | Downloadable repository-backed `.risu` export route and focused coverage.        |
 | 9-8c - Asset reference walker           | [`phase-9-client-thinning-9-8c.md`](phase-9-client-thinning-9-8c.md)                   | Pure server asset reference report helper and populated import asset counts.     |
+| 9-8d - Bundle export route              | [`phase-9-client-thinning-9-8d.md`](phase-9-client-thinning-9-8d.md)                   | ZIP bundle export route with `.risu`, manifest, and walked present assets.       |
 
 ## Historical Status Logs
 

@@ -15,6 +15,7 @@ import {
   encodeRepositoryRisuSaveBlockExport,
   encodeRepositoryRisuSaveLegacyExport,
 } from '../risuSave/exportSnapshot.js'
+import { buildRepositoryRisuSaveBundleExport } from '../risuSave/bundleExport.js'
 import {
   buildRepositoryRisuSaveAssetReport,
   summarizeRisuSaveAssetReport,
@@ -33,6 +34,7 @@ interface ExportQuery {
 }
 
 const EXPORT_FILENAME = 'database.risu'
+const BUNDLE_EXPORT_FILENAME = 'database.risu.zip'
 
 export function registerSaveRoutes(
   app: FastifyInstance,
@@ -74,10 +76,7 @@ export function registerSaveRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     try {
       const options = parseExportQuery(req.query)
-      const bytes =
-        options.envelope === 'risusave-blocks'
-          ? encodeRepositoryRisuSaveBlockExport(dataDir, { compression: options.compression })
-          : encodeRepositoryRisuSaveLegacyExport(dataDir, options.envelope)
+      const bytes = encodeRepositoryRisuSaveExport(dataDir, options)
       reply.header('content-type', 'application/octet-stream')
       reply.header('content-disposition', `attachment; filename="${EXPORT_FILENAME}"`)
       return reply.send(Buffer.from(bytes))
@@ -89,6 +88,38 @@ export function registerSaveRoutes(
       throw err
     }
   })
+
+  app.get<{ Querystring: ExportQuery }>('/api/v1/export/bundle', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const options = parseExportQuery(req.query)
+      const risuBytes = encodeRepositoryRisuSaveExport(dataDir, options)
+      const bundle = buildRepositoryRisuSaveBundleExport({
+        dataDir,
+        risuBytes,
+        envelope: options.envelope,
+        compression: options.compression,
+      })
+      reply.header('content-type', 'application/zip')
+      reply.header('content-disposition', `attachment; filename="${BUNDLE_EXPORT_FILENAME}"`)
+      return reply.send(Buffer.from(bundle.bytes))
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      throw err
+    }
+  })
+}
+
+function encodeRepositoryRisuSaveExport(
+  dataDir: string,
+  options: ReturnType<typeof parseExportQuery>,
+): Uint8Array {
+  return options.envelope === 'risusave-blocks'
+    ? encodeRepositoryRisuSaveBlockExport(dataDir, { compression: options.compression })
+    : encodeRepositoryRisuSaveLegacyExport(dataDir, options.envelope)
 }
 
 function parseExportQuery(query: ExportQuery): {

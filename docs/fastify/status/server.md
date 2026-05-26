@@ -40,10 +40,11 @@ docs.
   returning the browser projection; grouped settings commands preserve the
   shared masked placeholder as "leave unchanged".
 - `.risu` import/export routes are auth-gated: `POST /api/v1/import/risusave`
-  accepts JSON fixture imports and multipart `.risu` uploads, while
+  accepts JSON fixture imports and multipart `.risu` uploads,
   `GET /api/v1/export/risusave` returns downloadable repository-backed
-  `.risu` bytes. Exported asset ids remain JSON references until 9-8c/9-8d
-  add asset walking and bundle inclusion.
+  `.risu` bytes, and `GET /api/v1/export/bundle` returns a ZIP containing
+  `database.risu`, `manifest.json`, and only walked referenced asset files
+  that exist in repository metadata and on disk.
 - Memory routes are auth-gated: `POST /api/v1/memory/jobs`,
   `GET /api/v1/memory/jobs`, `DELETE /api/v1/memory/jobs/:id`,
   `GET /api/v1/memory/chunks/:chatId`, and
@@ -55,7 +56,7 @@ docs.
 ## Current Server Work
 
 Phase 8 Hypa V3 memory is closed. Phase 9 client thinning is active; the
-current pickup is 9-8c, the asset reference walker in
+current pickup is 9-9a, the server-backed browser smoke harness in
 [`next-steps.md`](next-steps.md).
 
 ## Watch Points

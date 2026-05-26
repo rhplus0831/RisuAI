@@ -28,6 +28,8 @@ the frontend test suite when they are not route behavior.
 | ------------------------------------------- | ------------------------------------------ | ----------- |
 | `GET /api/v1/bootstrap`                     | Fresh data dir returns `revision: 0`, current `schemaVersion`, `database: null`, and `assetBaseUrl`. Requires auth once a password is set. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
 | `POST /api/v1/import/risusave`              | JSON `{ database }` replaces `db.json.database`, bumps revision, rejects missing database, and reports referenced/missing/orphaned server asset counts; multipart `.risu` uploads decode through the server codec, apply normalized imports, report unsupported remote/cache-only references and asset counts, and reject malformed files without mutating persistence. | covered by `server/fastify/__tests__/bootstrap.test.ts` and `server/fastify/__tests__/risuSaveImportRoute.test.ts` |
+| `GET /api/v1/export/risusave`               | Auth-gated download returns repository-backed `.risu` bytes; supports RISUSAVE block and legacy envelope query options and validates malformed exports. | covered by `server/fastify/__tests__/risuSaveExportRoute.test.ts` |
+| `GET /api/v1/export/bundle`                 | Auth-gated ZIP download returns `database.risu`, `manifest.json`, and only walked referenced asset files that exist in repository metadata and on disk; reports missing references, missing files, and orphaned stored assets without bundling orphaned files. | covered by `server/fastify/__tests__/risuSaveBundleExportRoute.test.ts` |
 | `POST /api/v1/assets`                       | Auth-gated raw upload computes SHA-256, writes `data/assets/<sha>.<ext>`, returns metadata + revision, and is idempotent on re-upload. | covered by `server/fastify/__tests__/assets.test.ts` |
 | `GET /api/v1/assets/:id`                    | Public read serves stored bytes with Content-Type, immutable cache header, and 404 for unknown / malformed ids. | covered by `server/fastify/__tests__/assets.test.ts` |
 | `HEAD /api/v1/assets/:id`                   | Mirrors GET headers with no body.          | covered by `server/fastify/__tests__/assets.test.ts` |
@@ -42,10 +44,9 @@ Fastify serves `index.html`, nested static assets, SPA fallback for
 unknown non-API GETs, no fallback for `/api/*` or non-GET routes,
 and clean API behavior when `staticRoot` is absent.
 
-No Phase 2 server routes exist for `.risu` export, bundle export,
-asset delete, or asset GC. The legacy JSON import route remains here;
-server `.risu` codec core and multipart import route wiring are Phase 9
-work.
+No Phase 2 server routes exist for asset delete or asset GC. The legacy JSON
+import route remains here; server `.risu` codec core, multipart import route,
+repository export route, and bundle export route wiring landed in Phase 9.
 
 ## Phase 3: Proxy + Hub
 

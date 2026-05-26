@@ -12,39 +12,32 @@ shapes.
 
 ## Last Done
 
-**9-8c - Asset reference walker** is the latest landed slice.
+**9-8d - Bundle export route** is the latest landed slice.
 
-- Added the pure server helper in
-  `server/fastify/src/risuSave/assetReferences.ts`.
-- The helper scans current Phase 9 server asset-id fields and compares them
-  with repository asset metadata, returning referenced, missing, and orphaned
-  asset details plus compact counts.
-- Covered character images, emotion/additional assets, VITS files, character
-  card assets, GPT-SoVITS reference audio ids, prebuilt exclude ids, module
-  assets, user icon, custom background, persona icons, folder images, and bot
-  preset images.
-- The walker intentionally scans known fields only; it does not recursively
-  include arbitrary plugin/custom JSON strings.
-- `POST /api/v1/import/risusave` now returns populated `assetReport` counts
-  after JSON and multipart imports.
-- No asset-byte reads, ZIP bundles, bundle export route, browser cache,
-  localForage, Tauri remote, OPFS, AutoStorage, or Svelte database state was
-  added.
+- Added `server/fastify/src/risuSave/bundleExport.ts` and auth-gated
+  `GET /api/v1/export/bundle`.
+- The bundle route reuses the 9-8b repository `.risu` export query semantics
+  and the 9-8c asset walker.
+- ZIP contents are `database.risu`, `manifest.json`, and only referenced
+  asset files that exist in repository metadata and on disk.
+- The manifest reports compact asset counts, included assets, missing
+  references, metadata-present files missing from disk, and orphaned stored
+  assets. Orphaned assets are reported but not bundled.
+- No browser cache, localForage, Tauri remote, OPFS, AutoStorage, or Svelte
+  database state path was added.
 
 ## Immediate Pickup
 
-Immediate pickup: **9-8d - Bundle export route**.
+Immediate pickup: **9-9a - Server-backed browser smoke harness**.
 
-- Add `/api/v1/export/bundle` using the 9-8b repository `.risu` export and the
-  9-8c asset walker.
-- Include the `.risu` export, a manifest/report, and only walked asset files
-  that exist in repository asset metadata and on disk.
-- Surface missing asset references in the bundle report; do not silently add
-  orphaned stored assets.
-- Keep browser cache, localForage, Tauri remote, OPFS, AutoStorage, and Svelte
-  database state out of the server bundle path.
-- Treat the bundle target as the current Phase 9 schema. Do not add
-  compatibility migrations for intermediate Fastify shapes.
+- Add or document a repeatable browser-level smoke path for Fastify-served web
+  startup.
+- Cover bootstrap projection load, command-event subscription/re-bootstrap,
+  and one representative command mutation through the server-backed web path.
+- Keep the harness focused on server-backed web behavior. Tauri local storage
+  remains local and should not be pulled into this smoke path.
+- Do not broaden this slice into the generation/memory fixture closeout or the
+  full storage-write audit; those remain 9-9b and 9-9c.
 
 ## Implementation Notes
 
@@ -81,12 +74,11 @@ Immediate pickup: **9-8d - Bundle export route**.
 
 ## Later Queue
 
-1. 9-8d - Bundle export route.
-2. 9-9a - Server-backed browser smoke harness.
-3. 9-9b - Generation and memory fixture closeout.
-4. 9-9c - Server-backed storage-write audit.
-5. 9-9d - Manual Fastify web and Tauri local verification.
-6. 9-9e - Phase 9 docs closeout.
+1. 9-9a - Server-backed browser smoke harness.
+2. 9-9b - Generation and memory fixture closeout.
+3. 9-9c - Server-backed storage-write audit.
+4. 9-9d - Manual Fastify web and Tauri local verification.
+5. 9-9e - Phase 9 docs closeout.
 
 ## Parallel Or Deferred
 
@@ -99,12 +91,14 @@ Immediate pickup: **9-8d - Bundle export route**.
 
 ## Verification
 
-For the current 9-8d slice, start with focused bundle-route coverage plus
-the asset walker, export/import route, and `.risu` codec coverage:
+For the current 9-9a slice, start with the new or documented browser smoke
+harness plus the bootstrap/events/command surfaces it exercises. Keep the 9-8
+bundle/export/import baselines available when touching `.risu` or asset bundle
+code:
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts
-pnpm api:test -- server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
+pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts
 pnpm check
 ```
 
@@ -117,6 +111,15 @@ pnpm test
 pnpm api:test
 pnpm build
 ```
+
+Last recorded focused baseline after 9-8d:
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveAssetReferences.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`
+  - 2 files and 23 Fastify `.risu` codec / asset-reference tests passed.
+- `pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts`
+  - command selected the full Fastify API suite: 68 files and 1162 tests
+    passed.
+- `pnpm check` - clean.
 
 Last recorded focused baseline after 9-8c:
 
@@ -167,7 +170,7 @@ Last recorded broader baselines:
 - Closed memory phase:
   [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
 - Latest closeout:
-  [`../phases-completed/phase-9-client-thinning-9-8c.md`](../phases-completed/phase-9-client-thinning-9-8c.md)
+  [`../phases-completed/phase-9-client-thinning-9-8d.md`](../phases-completed/phase-9-client-thinning-9-8d.md)
 - Completed closeout index:
   [`../phases-completed/README.md`](../phases-completed/README.md)
 - Server status: [`server.md`](server.md)

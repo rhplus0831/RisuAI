@@ -3,8 +3,8 @@
 Date: 2026-05-26
 
 Status: active. Last landed work:
-**9-8c - Asset reference walker**. Next pickup:
-**9-8d - Bundle export route**.
+**9-8d - Bundle export route**. Next pickup:
+**9-9a - Server-backed browser smoke harness**.
 
 ## Goal
 
@@ -352,6 +352,8 @@ surfaces.
       [`../phases-completed/phase-9-client-thinning-9-8c.md`](../phases-completed/phase-9-client-thinning-9-8c.md).
   - **9-8d - Bundle export route.** Add `/api/v1/export/bundle` with the
     `.risu` export, manifest/report, and only walked asset files.
+    - Status: complete. Closeout:
+      [`../phases-completed/phase-9-client-thinning-9-8d.md`](../phases-completed/phase-9-client-thinning-9-8d.md).
 - **9-9 - Full server-backed fixture sweep and closeout.** Treat closeout as a
   sequence of verification surfaces, not one implementation slice.
   - **9-9a - Server-backed browser smoke harness.** Add or document a
