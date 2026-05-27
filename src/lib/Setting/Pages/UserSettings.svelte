@@ -3,8 +3,7 @@
 
   import { alertConfirm } from 'src/ts/alert'
   import { loadInternalBackup } from 'src/ts/globalApi.svelte'
-  import { isFastifyServer } from 'src/ts/platform'
-  import { LoadLocalBackup, SaveLocalBackup, SavePartialLocalBackup } from 'src/ts/storage/backup'
+  import { SaveServerBackup } from 'src/ts/storage/backup'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import { exportAsDataset } from 'src/ts/storage/exportAsDataset'
   import { cleanColdStorage } from 'src/ts/process/coldstorage.svelte'
@@ -15,42 +14,13 @@
 <Button
   onclick={async () => {
     if (await alertConfirm(language.backupConfirm)) {
-      SaveLocalBackup()
+      SaveServerBackup()
     }
   }}
   className="mt-2"
 >
-  {isFastifyServer ? 'Save Server Backup' : language.saveBackupLocal}
+  Save Server Backup
 </Button>
-
-{#if !isFastifyServer}
-  <Button
-    onclick={async () => {
-      if (await alertConfirm(language.backupConfirm)) {
-        SavePartialLocalBackup()
-      }
-    }}
-    className="mt-2"
-  >
-    {language.savePartialLocalBackup}
-  </Button>
-{/if}
-
-{#if !isFastifyServer}
-  <Button
-    onclick={async () => {
-      if (
-        (await alertConfirm(language.backupLoadConfirm)) &&
-        (await alertConfirm(language.backupLoadConfirm2))
-      ) {
-        LoadLocalBackup()
-      }
-    }}
-    className="mt-2"
-  >
-    {language.loadBackupLocal}
-  </Button>
-{/if}
 
 <Button
   onclick={async () => {
@@ -63,7 +33,7 @@
   }}
   className="mt-2"
 >
-  {isFastifyServer ? 'Load Server Backup' : language.loadInternalBackup}
+  Load Server Backup
 </Button>
 
 <Button

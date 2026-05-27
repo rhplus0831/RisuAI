@@ -2,7 +2,6 @@ import { checkNullish, sleep } from './util'
 import { v4 as uuidv4, v4 } from 'uuid'
 import { get } from 'svelte/store'
 import {
-  setDatabase,
   type Database,
   defaultSdDataFunc,
   getDatabase,
@@ -23,7 +22,6 @@ import {
 } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
 import {
-  alertConfirm,
   alertError,
   alertMd,
   alertNormal,
@@ -41,7 +39,6 @@ import {
   oldMainPrompt,
 } from './storage/defaultPrompts'
 import {
-  decodeRisuSave,
   encodeRisuSaveLegacy,
   RisuSaveEncoder,
   type toSaveType,
@@ -1750,68 +1747,34 @@ export class BlankWriter {
 }
 
 export async function loadInternalBackup() {
-  if (isFastifyServer) {
-    const list = await listServerBackups()
-    if (list.status === 'unavailable') return
-    if (list.status === 'error') {
-      alertError(list.error)
-      return
-    }
-    if (list.backups.length === 0) {
-      alertNormal('No server backups found')
-      return
-    }
-
-    const selectOptions = [
-      'Cancel',
-      ...list.backups.map((backup) => {
-        const label = backup.label ? `${backup.label} - ` : ''
-        return `${label}${new Date(backup.createdAt).toLocaleString()}`
-      }),
-    ]
-    const alertResult = parseInt(await alertSelect(selectOptions)) - 1
-    if (alertResult === -1) return
-
-    const selectedBackup = list.backups[alertResult]
-    const restored = await restoreServerBackup({ id: selectedBackup.id })
-    if (restored.status === 'ok') {
-      alertNormal('Loaded server backup')
-    } else if (restored.status === 'error') {
-      alertError(restored.error)
-    }
+  const list = await listServerBackups()
+  if (list.status === 'unavailable') return
+  if (list.status === 'error') {
+    alertError(list.error)
     return
   }
-
-  const keys = await forageStorage.keys()
-  let internalBackups: string[] = []
-  for (const key of keys) {
-    if (key.includes('dbbackup-')) {
-      internalBackups.push(key)
-    }
+  if (list.backups.length === 0) {
+    alertNormal('No server backups found')
+    return
   }
 
   const selectOptions = [
     'Cancel',
-    ...internalBackups.map((a) => {
-      return new Date(
-        parseInt(a.replace('database/dbbackup-', '').replace('dbbackup-', '')) * 100,
-      ).toLocaleString()
+    ...list.backups.map((backup) => {
+      const label = backup.label ? `${backup.label} - ` : ''
+      return `${label}${new Date(backup.createdAt).toLocaleString()}`
     }),
   ]
-
   const alertResult = parseInt(await alertSelect(selectOptions)) - 1
+  if (alertResult === -1) return
 
-  if (alertResult === -1) {
-    return
+  const selectedBackup = list.backups[alertResult]
+  const restored = await restoreServerBackup({ id: selectedBackup.id })
+  if (restored.status === 'ok') {
+    alertNormal('Loaded server backup')
+  } else if (restored.status === 'error') {
+    alertError(restored.error)
   }
-
-  const selectedBackup = internalBackups[alertResult]
-
-  const data = await forageStorage.getItem(selectedBackup)
-
-  setDatabase(await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array))
-
-  alertNormal('Loaded backup')
 }
 
 /**

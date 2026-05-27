@@ -64,16 +64,6 @@ export async function loadData() {
       try {
         await loadPlugins()
       } catch (error) {}
-      try {
-        const iosNavigator = window.navigator as Navigator & { standalone?: boolean }
-        const isInStandaloneMode =
-          window.matchMedia('(display-mode: standalone)').matches ||
-          iosNavigator.standalone ||
-          document.referrer.includes('android-app://')
-        if (isInStandaloneMode) {
-          await navigator.storage.persist()
-        }
-      } catch (error) {}
       LoadingStatusState.text = 'Checking For Format Update...'
       await withTrustedServerProjectionWrite(() => checkNewFormat())
       const db = getDatabase()

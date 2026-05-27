@@ -46,6 +46,12 @@ Phase 3 cleanup:
 
 - `src/ts/bootstrap.ts` now loads the Fastify bootstrap projection only and reports unavailable or errored bootstrap data explicitly.
 
+Phase 5 cleanup:
+
+- Standalone/PWA storage persistence was removed from `src/ts/bootstrap.ts`.
+- `src/ts/storage/persistant.ts` was deleted.
+- `public/manifest.json` no longer advertises `display: standalone`.
+
 ## Stage 3: Storage And Proxy IO
 
 Client IO should use Fastify route contracts only.
@@ -61,6 +67,11 @@ Phase 4 cleanup:
 
 - `src/ts/globalApi.svelte.ts` now selects Fastify `/api/v1/proxy/*` routes only for proxy fetch and stream job paths.
 - Hosted function proxy files under `public/functions` were deleted.
+
+Phase 5 cleanup:
+
+- `src/ts/storage/backup.ts` now creates Fastify server backups only.
+- `src/ts/globalApi.svelte.ts` loads Fastify server backups only and no longer falls back to browser-local internal backup keys.
 
 ## Stage 4: Generation Runtime
 

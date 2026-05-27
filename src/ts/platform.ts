@@ -7,7 +7,6 @@ type UserAgentDataLike = {
 
 type BrowserNavigator = Navigator & {
   userAgentData?: UserAgentDataLike
-  standalone?: boolean
 }
 
 export type RisuEnvironmentLabel = 'fastify' | 'web(dev)' | 'browser(test)'
@@ -134,8 +133,3 @@ export async function getDetailedOSLabel(): Promise<string> {
 
   return joinOSLabel(osName, browserVersion ?? getUserAgentOSVersion(osName))
 }
-
-export const isInStandaloneMode =
-  window.matchMedia('(display-mode: standalone)').matches ||
-  !!browserNavigator.standalone ||
-  document.referrer.includes('android-app://')

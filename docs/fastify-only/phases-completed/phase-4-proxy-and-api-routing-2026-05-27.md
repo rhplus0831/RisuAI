@@ -67,8 +67,8 @@ Verification:
 
 Next pickup:
 
-- Continue with [Phase 5: Browser Local Surface Cleanup](../phases/phase-5-browser-local-surface-cleanup.md).
-- Keep localized runtime strings that mention `/proxy2` or removed runtime wording for Phase 6 unless Phase 5 directly touches the same UI surface.
+- Phase 5 later closed in [Phase 5: Browser Local Surface Cleanup](phase-5-browser-local-surface-cleanup-2026-05-27.md).
+- Continue with [Phase 6: Docs And Packaging Closeout](../phases/phase-6-docs-and-packaging-closeout.md).
 
 ## Verification
 
