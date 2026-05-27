@@ -649,6 +649,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'newMessageButtonStyle',
     'createFolderOnBranch',
     'hamburgerButtonBottom',
+    'hotkeys',
     'enableRisuaiProTools',
     'globalChatVariables',
     'jailbreakToggle',
@@ -934,6 +935,7 @@ const ARRAY_SETTING_KEYS = new Set([
   'customModels',
   'customSidebarItems',
   'globalscript',
+  'hotkeys',
   'modelTools',
   'hypaV3Presets',
 ])

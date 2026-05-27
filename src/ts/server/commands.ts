@@ -136,6 +136,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   hideApiKey: 'display',
   hideRealm: 'display',
   hordeConfig: 'providers',
+  hotkeys: 'sidebar',
   htmlTranslation: 'language',
   huggingfaceKey: 'providers',
   hypaCustomSettings: 'memory',

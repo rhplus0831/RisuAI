@@ -422,6 +422,7 @@ describe('Phase 9-2a scalar settings groups', () => {
               label: 'Loadouts',
             },
           ],
+          hotkeys: [{ key: 'a', ctrl: true, action: 'home' }],
         },
       },
     })
@@ -452,6 +453,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           label: 'Loadouts',
         },
       ],
+      hotkeys: [{ key: 'a', ctrl: true, action: 'home' }],
     })
   })
 
