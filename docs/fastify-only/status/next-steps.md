@@ -2,26 +2,25 @@
 
 ## Current Pickup
 
-Start with [Phase 0: Audit And Baseline](../phases/phase-0-audit-and-baseline.md).
+Start with [Phase 1: Project Surface Removal](../phases/phase-1-project-surface-removal.md). Phase 0 is closed in [phases-completed](../phases-completed/phase-0-audit-and-baseline-2026-05-27.md).
 
 ## Immediate Tasks
 
-1. Run and record the baseline verification ladder.
-2. Confirm the removal list in [../removed-and-out-of-scope.md](../removed-and-out-of-scope.md).
-3. Prepare Phase 1 edits for project-level removal surfaces.
-4. Update this file after Phase 0 closes.
+1. Remove `sync`, `electron`, and `hono:build` from `package.json`.
+2. Delete `server/hono`, including Node, Bun, Cloudflare, Vercel, Wrangler, and postbuild files.
+3. Delete or replace `server.sh`, `server.bat`, and `capacitor.config.ts`.
+4. Remove stale public docs that instruct users to use removed project surfaces.
+5. Update this file after Phase 1 closes.
 
-## Verification To Record
+## Phase 1 Verification To Record
 
 - `pnpm check`
-- `pnpm test`
-- `pnpm api:test`
 - `pnpm build`
-- `pnpm smoke:fastify-browser`
+- `pnpm api:test`
 
 ## Watch Points
 
-- Do not start deleting platform gates before Phase 0 records the baseline.
+- Phase 0 has recorded the baseline; do not start deleting shared platform gates until Phase 2.
 - Keep docs and package scripts aligned in the same phase as project-surface removals.
 - Include localized app strings in the docs and packaging closeout, not only markdown files.
-- Treat new local/non-Fastify surfaces as Phase 0 findings, not as ad hoc cleanup.
+- Treat newly discovered project-level non-Fastify surfaces as Phase 1 findings, but defer shared runtime gates to later phases.

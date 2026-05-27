@@ -1,8 +1,10 @@
 # Completed Fastify-Only Phases
 
-No Fastify-only implementation phases are completed as of 2026-05-27.
+Completed phase closeouts:
 
-When a phase closes, move or copy its final closeout note here with:
+- [Phase 0: Audit And Baseline](phase-0-audit-and-baseline-2026-05-27.md) closed on 2026-05-27.
+
+Each closeout note should include:
 
 - Summary of changed files.
 - Verification commands and results.

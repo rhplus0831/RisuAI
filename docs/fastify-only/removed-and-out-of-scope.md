@@ -3,10 +3,12 @@
 ## Removal Targets
 
 - Hono server, including Node, Bun, Cloudflare, Vercel, and Wrangler entry points.
-- Electron scripts and any stale native desktop assumptions.
+- Electron package scripts and any stale native desktop assumptions.
 - Capacitor mobile packaging configuration.
 - Legacy `server.sh` and `server.bat` launchers.
 - Cloudflare Pages-style functions in `public/functions`.
+- Hono static/Vercel postbuild output flows.
+- Public README language that presents non-Fastify platforms as supported runtimes.
 - Legacy storage paths: `/api/write`, `/api/read`, `/api/list`, and `/api/remove`.
 - Legacy proxy paths: `/proxy2` and `/proxy-stream-jobs`.
 - Standalone browser save-file bootstrap as a supported runtime.

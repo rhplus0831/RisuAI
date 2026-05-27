@@ -5,6 +5,7 @@ This folder is the planning workspace for removing local runtime support and all
 ## Current State
 
 - Draft created on 2026-05-27.
+- Phase 0 audit and baseline closed on 2026-05-27.
 - Fastify is the only target production runtime.
 - The client remains a static web client served by Fastify; standalone local browser storage, native wrappers, alternate server projects, and legacy hosted functions are removal candidates.
 - The existing Fastify migration docs already describe server-backed web as the supported shape, but several compatibility bridges remain in package scripts, platform gates, storage, proxy routing, launchers, service worker behavior, and public docs.
@@ -18,7 +19,7 @@ This folder is the planning workspace for removing local runtime support and all
 5. [coverage.md](coverage.md) and the [coverage](coverage/) shards for test expectations.
 6. [removed-and-out-of-scope.md](removed-and-out-of-scope.md) for removals and permanent non-goals.
 7. [design](design/) for locked decisions.
-8. [phases](phases/) for active phase plans.
+8. [phases](phases/) for active phase plans and [phases-completed](phases-completed/) for closed work.
 9. [status](status/) for present-tense pickup notes.
 
 ## Locked Decisions

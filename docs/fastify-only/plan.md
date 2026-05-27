@@ -25,7 +25,7 @@ Remove local runtime support and all non-Fastify platform support so the project
 
 | Phase | Name | Purpose |
 | --- | --- | --- |
-| 0 | [Audit And Baseline](phases/phase-0-audit-and-baseline.md) | Freeze the known non-Fastify surfaces and current verification baseline. |
+| 0 | [Audit And Baseline](phases-completed/phase-0-audit-and-baseline-2026-05-27.md) | Freeze the known non-Fastify surfaces and current verification baseline. Completed on 2026-05-27. |
 | 1 | [Project Surface Removal](phases/phase-1-project-surface-removal.md) | Remove alternate server projects, stale scripts, launchers, and native/mobile config. |
 | 2 | [Runtime Contract Collapse](phases/phase-2-runtime-contract-collapse.md) | Replace broad platform gates with a Fastify-served client contract. |
 | 3 | [Storage Contract Cleanup](phases/phase-3-storage-contract-cleanup.md) | Keep Fastify storage APIs only and remove local/legacy storage fallbacks. |
