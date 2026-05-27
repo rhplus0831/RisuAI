@@ -31,9 +31,9 @@ Removal state:
 
 The client should assume a Fastify-served runtime.
 
-- Replace `local`, `node`, `web`, `web(dev)`, `isTauri`, and similar platform gates with a smaller contract that only distinguishes Fastify-served runtime from test/dev harnesses when necessary.
-- Remove `globalThis.__NODE__` as a Fastify compatibility trigger.
-- Keep `globalThis.__FASTIFY__` or replace it with a clearer server-backed flag, but do not keep both when one is only supporting old self-host branches.
+- `globalThis.__FASTIFY__` is the single Fastify-served client signal.
+- `src/ts/platform.ts` exports `isFastifyServer` plus browser/device helpers. It no longer exports `isNodeServer`, `isTauri`, or `isWeb`.
+- Test/dev harnesses may explicitly mock `isFastifyServer`; production code should not model removed runtime families.
 
 ## API Surface
 

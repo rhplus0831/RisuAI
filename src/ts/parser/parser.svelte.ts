@@ -10,7 +10,7 @@ import {
 } from '../storage/database.svelte'
 import { CurrentTriggerIdStore, DBState, selIdState } from '../stores.svelte'
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
-import { isNodeServer } from 'src/ts/platform'
+import { isFastifyServer } from 'src/ts/platform'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
 import { processScriptFull } from '../process/scripts'
@@ -103,7 +103,7 @@ registerRisuChatParserCBS({
   callInternalFunction: function (args: string[]): string {
     return ''
   },
-  isNodeServer: isNodeServer,
+  isFastifyServer,
   isMobile: false,
   appVer: appVer,
   getCurrentTriggerId: () => get(CurrentTriggerIdStore) ?? 'null',

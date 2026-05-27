@@ -1,7 +1,5 @@
-import { forageStorage } from '../globalApi.svelte'
-import { isNodeServer, isFastifyServer } from 'src/ts/platform'
+import { isFastifyServer } from 'src/ts/platform'
 import { DBState } from '../stores.svelte'
-import type { NodeStorage } from '../storage/nodeStorage'
 import { compress as fflateCompress, decompress as fflateDecompress } from 'fflate'
 import { alertClear, alertError, alertWait } from '../alert'
 import { language } from 'src/lang'
@@ -25,36 +23,21 @@ export async function getColdStorageItem(key: string) {
     return null
   }
 
-  if (isNodeServer) {
-    try {
-      const storage = forageStorage.realStorage as NodeStorage
-      const f = await storage.getItem('coldstorage/' + key)
-      if (!f) {
-        return null
-      }
-      const text = new TextDecoder().decode(await decompress(new Uint8Array(f)))
-      return JSON.parse(text)
-    } catch (error) {
+  try {
+    const opfs = await navigator.storage.getDirectory()
+    const file = await opfs.getFileHandle('coldstorage_' + key + '.json')
+    if (!file) {
       return null
     }
-  } else {
-    //use opfs
-    try {
-      const opfs = await navigator.storage.getDirectory()
-      const file = await opfs.getFileHandle('coldstorage_' + key + '.json')
-      if (!file) {
-        return null
-      }
-      const d = await file.getFile()
-      if (!d) {
-        return null
-      }
-      const buf = await d.arrayBuffer()
-      const text = new TextDecoder().decode(await decompress(new Uint8Array(buf)))
-      return JSON.parse(text)
-    } catch (error) {
+    const d = await file.getFile()
+    if (!d) {
       return null
     }
+    const buf = await d.arrayBuffer()
+    const text = new TextDecoder().decode(await decompress(new Uint8Array(buf)))
+    return JSON.parse(text)
+  } catch (error) {
+    return null
   }
 }
 
@@ -81,28 +64,16 @@ export async function setColdStorageItem(key: string, value: any): Promise<boole
     return false
   }
 
-  if (isNodeServer) {
-    try {
-      const storage = forageStorage.realStorage as NodeStorage
-      await storage.setItem('coldstorage/' + key, compressed)
-      return true
-    } catch (error) {
-      console.error('Cold storage node write failed:', error)
-      return false
-    }
-  } else {
-    //use opfs
-    try {
-      const opfs = await navigator.storage.getDirectory()
-      const file = await opfs.getFileHandle('coldstorage_' + key + '.json', { create: true })
-      const writable = await file.createWritable()
-      await writable.write(compressed as any)
-      await writable.close()
-      return true
-    } catch (error) {
-      console.error('Cold storage OPFS write failed:', error)
-      return false
-    }
+  try {
+    const opfs = await navigator.storage.getDirectory()
+    const file = await opfs.getFileHandle('coldstorage_' + key + '.json', { create: true })
+    const writable = await file.createWritable()
+    await writable.write(compressed as any)
+    await writable.close()
+    return true
+  } catch (error) {
+    console.error('Cold storage OPFS write failed:', error)
+    return false
   }
 }
 
@@ -113,26 +84,16 @@ export async function listColdStorageItems(): Promise<{ items: string[] }> {
     }
   }
 
-  if (isNodeServer) {
-    const fullKeys = await (forageStorage.realStorage as NodeStorage).keys()
-    const keys = fullKeys
-      .filter((k) => k.startsWith('coldstorage/'))
-      .map((k) => k.replace('coldstorage/', ''))
-    return {
-      items: keys,
+  const opfs = await navigator.storage.getDirectory()
+  const entries = opfs.entries()
+  const keys = []
+  for await (const [name] of entries) {
+    if (name.startsWith('coldstorage_') && name.endsWith('.json')) {
+      keys.push(name.slice(12, -5))
     }
-  } else {
-    const opfs = await navigator.storage.getDirectory()
-    const entries = opfs.entries()
-    const keys = []
-    for await (const [name, handle] of entries) {
-      if (name.startsWith('coldstorage_') && name.endsWith('.json')) {
-        keys.push(name.slice(12, -5))
-      }
-    }
-    return {
-      items: keys,
-    }
+  }
+  return {
+    items: keys,
   }
 }
 
@@ -153,14 +114,10 @@ export async function cleanColdStorage() {
     unusedKeys,
   )
 
-  if (isNodeServer) {
-    await removeColdStorageItems(unusedKeys)
-  } else {
-    for (let i = 0; i < unusedKeys.length; i++) {
-      const key = unusedKeys[i]
-      alertWait(`Removing unused cold storage item: ${key} (${i + 1} / ${unusedKeys.length})`)
-      await removeColdStorageItems([key])
-    }
+  for (let i = 0; i < unusedKeys.length; i++) {
+    const key = unusedKeys[i]
+    alertWait(`Removing unused cold storage item: ${key} (${i + 1} / ${unusedKeys.length})`)
+    await removeColdStorageItems([key])
   }
 
   alertClear()
@@ -171,24 +128,13 @@ async function removeColdStorageItems(keys: string[]) {
     return
   }
 
-  if (isNodeServer) {
-    try {
-      const storage = forageStorage.realStorage as NodeStorage
-      const deleteKeys = keys.map((k) => 'coldstorage/' + k)
-      ;(storage as NodeStorage).removeItem(deleteKeys)
-    } catch (error) {
-      console.error(error)
+  try {
+    const opfs = await navigator.storage.getDirectory()
+    for (let i = 0; i < keys.length; i++) {
+      await opfs.removeEntry('coldstorage_' + keys[i] + '.json')
     }
-  } else {
-    //use opfs
-    try {
-      const opfs = await navigator.storage.getDirectory()
-      for (let i = 0; i < keys.length; i++) {
-        await opfs.removeEntry('coldstorage_' + keys[i] + '.json')
-      }
-    } catch (error) {
-      console.error(error)
-    }
+  } catch (error) {
+    console.error(error)
   }
 }
 

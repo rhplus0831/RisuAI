@@ -44,7 +44,7 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
   callInternalFunction: (args: string[]) => {
     return ''
   },
-  isNodeServer: false,
+  isFastifyServer: false,
   isMobile: false,
   appVer: '0.0.0',
   getCurrentTriggerId: () => 'null',
@@ -127,7 +127,7 @@ export type CBSRegisterArg = {
   getSelectedCharID: () => number
   getModelInfo: (model: string) => LLMModel
   callInternalFunction: (args: string[]) => string
-  isNodeServer: boolean
+  isFastifyServer: boolean
   isMobile: boolean
   appVer: string
   /**
@@ -160,7 +160,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     getModuleLorebooks,
     pickHashRand,
     getSelectedCharID,
-    isNodeServer,
+    isFastifyServer,
     isMobile,
     appVer,
     getModelInfo,
@@ -2069,7 +2069,10 @@ export function registerCBS(arg: CBSRegisterArg) {
           return '0'
         }
         case 'node': {
-          return isNodeServer ? '1' : '0'
+          return '0'
+        }
+        case 'fastify': {
+          return isFastifyServer ? '1' : '0'
         }
         case 'version': {
           return appVer
@@ -2117,7 +2120,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           return '🫖'
         }
         case 'risutype': {
-          return isNodeServer ? 'node' : 'web'
+          return isFastifyServer ? 'fastify' : 'web'
         }
         case 'maxcontext': {
           return db.maxContext.toString()

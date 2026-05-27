@@ -1,17 +1,13 @@
 import { get } from 'svelte/store'
 import { parseChatML } from '../parser/chatML'
-import {
-  getDatabase,
-  type character,
-  type customscript,
-} from '../storage/database.svelte'
+import { getDatabase, type character, type customscript } from '../storage/database.svelte'
 import {
   defaultTranslatorPrompt,
   getCurrentTranslatorPresetFromState,
   type TranslatorPreset,
 } from './presets'
 import { globalFetch } from '../globalApi.svelte'
-import { isNodeServer } from 'src/ts/platform'
+import { isFastifyServer } from 'src/ts/platform'
 import { alertError } from '../alert'
 import { requestChatData } from '../process/request/request'
 import { doingChat, type OpenAIChat } from '../process/index.svelte'
@@ -216,7 +212,7 @@ async function translateMain(
     return bergamotTranslate(text, arg.from, arg.to, false)
   }
   if (db.useExperimentalGoogleTranslator) {
-    const hqAvailable = isNodeServer || userScriptFetch
+    const hqAvailable = isFastifyServer || userScriptFetch
 
     if (hqAvailable) {
       try {

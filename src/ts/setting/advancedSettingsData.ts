@@ -1,5 +1,5 @@
 import type { SettingItem } from './types'
-import { isNodeServer } from '../platform'
+import { isFastifyServer } from '../platform'
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -156,7 +156,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'segmented',
     labelKey: 'requestLocation',
     bindKey: 'requestLocation',
-    condition: () => !isNodeServer,
+    condition: () => !isFastifyServer,
     options: {
       segmentOptions: [
         { value: '', label: 'Default' },
@@ -370,7 +370,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'promptInfoInsideChat',
     bindKey: 'promptInfoInsideChat',
-    condition: () => isNodeServer,
+    condition: () => isFastifyServer,
     helpKey: 'promptInfoInsideChatDesc',
     classes: 'mt-4',
   },
@@ -379,7 +379,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'promptTextInfoInsideChat',
     bindKey: 'promptTextInfoInsideChat',
-    condition: (ctx) => isNodeServer && ctx.db.promptInfoInsideChat,
+    condition: (ctx) => isFastifyServer && ctx.db.promptInfoInsideChat,
     classes: 'mt-4',
   },
   {

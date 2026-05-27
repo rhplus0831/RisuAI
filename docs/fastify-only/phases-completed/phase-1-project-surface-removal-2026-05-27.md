@@ -8,7 +8,7 @@ Remove project-level surfaces that advertise or implement non-Fastify platforms.
 
 ## Result
 
-Phase 1 is complete. The repository no longer has the Hono server subtree, root launcher scripts, Capacitor config, or root package scripts for Hono/Electron/sync flows. Shared runtime platform gates were intentionally left for [Phase 2: Runtime Contract Collapse](../phases/phase-2-runtime-contract-collapse.md).
+Phase 1 is complete. The repository no longer has the Hono server subtree, root launcher scripts, Capacitor config, or root package scripts for Hono/Electron/sync flows. Shared runtime platform gates were intentionally left for [Phase 2: Runtime Contract Collapse](phase-2-runtime-contract-collapse-2026-05-27.md).
 
 ## Changed Files
 
@@ -45,8 +45,8 @@ Phase 1 is complete. The repository no longer has the Hono server subtree, root 
 
 ## Follow-Up
 
-- Continue with [Phase 2: Runtime Contract Collapse](../phases/phase-2-runtime-contract-collapse.md).
-- Keep `src/ts/platform.ts`, Fastify bootstrap globals, storage endpoint selection, proxy routing, service worker behavior, preload behavior, and localized runtime strings scoped to their later phases unless Phase 2 directly requires a narrow edit.
+- Continue with [Phase 2: Runtime Contract Collapse](phase-2-runtime-contract-collapse-2026-05-27.md).
+- Keep storage endpoint selection, proxy routing, service worker behavior, and remaining localized runtime strings scoped to their later phases.
 - `public/functions/proxy.js` and `public/functions/proxy2.js` remain hosted function proxy surfaces for Phase 4 or Phase 5 cleanup.
 
 ## Original Scope

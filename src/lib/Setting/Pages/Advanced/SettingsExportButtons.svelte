@@ -5,7 +5,7 @@
   import { alertMd, alertNormal } from 'src/ts/alert'
   import { downloadFile, getRequestLog } from 'src/ts/globalApi.svelte'
   import { getDatabase } from 'src/ts/storage/database.svelte'
-  import { isNodeServer } from 'src/ts/platform'
+  import { isFastifyServer } from 'src/ts/platform'
 </script>
 
 <Button
@@ -89,7 +89,7 @@
 
     //@ts-expect-error meta is not defined in Database type, added for settings export report
     db.meta = {
-      isNodeServer: isNodeServer,
+      isFastifyServer,
       protocol: location.protocol,
     }
 

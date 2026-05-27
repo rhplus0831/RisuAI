@@ -154,16 +154,15 @@ export const languageEnglish = {
       'Routes private/LAN model URLs through the local runtime path instead of browser direct fetch.\n\n' +
       '**Purpose**\n' +
       '- Avoid browser private-network/CORS restrictions for `192.168.x.x`, `10.x.x.x`, `localhost`, `.local`, and similar local hosts.\n' +
-      '- Mitigate timeout risk for slow first-token local inference in Node self-host mode.\n\n' +
+      '- Mitigate timeout risk for slow first-token local inference in Fastify self-host mode.\n\n' +
       '**How it works**\n' +
       '- Applies only when Local Network Mode is enabled and the target URL is detected as local/private.\n' +
-      '- Node self-host: streaming uses experimental Job+WebSocket relay first (fallback to `/proxy2` on failure); non-streaming uses `/proxy2`.\n' +
-      '- Tauri: uses native/direct path.\n' +
-      '- Public web mode: blocked for local/private direct calls by design.\n\n' +
+      '- Fastify self-host: streaming uses the `/api/v1/proxy/stream-jobs` relay first; non-streaming uses `/api/v1/proxy/fetch`.\n' +
+      '- Non-Fastify browser harnesses are blocked for local/private direct calls by design.\n\n' +
       '**Constraints**\n' +
       '- Scope is OpenAI-compatible request paths only.\n' +
       '- This does not bypass Cloudflare origin limits between two public domains.\n' +
-      '- Use your self-host URL (where `globalThis.__NODE__ === true`) for this feature to take effect.',
+      '- Use your Fastify-served self-host URL for this feature to take effect.',
     chainOfThought: 'If enabled, it will add chain of thought prompt to the prompt.',
     gptVisionQuality:
       'This option is used to set the quality of the image detection model. The higher the quality, the more accurate the detection, but more tokens are used.',

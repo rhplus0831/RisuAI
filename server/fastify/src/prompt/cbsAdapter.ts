@@ -8,15 +8,8 @@ import {
   parseDict,
 } from '../../../../src/ts/parser/risuChatParserHelpers'
 import { calcString } from '../../../../src/ts/process/infunctions'
-import {
-  getChatVar,
-  getGlobalChatVar,
-  setChatVar,
-} from '../../../../src/ts/parser/chatVarBackend'
-import {
-  getActiveDatabase,
-  getActiveSelectedCharID,
-} from './promptScope.js'
+import { getChatVar, getGlobalChatVar, setChatVar } from '../../../../src/ts/parser/chatVarBackend'
+import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
 
 /**
  * Server-side `CBSRegisterArg` factory. Wires the 24 DI fields the
@@ -133,7 +126,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getSelectedCharID: getActiveSelectedCharID,
     getModelInfo: () => PLACEHOLDER_MODEL,
     callInternalFunction: () => '',
-    isNodeServer: true,
+    isFastifyServer: true,
     isMobile: false,
     appVer: '2026.4.181',
     getCurrentTriggerId: () => 'null',

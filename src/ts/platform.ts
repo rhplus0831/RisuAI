@@ -10,18 +10,13 @@ type BrowserNavigator = Navigator & {
   standalone?: boolean
 }
 
-export type RisuEnvironmentLabel = 'local' | 'node' | 'web' | 'web(dev)'
+export type RisuEnvironmentLabel = 'fastify' | 'web(dev)' | 'browser(test)'
 
 const browserNavigator = navigator as BrowserNavigator
 
-export const isTauri = false as const
-export const isNodeServer: boolean = !!(globalThis as typeof globalThis & { __NODE__?: boolean })
-  .__NODE__
 export const isFastifyServer: boolean = !!(
   globalThis as typeof globalThis & { __FASTIFY__?: boolean }
 ).__FASTIFY__
-export const isWeb: boolean =
-  !isTauri && !isNodeServer && !isFastifyServer && location.hostname === 'risuai.xyz'
 export const isMobile: boolean = /Android|iPhone|iPad|iPod|webOS/i.test(browserNavigator.userAgent)
 
 export const isFirefox: boolean = browserNavigator.userAgent.includes('Firefox')
@@ -121,11 +116,11 @@ export function getRisuEnvironmentLabel(): RisuEnvironmentLabel {
     return 'web(dev)'
   }
 
-  if (isNodeServer) {
-    return 'node'
+  if (isFastifyServer) {
+    return 'fastify'
   }
 
-  return 'web'
+  return 'browser(test)'
 }
 
 export function getFallbackOSLabel(): string {

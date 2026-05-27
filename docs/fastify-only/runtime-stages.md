@@ -11,6 +11,11 @@ Phase 1 removed:
 - Legacy `server.sh` and `server.bat` launchers.
 - Capacitor config.
 
+Phase 2 removed:
+
+- `__NODE__` as a Fastify static-serving compatibility bridge.
+- The exported `isNodeServer`, `isTauri`, and `isWeb` runtime gates from `src/ts/platform.ts`.
+
 Remaining focus:
 
 - Public docs that still describe a cross-platform app.
@@ -19,10 +24,12 @@ Remaining focus:
 
 Fastify constructs the server, mounts `/api/v1/*`, serves static assets, and exposes only the globals or bootstrap payload needed by the Fastify-served client.
 
-Cleanup focus:
+Phase 2 cleanup:
 
-- Remove `__NODE__` as a compatibility bridge.
-- Keep a single server-backed signal for the client.
+- Fastify static serving keeps `globalThis.__FASTIFY__` as the single server-backed signal for the client.
+
+Remaining focus:
+
 - Make smoke startup match Docker and local dev startup.
 
 ## Stage 2: Client Bootstrap

@@ -41,7 +41,7 @@ import {
   saveAsset,
   VirtualWriter,
 } from './globalApi.svelte'
-import { isNodeServer, isFastifyServer } from 'src/ts/platform'
+import { isFastifyServer } from 'src/ts/platform'
 import { compressImage, getImageType } from './media'
 import {
   DBState,
@@ -69,11 +69,9 @@ const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz'
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
 export const hubURL = isFastifyServer
   ? '/api/v1/hub'
-  : isNodeServer
-    ? '/hub-proxy'
-    : window.location.hostname === 'nightly.risuai.xyz' || localStorage.getItem('hub') === 'nightly'
-      ? NIGHTLY_HUB_URL
-      : EXTERNAL_HUB_URL
+  : window.location.hostname === 'nightly.risuai.xyz' || localStorage.getItem('hub') === 'nightly'
+    ? NIGHTLY_HUB_URL
+    : EXTERNAL_HUB_URL
 
 function appendImportedCharacter(
   character: character,
@@ -1770,11 +1768,11 @@ export async function getRisuHub(arg: {
 }): Promise<hubType[]> {
   try {
     arg.search += ' __shared'
-    const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${!isNodeServer ? 'web' : 'other'}`
+    const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${isFastifyServer ? 'other' : 'web'}`
 
     const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg), {
       headers: {
-        'x-risuai-info': appVer + ';' + (isNodeServer ? 'node' : 'web'),
+        'x-risuai-info': appVer + ';' + (isFastifyServer ? 'fastify' : 'web'),
       },
     })
     if (da.status !== 200) {

@@ -173,10 +173,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     const indexHtml = (): string => {
       if (cachedIndex !== null) return cachedIndex
       const raw = fs.readFileSync(indexPath, 'utf-8')
-      // __NODE__ activates every self-host gate in the SPA (NodeStorage,
-      // save flow, prefer-remote saves); __FASTIFY__ disambiguates the
-      // server family so URL builders can prefer /api/v1/* routes.
-      const tag = '<script>globalThis.__NODE__ = true; globalThis.__FASTIFY__ = true;</script>'
+      const tag = '<script>globalThis.__FASTIFY__ = true;</script>'
       const headMatch = /<head(?:\s[^>]*)?>/i.exec(raw)
       cachedIndex = headMatch
         ? `${raw.slice(0, headMatch.index + headMatch[0].length)}\n${tag}${raw.slice(headMatch.index + headMatch[0].length)}`

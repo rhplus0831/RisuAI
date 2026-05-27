@@ -1,5 +1,5 @@
 import localforage from 'localforage'
-import { isNodeServer } from 'src/ts/platform'
+import { isFastifyServer } from 'src/ts/platform'
 import { NodeStorage } from './nodeStorage'
 import { OpfsStorage } from './opfsStorage'
 import { alertStore } from '../alert'
@@ -27,8 +27,8 @@ export class AutoStorage {
 
   async Init() {
     if (!this.realStorage) {
-      if (isNodeServer) {
-        console.log('using node storage')
+      if (isFastifyServer) {
+        console.log('using fastify storage')
         this.realStorage = new NodeStorage()
         return
       } else if (

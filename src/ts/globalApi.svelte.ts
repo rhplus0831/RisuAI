@@ -57,7 +57,7 @@ import { updateLorebooks } from './characters'
 import { initMobileGesture } from './hotkey'
 import { moduleUpdate } from './process/modules'
 import { makeColdData } from './process/coldstorage.svelte'
-import { isNodeServer, isFastifyServer } from './platform'
+import { isFastifyServer } from './platform'
 import { isLocalNetworkUrl } from './network/localNetwork'
 import {
   decodeProxyJobWsChunk,
@@ -559,18 +559,18 @@ const defaultProxyJobHeartbeatSec = 15
 
 function getProxy2Url() {
   if (isFastifyServer) return '/api/v1/proxy/fetch'
-  return !isNodeServer ? `${hubURL}/proxy2` : `/proxy2`
+  return `${hubURL}/proxy2`
 }
 
 function getProxyStreamJobsCreateUrl() {
   if (isFastifyServer) return '/api/v1/proxy/stream-jobs'
-  return isNodeServer ? '/proxy-stream-jobs' : `${hubURL}/proxy-stream-jobs`
+  return `${hubURL}/proxy-stream-jobs`
 }
 
 function getProxyStreamJobDeleteUrl(jobId: string) {
   const enc = encodeURIComponent(jobId)
   if (isFastifyServer) return `/api/v1/proxy/stream-jobs/${enc}`
-  return isNodeServer ? `/proxy-stream-jobs/${enc}` : `${hubURL}/proxy-stream-jobs/${enc}`
+  return `${hubURL}/proxy-stream-jobs/${enc}`
 }
 
 function getProxyStreamJobWsPath(jobId: string) {
@@ -710,15 +710,15 @@ export async function globalFetch(
     const urlHost = new URL(url).hostname
     const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
     const forcePlainFetch =
-      ((knownHostes.includes(urlHost)) || db.usePlainFetch || arg.plainFetchForce) &&
+      (knownHostes.includes(urlHost) || db.usePlainFetch || arg.plainFetchForce) &&
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute
 
-    if (useLocalNetworkRoute && !isNodeServer) {
+    if (useLocalNetworkRoute && !isFastifyServer) {
       return { ok: false, headers: {}, status: 400, data: webLocalNetworkBlockedMessage }
     }
 
-    if (knownHostes.includes(urlHost) && !isNodeServer) {
+    if (knownHostes.includes(urlHost) && !isFastifyServer) {
       return {
         ok: false,
         headers: {},
@@ -873,7 +873,7 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
     arg.headers ??= {}
     arg.headers['Content-Type'] ??=
       arg.body instanceof URLSearchParams ? 'application/x-www-form-urlencoded' : 'application/json'
-    const nodeProxyAuth = isNodeServer ? await getNodeServerProxyAuth() : null
+    const nodeProxyAuth = isFastifyServer ? await getNodeServerProxyAuth() : null
     const headers = {
       'risu-header': encodeURIComponent(JSON.stringify(arg.headers)),
       'risu-url': encodeURIComponent(url),
@@ -1619,12 +1619,12 @@ export async function fetchNative(
 
   const db = getDatabase()
   const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
-  if (useLocalNetworkRoute && !isNodeServer) {
+  if (useLocalNetworkRoute && !isFastifyServer) {
     throw new Error(webLocalNetworkBlockedMessage)
   }
-  let throughProxy = !isNodeServer && !db.usePlainFetch
+  let throughProxy = !isFastifyServer && !db.usePlainFetch
   if (useLocalNetworkRoute) {
-    if (isNodeServer) {
+    if (isFastifyServer) {
       throughProxy = true
     }
   }
@@ -1649,11 +1649,11 @@ export async function fetchNative(
       })
     } else if (throughProxy) {
       const useProxyJobWs =
-        isNodeServer &&
+        isFastifyServer &&
         arg.interceptor === 'openai_streaming' &&
         arg.method === 'POST' &&
         useLocalNetworkRoute
-      const nodeProxyAuth = isNodeServer ? await getNodeServerProxyAuth() : null
+      const nodeProxyAuth = isFastifyServer ? await getNodeServerProxyAuth() : null
 
       if (useProxyJobWs) {
         try {
