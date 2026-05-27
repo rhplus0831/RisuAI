@@ -1,0 +1,68 @@
+# Fastify-Only Architecture
+
+## Target Runtime
+
+The target runtime has one supported production shape:
+
+- Fastify owns API routes, storage, proxy, generation-related server IO, static asset serving, and Docker runtime startup.
+- The built web client runs as Fastify-served static assets.
+- Client code may know that it is server-backed, but it should not branch across local, node, Hono, hosted functions, native shells, or standalone browser persistence modes.
+
+## Server Layout
+
+The Fastify server remains under `server/fastify`.
+
+Expected owned surfaces:
+
+- App construction and plugin registration.
+- `/api/v1/*` route contracts.
+- Static root serving.
+- Data directory ownership.
+- Auth and storage gates.
+- Proxy and provider relay behavior.
+- Smoke-test startup.
+
+Removal targets:
+
+- `server/hono` and its Node, Bun, Cloudflare, and Vercel adapters.
+- Legacy root launchers that call missing or non-Fastify scripts.
+- Hosted function proxies under `public/functions`.
+
+## Client Contract
+
+The client should assume a Fastify-served runtime.
+
+- Replace `local`, `node`, `web`, `web(dev)`, `isTauri`, and similar platform gates with a smaller contract that only distinguishes Fastify-served runtime from test/dev harnesses when necessary.
+- Remove `globalThis.__NODE__` as a Fastify compatibility trigger.
+- Keep `globalThis.__FASTIFY__` or replace it with a clearer server-backed flag, but do not keep both when one is only supporting old self-host branches.
+
+## API Surface
+
+The retained API surface should use `/api/v1/*`.
+
+- Storage uses `/api/v1/storage/*`.
+- Proxy uses `/api/v1/proxy/*`.
+- Generation and chat server routes stay under the Fastify route tree.
+- Legacy paths such as `/api/write`, `/api/read`, `/api/list`, `/api/remove`, `/proxy2`, and `/proxy-stream-jobs` are removal targets.
+
+## Persistence
+
+Fastify owns persisted application data through the configured server data directory.
+
+The target design removes standalone browser persistence as a supported mode. OPFS, localforage, browser save-file bootstrap, and local-only import/export flows may remain only if they are explicitly part of a Fastify-served workflow rather than a replacement runtime.
+
+## Boundary Rules
+
+- No production import should depend on Hono, Electron, Capacitor, Cloudflare Pages Functions, Bun adapters, or Vercel adapters.
+- No UI branch should imply a supported local-only runtime.
+- No package script should advertise a removed platform.
+- No README or smoke instruction should point users at a non-Fastify server.
+
+## References
+
+- `server/fastify/src/app.ts:176`
+- `src/ts/platform.ts:13`
+- `src/ts/storage/nodeStorage.ts:6`
+- `src/ts/globalApi.svelte.ts:560`
+- `server/hono/package.json:1`
+- `public/functions/proxy.js:1`
