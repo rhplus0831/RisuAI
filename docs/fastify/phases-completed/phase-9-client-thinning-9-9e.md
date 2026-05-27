@@ -11,7 +11,7 @@ bundle routes own save movement.
 
 Post-closeout audit note: direct-write follow-up slices reopened after this
 closeout and later closed through 9J in
-`docs/fastify/phases/phase-9-client-thinning-followup.md`.
+`docs/fastify/phases-completed/phase-9-client-thinning-followup.md`.
 
 ## Confirmed
 

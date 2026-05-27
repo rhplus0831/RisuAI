@@ -27,24 +27,24 @@ These features are deleted. They have no server endpoints and no UI.
 
 A follow-up effort removed the residual non-Fastify runtime surfaces
 that the migration above left in place. Full detail lives in
-[`../fastify-only/removed-and-out-of-scope.md`](../fastify-only/removed-and-out-of-scope.md).
+[`phases-completed/fastify-only.md`](phases-completed/fastify-only.md).
 
-- **Hono server subtree.** Node, Bun, Cloudflare, Vercel, and Wrangler
+- **No-port: Hono server subtree.** Node, Bun, Cloudflare, Vercel, and Wrangler
   entry points under `server/hono`, plus their package scripts.
-- **Desktop and mobile wrappers.** Tauri/Electron launch scripts,
+- **No-port: desktop and mobile wrappers.** Tauri/Electron launch scripts,
   `server.sh` / `server.bat`, and the Capacitor config.
-- **Service worker and PWA local surfaces.** `public/sw.js`, the
+- **No-port: service worker and PWA local surfaces.** `public/sw.js`, the
   manifest `share_target` / `file_handlers` entries, `#share_*` and
   `launchQueue` import handlers, and standalone display mode.
-- **Local browser persistence.** OPFS and localforage app-runtime
+- **No-port: local browser persistence.** OPFS and localforage app-runtime
   storage selection, the local save-file bootstrap fallback, and local
   full/partial backup and restore-from-file flows.
-- **Legacy client endpoint selection.** Client routing to `/api/write`,
+- **No-port: legacy client endpoint selection.** Client routing to `/api/write`,
   `/api/read`, `/api/list`, `/api/remove`, `/proxy2`, and
   `/proxy-stream-jobs`, plus the Cloudflare Pages-style hosted proxy
   functions in `public/functions`. Client IO now targets
   `/api/v1/storage/*` and `/api/v1/proxy/*` only.
-- **Broad platform gates.** `isNodeServer`, `isTauri`, and `isWeb` are
+- **No-port: broad platform gates.** `isNodeServer`, `isTauri`, and `isWeb` are
   gone from `src/ts/platform.ts`; `globalThis.__FASTIFY__` is the single
   server-backed signal.
 
@@ -52,15 +52,15 @@ The server still ships `legacyStorage.ts` and `hub.ts` routes — they
 back the retained `/api/v1/storage/*` and `/api/v1/hub/*` contracts; the
 "legacy" name is historical, not a removed surface.
 
-## Permanent browser-only surfaces
+## Permanent browser-only / no-port surfaces
 
-The server does not host these and never will under this roadmap.
+The server does not host these under this roadmap.
 
 - **TTS playback.** Audio playback stays in the browser tab.
 - **Image preview / inlay rendering.** Browser renders results.
 - **Browser image embedding.** `@huggingface/transformers` model in
   browser.
-- **WebLLM and HF `hf:::` local models.** In-browser LLMs. Server
+- **WebLLM and HF `hf:::` local models.** No-port in-browser LLMs. Server
   returns 501 if addressed.
 - **Plugin code execution.** Runs in browser sandbox. Server gates
   plugin tool calls but does not execute plugin code.

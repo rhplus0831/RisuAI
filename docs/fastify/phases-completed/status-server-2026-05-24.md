@@ -80,7 +80,7 @@ template renderer, the closed critical-path assembler
   is the only authenticated route that accepts the ES256
   assertion via a `risu-auth` query-string parameter in addition
   to the header (EventSource-style clients can't set custom
-  headers); see [`../phases/phase-3-proxy.md`](../phases/phase-3-proxy.md).
+  headers); see [`phase-3-proxy-scope.md`](phase-3-proxy-scope.md).
   `buildApp` schedules `JobRegistry.tickGc` on a 60s unref'd
   interval and clears it via `onClose`.
 - `server/fastify/src/routes/hub.ts` registers the Phase 3C hub
@@ -196,7 +196,7 @@ been removed; `server/node/` no longer exists.
   switchover. Domain SQL tables are deferred to later server phases,
   per resource. Binary `.risu` codec and bundle export stay client-side
   until Phase 9. See
-  [`../phases/phase-2-storage.md`](../phases/phase-2-storage.md).
+  [`phase-2-storage-scope.md`](phase-2-storage-scope.md).
 - **Phase 3.** Closed 2026-05-21. Fastify owns provider proxy
   fetch, hub passthrough, stream-job HTTP+WS, the legacy
   key-value storage, auth, crypto, and the SPA static surface

@@ -10,10 +10,10 @@ paths directly; do not write compatibility migrations.
 
 All migration phases (0-9) are complete. The Fastify server is the only
 supported runtime. A follow-up Fastify-only lockdown then removed the
-residual non-Fastify surfaces this migration left behind (Hono adapters,
+residual no-port surfaces this migration left behind (Hono adapters,
 desktop/mobile wrappers, service worker, local browser persistence, and
 legacy client endpoints); that effort is documented under
-[`../fastify-only/`](../fastify-only/).
+[`phases-completed/fastify-only.md`](phases-completed/fastify-only.md).
 
 ## Read Order
 
@@ -27,7 +27,7 @@ legacy client endpoints); that effort is documented under
    fixtures).
 6. [`removed-and-out-of-scope.md`](removed-and-out-of-scope.md) -
    deleted features and permanent browser-only surfaces.
-7. [`design/`](design/) - deferred provider routing decisions.
+7. [`design/`](design/) - no-port provider routing decisions.
 8. [`phases-completed/`](phases-completed/) - archived phase plans,
    slice logs, and historical status.
 
@@ -40,8 +40,8 @@ legacy client endpoints); that effort is documented under
 - **Sequence.** Remove first, then port. Phase 0 stripped deprecated
   features before server work began.
 - **Client modes.** Server-backed web only. Desktop (Tauri), mobile
-  (Capacitor), PWA-standalone, and local browser persistence modes were
-  removed by the Fastify-only lockdown.
+  (Capacitor), PWA-standalone, and local browser persistence modes are
+  no-port and were removed by the Fastify-only lockdown.
 - **Memory.** Only Hypa V3. Supa, Hypa V2, Hanurai removed.
 - **Drive.** Google Drive sync removed in Phase 0.
 
@@ -49,5 +49,8 @@ legacy client endpoints); that effort is documented under
 
 - Status shards under `status/` are present-tense and updated when a
   slice lands.
+- Non-Fastify runtime mentions must be either removed or explicitly
+  marked `no-port`; archival mentions under `phases-completed/` are
+  historical and not implementation guidance.
 - Dates are absolute (`2026-05-20`), never relative.
 - Cite source files as `path:line`.

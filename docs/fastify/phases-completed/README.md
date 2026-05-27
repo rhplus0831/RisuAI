@@ -6,6 +6,10 @@ Archive of completed phase plans, landed slice tables, and historical
 status logs. Useful for auditing and archaeology, not for tracking
 current work.
 
+Archived notes preserve the wording that was true when each slice
+landed. Mentions of non-Fastify implementations in this directory are
+historical no-port references, not current implementation guidance.
+
 ## Phase Scope Documents
 
 Moved here after all phases closed. These contain the goals, boundaries,
@@ -41,12 +45,13 @@ worker, local browser persistence, legacy client endpoints). The full
 - [`fastify-only.md`](fastify-only.md) — goals, per-phase removals,
   guard tests, and final verification.
 
-## Tauri / Desktop Removal
+## No-Port Runtime Removal
 
 Tauri / Desktop support was explicitly removed in commit `a8dd411c`
 (2026-05-27). All `@tauri-apps/*` dependencies, Tauri config, and
 desktop-specific code paths are deleted. The web client only runs
-against the Fastify server.
+against the Fastify server; non-Fastify runtime references here are
+no-port history.
 
 ## Phase Closeout Slice Logs
 

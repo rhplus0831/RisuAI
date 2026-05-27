@@ -79,7 +79,7 @@ Results:
 Continue Phase 9 with **9-2c - Prompt templates/items**:
 
 - Implement typed prompt template/settings and prompt-item commands from
-  `docs/fastify/status/phase-9-command-map.md`.
+  `docs/fastify/phases-completed/phase-9-command-map.md`.
 - Replace server-backed web prompt template/item mutation paths in the
   prompt settings UI and prompt data item helpers.
 - Keep personas, translator presets, loadouts, projection enforcement,

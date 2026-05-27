@@ -13,7 +13,7 @@ Google Drive sync, and the Supa / Hypa V2 / Hanurai memory-engine entry
 points from the live surface, so later phases port a smaller surface.
 
 Status: complete as of 2026-05-20. The as-landed inventory lives in
-[`../status/removals.md`](../status/removals.md).
+[`status-removals.md`](status-removals.md).
 
 ## Preconditions
 
@@ -23,7 +23,7 @@ None. Phase 0 is the start.
 
 Five removal targets. Land each as its own commit (or series of
 commits) so a bisect can isolate any regression. Status per target
-lives in [`../status/removals.md`](../status/removals.md).
+lives in [`status-removals.md`](status-removals.md).
 
 ### 0.1 Group chat
 

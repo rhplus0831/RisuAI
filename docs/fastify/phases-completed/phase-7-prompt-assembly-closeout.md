@@ -10,7 +10,7 @@ for the browser adapter.
 Post-closeout audit note: regenerate browser wiring / assembly
 semantics, deferred-provider guards, stop-trigger mutation delivery, and
 route-backed fixture coverage were reopened in
-`docs/fastify/phases/phase-7-prompt-assembly-followup.md` and
+`docs/fastify/phases-completed/phase-7-prompt-assembly-followup.md` and
 later closed again in slices 7A-7E.
 
 ## Confirmed

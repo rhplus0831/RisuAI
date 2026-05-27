@@ -18,7 +18,8 @@ shapes.
 
 **9-9e - Phase 9 docs closeout** is the latest landed original
 migration slice. First-audit follow-up commits after `edbc2d07` are
-tracked in the follow-up and alpha phase docs under `../phases/`.
+tracked in the follow-up and alpha phase docs under
+`../phases-completed/`.
 
 - Closed Phase 9 for the Fastify-served web client-thinning scope.
 - Recorded the already-green 9-9d automated preflight and Fastify-served web
@@ -137,11 +138,11 @@ initialization` from `src/ts/parser/parser.svelte.ts:109`.
 ## References
 
 - Closed phase:
-  [`../phases/phase-9-client-thinning.md`](../phases/phase-9-client-thinning.md)
+  [`phase-9-client-thinning.md`](phase-9-client-thinning.md)
 - Command map:
-  [`../status/phase-9-command-map.md`](../status/phase-9-command-map.md)
+  [`phase-9-command-map.md`](phase-9-command-map.md)
 - Closed memory phase:
-  [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md)
+  [`phase-8-memory.md`](phase-8-memory.md)
 - Latest closeout:
   [`phase-9-client-thinning-9-9e.md`](phase-9-client-thinning-9-9e.md)
 - Completed closeout index:

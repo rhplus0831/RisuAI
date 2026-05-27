@@ -68,7 +68,7 @@ Phase 7 work is the rest of the Tier 4 browser adapter (7-12d onward). See
 plan. Current pickup state now lives in
 [`../status/next-steps.md`](../status/next-steps.md), and the active
 Phase 7 scope lives in
-[`../phases/phase-7-prompt-assembly.md`](../phases/phase-7-prompt-assembly.md).
+[`phase-7-prompt-assembly.md`](phase-7-prompt-assembly.md).
 
 ## Goal
 

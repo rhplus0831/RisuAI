@@ -5,7 +5,7 @@ Date: 2026-05-27
 Status: Phase 6 completion routing closed in Phase 6-28
 (`398a3ae6`; hash backfilled by `a8cb123b`). The table below
 tracks the current implementation matrix and the remaining
-local-only provider families. Post-closeout streaming error handling
+no-port provider families. Post-closeout streaming error handling
 closed in follow-up slices 6A-6C.
 
 ## Required per provider
@@ -32,7 +32,7 @@ in `src/ts/model/types.ts`, `src/ts/model/modellist.ts`, and
 
 | Provider / format family                | Request shape                             | Stream | Status      |
 | --------------------------------------- | ----------------------------------------- | ------ | ----------- |
-| Echo developer provider                 | local deterministic echo                  | SSE envelope | covered by `echo.test.ts`, `generation.completion.test.ts`, and dual-mode fixture `echo-basic` |
+| Echo developer provider                 | deterministic echo                        | SSE envelope | covered by `echo.test.ts`, `generation.completion.test.ts`, and dual-mode fixture `echo-basic` |
 | OpenAI Chat Completions                 | `/v1/chat/completions`                    | SSE    | covered by `openai.test.ts`, `generation.completion.test.ts`, and dual-mode fixture `openai-basic` |
 | OpenRouter                              | Chat Completions-compatible with OpenRouter headers | SSE | covered by `generation.completion.test.ts`, `openai.test.ts`, and `serverCompletion.test.ts` |
 | NanoGPT chat                            | Chat Completions-compatible, including subscription endpoint and optional `X-Provider` | SSE | covered by `generation.completion.test.ts`, `openai.test.ts`, and `serverCompletion.test.ts` |
@@ -60,31 +60,30 @@ in `src/ts/model/types.ts`, `src/ts/model/modellist.ts`, and
 | ooba / text-generation-webui legacy     | blocking `/api/v1/generate` endpoint      | no; buffered only | covered by `oobaLegacy.test.ts` and `generation.completion.test.ts` |
 | AWS Bedrock Claude                      | Bedrock runtime Anthropic Messages payload with SigV4 | no; buffered only | covered by `bedrock.test.ts`, `sigv4.test.ts`, `generation.completion.test.ts`, `serverCompletion.test.ts`, and dual-mode fixture `bedrock-basic` |
 | Stable Horde text                       | `/v2/generate/text/async` submit + status polling | no; buffered poll loop | covered by `horde.test.ts`, `generation.completion.test.ts`, `serverCompletion.test.ts`, and dual-mode fixture `horde-basic` |
-| OpenAI-compatible fixed endpoint without keyIdentifier | User endpoint with no defined key lookup | local only | client gate refuses until the auth path is defined |
-| Gemini `reverse_proxy` / `xcustom:::` and other unproven custom formats | Provider-specific variants without a routed auth / request-shape slice | local only | deferred until a concrete fixture demands the path |
-| NovelAI text                            | NovelAI text-generation API               | local only | deferred until server-owned provider string flattening lands; see `../design/novelai-novellist-stringlize.md` |
-| NovelList                               | NovelList API                             | local only | deferred until server-owned provider string flattening lands; see `../design/novelai-novellist-stringlize.md` |
-| ooba OAI-compatible                     | `/v1/completions` with Jinja chat template flattening | local only | deferred until server-owned provider string flattening lands; see `../design/ooba-oai-compat.md` |
+| OpenAI-compatible fixed endpoint without keyIdentifier | User endpoint with no defined key lookup | no-port | client gate refuses until the auth path is defined |
+| Gemini `reverse_proxy` / `xcustom:::` and other unproven custom formats | Provider-specific variants without a routed auth / request-shape slice | no-port | reopen only with a concrete fixture and route design |
+| NovelAI text                            | NovelAI text-generation API               | no-port | see `../design/novelai-novellist-stringlize.md` |
+| NovelList                               | NovelList API                             | no-port | see `../design/novelai-novellist-stringlize.md` |
+| ooba OAI-compatible                     | `/v1/completions` with Jinja chat template flattening | no-port | see `../design/ooba-oai-compat.md` |
 
-Providers/features that stay browser-local, LAN-local, or
-plugin-local should return a documented `501` from the server route
-when they are addressed by a server route:
+No-port provider/effect categories should return a documented `501`
+from the server route when they are addressed by a server route:
 
 - Plugin legacy providers - plugin code execution stays in the
   browser sandbox.
 - WebLLM and Hugging Face `hf:::` models - in-browser models.
 - transformers.js image embedding - browser ML.
 - Browser Web Speech, VoiceVox, Vits, GPT-SoVITS, and Fish Speech -
-  local / browser TTS.
+  no-port TTS effects.
 
-## Helper providers
+## No-port helper providers
 
 | Endpoint                             | Providers                            | Status      |
 | ------------------------------------ | ------------------------------------ | ----------- |
-| `POST /api/v1/generate/translate`    | DeepL, DeepLX, Google free / HTML, Bergamot, LLM | not started |
-| `POST /api/v1/generate/tts`          | OpenAI, ElevenLabs, NovelAI, Hugging Face API Inference | not started |
-| `POST /api/v1/generate/image`        | WebUI, NovelAI, Stability, fal, ComfyUI / legacy Comfy, Imagen, OpenAI-compatible image, WaveSpeed, kei | not started |
-| `POST /api/v1/generate/count-tokens` | tiktoken, Mistral, NovelAI, Claude, Llama / Llama 3, NovelList, Gemma, Cohere, DeepSeek / DeepSeek V4, GLM4 / GLM5 | not started |
+| `POST /api/v1/generate/translate`    | DeepL, DeepLX, Google free / HTML, Bergamot, LLM | no route in current Fastify surface |
+| `POST /api/v1/generate/tts`          | OpenAI, ElevenLabs, NovelAI, Hugging Face API Inference | no route in current Fastify surface |
+| `POST /api/v1/generate/image`        | WebUI, NovelAI, Stability, fal, ComfyUI / legacy Comfy, Imagen, OpenAI-compatible image, WaveSpeed, kei | no route in current Fastify surface |
+| `POST /api/v1/generate/count-tokens` | tiktoken, Mistral, NovelAI, Claude, Llama / Llama 3, NovelList, Gemma, Cohere, DeepSeek / DeepSeek V4, GLM4 / GLM5 | no route in current Fastify surface |
 
 ## Reference
 

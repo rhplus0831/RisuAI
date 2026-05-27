@@ -31,10 +31,10 @@ script are deleted.
 
 - Hub passthrough remains auth-gated; session-cookie support may be
   needed for browser-loaded hub resources.
-- NovelAI text, NovelList, and Ooba OAI-compatible remain deferred
-  until server-side prompt string flattening is available.
+- NovelAI text, NovelList, and Ooba OAI-compatible are no-port for the
+  completed roadmap unless a new provider-flattening phase reopens them.
 - Plugin / Lua execution and image generation side effects remain
-  browser-only.
+  browser-owned/no-port to the server.
 
 ## References
 

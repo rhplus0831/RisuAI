@@ -86,7 +86,7 @@ The coordinator now owns lifecycle wiring, browser-only closures,
 depth-prompt distribution, trigger-result placement, and recursive
 handoffs. The Svelte stores stay where they are because Phase 5 is
 browser-only. The closed slice record lives in
-[`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
+[`phase-5-sendchat-slicing.md`](phase-5-sendchat-slicing.md).
 
 ### Historical migration recipe
 

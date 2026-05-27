@@ -2,8 +2,9 @@
 
 Date: 2026-05-25
 
-Status: deferred. Keep NovelAI and NovelList local until server-owned
-prompt flattening includes provider-specific stringlize / unstringlize.
+Status: no-port. NovelAI and NovelList routing is not part of the
+completed Fastify route surface unless a new provider-flattening phase
+reopens it.
 
 Sibling decision: [`ooba-oai-compat.md`](./ooba-oai-compat.md)
 
@@ -14,7 +15,7 @@ Do not port the SPA's NovelAI / NovelList `stringlize` and
 
 NovelAI and NovelList use flat prompt-string wires plus bespoke sampler
 blocks, then trim the provider continuation back into an assistant turn.
-The local helpers depend on character name, user name, per-message
+The legacy browser helpers depend on character name, user name, per-message
 metadata, and memo tags. Those dependencies are exactly the server prompt
 context that later migration phases are meant to centralize.
 
@@ -30,14 +31,11 @@ There are two viable future shapes:
   already flattened. This is more acceptable for NovelAI / NovelList than
   for Ooba, because their upstream wires are not OpenAI-message-shaped.
 
-The migration currently chooses deferral so Phase 6 does not invent
-provider-specific context plumbing that Phase 9 or a dedicated
-provider-flattening follow-up would later replace.
+The completed roadmap keeps these no-port so Fastify does not inherit
+provider-specific context plumbing without a dedicated route design.
 
-## Revisit Triggers
+## Reopen Triggers
 
-- Server-backed client thinning needs NovelAI or NovelList to avoid local
-  browser dispatch.
 - A fixture requires NovelAI / NovelList parity through the Fastify route.
 - The project accepts a general prompt-string fast path for flattened
   provider families.
@@ -47,5 +45,5 @@ provider-flattening follow-up would later replace.
 ## References
 
 - Provider matrix: [`../coverage/providers.md`](../coverage/providers.md)
-- Local NovelAI / NovelList behavior is still the source of truth until
-  this decision is reopened.
+- Legacy NovelAI / NovelList behavior is historical reference material
+  until this decision is reopened.

@@ -108,7 +108,7 @@ chat under specific conditions:
 Each fixture is small enough to read in one screen. During Phase 5
 the set grew as extraction surfaced hidden coupling. The completed
 gate list is tracked in
-[`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
+[`phase-5-sendchat-slicing.md`](phase-5-sendchat-slicing.md).
 
 ### Test config
 

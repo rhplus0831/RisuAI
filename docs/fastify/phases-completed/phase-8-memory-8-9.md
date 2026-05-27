@@ -9,7 +9,7 @@ behind the Fastify path.
 
 Post-closeout audit note: custom embedding follow-up routing, production
 memory progress events, and no-embedding/no-summary diagnostics were
-reopened in `docs/fastify/phases/phase-8-memory-followup.md`.
+reopened in `docs/fastify/phases-completed/phase-8-memory-followup.md`.
 
 ## Confirmed
 

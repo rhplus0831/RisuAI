@@ -80,7 +80,7 @@ Results:
 Continue Phase 9 with **9-2d - Personas**:
 
 - Implement persona create/update/delete/reorder/select commands from
-  `docs/fastify/status/phase-9-command-map.md`.
+  `docs/fastify/phases-completed/phase-9-command-map.md`.
 - Preserve selected-persona mirror semantics for `username`, `userIcon`,
   `personaPrompt`, and `userNote`.
 - Keep translator presets, loadouts, projection enforcement,

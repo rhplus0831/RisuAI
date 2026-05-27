@@ -9,7 +9,7 @@ contract that the implementation slices must follow.
 ## Confirmed
 
 - The active Phase 9 command map lives in
-  [`../status/phase-9-command-map.md`](../status/phase-9-command-map.md).
+  [`phase-9-command-map.md`](phase-9-command-map.md).
 - The audit covered direct `DBState.db` writes, Svelte binds,
   array-mutator writes, `setDatabase` / `setDatabaseLite`, mutable
   `getDatabase()` references, plugin database setters, import/restore

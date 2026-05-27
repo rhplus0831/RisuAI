@@ -76,12 +76,11 @@ repository export route, and bundle export route wiring landed in Phase 9.
 | Route                                      | Pinned behavior                            | Status      |
 | ------------------------------------------ | ------------------------------------------ | ----------- |
 | `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, buffered/streaming dispatch for the original Phase 6 provider matrix, and typed streaming `provider_error` frames for upstream failures. Stable Horde text is provider `horde` on this route; no separate Horde route exists. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `vertexAuth.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`, `bedrock.test.ts`, `sigv4.test.ts`, `horde.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
-| `POST /api/v1/generate/translate`          | DeepL / DeepLX / Google.                   | not started |
-| `POST /api/v1/generate/tts`                | OpenAI / ElevenLabs / NovelAI / Hugging Face API Inference. | not started |
-| `POST /api/v1/generate/image`              | Provider routing + body shaping for current `sdProvider` values. | not started |
-| `POST /api/v1/generate/count-tokens`       | Returns token count per encoder.           | not started |
-| `GET /api/v1/generate/encodings`           | Lists tokenizers.                          | not started |
-| `POST /api/v1/generate/triggers/run`       | Worker sandbox returns trigger result.     | not started |
+
+No current Fastify routes exist for translate, TTS generation, image
+generation, token counting, tokenizer listing, or standalone trigger
+execution. Those helper families are no-port for the completed roadmap
+unless a new phase reopens them.
 
 Per-provider request / response coverage lives in
 [`providers.md`](providers.md).
@@ -137,7 +136,7 @@ route handlers.
 
 The command names, payload rules, id-vs-index policy, event names, and
 test expectations were locked by 9-0 in
-[`../status/phase-9-command-map.md`](../status/phase-9-command-map.md).
+[`../phases-completed/phase-9-command-map.md`](../phases-completed/phase-9-command-map.md).
 
 | Resource family           | Endpoints                                         | Status      |
 | ------------------------- | ------------------------------------------------- | ----------- |
@@ -170,9 +169,9 @@ shapes.
 | Surface                         | Pinned behavior                                   | Status      |
 | ------------------------------- | ------------------------------------------------- | ----------- |
 | bootstrap provider secrets      | `/api/v1/bootstrap` masks provider/media/memory secrets while settings commands preserve masked placeholders as "leave unchanged". | covered by `server/fastify/__tests__/bootstrap.test.ts` and `server/fastify/__tests__/commands.test.ts` |
-| server-backed backups           | Browser helpers use `/api/v1/backups`; local file restore and partial local backup return explicit unsupported behavior in Fastify mode. | covered by `src/ts/server/backups.test.ts` and `src/ts/storage/backup.test.ts` |
+| server-backed backups           | Browser helpers use `/api/v1/backups`; no-port file restore and partial backup flows return explicit unsupported behavior in Fastify mode. | covered by `src/ts/server/backups.test.ts` and `src/ts/storage/backup.test.ts` |
 | server-backed asset reads       | `loadAsset()` and `readImage()` fetch Fastify asset ids through `/api/v1/assets/:id` with `risu-auth`, without falling through to local storage. | covered by `src/ts/server/assets.test.ts`, `src/ts/bootstrap.test.ts`, and `server/fastify/__tests__/assets.test.ts` |
-| residual local caches           | RISUSAVE cache/remotes, cold-storage helpers, and Google Search MCP credential storage are gated or explicitly unsupported in Fastify mode. | covered by `src/ts/storage/risuSave.test.ts`, `src/ts/process/coldstorage.test.ts`, and `src/ts/process/mcp/googlesearchclient.test.ts` |
+| no-port residual caches         | RISUSAVE cache/remotes, cold-storage helpers, and Google Search MCP credential storage are gated or explicitly unsupported in Fastify mode. | covered by `src/ts/storage/risuSave.test.ts`, `src/ts/process/coldstorage.test.ts`, and `src/ts/process/mcp/googlesearchclient.test.ts` |
 | server `.risu` codec / import snapshot | Legacy envelopes and RISUSAVE blocks decode through server-safe codecs; decoded saves normalize into current Phase 9 import snapshots and malformed rows reject. | covered by `server/fastify/__tests__/risuSaveCodec.test.ts` |
 | multipart `.risu` import route | `/api/v1/import/risusave` accepts one uploaded `.risu`, applies the normalized import through repository helpers, runs memory legacy replacement, and reports unsupported references without browser cache recovery. | covered by `server/fastify/__tests__/risuSaveImportRoute.test.ts` |
 | repository `.risu` export route | `/api/v1/export/risusave` returns downloadable repository-backed `.risu` bytes from the current server store. | covered by `server/fastify/__tests__/risuSaveExportRoute.test.ts` |

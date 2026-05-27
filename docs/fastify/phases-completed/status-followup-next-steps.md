@@ -3,7 +3,7 @@
 Date: 2026-05-27
 
 Use this file as the closed first-audit runbook. The phase files under
-`../phases/` hold source evidence and exit criteria for that audit; the
+`../phases-completed/` holds source evidence and exit criteria for that audit; the
 current next-steps runbook lives in
 [`../status/next-steps.md`](../status/next-steps.md).
 
@@ -104,4 +104,4 @@ pnpm build
 - Phase index: [`../phases/README.md`](../phases/README.md)
 - Current live status: [`../status.md`](../status.md)
 - Phase 9 command map:
-  [`../status/phase-9-command-map.md`](../status/phase-9-command-map.md)
+  [`phase-9-command-map.md`](phase-9-command-map.md)

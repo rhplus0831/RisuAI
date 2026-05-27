@@ -14,9 +14,10 @@ phase; the items below are history kept for auditing and archaeology.
 Collapse the project to a single supported runtime — Fastify serving the
 API plus the built web client — by removing alternate server projects,
 native/mobile wrappers, broad platform gates, legacy storage and proxy
-endpoints, hosted functions, and standalone browser persistence.
+endpoints, hosted functions, and standalone browser persistence. Those
+removed surfaces are no-port.
 
-Non-goals: no compatibility shims for Hono, Electron, Capacitor,
+Non-goals (no-port): no compatibility shims for Hono, Electron, Capacitor,
 Cloudflare Pages Functions, legacy Node scripts, or local save-file
 mode; no migrations bridging removed storage paths; the static web
 client stays as the Fastify-served UI.
@@ -87,6 +88,6 @@ These assert the removed surfaces stay gone; keep them:
 ## Known Minor Leftovers
 
 - `public/functions/` is an empty directory (untracked by git).
-- `src/etc/docs/docs_text.cbs` still describes "Local version (Tauri)"
-  and a "Node version" as product variants; it is in-app assistant
+- `src/etc/docs/docs_text.cbs` still describes no-port "Local version
+  (Tauri)" and "Node version" product variants; it is in-app assistant
   knowledge text, not runtime code.

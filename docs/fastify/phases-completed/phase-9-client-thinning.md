@@ -107,7 +107,7 @@ surfaces.
     unknown keys to `pluginCustomStorage`. 9-0 records the mapping table;
     implementation lands in 9-4f.
   - Status: complete. Locked command map:
-    [`../status/phase-9-command-map.md`](../status/phase-9-command-map.md).
+    [`phase-9-command-map.md`](phase-9-command-map.md).
 - **9-1 - Command foundation.** Add command route plumbing,
   `baseRevision` / 409 handling, transactions, revision increments, event
   emission, and the typed browser command helper. Ship one small settings

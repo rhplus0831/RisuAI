@@ -43,7 +43,10 @@ new server revision. Route families:
 - Command routes for all resource families.
 - `GET /api/v1/events` command-event SSE stream.
 
-Planned: helper routes for translate, TTS, image, token counting.
+No current Fastify route surface exists for translate, TTS generation,
+image generation, token counting, tokenizer listing, or standalone
+trigger execution. Treat those helper families as no-port for this
+completed roadmap unless a new phase reopens them.
 
 ## Persistence
 
@@ -69,8 +72,8 @@ Server owns: persisted state, provider API keys, outbound HTTP for
 covered providers, prompt assembly, tokenization, lorebook activation,
 Hypa V3 memory.
 
-Browser owns: rendering, input, abort forwarding, local display state,
-TTS playback, image preview, browser image embedding, plugin code
-execution.
+Fastify-served browser client owns: rendering, input, abort forwarding,
+display state, TTS playback, image preview, browser image embedding,
+and plugin code execution.
 
-Removed: group chat, peer sync, Drive sync, Risu Account Sync.
+Removed/no-port: group chat, peer sync, Drive sync, Risu Account Sync.

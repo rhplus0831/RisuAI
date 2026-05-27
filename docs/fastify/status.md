@@ -3,10 +3,11 @@
 Date: 2026-05-27
 
 All Phases 0-9 are complete. No open findings remain. A follow-up
-Fastify-only lockdown then removed the residual non-Fastify runtime
+Fastify-only lockdown then removed the residual no-port runtime
 surfaces (Hono adapters, desktop/mobile wrappers, service worker, local
 browser persistence, legacy client endpoints); see
-[`../fastify-only/`](../fastify-only/) for that effort.
+[`phases-completed/fastify-only.md`](phases-completed/fastify-only.md)
+for that no-port cleanup.
 
 Policy: no actual Fastify users yet. Update schemas and import paths
 directly; do not write compatibility migrations.

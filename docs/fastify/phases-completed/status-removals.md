@@ -4,7 +4,7 @@ Date: 2026-05-20
 
 Final Phase 0 inventory. Update this file if a follow-up cleanup
 changes the as-landed removal surface. The canonical scope lives in
-[`../phases/phase-0-removals.md`](../phases/phase-0-removals.md).
+[`phase-0-removals-scope.md`](phase-0-removals-scope.md).
 
 Last updated: 2026-05-20 (legacy memory landed - Phase 0 complete).
 

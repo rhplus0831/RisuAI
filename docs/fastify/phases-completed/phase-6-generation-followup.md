@@ -63,7 +63,7 @@ pnpm api:test -- server/fastify/__tests__/generation.completion.test.ts
 
 ## References
 
-- Original phase: `docs/fastify/phases/phase-6-server-generation.md`
+- Original phase: `docs/fastify/phases-completed/phase-6-server-generation-scope.md`
 - OpenAI stream failure return: `server/fastify/src/generation/openai.ts:256`
 - SSE frame serialization: `server/fastify/src/routes/generation.ts:312`
 - Stream pipe: `server/fastify/src/routes/generation.ts:333`

@@ -80,7 +80,7 @@ Results:
 Continue Phase 9 with **9-2f - Loadouts**:
 
 - Implement loadout save/delete/favorite/touch commands from
-  `docs/fastify/status/phase-9-command-map.md`.
+  `docs/fastify/phases-completed/phase-9-command-map.md`.
 - Replace server-backed web loadout list and bookkeeping mutation paths
   with typed commands.
 - Keep loadout apply composite/deferred until every touched resource has a

@@ -80,7 +80,7 @@ pnpm api:test -- server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastif
 
 ## References
 
-- Original phase: `docs/fastify/phases/phase-8-memory.md`
+- Original phase: `docs/fastify/phases-completed/phase-8-memory.md`
 - custom model resolver in assembly: `server/fastify/src/prompt/assemble.ts:984`
 - follow-up summary enqueue: `server/fastify/src/prompt/memoryFollowups.ts:56`
 - memory diagnostics: `server/fastify/src/memorySelectionService.ts:117`

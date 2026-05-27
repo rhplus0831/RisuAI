@@ -11,7 +11,7 @@ The 2026-05-27 Phases 0-9 audit found reachable server-backed direct
 projection guard. The scalar character / persona writes plus two
 client-only UI writes are closed here; the remaining trigger collection /
 chat writes are tracked in
-[`../phases/phase-9-trigger-projection-writes.md`](../phases/phase-9-trigger-projection-writes.md).
+[`phase-9-trigger-projection-writes.md`](phase-9-trigger-projection-writes.md).
 
 ## Closeout
 
@@ -19,7 +19,8 @@ Routed each durable write through the command-dispatching helpers
 (`setCharacterByIndex` -> `dispatchUpdateCharacter`; `saveUserPersona` ->
 `updatePersonaCommand`), which wrap writes in
 `withTrustedServerProjectionWrite` and emit a typed command in
-server-backed mode while writing directly in local/Tauri mode.
+server-backed mode while the now-removed local/Tauri paths remained
+historical no-port behavior.
 
 Sites closed:
 

@@ -83,7 +83,7 @@ Results:
 Continue Phase 9 with **9-2e - Translator presets**:
 
 - Implement translator preset create/update/delete/select commands from
-  `docs/fastify/status/phase-9-command-map.md`.
+  `docs/fastify/phases-completed/phase-9-command-map.md`.
 - Preserve translator preset selection and any existing legacy-field sync
   behavior.
 - Keep loadouts, character/chat/message resources, projection

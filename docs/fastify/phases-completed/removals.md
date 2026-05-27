@@ -8,4 +8,4 @@ memory-engine entry points are out of the live migration surface. Hypa V3
 still carries a few legacy field/helper names for compatibility.
 
 Historical detail: [`../phases-completed/status-removals.md`](../phases-completed/status-removals.md).
-Closed phase summary: [`../phases/phase-0-removals.md`](../phases/phase-0-removals.md).
+Closed phase summary: [`phase-0-removals-scope.md`](phase-0-removals-scope.md).

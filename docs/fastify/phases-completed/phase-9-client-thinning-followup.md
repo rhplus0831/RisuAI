@@ -74,9 +74,9 @@ pnpm check
 
 ## References
 
-- Original phase: `docs/fastify/phases/phase-9-client-thinning.md`
+- Original phase: `docs/fastify/phases-completed/phase-9-client-thinning.md`
 - Original command map:
-  `docs/fastify/status/phase-9-command-map.md:186`
+  `docs/fastify/phases-completed/phase-9-command-map.md:186`
 - projection guard default: `src/ts/server/projectionWriteGuard.svelte.ts:5`
 - settings draft helper:
   `src/ts/server/settingsBridge.svelte.ts:39`

@@ -53,5 +53,5 @@ pnpm build
 
 ## References
 
-- Original phase: `docs/fastify/phases/phase-0-removals.md`
+- Original phase: `docs/fastify/phases-completed/phase-0-removals-scope.md`
 - Former source finding: `public/functions/drive.js:25`

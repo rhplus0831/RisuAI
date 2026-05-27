@@ -19,7 +19,7 @@ represented by fixtures. The server-backed suite also pins `/chat`
 dispatch parity, rollback/TTS side effects, and the `hypav3-memory`
 server prompt/progress/list-cancel path.
 The historical gate list lives in
-[`../status/sendchat-slicing.md`](../status/sendchat-slicing.md).
+[`../phases-completed/phase-5-sendchat-slicing.md`](../phases-completed/phase-5-sendchat-slicing.md).
 
 Snapshot schema bumped 2026-05-20: `providerCalls` is now an
 array of normalized call records (`{ mode, formated, ... }`)
@@ -57,10 +57,10 @@ all current snapshots assert it is `false`.
 | `auto-continue`       | Auto-continue fires once and lands a second turn.      | landed      |
 | `provider-error`      | Upstream `type:'fail'` produces a `risuerror` chat message. | landed |
 | `client-abort`        | Pre-aborted `AbortSignal`. Provider call still fires (our fake ignores the signal), but the post-provider check in `src/ts/process/dispatch/dispatchRequest.ts:127` returns the aborted union and the coordinator exits before any assistant message is added. | landed |
-| `echo-basic` | Minimal echo provider turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts `{provider: 'echo', model: 'echo_model', stream: false}` and `options.echo`. | landed |
-| `openai-basic` | Minimal vanilla OpenAI Chat Completions turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts provider/model/options for `openai`. | landed |
-| `anthropic-basic` | Minimal vanilla Anthropic Messages turn. Shared local/server-backed snapshot pins identical chat state while the server-backed sweep asserts provider/model/options for `anthropic`. | landed |
-| `mistral-basic` | Minimal vanilla Mistral turn. Shared local/server-backed snapshot pins provider `mistral`, model `mistral-large-latest`, and `options.mistral`. | landed |
+| `echo-basic` | Minimal echo provider turn. Shared legacy-client/server-backed snapshot pins identical chat state while the server-backed sweep asserts `{provider: 'echo', model: 'echo_model', stream: false}` and `options.echo`. | landed |
+| `openai-basic` | Minimal vanilla OpenAI Chat Completions turn. Shared legacy-client/server-backed snapshot pins identical chat state while the server-backed sweep asserts provider/model/options for `openai`. | landed |
+| `anthropic-basic` | Minimal vanilla Anthropic Messages turn. Shared legacy-client/server-backed snapshot pins identical chat state while the server-backed sweep asserts provider/model/options for `anthropic`. | landed |
+| `mistral-basic` | Minimal vanilla Mistral turn. Shared legacy-client/server-backed snapshot pins provider `mistral`, model `mistral-large-latest`, and `options.mistral`. | landed |
 | `cohere-basic` | Minimal non-streaming Cohere turn. Pins provider `cohere`, model `cohere-command-r-plus-04-2024`, and the newer command-r no-`safetyMode` option shape. | landed |
 | `deepseek-basic` | DeepSeek / DeepInfra-style OpenAI-compatible keyIdentifier route. Pins provider `openai`, `db.OaiCompAPIKeys.deepseek`, and base URL derivation from `modelInfo.endpoint`. | landed |
 | `gemini-basic` | Minimal vanilla Google AI Gemini turn. Pins provider `gemini`, model derivation from `modelInfo.internalID`, and `options.gemini`. | landed |

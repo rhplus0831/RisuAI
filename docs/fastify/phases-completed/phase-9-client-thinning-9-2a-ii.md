@@ -77,7 +77,7 @@ Results:
 Continue Phase 9 with **9-2b - Bot presets**:
 
 - Implement typed preset lifecycle and selection/apply commands from
-  `docs/fastify/status/phase-9-command-map.md`.
+  `docs/fastify/phases-completed/phase-9-command-map.md`.
 - Replace server-backed web preset mutations in
   `src/lib/Setting/botpreset.svelte` and
   `src/ts/storage/database.svelte.ts`.

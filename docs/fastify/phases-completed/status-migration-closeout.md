@@ -41,11 +41,11 @@ Completed phase detail and old landed-slice logs live in this directory.
   current next-steps runbook.
 - [`status-followup-next-steps.md`](status-followup-next-steps.md) -
   first follow-up archive and reference verification commands.
-- [`../status/phase-9-command-map.md`](../status/phase-9-command-map.md) -
+- [`phase-9-command-map.md`](phase-9-command-map.md) -
   locked Phase 9 mutation inventory and command map.
-- [`../phases/phase-9-client-thinning.md`](../phases/phase-9-client-thinning.md) -
+- [`phase-9-client-thinning.md`](phase-9-client-thinning.md) -
   closed Phase 9 scope, boundaries, and slice plan.
-- [`../phases/phase-8-memory.md`](../phases/phase-8-memory.md) - closed Phase
+- [`phase-8-memory.md`](phase-8-memory.md) - closed Phase
   8 summary and exit criteria.
 - [`../status/server.md`](../status/server.md) - current Fastify route surface.
 - [`../status/sendchat.md`](../status/sendchat.md) - current `sendChat`

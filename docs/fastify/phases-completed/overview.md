@@ -23,10 +23,10 @@ historical detail is in [`../phases-completed/`](../phases-completed/).
 
 ## Workstreams
 
-- Server: Fastify owns the live server path. See [`server.md`](server.md).
+- Server: Fastify owns the live server path. See [`../status/server.md`](../status/server.md).
 - sendChat: send, continue, regenerate, preview, and preview-prompt can
   use server assembly behind `db.useServerPromptAssembly`.
-  See [`sendchat.md`](sendchat.md).
+  See [`../status/sendchat.md`](../status/sendchat.md).
 - Provider coverage: the current routed matrix lives in
   [`../coverage/providers.md`](../coverage/providers.md).
 - Phase 9 command map:

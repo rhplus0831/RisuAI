@@ -54,7 +54,7 @@ pnpm test -- src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
 
 ## References
 
-- Original phase: `docs/fastify/phases/phase-7-prompt-assembly.md`
+- Original phase: `docs/fastify/phases-completed/phase-7-prompt-assembly.md`
 - sendChat server mode selection: `src/ts/process/index.svelte.ts:250`
 - reroll caller wiring: `src/lib/ChatScreens/DefaultChatScreen.svelte:330`
 - browser request adapter tests: `src/ts/process/request/tests/serverChat.test.ts`

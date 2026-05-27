@@ -9,7 +9,7 @@ server-dispatched `/chat` stream.
 Post-closeout audit note: the send-path dispatch work landed here, but
 explicit regenerate wiring and assembly semantics were later reopened and
 closed in
-`docs/fastify/phases/phase-7-prompt-assembly-followup.md`.
+`docs/fastify/phases-completed/phase-7-prompt-assembly-followup.md`.
 
 ## Landed
 

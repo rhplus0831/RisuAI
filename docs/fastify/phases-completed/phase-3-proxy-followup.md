@@ -59,7 +59,7 @@ the direct proxy path.
 
 ## References
 
-- Original phase: `docs/fastify/phases/phase-3-proxy.md`
+- Original phase: `docs/fastify/phases-completed/phase-3-proxy-scope.md`
 - Direct proxy filter: `server/fastify/src/proxy.ts:89`
 - Stream-job filter: `server/fastify/src/streamJobs.ts:124`
 - Stream-job forwarding: `server/fastify/src/streamJobs.ts:311`
