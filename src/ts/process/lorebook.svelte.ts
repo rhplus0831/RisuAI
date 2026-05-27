@@ -43,24 +43,31 @@ export function addLorebook(type: number) {
       previous,
     )
   } else if (type === -1) {
-    const lorebook = DBState.db.loreBook[DBState.db.loreBookPage] as
-      | { id?: string; data: loreBook[] }
-      | undefined
-    if (!lorebook) return
-    withTrustedServerProjectionWrite(() => {
-      lorebook.data.push({
+    const lorePage = DBState.db.loreBookPage
+    const current = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
+    if (!current) return
+    // Build the next entries from a mutable snapshot and assign it inside the
+    // trusted write: pushing into the array read from the projection mutates
+    // the read-only projection and throws.
+    const nextData: loreBook[] = [
+      ...safeStructuredClone(current.data ?? []),
+      {
         id: v4(),
         key: '',
-        comment: `New Lore ${lorebook.data.length + 1}`,
+        comment: `New Lore ${(current.data?.length ?? 0) + 1}`,
         content: '',
         mode: 'normal',
         insertorder: 100,
         alwaysActive: false,
         secondkey: '',
         selective: false,
-      })
+      },
+    ]
+    withTrustedServerProjectionWrite(() => {
+      const lorebook = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] }
+      lorebook.data = nextData
     })
-    if (lorebook.id) dispatchReplaceGlobalLorebookEntries(lorebook.id, lorebook.data, previous)
+    if (current.id) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
   } else {
     const page = DBState.db.characters[selectedID].chatPage
     withTrustedServerProjectionWrite(() => {
@@ -105,12 +112,14 @@ export function addLorebookFolder(type: number) {
       previous,
     )
   } else if (type === -1) {
-    const lorebook = DBState.db.loreBook[DBState.db.loreBookPage] as
-      | { id?: string; data: loreBook[] }
-      | undefined
-    if (!lorebook) return
-    withTrustedServerProjectionWrite(() => {
-      lorebook.data.push({
+    const lorePage = DBState.db.loreBookPage
+    const current = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
+    if (!current) return
+    // Assign a freshly-built array inside the trusted write; pushing into the
+    // array read from the projection mutates the read-only projection.
+    const nextData: loreBook[] = [
+      ...safeStructuredClone(current.data ?? []),
+      {
         id: v4(),
         key: '\uf000folder:' + id,
         comment: `New Folder`,
@@ -120,9 +129,13 @@ export function addLorebookFolder(type: number) {
         alwaysActive: false,
         secondkey: '',
         selective: false,
-      })
+      },
+    ]
+    withTrustedServerProjectionWrite(() => {
+      const lorebook = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] }
+      lorebook.data = nextData
     })
-    if (lorebook.id) dispatchReplaceGlobalLorebookEntries(lorebook.id, lorebook.data, previous)
+    if (current.id) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
   } else {
     const page = DBState.db.characters[selectedID].chatPage
     withTrustedServerProjectionWrite(() => {
@@ -756,12 +769,6 @@ export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
   const previous = currentLorebookStateSnapshot()
   const selectedID = get(selectedCharID)
   const page = mode === 'sglobal' ? -1 : DBState.db.characters[selectedID].chatPage
-  let lore =
-    mode === 'sglobal'
-      ? DBState.db.loreBook[DBState.db.loreBookPage].data
-      : mode === 'global'
-        ? DBState.db.characters[selectedID].globalLore
-        : DBState.db.characters[selectedID].chats[page].localLore
   const lorebook = (await selectSingleFile(['json', 'lorebook'])).data
   if (!lorebook) {
     return
@@ -769,20 +776,33 @@ export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
 
   try {
     const importedlore = JSON.parse(Buffer.from(lorebook).toString('utf-8'))
-    withTrustedServerProjectionWrite(() => {
-      if (importedlore.type === 'risu' && importedlore.data) {
-        const datas: loreBook[] = importedlore.data
-        for (const data of datas) {
-          lore.push(data)
-        }
-      } else if (importedlore.entries) {
-        const entries: { [key: string]: CCLorebook } = importedlore.entries
-        lore.push(...convertExternalLorebook(entries))
+    // Build the next entries from a mutable snapshot of the current lore so we
+    // never push into the read-only projection captured before the write.
+    const current =
+      mode === 'sglobal'
+        ? DBState.db.loreBook[DBState.db.loreBookPage]?.data
+        : mode === 'global'
+          ? DBState.db.characters[selectedID].globalLore
+          : DBState.db.characters[selectedID].chats[page].localLore
+    const lore: loreBook[] = safeStructuredClone(current ?? [])
+    if (importedlore.type === 'risu' && importedlore.data) {
+      const datas: loreBook[] = importedlore.data
+      for (const data of datas) {
+        lore.push(data)
       }
-      ensureClientLorebookEntryIds(lore)
-      if (mode === 'global') {
+    } else if (importedlore.entries) {
+      const entries: { [key: string]: CCLorebook } = importedlore.entries
+      lore.push(...convertExternalLorebook(entries))
+    }
+    ensureClientLorebookEntryIds(lore)
+    withTrustedServerProjectionWrite(() => {
+      // Assign the prepared array into the freshly-cloned mutable projection.
+      if (mode === 'sglobal') {
+        const target = DBState.db.loreBook[DBState.db.loreBookPage]
+        if (target) target.data = lore
+      } else if (mode === 'global') {
         DBState.db.characters[selectedID].globalLore = lore
-      } else if (mode === 'local') {
+      } else {
         DBState.db.characters[selectedID].chats[page].localLore = lore
       }
     })

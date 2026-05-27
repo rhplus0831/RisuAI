@@ -74,10 +74,15 @@ export function createServerBackedSettingDraft<T>(
 
     untrack(() => {
       if (!settingsGroupForKey(key)) return
-      const target = DBState.db as unknown as Record<string, unknown>
       const attempted = cloneJsonValue(draft.value)
-      const previous = cloneJsonValue(target[key])
+      const previous = cloneJsonValue(
+        (DBState.db as unknown as Record<string, unknown>)[key],
+      )
       withTrustedServerProjectionWrite(() => {
+        // Re-read DBState.db inside the callback: the trusted write swaps it to
+        // a mutable clone, so an alias captured earlier still points at the
+        // read-only projection and would throw on write.
+        const target = DBState.db as unknown as Record<string, unknown>
         target[key] = attempted
       })
       queueSettingsPatch({ [key]: attempted }, { [key]: previous }, delayMs)

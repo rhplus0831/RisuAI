@@ -69,7 +69,13 @@ export function restoreLorebookState(snapshot: LorebookStateSnapshot): void {
 
 export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
   for (const entry of entries ?? []) {
-    entry.id = typeof entry.id === 'string' && entry.id.trim() ? entry.id : v4()
+    // Only write when an id is actually missing. An unconditional assignment
+    // would trip the read-only projection guard's set trap even when the value
+    // is unchanged, which breaks dispatch paths that pass projection-owned
+    // entry arrays.
+    if (typeof entry.id !== 'string' || !entry.id.trim()) {
+      entry.id = v4()
+    }
   }
   return entries
 }
