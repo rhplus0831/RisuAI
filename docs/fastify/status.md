@@ -2,7 +2,11 @@
 
 Date: 2026-05-27
 
-All Phases 0-9 are complete. No open findings remain.
+All Phases 0-9 are complete. No open findings remain. A follow-up
+Fastify-only lockdown then removed the residual non-Fastify runtime
+surfaces (Hono adapters, desktop/mobile wrappers, service worker, local
+browser persistence, legacy client endpoints); see
+[`../fastify-only/`](../fastify-only/) for that effort.
 
 Policy: no actual Fastify users yet. Update schemas and import paths
 directly; do not write compatibility migrations.
@@ -12,7 +16,7 @@ directly; do not write compatibility migrations.
 Latest full verification on 2026-05-27:
 
 - `pnpm check`: 0 errors, 0 warnings.
-- `pnpm test`: 70 files, 754 passed, 4 skipped.
+- `pnpm test`: 76 files, 772 passed, 4 skipped.
 - `pnpm api:test`: 68 files, 1217 passed.
 - `pnpm build`: passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser`: 1 browser smoke test passed.

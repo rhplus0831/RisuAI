@@ -31,6 +31,16 @@ exit criteria, and closeout summaries for each phase.
 | 9 - Client thinning follow-up | [`phase-9-client-thinning-followup.md`](phase-9-client-thinning-followup.md) |
 | 9 - Trigger projection writes | [`phase-9-trigger-projection-writes.md`](phase-9-trigger-projection-writes.md) |
 
+## Fastify-Only Lockdown
+
+A follow-up effort after Phases 0-9 removed the residual non-Fastify
+runtime surfaces (Hono adapters, desktop/mobile wrappers, service
+worker, local browser persistence, legacy client endpoints). The full
+`docs/fastify-only/` workspace was condensed into a single archive:
+
+- [`fastify-only.md`](fastify-only.md) — goals, per-phase removals,
+  guard tests, and final verification.
+
 ## Tauri / Desktop Removal
 
 Tauri / Desktop support was explicitly removed in commit `a8dd411c`
