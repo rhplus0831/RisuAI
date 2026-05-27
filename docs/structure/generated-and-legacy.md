@@ -1,0 +1,67 @@
+# Generated Files And Legacy Caveats
+
+These notes help avoid spending time in files that look important but are either
+generated, local-only, historical, or intentionally no-port.
+
+## Do Not Hand-Edit
+
+| Path                                            | Why                                                                                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `dist/`                                         | Vite build output, copied public assets, chunks, source maps, workers. Regenerate with `pnpm build` or `pnpm buildsite`. |
+| `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                  |
+| `test-results/`                                 | Playwright/test output.                                                                                                  |
+| `data/`                                         | Local runtime state: SQLite, `db.json`, assets, backups, auth files. Useful for manual debugging, not source.            |
+| `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                              |
+| `src/ts/rpack/`                                 | Vendored rpack implementation; also excluded from Prettier.                                                              |
+
+`docs/fastify/coverage/*.md` is tracked despite the directory name, so treat
+those files as source documentation.
+
+## Public Assets
+
+`public/` is source for static assets copied by Vite. `dist/` is the generated
+copy. Edit `public/` when changing a static source asset; rebuild to refresh
+`dist/`.
+
+`public/functions/` is intentionally empty after removed public worker/OAuth
+surfaces. Do not reintroduce old Google Drive public workers without a new
+explicit roadmap.
+
+## Fastify-Only Runtime
+
+The project currently targets a Fastify-served web runtime. Historical mentions
+of native wrappers, browser-side persistence as primary runtime, peer sync,
+Drive sync, and service worker behavior are archival unless a new plan says
+otherwise.
+
+The historical phase logs under `docs/fastify/phases-completed/` are useful for
+why decisions were made, but they are not always current implementation
+guidance. Prefer the present-tense docs in `docs/fastify/README.md`,
+`docs/fastify/status.md`, `docs/fastify/architecture.md`, and this
+`docs/structure/` folder.
+
+## Legacy Names That Are Still Active
+
+Some files retain legacy names because they bridge current behavior:
+
+- `server/fastify/src/routes/legacyStorage.ts` backs active
+  `/api/v1/storage/*` routes used by `src/ts/storage/nodeStorage.ts`.
+- `server/fastify/src/routes/hub.ts` backs retained hub passthrough behavior.
+- Browser plugin runtime remains in `src/ts/plugins/`; server command routes
+  store plugin records and plugin storage but do not execute plugin code.
+
+Do not remove these just because the filename contains "legacy".
+
+## Removed Or No-Port Areas
+
+These are removed or intentionally not ported:
+
+- Group chat.
+- Peer sync.
+- Google Drive sync.
+- Risu Account Sync.
+- SupaMemory, Hypa V2, Hanurai.
+- Native/mobile wrapper runtime modes.
+- Browser local persistence as the primary supported runtime.
+
+The maintained memory path is Hypa V3 on the Fastify server.
