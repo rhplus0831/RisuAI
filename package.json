@@ -15,7 +15,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "smoke:fastify-browser": "cross-env VITE_FASTIFY_BROWSER_SMOKE=TRUE VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm buildsite && playwright test -c playwright.fastify-smoke.config.ts",
-    "buildsite": "vite build --outDir dist",
+    "buildsite": "cross-env VITE_RISU_LEGAL_CONFIGURED=TRUE vite build --outDir dist",
     "sync": "node electron/sync",
     "electron": "node electron/dist/electron",
     "hono:build": "vite build --sourcemap && node server/hono/src/utils/postbuild.js",
