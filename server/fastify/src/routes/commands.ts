@@ -153,7 +153,7 @@ import {
   readModulePatch,
   removeModuleReferences,
   requireModuleIndex,
-  validateFullCharacterModuleOrder,
+  validateCharacterModuleLinks,
   validateFullModuleOrder,
 } from '../commands/modules.js'
 import {
@@ -3570,7 +3570,7 @@ export function registerCommandRoutes(
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
           const character = findCharacterForModuleCommand(target, characterId)
-          validateFullCharacterModuleOrder(modules, character, moduleIds)
+          validateCharacterModuleLinks(modules, moduleIds)
           character.modules = moduleIds
           return {
             event: {

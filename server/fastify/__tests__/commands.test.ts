@@ -4244,6 +4244,77 @@ describe('Phase 9-4c module record and enablement commands', () => {
     ])
   })
 
+  it('adds and removes character module links, not only reorders', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: [],
+      modules: [
+        { id: 'mod-a', name: 'A', description: 'Alpha' },
+        { id: 'mod-b', name: 'B', description: 'Beta' },
+      ],
+      characters: [{ chaId: 'char-a', name: 'A', modules: [], chats: [], chatFolders: [] }],
+      characterOrder: ['char-a'],
+    })
+
+    // Add a previously unlinked module.
+    const added = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, moduleIds: ['mod-a'] },
+    })
+    expect(added.statusCode).toBe(200)
+    expect(added.json()).toMatchObject({
+      revision: 2,
+      characterId: 'char-a',
+      event: { type: 'character.modules.reordered', id: 'char-a' },
+    })
+
+    // Add a second module on top of the first.
+    const addedSecond = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2, moduleIds: ['mod-a', 'mod-b'] },
+    })
+    expect(addedSecond.statusCode).toBe(200)
+
+    let bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].modules).toEqual(['mod-a', 'mod-b'])
+
+    // Remove the first module, keeping the second.
+    const removed = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 3, moduleIds: ['mod-b'] },
+    })
+    expect(removed.statusCode).toBe(200)
+
+    bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(4)
+    expect(bootstrap.json().database.characters[0].modules).toEqual(['mod-b'])
+
+    // Unknown module ids are still rejected.
+    const badAdd = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4, moduleIds: ['mod-b', 'mod-missing'] },
+    })
+    expect(badAdd.statusCode).toBe(400)
+    expect(badAdd.json().error).toBe('Unknown module id in moduleIds: mod-missing')
+    expect(bootstrap.json().revision).toBe(4)
+  })
+
   it('rejects malformed module commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

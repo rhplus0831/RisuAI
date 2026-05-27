@@ -140,30 +140,26 @@ export function validateFullModuleOrder(
   }
 }
 
-export function validateFullCharacterModuleOrder(
+/**
+ * Validate the full replacement set of a character's module links. The list is
+ * the new set of links, so it supports add, remove, and reorder in one command:
+ * every id must reference a known module and the list must be duplicate-free,
+ * but it does not need to match the character's existing links.
+ */
+export function validateCharacterModuleLinks(
   modules: readonly ModuleRecord[],
-  character: CharacterRecord,
   moduleIds: readonly string[],
 ): void {
   const available = new Set(modules.map((module) => module.id))
-  const existing = new Set(
-    readStringArray(character.modules, `character ${character.chaId}.modules`),
-  )
   const seen = new Set<string>()
   for (const moduleId of moduleIds) {
     if (!available.has(moduleId)) {
       throw new ValidationError(`Unknown module id in moduleIds: ${moduleId}`)
     }
-    if (!existing.has(moduleId)) {
-      throw new ValidationError(`Module id is not linked to character: ${moduleId}`)
-    }
     if (seen.has(moduleId)) {
       throw new ValidationError(`Duplicate module id in moduleIds: ${moduleId}`)
     }
     seen.add(moduleId)
-  }
-  if (seen.size !== existing.size) {
-    throw new ValidationError('moduleIds must include every character module link')
   }
 }
 
