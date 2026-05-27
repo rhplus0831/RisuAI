@@ -1,13 +1,16 @@
 # Removed And Out Of Scope
 
-## Removal Targets
+## Removed In Phase 1
 
 - Hono server, including Node, Bun, Cloudflare, Vercel, and Wrangler entry points.
-- Electron package scripts and any stale native desktop assumptions.
+- Electron package scripts and stale native desktop launch scripts.
 - Capacitor mobile packaging configuration.
 - Legacy `server.sh` and `server.bat` launchers.
-- Cloudflare Pages-style functions in `public/functions`.
 - Hono static/Vercel postbuild output flows.
+
+## Remaining Removal Targets
+
+- Cloudflare Pages-style functions in `public/functions`.
 - Public README language that presents non-Fastify platforms as supported runtimes.
 - Legacy storage paths: `/api/write`, `/api/read`, `/api/list`, and `/api/remove`.
 - Legacy proxy paths: `/proxy2` and `/proxy-stream-jobs`.
@@ -34,10 +37,7 @@
 
 ## References
 
-- `server/hono/package.json:1`
 - `package.json:9`
-- `server.sh:1`
-- `server.bat:1`
-- `capacitor.config.ts:1`
+- `docs/fastify-only/phases-completed/phase-1-project-surface-removal-2026-05-27.md:1`
 - `public/functions/proxy.js:1`
 - `public/functions/proxy2.js:1`

@@ -26,7 +26,7 @@ Remove local runtime support and all non-Fastify platform support so the project
 | Phase | Name | Purpose |
 | --- | --- | --- |
 | 0 | [Audit And Baseline](phases-completed/phase-0-audit-and-baseline-2026-05-27.md) | Freeze the known non-Fastify surfaces and current verification baseline. Completed on 2026-05-27. |
-| 1 | [Project Surface Removal](phases/phase-1-project-surface-removal.md) | Remove alternate server projects, stale scripts, launchers, and native/mobile config. |
+| 1 | [Project Surface Removal](phases-completed/phase-1-project-surface-removal-2026-05-27.md) | Remove alternate server projects, stale scripts, launchers, and native/mobile config. Completed on 2026-05-27. |
 | 2 | [Runtime Contract Collapse](phases/phase-2-runtime-contract-collapse.md) | Replace broad platform gates with a Fastify-served client contract. |
 | 3 | [Storage Contract Cleanup](phases/phase-3-storage-contract-cleanup.md) | Keep Fastify storage APIs only and remove local/legacy storage fallbacks. |
 | 4 | [Proxy And API Routing](phases/phase-4-proxy-and-api-routing.md) | Remove hosted and legacy proxy routes so client IO targets Fastify. |
@@ -53,11 +53,8 @@ Each implementation phase should record its actual command output in the matchin
 
 ## References
 
-- `server/hono/package.json:1`
 - `package.json:9`
-- `server.sh:1`
-- `server.bat:1`
-- `capacitor.config.ts:1`
+- `docs/fastify-only/phases-completed/phase-1-project-surface-removal-2026-05-27.md:1`
 - `src/ts/platform.ts:13`
 - `server/fastify/src/app.ts:176`
 - `src/ts/storage/nodeStorage.ts:6`

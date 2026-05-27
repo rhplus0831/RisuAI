@@ -22,11 +22,10 @@ Expected owned surfaces:
 - Proxy and provider relay behavior.
 - Smoke-test startup.
 
-Removal targets:
+Removal state:
 
-- `server/hono` and its Node, Bun, Cloudflare, and Vercel adapters.
-- Legacy root launchers that call missing or non-Fastify scripts.
-- Hosted function proxies under `public/functions`.
+- Phase 1 removed `server/hono`, its Node, Bun, Cloudflare, and Vercel adapters, and legacy root launchers.
+- Hosted function proxies under `public/functions` remain removal targets.
 
 ## Client Contract
 
@@ -64,5 +63,4 @@ The target design removes standalone browser persistence as a supported mode. OP
 - `src/ts/platform.ts:13`
 - `src/ts/storage/nodeStorage.ts:6`
 - `src/ts/globalApi.svelte.ts:560`
-- `server/hono/package.json:1`
 - `public/functions/proxy.js:1`

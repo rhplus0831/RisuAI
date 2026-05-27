@@ -4,12 +4,15 @@
 
 Package scripts, launchers, Docker files, and public docs should advertise one runtime path: build the client, start Fastify, and serve the API plus static assets from the Fastify server.
 
-Removal focus:
+Phase 1 removed:
 
 - Hono build and start scripts.
 - Electron and native wrapper scripts.
 - Legacy `server.sh` and `server.bat` launchers.
 - Capacitor config.
+
+Remaining focus:
+
 - Public docs that still describe a cross-platform app.
 
 ## Stage 1: Fastify Boot

@@ -6,9 +6,10 @@ This folder is the planning workspace for removing local runtime support and all
 
 - Draft created on 2026-05-27.
 - Phase 0 audit and baseline closed on 2026-05-27.
+- Phase 1 project surface removal closed on 2026-05-27.
 - Fastify is the only target production runtime.
-- The client remains a static web client served by Fastify; standalone local browser storage, native wrappers, alternate server projects, and legacy hosted functions are removal candidates.
-- The existing Fastify migration docs already describe server-backed web as the supported shape, but several compatibility bridges remain in package scripts, platform gates, storage, proxy routing, launchers, service worker behavior, and public docs.
+- The client remains a static web client served by Fastify; standalone local browser storage and legacy hosted functions remain removal candidates.
+- The existing Fastify migration docs already describe server-backed web as the supported shape, but several compatibility bridges remain in platform gates, storage, proxy routing, service worker behavior, and public docs.
 
 ## Read Order
 

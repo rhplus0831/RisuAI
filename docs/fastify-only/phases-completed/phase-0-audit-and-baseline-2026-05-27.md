@@ -8,14 +8,14 @@ Create a verified baseline of local and non-Fastify support before deleting code
 
 ## Summary
 
-Phase 0 is complete. No runtime code was changed. The repository baseline is green, and the next implementation slice is [Phase 1: Project Surface Removal](../phases/phase-1-project-surface-removal.md).
+Phase 0 is complete. No runtime code was changed. The repository baseline is green. Phase 1 later closed in [Phase 1: Project Surface Removal](phase-1-project-surface-removal-2026-05-27.md).
 
 ## Changed Files
 
 - `docs/fastify-only/phases-completed/phase-0-audit-and-baseline-2026-05-27.md`
 - `docs/fastify-only/phases-completed/README.md`
 - `docs/fastify-only/phases/README.md`
-- `docs/fastify-only/phases/phase-1-project-surface-removal.md`
+- `docs/fastify-only/phases/phase-1-project-surface-removal.md` (later moved to `docs/fastify-only/phases-completed/phase-1-project-surface-removal-2026-05-27.md`)
 - `docs/fastify-only/status.md`
 - `docs/fastify-only/status/next-steps.md`
 - `docs/fastify-only/status/server.md`
@@ -73,6 +73,5 @@ Browser-local surfaces:
 
 ## Follow-Up
 
-- Start Phase 1 by removing project-level surfaces only: `server/hono`, `hono:build`, `sync`, `electron`, `server.sh`, `server.bat`, and `capacitor.config.ts`.
-- Keep shared runtime platform code untouched in Phase 1; `src/ts/platform.ts`, Fastify global injection, storage maps, proxy routing, bootstrap, service worker, preload, and localized runtime strings belong to later phases.
-- After Phase 1 edits, run and record `pnpm check`, `pnpm build`, and `pnpm api:test`.
+- Phase 1 later removed project-level surfaces only: `server/hono`, `hono:build`, `sync`, `electron`, `server.sh`, `server.bat`, and `capacitor.config.ts`.
+- Shared runtime platform code remains for later phases: `src/ts/platform.ts`, Fastify global injection, storage maps, proxy routing, bootstrap, service worker, preload, and localized runtime strings.

@@ -2,25 +2,26 @@
 
 ## Current Pickup
 
-Start with [Phase 1: Project Surface Removal](../phases/phase-1-project-surface-removal.md). Phase 0 is closed in [phases-completed](../phases-completed/phase-0-audit-and-baseline-2026-05-27.md).
+Start with [Phase 2: Runtime Contract Collapse](../phases/phase-2-runtime-contract-collapse.md). Phase 0 and Phase 1 are closed in [phases-completed](../phases-completed/).
 
 ## Immediate Tasks
 
-1. Remove `sync`, `electron`, and `hono:build` from `package.json`.
-2. Delete `server/hono`, including Node, Bun, Cloudflare, Vercel, Wrangler, and postbuild files.
-3. Delete or replace `server.sh`, `server.bat`, and `capacitor.config.ts`.
-4. Remove stale public docs that instruct users to use removed project surfaces.
-5. Update this file after Phase 1 closes.
+1. Collapse `src/ts/platform.ts` around the Fastify-served runtime.
+2. Remove `globalThis.__NODE__` from Fastify static serving and keep one clear Fastify/server-backed bootstrap signal.
+3. Update tests that mock platform state so they describe the retained Fastify contract.
+4. Leave storage endpoint cleanup, proxy routing cleanup, service worker cleanup, and localized runtime strings to their later phases unless Phase 2 directly exposes a dead branch.
+5. Update this file after Phase 2 closes.
 
-## Phase 1 Verification To Record
+## Phase 2 Verification To Record
 
 - `pnpm check`
+- `pnpm test`
 - `pnpm build`
-- `pnpm api:test`
+- `pnpm smoke:fastify-browser`
 
 ## Watch Points
 
-- Phase 0 has recorded the baseline; do not start deleting shared platform gates until Phase 2.
-- Keep docs and package scripts aligned in the same phase as project-surface removals.
+- Phase 1 removed project-level Hono, launcher, and native/mobile surfaces; do not resurrect them while collapsing runtime gates.
+- Keep Phase 2 focused on shared platform/bootstrap signals.
 - Include localized app strings in the docs and packaging closeout, not only markdown files.
-- Treat newly discovered project-level non-Fastify surfaces as Phase 1 findings, but defer shared runtime gates to later phases.
+- Treat newly discovered project-level non-Fastify surfaces as follow-up findings, but defer storage and proxy contract changes to later phases.

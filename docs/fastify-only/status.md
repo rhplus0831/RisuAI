@@ -2,27 +2,25 @@
 
 ## Migration Status
 
-Phase 0 closed on 2026-05-27 with a green verification baseline. Phase 1 is the current implementation pickup.
+Phase 0 closed on 2026-05-27 with a green verification baseline. Phase 1 closed on 2026-05-27. Phase 2 is the current implementation pickup.
 
 The known remaining surfaces are tracked in [plan.md](plan.md), [architecture.md](architecture.md), and the active phase files under [phases](phases/).
 
 ## Verification
 
-Latest baseline from Phase 0:
+Latest verification from Phase 1:
 
 - `pnpm check` passed.
-- `pnpm test` passed.
 - `pnpm api:test` passed.
 - `pnpm build` passed with existing build warnings.
-- `pnpm smoke:fastify-browser` passed with existing build warnings.
 
 ## Phase Summary
 
 | Phase | Status | Notes |
 | --- | --- | --- |
 | 0 Audit And Baseline | Completed | Closed on 2026-05-27 in [phases-completed](phases-completed/phase-0-audit-and-baseline-2026-05-27.md). |
-| 1 Project Surface Removal | Current pickup | Hono, stale scripts, launchers, and native/mobile config remain. |
-| 2 Runtime Contract Collapse | Not started | `__NODE__` and `__FASTIFY__` compatibility bridge remains. |
+| 1 Project Surface Removal | Completed | Closed on 2026-05-27 in [phases-completed](phases-completed/phase-1-project-surface-removal-2026-05-27.md). |
+| 2 Runtime Contract Collapse | Current pickup | `__NODE__` and `__FASTIFY__` compatibility bridge remains. |
 | 3 Storage Contract Cleanup | Not started | Fastify and legacy storage endpoints still share client code. |
 | 4 Proxy And API Routing | Not started | Fastify, legacy node, and hosted proxy paths still coexist. |
 | 5 Browser Local Surface Cleanup | Not started | Service worker, preload, and local bootstrap branches still need review. |
