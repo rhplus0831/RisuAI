@@ -1,6 +1,6 @@
 ## Environment Notes
 
-- This is an Ubuntu environment, and you can use the following commands. Use them if necessary:
+- When you are in the Ubuntu/Linux environment, and you can use the following commands. Use them if necessary:
   - rg, fdfind, fzf, batcat, eza, zoxide, jq, yq, delta, gh, just, entr, shellcheck, shfmt, hyperfine, strace, lsof, btop
 - use pnpm
 
