@@ -78,8 +78,12 @@
     if (suppressLoreDraftDispatch || !character || !chat || snapshot === loreDraftSnapshot) return
 
     withTrustedServerProjectionWrite(() => {
-      character.globalLore = cloneJsonValue(characterLoreDraft)
-      chat.localLore = cloneJsonValue(chatLoreDraft)
+      // Re-read live references inside the trusted scope; the captured
+      // `character`/`chat` are read-only server-projection proxies in Fastify mode.
+      const liveCharacter = DBState.db.characters?.[$selectedCharID]
+      const liveChat = liveCharacter?.chats?.[liveCharacter.chatPage]
+      if (liveCharacter) liveCharacter.globalLore = cloneJsonValue(characterLoreDraft)
+      if (liveChat) liveChat.localLore = cloneJsonValue(chatLoreDraft)
     })
     loreDraftSnapshot = snapshot
   })

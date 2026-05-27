@@ -18,6 +18,7 @@ import {
   dispatchCompatibleChatUpdate,
   dispatchPatchChatScriptstate,
 } from '../chatCommands'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import type { Chat } from '../storage/database.svelte'
 
 export async function processMultiCommand(command: string) {
@@ -51,7 +52,6 @@ export async function processMultiCommand(command: string) {
 async function processCommand(command: string, pipe: string): Promise<false | string> {
   const db = getDatabase()
   const currentChar = db.characters[get(selectedCharID)]
-  const currentChat = currentChar.chats[currentChar.chatPage]
   let { commandName, arg, namedArg } = commandParser(command, pipe)
 
   if (!arg) {
@@ -106,68 +106,54 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       return pipe
     }
     case 'send': {
-      const previous = currentChatStateSnapshot()
-      const previousChat = snapshotChat(currentChat)
-      currentChat.message.push({
-        role: 'user',
-        data: arg,
+      mutateCurrentChatMessages((chat) => {
+        chat.message.push({
+          role: 'user',
+          data: arg,
+        })
       })
-      setDatabase(db)
-      dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       return pipe
     }
     case 'sendas': {
       //name not implemented
-      const previous = currentChatStateSnapshot()
-      const previousChat = snapshotChat(currentChat)
-      currentChat.message.push({
-        role: 'char',
-        data: arg,
+      mutateCurrentChatMessages((chat) => {
+        chat.message.push({
+          role: 'char',
+          data: arg,
+        })
       })
-      setDatabase(db)
-      dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
       return pipe
     }
     case 'comment': {
       //works differently, but its close enough
-      const previous = currentChatStateSnapshot()
-      const previousChat = snapshotChat(currentChat)
       const addition = `<Comment>\n${arg}\n</Comment>`
-      currentChat.message[currentChat.message.length - 1].data += addition
-      setDatabase(db)
-      dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
+      mutateCurrentChatMessages((chat) => {
+        chat.message[chat.message.length - 1].data += addition
+      })
       return pipe
     }
     case 'cut': {
-      const previous = currentChatStateSnapshot()
-      const previousChat = snapshotChat(currentChat)
-      if (arg.includes('-')) {
-        const [start, end] = arg.split('-')
-        currentChat.message = currentChat.message.slice(parseInt(start), parseInt(end))
-        setDatabase(db)
-        dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
-      } else if (!isNaN(parseInt(arg))) {
-        const index = parseInt(arg)
-        currentChat.message = currentChat.message.splice(index, 1)
-        setDatabase(db)
-        dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
-      } else {
-        //For risu, doesn'ts work for STScript
-        const id = arg
-        currentChat.message = currentChat.message.filter((e) => e.chatId !== id)
-        setDatabase(db)
-        dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
-      }
+      mutateCurrentChatMessages((chat) => {
+        if (arg.includes('-')) {
+          const [start, end] = arg.split('-')
+          chat.message = chat.message.slice(parseInt(start), parseInt(end))
+        } else if (!isNaN(parseInt(arg))) {
+          const index = parseInt(arg)
+          chat.message = chat.message.splice(index, 1)
+        } else {
+          //For risu, doesn'ts work for STScript
+          const id = arg
+          chat.message = chat.message.filter((e) => e.chatId !== id)
+        }
+      })
       return pipe
     }
     case 'del': {
       const size = parseInt(arg)
       if (!isNaN(size)) {
-        const previous = currentChatStateSnapshot()
-        const previousChat = snapshotChat(currentChat)
-        currentChat.message = currentChat.message.slice(currentChat.message.length - size)
-        setDatabase(db)
-        dispatchCompatibleChatUpdate(previousChat, currentChat, previous)
+        mutateCurrentChatMessages((chat) => {
+          chat.message = chat.message.slice(chat.message.length - size)
+        })
       }
       return pipe
     }
@@ -187,58 +173,65 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         clearMode = true
         splited.shift()
       }
+      const selectedChar = get(selectedCharID)
       for (const e of splited) {
-        if (clearMode) {
-          currentChat.message = []
-        }
-        currentChat.message.push({
-          role: 'user',
-          data: e,
+        // Optimistic local writes must not mutate the read-only server
+        // projection directly; wrap them in a trusted write scope and re-read
+        // the live database inside it.
+        withTrustedServerProjectionWrite(() => {
+          const db = getDatabase()
+          const char = db.characters[selectedChar]
+          const chat = char.chats[char.chatPage]
+          if (clearMode) {
+            chat.message = []
+          }
+          chat.message.push({
+            role: 'user',
+            data: e,
+          })
+          setDatabase(db)
         })
         await sendChat(-1)
       }
       return ''
     }
     case 'setvar': {
-      console.log(namedArg, arg)
-      const db = getDatabase()
       const selectedChar = get(selectedCharID)
-      const char = db.characters[selectedChar]
-      const chat = char.chats[char.chatPage]
       const previous = currentChatStateSnapshot()
-      chat.scriptstate = chat.scriptstate ?? {}
       const stateKey = '$' + namedArg['key']
-      chat.scriptstate[stateKey] = arg
-      console.log(chat.scriptstate)
-
-      char.chats[char.chatPage] = chat
-      db.characters[selectedChar] = char
-      setDatabase(db)
-      if (chat.id) {
-        dispatchPatchChatScriptstate(chat.id, { [stateKey]: arg }, [], previous)
+      let chatId: string | undefined
+      withTrustedServerProjectionWrite(() => {
+        const db = getDatabase()
+        const char = db.characters[selectedChar]
+        const chat = char.chats[char.chatPage]
+        chat.scriptstate = chat.scriptstate ?? {}
+        chat.scriptstate[stateKey] = arg
+        chatId = chat.id
+        setDatabase(db)
+      })
+      if (chatId) {
+        dispatchPatchChatScriptstate(chatId, { [stateKey]: arg }, [], previous)
       }
       return ''
     }
     case 'addvar': {
-      const db = getDatabase()
       const selectedChar = get(selectedCharID)
-      const char = db.characters[selectedChar]
-      const chat = char.chats[char.chatPage]
       const previous = currentChatStateSnapshot()
-      chat.scriptstate = chat.scriptstate ?? {}
       const stateKey = '$' + namedArg['key']
-      chat.scriptstate[stateKey] = (Number(chat.scriptstate[stateKey]) + Number(arg)).toString()
-
-      char.chats[char.chatPage] = chat
-      db.characters[selectedChar] = char
-      setDatabase(db)
-      if (chat.id) {
-        dispatchPatchChatScriptstate(
-          chat.id,
-          { [stateKey]: chat.scriptstate[stateKey] },
-          [],
-          previous,
-        )
+      let chatId: string | undefined
+      let newValue = ''
+      withTrustedServerProjectionWrite(() => {
+        const db = getDatabase()
+        const char = db.characters[selectedChar]
+        const chat = char.chats[char.chatPage]
+        chat.scriptstate = chat.scriptstate ?? {}
+        newValue = (Number(chat.scriptstate[stateKey]) + Number(arg)).toString()
+        chat.scriptstate[stateKey] = newValue
+        chatId = chat.id
+        setDatabase(db)
+      })
+      if (chatId) {
+        dispatchPatchChatScriptstate(chatId, { [stateKey]: newValue }, [], previous)
       }
       return ''
     }
@@ -332,6 +325,27 @@ async function processCommand(command: string, pipe: string): Promise<false | st
 
 function snapshotChat(chat: Chat): Chat {
   return JSON.parse(JSON.stringify(chat)) as Chat
+}
+
+// Apply an optimistic mutation to the current chat's message history without
+// mutating the read-only server projection in place. The mutation runs inside
+// a trusted write scope against a freshly read database reference, then the
+// change is forwarded to the server through the compatible chat-update command.
+function mutateCurrentChatMessages(mutate: (chat: Chat) => void): void {
+  const selectedChar = get(selectedCharID)
+  const previous = currentChatStateSnapshot()
+  const beforeChar = getDatabase().characters[selectedChar]
+  const previousChat = snapshotChat(beforeChar.chats[beforeChar.chatPage])
+  withTrustedServerProjectionWrite(() => {
+    const db = getDatabase()
+    const char = db.characters[selectedChar]
+    const chat = char.chats[char.chatPage]
+    mutate(chat)
+    setDatabase(db)
+  })
+  const afterChar = getDatabase().characters[selectedChar]
+  const nextChat = snapshotChat(afterChar.chats[afterChar.chatPage])
+  dispatchCompatibleChatUpdate(previousChat, nextChat, previous)
 }
 
 function commandParser(command: string, pipe: string) {

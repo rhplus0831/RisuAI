@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 
@@ -25,6 +25,7 @@ vi.mock('./pluginSafety', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../server/commands'
+import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { DBState } from '../stores.svelte'
 import { getV2PluginAPIs, type RisuPlugin } from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
@@ -90,6 +91,7 @@ beforeEach(() => {
   platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
+  setServerProjectionWriteGuardEnabled(false)
   DBState.db = {
     currentPluginProvider: 'old-provider',
     pluginCustomStorage: {},
@@ -97,6 +99,10 @@ beforeEach(() => {
     modules: [seedModule('mod-a')],
     enabledModules: [],
   } as any
+})
+
+afterEach(() => {
+  setServerProjectionWriteGuardEnabled(false)
 })
 
 describe('plugin database command bridge', () => {
@@ -118,6 +124,28 @@ describe('plugin database command bridge', () => {
     })
     expect(calls.some((call) => call.url.includes('/api/v1/commands/plugin-storage'))).toBe(false)
     expect(DBState.db.currentPluginProvider).toBe('provider-a')
+  })
+
+  it('setArg updates plugin realArg through a command without throwing under the projection guard', async () => {
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+    setServerProjectionWriteGuardEnabled(true)
+
+    // Baseline: the guard is active, so a raw projection write throws.
+    expect(() => {
+      DBState.db.plugins[0].realArg['raw'] = 'x'
+    }).toThrow(/read-only server projection/)
+
+    expect(() => apis.setArg('plugin-a::myarg', 'myvalue')).not.toThrow()
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toBe(true)
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toMatchObject({
+      method: 'PATCH',
+      body: { patch: { realArg: { myarg: 'myvalue' } } },
+    })
+    expect(DBState.db.plugins[0].realArg.myarg).toBe('myvalue')
   })
 
   it('routes plugin module-integration database writes through settings commands', async () => {

@@ -40,6 +40,10 @@ import {
   dispatchUpdateModule,
   toModuleSnapshot,
 } from '../moduleCommands'
+import {
+  currentCharacterStateSnapshot,
+  dispatchCompatibleCharacterUpdate,
+} from '../characterCommands'
 import { canUseServerCommands } from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
@@ -168,7 +172,6 @@ export async function importPlugin(
 ) {
   try {
     let jsFile = ''
-    let db = getDatabase()
     let isUpdate = argu.isUpdate || false
     let originalPluginName = argu.originalPluginName || ''
     let isTypescript = argu.isTypescript || false
@@ -428,10 +431,13 @@ export async function importPlugin(
     }
 
     withTrustedServerProjectionWrite(() => {
+      const db = getDatabase()
       db.plugins ??= []
     })
 
-    const oldPluginIndex = db.plugins.findIndex((p: RisuPlugin) => p.name === pluginData.name)
+    const oldPluginIndex = getDatabase().plugins.findIndex(
+      (p: RisuPlugin) => p.name === pluginData.name,
+    )
 
     if (originalPluginName && originalPluginName !== pluginData.name) {
       showError(
@@ -449,13 +455,20 @@ export async function importPlugin(
 
     const previous = currentPluginStateSnapshot()
     if (oldPluginIndex !== -1) {
+      // Re-read the live database inside the trusted write scope so the
+      // optimistic update never mutates the read-only server projection
+      // through a stale reference captured before the scope.
       withTrustedServerProjectionWrite(() => {
+        const db = getDatabase()
         db.plugins[oldPluginIndex] = pluginData
+        setDatabaseLite(db)
       })
       dispatchUpdatePlugin(pluginData.name, toPluginSnapshot(pluginData), previous)
     } else if (!isUpdate || argu.isHotReload) {
       withTrustedServerProjectionWrite(() => {
+        const db = getDatabase()
         db.plugins.push(pluginData)
+        setDatabaseLite(db)
       })
       dispatchCreatePlugin(pluginData, previous)
     }
@@ -465,9 +478,6 @@ export async function importPlugin(
     }
 
     console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`)
-    withTrustedServerProjectionWrite(() => {
-      setDatabaseLite(db)
-    })
 
     loadPlugins()
   } catch (error) {
@@ -784,10 +794,13 @@ export const getV2PluginAPIs = () => {
       return getCurrentCharacter({ snapshot: true })
     },
     setChar: (char: any) => {
-      const db = getDatabase()
       const charid = get(selectedCharID)
-      db.characters[charid] = char
-      setDatabaseLite(db)
+      const previous = currentCharacterStateSnapshot()
+      const previousCharacter = $state.snapshot(DBState.db.characters[charid])
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.characters[charid] = char
+      })
+      dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
     },
     addProvider: (
       name: string,
@@ -835,12 +848,21 @@ export const getV2PluginAPIs = () => {
       pluginV2.unload.add(func)
     },
     setArg: (arg: string, value: string | number) => {
-      const db = getDatabase()
       const [name, realArg] = arg.split('::')
-      for (const plugin of db.plugins) {
-        if (plugin.name === name) {
-          const previous = currentPluginStateSnapshot()
-          plugin.realArg[realArg] = value
+      const previous = currentPluginStateSnapshot()
+      let matched = false
+      withTrustedServerProjectionWrite(() => {
+        const db = getDatabase()
+        for (const plugin of db.plugins) {
+          if (plugin.name === name) {
+            plugin.realArg[realArg] = value
+            matched = true
+          }
+        }
+      })
+      if (matched) {
+        const plugin = getDatabase().plugins.find((p) => p.name === name)
+        if (plugin) {
           dispatchUpdatePlugin(plugin.name, { realArg: plugin.realArg }, previous)
         }
       }

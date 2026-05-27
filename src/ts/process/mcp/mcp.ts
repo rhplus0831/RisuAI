@@ -154,10 +154,14 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
 
 export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void {
   const previous = cloneJsonValue(DBState.db.authRefreshes ?? [])
-  DBState.db.authRefreshes ??= []
-  DBState.db.authRefreshes.push({
-    url: mcp,
-    ...arg,
+  // The optimistic local write must run inside a trusted write scope so it
+  // does not throw against the read-only server projection in Fastify mode.
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.authRefreshes ??= []
+    DBState.db.authRefreshes.push({
+      url: mcp,
+      ...arg,
+    })
   })
 
   if (!canUseServerCommands()) return

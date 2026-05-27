@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 
@@ -22,6 +22,7 @@ vi.mock('../modules', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
+import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
 import { DBState } from '../../stores.svelte'
 import { persistMCPRefreshToken } from './mcp'
 
@@ -74,9 +75,14 @@ beforeEach(() => {
   platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
+  setServerProjectionWriteGuardEnabled(false)
   DBState.db = {
     authRefreshes: [],
   } as any
+})
+
+afterEach(() => {
+  setServerProjectionWriteGuardEnabled(false)
 })
 
 describe('MCP runtime persistence', () => {
@@ -114,6 +120,36 @@ describe('MCP runtime persistence', () => {
           authRefreshes: DBState.db.authRefreshes,
         },
       },
+    })
+  })
+
+  it('does not throw and still dispatches the command when the projection guard is active', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    // Baseline: the guard is active, so a raw projection write throws.
+    expect(() => {
+      DBState.db.authRefreshes.push({ url: 'raw' } as any)
+    }).toThrow(/read-only server projection/)
+
+    expect(() =>
+      persistMCPRefreshToken('https://mcp.example', {
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+        refreshToken: 'refresh-token',
+        tokenUrl: 'https://mcp.example/token',
+      }),
+    ).not.toThrow()
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(true)
+    })
+    expect(DBState.db.authRefreshes).toContainEqual({
+      url: 'https://mcp.example',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      refreshToken: 'refresh-token',
+      tokenUrl: 'https://mcp.example/token',
     })
   })
 

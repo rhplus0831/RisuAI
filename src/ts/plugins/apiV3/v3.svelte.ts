@@ -935,11 +935,20 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       }
     },
     setArgument: async (key: string, value: string) => {
-      const db = getDatabase()
-      for (const p of db.plugins) {
-        if (p.name === plugin.name) {
-          const previous = currentPluginStateSnapshot()
-          p.realArg[key] = value
+      const previous = currentPluginStateSnapshot()
+      let matched = false
+      withTrustedServerProjectionWrite(() => {
+        const db = getDatabase()
+        for (const p of db.plugins) {
+          if (p.name === plugin.name) {
+            p.realArg[key] = value
+            matched = true
+          }
+        }
+      })
+      if (matched) {
+        const p = getDatabase().plugins.find((candidate) => candidate.name === plugin.name)
+        if (p) {
           dispatchUpdatePlugin(p.name, { realArg: p.realArg }, previous)
         }
       }
