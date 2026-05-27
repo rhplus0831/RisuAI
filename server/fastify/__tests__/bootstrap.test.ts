@@ -257,4 +257,79 @@ describe('Phase 2A bootstrap + import', () => {
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     expect(onDisk.database).toEqual(sample)
   })
+
+  it('masks nested preset and character-owned secrets in bootstrap', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sample = {
+      openAIKey: 'sk-top-level',
+      botPresetsId: 0,
+      botPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          openAIKey: 'sk-preset-key',
+          proxyKey: 'proxy-preset-key',
+          aiModel: 'gpt4o-chatgpt',
+        },
+        {
+          id: 'preset-b',
+          name: 'Preset B',
+          openAIKey: '',
+        },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [],
+          oaiVoice: 'alloy',
+          oaiTTSConfig: {
+            enabled: true,
+            baseURL: 'https://api.openai.com/v1',
+            apiKey: 'sk-tts-key',
+            model: 'tts-1',
+          },
+        },
+      ],
+    }
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: sample },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().database).toEqual({
+      ...sample,
+      openAIKey: MASKED_PROVIDER_SECRET,
+      botPresets: [
+        {
+          ...sample.botPresets[0],
+          openAIKey: MASKED_PROVIDER_SECRET,
+          proxyKey: MASKED_PROVIDER_SECRET,
+        },
+        { ...sample.botPresets[1] },
+      ],
+      characters: [
+        {
+          ...sample.characters[0],
+          oaiTTSConfig: {
+            ...sample.characters[0].oaiTTSConfig,
+            apiKey: MASKED_PROVIDER_SECRET,
+          },
+        },
+      ],
+    })
+
+    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(onDisk.database).toEqual(sample)
+  })
 })
