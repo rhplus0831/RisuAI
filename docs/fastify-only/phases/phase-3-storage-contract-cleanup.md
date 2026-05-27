@@ -56,10 +56,40 @@ Verification:
 - `pnpm build` passed with existing build warnings.
 - `pnpm smoke:fastify-browser` passed with existing build warnings.
 
+### Phase 3B: Local App Persistence Selection
+
+Completed on 2026-05-27.
+
+Changed files:
+
+- `src/ts/storage/autoStorage.ts`
+- `src/ts/storage/autoStorage.test.ts`
+- `src/ts/storage/opfsStorage.ts`
+- `docs/fastify-only/status.md`
+- `docs/fastify-only/status/next-steps.md`
+- `docs/fastify-only/phases/phase-3-storage-contract-cleanup.md`
+- `docs/fastify-only/coverage/server-routes.md`
+- `docs/fastify-only/removed-and-out-of-scope.md`
+
+Completed work:
+
+- Collapsed `AutoStorage` so app persistence always uses Fastify-backed `NodeStorage`.
+- Removed OPFS and localforage selection/migration as standalone app-runtime persistence alternatives.
+- Deleted `OpfsStorage` because it was only reachable from the removed app persistence selector.
+- Added focused client tests that prove browser OPFS/localStorage signals do not affect app persistence selection and that reads, writes, lists, and removals delegate to one `NodeStorage` instance.
+
+Verification:
+
+- `pnpm exec vitest run src/ts/storage/autoStorage.test.ts src/ts/storage/nodeStorage.test.ts src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts` passed: 4 files and 16 tests.
+- `pnpm check` passed with 0 errors and 0 warnings.
+- `pnpm test` passed: 74 files, 768 tests passed, and 4 tests skipped.
+- `pnpm api:test` passed: 68 files and 1217 tests.
+- `pnpm build` passed with existing build warnings for CSS `::highlight(...)`, browser-externalized modules, plugin timing, ineffective dynamic imports, and large chunks.
+- `pnpm smoke:fastify-browser` passed with existing build warnings: 1 Playwright test.
+
 Next pickup:
 
-- Phase 3B should start in `src/ts/storage/autoStorage.ts` and remove OPFS/localforage as an app-runtime persistence alternative.
-- Phase 3C should then update `src/ts/bootstrap.ts` so unavailable Fastify bootstrap data remains an explicit Fastify error instead of falling into local save-file initialization.
+- Phase 3C should update `src/ts/bootstrap.ts` so unavailable Fastify bootstrap data remains an explicit Fastify error instead of falling into local save-file initialization.
 - Run the full phase verification ladder before moving this phase to `phases-completed`.
 
 ## Verification

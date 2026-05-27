@@ -14,6 +14,7 @@ Server route coverage should prove that Fastify owns the supported API surface a
 ## Removal Checks
 
 - Legacy storage paths: `/api/write`, `/api/read`, `/api/list`, `/api/remove`; Phase 3A removed these from client storage selection in `src/ts/storage/nodeStorage.ts`.
+- Local app persistence selection: Phase 3B removed OPFS/localforage as app-runtime storage alternatives in `src/ts/storage/autoStorage.ts`.
 - Legacy proxy paths: `/proxy2`, `/proxy-stream-jobs`.
 - Hono adapters and Cloudflare/Vercel/Bun entry points.
 - Hosted function proxy files under `public/functions`.
@@ -23,6 +24,7 @@ Server route coverage should prove that Fastify owns the supported API surface a
 - Route tests cover success and failure paths for retained Fastify APIs.
 - Client integration or smoke coverage proves the built UI uses Fastify `/api/v1/*`.
 - `src/ts/storage/nodeStorage.test.ts` covers retained Fastify storage and auth endpoints from the client storage adapter.
+- `src/ts/storage/autoStorage.test.ts` covers retained Fastify app persistence selection through `NodeStorage`.
 - Tests or static checks fail if package scripts point at removed server projects.
 
 ## Exit Criteria

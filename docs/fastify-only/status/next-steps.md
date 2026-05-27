@@ -2,23 +2,22 @@
 
 ## Current Pickup
 
-Continue [Phase 3: Storage Contract Cleanup](../phases/phase-3-storage-contract-cleanup.md). Phase 3A client storage route collapse is complete; the next pickup is Phase 3B local app persistence selection.
+Continue [Phase 3: Storage Contract Cleanup](../phases/phase-3-storage-contract-cleanup.md). Phase 3A client storage route collapse and Phase 3B local app persistence selection are complete; the next pickup is Phase 3C bootstrap fallback cleanup.
 
 ## Immediate Tasks
 
 1. Phase 3A done on 2026-05-27: `src/ts/storage/nodeStorage.ts` now uses `/api/v1/storage/*` plus `/api/v1/auth/*` only, and `src/ts/storage/nodeStorage.test.ts` covers the retained client route contract.
-2. Collapse `src/ts/storage/autoStorage.ts` so app persistence selects Fastify-backed storage instead of OPFS/localforage as a runtime alternative.
+2. Phase 3B done on 2026-05-27: `src/ts/storage/autoStorage.ts` now selects Fastify-backed `NodeStorage` only, `src/ts/storage/opfsStorage.ts` is removed, and `src/ts/storage/autoStorage.test.ts` covers the retained selector contract.
 3. Update `src/ts/bootstrap.ts` so missing Fastify bootstrap data reports a Fastify error instead of entering local save-file initialization.
 4. Keep proxy routing, hosted functions, service worker cleanup, and broader docs packaging for later phases unless Phase 3 directly exposes a dead branch.
 5. Update this file after the next Phase 3 slice closes.
 
-## Latest Phase 3A Verification
+## Latest Phase 3B Verification
 
-- `pnpm exec vitest run src/ts/storage/nodeStorage.test.ts src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts` passed.
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/legacyStorage.test.ts` passed.
+- `pnpm exec vitest run src/ts/storage/autoStorage.test.ts src/ts/storage/nodeStorage.test.ts src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts` passed: 4 files and 16 tests.
 - `pnpm check` passed.
-- `pnpm test` passed.
-- `pnpm api:test` passed.
+- `pnpm test` passed: 74 files, 768 tests passed, and 4 tests skipped.
+- `pnpm api:test` passed: 68 files and 1217 tests.
 - `pnpm build` passed with existing build warnings.
 - `pnpm smoke:fastify-browser` passed with existing build warnings.
 

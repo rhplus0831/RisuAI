@@ -8,14 +8,17 @@
 - Legacy `server.sh` and `server.bat` launchers.
 - Hono static/Vercel postbuild output flows.
 
+## Removed In Phase 3
+
+- Legacy client storage route selection for `/api/write`, `/api/read`, `/api/list`, and `/api/remove`.
+- OPFS and localforage app-runtime persistence selection through `AutoStorage`.
+
 ## Remaining Removal Targets
 
 - Cloudflare Pages-style functions in `public/functions`.
 - Public README language that presents non-Fastify platforms as supported runtimes.
-- Legacy storage paths: `/api/write`, `/api/read`, `/api/list`, and `/api/remove`.
 - Legacy proxy paths: `/proxy2` and `/proxy-stream-jobs`.
 - Standalone browser save-file bootstrap as a supported runtime.
-- OPFS or localforage persistence when used as a replacement for server-backed Fastify storage.
 - Service worker share/import behavior when it implies standalone local support.
 - User-facing app strings that mention removed runtimes, flags, or endpoints.
 

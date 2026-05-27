@@ -1,11 +1,7 @@
-import localforage from 'localforage'
-import { isFastifyServer } from 'src/ts/platform'
 import { NodeStorage } from './nodeStorage'
-import { OpfsStorage } from './opfsStorage'
-import { alertStore } from '../alert'
 
 export class AutoStorage {
-  realStorage: LocalForage | NodeStorage | OpfsStorage
+  realStorage: NodeStorage
 
   async setItem(key: string, value: Uint8Array): Promise<string | null> {
     await this.Init()
@@ -20,59 +16,15 @@ export class AutoStorage {
     await this.Init()
     return await this.realStorage.keys()
   }
-  async removeItem(key: string) {
+  async removeItem(key: string | string[]) {
     await this.Init()
     return await this.realStorage.removeItem(key)
   }
 
   async Init() {
     if (!this.realStorage) {
-      if (isFastifyServer) {
-        console.log('using fastify storage')
-        this.realStorage = new NodeStorage()
-        return
-      } else if (
-        window.navigator?.storage?.getDirectory &&
-        FileSystemFileHandle?.prototype?.createWritable &&
-        localStorage.getItem('opfs_flag!') === 'able'
-      ) {
-        console.log('using opfs storage')
-
-        const forage = localforage.createInstance({
-          name: 'risuai',
-        })
-
-        const i = await forage.getItem('database/database.bin')
-
-        if (!i || (await forage.getItem('migrated'))) {
-          this.realStorage = new OpfsStorage()
-          return
-        } else if (!(await forage.getItem('denied_opfs'))) {
-          console.log('migrating')
-          const keys = await forage.keys()
-          let i = 0
-          const opfs = new OpfsStorage()
-          for (const key of keys) {
-            alertStore.set({
-              type: 'wait',
-              msg: `Migrating your data...(${i}/${keys.length})`,
-            })
-            await opfs.setItem(key, await forage.getItem(key))
-            i += 1
-          }
-          this.realStorage = opfs
-          alertStore.set({
-            type: 'none',
-            msg: '',
-          })
-          await forage.setItem('migrated', true)
-          return
-        }
-      }
-      console.log('using forage storage')
-      this.realStorage = localforage.createInstance({
-        name: 'risuai',
-      })
+      console.log('using fastify storage')
+      this.realStorage = new NodeStorage()
     }
   }
 
