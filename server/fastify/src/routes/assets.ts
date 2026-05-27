@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
+import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import {
   ValidationError,
   addAsset,
@@ -29,6 +30,7 @@ export function registerAssetsRoutes(
   db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
+  eventSink: CommandEventSink,
 ): void {
   app.post('/api/v1/assets', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -43,6 +45,16 @@ export function registerAssetsRoutes(
     }
     try {
       const result = addAsset(db, dataDir, { bytes: req.body, contentType })
+      // A new asset bumps the repository revision; emit so SSE subscribers
+      // refresh and the uploading client can advance its cached revision,
+      // avoiding a stale-revision 409 on the next command.
+      if (result.created) {
+        eventSink.emit({
+          ...COMMAND_EVENT_CATALOG.assetCreated,
+          revision: result.revision,
+          id: result.entry.id,
+        })
+      }
       reply.code(result.created ? 201 : 200)
       return {
         assetId: result.entry.id,

@@ -62,6 +62,7 @@ import {
   parseProxyJobWsEvent,
 } from './network/proxyJobWs'
 import { getNodeServerProxyAuth } from './storage/nodeStorage'
+import { setCachedServerCommandRevision } from './server/commands'
 import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
 import { readServerAssetBytes, serverAssetUrl } from './server/assets'
 import { listServerBackups, restoreServerBackup } from './server/backups'
@@ -238,9 +239,14 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
       const body = await response.text().catch(() => '')
       throw new Error(body || `Failed to upload server asset: ${response.status}`)
     }
-    const responseBody = (await response.json()) as { assetId?: unknown }
+    const responseBody = (await response.json()) as { assetId?: unknown; revision?: unknown }
     if (typeof responseBody.assetId !== 'string') {
       throw new Error('Server asset upload response missing assetId')
+    }
+    // A new asset bumps the repository revision; advance the cached command
+    // revision so the next command does not race on a stale baseRevision.
+    if (typeof responseBody.revision === 'number') {
+      setCachedServerCommandRevision(responseBody.revision)
     }
     return responseBody.assetId
   }

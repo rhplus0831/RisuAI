@@ -155,7 +155,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerEventsRoutes(app, authState, commandEventSink, memoryEventBus)
-  registerAssetsRoutes(app, db, authState, config.dataDir)
+  registerAssetsRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)

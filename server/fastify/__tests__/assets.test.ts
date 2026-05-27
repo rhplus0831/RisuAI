@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { buildApp } from '../src/app.js'
+import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
@@ -11,11 +12,13 @@ const subtle = webcrypto.subtle
 interface Harness {
   app: FastifyInstance
   dataDir: string
+  commandEvents: CommandEventSink
 }
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
+  const commandEvents = createCommandEventSink()
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -25,8 +28,9 @@ async function startHarness(): Promise<Harness> {
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
+    commandEvents,
   })
-  return { app, dataDir }
+  return { app, dataDir, commandEvents }
 }
 
 async function stopHarness(h: Harness): Promise<void> {
@@ -130,6 +134,31 @@ describe('Phase 2C assets', () => {
     const onDisk = path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`)
     expect(existsSync(onDisk)).toBe(true)
     expect(Buffer.from(readFileSync(onDisk))).toEqual(PNG_BYTES)
+  })
+
+  it('emits an asset.created event with the bumped revision only for new assets', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const first = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(first.statusCode).toBe(201)
+    expect(harness.commandEvents.list()).toEqual([
+      { type: 'asset.created', resource: 'asset', revision: 1, id: PNG_SHA },
+    ])
+
+    // Re-uploading identical bytes does not bump the revision, so no event.
+    const second = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(second.statusCode).toBe(200)
+    expect(harness.commandEvents.list()).toHaveLength(1)
   })
 
   it('is idempotent on re-upload of the same bytes', async () => {
