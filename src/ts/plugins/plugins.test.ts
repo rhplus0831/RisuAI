@@ -270,4 +270,51 @@ describe('plugin database command bridge', () => {
     )
     expect(DBState.db.pluginCustomStorage.customPluginKey).toEqual({ value: 1 })
   })
+
+  it('blocks recognized resource families (in allowedDbKeys) in server mode without persisting', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+    DBState.db.characters = [{ chaId: 'char-a', name: 'Ada' }] as any
+
+    apis.setDatabaseLite({ characters: [{ chaId: 'char-b', name: 'Grace' }] })
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    // No projection change, no plugin-storage shadow, no command dispatched.
+    expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada' }])
+    expect(DBState.db.pluginCustomStorage.characters).toBeUndefined()
+    expect(calls.some((call) => call.url.includes('/api/v1/commands/'))).toBe(false)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('characters'))
+    warn.mockRestore()
+  })
+
+  it('blocks omitted documented keys (not in allowedDbKeys) instead of shadowing plugin storage', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      botPresets: [{ id: 'preset-a' }],
+      loreBook: [{ id: 'lore-a', data: [] }],
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(DBState.db.pluginCustomStorage.botPresets).toBeUndefined()
+    expect(DBState.db.pluginCustomStorage.loreBook).toBeUndefined()
+    expect(calls.some((call) => call.url.includes('/api/v1/commands/plugin-storage'))).toBe(false)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('botPresets'))
+    warn.mockRestore()
+  })
+
+  it('still writes recognized resource families locally when not in server mode', async () => {
+    platformState.isFastifyServer = false
+    const apis = getV2PluginAPIs()
+    DBState.db.characters = [] as any
+
+    apis.setDatabaseLite({ characters: [{ chaId: 'char-c', name: 'Hopper' }] })
+
+    expect(DBState.db.characters).toEqual([{ chaId: 'char-c', name: 'Hopper' }])
+  })
 })

@@ -581,6 +581,33 @@ export const allowedDbKeys = [
   'characterOrder',
 ]
 
+// Recognized database families that the plugin bridge cannot translate into
+// typed commands. In server-backed (Fastify) web mode we block writes to these
+// keys instead of doing a dangling projection write that no command persists,
+// or shadowing the real resource inside `pluginCustomStorage`. Plugins must use
+// the dedicated module/plugin/storage APIs or settings for these in server
+// mode. Local (desktop) mode is unaffected and still writes them through
+// `setDatabase`.
+export const unsupportedServerBridgeKeys = new Set<string>([
+  'characters',
+  'characterOrder',
+  'personas',
+  'selectedPersona',
+  'userIcon',
+  'personaPrompt',
+  'userNote',
+  'botPresets',
+  'botPresetsId',
+  'promptTemplate',
+  'promptSettings',
+  'translatorPresets',
+  'translatorPresetId',
+  'loadouts',
+  'lastLoadedLoadoutName',
+  'loreBook',
+  'loreBookPage',
+])
+
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
@@ -628,8 +655,10 @@ function applyPluginDatabasePatch(
   const previous = currentPluginStateSnapshot()
   const previousModules =
     'modules' in newDb || 'enabledModules' in newDb ? currentModuleStateSnapshot() : null
+  const serverMode = canUseServerCommands()
   const settingsPatch: Record<string, unknown> = {}
   const storageValues: Record<string, unknown> = {}
+  const blockedKeys: string[] = []
   let replacedStorage: Record<string, unknown> | null = null
 
   for (const [key, value] of Object.entries(newDb)) {
@@ -641,6 +670,15 @@ function applyPluginDatabasePatch(
       withTrustedServerProjectionWrite(() => {
         DBState.db.pluginCustomStorage = cloneJsonValue(replacedStorage)
       })
+      continue
+    }
+
+    // Recognized resource families without a bridge command: block in server
+    // mode rather than writing a projection change no command will persist, or
+    // shadowing the real resource in plugin storage. Local mode keeps writing
+    // them (persisted by the trailing setDatabase below).
+    if (serverMode && unsupportedServerBridgeKeys.has(key)) {
+      blockedKeys.push(key)
       continue
     }
 
@@ -682,7 +720,14 @@ function applyPluginDatabasePatch(
     dispatchPluginSettingsPatch(settingsPatch, previous)
   }
 
-  if (!canUseServerCommands() && options.full) {
+  if (blockedKeys.length > 0) {
+    console.warn(
+      '[plugin db bridge] Ignored unsupported database keys in server-backed mode: ' +
+        `${blockedKeys.join(', ')}. Use the dedicated plugin/module/storage APIs or settings instead.`,
+    )
+  }
+
+  if (!serverMode && options.full) {
     setDatabase(DBState.db)
   }
 }
@@ -967,6 +1012,16 @@ export const getV2PluginAPIs = () => {
             } else {
               ;(target as any)[prop] = value
             }
+            return true
+          } else if (
+            typeof prop === 'string' &&
+            canUseServerCommands() &&
+            unsupportedServerBridgeKeys.has(prop)
+          ) {
+            // Recognized resource family with no bridge command: route through
+            // applyPluginDatabasePatch so it is blocked + warned instead of
+            // being silently shadowed in plugin storage.
+            applyPluginDatabasePatch({ [prop]: value }, { full: false })
             return true
           } else {
             console.log('Setting custom db property', prop.toString(), value)

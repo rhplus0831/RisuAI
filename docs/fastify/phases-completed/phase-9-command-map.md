@@ -215,6 +215,26 @@ and store unknown keys in `pluginCustomStorage`. Mixed recognized changes
 use either ordered individual commands or the 9-4f composite bridge
 command; they must never replace the whole DB blob.
 
+### Revised contract (Phase 9 rework)
+
+The bridge above is the target. The keys actually wired to commands today are:
+`plugins`, `currentPluginProvider`, `modules`, `enabledModules`,
+`pluginCustomStorage`, and scalar settings-group keys. Recognized resource
+families that have no bridge command yet — `characters`, `characterOrder`,
+`personas`, `selectedPersona`, `userIcon`, `personaPrompt`, `userNote`,
+`botPresets`, `botPresetsId`, `promptTemplate`, `promptSettings`,
+`translatorPresets`, `translatorPresetId`, `loadouts`,
+`lastLoadedLoadoutName`, `loreBook`, `loreBookPage` — are **blocked in
+server-backed mode** (`plugins.svelte.ts:unsupportedServerBridgeKeys`).
+Writing them through `getDatabase`/`setDatabase`/`setDatabaseLite` in Fastify
+mode is ignored with a `console.warn` instead of producing a dangling
+projection write or shadowing the real resource inside `pluginCustomStorage`.
+Plugins must use the dedicated module/plugin/storage APIs or settings for
+those families in server mode. Local (desktop) mode is unchanged and still
+writes them via `setDatabase`. Truly unknown keys continue to route to
+`pluginCustomStorage`. When a bridge command is implemented for one of these
+families, remove its key from `unsupportedServerBridgeKeys`.
+
 ## Test Expectations
 
 - Command foundation tests cover auth rejection, missing/invalid
