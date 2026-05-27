@@ -20,10 +20,18 @@
 - Legacy client proxy route selection for `/proxy2` and `/proxy-stream-jobs`.
 - Cloudflare Pages-style hosted proxy functions in `public/functions/proxy.js` and `public/functions/proxy2.js`.
 
+## Removed In Phase 5
+
+- Service worker artifact `public/sw.js`, including `/sw/check`, `/sw/register`, `/sw/img`, `/sw/share`, and `/tf` cache fallbacks.
+- PWA `share_target` and `file_handlers` entries from `public/manifest.json`.
+- Client `#share_*` and `launchQueue` file import handlers that depended on service-worker share cache.
+- Service-worker image cache selection through `setUsingSw`.
+- Startup preload marker in `src/preload.ts`.
+
 ## Remaining Removal Targets
 
 - Public README language that presents non-Fastify platforms as supported runtimes.
-- Service worker share/import behavior when it implies standalone local support.
+- UI copy or gates that imply standalone browser-local operation.
 - User-facing app strings that mention removed runtimes, flags, or endpoints.
 
 ## Preserved Surfaces
@@ -47,3 +55,4 @@
 - `package.json:9`
 - `docs/fastify-only/phases-completed/phase-1-project-surface-removal-2026-05-27.md:1`
 - `docs/fastify-only/phases-completed/phase-4-proxy-and-api-routing-2026-05-27.md:1`
+- `docs/fastify-only/phases/phase-5-browser-local-surface-cleanup.md:1`

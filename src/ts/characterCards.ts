@@ -450,64 +450,6 @@ export async function characterURLImport() {
     settingsOpen.set(true)
     return
   }
-  if (hash.startsWith('#share_character')) {
-    const data = await fetch('/sw/share/character')
-    if (data.status !== 200) {
-      return
-    }
-    const charx = new Uint8Array(await data.arrayBuffer())
-    await importCharacterProcess({
-      name: 'shared.charx',
-      data: charx,
-    })
-  }
-  if (hash.startsWith('#share_module')) {
-    if (isFastifyServer) {
-      alertError('Module file import is not supported in server-backed web mode yet')
-      return
-    }
-    const data = await fetch('/sw/share/module')
-    if (data.status !== 200) {
-      return
-    }
-    const module = new Uint8Array(await data.arrayBuffer())
-    const md = await readModule(Buffer.from(module))
-    md.id = v4()
-    createGlobalModule(md)
-    alertNormal(language.successImport)
-    SettingsMenuIndex.set(14)
-    settingsOpen.set(true)
-  }
-  if (hash.startsWith('#share_preset')) {
-    const data = await fetch('/sw/share/preset')
-    if (data.status !== 200) {
-      return
-    }
-    const preset = new Uint8Array(await data.arrayBuffer())
-    await importPreset({
-      name: 'shared.risup',
-      data: preset,
-    })
-    SettingsMenuIndex.set(1)
-    settingsOpen.set(true)
-  }
-  if ('launchQueue' in window) {
-    const handleFiles = async (files: FileSystemFileHandle[]) => {
-      for (const f of files) {
-        const file = await f.getFile()
-        const data = new Uint8Array(await file.arrayBuffer())
-        await importFile(f.name, data)
-      }
-    }
-    //@ts-expect-error launchQueue is File Handling API for PWA, not yet in TypeScript's Window interface
-    window.launchQueue.setConsumer((launchParams) => {
-      if (launchParams.files && launchParams.files.length) {
-        const files = launchParams.files as FileSystemFileHandle[]
-        handleFiles(files)
-      }
-    })
-  }
-
   async function importFile(name: string, data: Uint8Array) {
     if (
       name.endsWith('.charx') ||

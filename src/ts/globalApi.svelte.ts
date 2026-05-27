@@ -159,57 +159,23 @@ export async function getFileSrc(loc: string) {
     return serverAssetUrl(loc) ?? loc
   }
   try {
-    if (usingSw) {
-      const encoded = Buffer.from(loc, 'utf-8').toString('hex')
-      let ind = fileCache.origin.indexOf(loc)
-      if (ind === -1) {
-        ind = fileCache.origin.length
-        fileCache.origin.push(loc)
-        fileCache.res.push('loading')
-        try {
-          const hasCache: boolean = (await (await fetch('/sw/check/' + encoded)).json()).able
-          if (hasCache) {
-            fileCache.res[ind] = 'done'
-            return '/sw/img/' + encoded
-          } else {
-            const f: Uint8Array = (await forageStorage.getItem(loc)) as unknown as Uint8Array
-            await fetch('/sw/register/' + encoded, {
-              method: 'POST',
-              body: f as any,
-            })
-            fileCache.res[ind] = 'done'
-            await sleep(10)
-          }
-          return '/sw/img/' + encoded
-        } catch (error) {}
-      } else {
-        const f = fileCache.res[ind]
-        if (f === 'loading') {
-          while (fileCache.res[ind] === 'loading') {
-            await sleep(10)
-          }
-        }
-        return '/sw/img/' + encoded
-      }
+    let ind = fileCache.origin.indexOf(loc)
+    if (ind === -1) {
+      ind = fileCache.origin.length
+      fileCache.origin.push(loc)
+      fileCache.res.push('loading')
+      const f: Uint8Array = (await forageStorage.getItem(loc)) as unknown as Uint8Array
+      fileCache.res[ind] = f
+      return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
     } else {
-      let ind = fileCache.origin.indexOf(loc)
-      if (ind === -1) {
-        ind = fileCache.origin.length
-        fileCache.origin.push(loc)
-        fileCache.res.push('loading')
-        const f: Uint8Array = (await forageStorage.getItem(loc)) as unknown as Uint8Array
-        fileCache.res[ind] = f
-        return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
-      } else {
-        const f = fileCache.res[ind]
-        if (f === 'loading') {
-          while (fileCache.res[ind] === 'loading') {
-            await sleep(10)
-          }
-          return `data:image/png;base64,${Buffer.from(fileCache.res[ind]).toString('base64')}`
+      const f = fileCache.res[ind]
+      if (f === 'loading') {
+        while (fileCache.res[ind] === 'loading') {
+          await sleep(10)
         }
-        return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
+        return `data:image/png;base64,${Buffer.from(fileCache.res[ind]).toString('base64')}`
       }
+      return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
     }
   } catch (error) {
     console.error(error)
@@ -529,12 +495,6 @@ export async function getDbBackups() {
     await forageStorage.removeItem(`database/dbbackup-${last}.bin`)
   }
   return backups
-}
-
-let usingSw = false
-
-export function setUsingSw(value: boolean) {
-  usingSw = value
 }
 
 /**

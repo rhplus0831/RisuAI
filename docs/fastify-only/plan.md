@@ -28,8 +28,8 @@ Remove local runtime support and all non-Fastify platform support so the project
 | 0     | [Audit And Baseline](phases-completed/phase-0-audit-and-baseline-2026-05-27.md)               | Freeze the known non-Fastify surfaces and current verification baseline. Completed on 2026-05-27.              |
 | 1     | [Project Surface Removal](phases-completed/phase-1-project-surface-removal-2026-05-27.md)     | Remove alternate server projects, stale scripts, launchers, and native/mobile config. Completed on 2026-05-27. |
 | 2     | [Runtime Contract Collapse](phases-completed/phase-2-runtime-contract-collapse-2026-05-27.md) | Replace broad platform gates with a Fastify-served client contract. Completed on 2026-05-27.                   |
-| 3     | [Storage Contract Cleanup](phases-completed/phase-3-storage-contract-cleanup-2026-05-27.md)   | Keep Fastify storage APIs only and remove local/legacy storage fallbacks. Completed on 2026-05-27.            |
-| 4     | [Proxy And API Routing](phases-completed/phase-4-proxy-and-api-routing-2026-05-27.md)         | Remove hosted and legacy proxy routes so client IO targets Fastify. Completed on 2026-05-27.                  |
+| 3     | [Storage Contract Cleanup](phases-completed/phase-3-storage-contract-cleanup-2026-05-27.md)   | Keep Fastify storage APIs only and remove local/legacy storage fallbacks. Completed on 2026-05-27.             |
+| 4     | [Proxy And API Routing](phases-completed/phase-4-proxy-and-api-routing-2026-05-27.md)         | Remove hosted and legacy proxy routes so client IO targets Fastify. Completed on 2026-05-27.                   |
 | 5     | [Browser Local Surface Cleanup](phases/phase-5-browser-local-surface-cleanup.md)              | Remove remaining service worker, preload, and share flows that imply standalone local support.                 |
 | 6     | [Docs And Packaging Closeout](phases/phase-6-docs-and-packaging-closeout.md)                  | Align README, localized app strings, Docker, env docs, and smoke instructions with Fastify only.               |
 | 7     | [Verification Closeout](phases/phase-7-verification-closeout.md)                              | Run the full verification ladder and archive completed status.                                                 |
@@ -60,8 +60,8 @@ Each implementation phase should record its actual command output in the matchin
 - `src/ts/storage/nodeStorage.ts:6`
 - `src/ts/storage/autoStorage.ts:28`
 - `src/ts/bootstrap.ts:137`
-- `public/sw.js:3`
-- `src/preload.ts:7`
+- `src/ts/browserLocalSurface.test.ts:1`
+- `public/manifest.json:33`
 - `src/ts/globalApi.svelte.ts:560`
 - `src/ts/globalApi.proxy.test.ts:80`
 - `vite.config.ts:28`

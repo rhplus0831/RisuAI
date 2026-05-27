@@ -4,11 +4,9 @@ import './ts/storage/database.svelte'
 import App from './App.svelte'
 import { loadData } from './ts/bootstrap'
 import { initHotkey } from './ts/hotkey'
-import { preLoadCheck } from './preload'
 import { mount } from 'svelte'
 import { installFastifyBrowserSmokeHook } from './ts/server/browserSmoke'
 
-preLoadCheck()
 let app = mount(App, {
   target: document.getElementById('app'),
 })
