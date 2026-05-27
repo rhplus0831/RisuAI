@@ -9,14 +9,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build --sourcemap",
-
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "smoke:fastify-browser": "VITE_FASTIFY_BROWSER_SMOKE=TRUE VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm buildsite && playwright test -c playwright.fastify-smoke.config.ts",
-
+    "smoke:fastify-browser": "cross-env VITE_FASTIFY_BROWSER_SMOKE=TRUE VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm buildsite && playwright test -c playwright.fastify-smoke.config.ts",
     "buildsite": "vite build --outDir dist",
     "sync": "node electron/sync",
     "electron": "node electron/dist/electron",
@@ -44,7 +42,6 @@
     "@smithy/protocol-http": "^3.3.0",
     "@smithy/signature-v4": "^2.3.0",
     "@tailwindcss/vite": "^4.2.2",
-
     "@types/markdown-it": "^14.1.2",
     "@types/trusted-types": "^2.0.7",
     "acorn": "^8.15.0",
@@ -95,7 +92,6 @@
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@swc/core": "1.5.7",
     "@tailwindcss/typography": "^0.5.19",
-
     "@tsconfig/svelte": "^5.0.6",
     "@types/diff": "^6.0.0",
     "@types/libsodium-wrappers-sumo": "^0.7.8",
@@ -109,6 +105,7 @@
     "@types/uuid": "^9.0.8",
     "@types/wicg-file-system-access": "^2020.9.8",
     "autoprefixer": "^10.4.23",
+    "cross-env": "^10.1.0",
     "fast-check": "^4.5.3",
     "happy-dom": "^20.1.0",
     "internal-ip": "^7.0.0",
