@@ -18,8 +18,9 @@ The Vertex token refresh moves server-side. Masking stays.
 
 **Why:** Masking provider secrets is only honest if no browser path needs them.
 Today server generation is *opt-in* (`useServerGeneration` defaults false) and
-*partial* (only "vanilla" formats; proxy/`xcustom`/preview fall back to the
-browser), so masked secrets break those flows. Of the three reconciliations —
+*partial* — many proxy/`xcustom` formats are already server-routed, but
+non-server-routable formats (notably Gemini `reverse_proxy`/`xcustom`) and
+preview bodies fall back to the browser, so masked secrets break those flows. Of the three reconciliations —
 (A) server-own + block, (B) stop masking, (C) per-key scoped masking — only A
 keeps the stated security invariant; B abandons it and C is the most error-prone.
 Removing the toggle removes the whole class: there is no "browser generation" mode
@@ -30,16 +31,18 @@ turn a silent security hole into an explicit burn-down list.
 
 ## EC2 — Plugin durable storage {#ec2}
 
-**Decision:** Default = Option B (server-back the async KV; disable sync
-`localStorage` + IndexedDB). Add an opt-in **Plugin Compatibility Mode**:
+**Decision:** Default = Option B. Durable plugin storage stays the
+already-server-backed `risuai.pluginStorage`; the three *device-local* sandbox
+APIs — sync `localStorage` (`SafeLocalStorage`), IndexedDB (`SafeIdbFactory`), and
+the local async `getLocalPluginStorage()`/`SafeLocalPluginStorage` — are disabled
+in Fastify mode. Add an opt-in **Plugin Compatibility Mode**:
 
 - **Account-wide**, and a **command-backed** server setting (not a browser-local
   flag — a local flag controlling whether browser-local storage is allowed would
   be self-undermining; account-wide also fits the projection model).
-- When on, restores **only** the two APIs B disables (sync `localStorage`,
-  IndexedDB) as device-local. The async KV stays **server-backed even in
-  Compatibility Mode** — no reason to move the common path off the server for a
-  niche IndexedDB plugin.
+- When on, restores those **three device-local APIs**. `risuai.pluginStorage`
+  stays server-backed and toggle-independent (durable plugin storage never moves
+  off the server).
 - Relaxes storage **location only, never resource ownership**: the
   `unsupportedServerBridgeKeys` guard, the `pluginV2` fix, and reserved-key
   shadowing protection stay enforced in both states. Compatibility Mode must never
@@ -49,17 +52,21 @@ turn a silent security hole into an explicit burn-down list.
 
 **Why:** A safe, honest default with an explicit, discouraged escape hatch beats
 either silently breaking plugins (pure B) or silently weakening the invariant
-(pure C). The sync/async split forces the shape: a server-backed store is
-necessarily async, so the async KV *can* be server-backed (and a server command
-already exists) while sync `localStorage` cannot. The audit narrowed the scope:
-bulk/unknown-key persistence and write-time reserved-key shadowing are already
-server-backed/blocked, so the remaining work is the sandbox APIs, `pluginV2`,
-read-time shadowing, and `saveMethod` honesty.
+(pure C). The server-backed durable path (`risuai.pluginStorage`) already exists,
+so the remaining surfaces are *explicitly device-local* — including the local
+async `getLocalPluginStorage()`, which the audit showed is distinct from
+`risuai.pluginStorage`. Treating all three uniformly (off by default, restored
+together by Compatibility Mode) keeps one escape hatch instead of special cases.
+The audit also narrowed the scope: bulk/unknown-key persistence and write-time
+reserved-key shadowing are already server-backed/blocked, so the remaining work is
+those three sandbox APIs, `pluginV2`, read-time shadowing, and `saveMethod`
+honesty.
 
 ## EC3 — Import current-shape {#ec3}
 
-**Decision:** Option A — call the already-exported `normalizeRisuSaveImportDatabase`
-(`importSnapshot.ts:83`) from the JSON import path; delete the narrow route-local
+**Decision:** Option A — in the JSON import path, pass the **returned normalized
+clone** from the already-exported `normalizeRisuSaveImportDatabase`
+(`importSnapshot.ts:83`) to `applyImportedDatabase`; delete the narrow route-local
 normalizer.
 
 **Why:** The bug *is* a duplicate normalizer drifting out of sync — exactly the
@@ -74,7 +81,8 @@ production — not load-bearing once unified.)
 **Decision:**
 
 - **4a — split helpers (i):** each id helper splits into `repairX` (import only,
-  may mint ids) and `validateX` (command path, rejects missing/duplicate). Not a
+  may mint ids) and `validateX` (command path, rejects missing/duplicate). Create
+  commands also require a client-supplied id (no server-side minting). Not a
   shared helper with an `allowRepair` flag.
 - **4b — subtractive (i):** remove `promptTemplate` from the prompt-settings
   command; the existing `/prompt-items/*` CRUD/reorder commands are the only
@@ -85,7 +93,11 @@ production — not load-bearing once unified.)
 which the split guarantees and a boolean flag defeats. A shared-helper-with-a-flag
 is also how repair leaked into commands in the first place. The audit narrowed
 the message case: duplicate ids are already rejected, so only the missing-`chatId`
-generation needs removing.
+generation needs removing. Per the audit this also covers **create**: create
+commands require a client-supplied id and reject missing (consistent with the
+optimistic-projection model, where the client assigns the id), so prompt-item
+create (`prompts.ts:64`) is in scope and EC7's no-mint rule needs no create
+exemption.
 
 **Why (4b):** `promptTemplate` is an id-bearing child array (like lorebook
 entries), not a scalar setting — editing it through the scalar settings patch is a
@@ -102,8 +114,9 @@ toggle `{ promptTemplate: [] }` — routes through a command instead.
 page. Port the `Risuai-NodeOnly` reference commit
 `1c1d7bc6dc0bbe8e176730dd6b6b894ea1d8033b` to Fastify: mint a per-page-load
 session id; register the active writer on **bootstrap/page-load** (last-loader
-wins); reject non-active sessions on mutation routes with **423**; the client
-**reacts on 423** by notifying and reloading. Still remove the blind 409 replay as
+wins); reject non-active sessions with **423** on every server-owned mutating
+route (commands, import, assets, backups, legacy storage); the client **reacts on
+423** by notifying and reloading. Still remove the blind 409 replay as
 a backstop. Conflict-resolution page and retry-safety classification are dropped.
 
 **Why:** This app was not designed for multi-device use; a 409 almost always means
@@ -132,7 +145,10 @@ optional-asset-ref validators; reject-on-missing.
 
 **Why:** Mechanical — no fork. The validator is already shared by create and patch,
 so the additive fields cover both. Field correction from the audit: the server
-asset field is `ref_audio_data.assetId`, not `ref_audio_path`.
+asset field is `ref_audio_data.assetId`, not `ref_audio_path`. EC6 stays scoped to
+the character audio refs; the broader walker-vs-validator drift class (e.g.
+`characterOrder.img` vs `imgFile` — `assetReferences.ts:69` / `characters.ts:215`)
+is left to EC7's audit rather than broadened here.
 
 ## EC7 — Repeatable audit {#ec7}
 

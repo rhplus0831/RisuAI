@@ -20,7 +20,7 @@ Each finding states the **problem** as it exists in the code today; the chosen
 dispatch is still reachable when `useServerGeneration` is missing or `false`.
 
 - `src/ts/storage/database.svelte.ts:773` defaults `useServerGeneration` to `false`.
-- `src/ts/process/request/serverCompletion.ts:528` is the function entry; the opt-in null gate is around `:531` (returns `null` unless `db.useServerGeneration === true`, and for every non-"vanilla" format, proxy/`xcustom`, or preview body).
+- `src/ts/process/request/serverCompletion.ts:528` is the function entry; the opt-in null gate is around `:531` (returns `null` unless `db.useServerGeneration === true`). Many proxy/`xcustom` formats are **already server-routed** — OpenAI-compatible (`:69`), Anthropic (`:281`), Mistral (`:314`), Cohere (`:341`), Responses (`:472`), Legacy Instruct (`:506`). The formats that still fall back are non-server-routable ones — notably Gemini `reverse_proxy`/`xcustom` (`:359`) — plus preview bodies.
 - `src/ts/process/request/request.ts:525` falls through to direct browser provider dispatch when the server provider is `null`.
 - `server/fastify/src/routes/bootstrap.ts:24` returns the masked projection; `server/fastify/src/providerSecrets.ts:22` and `:42` mask provider secrets used by browser dispatch.
 - `src/ts/process/request/google.ts:553` refreshes Vertex access tokens by mutating the local projection inside `withTrustedServerProjectionWrite` with no command/import persistence path.
@@ -61,6 +61,11 @@ Precision (from audit) — narrower than originally written:
   through plugin-storage bulk commands at `:706`/`:716`, Fastify routes exist at
   `server/fastify/src/routes/commands.ts:3804`, `:3838`, `:3871`, with coverage at
   `server/fastify/__tests__/commands.test.ts:4622`.
+- **Normal `risuai.pluginStorage` is already server-backed/routed** — distinct
+  from `getLocalPluginStorage()`, which returns the explicitly device-local
+  `SafeLocalPluginStorage`. The unresolved *async* local surface is specifically
+  `getLocalPluginStorage()`/`SafeLocalPluginStorage`; its Fastify treatment is an
+  open decision ([`decisions.md`](./decisions.md#ec2)).
 - **Write-time reserved-key shadowing is already blocked** in server mode at
   `plugins.svelte.ts:591` and `:680` (tests `plugins.test.ts:274`, `:292`).
 - Remaining gaps: the three `Safe*` sandbox APIs are ungated; **`pluginV2`** is
@@ -68,11 +73,12 @@ Precision (from audit) — narrower than originally written:
   (writes update the projection then get dropped by the settings-patch path); and
   **read-time** shadowing persists via the V2 `getDatabase` fallback at `:1002`.
 
-**Decision (EC2=B + Compatibility Mode):** default = server-back the async KV /
-disable sync `localStorage` + IndexedDB; an opt-in, account-wide, command-backed
-**Plugin Compatibility Mode** may restore *only* the two sync APIs as
-device-local, never relaxing resource ownership; fix `pluginV2`, read-time
-shadowing, and `saveMethod`. See [`decisions.md`](./decisions.md#ec2).
+**Decision (EC2=B + Compatibility Mode):** default = keep durable storage on the
+already-server-backed `risuai.pluginStorage` and disable the three device-local
+sandbox APIs (sync `localStorage`, IndexedDB, `getLocalPluginStorage()`); an
+opt-in, account-wide, command-backed **Plugin Compatibility Mode** may restore
+those three device-local APIs, never relaxing resource ownership; fix `pluginV2`,
+read-time shadowing, and `saveMethod`. See [`decisions.md`](./decisions.md#ec2).
 
 ## F3 → EC3 (P1): JSON import can persist non-current-shape DB data
 
@@ -107,6 +113,7 @@ items are still reachable through a settings command.
 - Script/trigger replacement repairs ids: `ensureDefinitionRecords` around `server/fastify/src/commands/scriptDefinitions.ts:97`, `:104`, `:127`; public routes at `server/fastify/src/routes/commands.ts:3950`, `:3984`, `:4018`, `:4052`.
 - Message `createMessageRecord` still generates a missing `chatId` around `server/fastify/src/commands/messages.ts:68`; `ensureChatMessages` repairs existing malformed DB state around `:50`.
 - `promptTemplate` is accepted as a raw `array|null` through the dedicated prompt-settings command: `server/fastify/src/commands/prompts.ts:11`, `:177`, applied at `server/fastify/src/routes/commands.ts:1328`, `:1341`, emitting `prompt.settings.updated` (`events.ts:53`).
+- Prompt-item **create** still mints ids server-side at `server/fastify/src/commands/prompts.ts:64`.
 
 Precision (from audit) — partly stale:
 
@@ -124,7 +131,8 @@ Precision (from audit) — partly stale:
 **Decision (EC4):** **4a** split each id helper into `repairX` (import, may mint
 ids) + `validateX` (command, rejects missing/dup) — messages need only to stop
 generating the missing `chatId`; lorebook entries and script/trigger defs get the
-full split. **4b** subtractive: drop `promptTemplate` from `/commands/prompt-settings`
+full split. Create commands (incl. prompt-item create, `prompts.ts:64`) require a
+client-supplied id — minting lives only in import/bootstrap. **4b** subtractive: drop `promptTemplate` from `/commands/prompt-settings`
 and route the `BotSettings` toggle through a command; the `/prompt-items/*`
 commands are the only editing path. See [`decisions.md`](./decisions.md#ec4).
 
@@ -139,6 +147,7 @@ with the newer revision (last-writer-wins).
 - The low-level transport already surfaces conflicts as `{ status: "conflict", currentRevision }` at `src/ts/server/commands.ts:2204`; direct typed helpers can return visible conflicts (coverage `commands.test.ts:313`).
 - The server correctly rejects stale revisions (`server/fastify/src/commands/mutations.ts:50`) and maps to 409 (`server/fastify/src/routes/commands.ts:4194`; coverage `commands.test.ts:190`).
 - Browser tests still encode replay for several families: settings `src/ts/server/commands.test.ts:486`, presets `:646`, prompts `:821`.
+- Other mutating routes do **not** take a `baseRevision`: import (`save.ts:48`) and asset upload (`assets.ts:35`); backups (`backups.ts:25`, `:46`, `:62`) and legacy storage writes (`legacyStorage.ts:67`, `:88`) are also mutating endpoints. The active-writer guard must cover them ([`decisions.md`](./decisions.md#ec5)).
 
 Precision (from audit): conflict-hiding is **not** limited to `runServerCommand`;
 callers are widespread (settings bridge `settingsBridge.svelte.ts:114`, presets
@@ -156,7 +165,7 @@ classification. See [`decisions.md`](./decisions.md#ec5).
 The asset-reference walker treats character audio fields as server asset
 references, but character validation does not cover them.
 
-- `server/fastify/src/risuSave/assetReferences.ts:85` walks character asset references; `:93` includes `vits.files` (dynamic refs at `:122`); `:95`/`:135` include the GPT-SoVITS reference-audio asset.
+- `server/fastify/src/risuSave/assetReferences.ts:85` walks character asset references; `:93` includes `vits.files` (dynamic refs at `:122`); `:95` plus `:141-143` include the GPT-SoVITS reference-audio asset.
 - `server/fastify/src/commands/characters.ts:371` (`validateCharacterAssetRefs`) validates `image`, `emotionImages`, `additionalAssets`, `ccAssets`, and `prebuiltAssetExclude` only.
 - Both create and patch are affected: create validates through `createCharacterRecord(... assetDataDir ...)` at `server/fastify/src/routes/commands.ts:2144`; patch through `readCharacterPatch(... assetDataDir ...)` at `:2182`.
 
@@ -169,6 +178,14 @@ Precision (from audit):
 - Asset ids are SHA-256 hex (`server/fastify/src/repository.ts:29`); syntactically
   valid but missing ids should still be rejected by `assetById`. The UI writes the
   field from `saveAsset(audio.data)` at `src/lib/SideBars/CharConfig.svelte:1372`.
+- The optional asset-ref validator intentionally allows `undefined`/`null`/`""`/`"-"`
+  (`server/fastify/src/commands/assets.ts:7`, `:20`), so "missing" means a
+  syntactically valid SHA-256 id **absent from persisted assets**, not an
+  empty/clear value.
+- EC6 stays scoped to character **audio** refs. The broader walker-vs-validator
+  drift class — e.g. `characterOrder.img` walked at `assetReferences.ts:69` while
+  order validation checks `imgFile` (`characters.ts:215`) — is caught by EC7's
+  audit, not this bucket ([`decisions.md`](./decisions.md#ec6)).
 
 **Decision (EC6):** extend `validateCharacterAssetRefs` to `vits.files.*` and
 `gptSoVitsConfig.ref_audio_data.assetId`, reusing the existing optional-asset-ref
