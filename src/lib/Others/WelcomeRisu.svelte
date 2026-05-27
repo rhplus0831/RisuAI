@@ -111,6 +111,11 @@
           textTheme: 'highcontrast',
           claudeCachingExperimental: true,
         }
+        // Snapshot the projection before applying the preset so we can persist
+        // every field setPreset() changes, not just the smaller patch below.
+        const beforeSetup = safeStructuredClone(
+          DBState.db as unknown as Record<string, unknown>,
+        )
         withTrustedServerProjectionWrite(() => {
           DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
           Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
@@ -197,7 +202,18 @@
         withTrustedServerProjectionWrite(() => {
           Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
         })
-        void applyServerBackedSettingsPatch(patch)
+        // Persist everything the preset + patch changed, not only the patch.
+        // applyServerBackedSettingsPatch keeps only command-backed settings
+        // keys, so unrelated keys are ignored safely; this stops preset fields
+        // from being lost on the next projection refresh in server mode.
+        const afterSetup = DBState.db as unknown as Record<string, unknown>
+        const fullPatch: Record<string, unknown> = { ...patch }
+        for (const key of Object.keys(afterSetup)) {
+          if (JSON.stringify(afterSetup[key]) !== JSON.stringify(beforeSetup[key])) {
+            fullPatch[key] = afterSetup[key]
+          }
+        }
+        void applyServerBackedSettingsPatch(fullPatch)
       }, 1000)
     }
   })
