@@ -64,7 +64,7 @@ Phase 6 is complete. Public setup docs now describe Risuai as a Fastify-served w
 
 ## Follow-Up
 
-- Continue with [Phase 7: Verification Closeout](../phases/phase-7-verification-closeout.md).
+- Phase 7 later closed in [Phase 7: Verification Closeout](phase-7-verification-closeout-2026-05-27.md).
 - Run the full verification ladder: `pnpm check`, `pnpm test`, `pnpm api:test`, `pnpm build`, and `pnpm smoke:fastify-browser`.
 - Confirm the active docs and entry points remain Fastify-only before marking the overall plan complete.
 

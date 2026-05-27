@@ -2,7 +2,7 @@
 
 ## Current State
 
-Fastify is the target server. Phase 1 removed the project-level Hono, launcher, and native/mobile surfaces. Phase 2 collapsed static serving to a single `globalThis.__FASTIFY__` client signal. Phase 4 removed hosted function proxy compatibility surfaces.
+Fastify is the only supported server. Phase 1 removed the project-level Hono, launcher, and native/mobile surfaces. Phase 2 collapsed static serving to a single `globalThis.__FASTIFY__` client signal. Phase 4 removed hosted function proxy compatibility surfaces. Phase 7 verified the final Fastify-only contract.
 
 Known items:
 
@@ -19,5 +19,4 @@ Known items:
 ## Watch Points
 
 - Keep Docker and compose Fastify flows intact.
-- Phase 7 should run the full verification ladder before final closeout.
 - Ensure route tests continue to cover retained `/api/v1/*` behavior.

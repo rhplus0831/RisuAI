@@ -23,16 +23,16 @@ Remove local runtime support and all non-Fastify platform support so the project
 
 ## Phase Summary
 
-| Phase | Name                                                                                          | Purpose                                                                                                        |
-| ----- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 0     | [Audit And Baseline](phases-completed/phase-0-audit-and-baseline-2026-05-27.md)               | Freeze the known non-Fastify surfaces and current verification baseline. Completed on 2026-05-27.              |
-| 1     | [Project Surface Removal](phases-completed/phase-1-project-surface-removal-2026-05-27.md)     | Remove alternate server projects, stale scripts, launchers, and native/mobile config. Completed on 2026-05-27. |
-| 2     | [Runtime Contract Collapse](phases-completed/phase-2-runtime-contract-collapse-2026-05-27.md) | Replace broad platform gates with a Fastify-served client contract. Completed on 2026-05-27.                   |
-| 3     | [Storage Contract Cleanup](phases-completed/phase-3-storage-contract-cleanup-2026-05-27.md)   | Keep Fastify storage APIs only and remove local/legacy storage fallbacks. Completed on 2026-05-27.             |
-| 4     | [Proxy And API Routing](phases-completed/phase-4-proxy-and-api-routing-2026-05-27.md)         | Remove hosted and legacy proxy routes so client IO targets Fastify. Completed on 2026-05-27.                   |
+| Phase | Name                                                                                                  | Purpose                                                                                                                               |
+| ----- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | [Audit And Baseline](phases-completed/phase-0-audit-and-baseline-2026-05-27.md)                       | Freeze the known non-Fastify surfaces and current verification baseline. Completed on 2026-05-27.                                     |
+| 1     | [Project Surface Removal](phases-completed/phase-1-project-surface-removal-2026-05-27.md)             | Remove alternate server projects, stale scripts, launchers, and native/mobile config. Completed on 2026-05-27.                        |
+| 2     | [Runtime Contract Collapse](phases-completed/phase-2-runtime-contract-collapse-2026-05-27.md)         | Replace broad platform gates with a Fastify-served client contract. Completed on 2026-05-27.                                          |
+| 3     | [Storage Contract Cleanup](phases-completed/phase-3-storage-contract-cleanup-2026-05-27.md)           | Keep Fastify storage APIs only and remove local/legacy storage fallbacks. Completed on 2026-05-27.                                    |
+| 4     | [Proxy And API Routing](phases-completed/phase-4-proxy-and-api-routing-2026-05-27.md)                 | Remove hosted and legacy proxy routes so client IO targets Fastify. Completed on 2026-05-27.                                          |
 | 5     | [Browser Local Surface Cleanup](phases-completed/phase-5-browser-local-surface-cleanup-2026-05-27.md) | Remove remaining service worker, preload, backup, and persistence flows that imply standalone local support. Completed on 2026-05-27. |
-| 6     | [Docs And Packaging Closeout](phases-completed/phase-6-docs-and-packaging-closeout-2026-05-27.md) | Align README, localized app strings, Docker, env docs, and smoke instructions with Fastify only. Completed on 2026-05-27. |
-| 7     | [Verification Closeout](phases/phase-7-verification-closeout.md)                              | Run the full verification ladder and archive completed status. Current pickup.                                |
+| 6     | [Docs And Packaging Closeout](phases-completed/phase-6-docs-and-packaging-closeout-2026-05-27.md)     | Align README, localized app strings, Docker, env docs, and smoke instructions with Fastify only. Completed on 2026-05-27.             |
+| 7     | [Verification Closeout](phases-completed/phase-7-verification-closeout-2026-05-27.md)                 | Run the full verification ladder and archive completed status. Completed on 2026-05-27.                                               |
 
 ## Risks
 
