@@ -44,7 +44,9 @@ export function decodeRisuSaveImportSnapshot(data: Uint8Array): RisuSaveImportSn
   ) {
     return {
       envelope,
-      database: normalizeImportDatabase(decodeLegacyRisuSaveEnvelope(data)),
+      database: normalizeImportDatabase(
+        decodeEnvelopeAsValidation(() => decodeLegacyRisuSaveEnvelope(data)),
+      ),
       unsupportedReferences: [],
     }
   }
@@ -53,11 +55,28 @@ export function decodeRisuSaveImportSnapshot(data: Uint8Array): RisuSaveImportSn
     throw new ValidationError(`Unsupported .risu envelope: ${envelope}`)
   }
 
-  const decoded = decodeRisuSaveBlockEnvelope(data)
+  const decoded = decodeEnvelopeAsValidation(() => decodeRisuSaveBlockEnvelope(data))
   return {
     envelope,
     database: normalizeImportDatabase(assembleBlockDatabase(decoded.blocks)),
     unsupportedReferences: decoded.unsupportedReferences,
+  }
+}
+
+/**
+ * The low-level envelope decoders throw plain Errors for malformed structures
+ * (truncated headers, bad gzip, unparsable directory JSON). Uploaded saves are
+ * untrusted input, so surface those as ValidationError (400) rather than
+ * letting them bubble up as internal 500s. ValidationErrors pass through.
+ */
+function decodeEnvelopeAsValidation<T>(decode: () => T): T {
+  try {
+    return decode()
+  } catch (err) {
+    if (err instanceof ValidationError) throw err
+    throw new ValidationError(
+      err instanceof Error ? err.message : 'Malformed .risu save envelope',
+    )
   }
 }
 

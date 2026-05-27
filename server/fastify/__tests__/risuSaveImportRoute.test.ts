@@ -266,4 +266,24 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(bootstrap.json().database).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
   })
+
+  it('returns 400 (not 500) for a malformed RISUSAVE block structure', async () => {
+    // Valid 'RISUSAVE\0' envelope header followed by a truncated block.
+    const upload = multipartRisuSave(new TextEncoder().encode('RISUSAVE\0x'))
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json()).toEqual({ error: 'Malformed RISUSAVE block header at offset 9' })
+
+    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().revision).toBe(0)
+    expect(bootstrap.json().database).toBeNull()
+    expect(harness.commandEvents.list()).toEqual([])
+  })
 })
