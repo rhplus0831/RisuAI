@@ -248,6 +248,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('disableSeperateParameterChangeOnPresetChange')).toBe('runtime')
     expect(settingsGroupForKey('epEnabled')).toBe('runtime')
     expect(settingsGroupForKey('streamGeminiThoughts')).toBe('runtime')
+    expect(settingsGroupForKey('verbosity')).toBe('runtime')
     expect(settingsGroupForKey('sdProvider')).toBe('media')
     expect(settingsGroupForKey('webUiUrl')).toBe('media')
     expect(settingsGroupForKey('sdSteps')).toBe('media')

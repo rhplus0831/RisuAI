@@ -324,6 +324,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   vertexClientEmail: 'providers',
   vertexPrivateKey: 'providers',
   vertexRegion: 'providers',
+  verbosity: 'runtime',
   voicevoxUrl: 'media',
   voyageApiKey: 'memory',
   waifuWidth: 'display',
