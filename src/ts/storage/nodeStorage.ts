@@ -3,47 +3,29 @@ import { alertError, alertInput, waitAlert } from '../alert'
 import { isFastifyServer } from '../platform'
 import { base64url, getKeypairStore, saveKeypairStore } from '../util'
 
-const ROUTES = isFastifyServer
-  ? {
-      write: '/api/v1/storage/write',
-      read: '/api/v1/storage/read',
-      list: '/api/v1/storage/list',
-      remove: '/api/v1/storage/remove',
-      crypto: '/api/v1/auth/crypto',
-      status: '/api/v1/auth/status',
-      setPassword: '/api/v1/auth/setup',
-      login: '/api/v1/auth/login',
-    }
-  : {
-      write: '/api/write',
-      read: '/api/read',
-      list: '/api/list',
-      remove: '/api/remove',
-      crypto: '/api/crypto',
-      status: '/api/test_auth',
-      setPassword: '/api/set_password',
-      login: '/api/login',
-    }
+const ROUTES = {
+  write: '/api/v1/storage/write',
+  read: '/api/v1/storage/read',
+  list: '/api/v1/storage/list',
+  remove: '/api/v1/storage/remove',
+  crypto: '/api/v1/auth/crypto',
+  status: '/api/v1/auth/status',
+  setPassword: '/api/v1/auth/setup',
+  login: '/api/v1/auth/login',
+}
 
 type AuthStatus = 'unset' | 'incorrect' | 'success'
 
 async function fetchAuthStatus(assertion: string): Promise<AuthStatus> {
-  if (isFastifyServer) {
-    const res = await fetch(ROUTES.status, {
-      headers: { 'risu-auth': assertion },
-    })
-    if (res.status >= 200 && res.status < 300) {
-      const body = (await res.json()) as { noPassword?: boolean; authorized?: boolean }
-      if (body.noPassword) return 'unset'
-      return body.authorized ? 'success' : 'incorrect'
-    }
-    return 'incorrect'
-  }
   const res = await fetch(ROUTES.status, {
     headers: { 'risu-auth': assertion },
   })
-  const data = (await res.json()) as { status?: AuthStatus }
-  return (data.status ?? 'incorrect') as AuthStatus
+  if (res.status >= 200 && res.status < 300) {
+    const body = (await res.json()) as { noPassword?: boolean; authorized?: boolean }
+    if (body.noPassword) return 'unset'
+    return body.authorized ? 'success' : 'incorrect'
+  }
+  return 'incorrect'
 }
 
 export class NodeStorage {
@@ -173,19 +155,9 @@ export class NodeStorage {
   async removeItem(key: string | string[]) {
     await this.checkAuth()
     const hexKey = (k: string) => Buffer.from(k, 'utf-8').toString('hex')
-    let filePath: string
-    if (isFastifyServer && Array.isArray(key)) {
-      // Fastify expects each key hex-encoded separately, joined by $$ so
-      // the server can split and validate every segment as hex.
-      filePath = key.map(hexKey).join('$$')
-    } else {
-      // Express's /api/remove is buggy for arrays; this preserves the
-      // legacy single-key behavior the client has always done.
-      const joined = Array.isArray(key) ? key.join('$$') : key
-      filePath = hexKey(joined)
-    }
+    const filePath = Array.isArray(key) ? key.map(hexKey).join('$$') : hexKey(key)
     const da = await fetch(ROUTES.remove, {
-      method: isFastifyServer ? 'POST' : 'GET',
+      method: 'POST',
       headers: {
         'file-path': filePath,
         'risu-auth': await this.createAuth(),

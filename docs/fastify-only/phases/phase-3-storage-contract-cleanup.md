@@ -24,6 +24,44 @@ Make Fastify storage the only supported persistence contract.
 - Local browser storage is not selected as an app runtime.
 - Storage tests and smoke coverage pass against Fastify.
 
+## Slice Status
+
+### Phase 3A: Client Storage Route Collapse
+
+Completed on 2026-05-27.
+
+Changed files:
+
+- `src/ts/storage/nodeStorage.ts`
+- `src/ts/storage/nodeStorage.test.ts`
+- `docs/fastify-only/status/next-steps.md`
+- `docs/fastify-only/status.md`
+- `docs/fastify-only/phases/phase-3-storage-contract-cleanup.md`
+- `docs/fastify-only/coverage/server-routes.md`
+
+Completed work:
+
+- Removed the legacy client route table for `/api/write`, `/api/read`, `/api/list`, `/api/remove`, `/api/crypto`, `/api/test_auth`, `/api/set_password`, and `/api/login`.
+- Kept only Fastify `/api/v1/storage/*` and `/api/v1/auth/*` endpoints in `NodeStorage`.
+- Removed the legacy Express remove fallback so array removals always use Fastify's hex-segment `$$` contract over `POST /api/v1/storage/remove`.
+- Added focused client tests for retained storage and auth route selection.
+
+Verification:
+
+- `pnpm exec vitest run src/ts/storage/nodeStorage.test.ts src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts` passed.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/legacyStorage.test.ts` passed.
+- `pnpm check` passed.
+- `pnpm test` passed.
+- `pnpm api:test` passed.
+- `pnpm build` passed with existing build warnings.
+- `pnpm smoke:fastify-browser` passed with existing build warnings.
+
+Next pickup:
+
+- Phase 3B should start in `src/ts/storage/autoStorage.ts` and remove OPFS/localforage as an app-runtime persistence alternative.
+- Phase 3C should then update `src/ts/bootstrap.ts` so unavailable Fastify bootstrap data remains an explicit Fastify error instead of falling into local save-file initialization.
+- Run the full phase verification ladder before moving this phase to `phases-completed`.
+
 ## Verification
 
 - `pnpm check`
