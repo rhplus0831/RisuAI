@@ -1199,8 +1199,8 @@ if (logs) {
 ```javascript
 const info = await Risuai.getRuntimeInfo()
 console.log(info.apiVersion) // e.g., '3.0'
-console.log(info.platform) // e.g., 'web', 'electron'
-console.log(info.saveMethod) // e.g., 'indexeddb', 'filesystem'
+console.log(info.platform) // e.g., 'fastify', 'web'
+console.log(info.saveMethod) // e.g., 'local'
 ```
 
 #### Unwrap SafeClassArray

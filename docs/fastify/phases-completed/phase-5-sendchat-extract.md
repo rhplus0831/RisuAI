@@ -39,7 +39,7 @@ src/ts/process/
   dispatch/
     dispatchRequest.ts        provider dispatch + preview exits
   postGeneration/
-    notification.ts           desktop notification
+    notification.ts           browser notification
     igp.ts                    IGP dispatch
     stage4Finalize.ts         generationInfo timing writeback
     charEmotionStore.ts       shared emotion-store helpers

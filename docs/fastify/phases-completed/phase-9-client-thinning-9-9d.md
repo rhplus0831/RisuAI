@@ -3,7 +3,7 @@
 Date: 2026-05-26
 
 Status: partial. Automated preflight and Fastify-served web verification
-passed. Tauri / Desktop testing is deferred to a separate later task, so do
+passed. Legacy local client testing is deferred to a separate later task, so do
 not proceed with it for now.
 
 ## Summary
@@ -17,9 +17,9 @@ not proceed with it for now.
 - Confirmed the Fastify-served browser stayed in server-backed mode and did
   not write through IndexedDB/localForage or OPFS during the manual command
   flow.
-- Verified the Tauri frontend bundle still builds with `pnpm tauribuild`.
-- Retried the desktop Tauri manual interaction pass after Cargo and the Linux
-  Tauri/WebKit/GTK development libraries were installed. The command now
+- Verified the legacy local client frontend bundle still builds with `pnpm tauribuild`.
+- Retried the legacy local client manual interaction pass after Cargo and the Linux
+  WebKit/GTK development libraries were installed. The command now
   compiles the Rust app, starts Vite, and launches `target/debug/risuai` under
   Xvfb.
 - The app still cannot complete local manual verification because the webview
@@ -44,7 +44,7 @@ not proceed with it for now.
 - Storage audit observed no IndexedDB/localForage or OPFS writes in
   server-backed web mode.
 
-## Tauri / Local Checks
+## Legacy local client checks
 
 - `pnpm tauribuild` passed, with the existing CSS `::highlight`, browser
   externalization, plugin-timing, ineffective dynamic import, and chunk-size
@@ -55,7 +55,7 @@ not proceed with it for now.
 - `. "$HOME/.cargo/env"` exposes Cargo successfully:
   `cargo 1.95.0 (f2d3ce0bd 2026-03-21)` and
   `rustc 1.95.0 (59807616e 2026-04-14)`.
-- pkg-config now sees the needed Linux Tauri/WebKit/GTK chain, including
+- pkg-config now sees the needed Linux WebKit/GTK chain, including
   `glib-2.0 2.80.0`, `gobject-2.0 2.80.0`, `gtk+-3.0 3.24.41`,
   `webkit2gtk-4.1 2.52.3`, `javascriptcoregtk-4.1 2.52.3`,
   `libsoup-3.0 3.4.4`, `ayatana-appindicator3-0.1 0.5.90`, and
@@ -63,10 +63,10 @@ not proceed with it for now.
 - `timeout 180s dbus-run-session -- xvfb-run -a env VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm tauri dev`
   passed the former Cargo and pkg-config blockers, compiled the Rust target,
   and launched `target/debug/risuai`.
-- The Tauri dev run was stopped after the app logged
+- The legacy local client dev run was stopped after the app logged
   `Cannot access 'appVer' before initialization` from
   `src/ts/parser/parser.svelte.ts:109`.
-- A plain Vite browser-local fallback is not a substitute for the Tauri manual
+- A plain Vite browser-local fallback is not a substitute for the legacy local client manual
   pass here: the dev page remained on the loading screen with
   `Cannot access 'appVer' before initialization`.
 
@@ -92,6 +92,6 @@ not proceed with it for now.
 ## Follow-Up
 
 - Continue to 9-9e for Phase 9 docs closeout.
-- Handle Tauri / Desktop testing as a separate later task. Do not fix,
-  work around, or run the desktop manual verification during the current
+- Handle legacy local client testing as a separate later task. Do not fix,
+  work around, or run the legacy local client manual verification during the current
   pickup.

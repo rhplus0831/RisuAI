@@ -586,7 +586,7 @@ export const allowedDbKeys = [
 // keys instead of doing a dangling projection write that no command persists,
 // or shadowing the real resource inside `pluginCustomStorage`. Plugins must use
 // the dedicated module/plugin/storage APIs or settings for these in server
-// mode. Local (desktop) mode is unaffected and still writes them through
+// mode. The legacy local mode is unaffected and still writes them through
 // `setDatabase`.
 export const unsupportedServerBridgeKeys = new Set<string>([
   'characters',

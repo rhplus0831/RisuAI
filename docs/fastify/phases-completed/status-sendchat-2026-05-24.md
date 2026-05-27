@@ -4,7 +4,7 @@ Date: 2026-05-24 (Phase 5 closed; Phase 7 in progress)
 
 Updated 2026-05-22: **Phase 5 is closed.** All 28 slices landed:
 auto-continue, owned `doingChat` lifecycle, error
-reporting, desktop notification, IGP, stage-4 timing writeback,
+reporting, notification, IGP, stage-4 timing writeback,
 direct response emotion, image-generation stable-diff dispatch,
 emotion fallback helpers, output-trigger reuse, the non-streaming
 plus streaming response loops, the final request-budget recheck,

@@ -66,7 +66,7 @@ those follow-up gaps closed again on 2026-05-27.
   persistent character / persona / lorebook mutations stay out of Phase 7.
 - Ooba OAI-compatible, NovelAI text, and NovelList remain deferred until
   server-side string flattening is available.
-- Tauri-specific changes stay out of this migration phase unless a phase
+- Legacy local client-specific changes stay out of this migration phase unless a phase
   boundary explicitly calls for manual verification.
 
 ## Exit Criteria

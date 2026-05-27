@@ -24,7 +24,7 @@ export const languageKorean = {
     wrongPassword: '비밀번호가 잘못되었습니다.',
     networkFetch: '네트워크가 불안정하거나 서버가 응답하지 않을 때 자주 발생합니다.',
     networkFetchWeb:
-      '이것은 CORS 오류일 수 있습니다. 이는 브라우저의 제한으로 인해 웹 버전을 사용할 때만 발생합니다. 데스크톱 로컬 버전이나 다른 버전의 Risuai를 사용해보세요.',
+      '브라우저 제한으로 인한 CORS 오류일 수 있습니다. 요청이 서버 측 프록시를 통해 전달되도록 Fastify 서버에서 RisuAI를 실행하세요.',
     networkFetchPlain:
       '이것은 요청 오류일 수 있습니다. 설정에서 직접 요청 보내기 옵션을 비활성화해 보세요.',
     requestLogRemoved: '요청 로그가 삭제되었습니다.',
@@ -1019,7 +1019,7 @@ export const languageKorean = {
     'NovelAI 사용 시 CORS 오류가 발생할 수 있으므로, NovelAI를 사용할 때는 이 옵션을 비활성화해 주세요.',
   translationPrompt: '번역 프롬프트',
   translationResponseSize: '번역 응답 크기',
-  webdeeplwarn: '이 옵션은 웹에서는 제대로 작동하지 않을 수 있습니다.',
+  webdeeplwarn: '이 옵션은 CORS 오류를 일으킬 수 있습니다.',
   saveBackupLocal: '로컬 백업 저장',
   loadBackupLocal: '로컬 백업 불러오기',
   topP: 'Top P',

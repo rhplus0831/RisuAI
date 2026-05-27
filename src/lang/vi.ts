@@ -24,7 +24,7 @@ export const languageVietnamese = {
     wrongPassword: 'Wrong Password',
     networkFetch: 'This happens when the network is unstable or the server is down.',
     networkFetchWeb:
-      'This can be a CORS error. this only happens when using web version dude to limitations of the browser. try using desktop local version, or other version of Risuai.',
+      'Đây có thể là lỗi CORS do giới hạn của trình duyệt. Hãy chạy RisuAI dưới máy chủ Fastify để các yêu cầu được chuyển tiếp qua proxy phía máy chủ.',
     networkFetchPlain:
       'This can be a plain fetch error. try disabling force plain fetch option in settings.',
     requestLogRemoved: 'This request log is removed.',
@@ -1009,8 +1009,7 @@ export const languageVietnamese = {
     'Vui lòng tắt tùy chọn này khi sử dụng NovelAI, vì nó có thể gây ra lỗi CORS khi sử dụng NovelAI.',
   translationPrompt: 'Lời nhắc dịch',
   translationResponseSize: 'Kích thước phản hồi dịch',
-  webdeeplwarn:
-    'Tùy chọn này không được khuyến nghị sử dụng với phiên bản web, vì nó có thể gây ra lỗi CORS.',
+  webdeeplwarn: 'Tùy chọn này có thể gây ra lỗi CORS.',
   saveBackupLocal: 'Lưu sao lưu cục bộ',
   loadBackupLocal: 'Tải sao lưu cục bộ',
   topP: 'Top P',

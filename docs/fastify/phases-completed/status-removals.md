@@ -136,7 +136,7 @@ Removed:
 - `src/ts/process/stableDiff.ts` lost the `fallbackRisuToken`
   localStorage rehydrate inside the kei SD provider.
 - `src/ts/plugins/apiV3/v3.svelte.ts` collapsed `saveMethod` to
-  `tauri | local`.
+  legacy local mode.
 - `src/lib/Setting/Pages/UserSettings.svelte` rewritten - only
   local backup / cold-storage / export buttons remain.
 - `src/lib/Others/SavePopupIcon.svelte` lost the

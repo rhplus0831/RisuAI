@@ -210,7 +210,7 @@ chunks queue follow-up work best-effort.
 ### Browser Changes
 
 The server-backed send path bypasses local `hypaMemoryV3` prompt
-assembly. The legacy browser module remains for local/Tauri mode and
+assembly. The legacy browser module remains for legacy local mode and
 local Hypa V3 editing outside server-backed mode. Server Hypa V3
 progress is surfaced through terminal side effects and mapped into the
 existing browser progress store.

@@ -25,7 +25,7 @@ Completed phase detail and old landed-slice logs live in this directory.
   `cf830b9e` closed Phase 9B projection-write tails, `bd7a4712`
   restored the Phase 5 `sendChat` boundary, and `50d55b97` closed the
   broad typecheck blocker and verification matrix.
-- Tauri / Desktop manual verification remains deferred and should not
+- The legacy local client manual verification remains deferred and should not
   be folded back into the original Phase 9 closeout.
 - Last original closeout baselines are archived in
   [`phase-9-client-thinning-9-9e.md`](phase-9-client-thinning-9-9e.md):
@@ -55,15 +55,15 @@ Completed phase detail and old landed-slice logs live in this directory.
 
 ## Current Workstreams
 
-| Workstream                                  | State                                                                                    |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Removals                                    | Closed; historical detail archived.                                                      |
-| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path and proxy header follow-up is closed.          |
+| Workstream                                  | State                                                                                                 |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Removals                                    | Closed; historical detail archived.                                                                   |
+| Fastify server foundation / storage / proxy | Closed; Fastify owns the live server path and proxy header follow-up is closed.                       |
 | Server-side generation                      | Closed for `/completion`; streaming error follow-up is closed and provider flattening stays deferred. |
-| Server-side prompt assembly                 | Closed; follow-up regenerate/provider/stop-trigger/fixture gaps closed again 2026-05-27. |
-| Hypa V3 memory                              | Closed; custom embedding, progress event, and missing-summary follow-up closed again 2026-05-27. |
-| Client thinning                             | Closed for Fastify web; direct-write follow-up closed again 2026-05-27.                  |
-| Alpha broad closeout                        | Closed; `pnpm check` and the full broad matrix passed in `50d55b97`. |
+| Server-side prompt assembly                 | Closed; follow-up regenerate/provider/stop-trigger/fixture gaps closed again 2026-05-27.              |
+| Hypa V3 memory                              | Closed; custom embedding, progress event, and missing-summary follow-up closed again 2026-05-27.      |
+| Client thinning                             | Closed for Fastify web; direct-write follow-up closed again 2026-05-27.                               |
+| Alpha broad closeout                        | Closed; `pnpm check` and the full broad matrix passed in `50d55b97`.                                  |
 
 ## Maintenance Rules
 

@@ -10,9 +10,9 @@ paths directly; do not write compatibility migrations.
 
 All migration phases (0-9) are complete. The Fastify server is the only
 supported runtime. A follow-up Fastify-only lockdown then removed the
-residual no-port surfaces this migration left behind (Hono adapters,
-desktop/mobile wrappers, service worker, local browser persistence, and
-legacy client endpoints); that effort is documented under
+residual no-port surfaces this migration left behind (alternative
+server adapters, legacy client wrappers, service worker, browser-side
+persistence, and legacy client endpoints); that effort is documented under
 [`phases-completed/fastify-only.md`](phases-completed/fastify-only.md).
 
 ## Read Order
@@ -39,9 +39,9 @@ legacy client endpoints); that effort is documented under
 - **No compatibility migrations.** No users yet; edit current shapes.
 - **Sequence.** Remove first, then port. Phase 0 stripped deprecated
   features before server work began.
-- **Client modes.** Server-backed web only. Desktop (Tauri), mobile
-  (Capacitor), PWA-standalone, and local browser persistence modes are
-  no-port and were removed by the Fastify-only lockdown.
+- **Client modes.** Server-backed web only. All non-Fastify client modes
+  (legacy native and mobile wrappers, installable-app, and browser-side
+  persistence) are no-port and were removed by the Fastify-only lockdown.
 - **Memory.** Only Hypa V3. Supa, Hypa V2, Hanurai removed.
 - **Drive.** Google Drive sync removed in Phase 0.
 

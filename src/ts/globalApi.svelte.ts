@@ -38,11 +38,7 @@ import {
   oldJailbreak,
   oldMainPrompt,
 } from './storage/defaultPrompts'
-import {
-  encodeRisuSaveLegacy,
-  RisuSaveEncoder,
-  type toSaveType,
-} from './storage/risuSave'
+import { encodeRisuSaveLegacy, RisuSaveEncoder, type toSaveType } from './storage/risuSave'
 import { AutoStorage } from './storage/autoStorage'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
@@ -517,7 +513,7 @@ export function getFetchData(id: string) {
 
 const knownHostes = ['localhost', '127.0.0.1', '0.0.0.0']
 const webLocalNetworkBlockedMessage =
-  'Direct private network calls are not supported in the web version'
+  'Direct private network calls are only supported when running under the Fastify server'
 const defaultProxyJobHeartbeatSec = 15
 
 function getProxyFetchUrl() {
@@ -683,7 +679,7 @@ export async function globalFetch(
         ok: false,
         headers: {},
         status: 400,
-        data: 'You are trying local request on web version. This is not allowed due to browser security policy. Use the desktop version instead, or use a tunneling service like ngrok and set the CORS to allow all.',
+        data: 'Local network requests from the browser are blocked by browser security policy. Run RisuAI under the Fastify server, or use a tunneling service like ngrok and set the CORS to allow all.',
       }
     }
 

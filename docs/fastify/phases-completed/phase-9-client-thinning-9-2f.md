@@ -4,7 +4,7 @@ Date: 2026-05-25
 
 9-2f is closed. It moves loadout save/delete/favorite/last-used
 bookkeeping behind typed Fastify commands in server-backed web mode while
-leaving local/Tauri mutation behavior intact.
+leaving legacy local mode mutation behavior intact.
 
 ## Landed
 

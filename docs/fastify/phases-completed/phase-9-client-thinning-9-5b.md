@@ -21,7 +21,7 @@ revision.
   `setCachedServerCommandRevision`.
 - Added `loadWebInitialDatabase()` in `src/ts/bootstrap.ts` and routed
   Fastify web startup through the server projection path.
-- Preserved the existing Tauri and local web localForage / `.risu` decode
+- Preserved the existing legacy local mode localForage / `.risu` decode
   startup behavior outside Fastify mode.
 - Added focused helper and startup tests proving Fastify mode reads the
   server projection, applies the returned database, caches the revision,

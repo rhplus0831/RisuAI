@@ -28,7 +28,7 @@ server-backed web mode.
   settings edits in `src/lib/Setting/Pages/PromptSettings.svelte`,
   `src/lib/UI/PromptDataItem.svelte`, and prompt-template enablement in
   `src/lib/Setting/Pages/BotSettings.svelte` through typed commands while
-  preserving optimistic local behavior and Tauri/local mutation paths.
+  preserving optimistic local behavior and legacy local mode mutation paths.
 
 ## Notes For Later Slices
 

@@ -163,10 +163,7 @@
     'nanogptSubscriptionState',
     '',
   )
-  const nanogptRequestModelDraft = createServerBackedSettingDraft<string>(
-    'nanogptRequestModel',
-    '',
-  )
+  const nanogptRequestModelDraft = createServerBackedSettingDraft<string>('nanogptRequestModel', '')
   const nanogptRequestModelNameDraft = createServerBackedSettingDraft<string>(
     'nanogptRequestModelName',
     '',
@@ -205,10 +202,7 @@
     'textgenWebUIBlockingURL',
     '',
   )
-  const enableCustomFlagsDraft = createServerBackedSettingDraft<boolean>(
-    'enableCustomFlags',
-    false,
-  )
+  const enableCustomFlagsDraft = createServerBackedSettingDraft<boolean>('enableCustomFlags', false)
   const customFlagsDraft = createServerBackedSettingDraft<LLMFlags[]>('customFlags', [])
   const moduleIntergrationDraft = createServerBackedSettingDraft<string>('moduleIntergration', '')
   const modelToolsDraft = createServerBackedSettingDraft<string[]>('modelTools', [])
@@ -379,9 +373,7 @@
 
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)
-        const previous = cloneJsonValue(
-          (DBState.db as unknown as Record<string, unknown>)[key],
-        )
+        const previous = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
         withTrustedServerProjectionWrite(() => {
           // Re-read DBState.db inside the callback: the trusted write swaps it
           // to a mutable clone, so an alias captured earlier still points at
@@ -993,8 +985,8 @@
       placeholder="wss://..."
     />
     <span class="text-draculared text-xs mb-2"
-        >You are using web version. you must use ngrok or other tunnels to use your local webui.</span
-      >
+      >To reach a local WebUI from the browser, use ngrok or other tunnels.</span
+    >
     <span class="text-draculared text-xs mb-2"
       >Warning: For Ooba version over 1.7, use "Ooba" as model, and use url like
       http://127.0.0.1:5000/v1/chat/completions</span

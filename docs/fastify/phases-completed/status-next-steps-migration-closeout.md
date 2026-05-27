@@ -24,7 +24,7 @@ tracked in the follow-up and alpha phase docs under
 - Closed Phase 9 for the Fastify-served web client-thinning scope.
 - Recorded the already-green 9-9d automated preflight and Fastify-served web
   manual verification as the Phase 9 closeout baseline.
-- Recorded that Tauri / Desktop manual verification is deferred to a separate
+- Recorded that legacy local client manual verification is deferred to a separate
   later task and is not part of Phase 9 closeout.
 - Refreshed live status, coverage, and completed-phase archive docs.
 
@@ -34,11 +34,11 @@ Immediate pickup: **none for the original migration**. The first
 follow-up and alpha audit are also closed; start new work only from a
 fresh recorded finding.
 
-- Do not fold audit follow-up or Tauri / Desktop manual verification
+- Do not fold audit follow-up or legacy local client manual verification
   back into the original Phase 9 docs closeout.
 - Do not add compatibility migrations for intermediate Fastify shapes; there
   are no actual Fastify users yet.
-- Keep Tauri/local storage behavior on the existing local path.
+- Keep legacy local mode storage behavior on the existing local path.
 
 ## Implementation Notes
 
@@ -53,7 +53,7 @@ fresh recorded finding.
   `src/ts/server/projectionWriteGuard.svelte.ts`; keep it as the narrow
   escape hatch for command-owned optimistic writes, rollbacks, and
   bootstrap projection replacement.
-- Tauri keeps its local storage path. Phase 9 gates should be
+- The legacy local client keeps its local storage path. Phase 9 gates should be
   server-backed web specific.
 - Storage and secret gates are already closed: Fastify startup/save,
   backup/restore, asset reads, RISUSAVE caches/remotes, cold-storage
@@ -79,7 +79,7 @@ fresh recorded finding.
    the second-pass audit record.
 2. New first-audit follow-up only if a fresh finding specifically
    belongs to that archive.
-3. Separate later task - Tauri / Desktop manual verification.
+3. Separate later task - legacy local client manual verification.
 
 ## Parallel Or Deferred
 
@@ -104,13 +104,13 @@ pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts serv
 pnpm check
 ```
 
-Deferred Tauri / Desktop task:
+Deferred legacy local client task:
 
 - App loads the expected persisted state after startup.
 - Import succeeds or shows the expected unsupported message for the mode.
 - Chat send, regenerate, message edit, and character switch behave correctly.
 - A representative settings change persists after reload.
-- Tauri/local keeps using the local storage path.
+- Legacy local mode keeps using the local storage path.
 
 Fastify-served web manual checks are already recorded in the 9-9d partial
 closeout: import, chat/message persistence, regenerate replacement, message
@@ -131,7 +131,7 @@ Latest recorded baseline details are archived in
 [`phase-9-client-thinning-9-9e.md`](phase-9-client-thinning-9-9e.md).
 In short: the Fastify browser smoke, focused client/server suites,
 `pnpm check`, `pnpm tauribuild`, and Fastify-served manual command flow
-passed during 9-9d/9-9e. Tauri desktop manual launch compiled and opened
+passed during 9-9d/9-9e. The legacy local client manual launch compiled and opened
 under Xvfb but remained blocked by `Cannot access 'appVer' before
 initialization` from `src/ts/parser/parser.svelte.ts:109`.
 

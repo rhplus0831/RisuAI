@@ -23,7 +23,7 @@ Date: 2026-05-26
 
 ## Boundaries
 
-- No browser cache lookup, localForage, Tauri remote-file access, OPFS,
+- No browser cache lookup, localForage, legacy local mode remote-file access, OPFS,
   AutoStorage, or Svelte database state path was added.
 - The bundle uses the current Phase 9 server asset-id fields from the 9-8c
   walker; it does not recursively scan arbitrary plugin/custom JSON strings.
@@ -47,4 +47,4 @@ Date: 2026-05-26
 - Keep 9-9a focused on Fastify-served web startup, bootstrap/events, and one
   representative command mutation.
 - Leave generation/memory fixture closeout, storage-write audit, manual
-  Fastify/Tauri verification, and Phase 9 docs closeout to 9-9b through 9-9e.
+  Fastify/legacy-local-mode verification, and Phase 9 docs closeout to 9-9b through 9-9e.

@@ -63,6 +63,6 @@ Results recorded in 9-9d:
 
 ## Deferred
 
-Tauri / Desktop manual verification remains a separate later task. Do not rerun
+The legacy local client manual verification remains a separate later task. Do not rerun
 or work around it as part of Phase 9 closeout; it is tracked independently from
 the Fastify-served web migration scope.

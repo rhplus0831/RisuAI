@@ -25,7 +25,7 @@ Date: 2026-05-26
 
 - Server asset ids remain JSON references in exported snapshots.
 - No asset reference walking, asset-byte reads, ZIP bundle generation, bundle
-  export route, browser cache lookup, localForage, Tauri remote-file access,
+  export route, browser cache lookup, localForage, legacy local-mode remote-file access,
   OPFS, AutoStorage, or Svelte database imports were added.
 - No compatibility migrations were added for intermediate Fastify shapes; the
   route targets current Phase 9 persisted database shapes.

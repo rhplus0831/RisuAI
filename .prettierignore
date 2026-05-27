@@ -4,9 +4,6 @@ build
 .svelte-kit
 coverage
 
-src-tauri/target
-src-tauri/gen
-
 public/token
 public/assets
 public/plugin_start.7z

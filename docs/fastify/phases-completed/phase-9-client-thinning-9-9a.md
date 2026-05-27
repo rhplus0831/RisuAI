@@ -30,7 +30,7 @@ Date: 2026-05-26
 - The smoke harness uses a temporary no-password Fastify data dir.
   Authenticated deployment behavior remains covered by existing Fastify
   auth/API tests.
-- Tauri and local browser storage paths remain out of scope.
+- Legacy local mode and local browser storage paths remain out of scope.
 
 ## Verification
 

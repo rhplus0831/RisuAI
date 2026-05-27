@@ -25,7 +25,7 @@ export const languageEnglish = {
     vertexAuthError: 'Vertex AI authentication details are missing.',
     networkFetch: 'This happens when the network is unstable or the server is down.',
     networkFetchWeb:
-      'This can be a CORS error. this only happens when using web version due to limitations of the browser. try using desktop local version, or other version of Risuai.',
+      'This can be a CORS error caused by browser limitations. Run RisuAI under the Fastify server so requests are routed through the server-side proxy.',
     networkFetchPlain:
       'This can be a plain fetch error. try disabling force plain fetch option in settings.',
     requestLogRemoved: 'This request log is removed.',
@@ -1099,8 +1099,7 @@ export const languageEnglish = {
     'Please disable this option when using NovelAI, as it can cause CORS errors when using NovelAI.',
   translationPrompt: 'Translation Prompt',
   translationResponseSize: 'Translation Response Size',
-  webdeeplwarn:
-    'This option is not recommended for use with web version, as it can cause CORS errors.',
+  webdeeplwarn: 'This option can cause CORS errors.',
   saveBackupLocal: 'Save Backup Locally',
   loadBackupLocal: 'Load Backup Locally',
   topP: 'Top P',

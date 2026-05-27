@@ -150,7 +150,7 @@ export const advancedSettingsItems: SettingItem[] = [
     },
   },
 
-  // Request Location (Non-Node/Tauri)
+  // Request Location (Non-Node)
   {
     id: 'adv.reqLoc',
     type: 'segmented',
@@ -364,7 +364,7 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
 
-  // Node/Tauri Specific
+  // Node Specific
   {
     id: 'adv.promptInfo',
     type: 'check',

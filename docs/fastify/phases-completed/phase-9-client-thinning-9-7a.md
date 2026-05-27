@@ -16,7 +16,7 @@ Date: 2026-05-26
   `server/fastify/__tests__/risuSaveCodec.test.ts` proving the corpus loads as
   bytes, envelope kinds classify correctly, expected fixture target shapes are
   pinned, unsupported references are represented, and the harness does not
-  import browser storage, Tauri, or Svelte database modules.
+  import browser storage, legacy local mode, or Svelte database modules.
 
 ## Boundaries
 
@@ -29,7 +29,7 @@ Date: 2026-05-26
   codec API.
 - The RISUSAVE block inspector is a fixture harness, not the 9-7c production
   block decoder. Remote and cache-only references are represented so 9-7c can
-  reject them without touching browser localForage or Tauri paths.
+  reject them without touching browser localForage or legacy local mode paths.
 
 ## Verification
 

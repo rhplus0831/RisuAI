@@ -15,7 +15,7 @@ Date: 2026-05-26
   inspection remains fixture harness support for 9-7c.
 - Expanded `server/fastify/__tests__/risuSaveCodec.test.ts` to cover legacy
   fixture parity, production encode/decode round-trips, non-legacy rejection,
-  and browser-storage/Tauri/Svelte/compression-stream detachment.
+  and browser-storage/legacy-local-mode/Svelte/compression-stream detachment.
 
 ## Boundaries
 
@@ -26,7 +26,7 @@ Date: 2026-05-26
   conversion, asset walking, multipart upload handling, or bundle export work
   landed.
 - The codec rejects non-legacy envelopes instead of trying to decode RISUSAVE
-  blocks, unknown bytes, browser cache references, or Tauri remote paths.
+  blocks, unknown bytes, browser cache references, or legacy local mode remote paths.
 
 ## Verification
 

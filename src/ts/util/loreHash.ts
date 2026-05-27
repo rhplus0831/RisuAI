@@ -3,8 +3,7 @@
  * `src/ts/util.ts` so the Fastify lorebook activation path (Phase
  * 7-7b) can compute stable chat-var keys for
  * `keep_activate_after_match` / `dont_activate_after_match` without
- * pulling in `getDatabase`, the Tauri dialog/fs plugins, or any
- * Svelte stores.
+ * pulling in `getDatabase` or any Svelte stores.
  *
  * `src/ts/util.ts` re-exports both names so existing SPA callers
  * (`cbs.ts`, `process/mcp/risuaccess/characters.ts`,

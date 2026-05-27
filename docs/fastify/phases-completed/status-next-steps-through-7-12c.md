@@ -192,7 +192,7 @@ folded into the current status shards:
 Do not reopen these choices without adding a short rationale here
 and updating the relevant phase doc:
 
-- Tauri stays as-is. Do not add or modify Tauri-specific code in
+- The legacy local client stays as-is. Do not add or modify legacy local mode-specific code in
   Phase 0-9.
 - Hub proxy stays. The legacy `/hub-proxy/*` route was removed with
   Express; Fastify keeps `/api/v1/hub/*`.
@@ -213,5 +213,5 @@ pnpm api:test
 pnpm build
 ```
 
-Tauri build is verified manually at phase boundaries, not
+The legacy local client build is verified manually at phase boundaries, not
 per-slice.

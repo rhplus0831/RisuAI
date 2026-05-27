@@ -74,4 +74,4 @@ Start **9-2a - Scalar settings groups**:
 - Keep provider-key masking deferred to 9-6 and prompt-template fields
   deferred to 9-2c.
 - Replace server-backed web settings call sites with local draft state
-  plus command helper calls while leaving Tauri/local paths alone.
+  plus command helper calls while leaving legacy local mode paths alone.

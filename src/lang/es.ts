@@ -25,7 +25,7 @@ export const languageSpanish = {
     wrongPassword: 'Contraseña incorrecta',
     networkFetch: 'Esto ocurre cuando la red es inestable o el servidor está caído.',
     networkFetchWeb:
-      'Esto puede ser un error de CORS. Esto solo ocurre al usar la versión web debido a las limitaciones del navegador. Intenta usar la versión local de escritorio u otra versión de Risuai.',
+      'Esto puede ser un error de CORS causado por las limitaciones del navegador. Ejecuta RisuAI con el servidor Fastify para que las solicitudes se enruten a través del proxy del lado del servidor.',
     networkFetchPlain:
       'Esto puede ser un error de fetch simple. Intenta desactivar la opción de forzar fetch simple en la configuración.',
     requestLogRemoved: 'Este registro de solicitud ha sido eliminado.',
@@ -1030,8 +1030,7 @@ export const languageSpanish = {
     'Desactiva esta opción cuando uses NovelAI, ya que puede causar errores de CORS al usar NovelAI.',
   translationPrompt: 'Prompt de Traducción',
   translationResponseSize: 'Tamaño de Respuesta de Traducción',
-  webdeeplwarn:
-    'Esta opción no se recomienda para su uso con la versión web, ya que puede causar errores de CORS.',
+  webdeeplwarn: 'Esta opción puede causar errores de CORS.',
   saveBackupLocal: 'Guardar Respaldo Localmente',
   loadBackupLocal: 'Cargar Respaldo Localmente',
   topP: 'Top P',

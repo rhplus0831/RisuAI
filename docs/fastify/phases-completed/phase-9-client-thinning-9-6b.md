@@ -11,8 +11,8 @@ Status: complete.
 - `readImage()` and `loadAsset()` share the same Fastify byte reader, which
   resolves raw server asset ids and legacy `assets/<sha>.<ext>` references to
   `/api/v1/assets/:id`.
-- Local web and Tauri asset reads remain on their existing local storage and
-  AppData paths.
+- Legacy local mode asset reads remain on their existing local storage
+  paths.
 - Durable asset references remain owned by the existing 9-4d command paths;
   no bundle walking, repository-backed `.risu` import/export, backup/restore
   projection, residual cache classification, or provider secret masking work

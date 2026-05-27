@@ -3,7 +3,7 @@
 Date: 2026-05-25
 
 9-3c is closed. It moves user-visible message history mutations behind
-typed Fastify commands in server-backed web mode while leaving local/Tauri
+typed Fastify commands in server-backed web mode while leaving legacy local mode
 mutation behavior intact.
 
 ## Landed

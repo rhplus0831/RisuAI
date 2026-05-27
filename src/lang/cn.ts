@@ -24,7 +24,7 @@ export const languageChinese = {
     wrongPassword: '密码错误',
     networkFetch: '这通常是由于网络连接不稳定或服务器故障引起的。',
     networkFetchWeb:
-      '这可能是由 CORS 错误引起的。这种情况只会在使用网页版时发生，因为浏览器存在一些限制。请尝试使用本地版或其他版本的叡苏。',
+      '这可能是由浏览器限制引起的 CORS 错误。请在 Fastify 服务器上运行 RisuAI，以便请求通过服务器端代理转发。',
     networkFetchPlain: '这可能是一次数据抓取（Fetch）错误。请尝试在设置中关闭强制抓取选项。',
     requestLogRemoved: '该请求记录已被删除。',
     requestLogRemovedDesc: '当客户端刷新或加载时，该请求记录会被删除。',
@@ -946,7 +946,7 @@ export const languageChinese = {
   usePlainFetchWarn: '使用 NovelAI 时请关闭此选项，避免出现 CORS 错误。',
   translationPrompt: '翻译提示词',
   translationResponseSize: '翻译回应长度',
-  webdeeplwarn: '此功能不不建议于网页版使用，避免出现 CORS 错误。',
+  webdeeplwarn: '此功能可能导致 CORS 错误。',
   saveBackupLocal: '本地保存备份',
   loadBackupLocal: '本机读取备份',
   topP: 'Top P',

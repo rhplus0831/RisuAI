@@ -32,7 +32,7 @@ surfaces.
 
 ## Notes For Later Slices
 
-- The bridge intentionally preserves Tauri/local mutation paths; it is a
+- The bridge intentionally preserves legacy local mode mutation paths; it is a
   no-op when Fastify commands are unavailable.
 - The migrated manual pages still contain direct Svelte `DBState.db`
   binds for local optimistic UI state. They now dispatch durable writes

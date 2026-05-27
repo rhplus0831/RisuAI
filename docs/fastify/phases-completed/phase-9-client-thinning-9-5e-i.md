@@ -17,7 +17,7 @@ helpers for bootstrap/event refresh writes.
   re-bootstrap refreshes.
 - The guard freezes projected database snapshots in Fastify mode when
   enabled, causing direct scalar, nested object, and array-mutator writes
-  to fail loudly while preserving local/Tauri behavior.
+  to fail loudly while preserving legacy local mode behavior.
 - Kept the guard foundation out of command optimistic/rollback write
   integration. That remains the next 9-5e slice.
 

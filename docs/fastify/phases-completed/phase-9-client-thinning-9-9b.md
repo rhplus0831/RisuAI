@@ -25,7 +25,7 @@ Date: 2026-05-26
   sanity check. Fixture-specific generation and memory assertions stay in the
   existing unit/API suites.
 - The full server-backed local-storage write audit remains 9-9c.
-- Manual Fastify web and Tauri local verification remains 9-9d.
+- Manual Fastify web and legacy local mode verification remains 9-9d.
 
 ## Verification
 

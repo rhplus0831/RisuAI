@@ -17,7 +17,7 @@ Status: complete.
   trusted projection scopes.
 - Added command routing for `lastMemory` when the chat has a stable id; no
   new command endpoints were introduced.
-- Left Tauri/local behavior untouched and did not fold storage/provider
+- Left legacy local mode behavior untouched and did not fold storage/provider
   gating, server-side `.risu` import/export, asset byte work, server-side
   plugin execution, or surgical event patching into this audit.
 
@@ -53,4 +53,4 @@ Status: complete.
 Continue with **9-6a - Server-backed persistence gate**. Stop
 Fastify-served web startup, save, and backup maintenance paths from
 initializing or writing AutoStorage, OPFS, NodeStorage, or localForage
-while keeping Tauri/local storage behavior unchanged.
+while keeping legacy local mode storage behavior unchanged.

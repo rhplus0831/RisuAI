@@ -136,4 +136,4 @@ pnpm test
 pnpm build
 ```
 
-Tauri build remains a manual phase-boundary verification.
+The legacy local client build remains a manual phase-boundary verification.

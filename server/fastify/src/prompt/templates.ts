@@ -1,7 +1,4 @@
-import type {
-  Database,
-  character,
-} from '../../../../src/ts/storage/database.svelte'
+import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import { expandVariables, type ExpandContext } from './variables.js'
@@ -100,26 +97,18 @@ export interface NormalizedTemplate {
  *   - swap in the utility-bot forced template unless the user template
  *     opts in via `promptSettings.utilOverride`.
  */
-export function normalizeTemplate(
-  db: Database,
-  currentChar: character,
-): NormalizedTemplate {
+export function normalizeTemplate(db: Database, currentChar: character): NormalizedTemplate {
   let promptTemplate = db.promptTemplate ? structuredClone(db.promptTemplate) : null
   const usingPromptTemplate = !!promptTemplate
 
   if (promptTemplate) {
-    const hasPostEverything = promptTemplate.some(
-      (card) => card.type === 'postEverything',
-    )
+    const hasPostEverything = promptTemplate.some((card) => card.type === 'postEverything')
     if (!hasPostEverything) {
       promptTemplate.push({ type: 'postEverything' })
     }
   }
 
-  if (
-    currentChar.utilityBot &&
-    !(usingPromptTemplate && db.promptSettings?.utilOverride)
-  ) {
+  if (currentChar.utilityBot && !(usingPromptTemplate && db.promptSettings?.utilOverride)) {
     promptTemplate = [
       { type: 'plain', text: '', role: 'system', type2: 'main' },
       { type: 'description' },
@@ -164,11 +153,7 @@ function coalescesSystemRows(aiModel: string): boolean {
  *
  * The SPA's trailing `formated.at(-1).content += ''` no-op is omitted.
  */
-export function coalesceRows(
-  formated: OpenAIChat[],
-  rows: OpenAIChat[],
-  aiModel: string,
-): void {
+export function coalesceRows(formated: OpenAIChat[], rows: OpenAIChat[], aiModel: string): void {
   for (const chat of rows) {
     if (!chat.content.trim() && !(chat.multimodals && chat.multimodals.length > 0)) {
       continue
@@ -179,12 +164,7 @@ export function coalesceRows(
     }
     if (chat.role === 'system') {
       const endf = formated.at(-1)
-      if (
-        endf &&
-        endf.role === 'system' &&
-        endf.memo === chat.memo &&
-        endf.name === chat.name
-      ) {
+      if (endf && endf.role === 'system' && endf.memo === chat.memo && endf.name === chat.name) {
         endf.content += '\n\n' + chat.content
       } else {
         formated.push(chat)
@@ -227,7 +207,7 @@ const CONVERT_ROLE = {
 
 /**
  * The global-note prebuilt image instruction, copied verbatim from
- * `src/ts/util.ts:1198` (`util.ts` pulls in Svelte/Tauri imports the
+ * `src/ts/util.ts:1198` (`util.ts` pulls in Svelte imports the
  * server can't load). Appended to a `globalNote` card when the
  * character opts in. The `{{join}}` / `{{ele}}` CBS is expanded later.
  */
@@ -390,10 +370,7 @@ export interface RenderedTemplate {
  * `preflight.ts` never supplies the sink, so its tokenization is
  * unaffected.
  */
-export function renderContentCard(
-  card: PromptItem,
-  deps: ContentCardDeps,
-): OpenAIChat[] | null {
+export function renderContentCard(card: PromptItem, deps: ContentCardDeps): OpenAIChat[] | null {
   const { ctx, currentChar, unformated, usingPromptTemplate, positionParser } = deps
   const db = ctx.database
 

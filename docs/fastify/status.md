@@ -4,8 +4,8 @@ Date: 2026-05-27
 
 All Phases 0-9 are complete. No open findings remain. A follow-up
 Fastify-only lockdown then removed the residual no-port runtime
-surfaces (Hono adapters, desktop/mobile wrappers, service worker, local
-browser persistence, legacy client endpoints); see
+surfaces (alternative server adapters, legacy client wrappers, service
+worker, browser-side persistence, legacy client endpoints); see
 [`phases-completed/fastify-only.md`](phases-completed/fastify-only.md)
 for that no-port cleanup.
 
@@ -24,18 +24,18 @@ Latest full verification on 2026-05-27:
 
 ## Phase Summary
 
-| Phase | Status | Closed |
-|-------|--------|--------|
-| 0 - Removals | Complete | 2026-05-20 |
-| 1 - Foundation | Complete | 2026-05-20 |
+| Phase                                   | Status   | Closed     |
+| --------------------------------------- | -------- | ---------- |
+| 0 - Removals                            | Complete | 2026-05-20 |
+| 1 - Foundation                          | Complete | 2026-05-20 |
 | 2 - Storage / import / assets / backups | Complete | 2026-05-20 |
-| 3 - Proxy migration | Complete | 2026-05-21 |
-| 4 - sendChat tests | Complete | 2026-05-20 |
-| 5 - sendChat extraction | Complete | 2026-05-22 |
-| 6 - Server-side generation | Complete | 2026-05-22 |
-| 7 - Server-side prompt assembly | Complete | 2026-05-24 |
-| 8 - Hypa V3 memory server-side | Complete | 2026-05-25 |
-| 9 - Client thinning | Complete | 2026-05-26 |
+| 3 - Proxy migration                     | Complete | 2026-05-21 |
+| 4 - sendChat tests                      | Complete | 2026-05-20 |
+| 5 - sendChat extraction                 | Complete | 2026-05-22 |
+| 6 - Server-side generation              | Complete | 2026-05-22 |
+| 7 - Server-side prompt assembly         | Complete | 2026-05-24 |
+| 8 - Hypa V3 memory server-side          | Complete | 2026-05-25 |
+| 9 - Client thinning                     | Complete | 2026-05-26 |
 
 ## Closeout Rules
 

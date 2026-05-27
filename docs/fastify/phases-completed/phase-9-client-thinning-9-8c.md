@@ -25,7 +25,7 @@ Date: 2026-05-26
 
 - No asset bytes are read or written by the walker.
 - No ZIP bundle export route, bundle manifest, browser cache lookup,
-  localForage, Tauri remote-file access, OPFS, AutoStorage, or Svelte database
+  localForage, legacy local-mode remote-file access, OPFS, AutoStorage, or Svelte database
   path was added.
 - The helper targets current Phase 9 server asset references only. It does not
   recursively treat arbitrary 64-character strings as asset references, and it

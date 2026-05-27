@@ -27,7 +27,7 @@ Status: complete.
 - No generic durable asset-reference command was added. References are
   still patched through the owning resource commands and emit the owning
   resource event.
-- Tauri/local storage keeps the existing `assets/<id>.<ext>` path shape.
+- Legacy local mode storage keeps the existing `assets/<id>.<ext>` path shape.
 - Server validators require referenced server asset ids to exist in the
   Fastify asset metadata before the owning command commits.
 - Bundle walking, full `.risu` import/export, asset GC, plugin

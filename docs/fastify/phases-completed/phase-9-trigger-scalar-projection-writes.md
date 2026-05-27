@@ -19,7 +19,7 @@ Routed each durable write through the command-dispatching helpers
 (`setCharacterByIndex` -> `dispatchUpdateCharacter`; `saveUserPersona` ->
 `updatePersonaCommand`), which wrap writes in
 `withTrustedServerProjectionWrite` and emit a typed command in
-server-backed mode while the now-removed local/Tauri paths remained
+server-backed mode while the now-removed legacy local mode paths remained
 historical no-port behavior.
 
 Sites closed:

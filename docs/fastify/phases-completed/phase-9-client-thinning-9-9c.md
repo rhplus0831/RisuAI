@@ -14,19 +14,19 @@ Date: 2026-05-26
   browser path.
 - Rechecked the known local storage candidates from the 9-6 gates. The
   remaining localForage users are runtime-only browser caches, plugin sandbox
-  storage, local/Tauri storage paths, or helpers already covered by explicit
+  storage, legacy local mode storage paths, or helpers already covered by explicit
   server-backed unsupported behavior.
 - No production code changes or new command endpoints were required.
 
 ## Boundaries
 
-- Tauri and local browser storage behavior is unchanged.
+- Legacy local mode and local browser storage behavior is unchanged.
 - Runtime-only browser caches remain local when they are not authoritative
   server database state.
 - Detailed `.risu` import/export, asset-reference, generation, and memory
   behavior remains covered by the focused API and fixture suites; the browser
   smoke is the integrated server-backed tripwire.
-- Manual Fastify web and Tauri local verification remains 9-9d.
+- Manual Fastify web and legacy local mode verification remains 9-9d.
 
 ## Verification
 
@@ -52,6 +52,6 @@ Date: 2026-05-26
 
 ## Follow-Up
 
-- Continue with 9-9d, manual Fastify web and Tauri local verification.
+- Continue with 9-9d, manual Fastify web and legacy local mode verification.
 - Keep 9-9e for final Phase 9 docs and status closeout after the manual checks
   are recorded.

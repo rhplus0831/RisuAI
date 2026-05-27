@@ -133,8 +133,8 @@ Delete:
   scaffold.
 - **Do not migrate group data.** Old saves load; group rows are
   inert. No conversion path.
-- **Do not delete Tauri-specific code.** It is out of migration
-  scope; only delete a Tauri file when it depends on a removed
+- **Do not delete legacy local mode-specific code.** It is out of migration
+  scope; only delete a legacy local mode file when it depends on a removed
   feature and the dependency cannot be made optional.
 - **Do not remove the Express server in Phase 0.** Phase 3 later
   retired and deleted it.

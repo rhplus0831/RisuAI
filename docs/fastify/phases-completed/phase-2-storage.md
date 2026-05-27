@@ -64,7 +64,7 @@ Server-side Phase 2 landed on 2026-05-20:
 - Covered by `server/fastify/__tests__/{bootstrap,assets,backups,static}.test.ts`.
 
 The browser is not yet thinned into a server-backed projection; that
-remains Phase 9. Local and Tauri storage paths remain in the client.
+remains Phase 9. Legacy local mode storage paths remain in the client.
 The legacy NodeStorage path still exists as a compatibility adapter,
 but in Fastify-served mode it now targets the Phase 3D-Broad
 `/api/v1/storage/*` routes.

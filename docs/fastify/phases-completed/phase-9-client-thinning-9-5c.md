@@ -25,7 +25,7 @@ that replaces the browser database projection.
   bootstrap refresh; refreshes replace `DBState.db` through the existing
   normalization path and rely on `fetchServerBootstrapProjection()` to
   cache the refreshed command revision.
-- Preserved Tauri/local web startup behavior outside Fastify mode.
+- Preserved legacy local mode web startup behavior outside Fastify mode.
 - Added focused event helper and startup tests for auth headers, command
   event filtering, unsubscribe aborts, debounced re-bootstrap, and
   non-Fastify no-subscribe behavior.
@@ -57,4 +57,4 @@ that replaces the browser database projection.
 - 9-5d should audit remaining server-backed web direct writes for the
   resource families already owned by 9-2 through 9-4, replace them with
   existing command helpers or explicit unsupported behavior, and keep
-  Tauri/local-only paths untouched.
+  legacy local-only paths untouched.

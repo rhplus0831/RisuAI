@@ -5,7 +5,7 @@ Date: 2026-05-25
 9-3b is closed. It moves chat record lifecycle, chat-folder lifecycle,
 chat selection, folder assignment/order, notes, persona binding, and
 bookmark metadata behind typed Fastify commands in server-backed web mode
-while leaving local/Tauri mutation behavior intact.
+while leaving legacy local mode mutation behavior intact.
 
 ## Landed
 

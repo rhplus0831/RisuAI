@@ -5,7 +5,7 @@ Date: 2026-05-25
 9-3a is closed. It moves character catalog lifecycle, selection,
 ordering/folder metadata, trash/restore bookkeeping, and scalar profile
 edits behind typed Fastify commands in server-backed web mode while
-leaving local/Tauri mutation behavior intact.
+leaving legacy local mode mutation behavior intact.
 
 ## Landed
 

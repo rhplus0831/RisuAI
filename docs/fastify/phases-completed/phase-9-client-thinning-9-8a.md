@@ -28,7 +28,7 @@ Date: 2026-05-26
 - No repository `.risu` export route was wired; that remains 9-8b.
 - No asset reference walking, asset-byte reads, ZIP bundle generation, bundle
   export route, asset recovery, or asset report population was added.
-- No browser cache, localForage, Tauri remote-file, OPFS, AutoStorage, Svelte
+- No browser cache, localForage, legacy local-mode remote-file, OPFS, AutoStorage, Svelte
   database, or compression-stream path was introduced.
 - No compatibility migrations were added for intermediate Fastify shapes; the
   import route targets current Phase 9 import snapshots.

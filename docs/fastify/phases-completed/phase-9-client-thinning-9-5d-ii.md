@@ -18,7 +18,7 @@ read-only `DBState.db` guard.
   translator preset selection handoff: delete routes and typed browser
   helpers now use `selectPersonaId` and `selectPresetId` instead of
   overloading the path resource id names in the request body.
-- Kept Tauri/local import/export, asset-byte save paths, and loadout
+- Kept legacy local mode import/export, asset-byte save paths, and loadout
   apply side effects out of this slice. Loadout apply still remains
   composite/deferred until every touched resource path is command-owned.
 

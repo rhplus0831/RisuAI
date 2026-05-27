@@ -8,7 +8,7 @@ Date: 2026-05-26
   browser `risuSaveCache` localForage cache; remote/cache-only blocks now
   report unavailable behavior instead of falling through to local storage.
 - Cold-storage helper entry points now return before OPFS, localForage-backed
-  NodeStorage, or Tauri-local paths in server-backed web mode. Chat hydration
+  NodeStorage, or legacy local-mode paths in server-backed web mode. Chat hydration
   through cold-storage pointers is explicitly unsupported in Fastify mode.
 - Google Search MCP credential storage is explicitly unsupported in
   server-backed web mode before local credential localForage reads or writes.

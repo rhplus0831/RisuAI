@@ -48,6 +48,6 @@ SSE without introducing surgical client-side patch semantics.
 ## Follow-Up
 
 - Continue with 9-5b bootstrap projection loading.
-- 9-5b should keep Tauri/local startup paths unchanged while Fastify web
+- 9-5b should keep legacy local mode startup paths unchanged while Fastify web
   startup reads `/api/v1/bootstrap`, applies the returned database
   projection, and caches the returned revision for command helpers.

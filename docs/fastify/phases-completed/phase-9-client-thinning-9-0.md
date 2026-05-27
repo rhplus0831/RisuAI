@@ -18,7 +18,7 @@ contract that the implementation slices must follow.
   bind lines, and 914 mutable-reference candidate lines. These are
   candidate counts, not unique command counts.
 - Write surfaces are classified by resource family, server-backed web
-  scope, local/Tauri-only scope, rollback risk, and owning Phase 9 slice.
+  scope, legacy local-only scope, rollback risk, and owning Phase 9 slice.
 - Command endpoint names, payload behavior, id-vs-index rules, child
   replacement behavior, reorder behavior, revision conflict behavior,
   event naming, and test expectations are locked for implementation.

@@ -65,7 +65,6 @@ describe('server .risu fixture harness', () => {
       exportSnapshotSource,
     ]) {
       expect(source).not.toContain('localforage')
-      expect(source).not.toContain('@tauri-apps')
       expect(source).not.toContain('database.svelte')
       expect(source).not.toContain('globalApi.svelte')
       expect(source).not.toContain('CompressionStream')
@@ -261,9 +260,7 @@ describe('server .risu fixture harness', () => {
       (fixture) => fixture.name === 'malformed-truncated-block',
     )
     expect(truncated).toBeDefined()
-    expect(() => decodeRisuSaveBlockEnvelope(truncated!.bytes)).toThrow(
-      /Malformed RISUSAVE block/,
-    )
+    expect(() => decodeRisuSaveBlockEnvelope(truncated!.bytes)).toThrow(/Malformed RISUSAVE block/)
   })
 
   it('normalizes decoded legacy envelopes into current import snapshots', () => {

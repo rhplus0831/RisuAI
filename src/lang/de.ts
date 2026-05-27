@@ -25,7 +25,7 @@ export const languageGerman = {
     wrongPassword: 'Falsches Passwort',
     networkFetch: 'Dies passiert, wenn das Netzwerk instabil ist oder der Server ausgefallen ist.',
     networkFetchWeb:
-      'Dies kann ein CORS-Fehler sein. Dies geschieht nur bei Verwendung der Webversion aufgrund von Browserbeschränkungen. Versuchen Sie, die lokale Desktop-Version oder eine andere Version von Risuai zu verwenden.',
+      'Dies kann ein CORS-Fehler aufgrund von Browserbeschränkungen sein. Führen Sie RisuAI über den Fastify-Server aus, damit Anfragen über den serverseitigen Proxy geleitet werden.',
     networkFetchPlain:
       "Dies kann ein einfacher Abruffehler sein. Versuchen Sie, die Option 'Erzwinge einfachen Abruf' in den Einstellungen zu deaktivieren.",
     requestLogRemoved: 'Dieses Anfrage-Protokoll wurde entfernt.',
@@ -1028,8 +1028,7 @@ export const languageGerman = {
     'Bitte deaktivieren Sie diese Option bei Verwendung von NovelAI, da dies bei Verwendung von NovelAI zu CORS-Fehlern führen kann.',
   translationPrompt: 'Übersetzungsanweisung',
   translationResponseSize: 'Übersetzungsantwortgröße',
-  webdeeplwarn:
-    'Diese Option wird nicht für die Verwendung mit der Webversion empfohlen, da sie CORS-Fehler verursachen kann.',
+  webdeeplwarn: 'Diese Option kann CORS-Fehler verursachen.',
   saveBackupLocal: 'Backup lokal speichern',
   loadBackupLocal: 'Backup lokal laden',
   topP: 'Top P',

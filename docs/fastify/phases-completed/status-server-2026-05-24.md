@@ -99,9 +99,9 @@ template renderer, the closed critical-path assembler
   well, so every existing self-host gate in the SPA
   (NodeStorage, save flow, prefer-remote saves) activates under
   Fastify too. Client-side, `platform.isFastifyServer` and the
-  long-standing `isNodeServer` both become true; URL builders
+  long-standing self-host gate both become true; URL builders
   in `globalApi.svelte.ts` and `characterCards.ts` prefer
-  `/api/v1/*`; and `isWeb` correctly excludes Fastify deployments.
+  `/api/v1/*`; and the web-mode gate correctly excludes Fastify deployments.
 - `server/fastify/src/routes/legacyStorage.ts` adds the
   key-value storage surface the SPA's `NodeStorage` /
   `AutoStorage` / cold-storage paths target:
@@ -170,11 +170,11 @@ template renderer, the closed critical-path assembler
 
 Other runtime servers still in tree:
 
-- `server/hono/` - small Hono scaffold with CSRF middleware,
-  `Hello Hono!`, and Node / Bun / Cloudflare static-serving
+- `server/hono/` - small alternative-server scaffold with CSRF middleware,
+  `Hello Hono!`, and alternative-server static-serving
   entry points. It is not on the Fastify migration path.
 
-Root `package.json` has `pnpm hono:build` for the Hono static
+Root `package.json` has `pnpm hono:build` for the alternative-server static
 bundle and `pnpm api:dev` / `pnpm api:start` / `pnpm api:test`
 for the Fastify server. The Dockerfile is configured to run
 `pnpm api:start`, expose 6002, and persist `/app/data`;

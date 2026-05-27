@@ -76,7 +76,7 @@ Continue 9-2a with **9-2a-ii - Manual scalar settings pages**:
 
 - Replace remaining manual server-backed scalar settings writes with
   local draft state plus `patchSettingsGroup`.
-- Keep Tauri/local mutation paths intact.
+- Keep legacy local mode mutation paths intact.
 - Keep provider-key masking deferred to 9-6.
 - Update the server/client scalar group maps together when adding newly
   routed fields.

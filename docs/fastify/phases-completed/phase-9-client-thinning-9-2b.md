@@ -29,7 +29,7 @@ mode.
   `src/lib/Setting/Pages/BotSettings.svelte`,
   `src/ts/storage/database.svelte.ts`, and prompt-conversion preset
   appends through typed commands in Fastify mode while preserving local
-  optimistic behavior and Tauri/local mutation paths.
+  optimistic behavior and legacy local mode mutation paths.
 
 ## Notes For Later Slices
 

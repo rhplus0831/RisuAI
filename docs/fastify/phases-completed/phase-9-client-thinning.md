@@ -10,7 +10,7 @@ tracked in
 the alpha pass reopened and closed additional projection-write blockers
 in
 [`../phases-completed/phase-9-client-thinning-9a.md`](../phases-completed/phase-9-client-thinning-9a.md).
-Tauri / Desktop manual verification remains a separate later task.
+Legacy local client manual verification remains a separate later task.
 
 ## Goal
 
@@ -77,13 +77,13 @@ owner of a full mutable database snapshot:
 - Decode imports into the Phase 9 per-resource command/import shape.
 - Export repository-backed `.risu` files and ZIP bundles with real asset
   references.
-- Drop localForage cache lookup and Tauri remote-file branches from the
+- Drop localForage cache lookup and legacy local mode remote-file branches from the
   server codec.
 
-### Tauri
+### Legacy local mode
 
-Tauri keeps its current localForage path. Phase 9 gates server-backed web
-behavior without changing the local desktop storage path. Tauri / Desktop
+The legacy local client keeps its current localForage path. Phase 9 gates server-backed web
+behavior without changing the legacy local storage path. Legacy local client
 testing is deferred to a separate later task outside this Phase 9 closeout.
 
 ## Difficulty Re-Check
@@ -263,13 +263,13 @@ surfaces.
       - Status: complete. Closeout:
         [`../phases-completed/phase-9-client-thinning-9-5d-v.md`](../phases-completed/phase-9-client-thinning-9-5d-v.md).
   - **9-5e - Read-only `DBState.db` guard.** Fail loudly for direct web-mode
-    mutation attempts while leaving Tauri/local mode untouched. Keep the
+    mutation attempts while leaving legacy local mode untouched. Keep the
     guard work split so guard failures do not become an unbounded residual
     mutation sweep.
     - **9-5e-i - Projection write gate foundation.** Add the server-backed
       read-only guard primitive and trusted projection replacement helpers for
       bootstrap/event refresh writes. No residual write fixes, storage gating,
-      or Tauri/local behavior changes.
+      or legacy local mode behavior changes.
       - Status: complete. Closeout:
         [`../phases-completed/phase-9-client-thinning-9-5e-i.md`](../phases-completed/phase-9-client-thinning-9-5e-i.md).
     - **9-5e-ii - Command bridge guard integration.** Route command-owned
@@ -289,7 +289,7 @@ surfaces.
   9-7/9-8.
   - **9-6a - Server-backed persistence gate.** Stop Fastify-served web startup,
     save, and backup maintenance from initializing or writing AutoStorage,
-    OPFS, NodeStorage, or localForage. Tauri/local mode stays unchanged.
+    OPFS, NodeStorage, or localForage. Legacy local mode stays unchanged.
     - Status: complete. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-6a.md`](../phases-completed/phase-9-client-thinning-9-6a.md).
   - **9-6b - Asset byte gate.** Close remaining Fastify asset-helper gaps,
@@ -327,7 +327,7 @@ surfaces.
   - **9-7c - RISUSAVE block codec port.** Implement server-safe block
     encode/decode for root, character, preset, module, loadout, plugin,
     plugin-storage, config, and root-component blocks. Reject or report
-    remote/cache-only blocks instead of using localForage or Tauri paths.
+    remote/cache-only blocks instead of using localForage or legacy local mode paths.
     - Status: complete. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-7c.md`](../phases-completed/phase-9-client-thinning-9-7c.md).
   - **9-7d - Decode normalization and validation.** Convert decoded saves into
@@ -378,16 +378,16 @@ surfaces.
     during startup, commands, import/export, assets, generation, or memory.
     - Status: complete. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-9c.md`](../phases-completed/phase-9-client-thinning-9-9c.md).
-  - **9-9d - Manual Fastify web and Tauri local verification.** Record manual
+  - **9-9d - Manual Fastify web and legacy local client verification.** Record manual
     import, chat, regenerate, edit, character switch, settings, persist, and
     reload checks for both modes.
     - Status: partial. Fastify-served web checks and automated preflight are
-      complete; Tauri / Desktop testing is deferred to a separate later task
+      complete; legacy local client testing is deferred to a separate later task
       outside Phase 9 closeout. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-9d.md`](../phases-completed/phase-9-client-thinning-9-9d.md).
   - **9-9e - Phase 9 docs closeout.** Update status, coverage, and completed
     phase docs after the Fastify web closeout is recorded, including the
-    separate later-task deferral for Tauri / Desktop testing.
+    separate later-task deferral for legacy local client testing.
     - Status: complete. Closeout:
       [`../phases-completed/phase-9-client-thinning-9-9e.md`](../phases-completed/phase-9-client-thinning-9-9e.md).
 
@@ -395,7 +395,7 @@ surfaces.
 
 - **No event-driven optimization.** Debounced re-bootstrap is the Phase 9
   target. Per-event patching is future work.
-- **No removal of `localforage` from the bundle.** Tauri still uses it.
+- **No removal of `localforage` from the bundle.** The legacy local client still uses it.
 - **No new resources.** Commands are for existing product data.
 - **No group-chat commands.** Group chat remains removed.
 - **No plugin code execution server-side.** Plugin code remains browser
@@ -408,7 +408,7 @@ later alpha broad typecheck blocker is also closed and tracked in
 [`../phases-completed/broad-closeout-typecheck-alpha.md`](../phases-completed/broad-closeout-typecheck-alpha.md).
 
 - Every direct `DBState.db.*` mutation in `src/lib/` and `src/ts/`
-  outside Tauri/local-only code is replaced by a command call.
+  outside legacy local-only code is replaced by a command call.
 - Command tests cover representative auth, revision conflict, child
   replacement, reorder, and rollback behavior.
 - The fully server-backed client runs against bootstrap, events, commands,
@@ -417,7 +417,7 @@ later alpha broad typecheck blocker is also closed and tracked in
   switch characters, change settings, and persist every change in the
   server data store.
 - `pnpm check`, `pnpm test`, `pnpm api:test`, and `pnpm build` are green.
-- Tauri local-storage mode still builds; manual Tauri / Desktop verification
+- The legacy local-storage mode still builds; manual legacy local client verification
   is deferred to a separate later task.
 
 ## Reference

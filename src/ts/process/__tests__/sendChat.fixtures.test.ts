@@ -46,7 +46,10 @@ vi.mock('../triggers', async (importActual) => {
       if (scripts.length === 0) return null
       const marker = scripts[0]?.comment ?? ''
       if (mode === 'start' && marker === '__test_start_mutate') {
-        const baseChat = (arg.chat ?? { message: [] }) as { message: unknown[]; [k: string]: unknown }
+        const baseChat = (arg.chat ?? { message: [] }) as {
+          message: unknown[]
+          [k: string]: unknown
+        }
         const mutatedChat = {
           ...baseChat,
           message: [
@@ -93,7 +96,7 @@ vi.mock('../transformers', async (importActual) => {
   }
 })
 
-// globalApi.svelte.readImage reads via localforage in non-tauri contexts; in
+// globalApi.svelte.readImage reads via localforage in the browser; in
 // vitest forageStorage returns undefined and Buffer.from(undefined) crashes.
 // history-media-fallback hits readImage for the {{asset_prompt::icon}} path;
 // we replace just that export and keep the rest via importActual.
@@ -130,10 +133,7 @@ import {
 } from '../__fixtures__/providerFake'
 import { resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { assertOrRecord, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
-import {
-  isTokenizerUrl,
-  serveTokenizerFetch,
-} from '../__fixtures__/mocks/tokenizerFetch'
+import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/tokenizerFetch'
 import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelte'
 
 const FIXTURES = [
@@ -190,11 +190,7 @@ describe('sendChat fixtures', () => {
     // the pass-through to avoid masking accidental escapes.
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
       return originalFetch(input as Parameters<typeof originalFetch>[0], init)
     }) as typeof globalThis.fetch

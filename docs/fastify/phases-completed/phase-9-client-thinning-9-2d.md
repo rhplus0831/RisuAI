@@ -24,7 +24,7 @@ server-backed web mode.
   create/update/delete/select/reorder commands.
 - Routed server-backed persona selection, profile/image mirror updates,
   import create, settings-page create/delete/reorder, and selected
-  profile-field edits through typed commands while keeping local/Tauri
+  profile-field edits through typed commands while keeping legacy local mode
   mutation behavior intact.
 
 ## Notes For Later Slices

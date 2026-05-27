@@ -104,7 +104,7 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
           if (MCPData.url) {
             mcpUrl = MCPData.url
           } else if (MCPData.command && MCPData.args) {
-            throw new Error('stdio MCPs are only supported in Local Version')
+            throw new Error('Command-based stdio MCPs are not supported')
           } else {
             throw new Error('MCP JSON does not contain a valid URL')
           }

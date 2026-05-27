@@ -23,7 +23,7 @@ Date: 2026-05-26
   `server/fastify/__tests__/risuSaveCodec.test.ts` for legacy normalization,
   block assembly, root-component merge behavior, unsupported-reference
   reporting, malformed import rejection, and
-  browser-storage/Tauri/Svelte/compression-stream detachment.
+  browser-storage/legacy-local-mode/Svelte/compression-stream detachment.
 
 ## Boundaries
 
@@ -33,7 +33,7 @@ Date: 2026-05-26
   dispatch, event emission, provider flattening, or plugin server execution was
   added.
 - Unsupported remote/cache-only block references are reported only; the server
-  still does not read browser `risuSaveCache`, localForage, Tauri remote files,
+  still does not read browser `risuSaveCache`, localForage, legacy local mode remote files,
   OPFS, AutoStorage, Svelte database state, or repository state during decode.
 - Repository-backed export snapshots remain in 9-7e. Multipart import/export
   routes plus asset walking remain in 9-8.

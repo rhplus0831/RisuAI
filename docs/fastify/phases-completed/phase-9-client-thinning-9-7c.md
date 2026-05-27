@@ -13,13 +13,13 @@ Date: 2026-05-26
   leaving the harness as compatibility helper surface for the fixture corpus.
 - Added explicit server decode reporting for remote and cache-only block
   references so the codec never falls through to browser `risuSaveCache`,
-  localForage, Tauri remote-file paths, Svelte database state, browser globals,
+  localForage, legacy local mode remote-file paths, Svelte database state, browser globals,
   import/export routes, or repository writes.
 - Expanded focused Fastify coverage in
   `server/fastify/__tests__/risuSaveCodec.test.ts` for production block fixture
   parity, compressed block round-trips, root-component block coverage,
   unsupported-reference reporting, malformed block rejection, and
-  browser-storage/Tauri/Svelte/compression-stream detachment.
+  browser-storage/legacy-local-mode/Svelte/compression-stream detachment.
 
 ## Boundaries
 
@@ -29,7 +29,7 @@ Date: 2026-05-26
   conversion, asset walking, multipart upload handling, or bundle export work
   landed.
 - Remote and cache-only block references are reported by the codec, not loaded
-  from browser cache, Tauri files, or server persistence.
+  from browser cache, legacy local mode files, or server persistence.
 - The codec returns raw decoded block payload strings and metadata; 9-7d owns
   conversion into validated current-schema import snapshots/resource shapes.
 

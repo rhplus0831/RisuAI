@@ -29,11 +29,11 @@ A follow-up effort removed the residual non-Fastify runtime surfaces
 that the migration above left in place. Full detail lives in
 [`phases-completed/fastify-only.md`](phases-completed/fastify-only.md).
 
-- **No-port: Hono server subtree.** Node, Bun, Cloudflare, Vercel, and Wrangler
-  entry points under `server/hono`, plus their package scripts.
-- **No-port: desktop and mobile wrappers.** Tauri/Electron launch scripts,
-  `server.sh` / `server.bat`, and the Capacitor config.
-- **No-port: service worker and PWA local surfaces.** `public/sw.js`, the
+- **No-port: alternative server subtree.** Non-Fastify server entry points
+  under `server/hono`, plus their package scripts.
+- **No-port: legacy client wrappers.** Legacy native launch scripts,
+  `server.sh` / `server.bat`, and the legacy mobile build config.
+- **No-port: service worker and installable-app surfaces.** `public/sw.js`, the
   manifest `share_target` / `file_handlers` entries, `#share_*` and
   `launchQueue` import handlers, and standalone display mode.
 - **No-port: local browser persistence.** OPFS and localforage app-runtime
@@ -41,10 +41,10 @@ that the migration above left in place. Full detail lives in
   full/partial backup and restore-from-file flows.
 - **No-port: legacy client endpoint selection.** Client routing to `/api/write`,
   `/api/read`, `/api/list`, `/api/remove`, `/proxy2`, and
-  `/proxy-stream-jobs`, plus the Cloudflare Pages-style hosted proxy
+  `/proxy-stream-jobs`, plus the legacy hosted proxy
   functions in `public/functions`. Client IO now targets
   `/api/v1/storage/*` and `/api/v1/proxy/*` only.
-- **No-port: broad platform gates.** `isNodeServer`, `isTauri`, and `isWeb` are
+- **No-port: broad platform gates.** The legacy non-Fastify runtime gates are
   gone from `src/ts/platform.ts`; `globalThis.__FASTIFY__` is the single
   server-backed signal.
 

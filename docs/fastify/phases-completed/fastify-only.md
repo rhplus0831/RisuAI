@@ -17,22 +17,22 @@ native/mobile wrappers, broad platform gates, legacy storage and proxy
 endpoints, hosted functions, and standalone browser persistence. Those
 removed surfaces are no-port.
 
-Non-goals (no-port): no compatibility shims for Hono, Electron, Capacitor,
-Cloudflare Pages Functions, legacy Node scripts, or local save-file
-mode; no migrations bridging removed storage paths; the static web
-client stays as the Fastify-served UI.
+Non-goals (no-port): no compatibility shims for the removed alternative
+server runtimes, client wrappers, hosted functions, legacy Node scripts,
+or local save-file mode; no migrations bridging removed storage paths;
+the static web client stays as the Fastify-served UI.
 
 ## Phases
 
 - **0 Audit And Baseline.** Froze the known non-Fastify surfaces and a
   green verification baseline.
-- **1 Project Surface Removal.** Deleted the `server/hono` subtree (Node,
-  Bun, Cloudflare, Vercel, Wrangler, postbuild), `server.sh` /
-  `server.bat`, `capacitor.config.ts`, and the Hono/Electron/sync
+- **1 Project Surface Removal.** Deleted the `server/hono` subtree
+  (alternative server entry points and postbuild), `server.sh` /
+  `server.bat`, `capacitor.config.ts`, and the alternative-server/sync
   package scripts.
 - **2 Runtime Contract Collapse.** Removed `globalThis.__NODE__` from
-  Fastify static serving and dropped `isNodeServer`, `isTauri`, and
-  `isWeb` from `src/ts/platform.ts`. `globalThis.__FASTIFY__` is the
+  Fastify static serving and dropped the legacy non-Fastify runtime gates
+  from `src/ts/platform.ts`. `globalThis.__FASTIFY__` is the
   single server-backed client signal; server gates use `isFastifyServer`.
 - **3 Storage Contract Cleanup.** Removed the legacy client route table
   (`/api/write`, `/api/read`, `/api/list`, `/api/remove`, and legacy
@@ -42,13 +42,13 @@ client stays as the Fastify-served UI.
   startup service-worker registration from `src/ts/bootstrap.ts`.
 - **4 Proxy And API Routing.** Collapsed client proxy URL builders onto
   `/api/v1/proxy/*` only, removed the `/proxy2` and `/proxy-stream-jobs`
-  hosted-hub fallbacks, and deleted the Cloudflare Pages-style hosted
+  hosted-hub fallbacks, and deleted the legacy hosted
   proxy functions `public/functions/proxy.js` and `proxy2.js`.
 - **5 Browser Local Surface Cleanup.** Deleted `public/sw.js` (and its
-  `/sw/*` + `/tf` cache fallbacks), removed PWA `share_target` /
+  `/sw/*` + `/tf` cache fallbacks), removed the installable-app `share_target` /
   `file_handlers` from `public/manifest.json` (display `standalone` ->
   `browser`), removed `#share_*` / `launchQueue` import handlers,
-  `setUsingSw`, `src/preload.ts`, standalone persistence, and the local
+  `setUsingSw`, `src/preload.ts`, installable-app persistence, and the local
   full/partial backup and restore-from-file paths. Deleted
   `src/ts/storage/persistant.ts`; `src/ts/storage/backup.ts` now creates
   Fastify server backups only.
@@ -70,8 +70,8 @@ back the retained `/api/v1/storage/*` and `/api/v1/hub/*` contracts. The
 
 These assert the removed surfaces stay gone; keep them:
 
-- `src/ts/browserLocalSurface.test.ts` — service-worker, PWA
-  share/file-handler, preload, standalone persistence, local backup.
+- `src/ts/browserLocalSurface.test.ts` — service-worker, installable-app
+  share/file-handler, preload, installable-app persistence, local backup.
 - `src/ts/globalApi.proxy.test.ts` — legacy proxy path absence.
 - `server/fastify/__tests__/static.test.ts` and
   `server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts` —
@@ -88,6 +88,3 @@ These assert the removed surfaces stay gone; keep them:
 ## Known Minor Leftovers
 
 - `public/functions/` is an empty directory (untracked by git).
-- `src/etc/docs/docs_text.cbs` still describes no-port "Local version
-  (Tauri)" and "Node version" product variants; it is in-app assistant
-  knowledge text, not runtime code.

@@ -17,7 +17,7 @@ Date: 2026-05-26
   blocks.
 - Server asset ids remain plain JSON references inside the exported database
   and blocks. No asset-byte reads, reference walking, ZIP generation, browser
-  cache lookup, localForage, Tauri remote-file access, OPFS, AutoStorage, or
+  cache lookup, localForage, legacy local mode remote-file access, OPFS, AutoStorage, or
   Svelte database imports were added.
 - Fixed a legacy envelope encoder parity bug exposed by repository export:
   64-byte server asset ids caused the `msgpackr` encoder path to throw in the
@@ -27,7 +27,7 @@ Date: 2026-05-26
   `server/fastify/__tests__/risuSaveCodec.test.ts` for repository legacy/block
   export round trips, directory shape, compression, server asset-id
   preservation, missing database rejection, block input validation, and
-  browser-storage/Tauri/Svelte/compression-stream detachment.
+  browser-storage/legacy-local-mode/Svelte/compression-stream detachment.
 
 ## Boundaries
 

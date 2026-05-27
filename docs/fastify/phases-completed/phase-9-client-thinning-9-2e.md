@@ -26,7 +26,7 @@ mode while preserving legacy translator runtime-field sync.
   translator preset create/update/delete/select commands.
 - Routed server-backed translator preset create/import, rename, delete,
   selection, prompt edits, and max-response edits through typed commands
-  while keeping local/Tauri mutation behavior intact.
+  while keeping legacy local mode mutation behavior intact.
 
 ## Notes For Later Slices
 
