@@ -12,7 +12,7 @@ There are no existing Fastify users that need compatibility migrations, and keep
 
 - Remove legacy storage paths from `src/ts/storage/nodeStorage.ts`.
 - Remove legacy proxy paths from `src/ts/globalApi.svelte.ts`.
-- Delete hosted function proxy files once no client code selects them.
+- Delete hosted function proxy files once no client code selects them; Phase 4 deleted `public/functions/proxy.js` and `public/functions/proxy2.js`.
 - Update route tests so removed endpoints are not part of the supported contract.
 
 ## Revisit Triggers
@@ -25,5 +25,4 @@ There are no existing Fastify users that need compatibility migrations, and keep
 
 - `src/ts/storage/nodeStorage.ts:6`
 - `src/ts/globalApi.svelte.ts:560`
-- `public/functions/proxy.js:1`
-- `public/functions/proxy2.js:1`
+- `src/ts/globalApi.proxy.test.ts:80`

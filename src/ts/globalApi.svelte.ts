@@ -33,7 +33,7 @@ import {
   waitAlert,
 } from './alert'
 import { hasher } from './parser/parser.svelte'
-import { characterURLImport, hubURL } from './characterCards'
+import { characterURLImport } from './characterCards'
 import {
   defaultJailbreak,
   defaultMainPrompt,
@@ -557,25 +557,22 @@ const webLocalNetworkBlockedMessage =
   'Direct private network calls are not supported in the web version'
 const defaultProxyJobHeartbeatSec = 15
 
-function getProxy2Url() {
-  if (isFastifyServer) return '/api/v1/proxy/fetch'
-  return `${hubURL}/proxy2`
+function getProxyFetchUrl() {
+  return '/api/v1/proxy/fetch'
 }
 
 function getProxyStreamJobsCreateUrl() {
-  if (isFastifyServer) return '/api/v1/proxy/stream-jobs'
-  return `${hubURL}/proxy-stream-jobs`
+  return '/api/v1/proxy/stream-jobs'
 }
 
 function getProxyStreamJobDeleteUrl(jobId: string) {
   const enc = encodeURIComponent(jobId)
-  if (isFastifyServer) return `/api/v1/proxy/stream-jobs/${enc}`
-  return `${hubURL}/proxy-stream-jobs/${enc}`
+  return `/api/v1/proxy/stream-jobs/${enc}`
 }
 
 function getProxyStreamJobWsPath(jobId: string) {
   const enc = encodeURIComponent(jobId)
-  return isFastifyServer ? `/api/v1/proxy/stream-jobs/${enc}/ws` : `/proxy-stream-jobs/${enc}/ws`
+  return `/api/v1/proxy/stream-jobs/${enc}/ws`
 }
 
 function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
@@ -869,7 +866,7 @@ async function fetchWithUSFetch(url: string, arg: GlobalFetchArgs): Promise<Glob
  */
 async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<GlobalFetchResult> {
   try {
-    const furl = getProxy2Url()
+    const furl = getProxyFetchUrl()
     arg.headers ??= {}
     arg.headers['Content-Type'] ??=
       arg.body instanceof URLSearchParams ? 'application/x-www-form-urlencoded' : 'application/json'
@@ -1667,11 +1664,11 @@ export async function fetchNative(
             fetchLogIndex,
           })
         } catch (wsErr) {
-          console.warn('[ProxyJobWS] fallback to /proxy2 due to error:', wsErr)
+          console.warn('[ProxyJobWS] falling back to Fastify proxy fetch due to error:', wsErr)
         }
       }
 
-      const r = await fetch(getProxy2Url(), {
+      const r = await fetch(getProxyFetchUrl(), {
         body: realBody as any,
         headers: arg.useRisuTk
           ? {

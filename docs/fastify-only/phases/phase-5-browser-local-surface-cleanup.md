@@ -28,6 +28,7 @@ Remove browser-local support that implies the app can run without the Fastify se
 
 - `pnpm check`
 - `pnpm test`
+- `pnpm api:test`
 - `pnpm build`
 - `pnpm smoke:fastify-browser`
 

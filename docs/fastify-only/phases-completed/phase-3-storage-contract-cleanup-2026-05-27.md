@@ -125,7 +125,7 @@ Verification:
 
 Next pickup:
 
-- Continue with [Phase 4: Proxy And API Routing](../phases/phase-4-proxy-and-api-routing.md).
+- Continue with [Phase 4: Proxy And API Routing](phase-4-proxy-and-api-routing-2026-05-27.md).
 - Keep service worker share/import behavior, preload cleanup, and broader docs packaging for later phases unless proxy cleanup exposes a dead branch.
 
 ## Verification

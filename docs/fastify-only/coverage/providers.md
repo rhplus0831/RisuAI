@@ -6,9 +6,10 @@ Provider and proxy tests should prove that provider IO uses the Fastify proxy co
 
 ## Current Inventory
 
-- `src/ts/globalApi.svelte.ts:560` currently has Fastify `/api/v1/proxy/*`, legacy node proxy, and hosted hub proxy branches.
-- `public/functions/proxy.js:1` and `public/functions/proxy2.js:1` are separate hosted function proxy surfaces.
-- Local network restrictions currently key off node-server semantics and need to be checked against the Fastify-only contract.
+- `src/ts/globalApi.svelte.ts:560` now builds Fastify `/api/v1/proxy/*` routes only for buffered proxy fetches, stream job creation/deletion, and stream job WebSocket paths.
+- `src/ts/globalApi.proxy.test.ts:80` covers client route selection and fails if `/proxy2` or `/proxy-stream-jobs` fragments reappear.
+- `public/functions/proxy.js` and `public/functions/proxy2.js` were deleted in Phase 4.
+- Local-network streaming route selection is covered against the Fastify-only contract.
 
 ## Expected Coverage
 

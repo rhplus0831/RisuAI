@@ -57,6 +57,11 @@ Cleanup focus:
 - Remove legacy storage and proxy endpoints.
 - Remove hosted function proxy paths.
 
+Phase 4 cleanup:
+
+- `src/ts/globalApi.svelte.ts` now selects Fastify `/api/v1/proxy/*` routes only for proxy fetch and stream job paths.
+- Hosted function proxy files under `public/functions` were deleted.
+
 ## Stage 4: Generation Runtime
 
 Generation, sendChat, provider, memory, and command flows should continue to run through the Fastify-backed contracts that the existing migration established.

@@ -29,7 +29,7 @@ Remove local runtime support and all non-Fastify platform support so the project
 | 1     | [Project Surface Removal](phases-completed/phase-1-project-surface-removal-2026-05-27.md)     | Remove alternate server projects, stale scripts, launchers, and native/mobile config. Completed on 2026-05-27. |
 | 2     | [Runtime Contract Collapse](phases-completed/phase-2-runtime-contract-collapse-2026-05-27.md) | Replace broad platform gates with a Fastify-served client contract. Completed on 2026-05-27.                   |
 | 3     | [Storage Contract Cleanup](phases-completed/phase-3-storage-contract-cleanup-2026-05-27.md)   | Keep Fastify storage APIs only and remove local/legacy storage fallbacks. Completed on 2026-05-27.            |
-| 4     | [Proxy And API Routing](phases/phase-4-proxy-and-api-routing.md)                              | Remove hosted and legacy proxy routes so client IO targets Fastify.                                            |
+| 4     | [Proxy And API Routing](phases-completed/phase-4-proxy-and-api-routing-2026-05-27.md)         | Remove hosted and legacy proxy routes so client IO targets Fastify. Completed on 2026-05-27.                  |
 | 5     | [Browser Local Surface Cleanup](phases/phase-5-browser-local-surface-cleanup.md)              | Remove remaining service worker, preload, and share flows that imply standalone local support.                 |
 | 6     | [Docs And Packaging Closeout](phases/phase-6-docs-and-packaging-closeout.md)                  | Align README, localized app strings, Docker, env docs, and smoke instructions with Fastify only.               |
 | 7     | [Verification Closeout](phases/phase-7-verification-closeout.md)                              | Run the full verification ladder and archive completed status.                                                 |
@@ -63,8 +63,7 @@ Each implementation phase should record its actual command output in the matchin
 - `public/sw.js:3`
 - `src/preload.ts:7`
 - `src/ts/globalApi.svelte.ts:560`
-- `public/functions/proxy.js:1`
-- `public/functions/proxy2.js:1`
+- `src/ts/globalApi.proxy.test.ts:80`
 - `vite.config.ts:28`
 - `Dockerfile:38`
 - `docker-compose.yml:8`

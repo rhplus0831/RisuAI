@@ -25,7 +25,7 @@ Expected owned surfaces:
 Removal state:
 
 - Phase 1 removed `server/hono`, its Node, Bun, Cloudflare, and Vercel adapters, and legacy root launchers.
-- Hosted function proxies under `public/functions` remain removal targets.
+- Phase 4 removed hosted function proxies under `public/functions`.
 
 ## Client Contract
 
@@ -42,7 +42,7 @@ The retained API surface should use `/api/v1/*`.
 - Storage uses `/api/v1/storage/*`.
 - Proxy uses `/api/v1/proxy/*`.
 - Generation and chat server routes stay under the Fastify route tree.
-- Legacy paths such as `/api/write`, `/api/read`, `/api/list`, `/api/remove`, `/proxy2`, and `/proxy-stream-jobs` are removal targets.
+- Legacy paths such as `/api/write`, `/api/read`, `/api/list`, `/api/remove`, `/proxy2`, and `/proxy-stream-jobs` are removed from client selection.
 
 ## Persistence
 
@@ -63,4 +63,4 @@ The target design removes standalone browser persistence as a supported mode. OP
 - `src/ts/platform.ts:13`
 - `src/ts/storage/nodeStorage.ts:6`
 - `src/ts/globalApi.svelte.ts:560`
-- `public/functions/proxy.js:1`
+- `src/ts/globalApi.proxy.test.ts:80`

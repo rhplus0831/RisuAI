@@ -15,11 +15,14 @@
 - Standalone browser save-file bootstrap as a supported app startup path.
 - Startup-time service worker registration from the removed local save-file bootstrap path.
 
+## Removed In Phase 4
+
+- Legacy client proxy route selection for `/proxy2` and `/proxy-stream-jobs`.
+- Cloudflare Pages-style hosted proxy functions in `public/functions/proxy.js` and `public/functions/proxy2.js`.
+
 ## Remaining Removal Targets
 
-- Cloudflare Pages-style functions in `public/functions`.
 - Public README language that presents non-Fastify platforms as supported runtimes.
-- Legacy proxy paths: `/proxy2` and `/proxy-stream-jobs`.
 - Service worker share/import behavior when it implies standalone local support.
 - User-facing app strings that mention removed runtimes, flags, or endpoints.
 
@@ -43,5 +46,4 @@
 
 - `package.json:9`
 - `docs/fastify-only/phases-completed/phase-1-project-surface-removal-2026-05-27.md:1`
-- `public/functions/proxy.js:1`
-- `public/functions/proxy2.js:1`
+- `docs/fastify-only/phases-completed/phase-4-proxy-and-api-routing-2026-05-27.md:1`
