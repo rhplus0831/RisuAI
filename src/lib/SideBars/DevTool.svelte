@@ -10,6 +10,8 @@
   import { tokenizePreset } from 'src/ts/process/prompt'
 
   import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase, setDatabase } from 'src/ts/storage/database.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/util'
@@ -238,23 +240,24 @@
         return
       }
       for (let i = 0; i < autopilot.length; i++) {
-        const db = DBState.db
-        let currentChar = db.characters[$selectedCharID]
-        let currentChat = currentChar.chats[currentChar.chatPage]
-        currentChat.message.push({
-          role: 'user',
-          data: autopilot[i],
-        })
-        currentChar.chats[currentChar.chatPage] = currentChat
-        db.characters[$selectedCharID] = currentChar
         if ($doingChat) {
           return
         }
-        currentChar.chats[currentChar.chatPage] = currentChat
-        db.characters[$selectedCharID] = currentChar
+        // Apply the optimistic user message inside a trusted write so it does
+        // not throw against the server projection guard, then let sendChat
+        // drive the command-backed persistence (same path as the /send slash
+        // command).
+        withTrustedServerProjectionWrite(() => {
+          const db = getDatabase()
+          const currentChar = db.characters[$selectedCharID]
+          const currentChat = currentChar.chats[currentChar.chatPage]
+          currentChat.message.push({
+            role: 'user',
+            data: autopilot[i],
+          })
+          setDatabase(db)
+        })
         await sendChat(i)
-        currentChar = db.characters[$selectedCharID]
-        currentChat = currentChar.chats[currentChar.chatPage]
       }
     }}>Run</Button
   >
