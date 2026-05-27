@@ -18,6 +18,6 @@ Known items:
 
 ## Watch Points
 
-- Phase 5 should remove browser-local surfaces without reintroducing `globalThis.__NODE__`.
 - Keep Docker and compose Fastify flows intact.
-- Ensure route tests cover retained `/api/v1/*` behavior before deleting legacy paths.
+- Phase 7 should run the full verification ladder before final closeout.
+- Ensure route tests continue to cover retained `/api/v1/*` behavior.

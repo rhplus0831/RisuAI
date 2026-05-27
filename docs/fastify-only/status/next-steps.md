@@ -2,29 +2,29 @@
 
 ## Current Pickup
 
-Continue [Phase 6: Docs And Packaging Closeout](../phases/phase-6-docs-and-packaging-closeout.md). Phase 5 browser local surface cleanup is archived in [phases-completed](../phases-completed/phase-5-browser-local-surface-cleanup-2026-05-27.md).
+Continue [Phase 7: Verification Closeout](../phases/phase-7-verification-closeout.md). Phase 6 docs and packaging closeout is archived in [phases-completed](../phases-completed/phase-6-docs-and-packaging-closeout-2026-05-27.md).
 
 ## Immediate Tasks
 
-1. Update `README.md` so it no longer describes a cross-platform app.
-2. Update localized app strings that still mention Node self-hosting, Tauri, `__NODE__`, `/proxy2`, or other removed runtime details.
-3. Fix Docker and compose port references so they match the Fastify runtime.
-4. Update development and smoke instructions to use `pnpm api:dev`, `pnpm api:start`, and `pnpm smoke:fastify-browser`.
+1. Run the full verification ladder: `pnpm check`, `pnpm test`, `pnpm api:test`, `pnpm build`, and `pnpm smoke:fastify-browser`.
+2. Confirm active docs and entry points still describe Fastify as the only supported runtime.
+3. Confirm removed platform paths are absent from scripts, source, public docs, and user-facing runtime strings.
+4. Archive Phase 7 with actual verification results, changed files, and any explicit follow-up items.
 5. Keep `src/ts/browserLocalSurface.test.ts` as the guard for removed service-worker, PWA share, file-handler, preload, standalone persistence, and local backup surfaces.
 
-## Latest Phase 5 Verification
+## Latest Phase 6 Verification
 
-- `pnpm exec vitest run src/ts/browserLocalSurface.test.ts src/ts/storage/backup.test.ts src/ts/bootstrap.test.ts` passed: 3 files and 12 tests.
 - `pnpm check` passed with 0 errors and 0 warnings.
-- `pnpm test` passed: 76 files, 772 tests passed, and 4 tests skipped.
-- `pnpm api:test` passed: 68 files and 1217 tests.
 - `pnpm build` passed with existing build warnings.
 - `pnpm smoke:fastify-browser` passed with existing build warnings: 1 Playwright test.
 
-## Phase 6 Verification To Record
+## Phase 7 Verification To Record
 
-- Record any additional focused command for docs, packaging, or localized-string cleanup.
-- Minimum Phase 6 verification: `pnpm check`, `pnpm build`, and `pnpm smoke:fastify-browser`.
+- `pnpm check`
+- `pnpm test`
+- `pnpm api:test`
+- `pnpm build`
+- `pnpm smoke:fastify-browser`
 
 ## Watch Points
 
@@ -32,4 +32,4 @@ Continue [Phase 6: Docs And Packaging Closeout](../phases/phase-6-docs-and-packa
 - Phase 3 removed bootstrap local save-file initialization; do not reintroduce local persistence as a fallback for service worker or preload failures.
 - Phase 4 removed client selection of `/proxy2`, `/proxy-stream-jobs`, and Cloudflare Pages-style hosted proxy functions.
 - Phase 5 removed `public/sw.js`, PWA share/file handlers, `#share_*` handlers, `launchQueue`, `setUsingSw`, `src/preload.ts`, standalone persistence, and local backup/restore paths; do not restore them as compatibility bridges.
-- Include localized app strings in the docs and packaging closeout, not only markdown files.
+- Phase 6 updated README, localized runtime strings, Docker access docs, development instructions, and smoke instructions; do not reintroduce cross-platform setup language.

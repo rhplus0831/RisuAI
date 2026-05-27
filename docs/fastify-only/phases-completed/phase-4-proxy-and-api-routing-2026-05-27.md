@@ -68,7 +68,7 @@ Verification:
 Next pickup:
 
 - Phase 5 later closed in [Phase 5: Browser Local Surface Cleanup](phase-5-browser-local-surface-cleanup-2026-05-27.md).
-- Continue with [Phase 6: Docs And Packaging Closeout](../phases/phase-6-docs-and-packaging-closeout.md).
+- Phase 6 docs and packaging closeout is archived in [phases-completed](phase-6-docs-and-packaging-closeout-2026-05-27.md).
 
 ## Verification
 

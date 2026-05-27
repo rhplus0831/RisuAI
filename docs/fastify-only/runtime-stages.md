@@ -16,9 +16,10 @@ Phase 2 removed:
 - `__NODE__` as a Fastify static-serving compatibility bridge.
 - The exported `isNodeServer`, `isTauri`, and `isWeb` runtime gates from `src/ts/platform.ts`.
 
-Remaining focus:
+Phase 6 cleanup:
 
-- Public docs that still describe a cross-platform app.
+- Public README language now describes the Fastify-served web application.
+- README development, production startup, Docker access, and smoke instructions now use the Fastify runtime path.
 
 ## Stage 1: Fastify Boot
 
@@ -28,9 +29,9 @@ Phase 2 cleanup:
 
 - Fastify static serving keeps `globalThis.__FASTIFY__` as the single server-backed signal for the client.
 
-Remaining focus:
+Phase 6 cleanup:
 
-- Make smoke startup match Docker and local dev startup.
+- Smoke startup, Docker access, and local dev instructions now agree on the Fastify port `6002` and retained scripts.
 
 ## Stage 2: Client Bootstrap
 
@@ -91,4 +92,4 @@ Required closeout:
 
 - README and Docker docs describe the same port and startup path.
 - Removed platforms are listed in [removed-and-out-of-scope.md](removed-and-out-of-scope.md).
-- Verification results are recorded before moving phase files to [phases-completed](phases-completed/).
+- Phase 7 must record the full verification ladder before moving the final phase file to [phases-completed](phases-completed/).

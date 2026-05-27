@@ -72,7 +72,7 @@ Remove browser-local support that implies the app can run without the Fastify se
 
 ## Follow-Up
 
-- Continue with [Phase 6: Docs And Packaging Closeout](../phases/phase-6-docs-and-packaging-closeout.md).
+- Phase 6 docs and packaging closeout is archived in [phases-completed](phase-6-docs-and-packaging-closeout-2026-05-27.md).
 - Phase 6 should update README, localized runtime strings, Docker, compose, env docs, and smoke instructions so they describe Fastify as the only supported runtime.
 - Keep Fastify-served drag/drop import/export utilities unless they become a replacement for Fastify storage or bootstrap.
 

@@ -12,9 +12,10 @@ This folder is the planning workspace for removing local runtime support and all
 - Phase 4 proxy and API routing closed on 2026-05-27.
 - Phase 5A service worker and preload cleanup closed on 2026-05-27.
 - Phase 5 browser local surface cleanup closed on 2026-05-27.
+- Phase 6 docs and packaging closeout closed on 2026-05-27.
 - Fastify is the only target production runtime.
 - The client remains a static web client served by Fastify.
-- The existing Fastify migration docs already describe server-backed web as the supported shape, but compatibility bridges remain in user-facing strings, packaging, and public docs.
+- Phase 7 verification closeout is the remaining active phase.
 
 ## Read Order
 

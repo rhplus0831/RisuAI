@@ -31,15 +31,15 @@ Remove local runtime support and all non-Fastify platform support so the project
 | 3     | [Storage Contract Cleanup](phases-completed/phase-3-storage-contract-cleanup-2026-05-27.md)   | Keep Fastify storage APIs only and remove local/legacy storage fallbacks. Completed on 2026-05-27.             |
 | 4     | [Proxy And API Routing](phases-completed/phase-4-proxy-and-api-routing-2026-05-27.md)         | Remove hosted and legacy proxy routes so client IO targets Fastify. Completed on 2026-05-27.                   |
 | 5     | [Browser Local Surface Cleanup](phases-completed/phase-5-browser-local-surface-cleanup-2026-05-27.md) | Remove remaining service worker, preload, backup, and persistence flows that imply standalone local support. Completed on 2026-05-27. |
-| 6     | [Docs And Packaging Closeout](phases/phase-6-docs-and-packaging-closeout.md)                  | Align README, localized app strings, Docker, env docs, and smoke instructions with Fastify only.               |
-| 7     | [Verification Closeout](phases/phase-7-verification-closeout.md)                              | Run the full verification ladder and archive completed status.                                                 |
+| 6     | [Docs And Packaging Closeout](phases-completed/phase-6-docs-and-packaging-closeout-2026-05-27.md) | Align README, localized app strings, Docker, env docs, and smoke instructions with Fastify only. Completed on 2026-05-27. |
+| 7     | [Verification Closeout](phases/phase-7-verification-closeout.md)                              | Run the full verification ladder and archive completed status. Current pickup.                                |
 
 ## Risks
 
 - Platform gates are shared across UI, storage, proxy, and bootstrap code; removing one branch can expose stale assumptions in another.
 - Storage cleanup can delete useful browser fallback behavior if the Fastify bootstrap path is not clearly separated first.
 - Proxy cleanup changes security boundaries around local-network access and provider calls.
-- Documentation currently uses cross-platform language, so code changes can land while user-facing instructions still point at removed modes.
+- Final verification can expose stale removed-platform references if docs or user-facing strings drift after Phase 6.
 
 ## Verification
 

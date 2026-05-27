@@ -33,8 +33,12 @@
 
 ## Remaining Removal Targets
 
-- Public README language that presents non-Fastify platforms as supported runtimes.
-- User-facing app strings that mention removed runtimes, flags, or endpoints.
+- None currently tracked after Phase 6 docs and packaging closeout.
+
+## Removed In Phase 6
+
+- Public README language that presented non-Fastify platforms as supported runtimes.
+- User-facing app strings that mentioned removed runtime paths or endpoints.
 
 ## Preserved Surfaces
 

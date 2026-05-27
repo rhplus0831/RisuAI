@@ -245,7 +245,7 @@ export const languageChineseTraditional = {
     keepSessionAlive:
       '使分頁保持活躍狀態，防止因閒置而在瀏覽器中過期。可能需要重新整理後才能生效。\n\n- **透過音效**：定期播放靜音音訊以保持工作階段活躍。此方法在大多數瀏覽器中相容性最佳且最有效。',
     localNetworkModeDesc:
-      '透過本機伺服器路由私有/區域網路模型 URL，而非透過瀏覽器直接抓取。\n\n**用途**\n- 避免瀏覽器的私有網路/CORS 限制\n- 降低本機推斷首個 Token 生成緩慢時的逾時風險\n\n**運作方式**\n- 串流回應使用實驗性的 Job+WebSocket 中繼（回退至 /proxy2）\n- 非串流回應使用 /proxy2 中繼\n\n**限制**\n- 僅適用於 OpenAI 相容的請求路徑',
+      '透過 Fastify 伺服器路由私有/區域網路模型 URL，而非透過瀏覽器直接抓取。\n\n**用途**\n- 避免瀏覽器的私有網路/CORS 限制\n- 降低本機推斷首個 Token 生成緩慢時的逾時風險\n\n**運作方式**\n- 僅在啟用「本機網路模式」且目標 URL 被偵測為本機或私有位址時套用\n- 串流回應優先使用 `/api/v1/proxy/stream-jobs` 中繼\n- 非串流回應使用 `/api/v1/proxy/fetch` 中繼\n\n**限制**\n- 僅適用於 OpenAI 相容的請求路徑\n- 請使用由 Fastify 提供服務的 Risuai URL，才能讓此功能生效',
   },
   setup: {
     chooseProvider: '選擇 AI 提供商',
