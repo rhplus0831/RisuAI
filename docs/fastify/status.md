@@ -31,7 +31,6 @@ Latest full verification on 2026-05-27:
 | 7 - Server-side prompt assembly | Complete | 2026-05-24 |
 | 8 - Hypa V3 memory server-side | Complete | 2026-05-25 |
 | 9 - Client thinning | Complete | 2026-05-26 |
-| Tauri / Desktop removal | Complete | 2026-05-27 |
 
 ## Closeout Rules
 

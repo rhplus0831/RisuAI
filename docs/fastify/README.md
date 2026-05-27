@@ -8,8 +8,8 @@ paths directly; do not write compatibility migrations.
 
 ## Current State
 
-All migration phases (0-9) are complete. Tauri / Desktop support has been
-explicitly removed. The Fastify server is the only supported runtime.
+All migration phases (0-9) are complete. The Fastify server is the only
+supported runtime.
 
 ## Read Order
 
@@ -35,7 +35,7 @@ explicitly removed. The Fastify server is the only supported runtime.
 - **No compatibility migrations.** No users yet; edit current shapes.
 - **Sequence.** Remove first, then port. Phase 0 stripped deprecated
   features before server work began.
-- **Client modes.** Server-backed web only. Tauri / Desktop removed.
+- **Client modes.** Server-backed web only.
 - **Memory.** Only Hypa V3. Supa, Hypa V2, Hanurai removed.
 - **Drive.** Google Drive sync removed in Phase 0.
 

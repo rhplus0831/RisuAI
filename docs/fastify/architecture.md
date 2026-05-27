@@ -73,5 +73,4 @@ Browser owns: rendering, input, abort forwarding, local display state,
 TTS playback, image preview, browser image embedding, plugin code
 execution.
 
-Removed: group chat, peer sync, Drive sync, Risu Account Sync,
-Tauri / Desktop.
+Removed: group chat, peer sync, Drive sync, Risu Account Sync.

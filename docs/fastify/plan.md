@@ -17,8 +17,7 @@ End state:
 - `sendChat` is a thin bridge that forwards intent to the server and
   applies SSE patches.
 - Group chat, peer multi-user chat, Risu Account Sync, Google Drive
-  sync, Supa / Hypa V2 / Hanurai memory engines, and Tauri / Desktop
-  support are removed.
+  sync, and Supa / Hypa V2 / Hanurai memory engines are removed.
 
 ## Completed Phases
 
@@ -36,7 +35,6 @@ with a read-only guard in server-backed mode.
 7. **Prompt assembly** - `/chat` route + dispatch (2026-05-24).
 8. **Memory** - Hypa V3 server-side queue (2026-05-25).
 9. **Client thinning** - command surface, projection guard (2026-05-26).
-10. **Tauri / Desktop removal** - all desktop support deleted (2026-05-27).
 
 ## Non-goals
 

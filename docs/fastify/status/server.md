@@ -2,8 +2,8 @@
 
 Date: 2026-05-27
 
-Fastify is the only server runtime. Express, Tauri, and the old
-`runserver` script are deleted.
+Fastify is the only server runtime. Express and the old `runserver`
+script are deleted.
 
 ## Route Surface
 

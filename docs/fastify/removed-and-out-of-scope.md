@@ -22,11 +22,6 @@ These features are deleted. They have no server endpoints and no UI.
 - **Supa memory, Hypa V2, Hanurai.** Legacy memory engines removed.
   Hypa V3 is the only maintained engine. Some legacy field names remain
   as compatibility helpers consumed by Hypa V3.
-- **Tauri / Desktop builds.** All Tauri support explicitly removed
-  (commit `a8dd411c`, 2026-05-27). The `@tauri-apps/*` dependencies,
-  Tauri config, desktop-specific storage paths, and all
-  `isTauri`/`appVer` branches are deleted. The web client only runs
-  against the Fastify server.
 
 ## Permanent browser-only surfaces
 
