@@ -57,7 +57,7 @@ Phase 2 is complete. Fastify static serving now injects only `globalThis.__FASTI
 
 ## Follow-Up
 
-- Continue with [Phase 3: Storage Contract Cleanup](../phases/phase-3-storage-contract-cleanup.md).
+- Continue with [Phase 3: Storage Contract Cleanup](phase-3-storage-contract-cleanup-2026-05-27.md).
 - `src/ts/storage/nodeStorage.ts` still contains Fastify and legacy storage route tables; remove the legacy storage endpoints in Phase 3.
 - `src/ts/bootstrap.ts` still has the local save-file fallback path for non-Fastify harnesses; remove unsupported local runtime bootstrap in Phase 3 or Phase 5 depending on storage cleanup needs.
 - `src/ts/globalApi.svelte.ts` still has hosted proxy fallback URL builders for non-Fastify harnesses; remove hosted and legacy proxy paths in Phase 4.

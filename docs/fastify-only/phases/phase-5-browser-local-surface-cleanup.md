@@ -8,7 +8,7 @@ Remove browser-local support that implies the app can run without the Fastify se
 
 - Review `public/sw.js` for share/import, image cache, and local-only behavior.
 - Review `src/preload.ts` for web versus non-web branches.
-- Remove local bootstrap flows that load save files instead of Fastify-backed data.
+- Verify the Phase 3 bootstrap cleanup left no reachable local save-file startup path.
 - Update UI copy or gates that still advertise local-only operation.
 - Keep browser features only when they are normal Fastify-served client features.
 

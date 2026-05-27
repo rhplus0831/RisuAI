@@ -42,6 +42,10 @@ Cleanup focus:
 - Remove standalone local initialization.
 - Make authentication and storage failures explicit Fastify errors.
 
+Phase 3 cleanup:
+
+- `src/ts/bootstrap.ts` now loads the Fastify bootstrap projection only and reports unavailable or errored bootstrap data explicitly.
+
 ## Stage 3: Storage And Proxy IO
 
 Client IO should use Fastify route contracts only.

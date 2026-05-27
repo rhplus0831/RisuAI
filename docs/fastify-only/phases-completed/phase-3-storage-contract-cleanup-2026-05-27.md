@@ -87,16 +87,53 @@ Verification:
 - `pnpm build` passed with existing build warnings for CSS `::highlight(...)`, browser-externalized modules, plugin timing, ineffective dynamic imports, and large chunks.
 - `pnpm smoke:fastify-browser` passed with existing build warnings: 1 Playwright test.
 
+### Phase 3C: Bootstrap Fallback Cleanup
+
+Completed on 2026-05-27.
+
+Changed files:
+
+- `src/ts/bootstrap.ts`
+- `src/ts/bootstrap.test.ts`
+- `docs/fastify-only/README.md`
+- `docs/fastify-only/plan.md`
+- `docs/fastify-only/status.md`
+- `docs/fastify-only/status/next-steps.md`
+- `docs/fastify-only/phases/README.md`
+- `docs/fastify-only/phases/phase-5-browser-local-surface-cleanup.md`
+- `docs/fastify-only/phases-completed/phase-2-runtime-contract-collapse-2026-05-27.md`
+- `docs/fastify-only/runtime-stages.md`
+- `docs/fastify-only/coverage/server-routes.md`
+- `docs/fastify-only/removed-and-out-of-scope.md`
+- `docs/fastify-only/phases-completed/phase-3-storage-contract-cleanup-2026-05-27.md`
+
+Completed work:
+
+- Collapsed `loadWebInitialDatabase()` so it always loads the Fastify `/api/v1/bootstrap` projection.
+- Removed the local save-file bootstrap fallback, backup decode fallback, and service worker registration from app startup.
+- Removed startup-time local persistence maintenance calls from `loadData()`.
+- Added tests proving unavailable or errored Fastify bootstrap data reports explicit errors without touching local persistence.
+
+Verification:
+
+- `pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts` passed: 2 files and 12 tests.
+- `pnpm check` passed with 0 errors and 0 warnings.
+- `pnpm test` passed: 74 files, 768 tests passed, and 4 tests skipped.
+- `pnpm api:test` passed: 68 files and 1217 tests.
+- `pnpm build` passed with existing build warnings for CSS `::highlight(...)`, browser-externalized modules, plugin timing, ineffective dynamic imports, and large chunks.
+- `pnpm smoke:fastify-browser` passed with existing build warnings: 1 Playwright test.
+
 Next pickup:
 
-- Phase 3C should update `src/ts/bootstrap.ts` so unavailable Fastify bootstrap data remains an explicit Fastify error instead of falling into local save-file initialization.
-- Run the full phase verification ladder before moving this phase to `phases-completed`.
+- Continue with [Phase 4: Proxy And API Routing](../phases/phase-4-proxy-and-api-routing.md).
+- Keep service worker share/import behavior, preload cleanup, and broader docs packaging for later phases unless proxy cleanup exposes a dead branch.
 
 ## Verification
 
 - `pnpm check`
 - `pnpm test`
 - `pnpm api:test`
+- `pnpm build`
 - `pnpm smoke:fastify-browser`
 
 ## References

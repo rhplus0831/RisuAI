@@ -8,8 +8,9 @@ This folder is the planning workspace for removing local runtime support and all
 - Phase 0 audit and baseline closed on 2026-05-27.
 - Phase 1 project surface removal closed on 2026-05-27.
 - Phase 2 runtime contract collapse closed on 2026-05-27.
+- Phase 3 storage contract cleanup closed on 2026-05-27.
 - Fastify is the only target production runtime.
-- The client remains a static web client served by Fastify; standalone local browser storage and legacy hosted functions remain removal candidates.
+- The client remains a static web client served by Fastify; legacy hosted functions and browser-local support surfaces remain removal candidates.
 - The existing Fastify migration docs already describe server-backed web as the supported shape, but several compatibility bridges remain in storage, proxy routing, service worker behavior, and public docs.
 
 ## Read Order

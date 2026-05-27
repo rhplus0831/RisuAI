@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
+type ServerBootstrapMockResponse =
+  | {
+      status: 'ok'
+      projection: {
+        revision: number
+        database: Record<string, unknown> | null
+      }
+    }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
+
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const serverBootstrapState = vi.hoisted(() => ({
   fetch: vi.fn(),
@@ -15,7 +26,7 @@ const serverBootstrapState = vi.hoisted(() => ({
         language: 'en',
       },
     },
-  },
+  } as ServerBootstrapMockResponse,
 }))
 const serverEventsState = vi.hoisted(() => ({
   subscriptions: [] as Array<{
@@ -316,24 +327,30 @@ describe('web bootstrap startup source', () => {
     }).toThrow()
   })
 
-  it('leaves local web database writes unguarded', async () => {
-    platformState.isFastifyServer = false
+  it('reports unavailable Fastify bootstrap without loading local persistence', async () => {
+    serverBootstrapState.response = { status: 'unavailable' }
 
-    await loadWebInitialDatabase()
-    setServerProjectionWriteGuardEnabled(true)
+    await expect(loadWebInitialDatabase()).rejects.toThrow('Server bootstrap is unavailable')
 
+    expect(LoadingStatusState.text).toBe('Loading Server Projection...')
     expect(isServerProjectionWriteGuardEnabled()).toBe(false)
-    DBState.db.language = 'ja'
-    expect(DBState.db.language).toBe('ja')
+    expect(forageSpies.Init).not.toHaveBeenCalled()
+    expect(forageSpies.getItem).not.toHaveBeenCalled()
+    expect(forageSpies.setItem).not.toHaveBeenCalled()
+    expect(serverEventsState.subscribe).not.toHaveBeenCalled()
   })
 
-  it('does not subscribe to server events outside Fastify mode', async () => {
-    platformState.isFastifyServer = false
+  it('reports Fastify bootstrap errors without loading local persistence', async () => {
+    serverBootstrapState.response = { status: 'error', error: 'missing_auth' }
 
-    await loadWebInitialDatabase()
+    await expect(loadWebInitialDatabase()).rejects.toThrow('missing_auth')
 
+    expect(LoadingStatusState.text).toBe('Loading Server Projection...')
+    expect(isServerProjectionWriteGuardEnabled()).toBe(false)
     expect(serverEventsState.subscribe).not.toHaveBeenCalled()
-    expect(forageSpies.Init).toHaveBeenCalledTimes(1)
+    expect(forageSpies.Init).not.toHaveBeenCalled()
+    expect(forageSpies.getItem).not.toHaveBeenCalled()
+    expect(forageSpies.setItem).not.toHaveBeenCalled()
   })
 
   it('skips local persistence maintenance during Fastify-served startup', async () => {

@@ -1,4 +1,4 @@
-import { checkNullish, sleep } from './util'
+import { checkNullish } from './util'
 import { v4 as uuidv4 } from 'uuid'
 import { get } from 'svelte/store'
 import {
@@ -20,14 +20,12 @@ import {
 } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from './alert'
-import { characterURLImport } from './characterCards'
 import {
   defaultJailbreak,
   defaultMainPrompt,
   oldJailbreak,
   oldMainPrompt,
 } from './storage/defaultPrompts'
-import { decodeRisuSave, encodeRisuSaveLegacy } from './storage/risuSave'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
@@ -36,17 +34,12 @@ import { updateGuisize } from './gui/guisize'
 import { updateLorebooks } from './characters'
 import { initMobileGesture } from './hotkey'
 import { moduleUpdate } from './process/modules'
-import { makeColdData } from './process/coldstorage.svelte'
 import {
   forageStorage,
-  saveDb,
-  getDbBackups,
   getUncleanables,
   getBasename,
-  setUsingSw,
   checkCharOrder,
 } from './globalApi.svelte'
-import { isFastifyServer } from './platform'
 import { registerModelDynamic } from './model/modellist'
 import { fetchServerBootstrapProjection } from './server/bootstrap'
 import { subscribeServerCommandEvents } from './server/events'
@@ -111,17 +104,11 @@ export async function loadData() {
         initMobileGesture()
         MobileGUI.set(true)
       }
-      if (!isFastifyServer) {
-        await makeColdData()
-      }
       loadedStore.set(true)
       selectedCharID.set(-1)
       startObserveDom()
       withTrustedServerProjectionWrite(assignIds)
       registerModelDynamic()
-      if (!isFastifyServer) {
-        saveDb()
-      }
       moduleUpdate()
       alertTOS().then((a) => {
         if (a === false) {
@@ -135,64 +122,16 @@ export async function loadData() {
 }
 
 export async function loadWebInitialDatabase() {
-  if (isFastifyServer) {
-    LoadingStatusState.text = 'Loading Server Projection...'
-    const bootstrap = await fetchServerBootstrapProjection()
-    if (bootstrap.status !== 'ok') {
-      throw new Error(
-        bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
-      )
-    }
-    applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
-    setServerProjectionWriteGuardEnabled(true)
-    await startServerProjectionEvents()
-    return
+  LoadingStatusState.text = 'Loading Server Projection...'
+  const bootstrap = await fetchServerBootstrapProjection()
+  if (bootstrap.status !== 'ok') {
+    throw new Error(
+      bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
+    )
   }
-
-  await forageStorage.Init()
-
-  LoadingStatusState.text = 'Loading Local Save File...'
-  let gotStorage: Uint8Array = (await forageStorage.getItem(
-    'database/database.bin',
-  )) as unknown as Uint8Array
-  LoadingStatusState.text = 'Decoding Local Save File...'
-  if (checkNullish(gotStorage)) {
-    gotStorage = encodeRisuSaveLegacy({})
-    await forageStorage.setItem('database/database.bin', gotStorage)
-  }
-  try {
-    const decoded = await decodeRisuSave(gotStorage)
-    console.log(decoded)
-    setDatabase(decoded)
-  } catch (error) {
-    console.error(error)
-    const backups = await getDbBackups()
-    let backupLoaded = false
-    for (const backup of backups) {
-      try {
-        LoadingStatusState.text = `Reading Backup File ${backup}...`
-        const backupData: Uint8Array = (await forageStorage.getItem(
-          `database/dbbackup-${backup}.bin`,
-        )) as unknown as Uint8Array
-        setDatabase(await decodeRisuSave(backupData))
-        backupLoaded = true
-      } catch (error) {}
-    }
-    if (!backupLoaded) {
-      throw 'Forage: Your save file is corrupted'
-    }
-  }
-
-  LoadingStatusState.text = 'Checking Service Worker...'
-  if (navigator.serviceWorker) {
-    setUsingSw(true)
-    await registerSw()
-  } else {
-    setUsingSw(false)
-  }
-  if (getDatabase().didFirstSetup) {
-    characterURLImport()
-  }
+  applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
+  setServerProjectionWriteGuardEnabled(true)
+  await startServerProjectionEvents()
 }
 
 export function stopServerProjectionEvents() {
@@ -255,20 +194,6 @@ async function refreshServerProjection() {
     } while (serverProjectionRefreshPending)
   } finally {
     serverProjectionRefreshInFlight = false
-  }
-}
-
-/**
- * Registers the service worker and initializes it.
- */
-async function registerSw() {
-  await navigator.serviceWorker.register('/sw.js', {
-    scope: '/',
-  })
-  await sleep(100)
-  const da = await fetch('/sw/init')
-  if (!(da.status >= 200 && da.status < 300)) {
-    location.reload()
   }
 }
 

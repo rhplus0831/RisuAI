@@ -12,13 +12,14 @@
 
 - Legacy client storage route selection for `/api/write`, `/api/read`, `/api/list`, and `/api/remove`.
 - OPFS and localforage app-runtime persistence selection through `AutoStorage`.
+- Standalone browser save-file bootstrap as a supported app startup path.
+- Startup-time service worker registration from the removed local save-file bootstrap path.
 
 ## Remaining Removal Targets
 
 - Cloudflare Pages-style functions in `public/functions`.
 - Public README language that presents non-Fastify platforms as supported runtimes.
 - Legacy proxy paths: `/proxy2` and `/proxy-stream-jobs`.
-- Standalone browser save-file bootstrap as a supported runtime.
 - Service worker share/import behavior when it implies standalone local support.
 - User-facing app strings that mention removed runtimes, flags, or endpoints.
 
