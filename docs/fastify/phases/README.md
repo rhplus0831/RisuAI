@@ -22,6 +22,11 @@ This directory is reserved for future phase docs if new work is opened.
 | 8 - Hypa V3 memory | 2026-05-25 | [`../phases-completed/phase-8-memory.md`](../phases-completed/phase-8-memory.md) |
 | 9 - Client thinning | 2026-05-26 | [`../phases-completed/phase-9-client-thinning.md`](../phases-completed/phase-9-client-thinning.md) |
 
+> **Note:** The Phase 9 *migration milestone* closed on the date above and stays
+> closed. Client thinning continues as a standing server-projection workstream —
+> the invariant, exit criteria, and open findings live in
+> [`../client-thinning/`](../client-thinning/), not in this migration index.
+
 ## Dependency Order
 
 ```text

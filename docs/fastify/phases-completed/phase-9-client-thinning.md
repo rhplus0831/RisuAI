@@ -2,6 +2,12 @@
 
 Date: 2026-05-27
 
+> **This document is archived history.** The Phase 9 client-thinning migration
+> milestone closed as recorded below. Client thinning continues as a standing
+> server-projection workstream with redefined exit criteria in
+> [`../client-thinning/`](../client-thinning/); consult that directory for the
+> current contract and open findings.
+
 Status: closed. Completed through **9-9e - Phase 9 docs closeout**.
 Fastify-served web client thinning closed for the original migration
 scope. Post-closeout direct-write audit slices closed through 9J and are
