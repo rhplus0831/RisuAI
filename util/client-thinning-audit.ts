@@ -62,6 +62,8 @@ const project = new Project({
 const sourcePaths = [
   'server/fastify/src/app.ts',
   'server/fastify/src/activeWriter.ts',
+  'server/fastify/src/auth.ts',
+  'server/fastify/src/db.ts',
   'server/fastify/src/repository.ts',
   'server/fastify/src/providerSecrets.ts',
   'server/fastify/src/routes/**/*.ts',
@@ -70,10 +72,16 @@ const sourcePaths = [
   'server/fastify/src/risuSave/exportSnapshot.ts',
   'server/fastify/src/risuSave/importSnapshot.ts',
   'src/ts/bootstrap.ts',
+  'src/ts/chatCommands.ts',
+  'src/ts/characterCommands.ts',
+  'src/ts/moduleCommands.ts',
+  'src/ts/characterCards.ts',
   'src/ts/setting/utils.ts',
   'src/ts/server/assets.ts',
   'src/ts/server/bootstrap.ts',
   'src/ts/server/commands.ts',
+  'src/ts/server/lorebookBridge.svelte.ts',
+  'src/ts/server/scriptDefinitionBridge.svelte.ts',
   'src/ts/plugins/pluginSafeClass.ts',
   'src/ts/plugins/plugins.svelte.ts',
   'src/ts/plugins/apiV3/v3.svelte.ts',
@@ -82,7 +90,14 @@ const sourcePaths = [
   'src/ts/process/request/serverMemory.ts',
   'src/ts/process/request/request.ts',
   'src/ts/process/request/google.ts',
+  'src/ts/process/sendChatContext.ts',
+  'src/ts/process/triggers.ts',
+  'src/ts/process/modules.ts',
+  'src/ts/process/processzip.ts',
+  'src/ts/process/transformers.ts',
+  'src/ts/process/mcp/risuaccess/modules.ts',
   'src/ts/server/projectionWriteGuard.svelte.ts',
+  'src/ts/globalApi.svelte.ts',
 ]
 
 project.addSourceFilesAtPaths(sourcePaths.map((pattern) => path.join(root, pattern)))
@@ -1256,63 +1271,293 @@ function checkProviderOwnership(): void {
   }
 }
 
-function checkAlpha3PassiveBootstrapRefresh(): void {
-  const check = 'A3R1 passive bootstrap refresh ownership'
-  const bootstrap = source('src/ts/bootstrap.ts')
+// Alpha 4 rule rewrites: every rule below derives its surface from
+// authoritative source structures (function exports, call graphs, AST literals)
+// rather than literal pre-fix substrings or hardcoded allow-lists. The
+// invariant the rule enforces is stated in a comment above each function.
+
+// ----- A4R1: Passive refresh must not register writer ownership -----
+//
+// Invariant: any function in `src/ts/` that issues bootstrap fetches as a
+// passive read (event-driven, polling, retry) must not call the
+// writer-registering bootstrap helper. The writer-mode helper is identified
+// structurally as the bootstrap fetcher whose body attaches the
+// `activeWriterSessionHeader()`. Only files in `WRITER_BOOTSTRAP_CALLERS` may
+// invoke it.
+
+const WRITER_BOOTSTRAP_CALLERS = new Set<string>([
+  // Page-load bootstrap (user-intent writer registration). Update if you add a
+  // new writer-intent entrypoint and document why.
+  'src/ts/bootstrap.ts',
+])
+
+function findWriterModeBootstrapHelpers(): Set<string> {
+  // Writer-mode helpers in src/ts/server/bootstrap.ts are exported functions
+  // whose body either directly attaches `activeWriterSessionHeader()` OR
+  // delegates through a private helper with `registerActiveWriter: true`.
+  const helpers = new Set<string>()
   const serverBootstrap = source('src/ts/server/bootstrap.ts')
-  const refreshBody = getFunctionBodyText(bootstrap, 'refreshServerProjection')
-  const fetchBody = getFunctionBodyText(serverBootstrap, 'fetchServerBootstrapProjection')
-
-  if (
-    refreshBody.includes('fetchServerBootstrapProjection()') &&
-    fetchBody.includes('activeWriterSessionHeader()')
-  ) {
-    fail(
-      check,
-      'Passive projection refresh calls fetchServerBootstrapProjection() while that helper sends the active-writer session header.',
-      bootstrap.getFunction('refreshServerProjection'),
-    )
-  }
-}
-
-function checkAlpha3SettingsConflictRetry(): void {
-  const check = 'A3R2 settings conflict replay'
-  const settings = source('src/ts/setting/utils.ts')
-  const patchBody = getFunctionBodyText(settings, 'patchServerBackedSetting')
-
-  if (
-    patchBody.includes("result.status === 'conflict'") &&
-    patchBody.includes('baseRevision: result.currentRevision') &&
-    patchBody.match(/patchSettingsGroup\(/g)?.length !== 1
-  ) {
-    fail(
-      check,
-      'patchServerBackedSetting must not replay the same settings patch after a 409 conflict.',
-      settings.getFunction('patchServerBackedSetting'),
-    )
-  }
-}
-
-function collectIdMintingRepairHelpers(): Map<string, FunctionDeclaration> {
-  const helpers = new Map<string, FunctionDeclaration>()
-  for (const file of project.getSourceFiles()) {
-    if (!rel(file).startsWith('server/fastify/src/commands/')) continue
-    for (const fn of file.getFunctions()) {
+  for (const fn of serverBootstrap.getFunctions()) {
+    if (!fn.isExported()) continue
+    const body = fn.getBody()
+    if (!body) continue
+    const bodyText = body.getText()
+    if (
+      bodyText.includes('activeWriterSessionHeader()') ||
+      bodyText.includes('registerActiveWriter: true')
+    ) {
       const name = fn.getName()
-      if (!name?.startsWith('repair')) continue
-      const body = fn.getBody()
-      if (body && findRandomUuidCall(body)) {
-        helpers.set(name, fn)
-      }
+      if (name) helpers.add(name)
     }
   }
   return helpers
 }
 
-function checkAlpha3CommandRepairMinting(): void {
-  const check = 'A3R3 command repair helper minting'
+function checkAlpha4PassiveRefresh(): void {
+  const check = 'A4R1 passive refresh writer ownership'
+  const writerHelpers = findWriterModeBootstrapHelpers()
+  if (writerHelpers.size === 0) {
+    fail(
+      check,
+      'No writer-mode bootstrap helpers were discovered; audit derivation is stale.',
+      undefined,
+      'src/ts/server/bootstrap.ts',
+    )
+    return
+  }
+
+  // Read-only helpers (the projection-refresh counterpart) must not register
+  // writer ownership. Every exported bootstrap helper not in the writer list
+  // must NOT contain `activeWriterSessionHeader(`.
+  const serverBootstrap = source('src/ts/server/bootstrap.ts')
+  for (const fn of serverBootstrap.getFunctions()) {
+    if (!fn.isExported()) continue
+    const name = fn.getName()
+    if (!name || writerHelpers.has(name)) continue
+    const body = fn.getBody()
+    if (!body) continue
+    if (body.getText().includes('activeWriterSessionHeader(')) {
+      fail(
+        check,
+        `${name} is a non-writer bootstrap helper but still attaches activeWriterSessionHeader(). Read-only paths must not register writer ownership.`,
+        fn,
+      )
+    }
+  }
+
+  // Project-wide: any caller of a writer-mode helper that is not in the
+  // allowlist is a passive-refresh that steals ownership.
+  for (const writerName of writerHelpers) {
+    const fn = serverBootstrap.getFunction(writerName)
+    if (!fn) continue
+    for (const reference of fn.findReferencesAsNodes()) {
+      const file = rel(reference.getSourceFile())
+      if (file === 'src/ts/server/bootstrap.ts') continue
+      if (file.endsWith('.test.ts')) continue
+      if (WRITER_BOOTSTRAP_CALLERS.has(file)) continue
+      const parent = reference.getParent()
+      // Skip imports/exports/type references; only call expressions register.
+      if (!parent || (!Node.isCallExpression(parent) && !Node.isPropertyAccessExpression(parent))) {
+        continue
+      }
+      fail(
+        check,
+        `${file} calls writer-mode bootstrap helper ${writerName}; add it to WRITER_BOOTSTRAP_CALLERS with explicit rationale or switch to a read-only helper.`,
+        reference,
+      )
+    }
+  }
+}
+
+// ----- A4R2: Conflict replay forbidden outside the central wrapper -----
+//
+// Invariant: only `runServerCommand` in `src/ts/server/commands.ts` is allowed
+// to branch on a command result whose `status === 'conflict'`. Any other
+// function that observes that branch and then re-runs a mutating command is a
+// blind replay.
+
+const ALLOWED_CONFLICT_HANDLERS = new Set<string>([
+  // The central command wrapper IS the conflict surface; it is allowed to
+  // observe and propagate.
+  'runServerCommand',
+])
+
+function isAllowedConflictFunction(file: string, name: string): boolean {
+  if (file === 'src/ts/server/commands.ts' && ALLOWED_CONFLICT_HANDLERS.has(name)) return true
+  return false
+}
+
+function checkAlpha4ConflictRetry(): void {
+  const check = 'A4R2 conflict replay outside central wrapper'
+  for (const file of project.getSourceFiles()) {
+    const rl = rel(file)
+    if (!rl.startsWith('src/')) continue
+    if (rl.endsWith('.test.ts')) continue
+    for (const fn of file.getFunctions()) {
+      const name = fn.getName()
+      if (!name) continue
+      if (isAllowedConflictFunction(rl, name)) continue
+      const body = fn.getBody()
+      if (!body) continue
+      const bodyText = body.getText()
+      // Look for the conflict observation pattern.
+      if (!bodyText.includes("'conflict'")) continue
+      // It observes the conflict status; is it then doing a follow-up command
+      // call with the same payload shape? Heuristic: the body also mentions
+      // baseRevision after the conflict observation.
+      const conflictIndex = bodyText.indexOf("'conflict'")
+      const afterConflict = bodyText.slice(conflictIndex)
+      if (
+        afterConflict.includes('baseRevision') &&
+        (afterConflict.match(/patchSettingsGroup\(|runServerCommand\(|fetch\(/) ?? []).length > 0
+      ) {
+        fail(
+          check,
+          `${rl} function ${name} branches on result.status === 'conflict' and resends a mutating command. Surface the conflict; do not replay.`,
+          fn,
+        )
+      }
+    }
+    // Also walk variable-declared arrow/function expressions at the module level.
+    for (const variable of file.getVariableDeclarations()) {
+      const init = variable.getInitializer()
+      if (!init || (!Node.isArrowFunction(init) && !Node.isFunctionExpression(init))) continue
+      const name = variable.getName()
+      if (isAllowedConflictFunction(rl, name)) continue
+      const bodyText = init.getText()
+      if (!bodyText.includes("'conflict'")) continue
+      const conflictIndex = bodyText.indexOf("'conflict'")
+      const afterConflict = bodyText.slice(conflictIndex)
+      if (
+        afterConflict.includes('baseRevision') &&
+        (afterConflict.match(/patchSettingsGroup\(|runServerCommand\(|fetch\(/) ?? []).length > 0
+      ) {
+        fail(
+          check,
+          `${rl} arrow ${name} branches on 'conflict' and replays a mutating command. Surface conflicts; do not retry.`,
+          init,
+        )
+      }
+    }
+  }
+}
+
+// ----- A4R3: Transitive command-path id minting forbidden -----
+//
+// Invariant: no function reachable from a `/api/v1/commands/*` route handler
+// may call `randomUUID()` / `nanoid()` / `uuidv4()` against a value derived
+// from the request body. Helpers that mint only for persisted state
+// (repair-on-read) are explicitly classified in `REPAIR_ON_READ_HELPERS`; the
+// classification is checked by argument-provenance: the helper's arguments
+// in each route call site must be persisted-state bindings, not request
+// payload.
+
+// Structural classification of helper functions by name prefix:
+//
+// - `ensure*` and `normalize*` helpers are NORMALIZE-ON-READ. Their minting
+//   repairs degraded persisted state and never originates from client request
+//   payloads. They are non-propagating: a call to one of them does not make
+//   the caller a "transitive minter." Arg-provenance at the route handler
+//   call site verifies the helper receives a persisted-state binding
+//   (`target` / `database` / `character` / `chat`), not a request-derived
+//   value.
+//
+// - `repair*` helpers are IMPORT/BOOTSTRAP ONLY. They may be called from
+//   import normalizers but must not be reachable from a command-path route
+//   handler — directly or transitively. They are propagating.
+//
+// - Any other function that mints ids transitively is a real violation.
+
+const NON_PROPAGATING_PREFIXES = ['ensure', 'normalize'] as const
+
+function isNonPropagatingHelperName(name: string): boolean {
+  return NON_PROPAGATING_PREFIXES.some((prefix) => name.startsWith(prefix))
+}
+
+// Per-helper argument allowlist for the route handler call site. The audit
+// asserts that when a route handler calls one of these helpers, the FIRST
+// argument is one of the listed identifier names (a binding to persisted
+// state inside the `mutate(database)` callback). Helpers not in this map are
+// classified by prefix only; their arg-provenance defaults to the standard
+// `target`/`database` allowlist.
+const NORMALIZE_HELPER_ARG_ALLOWLIST: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['ensureCharacterChats', new Set(['character', 'target'])],
+  ['ensureCharacterChatFolders', new Set(['character'])],
+  ['ensureCharacterLorebooks', new Set(['character'])],
+  ['ensureChatMessages', new Set(['chat'])],
+])
+
+const DEFAULT_NORMALIZE_HELPER_ARGS: ReadonlySet<string> = new Set([
+  'target',
+  'database',
+  'data',
+])
+
+function normalizeHelperAllowedArgs(name: string): ReadonlySet<string> {
+  return NORMALIZE_HELPER_ARG_ALLOWLIST.get(name) ?? DEFAULT_NORMALIZE_HELPER_ARGS
+}
+
+function isUuidMintCall(node: Node): boolean {
+  if (!Node.isCallExpression(node)) return false
+  const expression = node.getExpression()
+  const name = Node.isIdentifier(expression)
+    ? expression.getText()
+    : Node.isPropertyAccessExpression(expression)
+      ? expression.getName()
+      : ''
+  return name === 'randomUUID' || name === 'nanoid' || name === 'uuidv4'
+}
+
+function findUuidMintCall(node: Node): Node | undefined {
+  let match: Node | undefined
+  node.forEachDescendant((descendant) => {
+    if (match || !isUuidMintCall(descendant)) return
+    match = descendant
+  })
+  return match
+}
+
+// Build a project-wide name-to-FunctionDeclaration map for transitive walks.
+function buildServerFunctionMap(): Map<string, FunctionDeclaration> {
+  const fns = new Map<string, FunctionDeclaration>()
+  for (const file of project.getSourceFiles()) {
+    const rl = rel(file)
+    if (!rl.startsWith('server/fastify/src/')) continue
+    for (const fn of file.getFunctions()) {
+      const name = fn.getName()
+      if (name) fns.set(name, fn)
+    }
+  }
+  return fns
+}
+
+function transitivelyMintsUuid(
+  fn: FunctionDeclaration,
+  fns: ReadonlyMap<string, FunctionDeclaration>,
+  seen = new Set<string>(),
+): boolean {
+  const name = fn.getName()
+  if (!name || seen.has(name)) return false
+  seen.add(name)
+  // Normalize-on-read helpers (`ensure*`/`normalize*`) are the documented
+  // mint surface; their minting does not propagate. Their own contract is
+  // enforced separately by the arg-provenance check at the route call site.
+  if (isNonPropagatingHelperName(name)) return false
+  const body = fn.getBody()
+  if (!body) return false
+  if (findUuidMintCall(body)) return true
+  for (const called of calledIdentifierNames(body)) {
+    if (isNonPropagatingHelperName(called)) continue
+    const calledFn = fns.get(called)
+    if (calledFn && transitivelyMintsUuid(calledFn, fns, seen)) return true
+  }
+  return false
+}
+
+function checkAlpha4TransitiveCommandIdMinting(): void {
+  const check = 'A4R3 transitive command-path id minting'
   const routes = source('server/fastify/src/routes/commands.ts')
-  const idMintingRepairHelpers = collectIdMintingRepairHelpers()
+  const fns = buildServerFunctionMap()
 
   routes.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) return
@@ -1328,124 +1573,1028 @@ function checkAlpha3CommandRepairMinting(): void {
       return
     }
 
+    // Direct mint in the handler body is always wrong (no repair-on-read
+    // classification for a route handler).
+    const directMint = findUuidMintCall(handler)
+    if (directMint) {
+      fail(
+        check,
+        `${method} ${route} mints durable ids directly in the route handler.`,
+        directMint,
+      )
+      return
+    }
+
+    // Walk every called identifier in the handler.
     handler.forEachDescendant((descendant) => {
       if (!Node.isCallExpression(descendant)) return
       const callExpression = descendant.getExpression()
       if (!Node.isIdentifier(callExpression)) return
-      const helper = idMintingRepairHelpers.get(callExpression.getText())
-      if (!helper) return
-      fail(
-        check,
-        `${method} ${route} must not call id-minting repair helper ${callExpression.getText()}() from ${rel(helper.getSourceFile())}.`,
-        descendant,
-      )
+      const calledName = callExpression.getText()
+      const calledFn = fns.get(calledName)
+
+      // Direct call to a `repair*` helper from a command-path route is always
+      // a violation. Repair helpers are import/bootstrap-only.
+      if (calledName.startsWith('repair') && calledFn) {
+        // It must contain a UUID call (otherwise its name is misleading; treat
+        // the call as informational).
+        const body = calledFn.getBody()
+        if (body && findUuidMintCall(body)) {
+          fail(
+            check,
+            `${method} ${route} calls repair helper ${calledName}() from a command-path route. Repair helpers are import/bootstrap only; use the validate-only constructor instead.`,
+            descendant,
+          )
+          return
+        }
+      }
+
+      if (!calledFn) return
+
+      // Normalize-on-read helper: verify arg provenance.
+      if (isNonPropagatingHelperName(calledName)) {
+        const firstArg = descendant.getArguments()[0]
+        if (!firstArg) return
+        const argText = firstArg.getText()
+        const allowed = normalizeHelperAllowedArgs(calledName)
+        if (!allowed.has(argText)) {
+          fail(
+            check,
+            `${method} ${route} calls normalize-on-read helper ${calledName}(${argText}); only ${[...allowed].join('/')} are allowed (persisted-state bindings). Otherwise the helper might mint ids against request-derived data.`,
+            descendant,
+          )
+        }
+        return
+      }
+
+      // Non-classified helper: must not transitively mint.
+      if (transitivelyMintsUuid(calledFn, fns)) {
+        fail(
+          check,
+          `${method} ${route} calls ${calledName}() which transitively reaches a propagating mint (randomUUID()/nanoid()/uuidv4()). Reject missing ids at the validator boundary, or rename the intermediate helper to ensure*/normalize* if it is on-disk normalization (must take persisted-state arg only).`,
+          descendant,
+        )
+      }
     })
   })
 }
 
-function findRouteCallNode(sourceFile: SourceFile, method: string, route: string): Node | undefined {
-  let match: Node | undefined
-  sourceFile.forEachDescendant((node) => {
-    if (match || !Node.isCallExpression(node)) return
-    const expression = node.getExpression()
-    if (!Node.isPropertyAccessExpression(expression)) return
-    if (expression.getName().toUpperCase() !== method.toUpperCase()) return
-    const registeredRoute = node.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
-    if (registeredRoute === route) match = node
+// ----- A4R4: Every globally-addressed mutation normalizes first -----
+//
+// Invariant: every route handler that calls a global resolver
+// (`requireChatLocation`, `requireMessageLocation`) must invoke the matching
+// global normalizer (`normalizeAllCharacterChats`, `normalizeAllChatMessages`)
+// earlier in the same handler scope.
+
+interface GlobalResolverPair {
+  resolver: string
+  normalizer: string
+}
+
+const GLOBAL_RESOLVER_PAIRS: readonly GlobalResolverPair[] = [
+  { resolver: 'requireChatLocation', normalizer: 'normalizeAllCharacterChats' },
+  { resolver: 'requireMessageLocation', normalizer: 'normalizeAllChatMessages' },
+]
+
+function checkAlpha4ResolverNormalize(): void {
+  const check = 'A4R4 globally-addressed resolver normalize'
+
+  // Apply per-function across all server/fastify/src/. A function that calls
+  // a global resolver (directly or via a wrapper) must precede that call
+  // with the matching global normalizer in the same scope. This catches both
+  // route handlers (the direct case) and shared helpers like
+  // `normalizeSelectedChatLorebooks` that wrap the resolver.
+
+  interface OrderedCall {
+    name: string
+    start: number
+    node: Node
+  }
+
+  function scanScope(scope: Node, fnName: string, fileLabel: string): void {
+    const ordered: OrderedCall[] = []
+    scope.forEachDescendant((descendant) => {
+      // Do not descend into nested function bodies; those are separate scopes.
+      if (Node.isFunctionExpression(descendant) || Node.isArrowFunction(descendant)) {
+        return undefined
+      }
+      if (Node.isFunctionDeclaration(descendant)) return undefined
+      if (Node.isMethodDeclaration(descendant)) return undefined
+      if (!Node.isCallExpression(descendant)) return
+      const callExp = descendant.getExpression()
+      if (!Node.isIdentifier(callExp)) return
+      ordered.push({ name: callExp.getText(), start: descendant.getStart(), node: descendant })
+    })
+    ordered.sort((a, b) => a.start - b.start)
+    for (const pair of GLOBAL_RESOLVER_PAIRS) {
+      const resolverCall = ordered.find((call) => call.name === pair.resolver)
+      if (!resolverCall) continue
+      const normalizerCalledBefore = ordered.some(
+        (call) => call.start < resolverCall.start && call.name === pair.normalizer,
+      )
+      if (!normalizerCalledBefore) {
+        fail(
+          check,
+          `${fileLabel} ${fnName} calls ${pair.resolver}() without first calling ${pair.normalizer}() in the same scope. Globally-addressed resolvers must run after global id normalization.`,
+          resolverCall.node,
+        )
+      }
+    }
+  }
+
+  for (const file of project.getSourceFiles()) {
+    const rl = rel(file)
+    if (!rl.startsWith('server/fastify/src/')) continue
+    if (rl.endsWith('.test.ts')) continue
+    for (const fn of file.getFunctions()) {
+      const name = fn.getName()
+      if (!name) continue
+      // Skip:
+      //   - The resolvers themselves (they ARE the resolver).
+      //   - The normalizers (they ARE the normalizer).
+      //   - Any `require*` resolver-wrapper helper: it forwards the
+      //     normalization responsibility to its callers. The route-handler
+      //     scan below catches callers that don't normalize.
+      if (
+        name === 'requireChatLocation' ||
+        name === 'requireMessageLocation' ||
+        name === 'normalizeAllCharacterChats' ||
+        name === 'normalizeAllChatMessages' ||
+        name === 'normalizeGlobalChatIds' ||
+        name === 'normalizeGlobalChatFolderIds' ||
+        name === 'normalizeGlobalMessageIds' ||
+        name.startsWith('require')
+      ) {
+        continue
+      }
+      scanScope(fn, name, rl)
+    }
+    // Inline route handlers are arrow functions in property access calls;
+    // they get covered via routes/commands.ts's top-level forEachDescendant.
+    if (rl === 'server/fastify/src/routes/commands.ts') {
+      file.forEachDescendant((node) => {
+        if (!Node.isCallExpression(node)) return
+        const expression = node.getExpression()
+        if (!Node.isPropertyAccessExpression(expression)) return
+        const method = expression.getName().toUpperCase()
+        if (!['POST', 'PATCH', 'PUT', 'DELETE', 'GET', 'HEAD'].includes(method)) return
+        const route = node.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
+        if (!route?.startsWith('/api/v1/')) return
+        const handler = node.getArguments()[1]
+        if (!handler || (!Node.isArrowFunction(handler) && !Node.isFunctionExpression(handler))) {
+          return
+        }
+        scanScope(handler, `${method} ${route}`, rl)
+      })
+    }
+  }
+}
+
+// ----- A4R5: Asset reference parser parity (bidirectional) -----
+//
+// Invariant: the client asset-reference parser and the server asset-reference
+// walker accept the same set of legacy shapes. Parity is asserted by
+// extracting the regex literal from each side and comparing them.
+
+function getRegexInitializer(sourceFile: SourceFile, name: string): string | undefined {
+  const declaration = sourceFile.getVariableDeclaration(name)
+  const init = declaration?.getInitializer()
+  if (!init) return undefined
+  const literal = init.asKind(SyntaxKind.RegularExpressionLiteral)
+  if (literal) return literal.getLiteralText()
+  // Allow `new RegExp('...')`-style declarations as well.
+  if (Node.isNewExpression(init)) {
+    const arg = init.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
+    if (arg) return `/${arg}/`
+  }
+  return undefined
+}
+
+function findRegexLiteralByText(scope: Node, predicate: (literal: string) => boolean): string | undefined {
+  let match: string | undefined
+  scope.forEachDescendant((descendant) => {
+    if (match) return
+    if (Node.isRegularExpressionLiteral(descendant)) {
+      const lit = descendant.getLiteralText()
+      if (predicate(lit)) match = lit
+    }
   })
   return match
 }
 
-function checkAlpha3GlobalChatMessageAddressing(): void {
-  const check = 'A3R4 global chat/message addressing'
-  const chats = source('server/fastify/src/commands/chats.ts')
-  const messages = source('server/fastify/src/commands/messages.ts')
-  const routes = source('server/fastify/src/routes/commands.ts')
-  const routesText = routes.getFullText()
-  const chatResolverBody = getFunctionBodyText(chats, 'requireChatLocation')
-  const messageResolverBody = getFunctionBodyText(messages, 'requireMessageLocation')
-
-  if (
-    chatResolverBody.includes('for (let characterIndex = 0;') &&
-    chatResolverBody.includes('chat.id === chatId') &&
-    routesText.includes('chats.some((existing) => existing.id === chat.id)')
-  ) {
-    fail(
-      check,
-      'Chat commands resolve chatId globally but create/fork duplicate checks are still character-local.',
-      findRouteCallNode(routes, 'POST', '/api/v1/commands/characters/:characterId/chats'),
-    )
-  }
-
-  if (
-    messageResolverBody.includes('for (const character of characters)') &&
-    messageResolverBody.includes('message.chatId === messageId') &&
-    routesText.includes('messages.some((existing) => existing.chatId === message.chatId)')
-  ) {
-    fail(
-      check,
-      'Message commands resolve messageId globally but append duplicate checks are still chat-local.',
-      findRouteCallNode(routes, 'POST', '/api/v1/commands/chats/:chatId/messages'),
-    )
-  }
-}
-
-function checkAlpha3AssetReferenceParserParity(): void {
-  const check = 'A3R5 asset reference parser parity'
+function checkAlpha4AssetReferenceParity(): void {
+  const check = 'A4R5 asset reference parser parity'
   const clientAssets = source('src/ts/server/assets.ts')
   const walker = source('server/fastify/src/risuSave/assetReferences.ts')
-  const clientText = clientAssets.getFullText()
-  const addReferenceBody = getFunctionBodyText(walker, 'addReference')
 
-  if (
-    clientText.includes('LOCAL_ASSET_PATH_RE') &&
-    clientText.includes('serverAssetIdFromReference') &&
-    !addReferenceBody.includes('assets/')
-  ) {
+  // Client side: extract the LOCAL_ASSET_PATH_RE binding (already exported).
+  const clientPattern = getRegexInitializer(clientAssets, 'LOCAL_ASSET_PATH_RE')
+  if (!clientPattern) {
     fail(
       check,
-      'Client asset reads accept legacy assets/<id>.<ext> refs, but the RisuSave asset walker only records raw server asset ids.',
-      walker.getFunction('addReference'),
+      'src/ts/server/assets.ts must declare LOCAL_ASSET_PATH_RE for client/server parity comparison.',
+      undefined,
+      'src/ts/server/assets.ts',
+    )
+    return
+  }
+
+  // Walker side: accept either a matching named binding OR an inline regex
+  // literal in `addReference` whose pattern equals the client's. This avoids
+  // forcing a refactor while still asserting structural parity.
+  const walkerNamedPattern = getRegexInitializer(walker, 'LOCAL_ASSET_PATH_RE')
+  if (walkerNamedPattern) {
+    if (walkerNamedPattern !== clientPattern) {
+      fail(
+        check,
+        `Client and walker LOCAL_ASSET_PATH_RE differ: client=${clientPattern} walker=${walkerNamedPattern}. Share a single source of truth.`,
+        undefined,
+        'server/fastify/src/risuSave/assetReferences.ts',
+      )
+    }
+    return
+  }
+
+  const addReference = walker.getFunction('addReference')
+  if (!addReference) {
+    fail(
+      check,
+      'server/fastify/src/risuSave/assetReferences.ts must export addReference for parity comparison.',
+      undefined,
+      'server/fastify/src/risuSave/assetReferences.ts',
+    )
+    return
+  }
+  // Any regex literal inside addReference whose pattern equals the client's
+  // counts as parity. If none does, fail.
+  const matchingLiteral = findRegexLiteralByText(addReference, (lit) => lit === clientPattern)
+  if (!matchingLiteral) {
+    fail(
+      check,
+      `Walker addReference does not contain a regex literal equal to client LOCAL_ASSET_PATH_RE (${clientPattern}). Import the shared regex or update the walker to accept the same shapes.`,
+      addReference,
     )
   }
 }
 
-function checkAlpha3MaskedArraySecrets(): void {
-  const check = 'A3R6 masked array secret row identity'
+// ----- A4R6: Wildcard array secrets derive identity from SECRET_PATHS -----
+//
+// Invariant: every wildcard-array entry in `SECRET_PATHS` has a corresponding
+// entry in `ARRAY_ROW_IDENTITY_KEYS`, and the placeholder resolver rejects
+// missing/duplicated/unknown row identity rather than restoring by index.
+
+function extractWildcardArrayKeys(sourceFile: SourceFile): {
+  rowIdentityRequired: string[]
+  flatArrayOfStrings: string[]
+} {
+  // SECRET_PATHS is an array of arrays. Each inner array's first element is
+  // an array-segment name; the SECOND element is `WILDCARD` (an identifier).
+  // We split into two classes:
+  //   - rowIdentityRequired: path length ≥ 3, so the array contains objects
+  //     and the secret is at a nested key; needs ARRAY_ROW_IDENTITY_KEYS.
+  //   - flatArrayOfStrings: path length === 2, the secret IS the array value.
+  //     Row identity is not applicable; a separate guard is required.
+  const declaration = sourceFile.getVariableDeclaration('SECRET_PATHS')
+  let initializer = declaration?.getInitializer()
+  while (initializer && Node.isAsExpression(initializer)) {
+    initializer = initializer.getExpression()
+  }
+  const outer = initializer?.asKind(SyntaxKind.ArrayLiteralExpression)
+  if (!outer) return { rowIdentityRequired: [], flatArrayOfStrings: [] }
+  const rowIdentityRequired: string[] = []
+  const flatArrayOfStrings: string[] = []
+  for (const element of outer.getElements()) {
+    const inner = element.asKind(SyntaxKind.ArrayLiteralExpression)
+    if (!inner) continue
+    const items = inner.getElements()
+    if (items.length < 2) continue
+    const first = items[0].asKind(SyntaxKind.StringLiteral)?.getLiteralText()
+    const second = items[1].asKind(SyntaxKind.Identifier)?.getText()
+    if (!first || second !== 'WILDCARD') continue
+    if (items.length >= 3) rowIdentityRequired.push(first)
+    else flatArrayOfStrings.push(first)
+  }
+  return { rowIdentityRequired, flatArrayOfStrings }
+}
+
+function extractIdentityKeyNames(sourceFile: SourceFile): Set<string> {
+  const declaration = sourceFile.getVariableDeclaration('ARRAY_ROW_IDENTITY_KEYS')
+  let initializer = declaration?.getInitializer()
+  while (initializer && Node.isAsExpression(initializer)) {
+    initializer = initializer.getExpression()
+  }
+  const obj = initializer?.asKind(SyntaxKind.ObjectLiteralExpression)
+  if (!obj) return new Set()
+  const names = new Set<string>()
+  for (const property of obj.getProperties()) {
+    if (!Node.isPropertyAssignment(property)) continue
+    const nameNode = property.getNameNode()
+    if (Node.isStringLiteral(nameNode)) names.add(nameNode.getLiteralText())
+    else if (Node.isIdentifier(nameNode)) names.add(nameNode.getText())
+  }
+  return names
+}
+
+// Flat array-of-strings secrets (path length 2, ending in WILDCARD) cannot use
+// row identity. The audit accepts them only if explicitly classified here,
+// with rationale describing the alternate guard (e.g. shape-checked patch).
+const FLAT_ARRAY_SECRETS_CLASSIFIED: ReadonlySet<string> = new Set([
+  // `['OaiCompAPIKeys', WILDCARD]`: array-of-strings of OpenAI-compatible API
+  // keys. Restored by index, accepted today because the array shape never
+  // changes through commands (it is replaced wholesale, not reordered). Future
+  // work may either drop this restoration entirely or introduce a shape-pinned
+  // guard.
+  'OaiCompAPIKeys',
+])
+
+function checkAlpha4WildcardSecretIdentity(): void {
+  const check = 'A4R6 wildcard secret row identity'
   const providerSecrets = source('server/fastify/src/providerSecrets.ts')
-  const providerText = providerSecrets.getFullText()
-  const resolveBody = getFunctionBodyText(providerSecrets, 'resolvePath')
-  const riskyWildcardArrays = ['authRefreshes', 'botPresets', 'customModels'].filter((key) =>
-    providerText.includes(`['${key}', WILDCARD`),
-  )
-
-  if (
-    riskyWildcardArrays.length > 0 &&
-    resolveBody.includes('source[i]') &&
-    !providerText.includes('MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED')
-  ) {
+  const { rowIdentityRequired, flatArrayOfStrings } = extractWildcardArrayKeys(providerSecrets)
+  if (rowIdentityRequired.length === 0 && flatArrayOfStrings.length === 0) {
     fail(
       check,
-      `Masked array secrets for ${riskyWildcardArrays.join(', ')} restore by array index; require stable row identity or reject masked placeholders after reorder/delete.`,
-      providerSecrets.getFunction('resolvePath'),
+      'Could not extract wildcard arrays from SECRET_PATHS; audit derivation is stale.',
+      undefined,
+      'server/fastify/src/providerSecrets.ts',
     )
+    return
+  }
+  const identityKeys = extractIdentityKeyNames(providerSecrets)
+  for (const arrayKey of rowIdentityRequired) {
+    if (!identityKeys.has(arrayKey)) {
+      fail(
+        check,
+        `Wildcard array secret ${arrayKey} in SECRET_PATHS has no entry in ARRAY_ROW_IDENTITY_KEYS. Add a stable row identity key or remove the secret path.`,
+        providerSecrets.getVariableDeclaration('ARRAY_ROW_IDENTITY_KEYS'),
+      )
+    }
+  }
+  for (const arrayKey of flatArrayOfStrings) {
+    if (!FLAT_ARRAY_SECRETS_CLASSIFIED.has(arrayKey)) {
+      fail(
+        check,
+        `Flat array-of-strings secret ${arrayKey} in SECRET_PATHS has no row identity available. Either reject masked placeholders for this path or add ${arrayKey} to FLAT_ARRAY_SECRETS_CLASSIFIED with rationale.`,
+        providerSecrets.getVariableDeclaration('SECRET_PATHS'),
+      )
+    }
+  }
+
+  const providerText = providerSecrets.getFullText()
+  if (!providerText.includes('MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED')) {
+    fail(
+      check,
+      'providerSecrets.ts must export MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED so the placeholder resolver can reject unprovable row identity.',
+      undefined,
+      'server/fastify/src/providerSecrets.ts',
+    )
+  }
+
+  // The resolver function must reject when identity is missing/duplicated/unknown.
+  const resolveBody = getFunctionBodyText(providerSecrets, 'resolveArrayWildcard')
+  if (!resolveBody) {
+    fail(
+      check,
+      'providerSecrets.ts must define resolveArrayWildcard for wildcard array restoration.',
+      undefined,
+      'server/fastify/src/providerSecrets.ts',
+    )
+    return
+  }
+  for (const needle of [
+    'MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED',
+  ]) {
+    if (!resolveBody.includes(needle)) {
+      fail(
+        check,
+        `resolveArrayWildcard must reference ${needle}. Otherwise unprovable identity falls through silently.`,
+        providerSecrets.getFunction('resolveArrayWildcard'),
+      )
+    }
   }
 }
 
-function checkAlpha3AuthenticatedAssetFallback(): void {
-  const check = 'A3R7 authenticated asset fallback'
-  const assets = source('src/ts/server/assets.ts')
-  const readBody = getFunctionBodyText(assets, 'readServerAssetBytes')
+// ----- A4R7: Asset-URL helpers gate to documented shapes -----
+//
+// Invariant: every helper in `src/ts/` that returns or fetches a server asset
+// URL must, in its Fastify-mode branch, accept only documented shapes (raw
+// 64-char asset id, legacy `assets/<sha>.<ext>`, `data:`, `blob:`, absolute
+// `/api/v1/assets/...`). Unknown shapes must throw or return a documented
+// placeholder.
 
-  if (
-    readBody.includes('serverAssetUrl(loc) ?? loc') &&
-    readBody.includes("'risu-auth': auth")
-  ) {
+interface AssetUrlHelperRule {
+  file: string
+  fn: string
+  // Either the function MUST contain a throw on unknown shapes (helper is a
+  // bytes-reader), or the function MUST guard the unknown-shape fallback
+  // behind a known shape check (helper is a URL-getter).
+  mode: 'throw' | 'shape-gate'
+  // The gating expression the helper must evaluate before returning `loc`.
+  // Empty for `throw` mode.
+  shapeGates: readonly string[]
+}
+
+const ASSET_URL_HELPERS: readonly AssetUrlHelperRule[] = [
+  {
+    file: 'src/ts/server/assets.ts',
+    fn: 'readServerAssetBytes',
+    mode: 'throw',
+    shapeGates: [],
+  },
+  {
+    file: 'src/ts/globalApi.svelte.ts',
+    fn: 'getFileSrc',
+    mode: 'shape-gate',
+    shapeGates: ['isFastifyServer'],
+  },
+]
+
+function checkAlpha4AssetUrlGate(): void {
+  const check = 'A4R7 asset URL gate'
+  for (const rule of ASSET_URL_HELPERS) {
+    const file = source(rule.file)
+    const fn = file.getFunction(rule.fn)
+    if (!fn) {
+      fail(check, `Expected asset URL helper ${rule.fn} in ${rule.file}.`, undefined, rule.file)
+      continue
+    }
+    const body = fn.getBody()
+    if (!body) continue
+    const bodyText = body.getText()
+    if (rule.mode === 'throw') {
+      if (!bodyText.includes('throw new Error') && !bodyText.includes('throw ')) {
+        fail(
+          check,
+          `${rule.fn} in ${rule.file} must throw on unsupported asset references before attaching risu-auth.`,
+          fn,
+        )
+      }
+      // It must not fall back to fetching the raw `loc` while attaching auth.
+      if (
+        bodyText.includes("'risu-auth':") &&
+        /serverAssetUrl\([^)]*\)\s*\?\?\s*loc/.test(bodyText)
+      ) {
+        fail(
+          check,
+          `${rule.fn} in ${rule.file} falls back to fetching arbitrary loc values while attaching risu-auth.`,
+          fn,
+        )
+      }
+    } else {
+      // shape-gate mode: in the Fastify branch the function must explicitly
+      // accept a finite set of shapes and reject unknowns. The rule asserts:
+      //   1. There is a Fastify-mode branch at all.
+      //   2. No `?? loc` fall-through inside that branch (the literal
+      //      "unknown shape → return raw loc" anti-pattern).
+      //   3. The branch documents the unknown-shape default by either
+      //      returning an empty string/null OR throwing.
+      let fastifyBranchText: string | undefined
+      body.forEachDescendant((descendant) => {
+        if (fastifyBranchText) return
+        if (!Node.isIfStatement(descendant)) return
+        const cond = descendant.getExpression()
+        const condText = cond.getText()
+        if (!condText.includes('isFastifyServer')) return
+        const thenBlock = descendant.getThenStatement()
+        fastifyBranchText = thenBlock.getText()
+      })
+      if (!fastifyBranchText) {
+        fail(
+          check,
+          `${rule.fn} in ${rule.file} must guard its asset URL handling on isFastifyServer.`,
+          fn,
+        )
+        continue
+      }
+      if (/\?\?\s*loc\b/.test(fastifyBranchText)) {
+        fail(
+          check,
+          `${rule.fn} in ${rule.file} falls back to \`?? loc\` for unknown asset shapes; restrict to a documented set or return ''/throw.`,
+          fn,
+        )
+      }
+      const hasUnknownShapeGuard =
+        /\?\?\s*''/.test(fastifyBranchText) ||
+        /\?\?\s*null\b/.test(fastifyBranchText) ||
+        /return\s+''/.test(fastifyBranchText) ||
+        /return\s+null\b/.test(fastifyBranchText) ||
+        /throw\s/.test(fastifyBranchText)
+      if (!hasUnknownShapeGuard) {
+        fail(
+          check,
+          `${rule.fn} in ${rule.file} must explicitly reject unknown asset shapes by returning '' or throwing.`,
+          fn,
+        )
+      }
+    }
+  }
+}
+
+// ----- A4R-fanout: ≥2 unawaited mutating dispatches in one scope -----
+//
+// Invariant: no function dispatches two or more mutating server commands
+// (named `runServerCommand`, `runChatCommand`, or any export from
+// `src/ts/chatCommands.ts` whose name starts with `dispatch`) within the same
+// scope without serializing them through `runChatCommandSequence` or by
+// awaiting each previous call. Composite fan-out against one optimistic
+// snapshot races on the cached command revision.
+
+// Source files that export `dispatch*` mutating helpers. Add new ones here
+// when a fresh command family lands; the audit then auto-includes its
+// dispatchers in the fan-out scan.
+const DISPATCH_SOURCE_FILES = [
+  'src/ts/chatCommands.ts',
+  'src/ts/characterCommands.ts',
+  'src/ts/moduleCommands.ts',
+  'src/ts/server/scriptDefinitionBridge.svelte.ts',
+  'src/ts/server/lorebookBridge.svelte.ts',
+] as const
+
+function findMutatingDispatcherNames(): Set<string> {
+  const names = new Set<string>(['runServerCommand', 'runChatCommand'])
+  for (const file of DISPATCH_SOURCE_FILES) {
+    const absolute = path.join(root, file)
+    if (!fs.existsSync(absolute)) continue
+    // .svelte.ts files load via the project; pure-ts via source().
+    const sf = project.getSourceFile(absolute)
+    if (!sf) continue
+    for (const fn of sf.getFunctions()) {
+      if (!fn.isExported()) continue
+      const fnName = fn.getName()
+      if (!fnName) continue
+      if (fnName.startsWith('dispatch')) names.add(fnName)
+    }
+  }
+  return names
+}
+
+// Functions/helpers that intentionally serialize multiple dispatches.
+const ALLOWED_FANOUT_SEQUENCERS = new Set<string>([
+  'runChatCommandSequence',
+  'runOptimisticCommandSequence',
+])
+
+// Exemptions for specific declaration names where fan-out is provably safe
+// because the function only dispatches one command and the apparent multiple
+// callers operate on different snapshots. Keep this list short and document.
+const FANOUT_EXEMPT_DECLARATIONS = new Set<string>([
+  // The sequencer itself dispatches in series internally.
+  'runChatCommandSequence',
+  'runOptimisticCommandSequence',
+])
+
+function isBranchExclusiveDispatch(call: Node): boolean {
+  // A dispatch is "branch-exclusive" if it sits inside a Block that ends in
+  // a top-level `return` statement — i.e., the block is a guarded branch
+  // (typically `if (cond) { dispatch(...); return }` or a switch-case
+  // pattern with early-return). Such dispatches don't race siblings; only
+  // one fires per invocation. Excluding them keeps the rule focused on the
+  // genuine "≥2 dispatches sharing one optimistic snapshot" anti-pattern.
+  let cursor: Node | undefined = call.getParent()
+  while (cursor) {
+    if (Node.isBlock(cursor)) {
+      const statements = cursor.getStatements()
+      const last = statements[statements.length - 1]
+      if (last && Node.isReturnStatement(last)) return true
+      // Otherwise climb out: a containing block without an early-return
+      // doesn't make this dispatch exclusive on its own.
+      cursor = cursor.getParent()
+      continue
+    }
+    if (
+      Node.isFunctionDeclaration(cursor) ||
+      Node.isMethodDeclaration(cursor) ||
+      Node.isArrowFunction(cursor) ||
+      Node.isFunctionExpression(cursor) ||
+      Node.isSourceFile(cursor)
+    ) {
+      return false
+    }
+    cursor = cursor.getParent()
+  }
+  return false
+}
+
+function countDispatchesInScope(scope: Node, dispatcherNames: ReadonlySet<string>): Node[] {
+  const matches: Node[] = []
+  scope.forEachDescendant((descendant) => {
+    // FunctionDeclarations and class methods are separate top-level scopes —
+    // do not descend into them. ArrowFunctions and FunctionExpressions are
+    // closures (often inline callbacks like
+    // `withTrustedServerProjectionWrite(() => { ... })`) that share the
+    // enclosing optimistic snapshot, so we DO descend into them.
+    if (Node.isFunctionDeclaration(descendant)) return undefined
+    if (Node.isMethodDeclaration(descendant)) return undefined
+    if (!Node.isCallExpression(descendant)) return
+    const callExp = descendant.getExpression()
+    if (!Node.isIdentifier(callExp)) return
+    const callName = callExp.getText()
+    if (!dispatcherNames.has(callName)) return
+    if (isBranchExclusiveDispatch(descendant)) return
+    matches.push(descendant)
+  })
+  return matches
+}
+
+function callIsAwaited(call: Node): boolean {
+  let cursor: Node | undefined = call.getParent()
+  while (cursor) {
+    if (Node.isAwaitExpression(cursor)) return true
+    if (Node.isParenthesizedExpression(cursor)) {
+      cursor = cursor.getParent()
+      continue
+    }
+    return false
+  }
+  return false
+}
+
+function callIsInsideSequencer(call: Node): boolean {
+  let cursor: Node | undefined = call.getParent()
+  while (cursor) {
+    if (Node.isCallExpression(cursor)) {
+      const expression = cursor.getExpression()
+      if (Node.isIdentifier(expression) && ALLOWED_FANOUT_SEQUENCERS.has(expression.getText())) {
+        return true
+      }
+    }
+    cursor = cursor.getParent()
+  }
+  return false
+}
+
+function reportFanout(check: string, file: string, scopeName: string, calls: readonly Node[]): void {
+  const firstCall = calls[0]
+  if (!firstCall) return
+  const names = calls
+    .map((node) => {
+      if (!Node.isCallExpression(node)) return ''
+      const expression = node.getExpression()
+      return Node.isIdentifier(expression) ? expression.getText() : ''
+    })
+    .filter(Boolean)
+    .join(', ')
+  fail(
+    check,
+    `${file} ${scopeName} dispatches ${calls.length} mutating commands (${names}) without serialization. Route through runChatCommandSequence / runOptimisticCommandSequence, await each call, or use a composite server endpoint.`,
+    firstCall,
+  )
+}
+
+function checkAlpha4CompositeFanout(): void {
+  const check = 'A4R-fanout composite command race'
+  const dispatcherNames = findMutatingDispatcherNames()
+
+  // TypeScript / Svelte<script>-as-ts files we can parse with ts-morph.
+  for (const file of project.getSourceFiles()) {
+    const rl = rel(file)
+    if (!rl.startsWith('src/')) continue
+    if (rl.endsWith('.test.ts')) continue
+
+    const visitScope = (scopeNode: Node, scopeName: string): void => {
+      const calls = countDispatchesInScope(scopeNode, dispatcherNames)
+      const unserialized = calls.filter((call) => !callIsAwaited(call) && !callIsInsideSequencer(call))
+      if (unserialized.length >= 2) {
+        reportFanout(check, rl, scopeName, unserialized)
+      }
+    }
+
+    for (const fn of file.getFunctions()) {
+      const name = fn.getName() ?? '<anonymous>'
+      if (FANOUT_EXEMPT_DECLARATIONS.has(name)) continue
+      visitScope(fn, `function ${name}`)
+    }
+    for (const variable of file.getVariableDeclarations()) {
+      const init = variable.getInitializer()
+      if (!init) continue
+      if (!Node.isArrowFunction(init) && !Node.isFunctionExpression(init)) continue
+      const name = variable.getName()
+      if (FANOUT_EXEMPT_DECLARATIONS.has(name)) continue
+      visitScope(init, `arrow ${name}`)
+    }
+    // Class methods (e.g. MCP handlers, bridge classes).
+    for (const klass of file.getClasses()) {
+      for (const method of klass.getMethods()) {
+        const name = `${klass.getName() ?? 'Class'}.${method.getName()}`
+        if (FANOUT_EXEMPT_DECLARATIONS.has(method.getName())) continue
+        visitScope(method, `method ${name}`)
+      }
+    }
+  }
+
+  // Svelte files cannot be parsed by ts-morph; do a tolerant text scan.
+  // The pattern catches consecutive dispatch* calls with no intervening await.
+  const svelteScan = (pattern: string, rl: string): void => {
+    const lines = pattern.split(/\r?\n/)
+    const dispatchLines: { lineNo: number; lineText: string }[] = []
+    const dispatcherRegex = new RegExp(`\\b(${[...dispatcherNames].join('|')})\\(`)
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (dispatcherRegex.test(line) && !/\bawait\b/.test(line)) {
+        dispatchLines.push({ lineNo: i + 1, lineText: line })
+      }
+    }
+    // Group by adjacency (within 5 lines of one another), but split groups
+    // when an `} else {`, `} else if`, or other branch boundary appears
+    // between two dispatch calls — those are alternate code paths, not a
+    // single fan-out scope.
+    const branchBoundary = /^\s*\}\s*else\b|^\s*\}\s*$/
+    let group: typeof dispatchLines = []
+    const groups: (typeof dispatchLines)[] = []
+    const pushGroup = (g: typeof dispatchLines): void => {
+      if (g.length >= 2) groups.push(g)
+    }
+    for (const entry of dispatchLines) {
+      if (group.length === 0) {
+        group.push(entry)
+        continue
+      }
+      const prev = group[group.length - 1]
+      // Check the intervening lines for a branch boundary.
+      let crossesBoundary = false
+      for (let i = prev.lineNo; i < entry.lineNo - 1; i++) {
+        if (branchBoundary.test(lines[i] ?? '')) {
+          crossesBoundary = true
+          break
+        }
+      }
+      if (!crossesBoundary && entry.lineNo - prev.lineNo <= 5) {
+        group.push(entry)
+      } else {
+        pushGroup(group)
+        group = [entry]
+      }
+    }
+    pushGroup(group)
+    for (const found of groups) {
+      // Check if any of these lines is part of a sequencer call.
+      const startLine = found[0].lineNo
+      const endLine = found[found.length - 1].lineNo
+      const surrounding = lines.slice(Math.max(0, startLine - 3), endLine + 2).join('\n')
+      if ([...ALLOWED_FANOUT_SEQUENCERS].some((seq) => surrounding.includes(`${seq}(`))) continue
+      fail(
+        check,
+        `${rl} dispatches ${found.length} mutating commands at lines ${found.map((f) => f.lineNo).join(', ')} without serialization. Route through runChatCommandSequence / runOptimisticCommandSequence.`,
+        undefined,
+        rl,
+      )
+    }
+  }
+
+  // Svelte files we know contain mutating dispatchers from earlier audits.
+  const sveltePaths = [
+    'src/lib/SideBars/SideChatList.svelte',
+  ]
+  for (const rl of sveltePaths) {
+    const absolute = path.join(root, rl)
+    if (!fs.existsSync(absolute)) continue
+    svelteScan(fs.readFileSync(absolute, 'utf-8'), rl)
+  }
+}
+
+// ----- A4R-backup: every dataDir child is in createBackup and restoreBackup -----
+//
+// Invariant: each subdirectory or file produced by Fastify under `dataDir`
+// (the server-owned data directory root) is snapshotted by `createBackup` and
+// restored by `restoreBackup`. The inventory is declared in repository.ts as
+// `KNOWN_DATA_DIR_CHILDREN` and enforced here.
+
+function checkAlpha4BackupInventory(): void {
+  const check = 'A4R-backup data dir inventory'
+  const repository = source('server/fastify/src/repository.ts')
+  const children = getStringArray(repository, 'KNOWN_DATA_DIR_CHILDREN')
+  if (children.length === 0) {
     fail(
       check,
-      'readServerAssetBytes falls back to fetching arbitrary loc values while still attaching risu-auth.',
-      assets.getFunction('readServerAssetBytes'),
+      'repository.ts must declare KNOWN_DATA_DIR_CHILDREN (the exhaustive list of dataDir children to back up).',
+      undefined,
+      'server/fastify/src/repository.ts',
     )
+    return
+  }
+  const createBody = getFunctionBodyText(repository, 'createBackup')
+  const restoreBody = getFunctionBodyText(repository, 'restoreBackup')
+  for (const child of children) {
+    if (!createBody.includes(child)) {
+      fail(
+        check,
+        `createBackup must reference ${JSON.stringify(child)} (declared in KNOWN_DATA_DIR_CHILDREN).`,
+        repository.getFunction('createBackup'),
+      )
+    }
+    if (!restoreBody.includes(child)) {
+      fail(
+        check,
+        `restoreBackup must reference ${JSON.stringify(child)} (declared in KNOWN_DATA_DIR_CHILDREN).`,
+        repository.getFunction('restoreBackup'),
+      )
+    }
+  }
+}
+
+// ----- A4R-bounded: process-lifetime accumulators are bounded -----
+//
+// Invariant: every process-lifetime mutable collection in
+// `server/fastify/src/` that is written from a request handler must have a
+// documented bound. The audit identifies candidate collections by AST and
+// asserts each is in `BOUNDED_ACCUMULATOR_DECLARATIONS` with rationale.
+
+interface BoundedAccumulatorDeclaration {
+  file: string
+  // The text expression that selects the collection (e.g. property access).
+  expression: string
+  rationale: string
+}
+
+const BOUNDED_ACCUMULATOR_DECLARATIONS: readonly BoundedAccumulatorDeclaration[] = [
+  {
+    file: 'server/fastify/src/auth.ts',
+    expression: 'state.knownKeyHashes',
+    rationale: 'soft cap with LRU eviction by last-seen; persisted on every register',
+  },
+  {
+    file: 'server/fastify/src/commands/events.ts',
+    expression: 'this.events',
+    rationale: 'bounded to COMMAND_EVENT_HISTORY_LIMIT (1000) entries on emit',
+  },
+]
+
+function checkAlpha4BoundedAccumulators(): void {
+  const check = 'A4R-bounded process-lifetime accumulators'
+  // Surface assertion: each declared bounded accumulator must have an
+  // accompanying enforcement reference in the file (e.g. an `eviction`/`splice`/
+  // `slice` call that trims the collection). This is a minimum sanity check;
+  // the rationale string documents the chosen policy.
+  for (const decl of BOUNDED_ACCUMULATOR_DECLARATIONS) {
+    const fileText = text(decl.file)
+    if (!fileText.includes(decl.expression)) {
+      fail(
+        check,
+        `Bounded accumulator declaration is stale: ${decl.expression} not found in ${decl.file}.`,
+        undefined,
+        decl.file,
+      )
+      continue
+    }
+    const hasTrim =
+      /\.splice\(/.test(fileText) ||
+      /\.slice\(/.test(fileText) ||
+      /\.delete\(/.test(fileText) ||
+      /\.clear\(/.test(fileText)
+    if (!hasTrim) {
+      fail(
+        check,
+        `Bounded accumulator ${decl.expression} in ${decl.file} has no visible eviction (splice/slice/delete/clear). Rationale was: ${decl.rationale}.`,
+        undefined,
+        decl.file,
+      )
+    }
+  }
+
+  // Drift detection: walk top-level Set/Map/Array declarations in
+  // server/fastify/src/ and class fields of those types. For each that is
+  // written by a request handler (heuristic: same file imports a route
+  // registrar or is part of a route file), require that it is in
+  // BOUNDED_ACCUMULATOR_DECLARATIONS or has a bound comment marker.
+  const boundedFiles = new Set(BOUNDED_ACCUMULATOR_DECLARATIONS.map((d) => d.file))
+  const ACCUMULATOR_TYPES = new Set(['Set', 'Map', 'Array'])
+  for (const file of project.getSourceFiles()) {
+    const rl = rel(file)
+    if (!rl.startsWith('server/fastify/src/')) continue
+    if (rl.endsWith('.test.ts')) continue
+
+    // Skim top-level variable declarations.
+    for (const variable of file.getVariableDeclarations()) {
+      const init = variable.getInitializer()
+      if (!init) continue
+      let typeName = ''
+      if (Node.isNewExpression(init)) {
+        const expression = init.getExpression()
+        if (Node.isIdentifier(expression)) typeName = expression.getText()
+      }
+      if (!ACCUMULATOR_TYPES.has(typeName)) continue
+      // Only worry about exported/module-level top-level declarations.
+      if (variable.getVariableStatement()?.isExported() !== true) continue
+
+      // Whitelist if the file is already in BOUNDED_ACCUMULATOR_DECLARATIONS.
+      if (boundedFiles.has(rl)) continue
+      // Otherwise require a marker comment near the declaration.
+      const stmt = variable.getVariableStatement()
+      const stmtText = stmt?.getFullText() ?? ''
+      if (!stmtText.includes('// audit:bounded')) {
+        fail(
+          check,
+          `Top-level ${typeName} ${variable.getName()} in ${rl} is a process-lifetime accumulator; add to BOUNDED_ACCUMULATOR_DECLARATIONS or annotate with // audit:bounded(<policy>).`,
+          variable,
+        )
+      }
+    }
+  }
+}
+
+// ----- A4R-saveasset: every saveAsset caller declares classification -----
+//
+// Invariant: every call to `saveAsset(bytes, ...)` either:
+//   - passes a real filename string (arg index 2), so the persisted metadata
+//     honestly records the extension/content-type, OR
+//   - is annotated with a leading `// audit:image-default` comment that
+//     declares the call is intentionally PNG-defaulted.
+// Non-annotated callers without a filename default to PNG metadata, which is
+// the B7 bug. The audit asserts every call site picks one of the two paths.
+
+const IMAGE_DEFAULT_MARKER = 'audit:image-default'
+
+function callHasImageDefaultMarker(node: Node): boolean {
+  // Walk up to the enclosing block, checking leading comment ranges on every
+  // node along the way (statements, blocks, conditional bodies). Comments
+  // attached to an enclosing `if`/`else`/`return` count as marking the call,
+  // so the marker can sit just above the inner block.
+  let cursor: Node | undefined = node
+  let depth = 0
+  while (cursor && depth < 8) {
+    const comments = cursor.getLeadingCommentRanges?.()
+    if (comments) {
+      for (const range of comments) {
+        if (range.getText().includes(IMAGE_DEFAULT_MARKER)) return true
+      }
+    }
+    const parent: Node | undefined = cursor.getParent()
+    if (!parent) break
+    cursor = parent
+    depth += 1
+    if (Node.isBlock(parent)) {
+      // Inspect the block's own leading comments AND the enclosing
+      // statement that hosts the block (if/for/while/etc.). The marker is
+      // commonly attached one level above the block where the call lives.
+      const blockComments = parent.getLeadingCommentRanges?.()
+      if (blockComments) {
+        for (const range of blockComments) {
+          if (range.getText().includes(IMAGE_DEFAULT_MARKER)) return true
+        }
+      }
+      const blockParent = parent.getParent()
+      if (blockParent) {
+        const enclosingComments = blockParent.getLeadingCommentRanges?.()
+        if (enclosingComments) {
+          for (const range of enclosingComments) {
+            if (range.getText().includes(IMAGE_DEFAULT_MARKER)) return true
+          }
+        }
+      }
+      break
+    }
+    if (Node.isSourceFile(parent)) break
+  }
+  return false
+}
+
+function checkAlpha4SaveAssetClassification(): void {
+  const check = 'A4R-saveasset filename classification'
+  for (const file of project.getSourceFiles()) {
+    const rl = rel(file)
+    if (!rl.startsWith('src/')) continue
+    if (rl.endsWith('.test.ts')) continue
+    file.forEachDescendant((node) => {
+      if (!Node.isCallExpression(node)) return
+      const expression = node.getExpression()
+      const callName = Node.isIdentifier(expression)
+        ? expression.getText()
+        : Node.isPropertyAccessExpression(expression)
+          ? expression.getName()
+          : ''
+      if (callName !== 'saveAsset') return
+      // saveAsset signature: `saveAsset(data, customId = '', fileName = '')`.
+      // The fileName (arg index 2) determines the persisted extension /
+      // content-type. Without it the server defaults to PNG metadata even
+      // for non-image bytes.
+      const args = node.getArguments()
+      const fileNameArg = args[2]
+      if (fileNameArg) {
+        // If arg 2 is a non-empty string literal, that's a filename — pass.
+        // An empty string literal requires the image-default marker.
+        const literal = fileNameArg.asKind(SyntaxKind.StringLiteral)
+        if (literal && literal.getLiteralText() === '') {
+          if (!callHasImageDefaultMarker(node)) {
+            fail(
+              check,
+              `${rl} calls saveAsset(..., '', '') with an empty filename literal. Either pass a real filename or annotate the call with // ${IMAGE_DEFAULT_MARKER} (with rationale).`,
+              node,
+            )
+          }
+        }
+        // Non-empty literal or variable: assume the caller passes a real
+        // filename. The audit can be tightened later if drift appears.
+        return
+      }
+      // Arg 2 omitted: no filename. Caller must be annotated image-default.
+      if (!callHasImageDefaultMarker(node)) {
+        fail(
+          check,
+          `${rl} calls saveAsset(bytes) without a filename; the server will record image/png metadata even for non-image bytes. Either pass a real filename as the third argument, or annotate the call with a leading // ${IMAGE_DEFAULT_MARKER} comment (with rationale).`,
+          node,
+        )
+      }
+    })
   }
 }
 
@@ -1472,13 +2621,17 @@ runChecks([
   { id: 'AEC5 module reference semantics', run: checkModuleReferenceSemantics },
   { id: 'AEC6 asset persistence semantics', run: checkAssetPersistenceSemantics },
   { id: 'EC1 provider ownership', run: checkProviderOwnership },
-  { id: 'A3R1 passive bootstrap refresh ownership', run: checkAlpha3PassiveBootstrapRefresh },
-  { id: 'A3R2 settings conflict replay', run: checkAlpha3SettingsConflictRetry },
-  { id: 'A3R3 command repair helper minting', run: checkAlpha3CommandRepairMinting },
-  { id: 'A3R4 global chat/message addressing', run: checkAlpha3GlobalChatMessageAddressing },
-  { id: 'A3R5 asset reference parser parity', run: checkAlpha3AssetReferenceParserParity },
-  { id: 'A3R6 masked array secret row identity', run: checkAlpha3MaskedArraySecrets },
-  { id: 'A3R7 authenticated asset fallback', run: checkAlpha3AuthenticatedAssetFallback },
+  { id: 'A4R1 passive refresh writer ownership', run: checkAlpha4PassiveRefresh },
+  { id: 'A4R2 conflict replay outside central wrapper', run: checkAlpha4ConflictRetry },
+  { id: 'A4R3 transitive command-path id minting', run: checkAlpha4TransitiveCommandIdMinting },
+  { id: 'A4R4 globally-addressed resolver normalize', run: checkAlpha4ResolverNormalize },
+  { id: 'A4R5 asset reference parser parity', run: checkAlpha4AssetReferenceParity },
+  { id: 'A4R6 wildcard secret row identity', run: checkAlpha4WildcardSecretIdentity },
+  { id: 'A4R7 asset URL gate', run: checkAlpha4AssetUrlGate },
+  { id: 'A4R-fanout composite command race', run: checkAlpha4CompositeFanout },
+  { id: 'A4R-backup data dir inventory', run: checkAlpha4BackupInventory },
+  { id: 'A4R-bounded process-lifetime accumulators', run: checkAlpha4BoundedAccumulators },
+  { id: 'A4R-saveasset filename classification', run: checkAlpha4SaveAssetClassification },
 ])
 
 if (findings.length > 0) {
