@@ -73,10 +73,10 @@ audit currently passes while missing most Alpha 3 bug classes.
 | -------------------------------------------------------------------------- | -------- | -------------------------------- | -------------------------------- |
 | A3F1 - Passive bootstrap refresh steals active-writer ownership            | High     | Real                             | R1                               |
 | A3F2 - Generic settings blindly replay 409 conflicts                       | High     | Real                             | R2                               |
-| A3F3 - Preset copy/import still mint command-path ids                      | High     | Real                             | R3                               |
-| A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | Real                             | R3                               |
+| A3F3 - Preset copy/import still mint command-path ids                      | High     | Closed in Bucket 2               | R3                               |
+| A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | Closed in Bucket 2               | R3                               |
 | A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | Real, narrowed to chats/messages | R4                               |
-| A3F6 - Preset import bypasses preset image asset validation                | Medium   | Real                             | R3 overlap plus focused tests    |
+| A3F6 - Preset import bypasses preset image asset validation                | Medium   | Closed in Bucket 2               | R3 overlap plus focused tests    |
 | A3F7 - Asset reads can fetch arbitrary URLs with `risu-auth`               | High     | Real                             | R7                               |
 | A3F8 - Server backups do not preserve asset bytes                          | Medium   | Real                             | Focused tests/contract decision  |
 | A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | Real                             | R5                               |
@@ -117,13 +117,20 @@ Bucket 1 landed the A3EC1 fixes and focused A3F12 regression coverage:
 - Whole-chat compatibility command fan-out is serialized so the later commands
   read the command revision cached by earlier responses.
 
-After Bucket 1, A3R1 and A3R2 pass. `pnpm client-thinning:audit` remains red on
-the remaining A3R3 through A3R7 buckets.
+Bucket 2 landed the A3EC2 stable-id fixes and the A3F6 preset-import overlap:
+
+- Preset copy requires `newPresetId` and persists the exact client-provided id.
+- Preset import uses `createPresetRecord`, so missing ids and malformed or
+  missing image asset refs are rejected without bumping revision.
+- Deleting the last global lorebook returns 400 instead of minting a fallback
+  lorebook id.
+
+After Bucket 2, A3R1, A3R2, and A3R3 pass. `pnpm client-thinning:audit` remains
+red on the remaining A3R4 through A3R7 buckets.
 
 The audit still intentionally relies on focused behavior tests or later
 documented contract decisions for these Alpha 3 classes:
 
-- Preset import validator drift beyond the imported repair-helper overlap.
 - Backup/restore asset-byte preservation.
 - Upload metadata defaults for non-image assets.
 - Multi-command compatibility fan-out against one optimistic snapshot.
@@ -162,11 +169,9 @@ implementation exposes a repeatable source pattern worth guarding.
 
 ## Current Observed Failures
 
-After Bucket 1, `pnpm client-thinning:audit` is intentionally red on the
+After Bucket 2, `pnpm client-thinning:audit` is intentionally red on the
 remaining behavior buckets. The observed Alpha 3 failures are:
 
-- **A3R3:** preset copy, preset import, and last-lorebook delete call
-  id-minting repair helpers from public command routes.
 - **A3R4:** chat and message ids are globally resolved but only parent-locally
   deduped on create/append.
 - **A3R5:** client asset reads accept `assets/<id>.<ext>` but the RisuSave

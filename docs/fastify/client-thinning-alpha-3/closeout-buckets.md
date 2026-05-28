@@ -6,9 +6,10 @@ This is the suggested task-agent breakdown for Alpha 3. Each bucket should land
 behavior, focused tests, audit coverage where practical, and doc updates before
 being marked closed.
 
-Current status: **open.** Buckets 0 and 1 have landed. Bucket 1 clears A3F1,
-A3F2, and A3F12; `pnpm client-thinning:audit` is still red on the remaining
-A3R3 through A3R7 findings.
+Current status: **open.** Buckets 0, 1, and 2 have landed. Bucket 1 clears
+A3F1, A3F2, and A3F12. Bucket 2 clears A3F3, A3F4, and the A3F6 preset-import
+validator overlap; `pnpm client-thinning:audit` is still red on the remaining
+A3R4 through A3R7 findings.
 
 Rule-first gate: Bucket 0 lands before behavior closeout. No behavior bucket may
 be marked closed until its corresponding R rule fails on the pre-fix tree and
@@ -19,9 +20,9 @@ failing-then-passing regression test or an explicit tested contract decision.
 | ----- | ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | Landed in `util/client-thinning-audit.ts`; current failures are documented below.                                                                                               |
 | 1     | Active-writer and conflict semantics     | A3F1, A3F2, A3F12                                                            | Landed. Passive refresh is read-only, generic settings conflicts roll back without replay, and whole-chat compatibility command fan-out is serialized.                          |
-| 2     | Stable-id command holes                  | A3F3, A3F4                                                                   | preset copy/import command contracts, lorebook delete behavior, server/client command helpers, command tests, `util/client-thinning-audit.ts`                                   |
+| 2     | Stable-id command holes                  | A3F3, A3F4, A3F6 preset-import overlap                                       | Landed. Preset copy/import no longer mint ids, last-lorebook delete returns 400, and preset import validates image asset refs.                                                  |
 | 3     | Global id addressing                     | A3F5                                                                         | chat/message command helpers, import/bootstrap normalization, command route tests, audit checks                                                                                 |
-| 4     | Asset ownership and backup durability    | A3F6, A3F7, A3F8, A3F9, A3F10                                                | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`, preset import, `server/fastify/src/repository.ts`, RisuSave walker/bundle export, backup and asset tests, audit checks |
+| 4     | Asset ownership and backup durability    | A3F7, A3F8, A3F9, A3F10                                                      | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`, `server/fastify/src/repository.ts`, RisuSave walker/bundle export, backup and asset tests, audit checks                |
 | 5     | Secret placeholder row identity          | A3F11                                                                        | `server/fastify/src/providerSecrets.ts`, settings command tests, masking tests, audit checks                                                                                    |
 | 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | `server/fastify/src/commands/events.ts`, event tests, `docs/fastify/client-thinning-alpha-3/*`, top-level status docs after full ladder                                         |
 
@@ -32,9 +33,9 @@ failing-then-passing regression test or an explicit tested contract decision.
 - Buckets 2 and 3 both touch command id semantics and may conflict in
   `server/fastify/src/routes/commands.ts`; sequence them or split by file with a
   narrow integration owner.
-- Bucket 4 is mostly independent except for preset import, which overlaps with
-  Bucket 2. Decide whether preset import id validation and asset validation move
-  together.
+- Bucket 2 resolved the preset import overlap by moving the route to
+  `createPresetRecord`, so Bucket 4 can focus on asset reads, backups, bundle
+  walking, and upload metadata.
 - Bucket 5 is independent from command id work but should update the audit to
   prevent future masked-array placeholder regressions.
 - Bucket 6 should close last, after the full verification ladder passes.
@@ -82,8 +83,6 @@ pattern.
 `pnpm client-thinning:audit` currently fails by design with these remaining
 Alpha 3 gates:
 
-- A3R3: preset copy, preset import, and last-lorebook delete call id-minting
-  repair helpers from public command routes.
 - A3R4: chat and message routes resolve ids globally while create/append checks
   only enforce parent-local uniqueness.
 - A3R5: the client accepts legacy `assets/<id>.<ext>` references that the
@@ -93,5 +92,5 @@ Alpha 3 gates:
 - A3R7: `readServerAssetBytes` can fetch arbitrary references while attaching
   `risu-auth`.
 
-Next agent: start Bucket 2, then continue through the behavior buckets until all
+Next agent: start Bucket 3, then continue through the behavior buckets until all
 A3R gates pass. Keep broad status docs untouched until the final closeout.

@@ -542,6 +542,7 @@ export interface DeletePresetCommandInput extends PresetCommandInput {
 
 export interface CopyPresetCommandInput extends PresetCommandInput {
   presetId: string
+  newPresetId: string
   name?: string
   saveCurrent?: boolean
 }
@@ -1105,6 +1106,7 @@ export async function copyPresetCommand(
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
+      newPresetId: input.newPresetId,
       name: input.name,
       saveCurrent: input.saveCurrent,
     },

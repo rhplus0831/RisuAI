@@ -32,6 +32,7 @@ import {
   createPresetCommand,
   createTranslatorPresetCommand,
   createGlobalLorebookCommand,
+  copyPresetCommand,
   deleteChatCommand,
   deleteChatFolderCommand,
   deleteCharacterCommand,
@@ -55,6 +56,7 @@ import {
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  importPresetCommand,
   persistGenerationResultCommand,
   putPluginStorageCommand,
   reorderCharactersCommand,
@@ -579,6 +581,61 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 1,
           preset: { id: 'preset-a', name: 'A', mainPrompt: 'hello' },
+        },
+      },
+    ])
+  })
+
+  it('copies and imports presets through typed command helpers with stable ids', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/presets/preset-a/copy')) {
+        return {
+          revision: 2,
+          event: { type: 'preset.copied', revision: 2, resource: 'preset', id: 'preset-copy' },
+          presetId: 'preset-copy',
+          sourcePresetId: 'preset-a',
+        }
+      }
+      return {
+        revision: 3,
+        event: { type: 'preset.imported', revision: 3, resource: 'preset', id: 'preset-import' },
+        presetId: 'preset-import',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      copyPresetCommand({
+        baseRevision: 1,
+        presetId: 'preset-a',
+        newPresetId: 'preset-copy',
+        name: 'A Copy',
+        saveCurrent: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, presetId: 'preset-copy' })
+
+    await expect(
+      importPresetCommand({
+        baseRevision: 2,
+        preset: { id: 'preset-import', name: 'Imported' },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, presetId: 'preset-import' })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/presets/preset-a/copy',
+        body: {
+          baseRevision: 1,
+          newPresetId: 'preset-copy',
+          name: 'A Copy',
+          saveCurrent: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/presets/import',
+        body: {
+          baseRevision: 2,
+          preset: { id: 'preset-import', name: 'Imported' },
         },
       },
     ])

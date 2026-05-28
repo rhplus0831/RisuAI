@@ -4,8 +4,8 @@ Date: 2026-05-28
 
 Status: **open.** These findings were discovered after the
 [`../client-thinning-alpha-2/`](../client-thinning-alpha-2/) closeout. The
-current `pnpm client-thinning:audit` passes, so each fix should also broaden the
-repeatable audit where practical.
+Alpha 3 audit now fails intentionally on the remaining behavior buckets, so each
+fix should keep narrowing the repeatable audit failure list.
 
 ## Summary
 
@@ -13,10 +13,10 @@ repeatable audit where practical.
 | -------------------------------------------------------------------------- | -------- | ------------- | ------------------------------ | ------ | ---------------- |
 | A3F1 - Passive bootstrap refresh steals active-writer ownership            | High     | A3EC1 / A3EC6 | R1                             | Closed | 1                |
 | A3F2 - Generic settings blindly replay 409 conflicts                       | High     | A3EC1 / A3EC6 | R2                             | Closed | 1                |
-| A3F3 - Preset copy/import still mint command-path ids                      | High     | A3EC2 / A3EC6 | R3                             | Open   | 2                |
-| A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | A3EC2 / A3EC6 | R3                             | Open   | 2                |
+| A3F3 - Preset copy/import still mint command-path ids                      | High     | A3EC2 / A3EC6 | R3                             | Closed | 2                |
+| A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | A3EC2 / A3EC6 | R3                             | Closed | 2                |
 | A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | A3EC3 / A3EC6 | R4                             | Open   | 3                |
-| A3F6 - Preset import bypasses preset image asset validation                | Medium   | A3EC4 / A3EC6 | R3 overlap plus focused tests  | Open   | 4                |
+| A3F6 - Preset import bypasses preset image asset validation                | Medium   | A3EC4 / A3EC6 | R3 overlap plus focused tests  | Closed | 2                |
 | A3F7 - Asset reads can fetch arbitrary URLs with `risu-auth`               | High     | A3EC4 / A3EC6 | R7                             | Open   | 4                |
 | A3F8 - Server backups do not preserve asset bytes                          | Medium   | A3EC4         | Focused tests/contract         | Open   | 4                |
 | A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | A3EC4 / A3EC6 | R5                             | Open   | 4                |
@@ -136,16 +136,16 @@ exception that the current audit does not catch.
 
 Required closeout:
 
+- Closed in Bucket 2. `copyPresetCommand` now sends the optimistic
+  client-generated id as `newPresetId`, and the Fastify copy route requires that
+  id and rejects duplicates. Preset import now uses `createPresetRecord` instead
+  of the id-minting repair helper.
+- Regression proof:
+  `src/ts/server/commands.test.ts` and
+  `server/fastify/__tests__/commands.test.ts`.
 - Audit gate: R3, public command routes cannot call imported repair helpers that
   can mint ids unless the command is an explicit audited server-generated-id
   exception.
-- Add `newPresetId` or a full `preset` payload to the copy command, and require
-  it.
-- Use `createPresetRecord` or another validate-only helper for command import;
-  keep `repairPresetRecord` import/normalization-only.
-- Add missing-id and duplicate-id tests for preset copy and import.
-- Extend the stable-id audit to catch imported repair helpers used inside public
-  command routes.
 
 ## A3F4 - Empty-Lorebook Delete Fallback Mints A Command-Path Id
 
@@ -170,14 +170,12 @@ rather than a route-local `randomUUID()`.
 
 Required closeout:
 
+- Closed in Bucket 2. Deleting the last global lorebook now returns 400 instead
+  of inserting a fallback record, so the route no longer mints durable ids.
+- Regression proof: `server/fastify/__tests__/commands.test.ts`.
 - Audit gate: R3, public command routes cannot call imported repair helpers that
   can mint ids unless the command is an explicit audited server-generated-id
   exception.
-- Prefer returning 400 when deleting the last lorebook, or require the client to
-  provide a replacement lorebook id.
-- Add a route test for deleting the last lorebook.
-- Extend the audit to disallow repair helpers in command routes unless an
-  exception is documented.
 
 ## A3F5 - Global Chat/Message Addressing Can Hit The Wrong Duplicate Id
 
@@ -247,11 +245,13 @@ walking later treats as server asset references.
 
 Required closeout:
 
-- Audit gate: R3 overlap if preset import is rewritten away from
-  `repairPresetRecord`; otherwise close with focused validator tests and a
-  documented exclusion.
-- Validate asset refs on preset import.
-- Add malformed and missing `image` tests for `/commands/presets/import`.
+- Closed in Bucket 2. Preset import now uses `createPresetRecord` with the
+  Fastify asset data directory, matching create/patch validation for
+  `preset.image`.
+- Regression proof: `server/fastify/__tests__/commands.test.ts` covers
+  malformed and missing `image` refs for `/commands/presets/import`.
+- Audit gate: R3 overlap, because preset import was rewritten away from
+  `repairPresetRecord`.
 
 ## A3F7 - Asset Reads Can Fetch Arbitrary URLs With `risu-auth`
 

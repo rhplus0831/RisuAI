@@ -1267,6 +1267,30 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(missingCreate.statusCode).toBe(400)
     expect(missingCreate.json().error).toBe('preset.image references a missing server asset')
 
+    const malformedImport = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/import',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'preset-b', name: 'B', image: 'assets/not-server.png' },
+      },
+    })
+    expect(malformedImport.statusCode).toBe(400)
+    expect(malformedImport.json().error).toBe('preset.image must be a server asset id')
+
+    const missingImport = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/import',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'preset-b', name: 'B', image: missingAssetId },
+      },
+    })
+    expect(missingImport.statusCode).toBe(400)
+    expect(missingImport.json().error).toBe('preset.image references a missing server asset')
+
     const malformedPatch = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/presets/preset-a',
@@ -1372,12 +1396,13 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
+        newPresetId: 'preset-copy',
         name: 'A Copy',
       },
     })
     expect(copied.statusCode).toBe(200)
     const copiedPresetId = copied.json().presetId as string
-    expect(copiedPresetId).toBeTruthy()
+    expect(copiedPresetId).toBe('preset-copy')
     expect(copied.json().event).toMatchObject({
       type: 'preset.copied',
       resource: 'preset',
@@ -1428,6 +1453,61 @@ describe('Phase 9-2b bot preset commands', () => {
       ['preset-b', 'preset-a'],
     )
     expect(bootstrap.json().database.botPresetsId).toBe(0)
+  })
+
+  it('rejects missing and duplicate preset ids on copy and import', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A' },
+        { id: 'preset-b', name: 'B' },
+      ],
+      botPresetsId: 0,
+    })
+
+    const cases = [
+      {
+        url: '/api/v1/commands/presets/preset-a/copy',
+        payload: { baseRevision: revision, name: 'Missing id' },
+        error: 'newPresetId must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/presets/preset-a/copy',
+        payload: { baseRevision: revision, newPresetId: 'preset-b', name: 'Duplicate' },
+        error: 'Duplicate preset id: preset-b',
+      },
+      {
+        url: '/api/v1/commands/presets/import',
+        payload: { baseRevision: revision, preset: { name: 'Missing id' } },
+        error: 'preset.id must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/presets/import',
+        payload: { baseRevision: revision, preset: { id: 'preset-b', name: 'Duplicate' } },
+        error: 'Duplicate preset id: preset-b',
+      },
+    ]
+
+    for (const testCase of cases) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: testCase.url,
+        headers: { 'risu-auth': assertion },
+        payload: testCase.payload,
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error).toBe(testCase.error)
+    }
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual(
+      ['preset-a', 'preset-b'],
+    )
   })
 
   it('rejects malformed preset reorder without bumping revision', async () => {
@@ -4470,6 +4550,31 @@ describe('Phase 9-4a lorebook commands', () => {
       'lorebook.selected',
       'lorebook.deleted',
     ])
+  })
+
+  it('rejects deleting the last global lorebook without minting a replacement id', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/lorebooks/book-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(deleted.statusCode).toBe(400)
+    expect(deleted.json().error).toBe('Cannot delete the last lorebook')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database.loreBook).toEqual([{ id: 'book-a', name: 'A', data: [] }])
   })
 
   it('replaces global, character, chat, and module lorebook entry collections', async () => {

@@ -2219,6 +2219,7 @@ export function copyPreset(id: number) {
       copyPresetCommand({
         baseRevision,
         presetId: sourcePresetId,
+        newPresetId: newPres.id,
         name: newPres.name,
         saveCurrent: true,
       }),

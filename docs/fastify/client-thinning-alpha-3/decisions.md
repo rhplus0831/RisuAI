@@ -37,6 +37,11 @@ anchor.
 payload, response, tests, and audit all classify it as server-generated and the
 client does not perform an optimistic local write with a different id.
 
+**Bucket 2 implementation:** preset copy requires the client's optimistic copy
+id as `newPresetId`, preset import uses `createPresetRecord` instead of the
+id-minting repair helper, and deleting the last global lorebook returns 400
+instead of inserting a fallback lorebook.
+
 ## A3EC3 - Chat And Message Addressing
 
 **Default decision:** if a route addresses a chat or message by id
