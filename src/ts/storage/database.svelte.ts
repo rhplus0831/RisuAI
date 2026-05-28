@@ -773,6 +773,9 @@ export function setDatabase(data: Database) {
   data.newMessageButtonStyle ??= 'bottom-center'
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
+  // Incomplete-migration gate (see the `useServerPromptAssembly` JSDoc on the
+  // Database type). Default off — local prompt assembly stays the production path;
+  // do not flip this default until server `/chat` assembly is at parity. Not deprecated.
   data.useServerPromptAssembly ??= false
   if (!isFastifyServer) {
     //this is intended to forcely reduce the size of the database in web
@@ -1352,6 +1355,15 @@ export interface Database {
    * `POST /api/v1/generate/chat` route instead of the in-browser path.
    * Server-side completion dispatch is mandatory in Fastify mode; this
    * setting controls prompt assembly only.
+   *
+   * EXPERIMENTAL / INCOMPLETE-MIGRATION GATE — not a stable user setting and NOT
+   * deprecated. Defaults to `false`, so local prompt assembly
+   * (`assembleLocalSendChatPrompt`) is still the production path, because the
+   * server `/chat` path is not yet at parity (multimodal/asset inlining, image-gen
+   * instruction, Lua `editRequest`, plugin-V2 script hooks, group chat). Do NOT
+   * default-enable or delete this flag until server assembly reaches parity and the
+   * local fallback is retired — removing it is the END of that work, not a
+   * precursor. See docs/client-thinning/.
    */
   useServerPromptAssembly?: boolean
   createFolderOnBranch?: boolean

@@ -5,7 +5,6 @@
     "maxContext": 4000,
     "maxResponse": 200,
     "useStreaming": false,
-    "useServerGeneration": true,
     "instructChatTemplate": "chatml",
     "hordeConfig": {
       "apiKey": "horde-fixture-key",

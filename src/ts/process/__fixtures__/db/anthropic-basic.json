@@ -5,7 +5,6 @@
     "maxContext": 4000,
     "maxResponse": 200,
     "useStreaming": false,
-    "useServerGeneration": true,
     "claudeAPIKey": "sk-ant-fixture",
     "promptTemplate": null,
     "characters": [

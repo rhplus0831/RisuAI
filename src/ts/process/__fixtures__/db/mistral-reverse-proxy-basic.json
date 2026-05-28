@@ -5,7 +5,6 @@
     "maxContext": 4000,
     "maxResponse": 200,
     "useStreaming": false,
-    "useServerGeneration": true,
     "customAPIFormat": 4,
     "customProxyRequestModel": "mistral-on-proxy",
     "forceReplaceUrl": "https://proxy.example.com/v1",

@@ -154,12 +154,6 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
-  it('routes through the server even if a legacy useServerGeneration=false value exists', () => {
-    seedDb({ useServerGeneration: false } as unknown as Partial<Database>)
-    const r = getServerCompletionProvider(makeTarg())
-    expect(r).toBe('echo')
-  })
-
   it('returns null when previewBody is true', () => {
     const r = getServerCompletionProvider(makeTarg({ previewBody: true }))
     expect(r).toBeNull()

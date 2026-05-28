@@ -5,7 +5,6 @@
     "maxContext": 4000,
     "maxResponse": 200,
     "useStreaming": false,
-    "useServerGeneration": true,
     "google": { "projectId": "fixture-project" },
     "vertexRegion": "us-east5",
     "vertexClientEmail": "fixture-sa@fixture-project.iam.gserviceaccount.com",

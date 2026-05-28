@@ -154,6 +154,11 @@ export async function sendChat(
     // Server-side prompt assembly with browser-side patch replay. Send-like
     // calls now consume the `/chat` provider stream; preview modes still only
     // read the assembled prompt payload.
+    // Server prompt assembly is gated behind the (default-off) experimental
+    // `useServerPromptAssembly` flag; the `!assembledByServer` fallback below is the
+    // live local assembly path. Neither is deprecated — see the flag's JSDoc in
+    // database.svelte.ts. Removing the fallback is the end of the prompt-assembly
+    // thinning sub-family, not a precursor.
     if (isFastifyServer && DBState.db.useServerPromptAssembly) {
       const serverAssembly = await assembleServerBackedSendChat({
         selectedChar,

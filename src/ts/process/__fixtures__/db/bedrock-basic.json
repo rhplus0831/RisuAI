@@ -5,7 +5,6 @@
     "maxContext": 4000,
     "maxResponse": 200,
     "useStreaming": false,
-    "useServerGeneration": true,
     "claudeAPIKey": "AKIAFIXTUREFAKEKEY:fixture-secret-access-key:us-east-1",
     "promptTemplate": null,
     "characters": [

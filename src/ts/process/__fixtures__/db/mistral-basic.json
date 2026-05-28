@@ -5,7 +5,6 @@
     "maxContext": 4000,
     "maxResponse": 200,
     "useStreaming": false,
-    "useServerGeneration": true,
     "mistralKey": "mistral-fixture-key",
     "promptTemplate": null,
     "characters": [

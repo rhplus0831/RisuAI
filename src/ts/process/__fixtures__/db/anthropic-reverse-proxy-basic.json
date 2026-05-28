@@ -5,7 +5,6 @@
     "maxContext": 4000,
     "maxResponse": 200,
     "useStreaming": false,
-    "useServerGeneration": true,
     "customAPIFormat": 2,
     "customProxyRequestModel": "claude-on-proxy",
     "forceReplaceUrl": "https://proxy.example.com/v1",
