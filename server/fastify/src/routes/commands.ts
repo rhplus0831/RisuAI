@@ -82,6 +82,7 @@ import {
   validateFullCharacterOrder,
 } from '../commands/characters.js'
 import {
+  chatFolderIdExists,
   createChatFolderRecord,
   createChatRecord,
   ensureCharacterChatFolders,
@@ -2542,7 +2543,7 @@ export function registerCommandRoutes(
           const chats = ensureCharacterChats(character)
           const folders = ensureCharacterChatFolders(character)
           if (folder) {
-            if (folders.some((existing) => existing.id === folder.id)) {
+            if (chatFolderIdExists(characters, folder.id)) {
               throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
             }
             folders.unshift(folder)
@@ -2674,7 +2675,7 @@ export function registerCommandRoutes(
           const characters = normalizeAllCharacterChats(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
           const folders = ensureCharacterChatFolders(character)
-          if (folders.some((existing) => existing.id === folder.id)) {
+          if (chatFolderIdExists(characters, folder.id)) {
             throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
           }
           folders.unshift(folder)

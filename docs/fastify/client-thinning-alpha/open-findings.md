@@ -11,39 +11,11 @@ against the codebase from [`../../audit-codex.md`](../../audit-codex.md) and
 
 | Finding | Severity | Criterion | Status | Bucket |
 | --- | --- | --- | --- | --- |
-| AF5 | Medium | AEC4 | Open | 5 |
 | AF6 | Low | AEC5 | Open | 6 |
 | AF7 | Low | AEC5 | Open | 6 |
 | AF8 | Low | AEC6 | Open | 7 |
 | AF9 | Low | AEC7 | Open | 8 |
 | AF10 | Low | AEC6 | Open | 7 |
-
-## AF5 - Chat folder ids are scoped on create but global on patch/delete
-
-Severity: **Medium**
-
-Source: `docs/audit-codex.md` P2.
-
-Evidence:
-
-- Creation checks duplicate folder ids only within the target character at
-  `server/fastify/src/routes/commands.ts:2669-2674`.
-- Patch/delete routes identify only `:folderId` at
-  `server/fastify/src/routes/commands.ts:2697-2712` and
-  `server/fastify/src/routes/commands.ts:2740-2755`.
-- The resolver returns the first matching folder across characters at
-  `server/fastify/src/commands/chats.ts:286-299`.
-
-Impact:
-
-Two characters can contain the same folder id, but later patch/delete commands
-cannot disambiguate them and may mutate the wrong character's folder.
-
-Done when:
-
-- The command contract has one folder-id scope: either globally unique ids or
-  parent-scoped patch/delete addressing.
-- Tests cover duplicate folder ids across characters and patch/delete behavior.
 
 ## AF6 - Chat module references accept arbitrary ids
 

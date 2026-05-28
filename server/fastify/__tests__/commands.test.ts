@@ -3069,7 +3069,6 @@ describe('Phase 9-3b chat record and folder commands', () => {
       id: 'folder-b',
       parentId: 'char-a',
     })
-
     const folderUpdated = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/chat-folders/folder-b',
@@ -3145,6 +3144,157 @@ describe('Phase 9-3b chat record and folder commands', () => {
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
     })
+  })
+
+  it('rejects command-created chat folder ids that already exist on another character', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              folderId: 'folder-a',
+            },
+          ],
+          chatFolders: [{ id: 'folder-a', name: 'Folder A', folded: false }],
+          chatPage: 0,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [
+            {
+              id: 'chat-b',
+              name: 'B chat',
+              note: '',
+              message: [],
+              localLore: [],
+              folderId: 'folder-b',
+            },
+          ],
+          chatFolders: [{ id: 'folder-b', name: 'Folder B', folded: false }],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const duplicateFolderCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-b/chat-folders',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        folder: { id: 'folder-a', name: 'Duplicate Folder A', folded: false },
+      },
+    })
+    expect(duplicateFolderCreate.statusCode).toBe(400)
+    expect(duplicateFolderCreate.json().error).toBe('Duplicate chat folder id: folder-a')
+
+    const duplicateForkFolder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-b/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        folder: { id: 'folder-a', name: 'Duplicate Fork Folder', folded: false },
+      },
+    })
+    expect(duplicateForkFolder.statusCode).toBe(400)
+    expect(duplicateForkFolder.json().error).toBe('Duplicate chat folder id: folder-a')
+
+    const folderUpdated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chat-folders/folder-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { name: 'Folder B renamed' },
+      },
+    })
+    expect(folderUpdated.statusCode).toBe(200)
+
+    const folderDeleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/chat-folders/folder-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: folderUpdated.json().revision },
+    })
+    expect(folderDeleted.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const characters = bootstrap.json().database.characters
+    expect(characters[0].chatFolders).toEqual([])
+    expect(characters[0].chats[0].folderId).toBeNull()
+    expect(characters[1].chatFolders).toEqual([
+      { id: 'folder-b', name: 'Folder B renamed', folded: false },
+    ])
+    expect(characters[1].chats[0].folderId).toBe('folder-b')
+  })
+
+  it('repairs imported duplicate chat folder ids across characters', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              folderId: 'folder-a',
+            },
+          ],
+          chatFolders: [{ id: 'folder-a', name: 'Folder A', folded: false }],
+          chatPage: 0,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [
+            {
+              id: 'chat-b',
+              name: 'B chat',
+              note: '',
+              message: [],
+              localLore: [],
+              folderId: 'folder-a',
+            },
+          ],
+          chatFolders: [{ id: 'folder-a', name: 'Folder B', folded: false }],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    const [charA, charB] = bootstrap.json().database.characters
+    expect(charA.chatFolders[0].id).toBe('folder-a')
+    expect(charA.chats[0].folderId).toBe('folder-a')
+    expect(charB.chatFolders[0].id).not.toBe('folder-a')
+    expect(typeof charB.chatFolders[0].id).toBe('string')
+    expect(charB.chats[0].folderId).toBe(charB.chatFolders[0].id)
   })
 
   it('rejects malformed chat commands without bumping revision', async () => {

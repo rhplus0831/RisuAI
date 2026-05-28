@@ -82,6 +82,12 @@ duplicates if needed to normalize legacy data.
 already treats folder ids as global. Enforcing global uniqueness on create is
 less disruptive than adding a parent id to existing public routes and events.
 
+**Implementation note:** Bucket 5 closed AF5 by rejecting duplicate chat folder
+ids across all characters on command create, including fork-created folders.
+Import/bootstrap normalization now rewrites legacy duplicate folder ids after
+per-character chat repair and updates same-character chat `folderId` references
+to the rewritten id.
+
 ## AEC5 - Module reference semantics
 
 **Decision:** Durable command-written module reference lists should validate

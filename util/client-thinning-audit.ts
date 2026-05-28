@@ -486,6 +486,42 @@ function checkRisuSaveImportExportShape(): void {
   }
 }
 
+function checkChatFolderIdentityScope(): void {
+  const check = 'AEC4 chat folder identity scope'
+  const chats = source('server/fastify/src/commands/chats.ts')
+  const routesText = text('server/fastify/src/routes/commands.ts')
+  const normalizeBody = getFunctionBodyText(chats, 'normalizeAllCharacterChats')
+  const repairBody = getFunctionBodyText(chats, 'normalizeGlobalChatFolderIds')
+
+  if (!normalizeBody.includes('normalizeGlobalChatFolderIds(characters)')) {
+    fail(
+      check,
+      'normalizeAllCharacterChats must repair chat folder ids globally across characters.',
+      chats.getFunction('normalizeAllCharacterChats'),
+    )
+  }
+
+  for (const needle of ['seen.has(folder.id)', 'folder.id = randomUUID()', 'chat.folderId =']) {
+    if (!repairBody.includes(needle)) {
+      fail(
+        check,
+        `normalizeGlobalChatFolderIds must preserve global folder-id uniqueness and update chat refs; missing ${needle}.`,
+        chats.getFunction('normalizeGlobalChatFolderIds'),
+      )
+    }
+  }
+
+  const globalCreateGuards = routesText.match(/chatFolderIdExists\(characters, folder\.id\)/g) ?? []
+  if (globalCreateGuards.length < 2) {
+    fail(
+      check,
+      'Chat folder create command surfaces must reject ids already used by any character.',
+      undefined,
+      'server/fastify/src/routes/commands.ts',
+    )
+  }
+}
+
 function checkProviderOwnership(): void {
   const check = 'EC1 provider ownership'
   const serverCompletion = source('src/ts/process/request/serverCompletion.ts')
@@ -549,6 +585,7 @@ runChecks([
   { id: 'EC2 plugin storage gates', run: checkPluginStorageGates },
   { id: 'EC6 asset walker validator drift', run: checkAssetWalkerValidators },
   { id: 'AEC2 import/export current shape', run: checkRisuSaveImportExportShape },
+  { id: 'AEC4 chat folder identity scope', run: checkChatFolderIdentityScope },
   { id: 'EC1 provider ownership', run: checkProviderOwnership },
 ])
 

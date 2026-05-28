@@ -13,7 +13,8 @@ Opened on 2026-05-28 from the cross-verification of:
 - [`../../audit-claude.md`](../../audit-claude.md)
 
 Bucket 1 closed AF1 on 2026-05-28. Bucket 2 closed AF2 on 2026-05-28. Bucket 3
-closed AF3 on 2026-05-28. Bucket 4 closed AF4 on 2026-05-28.
+closed AF3 on 2026-05-28. Bucket 4 closed AF4 on 2026-05-28. Bucket 5 closed
+AF5 on 2026-05-28.
 
 ## Resolved findings
 
@@ -93,6 +94,27 @@ Regression proof:
   set matches block export's resource-key set and that the importer guards the
   assignment path.
 
+### Bucket 5 - Chat folder identity scope
+
+Resolved: **AF5 / AEC4**.
+
+Chat folder ids are now globally unique for command-written state, matching the
+public patch/delete route shape that addresses folders by `folderId` alone. The
+dedicated folder create route and the fork route's optional folder creation both
+reject ids already used by any character. Import/bootstrap repair keeps legacy
+state usable by rewriting duplicate folder ids across characters and updating
+that character's chat `folderId` references to the rewritten id.
+
+Regression proof:
+
+- `server/fastify/__tests__/commands.test.ts` covers cross-character duplicate
+  folder-id rejection, fork-created duplicate rejection, deterministic
+  patch/delete targeting, and imported duplicate repair with chat references
+  preserved.
+- `util/client-thinning-audit.ts` now checks that chat normalization performs a
+  global folder-id repair pass and that both command create surfaces use the
+  global duplicate guard.
+
 ## Verification results
 
 Bucket 1 verifier result:
@@ -121,14 +143,20 @@ Bucket 4 verifier result:
   passed (19 tests).
 - `pnpm client-thinning:audit`: passed.
 
+Bucket 5 verifier result:
+
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: passed
+  (75 tests).
+- `pnpm client-thinning:audit`: passed.
+
 Initial verifier result:
 
 - `pnpm client-thinning:audit`: passed.
 
 That initial pass was not sufficient for alpha closeout because AF1, AF2, AF3,
-and AF4 were audit blind spots. AF1 through AF4 now have focused regression
-coverage, and AF1 through AF4 have invariant-audit coverage where their bug
-classes were previously invisible.
+AF4, and AF5 were audit blind spots. AF1 through AF5 now have focused
+regression coverage, and AF1 through AF5 have invariant-audit coverage where
+their bug classes were previously invisible.
 
 ## Archived baseline
 

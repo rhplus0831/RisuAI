@@ -113,6 +113,23 @@ export function ensureCharacterChatFolders(character: CharacterRecord): ChatFold
   return folders
 }
 
+export function chatFolderIdExists(
+  characters: readonly CharacterRecord[],
+  folderId: string,
+): boolean {
+  return characters.some(
+    (character) =>
+      Array.isArray(character.chatFolders) &&
+      (character.chatFolders as unknown[]).some(
+        (folder) =>
+          !!folder &&
+          typeof folder === 'object' &&
+          !Array.isArray(folder) &&
+          (folder as JsonRecord).id === folderId,
+      ),
+  )
+}
+
 export function createChatRecord(input: unknown, label = 'chat'): ChatRecord {
   const chat = readJsonObject(input, label) as ChatRecord
   chat.id = readChatId(chat.id, `${label}.id`)
@@ -388,7 +405,32 @@ export function normalizeAllCharacterChats(database: unknown): CharacterRecord[]
   for (const character of characters) {
     ensureCharacterChats(character)
   }
+  normalizeGlobalChatFolderIds(characters)
   return characters
+}
+
+function normalizeGlobalChatFolderIds(characters: readonly CharacterRecord[]): void {
+  const seen = new Set<string>()
+  for (const character of characters) {
+    const folders = ensureCharacterChatFolders(character)
+    const renamed = new Map<string, string>()
+    for (const folder of folders) {
+      if (seen.has(folder.id)) {
+        const previousId = folder.id
+        do {
+          folder.id = randomUUID()
+        } while (seen.has(folder.id))
+        renamed.set(previousId, folder.id)
+      }
+      seen.add(folder.id)
+    }
+    if (renamed.size === 0) continue
+    for (const chat of character.chats as ChatRecord[]) {
+      if (chat.folderId && renamed.has(chat.folderId)) {
+        chat.folderId = renamed.get(chat.folderId)!
+      }
+    }
+  }
 }
 
 function normalizeChatPage(character: CharacterRecord, chats: readonly ChatRecord[]): void {
