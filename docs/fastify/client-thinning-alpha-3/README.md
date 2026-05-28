@@ -45,10 +45,16 @@ deleting the last global lorebook now returns 400 instead of creating a fallback
 id. The preset-import rewrite also closes the A3F6 image asset validation
 overlap with focused malformed/missing asset tests.
 
+Bucket 3 has now landed global chat/message id addressing fixes. Chat ids and
+message ids are normalized to global uniqueness during import/bootstrap repair,
+command-created chats and messages reject ids that already exist under another
+parent, and the existing globally addressed patch/delete/fork routes remain
+unambiguous without changing the public route contract.
+
 `pnpm client-thinning:audit` is still expected to fail until later buckets land,
-but A3R1, A3R2, and A3R3 should no longer appear. The next implementation agent
-should start with Bucket 3 and make A3R4 pass while adding focused global
-chat/message id tests.
+but A3R1, A3R2, A3R3, and A3R4 should no longer appear. The next implementation
+agent should start with Bucket 4 and make A3R5/A3R7 pass while adding focused
+asset ownership and backup durability tests.
 
 Do not reconcile `docs/fastify/status.md`,
 `docs/fastify/status/next-steps.md`, or other broad status docs until the
@@ -118,7 +124,7 @@ pnpm smoke:fastify-browser
 Passing these commands is not enough to close Alpha 3; they are the baseline that
 missed the open findings.
 
-After Bucket 2, `pnpm client-thinning:audit` is intentionally red until the
+After Bucket 3, `pnpm client-thinning:audit` is intentionally red until the
 remaining behavior buckets remove the flagged patterns. The latest observed
 failures are recorded in [`audit.md`](./audit.md).
 

@@ -131,6 +131,20 @@ export function chatFolderIdExists(
   )
 }
 
+export function chatIdExists(characters: readonly CharacterRecord[], chatId: string): boolean {
+  return characters.some(
+    (character) =>
+      Array.isArray(character.chats) &&
+      (character.chats as unknown[]).some(
+        (chat) =>
+          !!chat &&
+          typeof chat === 'object' &&
+          !Array.isArray(chat) &&
+          (chat as JsonRecord).id === chatId,
+      ),
+  )
+}
+
 export function createChatRecord(input: unknown, label = 'chat'): ChatRecord {
   const chat = readJsonObject(input, label) as ChatRecord
   chat.id = readChatId(chat.id, `${label}.id`)
@@ -406,8 +420,23 @@ export function normalizeAllCharacterChats(database: unknown): CharacterRecord[]
   for (const character of characters) {
     ensureCharacterChats(character)
   }
+  normalizeGlobalChatIds(characters)
   normalizeGlobalChatFolderIds(characters)
   return characters
+}
+
+function normalizeGlobalChatIds(characters: readonly CharacterRecord[]): void {
+  const seen = new Set<string>()
+  for (const character of characters) {
+    for (const chat of ensureCharacterChats(character)) {
+      if (seen.has(chat.id)) {
+        do {
+          chat.id = randomUUID()
+        } while (seen.has(chat.id))
+      }
+      seen.add(chat.id)
+    }
+  }
 }
 
 function normalizeGlobalChatFolderIds(characters: readonly CharacterRecord[]): void {

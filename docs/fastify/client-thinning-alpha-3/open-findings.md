@@ -15,7 +15,7 @@ fix should keep narrowing the repeatable audit failure list.
 | A3F2 - Generic settings blindly replay 409 conflicts                       | High     | A3EC1 / A3EC6 | R2                             | Closed | 1                |
 | A3F3 - Preset copy/import still mint command-path ids                      | High     | A3EC2 / A3EC6 | R3                             | Closed | 2                |
 | A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | A3EC2 / A3EC6 | R3                             | Closed | 2                |
-| A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | A3EC3 / A3EC6 | R4                             | Open   | 3                |
+| A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | A3EC3 / A3EC6 | R4                             | Closed | 3                |
 | A3F6 - Preset import bypasses preset image asset validation                | Medium   | A3EC4 / A3EC6 | R3 overlap plus focused tests  | Closed | 2                |
 | A3F7 - Asset reads can fetch arbitrary URLs with `risu-auth`               | High     | A3EC4 / A3EC6 | R7                             | Open   | 4                |
 | A3F8 - Server backups do not preserve asset bytes                          | Medium   | A3EC4         | Focused tests/contract         | Open   | 4                |
@@ -212,15 +212,21 @@ applies to message patch/delete.
 
 Required closeout:
 
-- Audit gate: R4, globally resolved chat/message ids must be globally unique or
-  the affected routes must become parent-scoped.
-- Either enforce global uniqueness for chat and message ids during
-  import/bootstrap normalization and command create/append/replace, or make the
-  public routes parent-scoped.
-- Add cross-character duplicate chat-id tests and cross-chat duplicate message-id
-  tests.
-- Teach the audit to flag globally resolving helpers whose create paths only
-  validate parent-local uniqueness.
+- Closed in Bucket 3. The existing public route contract remains globally
+  addressed, and the server now enforces global uniqueness instead of converting
+  routes to parent-scoped URLs.
+- Chat ids are repaired to global uniqueness during import/bootstrap
+  normalization, and command-created/forked chats reject ids already used under
+  another character.
+- Message ids are repaired to global uniqueness during import/bootstrap
+  normalization, local bookmark references are updated when a duplicate message
+  id is repaired, and append/replace/generation/chat-create/chat-fork command
+  paths reject message ids already used under another chat.
+- Regression proof: `server/fastify/__tests__/commands.test.ts` covers
+  cross-character duplicate chat-id repair/rejection and cross-chat duplicate
+  message-id repair/rejection.
+- Audit gate: R4 no longer appears in `pnpm client-thinning:audit`; the audit
+  remains intentionally red only on later buckets.
 
 ## A3F6 - Preset Import Bypasses Preset Image Asset Validation
 

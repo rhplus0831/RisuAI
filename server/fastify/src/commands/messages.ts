@@ -50,6 +50,7 @@ export function normalizeAllChatMessages(database: unknown): CharacterRecord[] {
       ensureChatMessages(chat)
     }
   }
+  normalizeGlobalMessageIds(characters)
   return characters
 }
 
@@ -167,6 +168,27 @@ export function requireChatMessages(
   return { character, chat, messages: ensureChatMessages(chat) }
 }
 
+export function messageIdExists(
+  characters: readonly CharacterRecord[],
+  messageId: string,
+  options: { excludeChat?: ChatRecord; excludeMessage?: MessageRecord } = {},
+): boolean {
+  for (const character of characters) {
+    if (!Array.isArray(character.chats)) continue
+    for (const chat of character.chats) {
+      if (!chat || typeof chat !== 'object' || Array.isArray(chat)) continue
+      if (chat === options.excludeChat) continue
+      if (!Array.isArray((chat as ChatRecord).message)) continue
+      for (const message of (chat as ChatRecord).message) {
+        if (!message || typeof message !== 'object' || Array.isArray(message)) continue
+        if (message === options.excludeMessage) continue
+        if ((message as JsonRecord).chatId === messageId) return true
+      }
+    }
+  }
+  return false
+}
+
 export function validateUniqueMessageIds(messages: readonly MessageRecord[]): void {
   const seen = new Set<string>()
   for (const message of messages) {
@@ -175,6 +197,48 @@ export function validateUniqueMessageIds(messages: readonly MessageRecord[]): vo
     }
     seen.add(message.chatId)
   }
+}
+
+function normalizeGlobalMessageIds(characters: readonly CharacterRecord[]): void {
+  const seen = new Set<string>()
+  for (const character of characters) {
+    for (const chat of ensureCharacterChats(character)) {
+      const renamed = new Map<string, string>()
+      for (const message of ensureChatMessages(chat)) {
+        if (seen.has(message.chatId)) {
+          const previousId = message.chatId
+          do {
+            message.chatId = randomUUID()
+          } while (seen.has(message.chatId))
+          renamed.set(previousId, message.chatId)
+        }
+        seen.add(message.chatId)
+      }
+      if (renamed.size > 0) {
+        updateChatMessageReferences(chat, renamed)
+      }
+    }
+  }
+}
+
+function updateChatMessageReferences(chat: ChatRecord, renamed: ReadonlyMap<string, string>): void {
+  if (Array.isArray(chat.bookmarks)) {
+    chat.bookmarks = chat.bookmarks.map((id) =>
+      typeof id === 'string' && renamed.has(id) ? renamed.get(id)! : id,
+    )
+  }
+  if (
+    !chat.bookmarkNames ||
+    typeof chat.bookmarkNames !== 'object' ||
+    Array.isArray(chat.bookmarkNames)
+  ) {
+    return
+  }
+  const next: Record<string, string> = {}
+  for (const [id, name] of Object.entries(chat.bookmarkNames)) {
+    next[renamed.get(id) ?? id] = name
+  }
+  chat.bookmarkNames = next
 }
 
 function validateMessageRecord(

@@ -3301,6 +3301,145 @@ describe('Phase 9-3b chat record and folder commands', () => {
     ).toEqual(['chat-a', 'chat-b'])
   })
 
+  it('repairs imported duplicate chat ids across characters', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-shared', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [{ id: 'chat-shared', name: 'B chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    const [charA, charB] = bootstrap.json().database.characters
+    expect(charA.chats[0].id).toBe('chat-shared')
+    expect(charB.chats[0].id).not.toBe('chat-shared')
+    expect(typeof charB.chats[0].id).toBe('string')
+  })
+
+  it('rejects command-created chat ids and message ids already used by another character', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'hello', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [{ id: 'chat-b', name: 'B chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const duplicateCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-b/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: { id: 'chat-a', name: 'Duplicate', note: '', message: [], localLore: [] },
+      },
+    })
+    expect(duplicateCreate.statusCode).toBe(400)
+    expect(duplicateCreate.json().error).toBe('Duplicate chat id: chat-a')
+
+    const duplicateFork = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-b/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: { id: 'chat-a', name: 'Duplicate fork', note: '', message: [], localLore: [] },
+      },
+    })
+    expect(duplicateFork.statusCode).toBe(400)
+    expect(duplicateFork.json().error).toBe('Duplicate chat id: chat-a')
+
+    const duplicateCreateMessage = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-b/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-c',
+          name: 'Message duplicate',
+          note: '',
+          message: [{ role: 'char', data: 'duplicate', chatId: 'msg-a' }],
+          localLore: [],
+        },
+      },
+    })
+    expect(duplicateCreateMessage.statusCode).toBe(400)
+    expect(duplicateCreateMessage.json().error).toBe('Duplicate message id: msg-a')
+
+    const duplicateForkMessage = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-b/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-fork',
+          name: 'Message duplicate fork',
+          note: '',
+          message: [{ role: 'char', data: 'duplicate', chatId: 'msg-a' }],
+          localLore: [],
+        },
+      },
+    })
+    expect(duplicateForkMessage.statusCode).toBe(400)
+    expect(duplicateForkMessage.json().error).toBe('Duplicate message id: msg-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(
+      bootstrap
+        .json()
+        .database.characters.map((character: { chats: { id: string }[] }) =>
+          character.chats.map((chat) => chat.id),
+        ),
+    ).toEqual([['chat-a'], ['chat-b']])
+  })
+
   it('rejects command-created chat folder ids that already exist on another character', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -3934,6 +4073,159 @@ describe('Phase 9-3c message history commands', () => {
     ])
     expect(messages.map((message: { chatId: string }) => message.chatId)).toHaveLength(3)
     expect(new Set(messages.map((message: { chatId: string }) => message.chatId)).size).toBe(3)
+  })
+
+  it('repairs imported duplicate message ids across chats and updates local references', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'a', chatId: 'msg-shared' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [
+            {
+              id: 'chat-b',
+              name: 'B chat',
+              note: '',
+              message: [{ role: 'char', data: 'b', chatId: 'msg-shared' }],
+              bookmarks: ['msg-shared'],
+              bookmarkNames: { 'msg-shared': 'Pinned' },
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    const [charA, charB] = bootstrap.json().database.characters
+    const renamedMessageId = charB.chats[0].message[0].chatId
+    expect(charA.chats[0].message[0].chatId).toBe('msg-shared')
+    expect(renamedMessageId).not.toBe('msg-shared')
+    expect(typeof renamedMessageId).toBe('string')
+    expect(charB.chats[0].bookmarks).toEqual([renamedMessageId])
+    expect(charB.chats[0].bookmarkNames).toEqual({ [renamedMessageId]: 'Pinned' })
+  })
+
+  it('rejects message ids already used by another chat without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'hello', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [
+            {
+              id: 'chat-b',
+              name: 'B chat',
+              note: '',
+              message: [{ role: 'user', data: 'hi', chatId: 'msg-b' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const duplicateAppend = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-b/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        message: { role: 'char', data: 'duplicate append', chatId: 'msg-a' },
+      },
+    })
+    expect(duplicateAppend.statusCode).toBe(400)
+    expect(duplicateAppend.json().error).toBe('Duplicate message id: msg-a')
+
+    const duplicateReplace = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-b/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        messages: [{ role: 'char', data: 'duplicate replace', chatId: 'msg-a' }],
+      },
+    })
+    expect(duplicateReplace.statusCode).toBe(400)
+    expect(duplicateReplace.json().error).toBe('Duplicate message id: msg-a')
+
+    const duplicateGeneration = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-b/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          targetMessageId: 'msg-b',
+          message: {
+            role: 'char',
+            data: 'duplicate generation',
+            chatId: 'msg-a',
+            generationInfo: { generationId: 'gen-a' },
+            promptInfo: { promptName: 'Preset' },
+          },
+        },
+      },
+    })
+    expect(duplicateGeneration.statusCode).toBe(400)
+    expect(duplicateGeneration.json().error).toBe('Duplicate message id: msg-a')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(
+      bootstrap
+        .json()
+        .database.characters.flatMap((character: { chats: { message: { chatId: string }[] }[] }) =>
+          character.chats.flatMap((chat) => chat.message.map((message) => message.chatId)),
+        ),
+    ).toEqual(['msg-a', 'msg-b'])
   })
 
   it('returns 404 and 409 for missing messages and stale message revisions', async () => {

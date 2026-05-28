@@ -75,7 +75,7 @@ audit currently passes while missing most Alpha 3 bug classes.
 | A3F2 - Generic settings blindly replay 409 conflicts                       | High     | Real                             | R2                               |
 | A3F3 - Preset copy/import still mint command-path ids                      | High     | Closed in Bucket 2               | R3                               |
 | A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | Closed in Bucket 2               | R3                               |
-| A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | Real, narrowed to chats/messages | R4                               |
+| A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | Closed in Bucket 3               | R4                               |
 | A3F6 - Preset import bypasses preset image asset validation                | Medium   | Closed in Bucket 2               | R3 overlap plus focused tests    |
 | A3F7 - Asset reads can fetch arbitrary URLs with `risu-auth`               | High     | Real                             | R7                               |
 | A3F8 - Server backups do not preserve asset bytes                          | Medium   | Real                             | Focused tests/contract decision  |
@@ -125,8 +125,21 @@ Bucket 2 landed the A3EC2 stable-id fixes and the A3F6 preset-import overlap:
 - Deleting the last global lorebook returns 400 instead of minting a fallback
   lorebook id.
 
-After Bucket 2, A3R1, A3R2, and A3R3 pass. `pnpm client-thinning:audit` remains
-red on the remaining A3R4 through A3R7 buckets.
+Before Bucket 3, A3R1, A3R2, and A3R3 passed while
+`pnpm client-thinning:audit` remained red on A3R4 through A3R7.
+
+Bucket 3 landed the A3EC3 global chat/message id addressing fixes:
+
+- Chat ids are normalized to global uniqueness across characters.
+- Message ids are normalized to global uniqueness across chats, with local
+  bookmark references updated when a duplicate message id is repaired.
+- Chat create/fork routes reject chat ids and embedded message ids already used
+  under another parent.
+- Message append/replace/generation routes reject message ids already used under
+  another chat while preserving same-chat replacement semantics.
+
+After Bucket 3, A3R1, A3R2, A3R3, and A3R4 pass. `pnpm client-thinning:audit`
+remains red on the remaining A3R5 through A3R7 buckets.
 
 The audit still intentionally relies on focused behavior tests or later
 documented contract decisions for these Alpha 3 classes:
@@ -169,19 +182,18 @@ implementation exposes a repeatable source pattern worth guarding.
 
 ## Current Observed Failures
 
-After Bucket 2, `pnpm client-thinning:audit` is intentionally red on the
+After Bucket 3, `pnpm client-thinning:audit` is intentionally red on the
 remaining behavior buckets. The observed Alpha 3 failures are:
 
-- **A3R4:** chat and message ids are globally resolved but only parent-locally
-  deduped on create/append.
 - **A3R5:** client asset reads accept `assets/<id>.<ext>` but the RisuSave
   asset walker records only raw ids.
 - **A3R6:** wildcard array secrets restore from `source[i]`.
 - **A3R7:** `readServerAssetBytes` falls back to arbitrary `loc` values with
   `risu-auth`.
 
-The next implementation pass should make these gates pass as each behavior
-bucket lands, then add or update focused tests for the corresponding finding.
+The next implementation pass should start with Bucket 4, make A3R5/A3R7 pass,
+and add or update focused tests for the corresponding asset ownership and backup
+durability findings.
 
 ## Loop-Exit Checklist
 

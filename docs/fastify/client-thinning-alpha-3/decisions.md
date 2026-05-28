@@ -57,6 +57,12 @@ uniqueness is not enough unless routes include the parent id and validate it.
 events. This is a larger public command contract change and must update the
 command map, client helpers, tests, and audit.
 
+**Bucket 3 implementation:** the public route contract remains globally
+addressed. Chat ids and message ids are normalized to global uniqueness during
+import/bootstrap repair, command-created/forked chats reject duplicate chat ids
+and embedded duplicate message ids, and message append/replace/generation
+commands reject ids already used under another chat.
+
 ## A3EC4 - Asset Ownership
 
 **Default decision:** Fastify asset reads should only attach `risu-auth` to

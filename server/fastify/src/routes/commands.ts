@@ -81,6 +81,7 @@ import {
 } from '../commands/characters.js'
 import {
   chatFolderIdExists,
+  chatIdExists,
   createChatFolderRecord,
   createChatRecord,
   ensureCharacterChatFolders,
@@ -106,6 +107,7 @@ import {
 } from '../commands/chats.js'
 import {
   createMessageRecord,
+  messageIdExists,
   normalizeAllChatMessages,
   readGenerationResult,
   readMessageId,
@@ -2384,6 +2386,8 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ChatCommandBody
       const baseRevision = readBaseRevision(body)
       const chat = createChatRecord(body.chat)
+      const chatMessages = readReplacementMessages(chat.message)
+      chat.message = chatMessages
       const selectCreated = readChatOptionalBoolean(body.select, 'select') ?? true
       const result = applyJsonCommandMutation<{ chatId: string; selectedChatId: string | null }>({
         db,
@@ -2397,8 +2401,13 @@ export function registerCommandRoutes(
           const character = characters[requireCharacterIndex(characters, characterId)]
           const previousSelectedChatId = selectedChatId(character)
           const chats = ensureCharacterChats(character)
-          if (chats.some((existing) => existing.id === chat.id)) {
+          if (chatIdExists(characters, chat.id)) {
             throw new ValidationError(`Duplicate chat id: ${chat.id}`)
+          }
+          for (const message of chatMessages) {
+            if (messageIdExists(characters, message.chatId)) {
+              throw new ValidationError(`Duplicate message id: ${message.chatId}`)
+            }
           }
           if (chat.modules) {
             validateNormalModuleLinks(modules, chat.modules, 'chat.modules')
@@ -2534,6 +2543,8 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ChatCommandBody
       const baseRevision = readBaseRevision(body)
       const forkedChat = createChatRecord(body.chat)
+      const forkedMessages = readReplacementMessages(forkedChat.message)
+      forkedChat.message = forkedMessages
       const sourcePatch =
         body.sourcePatch === undefined ? {} : readChatPatch(body.sourcePatch, { allowEmpty: true })
       const folder = body.folder === undefined ? null : createChatFolderRecord(body.folder)
@@ -2580,8 +2591,13 @@ export function registerCommandRoutes(
           }
 
           const nextChat = forkedChat
-          if (chats.some((existing) => existing.id === nextChat.id)) {
+          if (chatIdExists(characters, nextChat.id)) {
             throw new ValidationError(`Duplicate chat id: ${nextChat.id}`)
+          }
+          for (const message of forkedMessages) {
+            if (messageIdExists(characters, message.chatId)) {
+              throw new ValidationError(`Duplicate message id: ${message.chatId}`)
+            }
           }
           if (nextChat.modules) {
             validateNormalModuleLinks(modules, nextChat.modules, 'chat.modules')
@@ -2910,7 +2926,7 @@ export function registerCommandRoutes(
         mutate(database) {
           const characters = normalizeAllChatMessages(database)
           const { messages } = requireChatMessages(characters, chatId)
-          if (messages.some((existing) => existing.chatId === message.chatId)) {
+          if (messageIdExists(characters, message.chatId)) {
             throw new ValidationError(`Duplicate message id: ${message.chatId}`)
           }
           messages.push(message)
@@ -3070,6 +3086,11 @@ export function registerCommandRoutes(
           const characters = normalizeAllChatMessages(database)
           const { chat } = requireChatMessages(characters, chatId)
           validateUniqueMessageIds(replacement)
+          for (const message of replacement) {
+            if (messageIdExists(characters, message.chatId, { excludeChat: chat })) {
+              throw new ValidationError(`Duplicate message id: ${message.chatId}`)
+            }
+          }
           chat.message = replacement
           return {
             event: { ...COMMAND_EVENT_CATALOG.messagesReplaced, parentId: chatId },
@@ -3107,6 +3128,10 @@ export function registerCommandRoutes(
           const messageId = generationResult.message.chatId
           const lookupMessageId = generationResult.targetMessageId ?? messageId
           const existingIndex = messages.findIndex((message) => message.chatId === lookupMessageId)
+          const existingMessage = existingIndex === -1 ? undefined : messages[existingIndex]
+          if (messageIdExists(characters, messageId, { excludeMessage: existingMessage })) {
+            throw new ValidationError(`Duplicate message id: ${messageId}`)
+          }
           if (existingIndex === -1) {
             if (generationResult.targetMessageId) {
               throw new EntityNotFoundError(
