@@ -57,6 +57,7 @@ describe('client-thinning audit fixtures', () => {
   const passiveRefreshCheck = 'A4R1 passive refresh writer ownership'
   const assetWalkerCheck = 'EC6 asset walker validator drift'
   const activeWriterGuardCheck = 'EC5 active-writer guard'
+  const stableCommandIdsCheck = 'EC4 stable command ids'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -363,6 +364,27 @@ describe('client-thinning audit fixtures', () => {
       'active-writer-guard/classified-bypass',
       activeWriterGuardCheck,
     )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture whose command-path constructor mints a durable id', async () => {
+    const result = await runAuditFixture(
+      'stable-command-ids/failing-minting-constructor',
+      stableCommandIdsCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${stableCommandIdsCheck}]`)
+    expect(result.stderr).toContain(
+      'createCharacterRecord must reject missing/duplicate stable ids instead of minting them.',
+    )
+  })
+
+  it('allows validate-only command-path constructors with promptTemplate kept out of settings', async () => {
+    const result = await runAuditFixture('stable-command-ids/no-mint-bypass', stableCommandIdsCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
