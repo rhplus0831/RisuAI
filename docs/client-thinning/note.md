@@ -62,8 +62,9 @@ Bounded or partial:
   proof now exists for `A4R-saveasset filename classification`,
   `A4R-backup data dir inventory`, `A4R-bounded process-lifetime accumulators`,
   `A4R7 asset URL gate`, `A4R-fanout composite command race`,
-  `A4R4 globally-addressed resolver normalize`, and
-  `A4R5 asset reference parser parity`; remaining audit rules still need
+  `A4R4 globally-addressed resolver normalize`,
+  `A4R5 asset reference parser parity`, and
+  `A4R6 wildcard secret row identity`; remaining audit rules still need
   committed pre-fix fixtures and tests proving non-zero exit.
 - `util/client-thinning-audit.ts` is broad and structural, but currently lives
   as one monolithic script. Treat new findings as audit-rule work plus
@@ -89,7 +90,7 @@ Client-owned, no-port, or deferred:
    failing audit before selecting wider runtime work.
 2. Continue audit fixture reproducibility unless source inventory proves a more
    urgent live bug. The next small fixture target is
-   `A4R6 wildcard secret row identity`; `A4R3`, `A4R2`, and `A4R1` are the
+   `A4R3 transitive command-path id minting`; `A4R2` and `A4R1` are the
    remaining A4R rules after it.
 3. If adding a new finding, update the invariant, audit rule, fixture, test, and
    the smallest relevant status/coverage shard in the same batch.

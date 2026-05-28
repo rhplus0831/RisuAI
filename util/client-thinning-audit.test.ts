@@ -51,6 +51,7 @@ describe('client-thinning audit fixtures', () => {
   const compositeFanoutCheck = 'A4R-fanout composite command race'
   const resolverNormalizeCheck = 'A4R4 globally-addressed resolver normalize'
   const parserParityCheck = 'A4R5 asset reference parser parity'
+  const wildcardSecretCheck = 'A4R6 wildcard secret row identity'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -210,6 +211,27 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'asset-reference-parser-parity/parity-bypass',
       parserParityCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture with a wildcard object-array secret missing a row identity key', async () => {
+    const result = await runAuditFixture('wildcard-secret-row-identity/failing', wildcardSecretCheck)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${wildcardSecretCheck}]`)
+    expect(result.stderr).toContain(
+      'Wildcard array secret customModels in SECRET_PATHS has no entry in ARRAY_ROW_IDENTITY_KEYS.',
+    )
+  })
+
+  it('allows wildcard array secrets that all declare a stable row identity', async () => {
+    const result = await runAuditFixture(
+      'wildcard-secret-row-identity/classified-bypass',
+      wildcardSecretCheck,
     )
 
     expect(result.exitCode).toBe(0)

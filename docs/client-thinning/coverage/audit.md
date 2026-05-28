@@ -36,6 +36,11 @@ Date: 2026-05-29
   fixtures under `util/client-thinning-audit-fixtures/asset-reference-parser-parity/`.
   The failing fixture drifts the walker `addReference` regex from the client
   `LOCAL_ASSET_PATH_RE`; the bypass keeps both regex literals identical.
+- `A4R6 wildcard secret row identity` has committed failing and classified-bypass
+  fixtures under `util/client-thinning-audit-fixtures/wildcard-secret-row-identity/`.
+  The failing fixture declares a wildcard object-array secret (`customModels`)
+  with no entry in `ARRAY_ROW_IDENTITY_KEYS`; the bypass classifies every
+  wildcard array secret with a stable row identity key.
 
 ## Open Proof
 
@@ -82,7 +87,7 @@ existing files yet.
 | `A4R3 transitive command-path id minting` | `transitive-command-id-minting` | Mint ids directly in a `/api/v1/commands/*` route, call a `repair*` id-minting helper from a command route, pass request-derived data to `ensure*`/`normalize*`, or call an unclassified transitive minter. | Non-zero exit with `A4R3 transitive command-path id minting`. |
 | `A4R4 globally-addressed resolver normalize` | `resolver-normalize` | Call `requireChatLocation()` or `requireMessageLocation()` before the matching global normalizer in the same handler/helper scope. | Covered: failing fixture exits non-zero with `A4R4 globally-addressed resolver normalize` for both resolver pairs; normalize-first bypass exits zero. |
 | `A4R5 asset reference parser parity` | `asset-reference-parser-parity` | Change the client `LOCAL_ASSET_PATH_RE` without the server walker accepting the same regex shape, or remove the walker `addReference` parity surface. | Covered: failing fixture (walker regex drifted from client) exits non-zero with `A4R5 asset reference parser parity`; identical-regex bypass exits zero. |
-| `A4R6 wildcard secret row identity` | `wildcard-secret-row-identity` | Add a wildcard object-array secret path without `ARRAY_ROW_IDENTITY_KEYS`, add an unclassified flat string-array secret, or let wildcard placeholder resolution skip the rejected-row sentinel. | Non-zero exit with `A4R6 wildcard secret row identity`. |
+| `A4R6 wildcard secret row identity` | `wildcard-secret-row-identity` | Add a wildcard object-array secret path without `ARRAY_ROW_IDENTITY_KEYS`, add an unclassified flat string-array secret, or let wildcard placeholder resolution skip the rejected-row sentinel. | Covered: failing fixture (object-array secret missing a row identity key) exits non-zero with `A4R6 wildcard secret row identity`; fully-classified bypass exits zero. |
 | `A4R7 asset URL gate` | `asset-url-gate` | Let Fastify asset-byte helpers fetch arbitrary `loc` values with `risu-auth`, fall back to `?? loc` for unknown shapes, or omit the explicit empty/null/throw default for unknown asset shapes. | Covered: authenticated arbitrary-`loc` fetch and Fastify `?? loc` fallback fixtures exit non-zero with `A4R7 asset URL gate`; documented-shapes bypass exits zero. |
 | `A4R-fanout composite command race` | `composite-command-fanout` | Dispatch two or more mutating command helpers in one scope without awaiting each previous call or routing through `runChatCommandSequence`/`runOptimisticCommandSequence`. | Covered: failing fixture exits non-zero with `A4R-fanout composite command race`; bypass fixture (sequencer-routed and awaited-chain shapes) exits zero. |
 | `A4R-backup data dir inventory` | `backup-data-dir-inventory` | Add a child to `KNOWN_DATA_DIR_CHILDREN` without referencing it in both `createBackup` and `restoreBackup`, or remove the inventory declaration. | Covered: failing fixture exits non-zero with `A4R-backup data dir inventory` and the missing create/restore references. |
@@ -94,13 +99,14 @@ existing files yet.
 `A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
 `A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
 `A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
-and `A4R5 asset reference parser parity` are complete. Continue with the
-remaining A4R rules unless source inventory reveals a more urgent rule gap.
-`A4R6 wildcard secret row identity` is a good next small target: its fixture
-should prove that adding a wildcard object-array secret path without an entry in
-`ARRAY_ROW_IDENTITY_KEYS` (or adding an unclassified flat string-array secret)
-exits non-zero, while the fully-classified shape stays accepted. After that,
-`A4R3`, `A4R2`, and `A4R1` remain.
+`A4R5 asset reference parser parity`, and `A4R6 wildcard secret row identity`
+are complete. Continue with the remaining A4R rules unless source inventory
+reveals a more urgent rule gap. `A4R3 transitive command-path id minting` is a
+good next small target: its fixture should prove that a `/api/v1/commands/*`
+route that mints durable ids from request payloads (directly, or transitively
+via a `repair*`/`ensure*`/`normalize*` helper) exits non-zero, while a route
+that takes ids only from validated request params stays accepted. After that,
+`A4R2` and `A4R1` remain.
 
 ## Commands
 
