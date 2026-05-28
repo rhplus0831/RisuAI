@@ -63,11 +63,16 @@ const sourcePaths = [
   'server/fastify/src/app.ts',
   'server/fastify/src/activeWriter.ts',
   'server/fastify/src/repository.ts',
+  'server/fastify/src/providerSecrets.ts',
   'server/fastify/src/routes/**/*.ts',
   'server/fastify/src/commands/**/*.ts',
   'server/fastify/src/risuSave/assetReferences.ts',
   'server/fastify/src/risuSave/exportSnapshot.ts',
   'server/fastify/src/risuSave/importSnapshot.ts',
+  'src/ts/bootstrap.ts',
+  'src/ts/setting/utils.ts',
+  'src/ts/server/assets.ts',
+  'src/ts/server/bootstrap.ts',
   'src/ts/server/commands.ts',
   'src/ts/plugins/pluginSafeClass.ts',
   'src/ts/plugins/plugins.svelte.ts',
@@ -1251,6 +1256,199 @@ function checkProviderOwnership(): void {
   }
 }
 
+function checkAlpha3PassiveBootstrapRefresh(): void {
+  const check = 'A3R1 passive bootstrap refresh ownership'
+  const bootstrap = source('src/ts/bootstrap.ts')
+  const serverBootstrap = source('src/ts/server/bootstrap.ts')
+  const refreshBody = getFunctionBodyText(bootstrap, 'refreshServerProjection')
+  const fetchBody = getFunctionBodyText(serverBootstrap, 'fetchServerBootstrapProjection')
+
+  if (
+    refreshBody.includes('fetchServerBootstrapProjection()') &&
+    fetchBody.includes('activeWriterSessionHeader()')
+  ) {
+    fail(
+      check,
+      'Passive projection refresh calls fetchServerBootstrapProjection() while that helper sends the active-writer session header.',
+      bootstrap.getFunction('refreshServerProjection'),
+    )
+  }
+}
+
+function checkAlpha3SettingsConflictRetry(): void {
+  const check = 'A3R2 settings conflict replay'
+  const settings = source('src/ts/setting/utils.ts')
+  const patchBody = getFunctionBodyText(settings, 'patchServerBackedSetting')
+
+  if (
+    patchBody.includes("result.status === 'conflict'") &&
+    patchBody.includes('baseRevision: result.currentRevision') &&
+    patchBody.match(/patchSettingsGroup\(/g)?.length !== 1
+  ) {
+    fail(
+      check,
+      'patchServerBackedSetting must not replay the same settings patch after a 409 conflict.',
+      settings.getFunction('patchServerBackedSetting'),
+    )
+  }
+}
+
+function collectIdMintingRepairHelpers(): Map<string, FunctionDeclaration> {
+  const helpers = new Map<string, FunctionDeclaration>()
+  for (const file of project.getSourceFiles()) {
+    if (!rel(file).startsWith('server/fastify/src/commands/')) continue
+    for (const fn of file.getFunctions()) {
+      const name = fn.getName()
+      if (!name?.startsWith('repair')) continue
+      const body = fn.getBody()
+      if (body && findRandomUuidCall(body)) {
+        helpers.set(name, fn)
+      }
+    }
+  }
+  return helpers
+}
+
+function checkAlpha3CommandRepairMinting(): void {
+  const check = 'A3R3 command repair helper minting'
+  const routes = source('server/fastify/src/routes/commands.ts')
+  const idMintingRepairHelpers = collectIdMintingRepairHelpers()
+
+  routes.forEachDescendant((node) => {
+    if (!Node.isCallExpression(node)) return
+    const expression = node.getExpression()
+    if (!Node.isPropertyAccessExpression(expression)) return
+    const method = expression.getName().toUpperCase()
+    if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return
+    const route = node.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
+    if (!route?.startsWith('/api/v1/commands/')) return
+
+    const handler = node.getArguments()[1]
+    if (!handler || (!Node.isArrowFunction(handler) && !Node.isFunctionExpression(handler))) {
+      return
+    }
+
+    handler.forEachDescendant((descendant) => {
+      if (!Node.isCallExpression(descendant)) return
+      const callExpression = descendant.getExpression()
+      if (!Node.isIdentifier(callExpression)) return
+      const helper = idMintingRepairHelpers.get(callExpression.getText())
+      if (!helper) return
+      fail(
+        check,
+        `${method} ${route} must not call id-minting repair helper ${callExpression.getText()}() from ${rel(helper.getSourceFile())}.`,
+        descendant,
+      )
+    })
+  })
+}
+
+function findRouteCallNode(sourceFile: SourceFile, method: string, route: string): Node | undefined {
+  let match: Node | undefined
+  sourceFile.forEachDescendant((node) => {
+    if (match || !Node.isCallExpression(node)) return
+    const expression = node.getExpression()
+    if (!Node.isPropertyAccessExpression(expression)) return
+    if (expression.getName().toUpperCase() !== method.toUpperCase()) return
+    const registeredRoute = node.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
+    if (registeredRoute === route) match = node
+  })
+  return match
+}
+
+function checkAlpha3GlobalChatMessageAddressing(): void {
+  const check = 'A3R4 global chat/message addressing'
+  const chats = source('server/fastify/src/commands/chats.ts')
+  const messages = source('server/fastify/src/commands/messages.ts')
+  const routes = source('server/fastify/src/routes/commands.ts')
+  const routesText = routes.getFullText()
+  const chatResolverBody = getFunctionBodyText(chats, 'requireChatLocation')
+  const messageResolverBody = getFunctionBodyText(messages, 'requireMessageLocation')
+
+  if (
+    chatResolverBody.includes('for (let characterIndex = 0;') &&
+    chatResolverBody.includes('chat.id === chatId') &&
+    routesText.includes('chats.some((existing) => existing.id === chat.id)')
+  ) {
+    fail(
+      check,
+      'Chat commands resolve chatId globally but create/fork duplicate checks are still character-local.',
+      findRouteCallNode(routes, 'POST', '/api/v1/commands/characters/:characterId/chats'),
+    )
+  }
+
+  if (
+    messageResolverBody.includes('for (const character of characters)') &&
+    messageResolverBody.includes('message.chatId === messageId') &&
+    routesText.includes('messages.some((existing) => existing.chatId === message.chatId)')
+  ) {
+    fail(
+      check,
+      'Message commands resolve messageId globally but append duplicate checks are still chat-local.',
+      findRouteCallNode(routes, 'POST', '/api/v1/commands/chats/:chatId/messages'),
+    )
+  }
+}
+
+function checkAlpha3AssetReferenceParserParity(): void {
+  const check = 'A3R5 asset reference parser parity'
+  const clientAssets = source('src/ts/server/assets.ts')
+  const walker = source('server/fastify/src/risuSave/assetReferences.ts')
+  const clientText = clientAssets.getFullText()
+  const addReferenceBody = getFunctionBodyText(walker, 'addReference')
+
+  if (
+    clientText.includes('LOCAL_ASSET_PATH_RE') &&
+    clientText.includes('serverAssetIdFromReference') &&
+    !addReferenceBody.includes('assets/')
+  ) {
+    fail(
+      check,
+      'Client asset reads accept legacy assets/<id>.<ext> refs, but the RisuSave asset walker only records raw server asset ids.',
+      walker.getFunction('addReference'),
+    )
+  }
+}
+
+function checkAlpha3MaskedArraySecrets(): void {
+  const check = 'A3R6 masked array secret row identity'
+  const providerSecrets = source('server/fastify/src/providerSecrets.ts')
+  const providerText = providerSecrets.getFullText()
+  const resolveBody = getFunctionBodyText(providerSecrets, 'resolvePath')
+  const riskyWildcardArrays = ['authRefreshes', 'botPresets', 'customModels'].filter((key) =>
+    providerText.includes(`['${key}', WILDCARD`),
+  )
+
+  if (
+    riskyWildcardArrays.length > 0 &&
+    resolveBody.includes('source[i]') &&
+    !providerText.includes('MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED')
+  ) {
+    fail(
+      check,
+      `Masked array secrets for ${riskyWildcardArrays.join(', ')} restore by array index; require stable row identity or reject masked placeholders after reorder/delete.`,
+      providerSecrets.getFunction('resolvePath'),
+    )
+  }
+}
+
+function checkAlpha3AuthenticatedAssetFallback(): void {
+  const check = 'A3R7 authenticated asset fallback'
+  const assets = source('src/ts/server/assets.ts')
+  const readBody = getFunctionBodyText(assets, 'readServerAssetBytes')
+
+  if (
+    readBody.includes('serverAssetUrl(loc) ?? loc') &&
+    readBody.includes("'risu-auth': auth")
+  ) {
+    fail(
+      check,
+      'readServerAssetBytes falls back to fetching arbitrary loc values while still attaching risu-auth.',
+      assets.getFunction('readServerAssetBytes'),
+    )
+  }
+}
+
 function runChecks(checks: AuditCheck[]): void {
   for (const check of checks) {
     try {
@@ -1274,6 +1472,13 @@ runChecks([
   { id: 'AEC5 module reference semantics', run: checkModuleReferenceSemantics },
   { id: 'AEC6 asset persistence semantics', run: checkAssetPersistenceSemantics },
   { id: 'EC1 provider ownership', run: checkProviderOwnership },
+  { id: 'A3R1 passive bootstrap refresh ownership', run: checkAlpha3PassiveBootstrapRefresh },
+  { id: 'A3R2 settings conflict replay', run: checkAlpha3SettingsConflictRetry },
+  { id: 'A3R3 command repair helper minting', run: checkAlpha3CommandRepairMinting },
+  { id: 'A3R4 global chat/message addressing', run: checkAlpha3GlobalChatMessageAddressing },
+  { id: 'A3R5 asset reference parser parity', run: checkAlpha3AssetReferenceParserParity },
+  { id: 'A3R6 masked array secret row identity', run: checkAlpha3MaskedArraySecrets },
+  { id: 'A3R7 authenticated asset fallback', run: checkAlpha3AuthenticatedAssetFallback },
 ])
 
 if (findings.length > 0) {

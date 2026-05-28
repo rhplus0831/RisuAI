@@ -90,25 +90,30 @@ bug classes. Three proposed additions involving personas, loadouts, and
 translator presets were rejected because those collections are flat top-level
 arrays, not parent-scoped resources addressed globally.
 
-## Current Audit Coverage Gap
+## Current Audit Gate Status
 
 `util/client-thinning-audit.ts` currently registers checks for active-writer
 guards, stable command ids, plugin storage gates, asset walker validator drift,
 RisuSave import/export shape, chat folder identity scope, module reference
-semantics, asset persistence semantics, and provider ownership.
+semantics, asset persistence semantics, provider ownership, and the Alpha 3
+A3R1 through A3R7 rule-first gates.
 
-Those checks do not yet cover the following Alpha 3 classes:
+Bucket 0 added repeatable audit coverage for these Alpha 3 classes:
 
 - Passive read/bootstrap paths that register active-writer ownership.
 - Conflict retry helpers outside the central command wrapper.
 - Imported repair helpers that can mint ids inside public command routes.
 - Chat/message ids that are only parent-local while routes resolve globally.
-- Preset import validator drift.
 - Authenticated asset fetch fallthrough to arbitrary URLs.
-- Backup/restore asset-byte preservation.
 - Client/server asset-reference parser mismatch for legacy paths.
-- Upload metadata defaults for non-image assets.
 - Index-based restore of wildcard array secrets.
+
+The audit still intentionally relies on focused behavior tests or later
+documented contract decisions for these Alpha 3 classes:
+
+- Preset import validator drift beyond the imported repair-helper overlap.
+- Backup/restore asset-byte preservation.
+- Upload metadata defaults for non-image assets.
 - Multi-command compatibility fan-out against one optimistic snapshot.
 - Event sink retention bounds.
 
@@ -142,6 +147,28 @@ should fail on the pre-fix tree and pass after the behavior fix.
 A3F8, A3F10, A3F12, and A3F13 can close with focused regression tests and a
 documented contract decision. Add structural audit coverage for them only if the
 implementation exposes a repeatable source pattern worth guarding.
+
+## Bucket 0 Observed Failures
+
+After adding A3R1 through A3R7, `pnpm client-thinning:audit` is intentionally
+red on the current pre-fix tree. The observed Alpha 3 failures are:
+
+- **A3R1:** `refreshServerProjection()` calls `fetchServerBootstrapProjection()`
+  while that helper sends `activeWriterSessionHeader()`.
+- **A3R2:** `patchServerBackedSetting()` retries conflicts with
+  `result.currentRevision`.
+- **A3R3:** preset copy, preset import, and last-lorebook delete call
+  id-minting repair helpers from public command routes.
+- **A3R4:** chat and message ids are globally resolved but only parent-locally
+  deduped on create/append.
+- **A3R5:** client asset reads accept `assets/<id>.<ext>` but the RisuSave
+  asset walker records only raw ids.
+- **A3R6:** wildcard array secrets restore from `source[i]`.
+- **A3R7:** `readServerAssetBytes` falls back to arbitrary `loc` values with
+  `risu-auth`.
+
+The next implementation pass should make these gates pass as each behavior
+bucket lands, then add or update focused tests for the corresponding finding.
 
 ## Loop-Exit Checklist
 

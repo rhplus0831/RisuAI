@@ -6,7 +6,8 @@ This is the suggested task-agent breakdown for Alpha 3. Each bucket should land
 behavior, focused tests, audit coverage where practical, and doc updates before
 being marked closed.
 
-Current status: **open.**
+Current status: **open.** Bucket 0 audit gates have landed and are expected to
+fail against the current pre-fix tree.
 
 Rule-first gate: Bucket 0 lands before behavior closeout. No behavior bucket may
 be marked closed until its corresponding R rule fails on the pre-fix tree and
@@ -15,7 +16,7 @@ failing-then-passing regression test or an explicit tested contract decision.
 
 | Order | Bucket                                   | Closes                                                                       | Primary ownership                                                                                                                                                                                                                                    |
 | ----- | ---------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | `util/client-thinning-audit.ts`, audit tests/fixtures where available, this folder's docs                                                                                                                                                            |
+| 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | Landed in `util/client-thinning-audit.ts`; current failures are documented below.                                                                                                                                                                    |
 | 1     | Active-writer and conflict semantics     | A3F1, A3F2, A3F12                                                            | `src/ts/bootstrap.ts`, `src/ts/server/bootstrap.ts`, `server/fastify/src/routes/bootstrap.ts`, `src/ts/setting/utils.ts`, `src/ts/server/commands.ts`, compatibility command adapters, active-writer/settings tests, `util/client-thinning-audit.ts` |
 | 2     | Stable-id command holes                  | A3F3, A3F4                                                                   | preset copy/import command contracts, lorebook delete behavior, server/client command helpers, command tests, `util/client-thinning-audit.ts`                                                                                                        |
 | 3     | Global id addressing                     | A3F5                                                                         | chat/message command helpers, import/bootstrap normalization, command route tests, audit checks                                                                                                                                                      |
@@ -56,7 +57,7 @@ pnpm smoke:fastify-browser
 
 ## Audit Coverage Targets
 
-Extend `util/client-thinning-audit.ts` with these rule-first gates:
+`util/client-thinning-audit.ts` now contains these rule-first gates:
 
 - R1: passive refresh cannot use a writer-registering bootstrap helper.
 - R2: conflict retry code cannot resend the same patch with `currentRevision`
@@ -74,3 +75,24 @@ Extend `util/client-thinning-audit.ts` with these rule-first gates:
 A3F8, A3F10, A3F12, and A3F13 may close with focused regression tests and
 documented contract decisions unless the implementation reveals a reusable audit
 pattern.
+
+## Bucket 0 Current Audit Output
+
+`pnpm client-thinning:audit` currently fails by design with these Alpha 3 gates:
+
+- A3R1: passive projection refresh calls the writer-registering bootstrap
+  helper.
+- A3R2: generic settings replay the same patch after a conflict.
+- A3R3: preset copy, preset import, and last-lorebook delete call id-minting
+  repair helpers from public command routes.
+- A3R4: chat and message routes resolve ids globally while create/append checks
+  only enforce parent-local uniqueness.
+- A3R5: the client accepts legacy `assets/<id>.<ext>` references that the
+  RisuSave asset walker ignores.
+- A3R6: masked array secrets for `authRefreshes`, `botPresets`, and
+  `customModels` restore by array index.
+- A3R7: `readServerAssetBytes` can fetch arbitrary references while attaching
+  `risu-auth`.
+
+Next agent: start Bucket 1, then continue through the behavior buckets until all
+A3R gates pass. Keep broad status docs untouched until the final closeout.

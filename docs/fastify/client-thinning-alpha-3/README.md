@@ -5,15 +5,16 @@ Date: 2026-05-28
 Status: **open.** This directory records the third client-thinning follow-up
 pass after [`../client-thinning-alpha-2/`](../client-thinning-alpha-2/) closed.
 The Alpha 2 audit is still valuable, but a deeper read found additional
-Fastify server-projection invariant gaps that `pnpm client-thinning:audit` does
-not currently catch.
+Fastify server-projection invariant gaps that `pnpm client-thinning:audit` did
+not previously catch.
 
 ## Why Alpha 3 Exists
 
 The original Phase 9 migration and Alpha 1/Alpha 2 closeouts fixed many concrete
-direct-write and server-projection bugs. The latest checkout still has a green
-client-thinning audit and focused tests, but review found more classes where the
-documented invariant is stronger than the code and audit proof:
+direct-write and server-projection bugs. The read-only Alpha 3 baseline still
+had a green client-thinning audit and focused tests, but review found more
+classes where the documented invariant is stronger than the code and audit
+proof:
 
 - Passive bootstrap refresh can re-register a stale browser session as the
   active writer.
@@ -27,6 +28,18 @@ documented invariant is stronger than the code and audit proof:
 
 These are follow-up gaps in the standing Fastify server-projection workstream,
 not a rewrite of the archived Phase 9 migration slices.
+
+## Current Bucket 0 State
+
+Bucket 0 landed the Alpha 3 audit gates in `util/client-thinning-audit.ts`.
+`pnpm client-thinning:audit` is now expected to fail on the current pre-fix
+tree with A3R1 through A3R7 findings. This is intentional rule-first evidence:
+the next implementation agent should start with Bucket 1 and make the relevant
+A3R checks pass while adding focused behavior tests.
+
+Do not reconcile `docs/fastify/status.md`,
+`docs/fastify/status/next-steps.md`, or other broad status docs until the
+behavior buckets are fixed and the full closeout ladder passes.
 
 ## Scope
 
@@ -91,6 +104,10 @@ pnpm smoke:fastify-browser
 
 Passing these commands is not enough to close Alpha 3; they are the baseline that
 missed the open findings.
+
+After Bucket 0, `pnpm client-thinning:audit` is intentionally red until the
+behavior buckets remove the flagged patterns. The latest observed failures are
+recorded in [`audit.md`](./audit.md).
 
 ## Document Map
 
