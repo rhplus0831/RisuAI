@@ -5816,4 +5816,78 @@ describe('Phase 9-4d asset reference commands', () => {
     expect(bootstrap.json().database.characters[0].vits).toBeUndefined()
     expect(bootstrap.json().database.characters[0].gptSoVitsConfig).toBeUndefined()
   })
+
+  it('accepts optional character audio clear refs on create and patch', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [], chatFolders: [] }],
+      characterOrder: ['char-a'],
+    })
+    const clearValues = [null, '', '-'] as const
+
+    for (const [index, clearValue] of clearValues.entries()) {
+      const created = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/commands/characters',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          character: {
+            chaId: `char-clear-${index}`,
+            name: `Clear ${index}`,
+            vits: { files: { greeting: clearValue } },
+            gptSoVitsConfig: {
+              ref_audio_data: { fileName: 'ref.wav', assetId: clearValue },
+            },
+          },
+        },
+      })
+      expect(created.statusCode).toBe(200)
+      revision = created.json().revision
+
+      const patched = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/characters/char-a',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          patch: {
+            vits: { files: { greeting: clearValue } },
+            gptSoVitsConfig: {
+              ref_audio_data: { fileName: 'ref.wav', assetId: clearValue },
+            },
+          },
+        },
+      })
+      expect(patched.statusCode).toBe(200)
+      revision = patched.json().revision
+    }
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const characters = bootstrap.json().database.characters
+    for (const [index, clearValue] of clearValues.entries()) {
+      expect(
+        characters.find(
+          (character: { chaId: string }) => character.chaId === `char-clear-${index}`,
+        ),
+      ).toMatchObject({
+        vits: { files: { greeting: clearValue } },
+        gptSoVitsConfig: {
+          ref_audio_data: { fileName: 'ref.wav', assetId: clearValue },
+        },
+      })
+    }
+    expect(
+      characters.find((character: { chaId: string }) => character.chaId === 'char-a'),
+    ).toMatchObject({
+      vits: { files: { greeting: '-' } },
+      gptSoVitsConfig: {
+        ref_audio_data: { fileName: 'ref.wav', assetId: '-' },
+      },
+    })
+  })
 })

@@ -124,6 +124,13 @@ asset. Re-upload is the natural repair path and is safer than leaving GET to
 **Test decision:** Optional asset-clear values are intentional API behavior and
 must be covered by regression tests for the character audio refs.
 
+**Implementation note:** Bucket 7 closed AF8 and AF10 by making `addAsset`
+rewrite a missing blob when the uploaded bytes match an existing metadata row,
+while preserving idempotent same-asset upload semantics. Character create and
+patch tests now cover `null`, `""`, and `"-"` for `vits.files.*` and
+`gptSoVitsConfig.ref_audio_data.assetId`, and the invariant audit checks the
+healing and clear-value guardrails.
+
 ## AEC7 - Documentation and closeout state
 
 **Decision:** Alpha closeout is not complete until the docs, invariant audit, and

@@ -151,6 +151,11 @@ export function addAsset(
   const persisted = loadPersisted(dataDir)
   const existing = persisted.assets.find((a) => a.id === sha256)
   if (existing) {
+    const file = assetPath(dataDir, existing)
+    if (!fs.existsSync(file)) {
+      fs.mkdirSync(assetsDir(dataDir), { recursive: true })
+      fs.writeFileSync(file, args.bytes)
+    }
     return { entry: existing, created: false, revision: getSchemaState(db).revision }
   }
   fs.mkdirSync(assetsDir(dataDir), { recursive: true })

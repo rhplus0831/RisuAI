@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
@@ -185,6 +185,42 @@ describe('Phase 2C assets', () => {
       contentType: 'image/png',
       revision: 1,
     })
+  })
+
+  it('heals a missing blob when the same asset is re-uploaded', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const first = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(first.statusCode).toBe(201)
+
+    const onDisk = path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`)
+    unlinkSync(onDisk)
+
+    const missing = await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${PNG_SHA}` })
+    expect(missing.statusCode).toBe(404)
+
+    const second = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(second.statusCode).toBe(200)
+    expect(second.json()).toEqual({
+      assetId: PNG_SHA,
+      size: PNG_BYTES.length,
+      contentType: 'image/png',
+      revision: 1,
+    })
+    expect(existsSync(onDisk)).toBe(true)
+
+    const healed = await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${PNG_SHA}` })
+    expect(healed.statusCode).toBe(200)
+    expect(Buffer.from(healed.rawPayload)).toEqual(PNG_BYTES)
   })
 
   it('returns 415 for an unsupported content-type', async () => {

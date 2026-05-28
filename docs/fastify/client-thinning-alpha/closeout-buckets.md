@@ -7,8 +7,8 @@ one or more findings from [`open-findings.md`](./open-findings.md). A bucket is
 done only when code, focused tests, relevant audit-script coverage, and docs are
 all updated.
 
-Current pickup: **Bucket 7.** Buckets 1 through 6 are closed; the next ordered
-open item is asset blob healing and optional clear tests.
+Current pickup: **Bucket 8.** Buckets 1 through 7 are closed; the next ordered
+open item is documentation/status reconciliation.
 
 | Order | Bucket                                        | Closes           | Status | Primary ownership                                                                                                                                          |
 | ----- | --------------------------------------------- | ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -18,7 +18,7 @@ open item is asset blob healing and optional clear tests.
 | 4     | ROOT_COMPONENT reserved-key guard             | AEC2 / AF4       | Closed | `server/fastify/src/risuSave/importSnapshot.ts`, `.risu` import tests                                                                                      |
 | 5     | Chat folder identity scope                    | AEC4 / AF5       | Closed | `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/chats.ts`, command tests, `util/client-thinning-audit.ts`                            |
 | 6     | Module reference and MCP boundary semantics   | AEC5 / AF6, AF7  | Closed | `server/fastify/src/commands/chats.ts`, `server/fastify/src/commands/modules.ts`, prompt/module tests                                                      |
-| 7     | Asset blob healing + optional clear tests     | AEC6 / AF8, AF10 | Open   | `server/fastify/src/repository.ts`, `server/fastify/src/routes/assets.ts`, command/assets tests                                                            |
+| 7     | Asset blob healing + optional clear tests     | AEC6 / AF8, AF10 | Closed | `server/fastify/src/repository.ts`, `server/fastify/src/routes/assets.ts`, command/assets tests                                                            |
 | 8     | Documentation/status reconciliation           | AEC7 / AF9       | Open   | `docs/fastify/client-thinning-alpha/*`, relevant historical status docs                                                                                    |
 
 ## Parallelization notes
@@ -170,6 +170,8 @@ pnpm test src/ts/server/commands.test.ts -- --run
 ```
 
 ## 7. Asset blob healing + optional clear tests
+
+Status: **Closed 2026-05-28.** See [`history.md`](./history.md#bucket-7---asset-blob-healing--optional-clear-tests).
 
 Goal: close AF8 and AF10.
 

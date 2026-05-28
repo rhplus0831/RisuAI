@@ -30,6 +30,7 @@ const project = new Project({
 const sourcePaths = [
   'server/fastify/src/app.ts',
   'server/fastify/src/activeWriter.ts',
+  'server/fastify/src/repository.ts',
   'server/fastify/src/routes/**/*.ts',
   'server/fastify/src/commands/**/*.ts',
   'server/fastify/src/risuSave/assetReferences.ts',
@@ -571,6 +572,60 @@ function checkModuleReferenceSemantics(): void {
   }
 }
 
+function checkAssetPersistenceSemantics(): void {
+  const check = 'AEC6 asset persistence semantics'
+  const repository = source('server/fastify/src/repository.ts')
+  const assetCommands = source('server/fastify/src/commands/assets.ts')
+  const characters = source('server/fastify/src/commands/characters.ts')
+  const addAssetBody = getFunctionBodyText(repository, 'addAsset')
+  const optionalRefBody = getFunctionBodyText(assetCommands, 'validateOptionalServerAssetRef')
+  const characterText = text('server/fastify/src/commands/characters.ts')
+
+  for (const needle of [
+    'const file = assetPath(dataDir, existing)',
+    'if (!fs.existsSync(file))',
+    'fs.writeFileSync(file, args.bytes)',
+  ]) {
+    if (!addAssetBody.includes(needle)) {
+      fail(
+        check,
+        `addAsset must heal missing blobs for existing asset metadata; missing ${needle}.`,
+        repository.getFunction('addAsset'),
+      )
+    }
+  }
+
+  for (const clearValue of ["''", "'-'"]) {
+    if (!assetCommands.getFullText().includes(clearValue)) {
+      fail(
+        check,
+        `Optional server asset refs must preserve ${clearValue} as an accepted clear value.`,
+        assetCommands.getVariableDeclaration('CLEARABLE_ASSET_VALUES'),
+      )
+    }
+  }
+  if (!optionalRefBody.includes('value === null')) {
+    fail(
+      check,
+      'Optional server asset refs must preserve null as an accepted clear value.',
+      assetCommands.getFunction('validateOptionalServerAssetRef'),
+    )
+  }
+
+  for (const needle of [
+    'validateVitsAssetRefs(dataDir, record.vits',
+    'validateGptSoVitsAssetRefs(dataDir, record.gptSoVitsConfig',
+  ]) {
+    if (!characterText.includes(needle)) {
+      fail(
+        check,
+        `Character command validation must cover optional audio asset refs; missing ${needle}.`,
+        characters,
+      )
+    }
+  }
+}
+
 function checkProviderOwnership(): void {
   const check = 'EC1 provider ownership'
   const serverCompletion = source('src/ts/process/request/serverCompletion.ts')
@@ -636,6 +691,7 @@ runChecks([
   { id: 'AEC2 import/export current shape', run: checkRisuSaveImportExportShape },
   { id: 'AEC4 chat folder identity scope', run: checkChatFolderIdentityScope },
   { id: 'AEC5 module reference semantics', run: checkModuleReferenceSemantics },
+  { id: 'AEC6 asset persistence semantics', run: checkAssetPersistenceSemantics },
   { id: 'EC1 provider ownership', run: checkProviderOwnership },
 ])
 

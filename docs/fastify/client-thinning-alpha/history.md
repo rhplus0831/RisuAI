@@ -136,6 +136,29 @@ Regression proof:
   excludes MCP rows, rejects unresolved ids, and is wired into the command
   surfaces that persist normal module reference lists.
 
+### Bucket 7 - Asset blob healing + optional clear tests
+
+Resolved: **AF8, AF10 / AEC6**.
+
+Asset re-upload now heals a persisted asset metadata row whose blob file is
+missing. `addAsset` keeps the existing stable asset id and metadata response but
+rewrites the expected blob path when the upload bytes hash to an existing asset
+row and the file is absent.
+
+Optional character audio clear values are now covered as intentional command API
+behavior. `null`, `""`, and `"-"` are accepted for both `vits.files.*` and
+`gptSoVitsConfig.ref_audio_data.assetId` on character create and patch paths.
+
+Regression proof:
+
+- `server/fastify/__tests__/assets.test.ts` covers upload, missing blob 404,
+  same-id re-upload healing, and successful GET of the restored blob.
+- `server/fastify/__tests__/commands.test.ts` covers the `null`, `""`, and
+  `"-"` clear values for character audio refs on create and patch.
+- `util/client-thinning-audit.ts` now checks that `addAsset` heals missing
+  blobs for existing metadata and that optional server asset refs preserve the
+  documented clear-value semantics.
+
 ## Verification results
 
 Bucket 1 verifier result:
@@ -177,14 +200,23 @@ Bucket 6 verifier result:
 - `pnpm test src/ts/server/commands.test.ts -- --run`: passed (36 tests).
 - `pnpm client-thinning:audit`: passed.
 
+Bucket 7 verifier result:
+
+- `pnpm api:test server/fastify/__tests__/assets.test.ts -- --run`: passed
+  (16 tests).
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: passed
+  (77 tests).
+- `pnpm client-thinning:audit`: passed.
+
 Initial verifier result:
 
 - `pnpm client-thinning:audit`: passed.
 
 That initial pass was not sufficient for alpha closeout because AF1, AF2, AF3,
-AF4, and AF5 were audit blind spots. AF1 through AF5 now have focused
-regression coverage, and AF1 through AF5 have invariant-audit coverage where
-their bug classes were previously invisible.
+AF4, AF5, AF6, AF7, AF8, and AF10 were audit or regression blind spots. AF1
+through AF8 and AF10 now have focused regression coverage, and the invariant
+audit covers each bug class that was appropriate for repeatable structural
+checking.
 
 ## Archived baseline
 
