@@ -59,6 +59,7 @@ describe('client-thinning audit fixtures', () => {
   const activeWriterGuardCheck = 'EC5 active-writer guard'
   const stableCommandIdsCheck = 'EC4 stable command ids'
   const pluginStorageCheck = 'EC2 plugin storage gates'
+  const providerOwnershipCheck = 'EC1 provider ownership'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -407,6 +408,30 @@ describe('client-thinning audit fixtures', () => {
 
   it('allows device-local plugin storage gated by Plugin Compatibility Mode', async () => {
     const result = await runAuditFixture('plugin-storage-gates/gated-bypass', pluginStorageCheck)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that exposes useServerGeneration as a server settings command', async () => {
+    const result = await runAuditFixture(
+      'provider-ownership/failing-useservergeneration-setting',
+      providerOwnershipCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${providerOwnershipCheck}]`)
+    expect(result.stderr).toContain(
+      'useServerGeneration must not be exposed as a Fastify server settings command.',
+    )
+  })
+
+  it('allows server-routed provider dispatch with browser fallbacks gated off', async () => {
+    const result = await runAuditFixture(
+      'provider-ownership/server-routed-bypass',
+      providerOwnershipCheck,
+    )
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')

@@ -86,6 +86,12 @@ Date: 2026-05-29
   every storage method, `SafeIdbFactory` member, and the V3 bridge needles, and
   keeps `pluginV2` out of `allowedDbKeys`; the failing fixture drops the gate
   assert from `SafeLocalStorage.getItem`.
+- `EC1 provider ownership` has committed `failing-useservergeneration-setting`
+  and `server-routed-bypass` fixtures under
+  `util/client-thinning-audit-fixtures/provider-ownership/`. The bypass keeps the
+  serverCompletion Fastify-mode guards, gates browser Vertex projection writes
+  behind `isFastifyServer`, and omits `useServerGeneration` from the settings
+  map; the failing fixture exposes `useServerGeneration` as a settings command.
 
 ## Open Proof
 
@@ -126,7 +132,7 @@ existing files yet.
 | `AEC4 chat folder identity scope` | `chat-folder-identity-scope` | Normalize chat folder ids only per character, fail to update chat `folderId` references after repair, or omit global duplicate-id rejection on create surfaces. | Non-zero exit with `AEC4 chat folder identity scope`. |
 | `AEC5 module reference semantics` | `module-reference-semantics` | Treat MCP modules as normal link targets, tolerate unresolved normal module ids, or skip module-link validation on chat create/patch/fork writes. | Non-zero exit with `AEC5 module reference semantics`. |
 | `AEC6 asset persistence semantics` | `asset-persistence-semantics` | Stop healing missing asset blobs for existing metadata, reject documented clear values, or omit optional audio asset reference validation from character commands. | Non-zero exit with `AEC6 asset persistence semantics`. |
-| `EC1 provider ownership` | `provider-ownership` | Reintroduce browser provider fallback in Fastify mode, allow Fastify preview bodies without explicit support, permit browser Vertex projection writes in Fastify mode, or expose `useServerGeneration` as a server setting command. | Non-zero exit with `EC1 provider ownership`. |
+| `EC1 provider ownership` | `provider-ownership` | Reintroduce browser provider fallback in Fastify mode, allow Fastify preview bodies without explicit support, permit browser Vertex projection writes in Fastify mode, or expose `useServerGeneration` as a server setting command. | Covered: failing fixture (exposes `useServerGeneration` as a settings command) exits non-zero with `EC1 provider ownership`; server-routed bypass exits zero. |
 | `A4R1 passive refresh writer ownership` | `passive-refresh-writer-ownership` | Make a read-only bootstrap helper attach `activeWriterSessionHeader()` or call the writer-registering bootstrap helper from a passive refresh path outside `WRITER_BOOTSTRAP_CALLERS`. | Covered: `failing-passive-caller` and `failing-readonly-header` exit non-zero with `A4R1 passive refresh writer ownership`; `writer-intent-bypass` (writer helper called only from the allowlisted entrypoint) exits zero. |
 | `A4R2 conflict replay outside central wrapper` | `conflict-replay` | Branch on `result.status === 'conflict'` outside `runServerCommand` and then resend a mutating command with `baseRevision` through a command helper or fetch. | Covered: failing fixture (non-wrapper helper replays after a conflict) exits non-zero with `A4R2 conflict replay outside central wrapper`; surface-conflict bypass (plus the exempt central wrapper) exits zero. |
 | `A4R3 transitive command-path id minting` | `transitive-command-id-minting` | Mint ids directly in a `/api/v1/commands/*` route, call a `repair*` id-minting helper from a command route, pass request-derived data to `ensure*`/`normalize*`, or call an unclassified transitive minter. | Covered: failing fixture (direct route-handler mint + transitive helper mint) exits non-zero with `A4R3 transitive command-path id minting`; validated-param + normalize-on-read bypass exits zero. |
@@ -144,15 +150,14 @@ existing files yet.
 `A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
 `A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
 `A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
-Every A4R rule (`A4R1`–`A4R7` plus the `A4R-` named rules), `EC6 asset walker
-validator drift`, `EC5 active-writer guard`, `EC4 stable command ids`, and
-`EC2 plugin storage gates` now have committed fixtures. The remaining open rules
-are `EC1 provider ownership`, `AEC2 import/export current shape`, `AEC4 chat
-folder identity scope`, `AEC5 module reference semantics`, and `AEC6 asset
-persistence semantics`. A good next target is `EC1 provider ownership`: its
-fixture should prove that reintroducing a browser provider fallback in Fastify
-mode (or exposing `useServerGeneration` as a server setting command) exits
-non-zero, while the explicit server-routed shape stays accepted.
+Every A4R rule (`A4R1`–`A4R7` plus the `A4R-` named rules) and the EC rules
+(`EC1`, `EC2`, `EC4`, `EC5`, `EC6`) now have committed fixtures. The remaining
+open rules are the AEC structural invariants: `AEC2 import/export current
+shape`, `AEC4 chat folder identity scope`, `AEC5 module reference semantics`,
+and `AEC6 asset persistence semantics`. A good next target is `AEC4 chat folder
+identity scope`: its fixture should prove that normalizing chat folder ids only
+per-character (or omitting global duplicate-id rejection on create) exits
+non-zero, while global folder-id normalization stays accepted.
 
 ## Commands
 
