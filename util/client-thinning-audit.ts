@@ -651,7 +651,11 @@ function checkStableIdCommandPaths(): void {
     [chats, ['createChatRecord', 'createChatFolderRecord']],
     [prompts, ['createPromptItemRecord']],
     [messages, ['createMessageRecord', 'readReplacementMessages', 'readGenerationResult']],
-    [lorebooks, ['createGlobalLorebookRecord', 'readLorebookEntries']],
+    // A4EC3 / B2: command-path validators are the no-mint constructors.
+    // `validateGlobalLorebookCreate` and `validateLorebookEntries` replaced
+    // the repair-permissive `createGlobalLorebookRecord` and
+    // `readLorebookEntries` shims at the public routes.
+    [lorebooks, ['validateGlobalLorebookCreate', 'validateLorebookEntries']],
     [scripts, ['readScriptDefinitions', 'readTriggerDefinitions']],
   ])
 

@@ -119,7 +119,6 @@ import {
   validateUniqueMessageIds,
 } from '../commands/messages.js'
 import {
-  createGlobalLorebookRecord,
   ensureGlobalLorebookCollection,
   ensureLorebookDatabase,
   ensureModuleCollection,
@@ -128,13 +127,14 @@ import {
   readCharacterId as readLorebookCharacterId,
   readChatId as readLorebookChatId,
   readGlobalLorebookPatch,
-  readLorebookEntries,
   readLorebookId,
   readLorebookIdList,
   readModuleId,
   requireGlobalLorebookIndex,
   requireModule,
   validateFullLorebookOrder,
+  validateGlobalLorebookCreate,
+  validateLorebookEntries,
 } from '../commands/lorebooks.js'
 import {
   normalizeScriptDefinitionDatabase,
@@ -3170,7 +3170,9 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as { baseRevision?: unknown; lorebook?: unknown }
       const baseRevision = readBaseRevision(body)
-      const lorebook = createGlobalLorebookRecord(body.lorebook)
+      // A4EC3 / B2: validate-only constructor rejects missing entry ids
+      // rather than minting them.
+      const lorebook = validateGlobalLorebookCreate(body.lorebook)
       const result = applyJsonCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
@@ -3357,7 +3359,7 @@ export function registerCommandRoutes(
       const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
-      const entries = readLorebookEntries(body.entries)
+      const entries = validateLorebookEntries(body.entries)
       const result = applyJsonCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
@@ -3394,7 +3396,7 @@ export function registerCommandRoutes(
       )
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
-      const entries = readLorebookEntries(body.entries)
+      const entries = validateLorebookEntries(body.entries)
       const result = applyJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
@@ -3428,7 +3430,7 @@ export function registerCommandRoutes(
       const chatId = readLorebookChatId((req.params as { chatId?: unknown }).chatId)
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
-      const entries = readLorebookEntries(body.entries)
+      const entries = validateLorebookEntries(body.entries)
       const result = applyJsonCommandMutation<{ chatId: string }>({
         db,
         dataDir,
@@ -4001,7 +4003,7 @@ export function registerCommandRoutes(
       const moduleId = readModuleId((req.params as { moduleId?: unknown }).moduleId)
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
-      const entries = readLorebookEntries(body.entries)
+      const entries = validateLorebookEntries(body.entries)
       const result = applyJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,

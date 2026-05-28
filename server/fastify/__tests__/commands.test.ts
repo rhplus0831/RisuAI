@@ -5262,6 +5262,172 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(bootstrap.json().database.loreBook[0].data).toEqual([])
   })
 
+  it('rejects POST /lorebooks payloads that omit nested entry ids (A4EC3 / B2)', async () => {
+    // A4EC3 / B2: the create route now routes through validateGlobalLorebookCreate,
+    // which delegates to the no-mint validateLorebookEntries. Pre-fix the
+    // route silently minted UUIDs for missing entry ids the client could not
+    // observe.
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+    })
+
+    const missingId = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        lorebook: {
+          id: 'book-c',
+          name: 'C',
+          data: [
+            {
+              key: 'k',
+              secondkey: '',
+              insertorder: 100,
+              comment: '',
+              content: 'c',
+              mode: 'normal',
+              alwaysActive: false,
+              selective: false,
+            },
+          ],
+        },
+      },
+    })
+    expect(missingId.statusCode).toBe(400)
+    expect(missingId.json().error).toBe('lorebook.data[0].id must be a non-empty string')
+
+    const duplicateId = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        lorebook: {
+          id: 'book-c',
+          name: 'C',
+          data: [
+            {
+              id: 'dup-entry',
+              key: '',
+              secondkey: '',
+              insertorder: 100,
+              comment: '',
+              content: '',
+              mode: 'normal',
+              alwaysActive: false,
+              selective: false,
+            },
+            {
+              id: 'dup-entry',
+              key: '',
+              secondkey: '',
+              insertorder: 100,
+              comment: '',
+              content: '',
+              mode: 'normal',
+              alwaysActive: false,
+              selective: false,
+            },
+          ],
+        },
+      },
+    })
+    expect(duplicateId.statusCode).toBe(400)
+    expect(duplicateId.json().error).toBe('Duplicate lorebook entry id: dup-entry')
+
+    // Persisted state unchanged: only book-a from the import remains.
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database.loreBook.map((b: { id: string }) => b.id)).toEqual(['book-a'])
+  })
+
+  it('rejects PUT /characters /chats /modules lorebook payloads with missing or duplicate entry ids (A4EC3 / B2)', async () => {
+    // A4EC3 / B2: the four replace routes now route through validateLorebookEntries,
+    // which is a no-mint constructor. Pre-fix readLorebookEntries forwarded
+    // through repair-on-read and accepted minted ids.
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          globalLore: [],
+          chats: [{ id: 'chat-a', name: 'Chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+      modules: [{ id: 'mod-a', name: 'Mod', lorebook: [] }],
+    })
+
+    const malformedEntry = {
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: '',
+      content: '',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+
+    const routes = [
+      '/api/v1/commands/characters/char-a/lorebooks',
+      '/api/v1/commands/chats/chat-a/lorebooks',
+      '/api/v1/commands/modules/mod-a/lorebooks',
+    ]
+
+    for (const url of routes) {
+      const missing = await harness.app.inject({
+        method: 'PUT',
+        url,
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, entries: [malformedEntry] },
+      })
+      expect(missing.statusCode).toBe(400)
+      expect(missing.json().error).toBe('entries[0].id must be a non-empty string')
+
+      const duplicate = await harness.app.inject({
+        method: 'PUT',
+        url,
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          entries: [
+            { ...malformedEntry, id: 'dup-entry' },
+            { ...malformedEntry, id: 'dup-entry' },
+          ],
+        },
+      })
+      expect(duplicate.statusCode).toBe(400)
+      expect(duplicate.json().error).toBe('Duplicate lorebook entry id: dup-entry')
+    }
+
+    // Persisted state is untouched by the rejected requests; revision is
+    // still the post-import baseline.
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    const database = bootstrap.json().database
+    expect(database.characters[0].globalLore).toEqual([])
+    expect(database.characters[0].chats[0].localLore).toEqual([])
+    expect(database.modules[0].lorebook).toEqual([])
+  })
+
   it('returns 404 and 409 for missing lorebook parents and stale revisions', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

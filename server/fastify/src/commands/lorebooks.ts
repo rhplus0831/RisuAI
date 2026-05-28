@@ -136,6 +136,26 @@ export function ensureModuleCollection(database: JsonRecord): ModuleRecord[] {
   return modules
 }
 
+// Command-path constructor. Rejects request payloads that omit entry ids;
+// the public route caller is responsible for supplying stable ids. A4EC3 /
+// B2 — replaces the previous repair-permissive `createGlobalLorebookRecord`
+// on every command route.
+export function validateGlobalLorebookCreate(
+  input: unknown,
+  label = 'lorebook',
+): GlobalLorebookRecord {
+  const lorebook = readJsonObject(input, label) as GlobalLorebookRecord
+  lorebook.id = readLorebookId(lorebook.id, `${label}.id`)
+  lorebook.name =
+    typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
+  lorebook.data = validateLorebookEntries(lorebook.data ?? [], `${label}.data`)
+  validateGlobalLorebookRecord(lorebook, label)
+  return lorebook
+}
+
+// Import/bootstrap-only repair-permissive constructor. Allowed to mint
+// missing entry ids on degraded persisted state but never reachable from a
+// command-path route handler — A4R3 walks the call graph and forbids it.
 export function createGlobalLorebookRecord(
   input: unknown,
   label = 'lorebook',
@@ -192,17 +212,18 @@ export function readLorebookIdList(input: unknown, label = 'lorebookIds'): strin
   return input.map((id, index) => readLorebookId(id, `${label}[${index}]`))
 }
 
-export function readLorebookEntries(input: unknown, label = 'entries'): LorebookEntryRecord[] {
-  return validateLorebookEntries(input, label)
-}
-
+// A4EC3 / B2: command-path entry validator. No `randomUUID()` reference
+// reachable transitively — A4R3 verifies this with a static call-graph walk.
+// Replaces the dead `readLorebookEntries` alias that used to forward to
+// `createLorebookEntryRecord({ repairId: false })`; the audit treated the
+// shared minter as a propagating mint.
 export function validateLorebookEntries(input: unknown, label = 'entries'): LorebookEntryRecord[] {
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
   }
   const seen = new Set<string>()
   return input.map((raw, index) => {
-    const entry = createLorebookEntryRecord(raw, `${label}[${index}]`, { repairId: false })
+    const entry = validateLorebookEntry(raw, `${label}[${index}]`)
     if (seen.has(entry.id)) {
       throw new ValidationError(`Duplicate lorebook entry id: ${entry.id}`)
     }
@@ -257,6 +278,10 @@ export function validateFullLorebookOrder(
   }
 }
 
+// Import/bootstrap-only repair-permissive mapper. Mints replacement ids for
+// degraded persisted state; the A4R3 audit walks the call graph and
+// classifies this as a propagating mint, so command-path route handlers may
+// not reach it directly or transitively.
 export function repairLorebookEntries(input: unknown, label: string): LorebookEntryRecord[] {
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
@@ -264,7 +289,7 @@ export function repairLorebookEntries(input: unknown, label: string): LorebookEn
 
   const seen = new Set<string>()
   return input.map((raw, index) => {
-    const entry = createLorebookEntryRecord(raw, `${label}[${index}]`, { repairId: true })
+    const entry = repairLorebookEntry(raw, `${label}[${index}]`)
     if (seen.has(entry.id)) {
       entry.id = randomUUID()
     }
@@ -309,12 +334,8 @@ export function normalizeSelectedChatLorebooks(
   }
 }
 
-function createLorebookEntryRecord(
-  input: unknown,
-  label: string,
-  options: { repairId: boolean },
-): LorebookEntryRecord {
-  const entry = readJsonObject(
+function lorebookEntryFromInput(input: unknown, label: string): LorebookEntryRecord {
+  return readJsonObject(
     {
       key: '',
       secondkey: '',
@@ -328,10 +349,25 @@ function createLorebookEntryRecord(
     },
     label,
   ) as LorebookEntryRecord
+}
+
+// A4EC3 / B2: command-path single-entry validator. Has no transitive
+// reference to `randomUUID()` — A4R3 confirms this is non-propagating.
+function validateLorebookEntry(input: unknown, label: string): LorebookEntryRecord {
+  const entry = lorebookEntryFromInput(input, label)
   if (typeof entry.id !== 'string' || entry.id.trim() === '') {
-    if (!options.repairId) {
-      throw new ValidationError(`${label}.id must be a non-empty string`)
-    }
+    throw new ValidationError(`${label}.id must be a non-empty string`)
+  }
+  validateLorebookEntryRecord(entry, label)
+  return entry
+}
+
+// Import/bootstrap-only repair-permissive constructor. Mints `randomUUID()`
+// for missing entry ids; only called from `repair*` callers and never from
+// command-path routes.
+function repairLorebookEntry(input: unknown, label: string): LorebookEntryRecord {
+  const entry = lorebookEntryFromInput(input, label)
+  if (typeof entry.id !== 'string' || entry.id.trim() === '') {
     entry.id = randomUUID()
   }
   validateLorebookEntryRecord(entry, label)
