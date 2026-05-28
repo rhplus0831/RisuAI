@@ -213,6 +213,54 @@ export function backupDir(dataDir: string, id: string): string {
   return path.join(backupsDir(dataDir), id)
 }
 
+// A4EC4 / B4 / B5: the exhaustive list of child entries inside `dataDir` that
+// the backup contract owns. Every file/directory in this list must be
+// snapshotted by `createBackup` and restored by `restoreBackup`. The audit
+// (`pnpm client-thinning:audit`, rule A4R-backup) compares this list against
+// `createBackup` and `restoreBackup` bodies to catch drift.
+//
+// Implementation notes per entry:
+//   - 'db.json'  : the user-owned JSON state. Copied via file write/rename.
+//   - 'assets'   : asset bytes referenced from db.json. Copied as a directory.
+//   - 'risu.db'  : SQLite memory database (schema_version + hypa-v3 tables).
+//                  Backed up after a WAL checkpoint; restored via ATTACH so the
+//                  live `DatabaseSync` handle stays valid.
+//   - 'save'     : legacy storage directory written by /api/v1/storage/*.
+export const KNOWN_DATA_DIR_CHILDREN = ['db.json', 'assets', 'risu.db', 'save'] as const
+
+function saveDir(dataDir: string): string {
+  return path.join(dataDir, 'save')
+}
+
+function sqliteDbPath(dataDir: string): string {
+  return path.join(dataDir, 'risu.db')
+}
+
+// Tables that must survive a backup/restore round-trip. Kept in sync with
+// `createMemoryTables` and `schema_version` in `db.ts`. The audit (A4R-backup)
+// asserts createBackup / restoreBackup names every entry in
+// KNOWN_DATA_DIR_CHILDREN, and these tables sit inside `risu.db`.
+const SQLITE_BACKUP_TABLES = [
+  'schema_version',
+  'memory_chunks',
+  'memory_summaries',
+  'memory_embeddings',
+  'memory_jobs',
+] as const
+
+function checkpointWal(db: DatabaseSync): void {
+  // After TRUNCATE the WAL file is removed; the main `risu.db` file contains
+  // the committed state. Safe to file-copy after this call.
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+  } catch {
+    // Non-WAL databases (or unsupported pragma in some builds) — fall back to
+    // a passive checkpoint and proceed; the copied bytes still represent the
+    // committed state at this point because no writers are racing.
+    db.exec('PRAGMA wal_checkpoint')
+  }
+}
+
 export function createBackup(
   db: DatabaseSync,
   dataDir: string,
@@ -223,8 +271,19 @@ export function createBackup(
   const id = generateBackupId()
   const dir = backupDir(dataDir, id)
   fs.mkdirSync(dir, { recursive: true })
+
+  // Snapshot every KNOWN_DATA_DIR_CHILDREN entry.
   fs.writeFileSync(path.join(dir, 'db.json'), JSON.stringify(persisted))
   copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
+  // SQLite: flush WAL then file-copy.
+  checkpointWal(db)
+  const liveSqlite = sqliteDbPath(dataDir)
+  if (fs.existsSync(liveSqlite)) {
+    fs.copyFileSync(liveSqlite, path.join(dir, 'risu.db'))
+  }
+  // Legacy storage directory.
+  copyDirectoryIfPresent(saveDir(dataDir), path.join(dir, 'save'))
+
   const manifest: BackupManifest = {
     _version: BACKUP_MANIFEST_VERSION,
     id,
@@ -254,6 +313,73 @@ export function listBackups(dataDir: string): BackupManifest[] {
   return manifests
 }
 
+function restoreSqliteFromBackup(
+  db: DatabaseSync,
+  backupDbPath: string,
+): void {
+  // Use ATTACH + table-level swap so the existing `db` handle stays valid
+  // (file-rename would orphan open file descriptors and break every other
+  // active route holding the same handle). The transaction is atomic with
+  // respect to other queries on this connection.
+  if (!fs.existsSync(backupDbPath)) {
+    // No SQLite backup payload: clear out any live memory rows so the restore
+    // is consistent with a snapshot taken before SQLite-aware backups landed.
+    db.exec('BEGIN')
+    try {
+      for (const table of SQLITE_BACKUP_TABLES) {
+        if (table === 'schema_version') continue
+        db.exec(`DELETE FROM ${table}`)
+      }
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
+    return
+  }
+
+  // ATTACH expects a SQL string literal; the path is constructed locally and
+  // sanitised by replacing single quotes.
+  const sqlLiteralPath = backupDbPath.replaceAll("'", "''")
+  db.exec(`ATTACH DATABASE '${sqlLiteralPath}' AS bak`)
+  try {
+    db.exec('BEGIN')
+    try {
+      for (const table of SQLITE_BACKUP_TABLES) {
+        // Verify the table exists in the backup; older snapshots may predate
+        // memory tables.
+        const exists = db
+          .prepare(
+            `SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = ?`,
+          )
+          .get(table)
+        if (table === 'schema_version') {
+          // Special-case: schema_version has the PK row (id=1). Update in
+          // place from the backup rather than DELETE+INSERT to avoid
+          // re-triggering INSERT OR IGNORE seed.
+          if (exists) {
+            db.exec(
+              `INSERT OR REPLACE INTO main.schema_version (id, version, revision)
+               SELECT id, version, revision FROM bak.schema_version`,
+            )
+          }
+          continue
+        }
+        db.exec(`DELETE FROM main.${table}`)
+        if (exists) {
+          db.exec(`INSERT INTO main.${table} SELECT * FROM bak.${table}`)
+        }
+      }
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
+  } finally {
+    db.exec('DETACH DATABASE bak')
+  }
+}
+
 export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { revision: number } {
   if (!isValidBackupId(id)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
@@ -262,36 +388,70 @@ export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { 
   if (!fs.existsSync(snapshot)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
+
+  // Stage each KNOWN_DATA_DIR_CHILDREN entry under a temp path, then swap
+  // them into place. The SQLite restore uses ATTACH to preserve `db`.
   const live = path.join(dataDir, 'db.json')
   const tmp = `${live}.tmp`
   const liveAssets = assetsDir(dataDir)
   const backupAssets = path.join(backupDir(dataDir, id), 'assets')
   const tmpAssets = path.join(dataDir, `.assets-${id}.tmp`)
   const oldAssets = path.join(dataDir, `.assets-${id}.old`)
+  const liveSave = saveDir(dataDir)
+  const backupSave = path.join(backupDir(dataDir, id), 'save')
+  const tmpSave = path.join(dataDir, `.save-${id}.tmp`)
+  const oldSave = path.join(dataDir, `.save-${id}.old`)
+  const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
 
   rmDirectoryIfPresent(tmpAssets)
   rmDirectoryIfPresent(oldAssets)
+  rmDirectoryIfPresent(tmpSave)
+  rmDirectoryIfPresent(oldSave)
+
+  // Stage assets and save dirs as temp copies.
   if (fs.existsSync(backupAssets)) {
     fs.cpSync(backupAssets, tmpAssets, { recursive: true })
   } else {
     fs.mkdirSync(tmpAssets, { recursive: true })
   }
+  if (fs.existsSync(backupSave)) {
+    fs.cpSync(backupSave, tmpSave, { recursive: true })
+  } else {
+    fs.mkdirSync(tmpSave, { recursive: true })
+  }
 
+  // Stage db.json snapshot.
   fs.copyFileSync(snapshot, tmp)
+
+  // Move live directories aside so the swap can roll back.
   if (fs.existsSync(liveAssets)) {
     fs.renameSync(liveAssets, oldAssets)
   }
+  if (fs.existsSync(liveSave)) {
+    fs.renameSync(liveSave, oldSave)
+  }
+
   try {
+    // SQLite: ATTACH-based table swap (no file rename — preserves db handle).
+    restoreSqliteFromBackup(db, backupSqlite)
+    // File swaps: assets, save, db.json.
     fs.renameSync(tmpAssets, liveAssets)
+    fs.renameSync(tmpSave, liveSave)
     fs.renameSync(tmp, live)
   } catch (err) {
     rmDirectoryIfPresent(liveAssets)
     if (fs.existsSync(oldAssets)) {
       fs.renameSync(oldAssets, liveAssets)
     }
+    rmDirectoryIfPresent(liveSave)
+    if (fs.existsSync(oldSave)) {
+      fs.renameSync(oldSave, liveSave)
+    }
     throw err
   }
+
   rmDirectoryIfPresent(oldAssets)
+  rmDirectoryIfPresent(oldSave)
   const revision = bumpRevision(db)
   return { revision }
 }

@@ -398,4 +398,113 @@ describe('Phase 2D backups', () => {
       expect(del.statusCode).toBe(404)
     }
   })
+
+  it('A4EC4/B4: round-trips SQLite memory tables across backup and restore', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'pre-mem' })
+
+    // Open the live SQLite db directly to seed a memory_chunks row that the
+    // backup must preserve. We use the same Node sqlite binding.
+    const { DatabaseSync } = await import('node:sqlite')
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const seed = new DatabaseSync(liveDbPath)
+    try {
+      seed.exec(
+        `INSERT INTO memory_chunks (id, chat_id, range_start_seq, range_end_seq, text, status)
+         VALUES ('chunk-pre', 'chat-a', 0, 1, 'pre', 'pending')`,
+      )
+    } finally {
+      seed.close()
+    }
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'mem snapshot' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const backupId = backup.json().id
+    expect(existsSync(path.join(harness.dataDir, 'backups', backupId, 'risu.db'))).toBe(true)
+
+    // Mutate the memory table post-backup; restore must revert it.
+    const mutate = new DatabaseSync(liveDbPath)
+    try {
+      mutate.exec(
+        `INSERT INTO memory_chunks (id, chat_id, range_start_seq, range_end_seq, text, status)
+         VALUES ('chunk-post', 'chat-b', 0, 1, 'post', 'pending')`,
+      )
+      mutate.exec(`DELETE FROM memory_chunks WHERE id = 'chunk-pre'`)
+    } finally {
+      mutate.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    // The memory table must now match the snapshot.
+    const verify = new DatabaseSync(liveDbPath)
+    try {
+      const rows = verify
+        .prepare(`SELECT id FROM memory_chunks ORDER BY id ASC`)
+        .all() as { id: string }[]
+      expect(rows.map((r) => r.id)).toEqual(['chunk-pre'])
+    } finally {
+      verify.close()
+    }
+  })
+
+  it('A4EC4/B5: round-trips data/save directory across backup and restore', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'pre-save' })
+
+    // Write a legacy storage entry through the /storage/write route, then
+    // backup, mutate, restore, and verify the file content round-trips.
+    const filePath = Buffer.from('remotes/preserved.local.bin').toString('hex')
+    const initial = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/storage/write',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'application/octet-stream',
+        'file-path': filePath,
+      },
+      payload: Buffer.from('preserved-bytes'),
+    })
+    expect(initial.statusCode).toBe(200)
+    const savedFile = path.join(harness.dataDir, 'save', filePath)
+    expect(existsSync(savedFile)).toBe(true)
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'save snapshot' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const backupId = backup.json().id
+    expect(
+      existsSync(path.join(harness.dataDir, 'backups', backupId, 'save', filePath)),
+    ).toBe(true)
+
+    // Overwrite and add a different file, then restore.
+    writeFileSync(savedFile, 'tampered-bytes')
+    const addedHex = Buffer.from('remotes/after.local.bin').toString('hex')
+    const addedFile = path.join(harness.dataDir, 'save', addedHex)
+    writeFileSync(addedFile, 'after-restore-must-disappear')
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    expect(readFileSync(savedFile, 'utf-8')).toBe('preserved-bytes')
+    expect(existsSync(addedFile)).toBe(false)
+  })
 })
