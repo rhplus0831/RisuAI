@@ -1,6 +1,6 @@
 # Client Thinning Note
 
-Date: 2026-05-28
+Date: 2026-05-29
 
 Short handoff for the standalone client-thinning workstream. Runtime behavior
 was not changed when this folder was drafted. Start with [`status.md`](status.md),
@@ -10,6 +10,8 @@ was not changed when this folder was drafted. Start with [`status.md`](status.md
 
 - Command: `pnpm client-thinning:audit`
 - Result: Passed. The audit printed `Client-thinning audit passed.`
+- Command: `pnpm exec vitest run util/client-thinning-audit.test.ts`
+- Result: Passed. The run reported 1 test file passed and 5 tests passed.
 
 ## Checkpoint Scope
 
@@ -55,9 +57,11 @@ Bounded or partial:
   `DBState.db.useServerPromptAssembly` is true
   (`src/ts/process/index.svelte.ts:157`), and the setting defaults to false
   (`src/ts/storage/database.svelte.ts:776`).
-- Audit fixture reproducibility is the first standalone open item: every
-  client-thinning audit rule needs a committed pre-fix fixture and a test
-  proving non-zero exit.
+- Audit fixture reproducibility is the first standalone open item. Fixture
+  proof now exists for `A4R-saveasset filename classification`,
+  `A4R-backup data dir inventory`, and
+  `A4R-bounded process-lifetime accumulators`; remaining audit rules still
+  need committed pre-fix fixtures and tests proving non-zero exit.
 - `util/client-thinning-audit.ts` is broad and structural, but currently lives
   as one monolithic script. Treat new findings as audit-rule work plus
   reproducibility proof, not as one-off call-site fixes.
@@ -80,9 +84,8 @@ Client-owned, no-port, or deferred:
 
 1. Run `pnpm client-thinning:audit`. If it is red, fix or explicitly triage the
    failing audit before selecting wider runtime work.
-2. Make audit fixture reproducibility the first implementation family unless
-   source inventory proves a more urgent live bug. Each audit rule should have
-   a committed pre-fix fixture and a test that fails against that fixture.
+2. Continue audit fixture reproducibility unless source inventory proves a more
+   urgent live bug. The next small fixture target is `A4R7 asset URL gate`.
 3. If adding a new finding, update the invariant, audit rule, fixture, test, and
    the smallest relevant status/coverage shard in the same batch.
 4. Treat `sendChat` client-thinning as a separate sub-family. A valid batch must

@@ -52,10 +52,11 @@ now lives in `util/client-thinning-audit.test.ts`; it runs
 `CLIENT_THINNING_AUDIT_CHECK_IDS` selecting the intended rule and asserts exit
 code, stdout/stderr, and check id.
 
-Fixture proof is complete for `A4R-saveasset filename classification` and
-`A4R-backup data dir inventory`. The next small rule-family proof should be
-`A4R-bounded process-lifetime accumulators` unless source inventory reveals a
-more urgent audit-rule gap.
+Fixture proof is complete for `A4R-saveasset filename classification`,
+`A4R-backup data dir inventory`, and
+`A4R-bounded process-lifetime accumulators`. The next small rule-family proof
+should be `A4R7 asset URL gate` unless source inventory reveals a more urgent
+audit-rule gap.
 
 ## Direction
 

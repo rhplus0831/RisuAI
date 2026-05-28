@@ -45,6 +45,7 @@ function runAuditFixture(fixtureName: string, checkId: string): Promise<AuditRes
 
 describe('client-thinning audit fixtures', () => {
   const backupInventoryCheck = 'A4R-backup data dir inventory'
+  const boundedAccumulatorCheck = 'A4R-bounded process-lifetime accumulators'
   const saveAssetCheck = 'A4R-saveasset filename classification'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
@@ -61,6 +62,30 @@ describe('client-thinning audit fixtures', () => {
     expect(result.stderr).toContain(
       'restoreBackup must reference "secrets" (declared in KNOWN_DATA_DIR_CHILDREN).',
     )
+  })
+
+  it('fails a fixture with an unclassified exported process-lifetime accumulator', async () => {
+    const result = await runAuditFixture(
+      'bounded-process-lifetime-accumulators/failing',
+      boundedAccumulatorCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${boundedAccumulatorCheck}]`)
+    expect(result.stderr).toContain(
+      'Top-level Map pendingRequestState in server/fastify/src/routes/sessionCache.ts is a process-lifetime accumulator',
+    )
+  })
+
+  it('allows a documented bounded process-lifetime accumulator', async () => {
+    const result = await runAuditFixture(
+      'bounded-process-lifetime-accumulators/bounded-bypass',
+      boundedAccumulatorCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
   })
 
   it('fails a fixture with an unclassified saveAsset call', async () => {

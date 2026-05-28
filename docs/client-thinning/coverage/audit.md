@@ -19,6 +19,9 @@ Date: 2026-05-29
   `util/client-thinning-audit-fixtures/saveasset-filename-classification/`.
 - `A4R-backup data dir inventory` has a committed failing fixture under
   `util/client-thinning-audit-fixtures/backup-data-dir-inventory/`.
+- `A4R-bounded process-lifetime accumulators` has committed failing and bypass
+  fixtures under
+  `util/client-thinning-audit-fixtures/bounded-process-lifetime-accumulators/`.
 
 ## Open Proof
 
@@ -69,19 +72,21 @@ existing files yet.
 | `A4R7 asset URL gate` | `asset-url-gate` | Let Fastify asset-byte helpers fetch arbitrary `loc` values with `risu-auth`, fall back to `?? loc` for unknown shapes, or omit the explicit empty/null/throw default for unknown asset shapes. | Non-zero exit with `A4R7 asset URL gate`. |
 | `A4R-fanout composite command race` | `composite-command-fanout` | Dispatch two or more mutating command helpers in one scope without awaiting each previous call or routing through `runChatCommandSequence`/`runOptimisticCommandSequence`. | Non-zero exit with `A4R-fanout composite command race`. |
 | `A4R-backup data dir inventory` | `backup-data-dir-inventory` | Add a child to `KNOWN_DATA_DIR_CHILDREN` without referencing it in both `createBackup` and `restoreBackup`, or remove the inventory declaration. | Covered: failing fixture exits non-zero with `A4R-backup data dir inventory` and the missing create/restore references. |
-| `A4R-bounded process-lifetime accumulators` | `bounded-process-lifetime-accumulators` | Declare an exported top-level `Set`, `Map`, or `Array` under `server/fastify/src/` without bounded classification, or remove visible eviction from a declared accumulator. | Non-zero exit with `A4R-bounded process-lifetime accumulators`. |
+| `A4R-bounded process-lifetime accumulators` | `bounded-process-lifetime-accumulators` | Declare an exported top-level `Set`, `Map`, or `Array` under `server/fastify/src/` without bounded classification, or remove visible eviction from a declared accumulator. | Covered: failing fixture exits non-zero with `A4R-bounded process-lifetime accumulators`; bypass fixture with `// audit:bounded(...)` exits zero. |
 | `A4R-saveasset filename classification` | `saveasset-filename-classification` | Call `saveAsset(bytes)` or `saveAsset(..., '', '')` without a real filename and without a nearby `// audit:image-default` rationale. | Covered: failing fixture exits non-zero with `A4R-saveasset filename classification`; bypass fixture with `// audit:image-default` exits zero. |
 
 ## Suggested Next Proof
 
-`A4R-saveasset filename classification` and `A4R-backup data dir inventory`
-are complete. Continue with `A4R-bounded process-lifetime accumulators` unless
-source inventory reveals a more urgent rule gap. That fixture will likely need
-minimal `server/fastify/src/auth.ts` and `server/fastify/src/commands/events.ts`
-stubs for the declared bounded accumulators, plus one unclassified exported
-top-level `Set`, `Map`, or `Array` in another `server/fastify/src/` file.
-Avoid jumping to `EC5 active-writer guard` or `EC4 stable command ids` until
-several small fixtures have proven the harness shape.
+`A4R-saveasset filename classification`, `A4R-backup data dir inventory`, and
+`A4R-bounded process-lifetime accumulators` are complete. Continue with
+`A4R7 asset URL gate` unless source inventory reveals a more urgent rule gap.
+That fixture will likely need minimal `src/ts/server/assets.ts` and
+`src/ts/globalApi.svelte.ts` roots: one failing bytes-reader shape without a
+throw or with `serverAssetUrl(...) ?? loc`, and one failing URL-helper shape
+whose Fastify branch falls through to `?? loc` or lacks an explicit empty/null
+or throw default. Keep the fixture selected with
+`CLIENT_THINNING_AUDIT_CHECK_IDS` before moving to broader command or active
+writer rules.
 
 ## Commands
 
