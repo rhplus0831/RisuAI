@@ -1877,6 +1877,7 @@ interface RisuaiPluginAPI {
     apiVersion: string
     platform: string
     saveMethod: string
+    deviceLocalPluginStorage: boolean
   }>
 
   /**

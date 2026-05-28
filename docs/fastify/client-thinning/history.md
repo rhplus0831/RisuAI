@@ -37,7 +37,33 @@ Verification:
 - `pnpm build`: built with pre-existing CSS `::highlight`, browser-externalized
   module, plugin-timing, chunk-size, and ineffective-dynamic-import warnings.
 
-Next pickup: **EC2/F2 — Plugin durable storage + Compatibility Mode**.
+## Plugin durable storage + Compatibility Mode (EC2/F2)
+
+Closed on 2026-05-28.
+
+- Fastify-mode device-local plugin storage APIs are disabled by default:
+  `SafeLocalStorage`, `SafeIdbFactory`, and
+  `getLocalPluginStorage()`/`SafeLocalPluginStorage` throw an explicit
+  unsupported error unless Compatibility Mode is enabled.
+- `pluginCompatibilityMode` is an account-wide, command-backed Advanced setting
+  and is exposed in the UI as a not-recommended compatibility switch. Its help
+  text warns that the restored data is device-local, unsynced, and excluded from
+  server backup/export.
+- `risuai.pluginStorage` remains server-backed and independent of Compatibility
+  Mode.
+- Resource ownership remains enforced in both states: `pluginV2` is blocked in
+  Fastify mode as an unsupported bridge key, and V2 `getDatabase` no longer
+  reads server-owned names from `pluginCustomStorage` as a shadow fallback.
+- V3 `getRuntimeInfo()` reports `saveMethod: "server"` in Fastify mode and adds
+  `deviceLocalPluginStorage` as the capability flag.
+
+Verification:
+
+- `pnpm test src/ts/plugins/plugins.test.ts src/ts/server/commands.test.ts -- --run`:
+  49 passed.
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: 68 passed.
+
+Next pickup: **EC3/F3 — Import current-shape normalization**.
 
 ## Archived migration slices
 

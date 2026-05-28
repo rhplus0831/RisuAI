@@ -295,6 +295,9 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.showUnrecommended)) {
     data.showUnrecommended = false
   }
+  if (checkNullish(data.pluginCompatibilityMode)) {
+    data.pluginCompatibilityMode = false
+  }
   if (checkNullish(data.elevenLabKey)) {
     data.elevenLabKey = ''
   }
@@ -986,6 +989,7 @@ export interface Database {
   useSayNothing: boolean
   didFirstSetup: boolean
   showUnrecommended: boolean
+  pluginCompatibilityMode: boolean
   elevenLabKey: string
   voicevoxUrl: string
   useExperimental: boolean

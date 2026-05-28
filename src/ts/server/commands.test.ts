@@ -249,6 +249,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('epEnabled')).toBe('runtime')
     expect(settingsGroupForKey('streamGeminiThoughts')).toBe('runtime')
     expect(settingsGroupForKey('verbosity')).toBe('runtime')
+    expect(settingsGroupForKey('pluginCompatibilityMode')).toBe('advanced')
     expect(settingsGroupForKey('sdProvider')).toBe('media')
     expect(settingsGroupForKey('webUiUrl')).toBe('media')
     expect(settingsGroupForKey('sdSteps')).toBe('media')

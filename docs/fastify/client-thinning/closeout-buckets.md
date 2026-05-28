@@ -8,14 +8,14 @@ criterion ([`README.md`](./README.md)) and its finding
 ([`open-findings.md`](./open-findings.md)). A bucket is done only when its
 finding is resolved **and** the exit criterion's regression proof is committed.
 
-Current pickup: **Bucket 2 — Plugin durable storage + Compatibility Mode
-(EC2/F2)**. Bucket 1 closed on 2026-05-28; see
+Current pickup: **Bucket 3 — Import current-shape normalization (EC3/F3)**.
+Buckets 1 and 2 closed on 2026-05-28; see
 [`history.md`](./history.md#provider-ownership-ec1f1).
 
 | Order | Bucket                                             | Closes | Finding | Status            |
 | ----- | -------------------------------------------------- | ------ | ------- | ----------------- |
 | 1     | Provider ownership (server-only generation)        | EC1    | F1      | Closed 2026-05-28 |
-| 2     | Plugin durable storage + Compatibility Mode        | EC2    | F2      | Open              |
+| 2     | Plugin durable storage + Compatibility Mode        | EC2    | F2      | Closed 2026-05-28 |
 | 3     | Import current-shape normalization                 | EC3    | F3      | Open              |
 | 4     | Stable-id validation + prompt-item semantics       | EC4    | F4      | Open              |
 | 5     | Single active-writer session lock                  | EC5    | F5      | Open              |
@@ -29,21 +29,18 @@ Current pickup: **Bucket 2 — Plugin durable storage + Compatibility Mode
    browser dispatch, and the browser Vertex token refresh no longer writes to the
    server projection in Fastify mode. Focused proof:
    `pnpm test src/ts/process/request/tests/serverCompletion.test.ts -- --run`.
-2. **Plugin durable storage (EC2=B + Compatibility Mode).** Default: durable plugin
-   storage stays the already-server-backed `risuai.pluginStorage` (no change
-   there); disable the three device-local sandbox APIs in Fastify mode —
-   `SafeLocalStorage` (sync), `SafeIdbFactory` (IndexedDB), and
-   `getLocalPluginStorage()`/`SafeLocalPluginStorage` (local async) — with
-   explicit unsupported errors. Add an **account-wide, command-backed**
-   `pluginCompatibilityMode` setting (settings allowlist +
-   `SERVER_SETTINGS_GROUP_BY_KEY`, mirroring the `verbosity` fix); when on,
-   restore those three device-local APIs. The toggle relaxes storage _location_ only:
-   `unsupportedServerBridgeKeys`/`pluginV2`/reserved-key ownership stay enforced
-   in **both** states. Fix `pluginV2` (drop from `allowedDbKeys` or give it a real
-   command path), fix read-time shadowing via the V2 `getDatabase` fallback
-   (`:1002`), and make `getRuntimeInfo().saveMethod` (+ a capability flag) honest.
-   UI: the toggle sits under Advanced Settings → not-recommended, warning that its
-   data is device-local, unsynced, and excluded from server backup/export.
+2. **Plugin durable storage (EC2=B + Compatibility Mode) — closed 2026-05-28.**
+   Fastify mode now disables the three device-local sandbox APIs by default —
+   `SafeLocalStorage`, `SafeIdbFactory`, and
+   `getLocalPluginStorage()`/`SafeLocalPluginStorage` — with explicit unsupported
+   errors. `pluginCompatibilityMode` is a command-backed Advanced setting that
+   restores only those device-local APIs; `risuai.pluginStorage` remains
+   server-backed regardless. `pluginV2` is blocked as an unsupported bridge key
+   in Fastify mode, V2 `getDatabase` no longer reads server-owned names from
+   `pluginCustomStorage`, and V3 runtime info reports `saveMethod: "server"` plus
+   `deviceLocalPluginStorage`. Focused proof:
+   `pnpm test src/ts/plugins/plugins.test.ts src/ts/server/commands.test.ts -- --run`
+   and `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`.
 3. **Import normalization (EC3=A).** In the JSON path in `save.ts`, **pass the
    returned normalized clone** from the already-exported
    `normalizeRisuSaveImportDatabase` (`importSnapshot.ts:83`) to

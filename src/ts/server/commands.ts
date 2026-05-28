@@ -225,6 +225,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   personaNote: 'advanced',
   playMessage: 'display',
   playMessageOnTranslateEnd: 'display',
+  pluginCompatibilityMode: 'advanced',
   pluginDevelopMode: 'advanced',
   PresensePenalty: 'runtime',
   presetChain: 'advanced',

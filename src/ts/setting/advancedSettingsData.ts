@@ -485,6 +485,15 @@ export const advancedSettingsItems: SettingItem[] = [
     bindKey: 'pluginDevelopMode',
     classes: 'mt-4',
   },
+  {
+    id: 'adv.pluginCompatibilityMode',
+    type: 'check',
+    labelKey: 'pluginCompatibilityMode',
+    bindKey: 'pluginCompatibilityMode',
+    helpKey: 'pluginCompatibilityMode',
+    helpUnrecommended: true,
+    classes: 'mt-4',
+  },
 
   // More Experimental (Condition: useExperimental)
   {

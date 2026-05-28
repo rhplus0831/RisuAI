@@ -1,23 +1,42 @@
 import localforage from 'localforage'
 import { toGetter } from '../globalApi.svelte'
+import { isFastifyServer } from '../platform'
+import { DBState } from '../stores.svelte'
 
 const pluginStorage = localforage.createInstance({
   name: 'plugin',
   storeName: 'plugin',
 })
 
+const DEVICE_LOCAL_PLUGIN_STORAGE_ERROR =
+  'Device-local plugin storage is disabled in Fastify server mode. Enable Plugin Compatibility Mode to restore this device-local, unsynced API.'
+
+export function isDeviceLocalPluginStorageEnabled(): boolean {
+  return !isFastifyServer || DBState.db.pluginCompatibilityMode === true
+}
+
+export function assertDeviceLocalPluginStorageEnabled(): void {
+  if (!isDeviceLocalPluginStorageEnabled()) {
+    throw new Error(DEVICE_LOCAL_PLUGIN_STORAGE_ERROR)
+  }
+}
+
 export class SafeLocalStorage {
   getItem(key: string): string | null {
+    assertDeviceLocalPluginStorageEnabled()
     return localStorage.getItem(`safe_plugin_${key}`)
   }
   setItem(key: string, value: string): void {
+    assertDeviceLocalPluginStorageEnabled()
     localStorage.setItem(`safe_plugin_${key}`, value)
   }
   removeItem(key: string): void {
+    assertDeviceLocalPluginStorageEnabled()
     localStorage.removeItem(`safe_plugin_${key}`)
   }
   //not a standard localStorage method, but useful
   keys(): string[] {
+    assertDeviceLocalPluginStorageEnabled()
     const keys: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
@@ -29,11 +48,13 @@ export class SafeLocalStorage {
   }
 
   key(index: number): string | null {
+    assertDeviceLocalPluginStorageEnabled()
     const safeKeys = this.keys()
     return safeKeys[index] || null
   }
 
   clear(): void {
+    assertDeviceLocalPluginStorageEnabled()
     const keys = this.keys()
     for (const key of keys) {
       this.removeItem(key)
@@ -41,6 +62,7 @@ export class SafeLocalStorage {
   }
 
   get length(): number {
+    assertDeviceLocalPluginStorageEnabled()
     return this.keys().length
   }
 }
@@ -48,15 +70,19 @@ export class SafeLocalStorage {
 export class SafeLocalPluginStorage {
   __classType = 'REMOTE_REQUIRED' as const
   async getItem<T>(key: string): Promise<T | null> {
+    assertDeviceLocalPluginStorageEnabled()
     return await pluginStorage.getItem<T>(`safe_plugin_${key}`)
   }
   async setItem<T>(key: string, value: T): Promise<void> {
+    assertDeviceLocalPluginStorageEnabled()
     await pluginStorage.setItem(`safe_plugin_${key}`, value)
   }
   async removeItem(key: string): Promise<void> {
+    assertDeviceLocalPluginStorageEnabled()
     await pluginStorage.removeItem(`safe_plugin_${key}`)
   }
   async keys(): Promise<string[]> {
+    assertDeviceLocalPluginStorageEnabled()
     const keys: string[] = []
     await pluginStorage.iterate((value, key) => {
       if (key.startsWith('safe_plugin_')) {
@@ -66,6 +92,7 @@ export class SafeLocalPluginStorage {
     return keys
   }
   async clear(): Promise<void> {
+    assertDeviceLocalPluginStorageEnabled()
     const keys = await this.keys()
     for (const key of keys) {
       await this.removeItem(key)
@@ -75,6 +102,7 @@ export class SafeLocalPluginStorage {
 
 export const SafeIdbFactory = {
   databases: async (): Promise<{ name: string; version: number }[]> => {
+    assertDeviceLocalPluginStorageEnabled()
     if ('databases' in indexedDB) {
       const r = await indexedDB.databases()
       return r
@@ -88,12 +116,15 @@ export const SafeIdbFactory = {
     }
   },
   deleteDatabase: async (name: string): Promise<IDBOpenDBRequest> => {
+    assertDeviceLocalPluginStorageEnabled()
     return indexedDB.deleteDatabase(`safe_plugin_${name}`)
   },
   open: (name: string, version?: number): IDBOpenDBRequest => {
+    assertDeviceLocalPluginStorageEnabled()
     return indexedDB.open(`safe_plugin_${name}`, version)
   },
   cmp: (first: string, second: string): number => {
+    assertDeviceLocalPluginStorageEnabled()
     //well, we don't need to prefix here, as the comparison is the same
     return indexedDB.cmp(first, second)
   },

@@ -27,6 +27,7 @@ vi.mock('./pluginSafety', () => ({
 import { clearCachedServerCommandRevision, type CommandEvent } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { DBState } from '../stores.svelte'
+import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { getV2PluginAPIs, type RisuPlugin } from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
 
@@ -95,6 +96,7 @@ beforeEach(() => {
   DBState.db = {
     currentPluginProvider: 'old-provider',
     pluginCustomStorage: {},
+    pluginCompatibilityMode: false,
     plugins: [seedPlugin('plugin-a')],
     modules: [seedModule('mod-a')],
     enabledModules: [],
@@ -306,6 +308,84 @@ describe('plugin database command bridge', () => {
     expect(calls.some((call) => call.url.includes('/api/v1/commands/plugin-storage'))).toBe(false)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('botPresets'))
     warn.mockRestore()
+  })
+
+  it('blocks pluginV2 database writes in server mode instead of dropping or shadowing them', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({ pluginV2: [{ name: 'legacy-v2' }] })
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect((DBState.db as any).pluginV2).toBeUndefined()
+    expect(DBState.db.pluginCustomStorage.pluginV2).toBeUndefined()
+    expect(calls.some((call) => call.url.includes('/api/v1/commands/'))).toBe(false)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('pluginV2'))
+    warn.mockRestore()
+  })
+
+  it('does not expose server-owned resource shadows through V2 getDatabase in server mode', () => {
+    const apis = getV2PluginAPIs()
+    DBState.db.characters = [{ chaId: 'char-a', name: 'Ada' }] as any
+    DBState.db.pluginCustomStorage = {
+      characters: [{ chaId: 'shadow-char', name: 'Shadow' }],
+      pluginV2: [{ name: 'shadow-v2' }],
+      botPresets: [{ id: 'shadow-preset' }],
+      customPluginKey: 'visible',
+    }
+
+    const safeDb = apis.getDatabase() as any
+
+    expect(safeDb.characters).toEqual([{ chaId: 'char-a', name: 'Ada' }])
+    expect(safeDb.pluginV2).toBeUndefined()
+    expect(safeDb.botPresets).toBeUndefined()
+    expect(safeDb.customPluginKey).toBe('visible')
+    expect(Object.keys(safeDb)).toContain('customPluginKey')
+    expect(Object.keys(safeDb)).not.toContain('pluginV2')
+    expect(Object.keys(safeDb)).not.toContain('botPresets')
+  })
+
+  it('disables device-local plugin storage APIs by default in server mode', async () => {
+    const apis = getV2PluginAPIs()
+    const localPluginStorage = new SafeLocalPluginStorage()
+
+    expect(() => apis.safeLocalStorage.getItem('device')).toThrow(
+      /Device-local plugin storage is disabled/,
+    )
+    expect(() => apis.safeIdbFactory.open('device')).toThrow(
+      /Device-local plugin storage is disabled/,
+    )
+    await expect(localPluginStorage.getItem('device')).rejects.toThrow(
+      /Device-local plugin storage is disabled/,
+    )
+  })
+
+  it('restores device-local plugin storage APIs when compatibility mode is enabled', () => {
+    const apis = getV2PluginAPIs()
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      get length() {
+        return values.size
+      },
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      key: vi.fn((index: number) => Array.from(values.keys())[index] ?? null),
+    })
+    const open = vi.fn(() => ({}) as IDBOpenDBRequest)
+    vi.stubGlobal('indexedDB', {
+      open,
+      cmp: vi.fn(() => 0),
+    })
+    DBState.db.pluginCompatibilityMode = true
+
+    apis.safeLocalStorage.setItem('device', 'enabled')
+
+    expect(apis.safeLocalStorage.getItem('device')).toBe('enabled')
+    expect(() => apis.safeIdbFactory.open('device')).not.toThrow()
+    expect(open).toHaveBeenCalledWith('safe_plugin_device', undefined)
   })
 
   it('still writes recognized resource families locally when not in server mode', async () => {

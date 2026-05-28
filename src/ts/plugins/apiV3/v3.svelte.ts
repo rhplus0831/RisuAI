@@ -17,7 +17,12 @@ import {
   dispatchCompatibleCharacterUpdate,
 } from 'src/ts/characterCommands'
 import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from 'src/ts/chatCommands'
-import { SafeLocalPluginStorage, tagWhitelist } from '../pluginSafeClass'
+import {
+  SafeLocalPluginStorage,
+  assertDeviceLocalPluginStorageEnabled,
+  isDeviceLocalPluginStorageEnabled,
+  tagWhitelist,
+} from '../pluginSafeClass'
 import DOMPurify from 'dompurify'
 import {
   additionalChatMenu,
@@ -1239,10 +1244,12 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       return {
         apiVersion: '3.0',
         platform: isFastifyServer ? 'fastify' : 'web',
-        saveMethod: 'local',
+        saveMethod: isFastifyServer ? 'server' : 'local',
+        deviceLocalPluginStorage: isDeviceLocalPluginStorageEnabled(),
       }
     },
     getLocalPluginStorage: () => {
+      assertDeviceLocalPluginStorageEnabled()
       return new SafeLocalPluginStorage()
     },
     checkCharOrder: checkCharOrder,

@@ -400,6 +400,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
           allowAllExtentionFiles: true,
           auxModelUnderModelSettings: true,
+          pluginCompatibilityMode: true,
         },
       },
     })
@@ -810,6 +811,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           moduleIntergration: 'module-ns',
           enableCustomFlags: true,
           customFlags: [8, 21],
+          pluginCompatibilityMode: true,
         },
       },
     })
@@ -969,6 +971,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       moduleIntergration: 'module-ns',
       enableCustomFlags: true,
       customFlags: [8, 21],
+      pluginCompatibilityMode: true,
     })
   })
 

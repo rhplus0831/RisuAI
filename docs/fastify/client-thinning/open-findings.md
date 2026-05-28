@@ -14,43 +14,6 @@ Each finding states the **problem** as it exists in the code today; the chosen
 **direction** is summarized in the Decision line and detailed in
 [`decisions.md`](./decisions.md) / [`closeout-buckets.md`](./closeout-buckets.md).
 
-## F2 → EC2 (P1): Plugin APIs still expose durable browser storage in Fastify mode
-
-The plugin sandbox still exposes durable browser-local storage in server-backed
-mode, outside `/api/v1/commands/plugin-storage`.
-
-- `src/ts/plugins/pluginSafeClass.ts:9` exposes `SafeLocalStorage` (synchronous `localStorage` under `safe_plugin_*`).
-- `src/ts/plugins/pluginSafeClass.ts:48` exposes `SafeLocalPluginStorage` (async localForage; tagged `REMOTE_REQUIRED`).
-- `src/ts/plugins/pluginSafeClass.ts:76` exposes `SafeIdbFactory` (opens/deletes prefixed IndexedDB databases).
-- `src/ts/plugins/plugins.svelte.ts:961` and `:962` expose sandbox `localStorage`/`indexedDB`; `:985` constructs `SafeLocalStorage` without a Fastify gate.
-- `src/ts/plugins/apiV3/v3.svelte.ts:1242` still reports `saveMethod: "local"` and `:1245` returns `SafeLocalPluginStorage`, even when `platform: "fastify"`.
-
-Precision (from audit) — narrower than originally written:
-
-- **Bulk / unknown-key persistence is already server-backed.** V2 plugin-storage
-  put/delete/bulk dispatch at `plugins.svelte.ts:621-648`, unknown DB keys route
-  through plugin-storage bulk commands at `:706`/`:716`, Fastify routes exist at
-  `server/fastify/src/routes/commands.ts:3804`, `:3838`, `:3871`, with coverage at
-  `server/fastify/__tests__/commands.test.ts:4622`.
-- **Normal `risuai.pluginStorage` is already server-backed/routed** — distinct
-  from `getLocalPluginStorage()`, which returns the explicitly device-local
-  `SafeLocalPluginStorage`. The unresolved _async_ local surface is specifically
-  `getLocalPluginStorage()`/`SafeLocalPluginStorage`; its Fastify treatment is an
-  open decision ([`decisions.md`](./decisions.md#ec2)).
-- **Write-time reserved-key shadowing is already blocked** in server mode at
-  `plugins.svelte.ts:591` and `:680` (tests `plugins.test.ts:274`, `:292`).
-- Remaining gaps: the three `Safe*` sandbox APIs are ungated; **`pluginV2`** is
-  still in `allowedDbKeys` (`:548`) with no durable settings-group command path
-  (writes update the projection then get dropped by the settings-patch path); and
-  **read-time** shadowing persists via the V2 `getDatabase` fallback at `:1002`.
-
-**Decision (EC2=B + Compatibility Mode):** default = keep durable storage on the
-already-server-backed `risuai.pluginStorage` and disable the three device-local
-sandbox APIs (sync `localStorage`, IndexedDB, `getLocalPluginStorage()`); an
-opt-in, account-wide, command-backed **Plugin Compatibility Mode** may restore
-those three device-local APIs, never relaxing resource ownership; fix `pluginV2`,
-read-time shadowing, and `saveMethod`. See [`decisions.md`](./decisions.md#ec2).
-
 ## F3 → EC3 (P1): JSON import can persist non-current-shape DB data
 
 Multipart `.risu` import runs the broad current-shape normalizer, but JSON

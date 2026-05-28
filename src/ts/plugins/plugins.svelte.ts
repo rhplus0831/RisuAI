@@ -14,7 +14,12 @@ import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from '..
 import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
 import { checkCodeSafety } from './pluginSafety'
-import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from './pluginSafeClass'
+import {
+  SafeDocument,
+  SafeIdbFactory,
+  SafeLocalStorage,
+  isDeviceLocalPluginStorageEnabled,
+} from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import { pluginCodeTranspiler } from './apiV3/transpiler'
 import {
@@ -606,6 +611,7 @@ export const unsupportedServerBridgeKeys = new Set<string>([
   'lastLoadedLoadoutName',
   'loreBook',
   'loreBookPage',
+  'pluginV2',
 ])
 
 function cloneJsonValue<T>(value: T): T {
@@ -999,6 +1005,12 @@ export const getV2PluginAPIs = () => {
         get(target, prop) {
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
             return (target as any)[prop]
+          } else if (
+            typeof prop === 'string' &&
+            canUseServerCommands() &&
+            unsupportedServerBridgeKeys.has(prop)
+          ) {
+            return undefined
           } else if (target.pluginCustomStorage) {
             console.log('Getting custom db property', prop.toString())
             return target.pluginCustomStorage[prop.toString()]
@@ -1034,9 +1046,33 @@ export const getV2PluginAPIs = () => {
             (key) => typeof key === 'string' && allowedDbKeys.includes(key),
           )
           if (target.pluginCustomStorage) {
-            keys.push(...Object.keys(target.pluginCustomStorage))
+            keys.push(
+              ...Object.keys(target.pluginCustomStorage).filter(
+                (key) => !canUseServerCommands() || !unsupportedServerBridgeKeys.has(key),
+              ),
+            )
           }
           return keys
+        },
+        getOwnPropertyDescriptor(target, prop) {
+          if (typeof prop !== 'string') {
+            return Reflect.getOwnPropertyDescriptor(target, prop)
+          }
+          if (allowedDbKeys.includes(prop)) {
+            return Reflect.getOwnPropertyDescriptor(target, prop)
+          }
+          if (canUseServerCommands() && unsupportedServerBridgeKeys.has(prop)) {
+            return undefined
+          }
+          if (target.pluginCustomStorage && prop in target.pluginCustomStorage) {
+            return {
+              configurable: true,
+              enumerable: true,
+              writable: true,
+              value: target.pluginCustomStorage[prop],
+            }
+          }
+          return undefined
         },
         deleteProperty(target, prop) {
           console.log('Attempt to delete db.' + String(prop) + ' denied in safe database proxy.')
@@ -1079,6 +1115,7 @@ export const getV2PluginAPIs = () => {
         return Object.keys(db.pluginCustomStorage).length
       },
     },
+    isDeviceLocalPluginStorageEnabled,
     setDatabaseLite: (newDb: any) => {
       applyPluginDatabasePatch(newDb, { full: false })
     },

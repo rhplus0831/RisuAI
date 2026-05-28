@@ -143,6 +143,8 @@ export const languageEnglish = {
     sayNothing: "If enabled, it will input 'say nothing' when no string inputed.",
     showUnrecommended:
       'If enabled, it will show unrecommended, deprecated settings. It is NOT RECOMMENDED to use these settings.',
+    pluginCompatibilityMode:
+      'Restores legacy device-local plugin storage APIs in Fastify server mode. Data written there is device-local, unsynced, and excluded from server backup/export. Prefer pluginStorage for durable plugin data.',
     imageCompression:
       "If enabled, it will compress images when exporting character. if animated images doesn't works, try disabling this option.",
     useExperimental: 'If enabled, it will show some experimental features.',
@@ -1640,6 +1642,7 @@ export const languageEnglish = {
   newMessageButtonRightCenter: 'Right Center',
   newMessageButtonTopBar: 'Top Bar',
   trimStartNewChat: "Trim 'Start New Chat' Messages",
+  pluginCompatibilityMode: 'Plugin Compatibility Mode',
   pluginDevelopMode: 'Plugin Develop Mode',
   fetchLogConsent:
     'Plugin {} is requesting to fetch logs, which may expose sensitive information. Do you want to allow this?',

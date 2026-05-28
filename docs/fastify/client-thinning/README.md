@@ -61,8 +61,8 @@ all criteria map to closeout buckets in
 | EC6 | **Asset references validated where written.** `validateCharacterAssetRefs` covers the character **audio** fields the bundle walker treats as references — `vits.files.*` and `gptSoVitsConfig.ref_audio_data.assetId` (create + patch). The general walker-vs-validator drift class (e.g. `characterOrder.img`) is checked by EC7.                                                                                                                                               | Character create/patch tests for valid, missing, and malformed audio asset refs.                                                        |
 | EC7 | **Repeatable invariant audit exists.** A ts-morph/rg audit script re-checks the invariants (no mutation route bypasses the active-session check; no command-path helper mints ids; no resource has both a typed command and a generic-settings channel; sandbox storage APIs gated; asset-walker fields covered by validators), and the full ladder is green.                                                                                                                    | Audit script committed in repo + the ladder below.                                                                                      |
 
-Progress as of 2026-05-28: **EC1 is closed**. The next pickup is **EC2 —
-Plugin durable storage + Compatibility Mode**; see
+Progress as of 2026-05-28: **EC1 and EC2 are closed**. The next pickup is
+**EC3 — Import current-shape normalization**; see
 [`closeout-buckets.md`](./closeout-buckets.md).
 
 ## Verification ladder
