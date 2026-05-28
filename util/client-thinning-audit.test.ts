@@ -58,6 +58,7 @@ describe('client-thinning audit fixtures', () => {
   const assetWalkerCheck = 'EC6 asset walker validator drift'
   const activeWriterGuardCheck = 'EC5 active-writer guard'
   const stableCommandIdsCheck = 'EC4 stable command ids'
+  const pluginStorageCheck = 'EC2 plugin storage gates'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -385,6 +386,27 @@ describe('client-thinning audit fixtures', () => {
 
   it('allows validate-only command-path constructors with promptTemplate kept out of settings', async () => {
     const result = await runAuditFixture('stable-command-ids/no-mint-bypass', stableCommandIdsCheck)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture whose device-local storage method skips the compatibility gate', async () => {
+    const result = await runAuditFixture(
+      'plugin-storage-gates/failing-ungated-getitem',
+      pluginStorageCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${pluginStorageCheck}]`)
+    expect(result.stderr).toContain(
+      'SafeLocalStorage.getItem must assert Plugin Compatibility Mode before touching device-local storage.',
+    )
+  })
+
+  it('allows device-local plugin storage gated by Plugin Compatibility Mode', async () => {
+    const result = await runAuditFixture('plugin-storage-gates/gated-bypass', pluginStorageCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')

@@ -80,6 +80,12 @@ Date: 2026-05-29
   all command-path constructors as validate-only and keeps `promptTemplate` out
   of the settings maps; the failing fixture makes `createCharacterRecord` mint
   `randomUUID()`.
+- `EC2 plugin storage gates` has committed `failing-ungated-getitem` and
+  `gated-bypass` fixtures under
+  `util/client-thinning-audit-fixtures/plugin-storage-gates/`. The bypass gates
+  every storage method, `SafeIdbFactory` member, and the V3 bridge needles, and
+  keeps `pluginV2` out of `allowedDbKeys`; the failing fixture drops the gate
+  assert from `SafeLocalStorage.getItem`.
 
 ## Open Proof
 
@@ -114,7 +120,7 @@ existing files yet.
 | --- | --- | --- | --- |
 | `EC5 active-writer guard` | `active-writer-guard` | Move or omit `registerActiveWriterGuard`, add an unclassified mutating Fastify route, drop active-writer classifier needles, or remove client stale-writer handling from server chat/memory helpers. | Covered: failing fixture (unclassified `POST /api/v1/widgets`) exits non-zero with `EC5 active-writer guard`; fully classified route surface with the guard wired in order exits zero. |
 | `EC4 stable command ids` | `stable-command-ids` | Let command-path constructors mint `randomUUID()`, expose `promptTemplate` through generic settings commands, or allow command routes to mint durable ids from request payloads. | Covered: failing fixture (`createCharacterRecord` mints `randomUUID()`) exits non-zero with `EC4 stable command ids`; validate-only bypass exits zero. |
-| `EC2 plugin storage gates` | `plugin-storage-gates` | Touch localStorage, plugin storage, or IndexedDB bridge methods without `assertDeviceLocalPluginStorageEnabled()`, expose `pluginV2`, or remove Fastify server/local save-mode separation. | Non-zero exit with `EC2 plugin storage gates`. |
+| `EC2 plugin storage gates` | `plugin-storage-gates` | Touch localStorage, plugin storage, or IndexedDB bridge methods without `assertDeviceLocalPluginStorageEnabled()`, expose `pluginV2`, or remove Fastify server/local save-mode separation. | Covered: failing fixture (`SafeLocalStorage.getItem` skips the gate) exits non-zero with `EC2 plugin storage gates`; fully gated bypass exits zero. |
 | `EC6 asset walker validator drift` | `asset-walker-validator-drift` | Add an asset walker field without validator ownership, leave stale ownership for a removed walker field, or drop a required validator needle. | Covered: failing fixture (unowned walker field) exits non-zero with `EC6 asset walker validator drift`; owned bypass (collected fields equal the owner table, all validator needles present) exits zero. |
 | `AEC2 import/export current shape` | `import-export-current-shape` | Remove a block-export resource family, stop import normalization for a block-exported family, desync reserved root keys, or allow root component import to overwrite resource blocks. | Non-zero exit with `AEC2 import/export current shape`. |
 | `AEC4 chat folder identity scope` | `chat-folder-identity-scope` | Normalize chat folder ids only per character, fail to update chat `folderId` references after repair, or omit global duplicate-id rejection on create surfaces. | Non-zero exit with `AEC4 chat folder identity scope`. |
@@ -139,14 +145,14 @@ existing files yet.
 `A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
 `A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
 Every A4R rule (`A4R1`–`A4R7` plus the `A4R-` named rules), `EC6 asset walker
-validator drift`, `EC5 active-writer guard`, and `EC4 stable command ids` now
-have committed fixtures. The remaining open rules are the EC/AEC structural
-invariants: `EC2 plugin storage gates`, `EC1 provider ownership`, `AEC2
-import/export current shape`, `AEC4 chat folder identity scope`, `AEC5 module
-reference semantics`, and `AEC6 asset persistence semantics`. A good next target
-is `EC2 plugin storage gates`: its fixture should prove that touching
-device-local plugin storage without `pluginCompatibilityMode`/the gate helper
-exits non-zero, while the gated shape stays accepted.
+validator drift`, `EC5 active-writer guard`, `EC4 stable command ids`, and
+`EC2 plugin storage gates` now have committed fixtures. The remaining open rules
+are `EC1 provider ownership`, `AEC2 import/export current shape`, `AEC4 chat
+folder identity scope`, `AEC5 module reference semantics`, and `AEC6 asset
+persistence semantics`. A good next target is `EC1 provider ownership`: its
+fixture should prove that reintroducing a browser provider fallback in Fastify
+mode (or exposing `useServerGeneration` as a server setting command) exits
+non-zero, while the explicit server-routed shape stays accepted.
 
 ## Commands
 
