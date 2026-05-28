@@ -44,7 +44,24 @@ function runAuditFixture(fixtureName: string, checkId: string): Promise<AuditRes
 }
 
 describe('client-thinning audit fixtures', () => {
+  const backupInventoryCheck = 'A4R-backup data dir inventory'
   const saveAssetCheck = 'A4R-saveasset filename classification'
+
+  it('fails a fixture with a data dir child omitted from backup and restore', async () => {
+    const result = await runAuditFixture(
+      'backup-data-dir-inventory/failing',
+      backupInventoryCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${backupInventoryCheck}]`)
+    expect(result.stderr).toContain(
+      'createBackup must reference "secrets" (declared in KNOWN_DATA_DIR_CHILDREN).',
+    )
+    expect(result.stderr).toContain(
+      'restoreBackup must reference "secrets" (declared in KNOWN_DATA_DIR_CHILDREN).',
+    )
+  })
 
   it('fails a fixture with an unclassified saveAsset call', async () => {
     const result = await runAuditFixture(
