@@ -6,7 +6,12 @@ import {
   readCharacterId,
   readJsonObject,
 } from './characters.js'
-import { ensureCharacterChats, readChatId, requireChatLocation } from './chats.js'
+import {
+  ensureCharacterChats,
+  normalizeAllCharacterChats,
+  readChatId,
+  requireChatLocation,
+} from './chats.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -286,6 +291,11 @@ export function normalizeSelectedChatLorebooks(
   database: JsonRecord,
   chatId: string,
 ): { character: CharacterRecord; chat: { localLore: LorebookEntryRecord[] }; parentId: string } {
+  // A4EC8 / B9: every globally-addressed resolver (requireChatLocation)
+  // must run after global id normalization. Without normalizeAllCharacterChats
+  // first, persisted cross-character duplicate chat ids would let this route
+  // mutate the wrong row. Normalize is idempotent.
+  normalizeAllCharacterChats(database)
   const characters = ensureCharacterCollection(database)
   const location = requireChatLocation(characters, chatId)
   location.chat.localLore = repairLorebookEntries(
