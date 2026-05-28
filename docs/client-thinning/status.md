@@ -25,8 +25,8 @@ Implemented:
 
 Bounded or partial:
 
-- Audit fixture reproducibility is open. Each audit rule needs a committed
-  pre-fix fixture and test proof in this active task.
+- Audit fixture reproducibility is complete. All 20 audit rules have a committed
+  pre-fix fixture and test proof in `util/client-thinning-audit.test.ts`.
 - `sendChat` prompt assembly is server-capable but not default-thin. The
   browser still falls back to local prompt assembly unless
   `useServerPromptAssembly` is enabled.
@@ -51,8 +51,9 @@ Client-owned, unsupported, or no-port:
 - Treat the workstream as active, not complete.
 - Start with the audit. If `pnpm client-thinning:audit` is red, fix or triage
   that before selecting wider runtime changes.
-- The best first code batch is audit fixture reproducibility: fixture/test proof
-  for the structural audit rules.
+- Audit fixture reproducibility is now complete (all 20 rules have committed
+  fixture/test proof). Pick a live invariant family for the next batch instead
+  of more audit fixtures, unless a new audit rule is added.
 - Runtime expansion or deletion must name one invariant family and one proof
   command before editing.
 

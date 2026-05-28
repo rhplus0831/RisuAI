@@ -58,11 +58,12 @@ Bounded or partial:
   `DBState.db.useServerPromptAssembly` is true
   (`src/ts/process/index.svelte.ts:157`), and the setting defaults to false
   (`src/ts/storage/database.svelte.ts:776`).
-- Audit fixture reproducibility is the first standalone open item. Every A4R
-  rule (`A4R1`–`A4R7` plus the `A4R-` named rules), all EC rules (`EC1`, `EC2`,
-  `EC4`, `EC5`, `EC6`), and AEC `AEC4`/`AEC5`/`AEC6` now have committed pre-fix
-  fixtures and tests proving non-zero exit. The only remaining open rule is
-  `AEC2 import/export current shape`.
+- Audit fixture reproducibility is COMPLETE. All 20 audit rules now have
+  committed pre-fix fixtures and tests in `util/client-thinning-audit.test.ts`
+  proving non-zero exit (and, where the rule has a narrow allowed shape, a
+  bypass fixture proving zero exit). Several fixtures intentionally mirror the
+  audit's tables (`MUTATING_ROUTE_RULES`, `ASSET_WALKER_OWNERS`), so they must
+  be updated in the same batch when a rule's surface changes.
 - `util/client-thinning-audit.ts` is broad and structural, but currently lives
   as one monolithic script. Treat new findings as audit-rule work plus
   reproducibility proof, not as one-off call-site fixes.
@@ -85,9 +86,12 @@ Client-owned, no-port, or deferred:
 
 1. Run `pnpm client-thinning:audit`. If it is red, fix or explicitly triage the
    failing audit before selecting wider runtime work.
-2. Continue audit fixture reproducibility unless source inventory proves a more
-   urgent live bug. All A4R and EC rules plus `AEC4`/`AEC5`/`AEC6` are covered;
-   the last remaining fixture target is `AEC2 import/export current shape`.
+2. Audit fixture reproducibility is complete (all 20 rules). The next delta
+   should pick a live invariant family (command boundary, projection
+   refresh/write guard, asset/import/backup boundary, provider/prompt routing,
+   memory mutation, or sendChat thinning) rather than more audit fixtures —
+   unless a new audit rule is added, which must ship its fixture in the same
+   batch.
 3. If adding a new finding, update the invariant, audit rule, fixture, test, and
    the smallest relevant status/coverage shard in the same batch.
 4. Treat `sendChat` client-thinning as a separate sub-family. A valid batch must

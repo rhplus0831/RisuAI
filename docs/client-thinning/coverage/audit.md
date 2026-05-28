@@ -111,15 +111,29 @@ Date: 2026-05-29
   clear values, and validates the optional vits/gptSoVits audio asset refs; the
   failing fixture drops the `if (!fs.existsSync(file))` heal guard from
   `addAsset`.
+- `AEC2 import/export current shape` has committed
+  `failing-desynced-reserved-keys` and `current-shape-bypass` fixtures under
+  `util/client-thinning-audit-fixtures/import-export-current-shape/`. The bypass
+  keeps the block export needles, the import normalize calls, and
+  `ROOT_COMPONENT_RESERVED_KEYS` in sync with `BLOCK_RESOURCE_KEYS` (with the
+  reserved-key rejection in `assembleBlockDatabase`); the failing fixture drops
+  `'plugins'` from `ROOT_COMPONENT_RESERVED_KEYS`. **This completes committed
+  fixture reproducibility for all 20 audit rules.**
 
 ## Open Proof
 
-Each remaining rule needs:
+All 20 audit rules now have committed fixture proof, so there are no open rules.
+Any NEW audit rule must ship with the same proof in the same batch:
 
 - a committed pre-fix fixture
 - a test that runs the rule against the fixture
 - an assertion that the rule exits non-zero
 - a bypass-shape case when a narrow rule could otherwise pass
+
+When an existing rule's surface changes (e.g. the `MUTATING_ROUTE_RULES` table,
+the `ASSET_WALKER_OWNERS` table, or a needle), update the matching fixture in
+the same batch — several fixtures intentionally mirror those tables, so they
+will fail until updated alongside the rule.
 
 ## Fixture Harness
 
@@ -147,7 +161,7 @@ existing files yet.
 | `EC4 stable command ids` | `stable-command-ids` | Let command-path constructors mint `randomUUID()`, expose `promptTemplate` through generic settings commands, or allow command routes to mint durable ids from request payloads. | Covered: failing fixture (`createCharacterRecord` mints `randomUUID()`) exits non-zero with `EC4 stable command ids`; validate-only bypass exits zero. |
 | `EC2 plugin storage gates` | `plugin-storage-gates` | Touch localStorage, plugin storage, or IndexedDB bridge methods without `assertDeviceLocalPluginStorageEnabled()`, expose `pluginV2`, or remove Fastify server/local save-mode separation. | Covered: failing fixture (`SafeLocalStorage.getItem` skips the gate) exits non-zero with `EC2 plugin storage gates`; fully gated bypass exits zero. |
 | `EC6 asset walker validator drift` | `asset-walker-validator-drift` | Add an asset walker field without validator ownership, leave stale ownership for a removed walker field, or drop a required validator needle. | Covered: failing fixture (unowned walker field) exits non-zero with `EC6 asset walker validator drift`; owned bypass (collected fields equal the owner table, all validator needles present) exits zero. |
-| `AEC2 import/export current shape` | `import-export-current-shape` | Remove a block-export resource family, stop import normalization for a block-exported family, desync reserved root keys, or allow root component import to overwrite resource blocks. | Non-zero exit with `AEC2 import/export current shape`. |
+| `AEC2 import/export current shape` | `import-export-current-shape` | Remove a block-export resource family, stop import normalization for a block-exported family, desync reserved root keys, or allow root component import to overwrite resource blocks. | Covered: failing fixture (reserved root keys drift from block export keys) exits non-zero with `AEC2 import/export current shape`; in-sync bypass exits zero. |
 | `AEC4 chat folder identity scope` | `chat-folder-identity-scope` | Normalize chat folder ids only per character, fail to update chat `folderId` references after repair, or omit global duplicate-id rejection on create surfaces. | Covered: failing fixture (per-character folder-id normalization) exits non-zero with `AEC4 chat folder identity scope`; global-scope bypass exits zero. |
 | `AEC5 module reference semantics` | `module-reference-semantics` | Treat MCP modules as normal link targets, tolerate unresolved normal module ids, or skip module-link validation on chat create/patch/fork writes. | Covered: failing fixture (MCP rows linkable as normal modules) exits non-zero with `AEC5 module reference semantics`; typed-links bypass exits zero. |
 | `AEC6 asset persistence semantics` | `asset-persistence-semantics` | Stop healing missing asset blobs for existing metadata, reject documented clear values, or omit optional audio asset reference validation from character commands. | Covered: failing fixture (`addAsset` drops the missing-blob heal guard) exits non-zero with `AEC6 asset persistence semantics`; heal + clear-value bypass exits zero. |
@@ -166,17 +180,16 @@ existing files yet.
 
 ## Suggested Next Proof
 
-`A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
-`A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
-`A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
-Every A4R rule (`A4R1`–`A4R7` plus the `A4R-` named rules), all EC rules (`EC1`,
-`EC2`, `EC4`, `EC5`, `EC6`), `AEC4 chat folder identity scope`,
-`AEC5 module reference semantics`, and `AEC6 asset persistence semantics` now
-have committed fixtures. The only remaining open rule is `AEC2 import/export
-current shape`: its fixture should prove that removing a block-export resource
-family (or desyncing the reserved root keys / letting root-component import
-overwrite resource blocks) exits non-zero, while the current import/export shape
-stays accepted.
+All 20 audit rules now have committed failing (and, where the rule has a narrow
+allowed shape, bypass) fixtures wired into `util/client-thinning-audit.test.ts`.
+Audit fixture reproducibility — the workstream's first standalone open item — is
+complete.
+
+The next client-thinning delta should move off audit reproducibility to a live
+invariant family (command boundary, projection refresh/write guard,
+asset/import/backup boundary, provider/prompt routing, memory mutation, or
+sendChat thinning), or to maintaining these fixtures when a rule's surface
+changes. New audit rules must ship a fixture + test in the same batch.
 
 ## Commands
 

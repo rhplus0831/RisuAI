@@ -63,6 +63,7 @@ describe('client-thinning audit fixtures', () => {
   const chatFolderScopeCheck = 'AEC4 chat folder identity scope'
   const moduleReferenceCheck = 'AEC5 module reference semantics'
   const assetPersistenceCheck = 'AEC6 asset persistence semantics'
+  const importExportShapeCheck = 'AEC2 import/export current shape'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -506,6 +507,30 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'asset-persistence-semantics/heal-and-clear-bypass',
       assetPersistenceCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture whose reserved root keys drift from block export keys', async () => {
+    const result = await runAuditFixture(
+      'import-export-current-shape/failing-desynced-reserved-keys',
+      importExportShapeCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${importExportShapeCheck}]`)
+    expect(result.stderr).toContain(
+      'ROOT_COMPONENT reserved keys must match block export resource keys.',
+    )
+  })
+
+  it('allows the current import/export shape with reserved keys in sync', async () => {
+    const result = await runAuditFixture(
+      'import-export-current-shape/current-shape-bypass',
+      importExportShapeCheck,
     )
 
     expect(result.exitCode).toBe(0)
