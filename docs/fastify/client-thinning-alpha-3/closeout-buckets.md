@@ -6,23 +6,24 @@ This is the suggested task-agent breakdown for Alpha 3. Each bucket should land
 behavior, focused tests, audit coverage where practical, and doc updates before
 being marked closed.
 
-Current status: **open.** Bucket 0 audit gates have landed and are expected to
-fail against the current pre-fix tree.
+Current status: **open.** Buckets 0 and 1 have landed. Bucket 1 clears A3F1,
+A3F2, and A3F12; `pnpm client-thinning:audit` is still red on the remaining
+A3R3 through A3R7 findings.
 
 Rule-first gate: Bucket 0 lands before behavior closeout. No behavior bucket may
 be marked closed until its corresponding R rule fails on the pre-fix tree and
 passes after the fix. Findings without a dedicated R rule still need a focused
 failing-then-passing regression test or an explicit tested contract decision.
 
-| Order | Bucket                                   | Closes                                                                       | Primary ownership                                                                                                                                                                                                                                    |
-| ----- | ---------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | Landed in `util/client-thinning-audit.ts`; current failures are documented below.                                                                                                                                                                    |
-| 1     | Active-writer and conflict semantics     | A3F1, A3F2, A3F12                                                            | `src/ts/bootstrap.ts`, `src/ts/server/bootstrap.ts`, `server/fastify/src/routes/bootstrap.ts`, `src/ts/setting/utils.ts`, `src/ts/server/commands.ts`, compatibility command adapters, active-writer/settings tests, `util/client-thinning-audit.ts` |
-| 2     | Stable-id command holes                  | A3F3, A3F4                                                                   | preset copy/import command contracts, lorebook delete behavior, server/client command helpers, command tests, `util/client-thinning-audit.ts`                                                                                                        |
-| 3     | Global id addressing                     | A3F5                                                                         | chat/message command helpers, import/bootstrap normalization, command route tests, audit checks                                                                                                                                                      |
-| 4     | Asset ownership and backup durability    | A3F6, A3F7, A3F8, A3F9, A3F10                                                | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`, preset import, `server/fastify/src/repository.ts`, RisuSave walker/bundle export, backup and asset tests, audit checks                                                                      |
-| 5     | Secret placeholder row identity          | A3F11                                                                        | `server/fastify/src/providerSecrets.ts`, settings command tests, masking tests, audit checks                                                                                                                                                         |
-| 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | `server/fastify/src/commands/events.ts`, event tests, `docs/fastify/client-thinning-alpha-3/*`, top-level status docs after full ladder                                                                                                              |
+| Order | Bucket                                   | Closes                                                                       | Primary ownership                                                                                                                                                               |
+| ----- | ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | Landed in `util/client-thinning-audit.ts`; current failures are documented below.                                                                                               |
+| 1     | Active-writer and conflict semantics     | A3F1, A3F2, A3F12                                                            | Landed. Passive refresh is read-only, generic settings conflicts roll back without replay, and whole-chat compatibility command fan-out is serialized.                          |
+| 2     | Stable-id command holes                  | A3F3, A3F4                                                                   | preset copy/import command contracts, lorebook delete behavior, server/client command helpers, command tests, `util/client-thinning-audit.ts`                                   |
+| 3     | Global id addressing                     | A3F5                                                                         | chat/message command helpers, import/bootstrap normalization, command route tests, audit checks                                                                                 |
+| 4     | Asset ownership and backup durability    | A3F6, A3F7, A3F8, A3F9, A3F10                                                | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`, preset import, `server/fastify/src/repository.ts`, RisuSave walker/bundle export, backup and asset tests, audit checks |
+| 5     | Secret placeholder row identity          | A3F11                                                                        | `server/fastify/src/providerSecrets.ts`, settings command tests, masking tests, audit checks                                                                                    |
+| 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | `server/fastify/src/commands/events.ts`, event tests, `docs/fastify/client-thinning-alpha-3/*`, top-level status docs after full ladder                                         |
 
 ## Parallelization Notes
 
@@ -76,13 +77,11 @@ A3F8, A3F10, A3F12, and A3F13 may close with focused regression tests and
 documented contract decisions unless the implementation reveals a reusable audit
 pattern.
 
-## Bucket 0 Current Audit Output
+## Current Audit Output
 
-`pnpm client-thinning:audit` currently fails by design with these Alpha 3 gates:
+`pnpm client-thinning:audit` currently fails by design with these remaining
+Alpha 3 gates:
 
-- A3R1: passive projection refresh calls the writer-registering bootstrap
-  helper.
-- A3R2: generic settings replay the same patch after a conflict.
 - A3R3: preset copy, preset import, and last-lorebook delete call id-minting
   repair helpers from public command routes.
 - A3R4: chat and message routes resolve ids globally while create/append checks
@@ -94,5 +93,5 @@ pattern.
 - A3R7: `readServerAssetBytes` can fetch arbitrary references while attaching
   `risu-auth`.
 
-Next agent: start Bucket 1, then continue through the behavior buckets until all
+Next agent: start Bucket 2, then continue through the behavior buckets until all
 A3R gates pass. Keep broad status docs untouched until the final closeout.

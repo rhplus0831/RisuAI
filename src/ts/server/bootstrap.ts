@@ -25,6 +25,19 @@ export function canUseServerBootstrap(): boolean {
 export async function fetchServerBootstrapProjection(
   signal?: AbortSignal | null,
 ): Promise<ServerBootstrapResult> {
+  return fetchServerBootstrapProjectionWithMode({ signal, registerActiveWriter: true })
+}
+
+export async function fetchServerBootstrapProjectionReadOnly(
+  signal?: AbortSignal | null,
+): Promise<ServerBootstrapResult> {
+  return fetchServerBootstrapProjectionWithMode({ signal, registerActiveWriter: false })
+}
+
+async function fetchServerBootstrapProjectionWithMode(input: {
+  signal?: AbortSignal | null
+  registerActiveWriter: boolean
+}): Promise<ServerBootstrapResult> {
   if (!canUseServerBootstrap()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
@@ -32,10 +45,10 @@ export async function fetchServerBootstrapProjection(
   try {
     response = await fetch(BOOTSTRAP_ENDPOINT, {
       method: 'GET',
-      signal: signal ?? undefined,
+      signal: input.signal ?? undefined,
       headers: {
         'risu-auth': auth,
-        ...activeWriterSessionHeader(),
+        ...(input.registerActiveWriter ? activeWriterSessionHeader() : {}),
       },
     })
   } catch (err) {

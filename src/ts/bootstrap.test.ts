@@ -15,6 +15,7 @@ type ServerBootstrapMockResponse =
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const serverBootstrapState = vi.hoisted(() => ({
   fetch: vi.fn(),
+  fetchReadOnly: vi.fn(),
   response: {
     status: 'ok' as const,
     projection: {
@@ -86,6 +87,7 @@ vi.mock('./platform', async (importActual) => {
 
 vi.mock('./server/bootstrap', () => ({
   fetchServerBootstrapProjection: serverBootstrapState.fetch,
+  fetchServerBootstrapProjectionReadOnly: serverBootstrapState.fetchReadOnly,
 }))
 
 vi.mock('./server/events', () => ({
@@ -156,6 +158,7 @@ import { DBState, LoadingStatusState, hypaV3ProgressStore, loadedStore } from '.
 beforeEach(() => {
   platformState.isFastifyServer = true
   serverBootstrapState.fetch.mockImplementation(async () => serverBootstrapState.response)
+  serverBootstrapState.fetchReadOnly.mockImplementation(async () => serverBootstrapState.response)
   serverBootstrapState.response = {
     status: 'ok',
     projection: {
@@ -169,6 +172,7 @@ beforeEach(() => {
     },
   }
   serverBootstrapState.fetch.mockClear()
+  serverBootstrapState.fetchReadOnly.mockClear()
   serverEventsState.subscriptions = []
   serverEventsState.unsubscribe.mockClear()
   serverEventsState.subscribe.mockClear()
@@ -231,10 +235,12 @@ describe('web bootstrap startup source', () => {
 
       await vi.advanceTimersByTimeAsync(99)
       expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
+      expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
       expect(DBState.db.language).toBe('en')
 
       await vi.advanceTimersByTimeAsync(1)
-      expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(2)
+      expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
+      expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
       expect(DBState.db.language).toBe('ko')
       expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [] }])
     } finally {
@@ -268,6 +274,7 @@ describe('web bootstrap startup source', () => {
       subMsg: '2 queued',
     })
     expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
   it('blocks direct Fastify projection writes after the guard is enabled', async () => {

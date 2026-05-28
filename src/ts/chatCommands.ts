@@ -97,6 +97,22 @@ export function runMessageCommand<T extends Record<string, unknown>>(
   runChatCommand(command, rollback)
 }
 
+function runChatCommandSequence(
+  commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
+  rollback: () => void,
+): void {
+  if (!canUseServerCommands() || commands.length === 0) return
+  void (async () => {
+    for (const command of commands) {
+      const result = await runServerCommand({ command })
+      if (result.status !== 'ok') {
+        rollback()
+        return
+      }
+    }
+  })()
+}
+
 export function dispatchCreateChat(
   characterId: string,
   chat: Chat,
@@ -144,23 +160,45 @@ export function dispatchCompatibleChatUpdate(
   if (!chatId || !previousChat || !nextChat) return
 
   const metadataPatch = changedChatMetadata(previousChat, nextChat)
+  const commands: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
   if (Object.keys(metadataPatch).length > 0) {
-    dispatchUpdateChat(chatId, metadataPatch, previous)
+    commands.push((baseRevision) =>
+      updateChatCommand({
+        baseRevision,
+        chatId,
+        patch: sanitizeChatPatch(metadataPatch),
+        select: false,
+      }),
+    )
   }
 
   if (snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? [])) {
-    dispatchReplaceMessages(chatId, nextChat.message ?? [], previous)
+    for (const message of nextChat.message ?? []) {
+      ensureMessageId(message)
+    }
+    const messages = (nextChat.message ?? []).map(toMessageSnapshot)
+    commands.push((baseRevision) =>
+      replaceMessagesCommand({
+        baseRevision,
+        chatId,
+        messages,
+      }),
+    )
   }
 
   const scriptstatePatch = changedScriptstatePatch(previousChat.scriptstate, nextChat.scriptstate)
   if (Object.keys(scriptstatePatch.patch).length > 0 || scriptstatePatch.deleteKeys.length > 0) {
-    dispatchPatchChatScriptstate(
-      chatId,
-      scriptstatePatch.patch,
-      scriptstatePatch.deleteKeys,
-      previous,
+    commands.push((baseRevision) =>
+      patchChatScriptstateCommand({
+        baseRevision,
+        chatId,
+        patch: sanitizeScriptstatePatch(scriptstatePatch.patch),
+        deleteKeys: scriptstatePatch.deleteKeys.filter((key) => key.length > 0),
+      }),
     )
   }
+
+  runChatCommandSequence(commands, () => restoreChatState(previous))
 }
 
 export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {

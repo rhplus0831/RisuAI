@@ -11,8 +11,8 @@ repeatable audit where practical.
 
 | Finding                                                                    | Severity | Criterion     | Audit gate                     | Status | Suggested bucket |
 | -------------------------------------------------------------------------- | -------- | ------------- | ------------------------------ | ------ | ---------------- |
-| A3F1 - Passive bootstrap refresh steals active-writer ownership            | High     | A3EC1 / A3EC6 | R1                             | Open   | 1                |
-| A3F2 - Generic settings blindly replay 409 conflicts                       | High     | A3EC1 / A3EC6 | R2                             | Open   | 1                |
+| A3F1 - Passive bootstrap refresh steals active-writer ownership            | High     | A3EC1 / A3EC6 | R1                             | Closed | 1                |
+| A3F2 - Generic settings blindly replay 409 conflicts                       | High     | A3EC1 / A3EC6 | R2                             | Closed | 1                |
 | A3F3 - Preset copy/import still mint command-path ids                      | High     | A3EC2 / A3EC6 | R3                             | Open   | 2                |
 | A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | A3EC2 / A3EC6 | R3                             | Open   | 2                |
 | A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | A3EC3 / A3EC6 | R4                             | Open   | 3                |
@@ -22,7 +22,7 @@ repeatable audit where practical.
 | A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | A3EC4 / A3EC6 | R5                             | Open   | 4                |
 | A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | A3EC4         | Focused tests/contract         | Open   | 4                |
 | A3F11 - Masked array secrets restore by index                              | Medium   | A3EC5 / A3EC6 | R6                             | Open   | 5                |
-| A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | A3EC1         | Focused tests/contract         | Open   | 6                |
+| A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | A3EC1         | Focused tests/contract         | Closed | 1                |
 | A3F13 - Command event sink keeps unbounded event history                   | Low      | A3EC6         | Focused tests/retention policy | Open   | 6                |
 
 The latest Codex and Claude audits are merged in [`audit.md`](./audit.md).
@@ -56,6 +56,13 @@ because refreshes are not only page-load/user-intent bootstrap calls.
 
 Required closeout:
 
+- Closed in Bucket 1. Passive projection refresh now calls a read-only bootstrap
+  helper that does not attach `risu-writer-session`; page-load bootstrap remains
+  the writer-registration path.
+- Regression proof:
+  `src/ts/server/bootstrap.test.ts`,
+  `src/ts/bootstrap.test.ts`, and
+  `server/fastify/__tests__/activeWriter.test.ts`.
 - Audit gate: R1, passive projection refresh cannot call a writer-registering
   bootstrap helper.
 - Split bootstrap into a writer-registration mode and a projection-refresh mode,
@@ -89,6 +96,10 @@ the conflict.
 
 Required closeout:
 
+- Closed in Bucket 1. `patchServerBackedSetting` now treats conflict like any
+  non-ok command result and rolls back the optimistic setting instead of
+  resending the same patch with `currentRevision`.
+- Regression proof: `src/ts/setting/utils.test.ts`.
 - Audit gate: R2, conflict retry blocks that resend the same patch are forbidden
   outside the central command wrapper.
 - Remove the retry and roll back/surface conflict like `runServerCommand`.
@@ -423,6 +434,10 @@ roll back successful state because sibling commands raced each other.
 
 Required closeout:
 
+- Closed in Bucket 1. `dispatchCompatibleChatUpdate` now serializes metadata,
+  message replacement, and scriptstate commands so each command reads the
+  command revision cached by the previous response.
+- Regression proof: `src/ts/compatibilityAdapters.test.ts`.
 - No dedicated R-rule is required unless the implementation exposes a reusable
   audit pattern; close with focused compatibility fan-out tests.
 - Serialize command dispatches that share one optimistic snapshot, or replace

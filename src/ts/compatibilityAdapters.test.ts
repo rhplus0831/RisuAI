@@ -76,6 +76,32 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
+function stubRevisionCheckedCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  let currentRevision = 10
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      calls.push({ url, method: init.method ?? 'GET', body })
+      if (url === '/api/v1/bootstrap') {
+        return jsonResponse({ revision: currentRevision })
+      }
+      const baseRevision = (body as { baseRevision?: unknown } | null)?.baseRevision
+      if (baseRevision !== currentRevision) {
+        return jsonResponse({ error: 'revision_conflict', currentRevision }, 409)
+      }
+      currentRevision += 1
+      return jsonResponse({
+        revision: currentRevision,
+        event: { type: 'compat.updated', revision: currentRevision, resource: 'compat' },
+      })
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
 function seedCharacter(): character {
   return {
     chaId: 'char-a',
@@ -181,7 +207,7 @@ describe('Phase 9-3f compatibility adapters', () => {
         true,
       )
     })
-    expect(calls.filter((call) => call.url === '/api/v1/bootstrap')).toHaveLength(3)
+    expect(calls.filter((call) => call.url === '/api/v1/bootstrap')).toHaveLength(1)
     expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-a')).toMatchObject({
       method: 'PATCH',
       body: {
@@ -194,7 +220,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     ).toMatchObject({
       method: 'PUT',
       body: {
-        baseRevision: 10,
+        baseRevision: 11,
         messages: nextChat.message,
       },
     })
@@ -203,11 +229,45 @@ describe('Phase 9-3f compatibility adapters', () => {
     ).toMatchObject({
       method: 'PATCH',
       body: {
-        baseRevision: 10,
+        baseRevision: 11,
         patch: { $old: '2' },
         deleteKeys: ['$gone'],
       },
     })
+  })
+
+  it('serializes whole-chat compatibility command fan-out against the latest revision', async () => {
+    const calls = stubRevisionCheckedCommandFetch()
+    const previousChat = snapshot(DBState.db.characters[0].chats[0]) as Chat
+    const previous = currentChatStateSnapshot()
+    const nextChat: Chat = {
+      ...previousChat,
+      note: 'serialized note',
+      message: [
+        { role: 'user', data: 'replacement', chatId: 'msg-a' },
+        { role: 'char', data: 'new', chatId: 'msg-b' },
+      ],
+      scriptstate: { $old: '3' },
+    }
+    DBState.db.characters[0].chats[0] = nextChat
+
+    dispatchCompatibleChatUpdate(previousChat, nextChat, previous)
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(
+        true,
+      )
+    })
+
+    const commandBodies = calls
+      .filter((call) => call.url !== '/api/v1/bootstrap')
+      .map((call) => call.body)
+    expect(commandBodies).toEqual([
+      { baseRevision: 10, patch: { note: 'serialized note' }, select: false },
+      { baseRevision: 11, messages: nextChat.message },
+      { baseRevision: 12, patch: { $old: '3' }, deleteKeys: ['$gone'] },
+    ])
+    expect(DBState.db.characters[0].chats[0]).toEqual(nextChat)
   })
 
   it('does not dispatch compatibility commands outside Fastify mode', async () => {

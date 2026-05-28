@@ -108,6 +108,18 @@ Bucket 0 added repeatable audit coverage for these Alpha 3 classes:
 - Client/server asset-reference parser mismatch for legacy paths.
 - Index-based restore of wildcard array secrets.
 
+Bucket 1 landed the A3EC1 fixes and focused A3F12 regression coverage:
+
+- Passive event-driven projection refresh uses a read-only bootstrap fetch and
+  no longer sends the active-writer session header.
+- Generic data-driven settings patches roll back on 409 instead of replaying
+  the same patch against `currentRevision`.
+- Whole-chat compatibility command fan-out is serialized so the later commands
+  read the command revision cached by earlier responses.
+
+After Bucket 1, A3R1 and A3R2 pass. `pnpm client-thinning:audit` remains red on
+the remaining A3R3 through A3R7 buckets.
+
 The audit still intentionally relies on focused behavior tests or later
 documented contract decisions for these Alpha 3 classes:
 
@@ -148,15 +160,11 @@ A3F8, A3F10, A3F12, and A3F13 can close with focused regression tests and a
 documented contract decision. Add structural audit coverage for them only if the
 implementation exposes a repeatable source pattern worth guarding.
 
-## Bucket 0 Observed Failures
+## Current Observed Failures
 
-After adding A3R1 through A3R7, `pnpm client-thinning:audit` is intentionally
-red on the current pre-fix tree. The observed Alpha 3 failures are:
+After Bucket 1, `pnpm client-thinning:audit` is intentionally red on the
+remaining behavior buckets. The observed Alpha 3 failures are:
 
-- **A3R1:** `refreshServerProjection()` calls `fetchServerBootstrapProjection()`
-  while that helper sends `activeWriterSessionHeader()`.
-- **A3R2:** `patchServerBackedSetting()` retries conflicts with
-  `result.currentRevision`.
 - **A3R3:** preset copy, preset import, and last-lorebook delete call
   id-minting repair helpers from public command routes.
 - **A3R4:** chat and message ids are globally resolved but only parent-locally

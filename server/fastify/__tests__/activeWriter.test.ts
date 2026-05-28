@@ -87,6 +87,33 @@ describe('active writer session guard', () => {
     expect(active.json().revision).toBe(2)
   })
 
+  it('does not let passive bootstrap reads reclaim active-writer ownership', async () => {
+    await bootstrapSession(harness.app, 'session-a')
+    await bootstrapSession(harness.app, 'session-b')
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+      payload: { database: { useServerPromptAssembly: false } },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const passiveRefresh = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+    })
+    expect(passiveRefresh.statusCode).toBe(200)
+
+    const staleAfterPassiveRefresh = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+      payload: { baseRevision: 1, patch: { useServerPromptAssembly: true } },
+    })
+    expectStaleWriter(staleAfterPassiveRefresh)
+  })
+
   it('rejects stale writers on import, asset upload, backups, and legacy storage writes', async () => {
     await bootstrapSession(harness.app, 'session-a')
     await bootstrapSession(harness.app, 'session-b')

@@ -34,14 +34,12 @@ import { updateGuisize } from './gui/guisize'
 import { updateLorebooks } from './characters'
 import { initMobileGesture } from './hotkey'
 import { moduleUpdate } from './process/modules'
-import {
-  forageStorage,
-  getUncleanables,
-  getBasename,
-  checkCharOrder,
-} from './globalApi.svelte'
+import { forageStorage, getUncleanables, getBasename, checkCharOrder } from './globalApi.svelte'
 import { registerModelDynamic } from './model/modellist'
-import { fetchServerBootstrapProjection } from './server/bootstrap'
+import {
+  fetchServerBootstrapProjection,
+  fetchServerBootstrapProjectionReadOnly,
+} from './server/bootstrap'
 import { subscribeServerCommandEvents } from './server/events'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 
@@ -175,7 +173,7 @@ async function refreshServerProjection() {
   try {
     do {
       serverProjectionRefreshPending = false
-      const bootstrap = await fetchServerBootstrapProjection()
+      const bootstrap = await fetchServerBootstrapProjectionReadOnly()
       if (bootstrap.status === 'ok') {
         applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
       } else if (bootstrap.status === 'error') {
