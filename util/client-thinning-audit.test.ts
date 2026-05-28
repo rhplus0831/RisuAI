@@ -56,6 +56,7 @@ describe('client-thinning audit fixtures', () => {
   const conflictReplayCheck = 'A4R2 conflict replay outside central wrapper'
   const passiveRefreshCheck = 'A4R1 passive refresh writer ownership'
   const assetWalkerCheck = 'EC6 asset walker validator drift'
+  const activeWriterGuardCheck = 'EC5 active-writer guard'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -340,6 +341,28 @@ describe('client-thinning audit fixtures', () => {
 
   it('allows a walker whose fields all map to an owned validator with its needles', async () => {
     const result = await runAuditFixture('asset-walker-validator-drift/owned-bypass', assetWalkerCheck)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture with an unclassified mutating Fastify route', async () => {
+    const result = await runAuditFixture(
+      'active-writer-guard/failing-unclassified-route',
+      activeWriterGuardCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${activeWriterGuardCheck}]`)
+    expect(result.stderr).toContain('Unclassified mutating Fastify route: POST /api/v1/widgets.')
+  })
+
+  it('allows a fully classified mutating route surface with the guard wired in order', async () => {
+    const result = await runAuditFixture(
+      'active-writer-guard/classified-bypass',
+      activeWriterGuardCheck,
+    )
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')

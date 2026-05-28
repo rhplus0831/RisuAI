@@ -59,11 +59,11 @@ Bounded or partial:
   (`src/ts/process/index.svelte.ts:157`), and the setting defaults to false
   (`src/ts/storage/database.svelte.ts:776`).
 - Audit fixture reproducibility is the first standalone open item. Every A4R
-  rule (`A4R1`–`A4R7` plus the `A4R-` named rules) and `EC6 asset walker
-  validator drift` now have committed pre-fix fixtures and tests proving
-  non-zero exit. The remaining open rules are the EC/AEC structural invariants
-  (`EC1`, `EC2`, `EC4`, `EC5`, `AEC2`, `AEC4`, `AEC5`, `AEC6`), which still need
-  committed fixtures.
+  rule (`A4R1`–`A4R7` plus the `A4R-` named rules), `EC6 asset walker validator
+  drift`, and `EC5 active-writer guard` now have committed pre-fix fixtures and
+  tests proving non-zero exit. The remaining open rules are the EC/AEC
+  structural invariants (`EC1`, `EC2`, `EC4`, `AEC2`, `AEC4`, `AEC5`, `AEC6`),
+  which still need committed fixtures.
 - `util/client-thinning-audit.ts` is broad and structural, but currently lives
   as one monolithic script. Treat new findings as audit-rule work plus
   reproducibility proof, not as one-off call-site fixes.
@@ -87,9 +87,9 @@ Client-owned, no-port, or deferred:
 1. Run `pnpm client-thinning:audit`. If it is red, fix or explicitly triage the
    failing audit before selecting wider runtime work.
 2. Continue audit fixture reproducibility unless source inventory proves a more
-   urgent live bug. All A4R rules and `EC6` are covered; the next fixture target
-   is `EC5 active-writer guard`, then the remaining EC/AEC structural rules
-   (`EC1`, `EC2`, `EC4`, `AEC2`, `AEC4`, `AEC5`, `AEC6`).
+   urgent live bug. All A4R rules, `EC6`, and `EC5` are covered; the next
+   fixture target is `EC4 stable command ids`, then the remaining EC/AEC
+   structural rules (`EC1`, `EC2`, `AEC2`, `AEC4`, `AEC5`, `AEC6`).
 3. If adding a new finding, update the invariant, audit rule, fixture, test, and
    the smallest relevant status/coverage shard in the same batch.
 4. Treat `sendChat` client-thinning as a separate sub-family. A valid batch must
