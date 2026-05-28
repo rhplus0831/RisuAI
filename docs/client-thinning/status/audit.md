@@ -54,9 +54,9 @@ code, stdout/stderr, and check id.
 
 Fixture proof is complete for `A4R-saveasset filename classification`,
 `A4R-backup data dir inventory`, and
-`A4R-bounded process-lifetime accumulators`. The next small rule-family proof
-should be `A4R7 asset URL gate` unless source inventory reveals a more urgent
-audit-rule gap.
+`A4R-bounded process-lifetime accumulators`, and `A4R7 asset URL gate`. The
+next small rule-family proof should be `A4R-fanout composite command race`
+unless source inventory reveals a more urgent audit-rule gap.
 
 ## Direction
 

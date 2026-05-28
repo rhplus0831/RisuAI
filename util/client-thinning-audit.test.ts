@@ -46,6 +46,7 @@ function runAuditFixture(fixtureName: string, checkId: string): Promise<AuditRes
 describe('client-thinning audit fixtures', () => {
   const backupInventoryCheck = 'A4R-backup data dir inventory'
   const boundedAccumulatorCheck = 'A4R-bounded process-lifetime accumulators'
+  const assetUrlGateCheck = 'A4R7 asset URL gate'
   const saveAssetCheck = 'A4R-saveasset filename classification'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
@@ -82,6 +83,40 @@ describe('client-thinning audit fixtures', () => {
       'bounded-process-lifetime-accumulators/bounded-bypass',
       boundedAccumulatorCheck,
     )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that fetches arbitrary asset loc values with server auth', async () => {
+    const result = await runAuditFixture(
+      'asset-url-gate/failing-authenticated-loc-fetch',
+      assetUrlGateCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
+    expect(result.stderr).toContain(
+      'readServerAssetBytes in src/ts/server/assets.ts falls back to fetching arbitrary loc values while attaching risu-auth.',
+    )
+  })
+
+  it('fails a fixture that returns unknown asset URL shapes in Fastify mode', async () => {
+    const result = await runAuditFixture(
+      'asset-url-gate/failing-fastify-url-fallback',
+      assetUrlGateCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
+    expect(result.stderr).toContain(
+      "getFileSrc in src/ts/globalApi.svelte.ts falls back to `?? loc` for unknown asset shapes",
+    )
+  })
+
+  it('allows documented Fastify asset URL shapes with an explicit unknown default', async () => {
+    const result = await runAuditFixture('asset-url-gate/documented-shapes', assetUrlGateCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')

@@ -3,19 +3,20 @@
 Date: 2026-05-29
 
 Short handoff for the standalone client-thinning workstream. Runtime behavior
-was not changed when this folder was drafted. Start with [`status.md`](status.md),
-[`coverage.md`](coverage.md), and only the shard for the behavior being changed.
+was not changed by the latest audit-fixture batch. Start with
+[`status.md`](status.md), [`coverage.md`](coverage.md), and only the shard for
+the behavior being changed.
 
 ## Latest Verification
 
 - Command: `pnpm client-thinning:audit`
 - Result: Passed. The audit printed `Client-thinning audit passed.`
 - Command: `pnpm exec vitest run util/client-thinning-audit.test.ts`
-- Result: Passed. The run reported 1 test file passed and 5 tests passed.
+- Result: Passed. The run reported 1 test file passed and 8 tests passed.
 
 ## Checkpoint Scope
 
-- Delta class: documentation extraction and workstream split.
+- Delta class: audit fixture reproducibility.
 - Source material: `docs/archive/fastify/client-thinning/`, archived Phase 9,
   `docs/structure/`, `util/client-thinning-audit.ts`, Fastify routes, client
   server adapters, projection guard, command helpers, provider routing, and
@@ -60,8 +61,9 @@ Bounded or partial:
 - Audit fixture reproducibility is the first standalone open item. Fixture
   proof now exists for `A4R-saveasset filename classification`,
   `A4R-backup data dir inventory`, and
-  `A4R-bounded process-lifetime accumulators`; remaining audit rules still
-  need committed pre-fix fixtures and tests proving non-zero exit.
+  `A4R-bounded process-lifetime accumulators`, and `A4R7 asset URL gate`;
+  remaining audit rules still need committed pre-fix fixtures and tests proving
+  non-zero exit.
 - `util/client-thinning-audit.ts` is broad and structural, but currently lives
   as one monolithic script. Treat new findings as audit-rule work plus
   reproducibility proof, not as one-off call-site fixes.
@@ -85,7 +87,8 @@ Client-owned, no-port, or deferred:
 1. Run `pnpm client-thinning:audit`. If it is red, fix or explicitly triage the
    failing audit before selecting wider runtime work.
 2. Continue audit fixture reproducibility unless source inventory proves a more
-   urgent live bug. The next small fixture target is `A4R7 asset URL gate`.
+   urgent live bug. The next small fixture target is
+   `A4R-fanout composite command race`.
 3. If adding a new finding, update the invariant, audit rule, fixture, test, and
    the smallest relevant status/coverage shard in the same batch.
 4. Treat `sendChat` client-thinning as a separate sub-family. A valid batch must

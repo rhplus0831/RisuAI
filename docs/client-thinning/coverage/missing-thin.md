@@ -7,7 +7,8 @@ Date: 2026-05-28
 - Audit fixtures/tests are missing for most rule families; the reusable
   harness plus `A4R-saveasset filename classification` and
   `A4R-backup data dir inventory` and
-  `A4R-bounded process-lifetime accumulators` proofs exist.
+  `A4R-bounded process-lifetime accumulators` and `A4R7 asset URL gate` proofs
+  exist.
 - `sendChat` server prompt assembly is not default-thin because
   `useServerPromptAssembly` defaults false.
 - Default chat-screen submission still performs browser-side durable transcript

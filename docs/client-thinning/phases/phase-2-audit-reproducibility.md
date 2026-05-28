@@ -61,9 +61,9 @@ the rule exits non-zero for that regression class.
      listed in the inventory.
    - Scope: fixture and test additions for the current audit rules, plus narrow
      audit-runner seams only when a fixture cannot otherwise exercise the rule.
-   - Status: active; `A4R-backup data dir inventory` and
-     `A4R-bounded process-lifetime accumulators` are complete as of
-     2026-05-29.
+   - Status: active; `A4R-backup data dir inventory`,
+     `A4R-bounded process-lifetime accumulators`, and `A4R7 asset URL gate`
+     are complete as of 2026-05-29.
    - Done: each rule family has at least one committed pre-fix fixture, a test
      that asserts non-zero exit, and rule-specific proof that the intended
      regression class is caught.
@@ -85,11 +85,11 @@ the rule exits non-zero for that regression class.
 ## Next Handoff
 
 Continue slice 4 by adding the next rule-family fixture proof. Start with
-`A4R7 asset URL gate` unless current source inventory reveals a more urgent
-rule gap. Follow the established pattern in
+`A4R-fanout composite command race` unless current source inventory reveals a
+more urgent rule gap. Follow the established pattern in
 `util/client-thinning-audit.test.ts` and
-`util/client-thinning-audit-fixtures/bounded-process-lifetime-accumulators/`:
-add a minimal fixture root, select one audit check with
+`util/client-thinning-audit-fixtures/asset-url-gate/`: add a minimal fixture
+root, select one audit check with
 `CLIENT_THINNING_AUDIT_CHECK_IDS`, assert non-zero exit with the intended check
 id, add a bypass fixture if the rule has an accepted shape, and keep
 `pnpm client-thinning:audit` passing.
