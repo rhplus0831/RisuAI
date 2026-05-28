@@ -8,8 +8,8 @@ criterion ([`README.md`](./README.md)) and its finding
 ([`open-findings.md`](./open-findings.md)). A bucket is done only when its
 finding is resolved **and** the exit criterion's regression proof is committed.
 
-Current pickup: **Bucket 6 — Character asset-reference validation (EC6/F6)**.
-Buckets 1, 2, 3, 4, and 5 closed on 2026-05-28; see
+Current pickup: **Bucket 7 — Repeatable audit script + full verification ladder
+(EC7)**. Buckets 1, 2, 3, 4, 5, and 6 closed on 2026-05-28; see
 [`history.md`](./history.md).
 
 | Order | Bucket                                             | Closes | Finding | Status            |
@@ -19,7 +19,7 @@ Buckets 1, 2, 3, 4, and 5 closed on 2026-05-28; see
 | 3     | Import current-shape normalization                 | EC3    | F3      | Closed 2026-05-28 |
 | 4     | Stable-id validation + prompt-item semantics       | EC4    | F4      | Closed 2026-05-28 |
 | 5     | Single active-writer session lock                  | EC5    | F5      | Closed 2026-05-28 |
-| 6     | Character asset-reference validation               | EC6    | F6      | Open              |
+| 6     | Character asset-reference validation               | EC6    | F6      | Closed 2026-05-28 |
 | 7     | Repeatable audit script + full verification ladder | EC7    | —       | Open              |
 
 1. **Provider ownership (EC1=A) — closed 2026-05-28.** Server generation is now
@@ -71,13 +71,15 @@ Buckets 1, 2, 3, 4, and 5 closed on 2026-05-28; see
    `pnpm api:test server/fastify/__tests__/activeWriter.test.ts server/fastify/__tests__/commands.test.ts -- --run`
    and
    `pnpm test src/ts/server/commands.test.ts src/ts/server/bootstrap.test.ts src/ts/server/backups.test.ts src/ts/storage/nodeStorage.test.ts -- --run`.
-6. **Asset-reference validation (EC6).** Extend `validateCharacterAssetRefs`
-   (`characters.ts:371`) to iterate the `vits.files` dynamic map (report
-   `vits.files.<key>`) and validate `gptSoVitsConfig.ref_audio_data.assetId`,
-   reusing `validateOptionalServerAssetRef`. Shared by create and patch already;
-   reject-on-missing. Tests: valid/missing/malformed on both paths. Scope is the
-   character **audio** refs only — the broader walker-vs-validator drift class
-   (e.g. `characterOrder.img` vs `imgFile`) is left to EC7's audit.
+6. **Asset-reference validation (EC6) — closed 2026-05-28.**
+   `validateCharacterAssetRefs` now validates the character audio refs walked by
+   the bundle/export asset-reference scanner: `vits.files.*` and
+   `gptSoVitsConfig.ref_audio_data.assetId`. The validator is shared by create
+   and patch, keeps optional clear values, and rejects malformed or missing
+   server asset ids. Scope stayed on character **audio** refs only — the broader
+   walker-vs-validator drift class (e.g. `characterOrder.img` vs `imgFile`) is
+   left to EC7's audit. Focused proof:
+   `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`.
 7. **Repeatable audit + ladder (EC7).** Land the audit script below, then run the
    full ladder. No audit/invariant package script and no `ts-morph` dependency
    exist yet (`package.json`); both must be added and wired (the ladder scripts

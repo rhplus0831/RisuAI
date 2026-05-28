@@ -384,6 +384,53 @@ function validateCharacterAssetRefs(dataDir: string, record: JsonRecord, label: 
   if ('prebuiltAssetExclude' in record) {
     validateAssetIdList(dataDir, record.prebuiltAssetExclude, `${label}.prebuiltAssetExclude`)
   }
+  if ('vits' in record) {
+    validateVitsAssetRefs(dataDir, record.vits, `${label}.vits`)
+  }
+  if ('gptSoVitsConfig' in record) {
+    validateGptSoVitsAssetRefs(dataDir, record.gptSoVitsConfig, `${label}.gptSoVitsConfig`)
+  }
+}
+
+function validateVitsAssetRefs(dataDir: string, value: unknown, label: string): void {
+  if (value === undefined || value === null) return
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError(`${label} must be an object`)
+  }
+  const record = value as JsonRecord
+  if (!('files' in record) || record.files === undefined || record.files === null) return
+  if (!record.files || typeof record.files !== 'object' || Array.isArray(record.files)) {
+    throw new ValidationError(`${label}.files must be an object`)
+  }
+  for (const [key, assetId] of Object.entries(record.files as JsonRecord)) {
+    validateOptionalServerAssetRef(dataDir, assetId, `${label}.files.${key}`)
+  }
+}
+
+function validateGptSoVitsAssetRefs(dataDir: string, value: unknown, label: string): void {
+  if (value === undefined || value === null) return
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError(`${label} must be an object`)
+  }
+  const record = value as JsonRecord
+  if (
+    !('ref_audio_data' in record) ||
+    record.ref_audio_data === undefined ||
+    record.ref_audio_data === null
+  ) {
+    return
+  }
+  if (
+    !record.ref_audio_data ||
+    typeof record.ref_audio_data !== 'object' ||
+    Array.isArray(record.ref_audio_data)
+  ) {
+    throw new ValidationError(`${label}.ref_audio_data must be an object`)
+  }
+  const refAudio = record.ref_audio_data as JsonRecord
+  if ('assetId' in refAudio) {
+    validateOptionalServerAssetRef(dataDir, refAudio.assetId, `${label}.ref_audio_data.assetId`)
+  }
 }
 
 function validateJsonValue(label: string, value: unknown): void {

@@ -141,7 +141,25 @@ normalization expectations (`modules: []` no longer added when absent). That is
 not part of EC5, but the next agent should be aware before using that suite as a
 signal.
 
-Next pickup: **EC6/F6 — Character asset-reference validation**.
+## Character asset-reference validation (EC6/F6)
+
+Closed on 2026-05-28.
+
+- `validateCharacterAssetRefs` now covers the character audio asset references
+  walked by `risuSave/assetReferences.ts`: the dynamic `vits.files.*` map and
+  `gptSoVitsConfig.ref_audio_data.assetId`.
+- The validation is shared by create and patch through `createCharacterRecord`
+  and `readCharacterPatch`, reuses `validateOptionalServerAssetRef`, preserves
+  optional clear values, and rejects syntactically malformed or missing persisted
+  server asset ids.
+- EC6 stayed scoped to character audio refs. The broader walker-vs-validator
+  drift class remains EC7 audit-script work.
+
+Verification:
+
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: 70 passed.
+
+Next pickup: **EC7 — Repeatable invariant audit + full verification ladder**.
 
 ## Archived migration slices
 

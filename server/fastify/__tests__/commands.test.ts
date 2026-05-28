@@ -5005,18 +5005,47 @@ describe('Phase 9-4d asset reference commands', () => {
       modules: [{ id: 'mod-a', name: 'Module', description: '', assets: [] }],
     })
 
+    const createdCharacter = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        character: {
+          chaId: 'char-b',
+          name: 'B',
+          vits: { files: { greeting: firstAsset.assetId } },
+          gptSoVitsConfig: {
+            ref_audio_data: { fileName: 'ref.wav', assetId: secondAsset.assetId },
+          },
+          chats: [],
+          chatFolders: [],
+        },
+      },
+    })
+    expect(createdCharacter.statusCode).toBe(200)
+    expect(createdCharacter.json().event).toMatchObject({
+      type: 'character.created',
+      resource: 'character',
+      id: 'char-b',
+    })
+
     const character = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/characters/char-a',
       headers: { 'risu-auth': assertion },
       payload: {
-        baseRevision: revision,
+        baseRevision: createdCharacter.json().revision,
         patch: {
           image: firstAsset.assetId,
           emotionImages: [['happy', firstAsset.assetId]],
           additionalAssets: [['extra.png', secondAsset.assetId, 'png']],
           ccAssets: [{ type: 'icon', uri: secondAsset.assetId, name: 'alt', ext: 'png' }],
           prebuiltAssetExclude: [secondAsset.assetId],
+          vits: { files: { greeting: firstAsset.assetId } },
+          gptSoVitsConfig: {
+            ref_audio_data: { fileName: 'ref.wav', assetId: secondAsset.assetId },
+          },
         },
       },
     })
@@ -5075,7 +5104,7 @@ describe('Phase 9-4d asset reference commands', () => {
             color: '',
             imgFile: secondAsset.assetId,
             img: `/api/v1/assets/${secondAsset.assetId}`,
-            data: ['char-a'],
+            data: ['char-a', 'char-b'],
           },
         ],
       },
@@ -5094,6 +5123,17 @@ describe('Phase 9-4d asset reference commands', () => {
       additionalAssets: [['extra.png', secondAsset.assetId, 'png']],
       ccAssets: [{ type: 'icon', uri: secondAsset.assetId, name: 'alt', ext: 'png' }],
       prebuiltAssetExclude: [secondAsset.assetId],
+      vits: { files: { greeting: firstAsset.assetId } },
+      gptSoVitsConfig: {
+        ref_audio_data: { fileName: 'ref.wav', assetId: secondAsset.assetId },
+      },
+    })
+    expect(database.characters[1]).toMatchObject({
+      chaId: 'char-b',
+      vits: { files: { greeting: firstAsset.assetId } },
+      gptSoVitsConfig: {
+        ref_audio_data: { fileName: 'ref.wav', assetId: secondAsset.assetId },
+      },
     })
     expect(database.modules[0].assets).toEqual([['module.png', firstAsset.assetId, 'png']])
     expect(database.personas[0].icon).toBe(secondAsset.assetId)
@@ -5151,5 +5191,100 @@ describe('Phase 9-4d asset reference commands', () => {
     expect(bootstrap.json().database.characters[0].image).toBeUndefined()
     expect(bootstrap.json().database.modules[0].assets).toBeUndefined()
     expect(bootstrap.json().database.personas[0].icon).toBe(uploaded.assetId)
+  })
+
+  it('rejects malformed and missing character audio asset refs on create and patch', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [], chatFolders: [] }],
+      characterOrder: ['char-a'],
+    })
+    const missingAssetId = '0'.repeat(64)
+
+    const malformedCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        character: {
+          chaId: 'char-b',
+          name: 'B',
+          vits: { files: { greeting: 'assets/not-server.wav' } },
+        },
+      },
+    })
+    expect(malformedCreate.statusCode).toBe(400)
+    expect(malformedCreate.json().error).toBe(
+      'character.vits.files.greeting must be a server asset id',
+    )
+
+    const missingCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        character: {
+          chaId: 'char-b',
+          name: 'B',
+          gptSoVitsConfig: {
+            ref_audio_data: { fileName: 'ref.wav', assetId: missingAssetId },
+          },
+        },
+      },
+    })
+    expect(missingCreate.statusCode).toBe(400)
+    expect(missingCreate.json().error).toBe(
+      'character.gptSoVitsConfig.ref_audio_data.assetId references a missing server asset',
+    )
+
+    const malformedPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          gptSoVitsConfig: {
+            ref_audio_data: { fileName: 'ref.wav', assetId: 'assets/not-server.wav' },
+          },
+        },
+      },
+    })
+    expect(malformedPatch.statusCode).toBe(400)
+    expect(malformedPatch.json().error).toBe(
+      'patch.gptSoVitsConfig.ref_audio_data.assetId must be a server asset id',
+    )
+
+    const missingPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { vits: { files: { greeting: missingAssetId } } },
+      },
+    })
+    expect(missingPatch.statusCode).toBe(400)
+    expect(missingPatch.json().error).toBe(
+      'patch.vits.files.greeting references a missing server asset',
+    )
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database.characters).toHaveLength(1)
+    expect(bootstrap.json().database.characters[0]).toMatchObject({
+      chaId: 'char-a',
+      name: 'A',
+      chats: [],
+      chatFolders: [],
+    })
+    expect(bootstrap.json().database.characters[0].vits).toBeUndefined()
+    expect(bootstrap.json().database.characters[0].gptSoVitsConfig).toBeUndefined()
   })
 })
