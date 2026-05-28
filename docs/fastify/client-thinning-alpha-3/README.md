@@ -1,0 +1,108 @@
+# Fastify Client Thinning Alpha 3 - Audit Handoff
+
+Date: 2026-05-28
+
+Status: **open.** This directory records the third client-thinning follow-up
+pass after [`../client-thinning-alpha-2/`](../client-thinning-alpha-2/) closed.
+The Alpha 2 audit is still valuable, but a deeper read found additional
+Fastify server-projection invariant gaps that `pnpm client-thinning:audit` does
+not currently catch.
+
+## Why Alpha 3 Exists
+
+The original Phase 9 migration and Alpha 1/Alpha 2 closeouts fixed many concrete
+direct-write and server-projection bugs. The latest checkout still has a green
+client-thinning audit and focused tests, but review found more classes where the
+documented invariant is stronger than the code and audit proof:
+
+- Passive bootstrap refresh can re-register a stale browser session as the
+  active writer.
+- A generic settings path still blindly replays a 409 conflict.
+- Some command paths still mint durable ids or allow ambiguous globally addressed
+  ids.
+- Asset reads, backup/restore, and bundle walking still have gaps around server
+  asset ownership.
+- Secret placeholder restoration can copy array-row secrets by index after
+  reorder/delete.
+
+These are follow-up gaps in the standing Fastify server-projection workstream,
+not a rewrite of the archived Phase 9 migration slices.
+
+## Scope
+
+Alpha 3 covers Fastify-served web mode only: the SPA served by
+`server/fastify`, with durable state owned by Fastify APIs and browser state
+treated as a projection.
+
+In scope:
+
+- Active-writer registration, passive refresh, command conflict handling, and
+  multi-command optimistic adapters.
+- Public command routes and helpers that create, copy, import, or repair durable
+  ids.
+- Globally addressed chat and message command semantics. Chat folder global
+  identity remains covered by the earlier AEC4 audit rule and is not reopened by
+  Alpha 3 unless new evidence appears.
+- Provider secret masking and placeholder restoration.
+- Fastify asset read/write, RisuSave bundle walking, server backup/restore, and
+  asset metadata.
+- `util/client-thinning-audit.ts` coverage for the classes above.
+
+Out of scope unless needed to close a finding:
+
+- Legacy local browser mode.
+- A full rewrite of the Phase 9 command map.
+- Runtime-only provider/proxy requests that do not write local durable state.
+
+## Alpha 3 Invariant
+
+> In Fastify-served web mode, passive projection reads must not claim write
+> ownership, public command writes must preserve client-owned stable ids and
+> unambiguous addressing, and server-owned assets/secrets must not leak or drift
+> through client fallbacks.
+
+## Exit Criteria
+
+Alpha 3 is complete only when every criterion below is true and covered by
+committed regression proof.
+
+| #     | Exit criterion                                                                                                                                                    | Required regression proof                                                                                                                                                        |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A3EC1 | Passive projection refresh does not steal active-writer ownership, and 409 conflicts are not blindly replayed.                                                    | Multi-session active-writer tests for event/bootstrap refresh; generic settings conflict test; audit checks for bootstrap registration mode and retry drift.                     |
+| A3EC2 | Public command paths never mint stable ids unless a documented command explicitly owns server-generated ids.                                                      | Missing-id tests for preset copy/import and empty-lorebook fallback, or documented exceptions with explicit client/server contract and audit coverage.                           |
+| A3EC3 | Globally addressed chat/message commands are globally unique or parent-scoped in the route contract. Chat folder global uniqueness remains covered by Alpha AEC4. | Cross-character duplicate chat-id tests and cross-chat duplicate message-id tests prove rejection or disambiguation for create/import/patch/delete/fork.                         |
+| A3EC4 | Server asset reads, bundle walking, backups, and upload metadata preserve the server-owned asset contract.                                                        | Tests for rejecting arbitrary URL fetch with `risu-auth`, preserving backup asset bytes, including supported asset references in bundles, and retaining MIME/extension metadata. |
+| A3EC5 | Masked provider secrets cannot be transplanted across array rows.                                                                                                 | Reorder/delete tests for masked array secret fields such as `botPresets`, `customModels`, and `authRefreshes`.                                                                   |
+| A3EC6 | The repeatable audit covers the Alpha 3 bug classes.                                                                                                              | `pnpm client-thinning:audit` fails on the old patterns and passes after fixes; docs and status are reconciled only after the full ladder passes.                                 |
+
+## Verification Baseline
+
+The following commands were recorded across the latest read-only Alpha 3 audits
+and passed:
+
+```bash
+pnpm client-thinning:audit
+pnpm check
+pnpm test
+pnpm api:test
+pnpm build
+pnpm smoke:fastify-browser
+```
+
+Passing these commands is not enough to close Alpha 3; they are the baseline that
+missed the open findings.
+
+## Document Map
+
+- [`audit.md`](./audit.md) - combined Codex/Claude latest audit verdict,
+  conflict resolution, R1-R7 gates, and loop-exit checklist.
+- [`open-findings.md`](./open-findings.md) - live Alpha 3 findings.
+- [`closeout-buckets.md`](./closeout-buckets.md) - suggested task order and
+  ownership.
+- [`decisions.md`](./decisions.md) - default decisions and acceptable
+  alternatives to settle before implementation.
+- [`../../audit-codex-latest.md`](../../audit-codex-latest.md) and
+  [`../../audit-claude-latest.md`](../../audit-claude-latest.md) - source latest
+  read-only audits combined into this folder.
+- [`../../handover.md`](../../handover.md) - broader audit handoff notes for the
+  next detailed pass.
