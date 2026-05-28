@@ -26,6 +26,12 @@ Date: 2026-05-29
   `util/client-thinning-audit-fixtures/asset-url-gate/`.
 - `A4R-fanout composite command race` has committed failing and bypass fixtures
   under `util/client-thinning-audit-fixtures/composite-command-fanout/`.
+- `A4R4 globally-addressed resolver normalize` has committed failing and
+  normalize-first bypass fixtures under
+  `util/client-thinning-audit-fixtures/resolver-normalize/`. The failing fixture
+  proves both resolver pairs (`requireChatLocation`/`normalizeAllCharacterChats`
+  and `requireMessageLocation`/`normalizeAllChatMessages`) exit non-zero when the
+  resolver runs without the matching normalizer earlier in the same scope.
 
 ## Open Proof
 
@@ -70,7 +76,7 @@ existing files yet.
 | `A4R1 passive refresh writer ownership` | `passive-refresh-writer-ownership` | Make a read-only bootstrap helper attach `activeWriterSessionHeader()` or call the writer-registering bootstrap helper from a passive refresh path outside `WRITER_BOOTSTRAP_CALLERS`. | Non-zero exit with `A4R1 passive refresh writer ownership`. |
 | `A4R2 conflict replay outside central wrapper` | `conflict-replay` | Branch on `result.status === 'conflict'` outside `runServerCommand` and then resend a mutating command with `baseRevision` through a command helper or fetch. | Non-zero exit with `A4R2 conflict replay outside central wrapper`. |
 | `A4R3 transitive command-path id minting` | `transitive-command-id-minting` | Mint ids directly in a `/api/v1/commands/*` route, call a `repair*` id-minting helper from a command route, pass request-derived data to `ensure*`/`normalize*`, or call an unclassified transitive minter. | Non-zero exit with `A4R3 transitive command-path id minting`. |
-| `A4R4 globally-addressed resolver normalize` | `resolver-normalize` | Call `requireChatLocation()` or `requireMessageLocation()` before the matching global normalizer in the same handler/helper scope. | Non-zero exit with `A4R4 globally-addressed resolver normalize`. |
+| `A4R4 globally-addressed resolver normalize` | `resolver-normalize` | Call `requireChatLocation()` or `requireMessageLocation()` before the matching global normalizer in the same handler/helper scope. | Covered: failing fixture exits non-zero with `A4R4 globally-addressed resolver normalize` for both resolver pairs; normalize-first bypass exits zero. |
 | `A4R5 asset reference parser parity` | `asset-reference-parser-parity` | Change the client `LOCAL_ASSET_PATH_RE` without the server walker accepting the same regex shape, or remove the walker `addReference` parity surface. | Non-zero exit with `A4R5 asset reference parser parity`. |
 | `A4R6 wildcard secret row identity` | `wildcard-secret-row-identity` | Add a wildcard object-array secret path without `ARRAY_ROW_IDENTITY_KEYS`, add an unclassified flat string-array secret, or let wildcard placeholder resolution skip the rejected-row sentinel. | Non-zero exit with `A4R6 wildcard secret row identity`. |
 | `A4R7 asset URL gate` | `asset-url-gate` | Let Fastify asset-byte helpers fetch arbitrary `loc` values with `risu-auth`, fall back to `?? loc` for unknown shapes, or omit the explicit empty/null/throw default for unknown asset shapes. | Covered: authenticated arbitrary-`loc` fetch and Fastify `?? loc` fallback fixtures exit non-zero with `A4R7 asset URL gate`; documented-shapes bypass exits zero. |
@@ -82,13 +88,15 @@ existing files yet.
 ## Suggested Next Proof
 
 `A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
-`A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`, and
-`A4R-fanout composite command race` are complete. Continue with the remaining
-ordering-sensitive A4R rules unless source inventory reveals a more urgent rule
-gap. `A4R4 globally-addressed resolver normalize` is a good next small target:
-its fixture should prove that calling `requireChatLocation()` or
-`requireMessageLocation()` before the matching global normalizer in the same
-scope exits non-zero, while the normalize-then-resolve order remains accepted.
+`A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
+`A4R-fanout composite command race`, and
+`A4R4 globally-addressed resolver normalize` are complete. Continue with the
+remaining A4R rules unless source inventory reveals a more urgent rule gap.
+`A4R5 asset reference parser parity` is a good next small target: its fixture
+should prove that diverging the client `LOCAL_ASSET_PATH_RE` from the server
+walker regex (or dropping the walker `addReference` parity surface) exits
+non-zero, while a shape that keeps both regex literals identical stays accepted.
+After that, `A4R6`, `A4R3`, `A4R2`, and `A4R1` remain.
 
 ## Commands
 

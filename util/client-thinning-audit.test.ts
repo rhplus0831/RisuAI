@@ -49,6 +49,7 @@ describe('client-thinning audit fixtures', () => {
   const assetUrlGateCheck = 'A4R7 asset URL gate'
   const saveAssetCheck = 'A4R-saveasset filename classification'
   const compositeFanoutCheck = 'A4R-fanout composite command race'
+  const resolverNormalizeCheck = 'A4R4 globally-addressed resolver normalize'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -163,6 +164,30 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'composite-command-fanout/serialized-bypass',
       compositeFanoutCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that resolves a global location before normalizing ids', async () => {
+    const result = await runAuditFixture('resolver-normalize/failing', resolverNormalizeCheck)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${resolverNormalizeCheck}]`)
+    expect(result.stderr).toContain(
+      'server/fastify/src/commands/chats.ts renameChatByGlobalId calls requireChatLocation() without first calling normalizeAllCharacterChats() in the same scope.',
+    )
+    expect(result.stderr).toContain(
+      'server/fastify/src/commands/messages.ts editMessageByGlobalId calls requireMessageLocation() without first calling normalizeAllChatMessages() in the same scope.',
+    )
+  })
+
+  it('allows normalize-then-resolve order in the same scope', async () => {
+    const result = await runAuditFixture(
+      'resolver-normalize/normalize-first-bypass',
+      resolverNormalizeCheck,
     )
 
     expect(result.exitCode).toBe(0)
