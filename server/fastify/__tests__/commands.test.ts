@@ -3146,6 +3146,81 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
   })
 
+  it('rejects chat fork commands without client-supplied fork ids without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            { id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] },
+            { id: 'chat-b', name: 'B chat', note: '', message: [], localLore: [] },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const omittedChat = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+      },
+    })
+    expect(omittedChat.statusCode).toBe(400)
+    expect(omittedChat.json().error).toBe('chat must be an object')
+
+    const missingChatId = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          name: 'Fork without id',
+          note: '',
+          message: [],
+          localLore: [],
+        },
+      },
+    })
+    expect(missingChatId.statusCode).toBe(400)
+    expect(missingChatId.json().error).toBe('chat.id must be a non-empty string')
+
+    const duplicateChatId = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-b',
+          name: 'Duplicate fork',
+          note: '',
+          message: [],
+          localLore: [],
+        },
+      },
+    })
+    expect(duplicateChatId.statusCode).toBe(400)
+    expect(duplicateChatId.json().error).toBe('Duplicate chat id: chat-b')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(
+      bootstrap.json().database.characters[0].chats.map((chat: { id: string }) => chat.id),
+    ).toEqual(['chat-a', 'chat-b'])
+  })
+
   it('rejects command-created chat folder ids that already exist on another character', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -3204,6 +3279,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
+        chat: {
+          id: 'chat-fork',
+          name: 'Fork',
+          note: '',
+          message: [],
+          localLore: [],
+        },
         folder: { id: 'folder-a', name: 'Duplicate Fork Folder', folded: false },
       },
     })

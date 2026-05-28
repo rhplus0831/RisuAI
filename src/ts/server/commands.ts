@@ -721,7 +721,7 @@ export interface DeleteChatCommandInput extends ChatCommandInput {
 
 export interface ForkChatCommandInput extends ChatCommandInput {
   chatId: string
-  chat?: ChatSnapshot
+  chat: ChatSnapshot
   sourcePatch?: ChatSnapshot
   folder?: ChatFolderSnapshot
   select?: boolean

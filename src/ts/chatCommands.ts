@@ -178,7 +178,7 @@ export function dispatchForkChat(
   sourceChatId: string,
   previous: ChatStateSnapshot,
   input: {
-    chat?: Chat
+    chat: Chat
     sourcePatch?: ChatSnapshot
     folder?: ChatFolder
     select?: boolean
@@ -189,7 +189,7 @@ export function dispatchForkChat(
       forkChatCommand({
         baseRevision,
         chatId: sourceChatId,
-        chat: input.chat ? toChatSnapshot(input.chat) : undefined,
+        chat: toChatSnapshot(input.chat),
         sourcePatch: input.sourcePatch ? sanitizeChatPatch(input.sourcePatch) : undefined,
         folder: input.folder ? toChatFolderSnapshot(input.folder) : undefined,
         select: input.select,

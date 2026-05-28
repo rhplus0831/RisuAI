@@ -6,14 +6,15 @@ This is the ordered task-agent work breakdown for Alpha 2. Each bucket closes
 one or more findings from [`open-findings.md`](./open-findings.md). A bucket is
 done only when code, focused tests, audit coverage, and docs are all updated.
 
-Current status: **open.**
+Current status: **open.** Bucket 1 is closed; the next open work item is
+Bucket 2, memory mutation active-writer coverage.
 
-| Order | Bucket | Closes | Status | Primary ownership |
-| ----- | ------ | ------ | ------ | ----------------- |
-| 1 | Chat fork stable id semantics | A2F1 / A2EC1 | Open | `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts` |
-| 2 | Memory mutation active-writer coverage | A2F2 / A2EC2 | Open | `server/fastify/src/activeWriter.ts`, `server/fastify/src/routes/memoryJobs.ts`, `server/fastify/src/routes/generationChat.ts`, `src/ts/process/request/serverMemory.ts`, active-writer/memory/generation tests, `util/client-thinning-audit.ts` |
-| 3 | Audit invariant broadening | A2F3 / A2EC3 | Open | `util/client-thinning-audit.ts`, route/audit tests as needed |
-| 4 | Alpha 2 docs/status closeout | A2F4 / A2EC4 | Open | `docs/fastify/client-thinning-alpha-2/*`, `docs/fastify/status.md`, `docs/fastify/status/next-steps.md` |
+| Order | Bucket                                 | Closes       | Status            | Primary ownership                                                                                                                                                                                                                                |
+| ----- | -------------------------------------- | ------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Chat fork stable id semantics          | A2F1 / A2EC1 | Closed 2026-05-28 | `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts`                                                                                                                            |
+| 2     | Memory mutation active-writer coverage | A2F2 / A2EC2 | Open              | `server/fastify/src/activeWriter.ts`, `server/fastify/src/routes/memoryJobs.ts`, `server/fastify/src/routes/generationChat.ts`, `src/ts/process/request/serverMemory.ts`, active-writer/memory/generation tests, `util/client-thinning-audit.ts` |
+| 3     | Audit invariant broadening             | A2F3 / A2EC3 | Open              | `util/client-thinning-audit.ts`, route/audit tests as needed                                                                                                                                                                                     |
+| 4     | Alpha 2 docs/status closeout           | A2F4 / A2EC4 | Open              | `docs/fastify/client-thinning-alpha-2/*`, `docs/fastify/status.md`, `docs/fastify/status/next-steps.md`                                                                                                                                          |
 
 ## Parallelization Notes
 
@@ -26,31 +27,39 @@ Current status: **open.**
 
 ## 1. Chat Fork Stable Id Semantics
 
-Status: **Open.**
+Status: **Closed 2026-05-28.**
 
 Goal: close A2F1 and make the command stable-id rule true for fork creation.
 
-Required implementation:
+Closed implementation:
 
-- Remove the `randomChatId(chats)` fallback from the public fork command path,
-  or explicitly reclassify the route as a documented exception with equivalent
-  stable identity proof.
-- Preferred behavior: `POST /api/v1/commands/chats/:chatId/fork` requires a
-  fork payload with a non-empty `chat.id` whenever it creates a new chat.
-- Keep duplicate-id rejection and folder/module validation behavior intact.
-- Extend `util/client-thinning-audit.ts` to detect route-local command id
-  minting in `server/fastify/src/routes/commands.ts`.
+- Removed the `randomChatId(chats)` fallback and the route-local
+  `randomUUID()` wrapper from the public fork command path.
+- `POST /api/v1/commands/chats/:chatId/fork` now requires a fork payload with a
+  non-empty `chat.id`.
+- Duplicate-id rejection, folder validation, module validation, and valid
+  client-supplied fork flows are covered by focused Fastify API tests.
+- `util/client-thinning-audit.ts` now detects command route handlers that mint
+  durable ids directly with `randomUUID()` or indirectly through route-local
+  helpers.
 
-Focused proof:
+Closed proof:
 
 ```bash
 pnpm api:test server/fastify/__tests__/commands.test.ts -- --run
 pnpm client-thinning:audit
 ```
 
-Done when omitted/missing fork ids return 400 without a revision bump, valid
-client-supplied fork ids still work, and the audit would fail if route-local
-`randomUUID()` minting is reintroduced.
+Extra verification also run:
+
+```bash
+pnpm test src/ts/server/commands.test.ts -- --run
+pnpm check
+```
+
+Omitted/missing fork ids return 400 without a revision bump, valid
+client-supplied fork ids still work, duplicate ids still fail, and the audit
+would fail if route-local `randomUUID()` minting is reintroduced.
 
 ## 2. Memory Mutation Active-Writer Coverage
 
@@ -95,7 +104,9 @@ still pass.
 Status: **Open.**
 
 Goal: close A2F3 and make the audit prove the documented invariant rather than
-only the previous known list.
+only the previous known list. Bucket 1 already landed command route-local id
+minting coverage; this bucket still owns active-writer route discovery and full
+asset-walker validator ownership.
 
 Required implementation:
 

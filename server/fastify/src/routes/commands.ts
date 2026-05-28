@@ -1,5 +1,4 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
@@ -2529,7 +2528,7 @@ export function registerCommandRoutes(
       const sourceChatId = readChatId((req.params as { chatId?: unknown }).chatId)
       const body = (req.body ?? {}) as ChatCommandBody
       const baseRevision = readBaseRevision(body)
-      const forkedChat = body.chat === undefined ? null : createChatRecord(body.chat)
+      const forkedChat = createChatRecord(body.chat)
       const sourcePatch =
         body.sourcePatch === undefined ? {} : readChatPatch(body.sourcePatch, { allowEmpty: true })
       const folder = body.folder === undefined ? null : createChatFolderRecord(body.folder)
@@ -2547,11 +2546,7 @@ export function registerCommandRoutes(
           const target = ensureModuleCommandDatabase(database)
           const characters = normalizeAllCharacterChats(target)
           const modules = ensureModuleRecords(target)
-          const {
-            character,
-            chat: sourceChat,
-            chatIndex,
-          } = requireChatLocation(characters, sourceChatId)
+          const { character, chatIndex } = requireChatLocation(characters, sourceChatId)
           const previousSelectedChatId = selectedChatId(character)
           const chats = ensureCharacterChats(character)
           const folders = ensureCharacterChatFolders(character)
@@ -2579,13 +2574,7 @@ export function registerCommandRoutes(
             id: sourceChatId,
           }
 
-          const nextChat =
-            forkedChat ??
-            createChatRecord({
-              ...JSON.parse(JSON.stringify(sourceChat)),
-              id: randomChatId(chats),
-              name: `${sourceChat.name} (Branch)`,
-            })
+          const nextChat = forkedChat
           if (chats.some((existing) => existing.id === nextChat.id)) {
             throw new ValidationError(`Duplicate chat id: ${nextChat.id}`)
           }
@@ -4144,19 +4133,6 @@ export function registerCommandRoutes(
       return sendCommandError(reply, err)
     }
   })
-}
-
-function randomChatId(chats: readonly { id: string }[]): string {
-  let id = cryptoRandomId()
-  const existing = new Set(chats.map((chat) => chat.id))
-  while (existing.has(id)) {
-    id = cryptoRandomId()
-  }
-  return id
-}
-
-function cryptoRandomId(): string {
-  return randomUUID()
 }
 
 function readSettingsGroup(group: unknown): SettingsGroup {

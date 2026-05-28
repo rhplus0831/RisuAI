@@ -2,9 +2,11 @@
 
 Date: 2026-05-28
 
-Status: **open task-agent handoff.** This directory records the next reopened
-client-thinning alpha pass after [`../client-thinning-alpha/`](../client-thinning-alpha/)
-closed AF1 through AF10 and AEC1 through AEC7.
+Status: **open task-agent handoff.** Bucket 1 closed on 2026-05-28; the next
+open work item is Bucket 2, memory mutation active-writer coverage. This
+directory records the next reopened client-thinning alpha pass after
+[`../client-thinning-alpha/`](../client-thinning-alpha/) closed AF1 through
+AF10 and AEC1 through AEC7.
 
 The earlier client-thinning and alpha directories remain historical records.
 Do not rewrite them to explain away this pass. Close this alpha-2 directory only
@@ -17,10 +19,13 @@ green.
 The first alpha pass fixed the known Codex/Claude audit findings, but a deeper
 follow-up audit found three remaining invariant gaps:
 
-- A route-local chat fork fallback still mints a command-path chat id.
+- A route-local chat fork fallback still minted a command-path chat id. This is
+  now closed by Bucket 1 and recorded in [`history.md`](./history.md).
 - Durable memory-job mutations are outside the active-writer lock.
 - The invariant audit still proves less than the docs claim for route-local id
   minting, active-writer mutation discovery, and asset-walker validator parity.
+  Bucket 1 added route-local command id minting coverage; the remaining audit
+  broadening belongs to Buckets 2 and 3.
 
 These are not failures of the original Phase 9 migration slices. They are
 follow-up gaps in the standing Fastify server-projection contract.
@@ -59,12 +64,17 @@ Out of scope unless directly needed for a finding:
 Alpha 2 is complete only when every criterion below is true and covered by
 committed regression proof.
 
-| #     | Exit criterion | Required regression proof |
-| ----- | -------------- | ------------------------- |
-| A2EC1 | **Command fork ids are stable.** `/api/v1/commands/chats/:chatId/fork` no longer mints a chat id through route-local `randomUUID()` fallback. If a fork creates a chat, the command payload supplies the durable id, or the route is explicitly reclassified and the stable-id docs are updated. | Missing `chat.id` on fork returns 400, or a documented alternative has equivalent stable-id proof. `pnpm client-thinning:audit` fails on route-local command id minting. |
+| #     | Exit criterion                                                                                                                                                                                                                                                                                                                                                                                                  | Required regression proof                                                                                                                                                                                                              |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A2EC1 | **Command fork ids are stable.** `/api/v1/commands/chats/:chatId/fork` no longer mints a chat id through route-local `randomUUID()` fallback. If a fork creates a chat, the command payload supplies the durable id, or the route is explicitly reclassified and the stable-id docs are updated.                                                                                                                | Missing `chat.id` on fork returns 400, or a documented alternative has equivalent stable-id proof. `pnpm client-thinning:audit` fails on route-local command id minting.                                                               |
 | A2EC2 | **Every durable mutation is active-writer guarded or explicitly classified.** Memory job create/cancel routes and generation-time memory planning are guarded as browser-triggered durable mutations, or explicitly documented as exempt runtime/internal state with tests proving the exemption. Default closure is to guard browser-triggered entrypoints and classify background worker commits as internal. | Stale writer receives 423 for guarded memory/generation mutation entrypoints; client helpers send `risu-writer-session` and handle 423 where applicable; worker/internal commits are documented and tested as non-browser entrypoints. |
-| A2EC3 | **The invariant audit covers the newly found blind spots.** The audit discovers command route id minting, active-writer mutation classifier drift, and full asset-walker validator coverage rather than relying on narrow whitelists. | `pnpm client-thinning:audit` contains structural checks for the new classes and passes after fixes. Negative-fixture or source mutation checks are encouraged where practical. |
-| A2EC4 | **Docs reflect current state.** This directory moves closed findings to history, updates buckets, and records the final ladder. Existing `status.md` and `status/next-steps.md` are reconciled only after code and audit proof land. | `README`, `open-findings`, `closeout-buckets`, `decisions`, and `history/final-audit` agree after the full ladder passes. |
+| A2EC3 | **The invariant audit covers the newly found blind spots.** The audit discovers command route id minting, active-writer mutation classifier drift, and full asset-walker validator coverage rather than relying on narrow whitelists.                                                                                                                                                                           | `pnpm client-thinning:audit` contains structural checks for the new classes and passes after fixes. Negative-fixture or source mutation checks are encouraged where practical.                                                         |
+| A2EC4 | **Docs reflect current state.** This directory moves closed findings to history, updates buckets, and records the final ladder. Existing `status.md` and `status/next-steps.md` are reconciled only after code and audit proof land.                                                                                                                                                                            | `README`, `open-findings`, `closeout-buckets`, `decisions`, and `history/final-audit` agree after the full ladder passes.                                                                                                              |
+
+Current progress:
+
+- A2EC1 is closed by Bucket 1.
+- A2EC2, A2EC3, and A2EC4 remain open.
 
 ## Verification Ladder
 
@@ -89,6 +99,6 @@ gate.
 - [`decisions.md`](./decisions.md) - starting decisions and acceptable
   alternatives.
 - [`closeout-buckets.md`](./closeout-buckets.md) - ordered task-agent work.
-- `history.md` - create when the first bucket closes.
+- [`history.md`](./history.md) - resolved Alpha 2 findings as buckets close.
 - `final-audit.md` - create only after all Alpha 2 buckets close and the ladder
   has been rerun.

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { Node, Project, SourceFile, SyntaxKind } from 'ts-morph'
+import { Node, Project, SourceFile, SyntaxKind, type FunctionDeclaration } from 'ts-morph'
 
 interface Finding {
   check: string
@@ -139,6 +139,106 @@ function routeRegistrations(files: SourceFile[]): RouteRegistration[] {
   return routes
 }
 
+function calledIdentifierNames(node: Node): Set<string> {
+  const names = new Set<string>()
+  node.forEachDescendant((descendant) => {
+    if (!Node.isCallExpression(descendant)) return
+    const expression = descendant.getExpression()
+    if (Node.isIdentifier(expression)) {
+      names.add(expression.getText())
+    }
+  })
+  return names
+}
+
+function isRandomUuidCall(node: Node): boolean {
+  if (!Node.isCallExpression(node)) return false
+  const expression = node.getExpression()
+  if (Node.isIdentifier(expression)) {
+    return expression.getText() === 'randomUUID'
+  }
+  return Node.isPropertyAccessExpression(expression) && expression.getName() === 'randomUUID'
+}
+
+function findRandomUuidCall(node: Node): Node | undefined {
+  let randomUuidCall: Node | undefined
+  node.forEachDescendant((descendant) => {
+    if (randomUuidCall || !isRandomUuidCall(descendant)) return
+    randomUuidCall = descendant
+  })
+  return randomUuidCall
+}
+
+function localFunctionCanMintRandomUuid(
+  fn: FunctionDeclaration,
+  localFunctions: ReadonlyMap<string, FunctionDeclaration>,
+  seen = new Set<string>(),
+): boolean {
+  const name = fn.getName()
+  if (!name || seen.has(name)) return false
+  seen.add(name)
+
+  const body = fn.getBody()
+  if (!body) return false
+  if (findRandomUuidCall(body)) return true
+
+  for (const calledName of calledIdentifierNames(body)) {
+    const calledFunction = localFunctions.get(calledName)
+    if (calledFunction && localFunctionCanMintRandomUuid(calledFunction, localFunctions, seen)) {
+      return true
+    }
+  }
+  return false
+}
+
+function checkCommandRouteLocalIdMinting(check: string, sourceFile: SourceFile): void {
+  const localFunctions = new Map<string, FunctionDeclaration>()
+  for (const fn of sourceFile.getFunctions()) {
+    const name = fn.getName()
+    if (name) localFunctions.set(name, fn)
+  }
+
+  sourceFile.forEachDescendant((node) => {
+    if (!Node.isCallExpression(node)) return
+    const expression = node.getExpression()
+    if (!Node.isPropertyAccessExpression(expression)) return
+    const method = expression.getName().toUpperCase()
+    if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return
+    const route = node.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
+    if (!route?.startsWith('/api/v1/commands/')) return
+
+    const handler = node.getArguments()[1]
+    if (!handler || (!Node.isArrowFunction(handler) && !Node.isFunctionExpression(handler))) {
+      return
+    }
+
+    const directRandomUuidCall = findRandomUuidCall(handler)
+    if (directRandomUuidCall) {
+      fail(
+        check,
+        `${method} ${route} must not mint durable command ids with randomUUID() in the route handler.`,
+        directRandomUuidCall,
+      )
+      return
+    }
+
+    handler.forEachDescendant((descendant) => {
+      if (!Node.isCallExpression(descendant)) return
+      const callExpression = descendant.getExpression()
+      if (!Node.isIdentifier(callExpression)) return
+      const calledFunction = localFunctions.get(callExpression.getText())
+      if (!calledFunction || !localFunctionCanMintRandomUuid(calledFunction, localFunctions)) {
+        return
+      }
+      fail(
+        check,
+        `${method} ${route} must not mint durable command ids through route-local helper ${callExpression.getText()}().`,
+        descendant,
+      )
+    })
+  })
+}
+
 function isKnownServerOwnedMutation(method: string, route: string): boolean {
   if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return false
   if (route.startsWith('/api/v1/commands/')) return true
@@ -265,6 +365,8 @@ function checkStableIdCommandPaths(): void {
   }
 
   const serverCommands = source('server/fastify/src/routes/commands.ts')
+  checkCommandRouteLocalIdMinting(check, serverCommands)
+
   const clientCommands = source('src/ts/server/commands.ts')
   const promptSettingKeys = getStringArray(prompts, 'PROMPT_SETTINGS_KEYS')
   const serverSettingsKeys = text('server/fastify/src/routes/commands.ts')

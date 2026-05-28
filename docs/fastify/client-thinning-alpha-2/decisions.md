@@ -11,6 +11,11 @@ chooses a different implementation and lands tests proving the new contract.
 stable-id rule as public create commands. The client supplies the fork chat id;
 the server validates it and rejects missing or duplicate ids.
 
+**Landed 2026-05-28:** Bucket 1 chose the default decision. The public fork
+route now requires `body.chat.id`, rejects omitted/missing ids before mutation,
+keeps duplicate-id rejection, and the audit checks command route handlers for
+route-local id minting.
+
 **Why:** The standing invariant depends on the browser owning optimistic durable
 ids for command writes. A route-local `randomUUID()` fallback is easy for the
 current helper-level audit to miss, and it reintroduces the exact stable-id class

@@ -7,21 +7,30 @@ These findings seed the Alpha 2 task list. They were identified after the
 
 ## Summary
 
-| Finding | Severity | Criterion | Status | Bucket |
-| ------- | -------- | --------- | ------ | ------ |
-| A2F1 - Chat fork command mints ids | High | A2EC1 / A2EC3 | Open | 1 |
-| A2F2 - Memory mutations bypass active-writer classification | High | A2EC2 / A2EC3 | Open | 2 |
-| A2F3 - Audit proof is narrower than the stated invariant | Medium | A2EC3 | Open | 3 |
-| A2F4 - Alpha 2 docs/status closeout | Medium | A2EC4 | Open | 4 |
+| Finding                                                     | Severity | Criterion     | Status            | Bucket |
+| ----------------------------------------------------------- | -------- | ------------- | ----------------- | ------ |
+| A2F1 - Chat fork command mints ids                          | High     | A2EC1 / A2EC3 | Closed 2026-05-28 | 1      |
+| A2F2 - Memory mutations bypass active-writer classification | High     | A2EC2 / A2EC3 | Open              | 2      |
+| A2F3 - Audit proof is narrower than the stated invariant    | Medium   | A2EC3         | Open              | 3      |
+| A2F4 - Alpha 2 docs/status closeout                         | Medium   | A2EC4         | Open              | 4      |
 
 ## A2F1 - Chat Fork Command Mints IDs
 
 Severity: **High**
 
+Status: **Closed 2026-05-28.** Resolved in Bucket 1 and copied to
+[`history.md`](./history.md). The route now requires a client-supplied
+`body.chat.id`, duplicate fork ids still fail, and rejected fork requests do not
+bump the JSON revision. `pnpm client-thinning:audit` now scans public command
+route handlers for route-local `randomUUID()` minting, including calls through
+route-local helper functions.
+
+Original evidence before Bucket 1:
+
 `docs/fastify/client-thinning/README.md` says public commands validate stable
 identity and that create commands require client-supplied ids. The first alpha
 pass extended that rule to root create helpers, but the public chat fork route
-still contains a route-local fallback that mints the new fork id:
+contained a route-local fallback that minted the new fork id:
 
 - `server/fastify/src/routes/commands.ts:2525` registers
   `POST /api/v1/commands/chats/:chatId/fork`.
@@ -32,15 +41,23 @@ still contains a route-local fallback that mints the new fork id:
 - `server/fastify/src/routes/commands.ts:4149` through `4160` implement
   `randomChatId` through `randomUUID()`.
 
-Current tests cover the successful fork path with a supplied `chat.id`, but not
+The tests covered the successful fork path with a supplied `chat.id`, but not
 the omitted-id fallback:
 
 - `server/fastify/__tests__/commands.test.ts:2998` through `3012`.
 
-Impact: a public command path can still create durable server state with an id
-the client did not choose. This reopens the stable-id invariant for this route.
+Original impact: a public command path could create durable server state with
+an id the client did not choose. This reopened the stable-id invariant for this
+route.
 
-Required closeout:
+Closed proof:
+
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`
+- `pnpm client-thinning:audit`
+- Extra verification also run: `pnpm test src/ts/server/commands.test.ts -- --run`
+  and `pnpm check`.
+
+Original required closeout:
 
 - Make fork creation require a client-supplied fork chat id, preferably by
   requiring `body.chat.id` when the route creates a new chat.
@@ -133,7 +150,10 @@ cycles.
 Required closeout:
 
 - Expand the stable-id audit to include public command route files and route
-  fallbacks that call `randomUUID()` or equivalent id minting.
+  fallbacks that call `randomUUID()` or equivalent id minting. Bucket 1 added
+  route-local command handler coverage for this class; Bucket 3 still owns the
+  remaining active-writer route discovery and full asset-walker validator
+  coverage.
 - Expand active-writer audit coverage from a handwritten known-route list to a
   discovery check over Fastify mutating routes, with explicit reviewed
   exclusions.
