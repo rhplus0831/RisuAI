@@ -587,6 +587,223 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('restores masked provider array secrets by stable row identity after reorder', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      customModels: [
+        { id: 'xcustom:::a', name: 'Custom A', key: 'custom-a', url: 'https://a.example.com' },
+        { id: 'xcustom:::b', name: 'Custom B', key: 'custom-b', url: 'https://b.example.com' },
+      ],
+      authRefreshes: [
+        {
+          url: 'https://mcp-a.example.com',
+          tokenUrl: 'https://mcp-a.example.com/token',
+          refreshToken: 'refresh-a',
+          clientId: 'client-a',
+          clientSecret: 'secret-a',
+        },
+        {
+          url: 'https://mcp-b.example.com',
+          tokenUrl: 'https://mcp-b.example.com/token',
+          refreshToken: 'refresh-b',
+          clientId: 'client-b',
+          clientSecret: 'secret-b',
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          customModels: [
+            {
+              id: 'xcustom:::b',
+              name: 'Custom B renamed',
+              key: MASKED_PROVIDER_SECRET,
+              url: 'https://b2.example.com',
+            },
+            {
+              id: 'xcustom:::a',
+              name: 'Custom A renamed',
+              key: MASKED_PROVIDER_SECRET,
+              url: 'https://a2.example.com',
+            },
+          ],
+          authRefreshes: [
+            {
+              url: 'https://mcp-b.example.com',
+              tokenUrl: 'https://mcp-b.example.com/token',
+              refreshToken: MASKED_PROVIDER_SECRET,
+              clientId: 'client-b-new',
+              clientSecret: MASKED_PROVIDER_SECRET,
+            },
+            {
+              url: 'https://mcp-a.example.com',
+              tokenUrl: 'https://mcp-a.example.com/token',
+              refreshToken: MASKED_PROVIDER_SECRET,
+              clientId: 'client-a-new',
+              clientSecret: MASKED_PROVIDER_SECRET,
+            },
+          ],
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(loadPersisted(harness.dataDir).database).toMatchObject({
+      customModels: [
+        {
+          id: 'xcustom:::b',
+          name: 'Custom B renamed',
+          key: 'custom-b',
+          url: 'https://b2.example.com',
+        },
+        {
+          id: 'xcustom:::a',
+          name: 'Custom A renamed',
+          key: 'custom-a',
+          url: 'https://a2.example.com',
+        },
+      ],
+      authRefreshes: [
+        {
+          url: 'https://mcp-b.example.com',
+          tokenUrl: 'https://mcp-b.example.com/token',
+          refreshToken: 'refresh-b',
+          clientId: 'client-b-new',
+          clientSecret: 'secret-b',
+        },
+        {
+          url: 'https://mcp-a.example.com',
+          tokenUrl: 'https://mcp-a.example.com/token',
+          refreshToken: 'refresh-a',
+          clientId: 'client-a-new',
+          clientSecret: 'secret-a',
+        },
+      ],
+    })
+  })
+
+  it('does not transplant masked provider array secrets after deleting earlier rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      customModels: [
+        { id: 'xcustom:::a', name: 'Custom A', key: 'custom-a', url: 'https://a.example.com' },
+        { id: 'xcustom:::b', name: 'Custom B', key: 'custom-b', url: 'https://b.example.com' },
+      ],
+      authRefreshes: [
+        {
+          url: 'https://mcp-a.example.com',
+          tokenUrl: 'https://mcp-a.example.com/token',
+          refreshToken: 'refresh-a',
+          clientId: 'client-a',
+          clientSecret: 'secret-a',
+        },
+        {
+          url: 'https://mcp-b.example.com',
+          tokenUrl: 'https://mcp-b.example.com/token',
+          refreshToken: 'refresh-b',
+          clientId: 'client-b',
+          clientSecret: 'secret-b',
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          customModels: [
+            {
+              id: 'xcustom:::b',
+              name: 'Custom B kept',
+              key: MASKED_PROVIDER_SECRET,
+              url: 'https://b.example.com',
+            },
+          ],
+          authRefreshes: [
+            {
+              url: 'https://mcp-b.example.com',
+              tokenUrl: 'https://mcp-b.example.com/token',
+              refreshToken: MASKED_PROVIDER_SECRET,
+              clientId: 'client-b',
+              clientSecret: MASKED_PROVIDER_SECRET,
+            },
+          ],
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(loadPersisted(harness.dataDir).database).toMatchObject({
+      customModels: [
+        { id: 'xcustom:::b', name: 'Custom B kept', key: 'custom-b', url: 'https://b.example.com' },
+      ],
+      authRefreshes: [
+        {
+          url: 'https://mcp-b.example.com',
+          tokenUrl: 'https://mcp-b.example.com/token',
+          refreshToken: 'refresh-b',
+          clientId: 'client-b',
+          clientSecret: 'secret-b',
+        },
+      ],
+    })
+  })
+
+  it('rejects masked provider array placeholders without matching row identity', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      customModels: [
+        { id: 'xcustom:::a', name: 'Custom A', key: 'custom-a', url: 'https://a.example.com' },
+      ],
+    })
+
+    const missingIdentity = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          customModels: [
+            { name: 'Missing Id', key: MASKED_PROVIDER_SECRET, url: 'https://missing.example.com' },
+          ],
+        },
+      },
+    })
+    expect(missingIdentity.statusCode).toBe(400)
+    expect(missingIdentity.json().error).toContain('without id')
+
+    const unknownRow = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          customModels: [
+            {
+              id: 'xcustom:::missing',
+              name: 'Missing',
+              key: MASKED_PROVIDER_SECRET,
+              url: 'https://missing.example.com',
+            },
+          ],
+        },
+      },
+    })
+    expect(unknownRow.statusCode).toBe(400)
+    expect(unknownRow.json().error).toContain('unknown customModels row')
+  })
+
   it('applies manual settings page scalar roots through grouped commands', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -1321,9 +1538,7 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.botPresets).toEqual([
-      { id: 'preset-a', name: 'A', image: '' },
-    ])
+    expect(bootstrap.json().database.botPresets).toEqual([{ id: 'preset-a', name: 'A', image: '' }])
   })
 
   it('selects and applies a preset while saving the previously selected snapshot', async () => {

@@ -6,26 +6,27 @@ This is the suggested task-agent breakdown for Alpha 3. Each bucket should land
 behavior, focused tests, audit coverage where practical, and doc updates before
 being marked closed.
 
-Current status: **open.** Buckets 0, 1, 2, 3, and 4 have landed. Bucket 1 clears
-A3F1, A3F2, and A3F12. Bucket 2 clears A3F3, A3F4, and the A3F6 preset-import
-validator overlap. Bucket 3 clears A3F5 global chat/message addressing;
-Bucket 4 clears A3F7, A3F8, A3F9, and A3F10. `pnpm client-thinning:audit` is
-still red on the remaining A3R6 finding.
+Current status: **open.** Buckets 0, 1, 2, 3, 4, and 5 have landed. Bucket 1
+clears A3F1, A3F2, and A3F12. Bucket 2 clears A3F3, A3F4, and the A3F6
+preset-import validator overlap. Bucket 3 clears A3F5 global chat/message
+addressing; Bucket 4 clears A3F7, A3F8, A3F9, and A3F10. Bucket 5 clears A3F11
+masked array secret row identity. `pnpm client-thinning:audit` now passes;
+Bucket 6 remains for A3F13 event retention and final closeout.
 
 Rule-first gate: Bucket 0 lands before behavior closeout. No behavior bucket may
 be marked closed until its corresponding R rule fails on the pre-fix tree and
 passes after the fix. Findings without a dedicated R rule still need a focused
 failing-then-passing regression test or an explicit tested contract decision.
 
-| Order | Bucket                                   | Closes                                                                       | Primary ownership                                                                                                                                                      |
-| ----- | ---------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | Landed in `util/client-thinning-audit.ts`; current failures are documented below.                                                                                      |
-| 1     | Active-writer and conflict semantics     | A3F1, A3F2, A3F12                                                            | Landed. Passive refresh is read-only, generic settings conflicts roll back without replay, and whole-chat compatibility command fan-out is serialized.                 |
-| 2     | Stable-id command holes                  | A3F3, A3F4, A3F6 preset-import overlap                                       | Landed. Preset copy/import no longer mint ids, last-lorebook delete returns 400, and preset import validates image asset refs.                                         |
-| 3     | Global id addressing                     | A3F5                                                                         | Landed. Chat/message ids are globally normalized or rejected on command writes while the public globally addressed route contract remains unchanged.                   |
-| 4     | Asset ownership and backup durability    | A3F7, A3F8, A3F9, A3F10                                                      | Landed. Authenticated asset reads reject unknown refs, bundle walking includes legacy asset paths, backups preserve asset bytes, and ONNX upload metadata is retained. |
-| 5     | Secret placeholder row identity          | A3F11                                                                        | `server/fastify/src/providerSecrets.ts`, settings command tests, masking tests, audit checks                                                                           |
-| 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | `server/fastify/src/commands/events.ts`, event tests, `docs/fastify/client-thinning-alpha-3/*`, top-level status docs after full ladder                                |
+| Order | Bucket                                   | Closes                                                                       | Primary ownership                                                                                                                                                        |
+| ----- | ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | Landed in `util/client-thinning-audit.ts`; current audit status is documented below.                                                                                     |
+| 1     | Active-writer and conflict semantics     | A3F1, A3F2, A3F12                                                            | Landed. Passive refresh is read-only, generic settings conflicts roll back without replay, and whole-chat compatibility command fan-out is serialized.                   |
+| 2     | Stable-id command holes                  | A3F3, A3F4, A3F6 preset-import overlap                                       | Landed. Preset copy/import no longer mint ids, last-lorebook delete returns 400, and preset import validates image asset refs.                                           |
+| 3     | Global id addressing                     | A3F5                                                                         | Landed. Chat/message ids are globally normalized or rejected on command writes while the public globally addressed route contract remains unchanged.                     |
+| 4     | Asset ownership and backup durability    | A3F7, A3F8, A3F9, A3F10                                                      | Landed. Authenticated asset reads reject unknown refs, bundle walking includes legacy asset paths, backups preserve asset bytes, and ONNX upload metadata is retained.   |
+| 5     | Secret placeholder row identity          | A3F11                                                                        | Landed. Masked array placeholders restore by stable row identity or reject missing/duplicated/unknown row identity, with provider settings and masking regression tests. |
+| 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | `server/fastify/src/commands/events.ts`, event tests, `docs/fastify/client-thinning-alpha-3/*`, top-level status docs after full ladder                                  |
 
 ## Parallelization Notes
 
@@ -37,8 +38,8 @@ failing-then-passing regression test or an explicit tested contract decision.
 - Bucket 2 resolved the preset import overlap by moving the route to
   `createPresetRecord`, so Bucket 4 can focus on asset reads, backups, bundle
   walking, and upload metadata.
-- Bucket 5 is independent from command id work but should update the audit to
-  prevent future masked-array placeholder regressions.
+- Bucket 5 is independent from command id work and now prevents masked-array
+  placeholder regressions through R6 plus focused tests.
 - Bucket 6 should close last, after the full verification ladder passes.
 - A3F5 no longer includes chat folders. Folder global uniqueness is already
   covered by `normalizeGlobalChatFolderIds` and audit rule AEC4
@@ -81,11 +82,8 @@ pattern.
 
 ## Current Audit Output
 
-`pnpm client-thinning:audit` currently fails by design with this remaining
-Alpha 3 gate:
+`pnpm client-thinning:audit` currently passes all Alpha 3 R1-R7 gates.
 
-- A3R6: masked array secrets for `authRefreshes`, `botPresets`, and
-  `customModels` restore by array index.
-
-Next agent: start Bucket 5, then continue through event retention and final
-closeout. Keep broad status docs untouched until the final closeout.
+Next agent: start Bucket 6, close A3F13 event retention with focused tests, then
+run the full closeout ladder. Keep broad status docs untouched until the final
+closeout.

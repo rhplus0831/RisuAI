@@ -81,7 +81,7 @@ audit currently passes while missing most Alpha 3 bug classes.
 | A3F8 - Server backups do not preserve asset bytes                          | Medium   | Closed in Bucket 4  | Focused tests/contract decision  |
 | A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | Closed in Bucket 4  | R5                               |
 | A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | Closed in Bucket 4  | Focused tests/contract decision  |
-| A3F11 - Masked array secrets restore by index                              | Medium   | Real                | R6                               |
+| A3F11 - Masked array secrets restore by index                              | Medium   | Closed in Bucket 5  | R6                               |
 | A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | Real                | Focused tests/contract decision  |
 | A3F13 - Command event sink keeps unbounded event history                   | Low      | Real                | Focused tests/retention decision |
 
@@ -154,6 +154,18 @@ Bucket 4 landed the A3EC4 asset ownership fixes:
 After Bucket 4, A3R5 and A3R7 pass. `pnpm client-thinning:audit` remains red on
 the remaining A3R6 Bucket 5 gate.
 
+Bucket 5 landed the A3EC5 masked secret row identity fixes:
+
+- Masked array placeholders restore by stable row identity instead of array
+  position for `authRefreshes`, `botPresets`, `characters`, and `customModels`.
+- Provider settings commands reject masked placeholders when the target row is
+  missing identity, duplicates identity, or references no persisted source row.
+- Reorder/delete tests prove provider array secrets are preserved on their own
+  rows; direct masking tests cover bot presets and character-owned TTS secrets.
+
+After Bucket 5, A3R6 passes and `pnpm client-thinning:audit` is green. Alpha 3
+remains open for Bucket 6 event retention/final closeout.
+
 The audit still intentionally relies on focused behavior tests or later
 documented contract decisions for these Alpha 3 classes:
 
@@ -195,13 +207,12 @@ implementation exposes a repeatable source pattern worth guarding.
 
 ## Current Observed Failures
 
-After Bucket 4, `pnpm client-thinning:audit` is intentionally red on the
-remaining behavior bucket. The observed Alpha 3 failure is:
+After Bucket 5, `pnpm client-thinning:audit` passes. There are no remaining
+R1-R7 audit failures.
 
-- **A3R6:** wildcard array secrets restore from `source[i]`.
-
-The next implementation pass should start with Bucket 5, make A3R6 pass, and
-add focused tests for masked array secret placeholder row identity.
+The next implementation pass should start with Bucket 6 and close A3F13 command
+event retention with focused retention-policy tests before running the full
+closeout ladder.
 
 ## Loop-Exit Checklist
 

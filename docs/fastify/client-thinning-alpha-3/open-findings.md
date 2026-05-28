@@ -21,7 +21,7 @@ fix should keep narrowing the repeatable audit failure list.
 | A3F8 - Server backups do not preserve asset bytes                          | Medium   | A3EC4         | Focused tests/contract         | Closed | 4                |
 | A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | A3EC4 / A3EC6 | R5                             | Closed | 4                |
 | A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | A3EC4         | Focused tests/contract         | Closed | 4                |
-| A3F11 - Masked array secrets restore by index                              | Medium   | A3EC5 / A3EC6 | R6                             | Open   | 5                |
+| A3F11 - Masked array secrets restore by index                              | Medium   | A3EC5 / A3EC6 | R6                             | Closed | 5                |
 | A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | A3EC1         | Focused tests/contract         | Closed | 1                |
 | A3F13 - Command event sink keeps unbounded event history                   | Low      | A3EC6         | Focused tests/retention policy | Open   | 6                |
 
@@ -406,12 +406,19 @@ Existing tests cover one-element arrays but not row identity changes.
 
 Required closeout:
 
-- Audit gate: R6, wildcard secret paths over arrays require stable row identity
-  for masked placeholder restoration or rejection of unprovable changes.
-- Restore array-row secrets by stable row identity where available, or reject
-  masked placeholders in array payloads that cannot prove identity.
-- Add reorder/delete regression tests for `botPresets[*].openAIKey`,
-  `customModels[*].key`, and `authRefreshes[*].refreshToken` or equivalent.
+- Closed in Bucket 5. Masked array placeholders now restore by stable row
+  identity instead of position for `authRefreshes`, `botPresets`, `characters`,
+  and `customModels`.
+- Provider settings commands reject masked placeholders when row identity is
+  missing, duplicated, or unknown, preventing reorder/delete transplants.
+- Regression proof:
+  `server/fastify/__tests__/commands.test.ts` covers `customModels[*].key` and
+  `authRefreshes[*].refreshToken`/`clientSecret` reorder/delete behavior through
+  `/api/v1/commands/settings/providers`;
+  `server/fastify/__tests__/providerSecrets.test.ts` covers
+  `botPresets[*].openAIKey`/`proxyKey` and
+  `characters[*].oaiTTSConfig.apiKey`.
+- Audit gate: R6 no longer appears in `pnpm client-thinning:audit`.
 
 ## A3F12 - Compatibility Adapters Can Fan Out Conflicting Concurrent Commands
 

@@ -57,10 +57,17 @@ RisuSave asset walker and bundle export include supported legacy
 `assets/<sha>.<ext>` references, server backups copy/restore asset bytes, and
 ONNX transformer asset uploads preserve `.onnx` metadata.
 
-`pnpm client-thinning:audit` is still expected to fail until later buckets land,
-but A3R1, A3R2, A3R3, A3R4, A3R5, and A3R7 should no longer appear. The next
-implementation agent should start with Bucket 5 and make A3R6 pass while adding
-focused masked-array secret placeholder tests.
+Bucket 5 has now landed masked-array secret row identity fixes. Placeholder
+restoration for array rows resolves by stable row identity (`botPresets.id`,
+`customModels.id`, `authRefreshes.url`, and `characters.chaId`) and rejects
+masked placeholders when identity is missing, duplicated, or unknown. Focused
+tests cover reorder/delete behavior for provider settings arrays plus direct
+masking coverage for bot presets and character-owned TTS secrets.
+
+After Bucket 5, `pnpm client-thinning:audit` passes all Alpha 3 R1-R7 gates. The
+next implementation agent should start with Bucket 6: close A3F13 event
+retention, run the full closeout ladder, then reconcile broad status docs only
+after Alpha 3 is ready to close.
 
 Do not reconcile `docs/fastify/status.md`,
 `docs/fastify/status/next-steps.md`, or other broad status docs until the

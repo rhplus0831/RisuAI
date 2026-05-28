@@ -1,8 +1,19 @@
+import { ValidationError } from './repository.js'
+
 const WILDCARD = Symbol('secret-path-wildcard')
 
 export const MASKED_PROVIDER_SECRET = '__RISU_SECRET_MASKED__'
+export const MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED =
+  'Masked provider secret placeholder cannot be resolved for an array row without stable identity'
 
 type PathSegment = string | typeof WILDCARD
+
+const ARRAY_ROW_IDENTITY_KEYS: Record<string, string> = {
+  authRefreshes: 'url',
+  botPresets: 'id',
+  characters: 'chaId',
+  customModels: 'id',
+}
 
 const SECRET_PATHS: PathSegment[][] = [
   ['account', 'token'],
@@ -108,21 +119,18 @@ function maskPath(target: unknown, path: PathSegment[]): void {
   maskPath(target[segment], rest)
 }
 
-function resolvePath(source: unknown, target: unknown, path: PathSegment[]): void {
+function resolvePath(
+  source: unknown,
+  target: unknown,
+  path: PathSegment[],
+  arrayKey?: string,
+): void {
   if (path.length === 0) return
   const [segment, ...rest] = path
 
   if (segment === WILDCARD) {
     if (Array.isArray(target)) {
-      for (let i = 0; i < target.length; i += 1) {
-        if (rest.length === 0) {
-          if (target[i] === MASKED_PROVIDER_SECRET && Array.isArray(source)) {
-            target[i] = cloneJsonValue(source[i])
-          }
-        } else {
-          resolvePath(Array.isArray(source) ? source[i] : undefined, target[i], rest)
-        }
-      }
+      resolveArrayWildcard(source, target, rest, arrayKey)
       return
     }
     if (isRecord(target)) {
@@ -146,7 +154,94 @@ function resolvePath(source: unknown, target: unknown, path: PathSegment[]): voi
     }
     return
   }
-  resolvePath(isRecord(source) ? source[segment] : undefined, target[segment], rest)
+  resolvePath(isRecord(source) ? source[segment] : undefined, target[segment], rest, segment)
+}
+
+function resolveArrayWildcard(
+  source: unknown,
+  target: unknown[],
+  rest: PathSegment[],
+  arrayKey?: string,
+): void {
+  if (!target.some((row) => hasMaskedPlaceholderAtPath(row, rest))) return
+
+  const identityKey = arrayKey ? ARRAY_ROW_IDENTITY_KEYS[arrayKey] : undefined
+  if (!identityKey || !Array.isArray(source)) {
+    throw new ValidationError(MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED)
+  }
+
+  const sourceRows = buildUniqueRowIdentityMap(source, identityKey, arrayKey)
+  const seenTargetIds = new Set<string>()
+
+  for (const row of target) {
+    if (!hasMaskedPlaceholderAtPath(row, rest)) continue
+    const rowId = readRowIdentity(row, identityKey, arrayKey)
+    if (seenTargetIds.has(rowId)) {
+      throw new ValidationError(`Duplicate ${arrayKey ?? 'array'} row identity: ${rowId}`)
+    }
+    seenTargetIds.add(rowId)
+
+    const sourceRow = sourceRows.get(rowId)
+    if (!sourceRow) {
+      throw new ValidationError(
+        `Cannot resolve masked provider secret for unknown ${arrayKey} row: ${rowId}`,
+      )
+    }
+    resolvePath(sourceRow, row, rest)
+  }
+}
+
+function buildUniqueRowIdentityMap(
+  rows: unknown[],
+  identityKey: string,
+  arrayKey?: string,
+): Map<string, unknown> {
+  const byId = new Map<string, unknown>()
+  const duplicateIds = new Set<string>()
+  for (const row of rows) {
+    if (!isRecord(row)) continue
+    const id = row[identityKey]
+    if (typeof id !== 'string' || id.length === 0) continue
+    if (byId.has(id)) {
+      duplicateIds.add(id)
+      continue
+    }
+    byId.set(id, row)
+  }
+
+  if (duplicateIds.size > 0) {
+    throw new ValidationError(
+      `Duplicate ${arrayKey ?? 'array'} row identity: ${Array.from(duplicateIds).join(', ')}`,
+    )
+  }
+  return byId
+}
+
+function readRowIdentity(row: unknown, identityKey: string, arrayKey?: string): string {
+  if (!isRecord(row) || typeof row[identityKey] !== 'string' || row[identityKey].length === 0) {
+    throw new ValidationError(
+      `Cannot resolve masked provider secret for ${arrayKey ?? 'array'} row without ${identityKey}`,
+    )
+  }
+  return row[identityKey]
+}
+
+function hasMaskedPlaceholderAtPath(target: unknown, path: PathSegment[]): boolean {
+  if (path.length === 0) return target === MASKED_PROVIDER_SECRET
+  const [segment, ...rest] = path
+
+  if (segment === WILDCARD) {
+    if (Array.isArray(target)) {
+      return target.some((value) => hasMaskedPlaceholderAtPath(value, rest))
+    }
+    if (isRecord(target)) {
+      return Object.values(target).some((value) => hasMaskedPlaceholderAtPath(value, rest))
+    }
+    return false
+  }
+
+  if (!isRecord(target) || !(segment in target)) return false
+  return hasMaskedPlaceholderAtPath(target[segment], rest)
 }
 
 function cloneJsonValue<T>(value: T): T {

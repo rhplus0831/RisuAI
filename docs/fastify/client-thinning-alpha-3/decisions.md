@@ -98,6 +98,12 @@ restore can transplant secrets.
 **Acceptable alternative:** Split high-risk secret arrays out of generic
 settings commands and require dedicated commands that can validate row identity.
 
+**Bucket 5 implementation:** masked array placeholders restore only through
+stable row identity: `botPresets.id`, `customModels.id`, `authRefreshes.url`,
+and `characters.chaId`. If a masked placeholder cannot prove identity because
+the target row is missing identity, duplicates identity, or references no source
+row, the command is rejected instead of copying a secret by array position.
+
 ## A3EC6 - Audit Shape
 
 **Decision:** Alpha 3 uses rule-first closeout. R1-R7 must be added before the
