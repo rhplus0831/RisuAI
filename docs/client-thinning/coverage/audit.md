@@ -24,6 +24,8 @@ Date: 2026-05-29
   `util/client-thinning-audit-fixtures/bounded-process-lifetime-accumulators/`.
 - `A4R7 asset URL gate` has committed failing and bypass fixtures under
   `util/client-thinning-audit-fixtures/asset-url-gate/`.
+- `A4R-fanout composite command race` has committed failing and bypass fixtures
+  under `util/client-thinning-audit-fixtures/composite-command-fanout/`.
 
 ## Open Proof
 
@@ -72,7 +74,7 @@ existing files yet.
 | `A4R5 asset reference parser parity` | `asset-reference-parser-parity` | Change the client `LOCAL_ASSET_PATH_RE` without the server walker accepting the same regex shape, or remove the walker `addReference` parity surface. | Non-zero exit with `A4R5 asset reference parser parity`. |
 | `A4R6 wildcard secret row identity` | `wildcard-secret-row-identity` | Add a wildcard object-array secret path without `ARRAY_ROW_IDENTITY_KEYS`, add an unclassified flat string-array secret, or let wildcard placeholder resolution skip the rejected-row sentinel. | Non-zero exit with `A4R6 wildcard secret row identity`. |
 | `A4R7 asset URL gate` | `asset-url-gate` | Let Fastify asset-byte helpers fetch arbitrary `loc` values with `risu-auth`, fall back to `?? loc` for unknown shapes, or omit the explicit empty/null/throw default for unknown asset shapes. | Covered: authenticated arbitrary-`loc` fetch and Fastify `?? loc` fallback fixtures exit non-zero with `A4R7 asset URL gate`; documented-shapes bypass exits zero. |
-| `A4R-fanout composite command race` | `composite-command-fanout` | Dispatch two or more mutating command helpers in one scope without awaiting each previous call or routing through `runChatCommandSequence`/`runOptimisticCommandSequence`. | Non-zero exit with `A4R-fanout composite command race`. |
+| `A4R-fanout composite command race` | `composite-command-fanout` | Dispatch two or more mutating command helpers in one scope without awaiting each previous call or routing through `runChatCommandSequence`/`runOptimisticCommandSequence`. | Covered: failing fixture exits non-zero with `A4R-fanout composite command race`; bypass fixture (sequencer-routed and awaited-chain shapes) exits zero. |
 | `A4R-backup data dir inventory` | `backup-data-dir-inventory` | Add a child to `KNOWN_DATA_DIR_CHILDREN` without referencing it in both `createBackup` and `restoreBackup`, or remove the inventory declaration. | Covered: failing fixture exits non-zero with `A4R-backup data dir inventory` and the missing create/restore references. |
 | `A4R-bounded process-lifetime accumulators` | `bounded-process-lifetime-accumulators` | Declare an exported top-level `Set`, `Map`, or `Array` under `server/fastify/src/` without bounded classification, or remove visible eviction from a declared accumulator. | Covered: failing fixture exits non-zero with `A4R-bounded process-lifetime accumulators`; bypass fixture with `// audit:bounded(...)` exits zero. |
 | `A4R-saveasset filename classification` | `saveasset-filename-classification` | Call `saveAsset(bytes)` or `saveAsset(..., '', '')` without a real filename and without a nearby `// audit:image-default` rationale. | Covered: failing fixture exits non-zero with `A4R-saveasset filename classification`; bypass fixture with `// audit:image-default` exits zero. |
@@ -80,12 +82,13 @@ existing files yet.
 ## Suggested Next Proof
 
 `A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
-`A4R-bounded process-lifetime accumulators`, and `A4R7 asset URL gate` are
-complete. Continue with `A4R-fanout composite command race` unless source
-inventory reveals a more urgent rule gap. That fixture should prove that a
-single scope dispatching multiple mutating command helpers without awaiting
-the previous dispatch exits non-zero, while a routed sequence helper or
-properly awaited dispatch chain remains accepted.
+`A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`, and
+`A4R-fanout composite command race` are complete. Continue with the remaining
+ordering-sensitive A4R rules unless source inventory reveals a more urgent rule
+gap. `A4R4 globally-addressed resolver normalize` is a good next small target:
+its fixture should prove that calling `requireChatLocation()` or
+`requireMessageLocation()` before the matching global normalizer in the same
+scope exits non-zero, while the normalize-then-resolve order remains accepted.
 
 ## Commands
 

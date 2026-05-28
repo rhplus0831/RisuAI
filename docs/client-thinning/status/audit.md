@@ -53,10 +53,10 @@ now lives in `util/client-thinning-audit.test.ts`; it runs
 code, stdout/stderr, and check id.
 
 Fixture proof is complete for `A4R-saveasset filename classification`,
-`A4R-backup data dir inventory`, and
-`A4R-bounded process-lifetime accumulators`, and `A4R7 asset URL gate`. The
-next small rule-family proof should be `A4R-fanout composite command race`
-unless source inventory reveals a more urgent audit-rule gap.
+`A4R-backup data dir inventory`, `A4R-bounded process-lifetime accumulators`,
+`A4R7 asset URL gate`, and `A4R-fanout composite command race`. The next small
+rule-family proof should be `A4R4 globally-addressed resolver normalize` unless
+source inventory reveals a more urgent audit-rule gap.
 
 ## Direction
 
