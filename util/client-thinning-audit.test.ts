@@ -61,6 +61,7 @@ describe('client-thinning audit fixtures', () => {
   const pluginStorageCheck = 'EC2 plugin storage gates'
   const providerOwnershipCheck = 'EC1 provider ownership'
   const chatFolderScopeCheck = 'AEC4 chat folder identity scope'
+  const moduleReferenceCheck = 'AEC5 module reference semantics'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -456,6 +457,30 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'chat-folder-identity-scope/global-scope-bypass',
       chatFolderScopeCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that treats MCP modules as normal link targets', async () => {
+    const result = await runAuditFixture(
+      'module-reference-semantics/failing-mcp-as-normal',
+      moduleReferenceCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${moduleReferenceCheck}]`)
+    expect(result.stderr).toContain(
+      'Normal module-link validation must exclude MCP module rows from linkable command ids.',
+    )
+  })
+
+  it('allows MCP-excluded module link validation across chat write paths', async () => {
+    const result = await runAuditFixture(
+      'module-reference-semantics/typed-links-bypass',
+      moduleReferenceCheck,
     )
 
     expect(result.exitCode).toBe(0)
