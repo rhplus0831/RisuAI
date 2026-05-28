@@ -3,16 +3,14 @@ import type { FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
-import { normalizePromptTemplateCollection } from '../commands/prompts.js'
-import { normalizePresetCollection } from '../commands/presets.js'
-import { normalizeTranslatorPresetCollection } from '../commands/translatorPresets.js'
-import { normalizeLoadoutCollection } from '../commands/loadouts.js'
-import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitions.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { ValidationError, applyImport } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRows } from '../memoryLegacyImport.js'
-import { decodeRisuSaveImportSnapshot } from '../risuSave/importSnapshot.js'
+import {
+  decodeRisuSaveImportSnapshot,
+  normalizeRisuSaveImportDatabase,
+} from '../risuSave/importSnapshot.js'
 import {
   encodeRepositoryRisuSaveBlockExport,
   encodeRepositoryRisuSaveLegacyExport,
@@ -66,8 +64,8 @@ export function registerSaveRoutes(
       }
 
       const body = (req.body ?? {}) as ImportBody
-      normalizeJsonImportDatabase(body.database)
-      const { revision, assetReport } = applyImportedDatabase(db, dataDir, body.database)
+      const database = normalizeRisuSaveImportDatabase(body.database)
+      const { revision, assetReport } = applyImportedDatabase(db, dataDir, database)
       const event = { ...COMMAND_EVENT_CATALOG.stateImported, revision }
       eventSink.emit(event)
       return { revision, event, assetReport }
@@ -180,38 +178,6 @@ async function readUploadedRisuSave(req: FastifyRequest): Promise<Uint8Array> {
     throw new ValidationError('risusave file is empty')
   }
   return bytes
-}
-
-function normalizeJsonImportDatabase(database: unknown): void {
-  if (
-    database &&
-    typeof database === 'object' &&
-    !Array.isArray(database) &&
-    ('botPresets' in database || 'botPresetsId' in database)
-  ) {
-    normalizePresetCollection(database)
-  }
-  if (
-    database &&
-    typeof database === 'object' &&
-    !Array.isArray(database) &&
-    ('translatorPresets' in database ||
-      'translatorPresetId' in database ||
-      'translatorPrompt' in database ||
-      'translatorMaxResponse' in database)
-  ) {
-    normalizeTranslatorPresetCollection(database)
-  }
-  if (
-    database &&
-    typeof database === 'object' &&
-    !Array.isArray(database) &&
-    ('loadouts' in database || 'lastLoadedLoadoutName' in database)
-  ) {
-    normalizeLoadoutCollection(database)
-  }
-  normalizePromptTemplateCollection(database)
-  normalizeScriptDefinitionCollection(database)
 }
 
 function applyImportedDatabase(

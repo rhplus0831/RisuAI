@@ -8,15 +8,15 @@ criterion ([`README.md`](./README.md)) and its finding
 ([`open-findings.md`](./open-findings.md)). A bucket is done only when its
 finding is resolved **and** the exit criterion's regression proof is committed.
 
-Current pickup: **Bucket 3 — Import current-shape normalization (EC3/F3)**.
-Buckets 1 and 2 closed on 2026-05-28; see
+Current pickup: **Bucket 4 — Stable-id validation + prompt-item semantics (EC4/F4)**.
+Buckets 1, 2, and 3 closed on 2026-05-28; see
 [`history.md`](./history.md#provider-ownership-ec1f1).
 
 | Order | Bucket                                             | Closes | Finding | Status            |
 | ----- | -------------------------------------------------- | ------ | ------- | ----------------- |
 | 1     | Provider ownership (server-only generation)        | EC1    | F1      | Closed 2026-05-28 |
 | 2     | Plugin durable storage + Compatibility Mode        | EC2    | F2      | Closed 2026-05-28 |
-| 3     | Import current-shape normalization                 | EC3    | F3      | Open              |
+| 3     | Import current-shape normalization                 | EC3    | F3      | Closed 2026-05-28 |
 | 4     | Stable-id validation + prompt-item semantics       | EC4    | F4      | Open              |
 | 5     | Single active-writer session lock                  | EC5    | F5      | Open              |
 | 6     | Character asset-reference validation               | EC6    | F6      | Open              |
@@ -41,13 +41,13 @@ Buckets 1 and 2 closed on 2026-05-28; see
    `deviceLocalPluginStorage`. Focused proof:
    `pnpm test src/ts/plugins/plugins.test.ts src/ts/server/commands.test.ts -- --run`
    and `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`.
-3. **Import normalization (EC3=A).** In the JSON path in `save.ts`, **pass the
-   returned normalized clone** from the already-exported
-   `normalizeRisuSaveImportDatabase` (`importSnapshot.ts:83`) to
-   `applyImportedDatabase` — the normalizer returns a cloned normalized DB, so
-   calling it without using the return value is a no-op. Delete the narrow
-   route-local normalizer. Audit any test that deliberately seeds malformed data
-   via JSON (it will now be normalized on the way in).
+3. **Import normalization (EC3=A) — closed 2026-05-28.** The JSON path in
+   `save.ts` now passes the returned normalized clone from the exported
+   `normalizeRisuSaveImportDatabase` to `applyImportedDatabase`, matching the
+   multipart `.risu` import path. The narrow route-local normalizer was removed,
+   JSON imports of non-object database payloads now return 400, and bootstrap
+   tests now expect current-shape output after JSON import. Focused proof:
+   `pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts -- --run`.
 4. **Stable-id validation + prompt items (EC4).**
    - _4a (split helpers):_ split each id helper into `repairX` (import/bootstrap
      only, may mint ids) and `validateX` (command path, rejects missing/duplicate

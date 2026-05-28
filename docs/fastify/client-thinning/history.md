@@ -63,7 +63,25 @@ Verification:
   49 passed.
 - `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: 68 passed.
 
-Next pickup: **EC3/F3 — Import current-shape normalization**.
+## Import current-shape normalization (EC3/F3)
+
+Closed on 2026-05-28.
+
+- JSON `{ database }` import now uses the same exported
+  `normalizeRisuSaveImportDatabase` path as multipart `.risu` import and passes
+  the returned normalized clone into persistence.
+- The narrow `save.ts` route-local import normalizer was removed.
+- Non-object JSON `database` payloads now return 400 before persistence.
+- Bootstrap/import tests now treat JSON import as a current-shape normalization
+  boundary: imported partial character/message shapes are served back normalized,
+  with missing/duplicate message ids repaired by the import path.
+
+Verification:
+
+- `pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts -- --run`:
+  17 passed.
+
+Next pickup: **EC4/F4 — Stable-id validation + prompt-item semantics**.
 
 ## Archived migration slices
 

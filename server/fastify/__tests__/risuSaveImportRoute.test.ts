@@ -111,6 +111,83 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(harness.commandEvents.list()).toEqual([imported.json().event])
   })
 
+  it('normalizes JSON database imports through the current-shape .risu normalizer', async () => {
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'A',
+              chats: [
+                {
+                  id: 'chat-a',
+                  name: 'Chat A',
+                  note: '',
+                  localLore: [],
+                  message: [
+                    { role: 'user', data: 'missing id' },
+                    { role: 'char', data: 'kept id', chatId: 'message-a' },
+                    { role: 'user', data: 'duplicate id', chatId: 'message-a' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const messages = bootstrap.json().database.characters[0].chats[0].message as Array<{
+      chatId?: unknown
+      data?: unknown
+    }>
+    expect(messages.map((message) => message.data)).toEqual(['missing id', 'kept id', 'duplicate id'])
+    expect(messages.map((message) => message.chatId)).toContain('message-a')
+    expect(new Set(messages.map((message) => message.chatId)).size).toBe(3)
+    expect(messages.every((message) => typeof message.chatId === 'string' && message.chatId)).toBe(
+      true,
+    )
+    expect(bootstrap.json().database).toMatchObject({
+      characters: [
+        expect.objectContaining({
+          chaId: 'char-a',
+          chats: [
+            expect.objectContaining({
+              id: 'chat-a',
+              localLore: [],
+              message: messages,
+            }),
+          ],
+        }),
+      ],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+      modules: [],
+    })
+  })
+
+  it('rejects malformed JSON database imports without mutating persistence', async () => {
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: 'not an object' },
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json()).toEqual({ error: 'database must be an object' })
+
+    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().revision).toBe(0)
+    expect(bootstrap.json().database).toBeNull()
+    expect(harness.commandEvents.list()).toEqual([])
+  })
+
   it('reports referenced, missing, and orphaned server assets after JSON imports', async () => {
     const present = 'a'.repeat(64)
     const missing = 'b'.repeat(64)

@@ -14,30 +14,6 @@ Each finding states the **problem** as it exists in the code today; the chosen
 **direction** is summarized in the Decision line and detailed in
 [`decisions.md`](./decisions.md) / [`closeout-buckets.md`](./closeout-buckets.md).
 
-## F3 → EC3 (P1): JSON import can persist non-current-shape DB data
-
-Multipart `.risu` import runs the broad current-shape normalizer, but JSON
-`{ database }` import runs a narrower route-local normalizer.
-
-- `server/fastify/src/routes/save.ts:68-70` accepts `body.database`, runs only the route-local normalizer, and applies that database.
-- `server/fastify/src/routes/save.ts:185-215` normalizes presets, translator presets, loadouts, prompt templates, and script definitions only.
-- `server/fastify/src/risuSave/importSnapshot.ts:155` is the broader normalizer (messages, personas, modules, plugins, plugin storage, global/child lorebooks, scripts).
-- `server/fastify/src/repository.ts:107-117` persists any non-null/undefined database payload.
-- `server/fastify/src/routes/bootstrap.ts:20-24` loads persisted data and masks secrets, but does not run current-shape normalization.
-
-Precision (from audit):
-
-- JSON import persists a **route-normalized inbound payload**, not a completely
-  untouched one; and bootstrap serves **without shape repair** (secrets are still
-  masked). The JSON route also accepts broad non-object payloads unless the
-  narrow route-local normalizer happens to throw.
-- The broad normalizer is **already exported** as
-  `normalizeRisuSaveImportDatabase` (`importSnapshot.ts:83`).
-
-**Decision (EC3=A):** call the already-exported `normalizeRisuSaveImportDatabase`
-from the JSON path before `applyImportedDatabase`; audit malformed-seed tests.
-See [`decisions.md`](./decisions.md#ec3).
-
 ## F4 → EC4 (P1/P2): Public command paths still repair stable ids / bypass resource semantics
 
 Several public replacement helpers still repair durable child ids, and prompt

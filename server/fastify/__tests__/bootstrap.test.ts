@@ -91,6 +91,26 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
+function expectNormalizedAdaDatabase(database: unknown, expected: Record<string, unknown> = {}): void {
+  expect(database).toMatchObject({
+    ...expected,
+    characters: [
+      expect.objectContaining({
+        chaId: 'char-a',
+        name: 'Ada',
+        chats: [],
+        chatFolders: [],
+        customscript: [],
+        triggerscript: [],
+        globalLore: [],
+      }),
+    ],
+    characterOrder: ['char-a'],
+    currentChar: 0,
+    modules: [],
+  })
+}
+
 describe('Phase 2A bootstrap + import', () => {
   it('returns empty database on a fresh data dir (no password)', async () => {
     const res = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
@@ -115,7 +135,7 @@ describe('Phase 2A bootstrap + import', () => {
 
   it('imports a database and serves it back via bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    const sample = { greeting: 'hi', characters: [{ id: 'a', name: 'Ada' }] }
+    const sample = { greeting: 'hi', characters: [{ chaId: 'char-a', name: 'Ada' }] }
 
     const imported = await harness.app.inject({
       method: 'POST',
@@ -136,7 +156,9 @@ describe('Phase 2A bootstrap + import', () => {
 
     expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(true)
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk).toEqual({ _version: 1, database: sample, assets: [] })
+    expect(onDisk._version).toBe(1)
+    expect(onDisk.assets).toEqual([])
+    expectNormalizedAdaDatabase(onDisk.database, { greeting: 'hi' })
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -144,12 +166,10 @@ describe('Phase 2A bootstrap + import', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json()).toEqual({
-      revision: 1,
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      database: sample,
-      assetBaseUrl: '/api/v1/assets',
-    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(bootstrap.json().assetBaseUrl).toBe('/api/v1/assets')
+    expectNormalizedAdaDatabase(bootstrap.json().database, { greeting: 'hi' })
   })
 
   it('rejects import with missing database field', async () => {
@@ -187,7 +207,13 @@ describe('Phase 2A bootstrap + import', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toEqual({ v: 2 })
+    expect(bootstrap.json().database).toEqual({
+      v: 2,
+      characters: [],
+      characterOrder: [],
+      currentChar: -1,
+      modules: [],
+    })
   })
 
   it('masks provider secrets in bootstrap without changing persisted data', async () => {
@@ -235,8 +261,7 @@ describe('Phase 2A bootstrap + import', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database).toEqual({
-      ...sample,
+    expect(bootstrap.json().database).toMatchObject({
       openAIKey: MASKED_PROVIDER_SECRET,
       OaiCompAPIKeys: { deepseek: MASKED_PROVIDER_SECRET },
       customModels: [{ ...sample.customModels[0], key: MASKED_PROVIDER_SECRET }],
@@ -253,9 +278,14 @@ describe('Phase 2A bootstrap + import', () => {
       openaiCompatImage: { url: 'https://image.example.com', key: MASKED_PROVIDER_SECRET },
       wavespeedImage: { key: MASKED_PROVIDER_SECRET, model: 'speedy' },
     })
+    expectNormalizedAdaDatabase(bootstrap.json().database)
 
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toEqual(sample)
+    expectNormalizedAdaDatabase(onDisk.database, {
+      openAIKey: 'sk-openai',
+      aiModel: 'gpt4o-chatgpt',
+      OaiCompAPIKeys: { deepseek: 'ds-key' },
+    })
   })
 
   it('masks nested preset and character-owned secrets in bootstrap', async () => {
@@ -307,8 +337,7 @@ describe('Phase 2A bootstrap + import', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database).toEqual({
-      ...sample,
+    expect(bootstrap.json().database).toMatchObject({
       openAIKey: MASKED_PROVIDER_SECRET,
       botPresets: [
         {
@@ -328,8 +357,12 @@ describe('Phase 2A bootstrap + import', () => {
         },
       ],
     })
+    expectNormalizedAdaDatabase(bootstrap.json().database)
 
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toEqual(sample)
+    expectNormalizedAdaDatabase(onDisk.database, {
+      openAIKey: 'sk-top-level',
+      botPresetsId: 0,
+    })
   })
 })
