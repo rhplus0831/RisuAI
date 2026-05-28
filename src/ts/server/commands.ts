@@ -314,7 +314,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   useLegacyGUI: 'display',
   usePlainFetch: 'runtime',
   useSayNothing: 'advanced',
-  useServerGeneration: 'runtime',
   useServerPromptAssembly: 'runtime',
   useStreaming: 'runtime',
   useTokenizerCaching: 'advanced',

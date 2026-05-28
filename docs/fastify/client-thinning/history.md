@@ -6,9 +6,42 @@ Resolved findings, verification-ladder results, and the pointer to the archived
 Phase 9 migration slices. The live work is in
 [`open-findings.md`](./open-findings.md).
 
+## Provider ownership (EC1/F1)
+
+Closed on 2026-05-28.
+
+- Fastify-mode completion dispatch no longer reads `useServerGeneration`; legacy
+  saved `false` values are ignored.
+- `useServerGeneration` was removed from the Fastify settings command maps and
+  the browser settings-group map.
+- `requestChatDataMain` now uses `resolveServerCompletionRoute`: server-routable
+  providers call `/api/v1/generate/completion`, while unsupported provider
+  formats and provider-preview bodies fail explicitly in Fastify server mode
+  instead of falling through to browser provider dispatch.
+- Browser Vertex refresh still exists for non-Fastify local mode, but in Fastify
+  mode it no longer writes `vertexAccessToken` / `vertexAccessTokenExpires` into
+  the server projection; server Vertex routing continues through
+  `server/fastify/src/generation/vertexAuth.ts`.
+
+Verification:
+
+- `pnpm test src/ts/process/request/tests/serverCompletion.test.ts -- --run`:
+  126 passed.
+- `pnpm test src/ts/process/request/tests/google.fastify.test.ts -- --run`: 1
+  passed.
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: 68
+  passed.
+- `pnpm check`: passed, 0 errors / 0 warnings.
+- `pnpm test`: 782 passed, 4 skipped.
+- `pnpm api:test`: 1221 passed.
+- `pnpm build`: built with pre-existing CSS `::highlight`, browser-externalized
+  module, plugin-timing, chunk-size, and ineffective-dynamic-import warnings.
+
+Next pickup: **EC2/F2 — Plugin durable storage + Compatibility Mode**.
+
 ## Archived migration slices
 
-The original Phase 9 *client-thinning migration* (slices 9-0 through 9-9e, plus
+The original Phase 9 _client-thinning migration_ (slices 9-0 through 9-9e, plus
 followups and the `9a`/`9b` projection-write passes) is closed and archived
 under [`../phases-completed/`](../phases-completed/) as `phase-9-*` documents,
 indexed from [`../phases-completed/README.md`](../phases-completed/README.md) and

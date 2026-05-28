@@ -2,7 +2,7 @@
 
 Date: 2026-05-28
 
-Status: **reopened / not complete.** The original Phase 9 *migration milestone*
+Status: **reopened / not complete.** The original Phase 9 _migration milestone_
 (linear 0→9 client-thinning) is archived as closed under
 [`../phases-completed/`](../phases-completed/) and stays closed. Client thinning
 itself continues here as a **standing workstream**, because every audit pass that
@@ -22,7 +22,7 @@ shows why:
   character-module persistence, stale trusted-write aliases, plugin DB bridge
   narrowing, welcome-setup persistence, `verbosity`, DevTool autopilot,
   malformed RISUSAVE errors, asset upload revision events).
-- A follow-up audit then found a *different* class of issues: provider dispatch
+- A follow-up audit then found a _different_ class of issues: provider dispatch
   ownership, plugin-local durable storage, JSON import normalization, stable-id
   command semantics, blind conflict retry, and missing asset validation.
 
@@ -47,18 +47,23 @@ regression tests.
 
 Client thinning is complete only when **every** criterion is true in
 Fastify-served web mode **and** covered by a committed regression test. Each
-criterion maps to an open finding ([`open-findings.md`](./open-findings.md)) and
-a closeout bucket ([`closeout-buckets.md`](./closeout-buckets.md)).
+open criteria map to findings in [`open-findings.md`](./open-findings.md), and
+all criteria map to closeout buckets in
+[`closeout-buckets.md`](./closeout-buckets.md).
 
-| #   | Exit criterion | Required regression proof |
-|-----|----------------|---------------------------|
-| EC1 | **Provider ownership.** Server generation is the *only* generation path in Fastify mode — the `useServerGeneration` toggle is removed (const-true); browser provider dispatch is unreachable (unsupported formats error explicitly); no client-side durable token writes (Vertex refresh moves server-side). | Fastify bootstrap → generation reaches the server path or errors; no browser dispatch; no client Vertex token write. |
+| #   | Exit criterion                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Required regression proof                                                                                                               |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| EC1 | **Provider ownership.** Server generation is the _only_ generation path in Fastify mode — the `useServerGeneration` toggle is removed (const-true); browser provider dispatch is unreachable (unsupported formats error explicitly); no client-side durable token writes (Vertex refresh moves server-side).                                                                                                                                                                     | Fastify bootstrap → generation reaches the server path or errors; no browser dispatch; no client Vertex token write.                    |
 | EC2 | **Durable writes go through commands/import only.** Durable plugin storage uses the already-server-backed `risuai.pluginStorage`; the device-local sandbox APIs — sync `localStorage`, IndexedDB, and `getLocalPluginStorage()` — are disabled by default. An opt-in, account-wide, command-backed **Plugin Compatibility Mode** may restore those device-local APIs, and never relaxes resource ownership. `pluginV2`, read-time shadowing, and `saveMethod` honesty are fixed. | With Compatibility Mode **off**, no device-local durable plugin-storage path is reachable; resource ownership holds in **both** states. |
-| EC3 | **Imports produce current-shape data.** JSON `{ database }` import calls the same exported `.risu` normalizer (`normalizeRisuSaveImportDatabase`); bootstrap never serves shapes public commands cannot address by stable id. | Import missing/duplicate ids through the JSON path → normalized bootstrap output or 400. |
-| EC4 | **Public commands validate stable identity.** Id helpers are split into import-only `repairX` (may mint ids) and command-path `validateX` (rejects missing/duplicate, 400); no command-path helper mints ids — create commands require client-supplied ids. Prompt items are edited only via the existing `/prompt-items/*` commands — the raw `promptTemplate` settings path is removed. | Create/patch tests for missing and duplicate child ids; `promptTemplate` rejected by `/commands/prompt-settings`. |
-| EC5 | **Single active writer.** In Fastify mode only the most recently bootstrapped session may mutate; stale sessions are rejected (`423`) and reload. No blind 409 replay (both wrapper sites). | A second session's mutation after a newer session registers → `423`; no command wrapper auto-replays a 409. |
-| EC6 | **Asset references validated where written.** `validateCharacterAssetRefs` covers the character **audio** fields the bundle walker treats as references — `vits.files.*` and `gptSoVitsConfig.ref_audio_data.assetId` (create + patch). The general walker-vs-validator drift class (e.g. `characterOrder.img`) is checked by EC7. | Character create/patch tests for valid, missing, and malformed audio asset refs. |
-| EC7 | **Repeatable invariant audit exists.** A ts-morph/rg audit script re-checks the invariants (no mutation route bypasses the active-session check; no command-path helper mints ids; no resource has both a typed command and a generic-settings channel; sandbox storage APIs gated; asset-walker fields covered by validators), and the full ladder is green. | Audit script committed in repo + the ladder below. |
+| EC3 | **Imports produce current-shape data.** JSON `{ database }` import calls the same exported `.risu` normalizer (`normalizeRisuSaveImportDatabase`); bootstrap never serves shapes public commands cannot address by stable id.                                                                                                                                                                                                                                                    | Import missing/duplicate ids through the JSON path → normalized bootstrap output or 400.                                                |
+| EC4 | **Public commands validate stable identity.** Id helpers are split into import-only `repairX` (may mint ids) and command-path `validateX` (rejects missing/duplicate, 400); no command-path helper mints ids — create commands require client-supplied ids. Prompt items are edited only via the existing `/prompt-items/*` commands — the raw `promptTemplate` settings path is removed.                                                                                        | Create/patch tests for missing and duplicate child ids; `promptTemplate` rejected by `/commands/prompt-settings`.                       |
+| EC5 | **Single active writer.** In Fastify mode only the most recently bootstrapped session may mutate; stale sessions are rejected (`423`) and reload. No blind 409 replay (both wrapper sites).                                                                                                                                                                                                                                                                                      | A second session's mutation after a newer session registers → `423`; no command wrapper auto-replays a 409.                             |
+| EC6 | **Asset references validated where written.** `validateCharacterAssetRefs` covers the character **audio** fields the bundle walker treats as references — `vits.files.*` and `gptSoVitsConfig.ref_audio_data.assetId` (create + patch). The general walker-vs-validator drift class (e.g. `characterOrder.img`) is checked by EC7.                                                                                                                                               | Character create/patch tests for valid, missing, and malformed audio asset refs.                                                        |
+| EC7 | **Repeatable invariant audit exists.** A ts-morph/rg audit script re-checks the invariants (no mutation route bypasses the active-session check; no command-path helper mints ids; no resource has both a typed command and a generic-settings channel; sandbox storage APIs gated; asset-walker fields covered by validators), and the full ladder is green.                                                                                                                    | Audit script committed in repo + the ladder below.                                                                                      |
+
+Progress as of 2026-05-28: **EC1 is closed**. The next pickup is **EC2 —
+Plugin durable storage + Compatibility Mode**; see
+[`closeout-buckets.md`](./closeout-buckets.md).
 
 ## Verification ladder
 

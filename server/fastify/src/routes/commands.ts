@@ -402,7 +402,6 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
   ],
   runtime: [
     'useServerPromptAssembly',
-    'useServerGeneration',
     'useStreaming',
     'streamGeminiThoughts',
     'maxContext',
@@ -779,7 +778,6 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'useLegacyGUI',
   'usePlainFetch',
   'useSayNothing',
-  'useServerGeneration',
   'useServerPromptAssembly',
   'useStreaming',
   'useTokenizerCaching',

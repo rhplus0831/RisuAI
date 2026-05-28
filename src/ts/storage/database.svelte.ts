@@ -770,7 +770,6 @@ export function setDatabase(data: Database) {
   data.newMessageButtonStyle ??= 'bottom-center'
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
-  data.useServerGeneration ??= false
   data.useServerPromptAssembly ??= false
   if (!isFastifyServer) {
     //this is intended to forcely reduce the size of the database in web
@@ -1344,13 +1343,11 @@ export interface Database {
   pluginDevelopMode?: boolean
   echoMessage?: string
   echoDelay?: number
-  useServerGeneration?: boolean
   /**
    * Phase 7-12a: route browser prompt assembly through the server
    * `POST /api/v1/generate/chat` route instead of the in-browser path.
-   * Independent of `useServerGeneration` (server-side dispatch). The
-   * adapter (`serverChat.ts`) is wired for preview paths as of 7-12c;
-   * send/continue/regenerate wait for the 7-12d dispatch cluster.
+   * Server-side completion dispatch is mandatory in Fastify mode; this
+   * setting controls prompt assembly only.
    */
   useServerPromptAssembly?: boolean
   createFolderOnBranch?: boolean

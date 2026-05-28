@@ -28,10 +28,7 @@ import {
   requestOpenAILegacyInstruct,
   requestOpenAIResponseAPI,
 } from './openAI/requests'
-import {
-  getServerCompletionProvider,
-  requestServerCompletion,
-} from './serverCompletion'
+import { resolveServerCompletionRoute, requestServerCompletion } from './serverCompletion'
 import { applyParameters, type ModelModeExtended } from './shared'
 
 export type ToolCall = {
@@ -522,9 +519,16 @@ export async function requestChatDataMain(
 
   targ.formated = reformater(targ.formated, targ.modelInfo)
 
-  const serverProvider = getServerCompletionProvider(targ)
-  if (serverProvider !== null) {
-    return requestServerCompletion(targ, serverProvider, abortSignal)
+  const serverRoute = resolveServerCompletionRoute(targ)
+  if (serverRoute.type === 'server') {
+    return requestServerCompletion(targ, serverRoute.provider, abortSignal)
+  }
+  if (serverRoute.type === 'unsupported') {
+    return {
+      type: 'fail',
+      result: serverRoute.reason,
+      noRetry: true,
+    }
   }
 
   switch (format) {

@@ -8,24 +8,27 @@ criterion ([`README.md`](./README.md)) and its finding
 ([`open-findings.md`](./open-findings.md)). A bucket is done only when its
 finding is resolved **and** the exit criterion's regression proof is committed.
 
-| Order | Bucket | Closes | Finding |
-|-------|--------|--------|---------|
-| 1 | Provider ownership (server-only generation) | EC1 | F1 |
-| 2 | Plugin durable storage + Compatibility Mode | EC2 | F2 |
-| 3 | Import current-shape normalization | EC3 | F3 |
-| 4 | Stable-id validation + prompt-item semantics | EC4 | F4 |
-| 5 | Single active-writer session lock | EC5 | F5 |
-| 6 | Character asset-reference validation | EC6 | F6 |
-| 7 | Repeatable audit script + full verification ladder | EC7 | — |
+Current pickup: **Bucket 2 — Plugin durable storage + Compatibility Mode
+(EC2/F2)**. Bucket 1 closed on 2026-05-28; see
+[`history.md`](./history.md#provider-ownership-ec1f1).
 
-1. **Provider ownership (EC1=A).** Make server generation the only path in
-   Fastify mode: **remove `useServerGeneration`** (treat as const-true in Fastify
-   so the toggle no longer gates dispatch). Make browser provider dispatch
-   unreachable — formats the server cannot own yet return an explicit
-   "unsupported in server mode" error instead of silently dispatching with masked
-   placeholders. Move the Vertex token refresh server-side (server Vertex routing
-   already exists in `server/fastify/src/generation/vertexAuth.ts`); remove the
-   client projection write at `google.ts:553`. Masking stays.
+| Order | Bucket                                             | Closes | Finding | Status            |
+| ----- | -------------------------------------------------- | ------ | ------- | ----------------- |
+| 1     | Provider ownership (server-only generation)        | EC1    | F1      | Closed 2026-05-28 |
+| 2     | Plugin durable storage + Compatibility Mode        | EC2    | F2      | Open              |
+| 3     | Import current-shape normalization                 | EC3    | F3      | Open              |
+| 4     | Stable-id validation + prompt-item semantics       | EC4    | F4      | Open              |
+| 5     | Single active-writer session lock                  | EC5    | F5      | Open              |
+| 6     | Character asset-reference validation               | EC6    | F6      | Open              |
+| 7     | Repeatable audit script + full verification ladder | EC7    | —       | Open              |
+
+1. **Provider ownership (EC1=A) — closed 2026-05-28.** Server generation is now
+   mandatory in Fastify mode: `useServerGeneration` no longer gates dispatch or
+   appears in the Fastify settings command maps, unsupported provider/preview
+   paths return explicit Fastify server-mode errors instead of falling through to
+   browser dispatch, and the browser Vertex token refresh no longer writes to the
+   server projection in Fastify mode. Focused proof:
+   `pnpm test src/ts/process/request/tests/serverCompletion.test.ts -- --run`.
 2. **Plugin durable storage (EC2=B + Compatibility Mode).** Default: durable plugin
    storage stays the already-server-backed `risuai.pluginStorage` (no change
    there); disable the three device-local sandbox APIs in Fastify mode —
@@ -34,7 +37,7 @@ finding is resolved **and** the exit criterion's regression proof is committed.
    explicit unsupported errors. Add an **account-wide, command-backed**
    `pluginCompatibilityMode` setting (settings allowlist +
    `SERVER_SETTINGS_GROUP_BY_KEY`, mirroring the `verbosity` fix); when on,
-   restore those three device-local APIs. The toggle relaxes storage *location* only:
+   restore those three device-local APIs. The toggle relaxes storage _location_ only:
    `unsupportedServerBridgeKeys`/`pluginV2`/reserved-key ownership stay enforced
    in **both** states. Fix `pluginV2` (drop from `allowedDbKeys` or give it a real
    command path), fix read-time shadowing via the V2 `getDatabase` fallback
@@ -49,7 +52,7 @@ finding is resolved **and** the exit criterion's regression proof is committed.
    route-local normalizer. Audit any test that deliberately seeds malformed data
    via JSON (it will now be normalized on the way in).
 4. **Stable-id validation + prompt items (EC4).**
-   - *4a (split helpers):* split each id helper into `repairX` (import/bootstrap
+   - _4a (split helpers):_ split each id helper into `repairX` (import/bootstrap
      only, may mint ids) and `validateX` (command path, rejects missing/duplicate
      with 400). Lorebook entries (`ensureLorebookEntries`) and script/trigger defs
      (`ensureDefinitionRecords`) get the full split; messages need only to **stop
@@ -57,10 +60,10 @@ finding is resolved **and** the exit criterion's regression proof is committed.
      rejection already exists. Create commands require a client-supplied id and
      reject missing (incl. prompt-item create, `prompts.ts:64`); no command-path
      helper may call `randomUUID()`.
-   - *4b (subtractive prompt items):* drop `promptTemplate` from
+   - _4b (subtractive prompt items):_ drop `promptTemplate` from
      `PROMPT_SETTINGS_KEYS` (`prompts.ts:19`) and remove prompt-settings
      acceptance + validation for it (`prompts.ts:177`); note `commands.ts:1328`
-     only *reads* prompt settings (generic apply is around `:1341`/`:4184`). The
+     only _reads_ prompt settings (generic apply is around `:1341`/`:4184`). The
      existing `/prompt-items/*` CRUD/reorder commands become the only editing
      path; preset switch already carries `promptTemplate` server-side via
      `applyPreset`. Route the `BotSettings.svelte:1455` enable/disable toggle

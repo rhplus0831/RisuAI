@@ -10,6 +10,11 @@ import type { RequestDataArgumentExtended, requestDataResponse } from './request
 
 const COMPLETION_ENDPOINT = '/api/v1/generate/completion'
 
+export type ServerCompletionRoute =
+  | { type: 'local' }
+  | { type: 'server'; provider: string }
+  | { type: 'unsupported'; reason: string }
+
 export function formatToServerProvider(format: LLMFormat): string | null {
   switch (format) {
     case LLMFormat.Echo:
@@ -525,28 +530,54 @@ function isVanillaLegacyInstruct(targ: RequestDataArgumentExtended): boolean {
   return true
 }
 
-export function getServerCompletionProvider(targ: RequestDataArgumentExtended): string | null {
-  if (!isFastifyServer) return null
-  const db = getDatabase()
-  if (db.useServerGeneration !== true) return null
-  if (targ.previewBody === true) return null
-  if (!targ.modelInfo) return null
+function unsupportedServerGenerationReason(targ: RequestDataArgumentExtended): string {
+  const model = targ.aiModel ?? targ.modelInfo?.id ?? 'the selected model'
+  return `Generation for ${model} is not supported in Fastify server mode. Select a server-routed provider or change this model before retrying.`
+}
+
+export function resolveServerCompletionRoute(
+  targ: RequestDataArgumentExtended,
+): ServerCompletionRoute {
+  if (!isFastifyServer) return { type: 'local' }
+  if (targ.previewBody === true) {
+    return {
+      type: 'unsupported',
+      reason:
+        'Provider preview bodies are not supported in Fastify server mode because browser-side provider dispatch is disabled.',
+    }
+  }
+  if (!targ.modelInfo) {
+    return {
+      type: 'unsupported',
+      reason: unsupportedServerGenerationReason(targ),
+    }
+  }
   const provider = formatToServerProvider(targ.modelInfo.format)
-  if (provider === null) return null
-  if (provider === 'openai') return selectOpenAIVariant(targ)
-  if (provider === 'anthropic' && !isVanillaAnthropic(targ)) return null
-  if (provider === 'mistral' && !isVanillaMistral(targ)) return null
-  if (provider === 'cohere' && !isVanillaCohere(targ)) return null
-  if (provider === 'gemini' && !isVanillaGemini(targ)) return null
-  if (provider === 'openai-legacy-instruct' && !isVanillaLegacyInstruct(targ)) return null
-  if (provider === 'openai-responses' && !isVanillaResponses(targ)) return null
-  if (provider === 'bedrock' && !isVanillaBedrock(targ)) return null
-  if (provider === 'horde' && !isVanillaHorde(targ)) return null
+  if (provider === null)
+    return { type: 'unsupported', reason: unsupportedServerGenerationReason(targ) }
+  let routedProvider: string | null = provider
+  if (provider === 'openai') routedProvider = selectOpenAIVariant(targ)
+  if (provider === 'anthropic' && !isVanillaAnthropic(targ)) routedProvider = null
+  if (provider === 'mistral' && !isVanillaMistral(targ)) routedProvider = null
+  if (provider === 'cohere' && !isVanillaCohere(targ)) routedProvider = null
+  if (provider === 'gemini' && !isVanillaGemini(targ)) routedProvider = null
+  if (provider === 'openai-legacy-instruct' && !isVanillaLegacyInstruct(targ)) routedProvider = null
+  if (provider === 'openai-responses' && !isVanillaResponses(targ)) routedProvider = null
+  if (provider === 'bedrock' && !isVanillaBedrock(targ)) routedProvider = null
+  if (provider === 'horde' && !isVanillaHorde(targ)) routedProvider = null
   if (provider === 'ollama') {
     // Translate the routing decision the local code makes for ollama-cloud.
-    return resolveOllamaProvider(targ)
+    routedProvider = resolveOllamaProvider(targ)
   }
-  return provider
+  if (routedProvider === null) {
+    return { type: 'unsupported', reason: unsupportedServerGenerationReason(targ) }
+  }
+  return { type: 'server', provider: routedProvider }
+}
+
+export function getServerCompletionProvider(targ: RequestDataArgumentExtended): string | null {
+  const route = resolveServerCompletionRoute(targ)
+  return route.type === 'server' ? route.provider : null
 }
 
 /**

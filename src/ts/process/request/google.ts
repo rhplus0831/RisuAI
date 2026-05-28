@@ -1,5 +1,6 @@
 import { fetchNative, textifyReadableStream } from 'src/ts/globalApi.svelte'
 import { LLMFlags, LLMFormat, type LLMModel } from 'src/ts/model/modellist'
+import { isFastifyServer } from 'src/ts/platform'
 import { getDatabase, setDatabase } from 'src/ts/storage/database.svelte'
 import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 import { base64url, simplifySchema } from 'src/ts/util'
@@ -550,12 +551,14 @@ export async function requestGoogleCloudVertex(
       throw new Error('No google access token in the response')
     }
 
-    withTrustedServerProjectionWrite(() => {
-      const db2 = getDatabase()
-      db2.vertexAccessToken = token
-      db2.vertexAccessTokenExpires = Date.now() + 3500 * 1000
-      setDatabase(db2)
-    })
+    if (!isFastifyServer) {
+      withTrustedServerProjectionWrite(() => {
+        const db2 = getDatabase()
+        db2.vertexAccessToken = token
+        db2.vertexAccessTokenExpires = Date.now() + 3500 * 1000
+        setDatabase(db2)
+      })
+    }
     return token
   }
 

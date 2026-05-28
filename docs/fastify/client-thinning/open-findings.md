@@ -14,35 +14,6 @@ Each finding states the **problem** as it exists in the code today; the chosen
 **direction** is summarized in the Decision line and detailed in
 [`decisions.md`](./decisions.md) / [`closeout-buckets.md`](./closeout-buckets.md).
 
-## F1 → EC1 (P1): Fastify can fall back to browser-side provider generation after secrets are masked
-
-`/api/v1/bootstrap` returns a masked projection, but client-side provider
-dispatch is still reachable when `useServerGeneration` is missing or `false`.
-
-- `src/ts/storage/database.svelte.ts:773` defaults `useServerGeneration` to `false`.
-- `src/ts/process/request/serverCompletion.ts:528` is the function entry; the opt-in null gate is around `:531` (returns `null` unless `db.useServerGeneration === true`). Many proxy/`xcustom` formats are **already server-routed** — OpenAI-compatible (`:69`), Anthropic (`:281`), Mistral (`:314`), Cohere (`:341`), Responses (`:472`), Legacy Instruct (`:506`). The formats that still fall back are non-server-routable ones — notably Gemini `reverse_proxy`/`xcustom` (`:359`) — plus preview bodies.
-- `src/ts/process/request/request.ts:525` falls through to direct browser provider dispatch when the server provider is `null`.
-- `server/fastify/src/routes/bootstrap.ts:24` returns the masked projection; `server/fastify/src/providerSecrets.ts:22` and `:42` mask provider secrets used by browser dispatch.
-- `src/ts/process/request/google.ts:553` refreshes Vertex access tokens by mutating the local projection inside `withTrustedServerProjectionWrite` with no command/import persistence path.
-
-Precision (from audit):
-
-- **Server Vertex already exists.** Server-side Vertex routing and bearer
-  exchange/cache live in `serverCompletion.ts` and
-  `server/fastify/src/generation/vertexAuth.ts`. The remaining problem is that
-  browser-side Vertex *refresh* stays reachable through the fallback — not that
-  there is no server path.
-- **Masked-field precision:** `vertexPrivateKey` and `vertexAccessToken` are
-  masked; `vertexClientEmail`, `vertexRegion`, and `google.projectId` are not.
-- Placeholder preservation for normal settings patches already exists, so F1 is
-  **not** about settings writes overwriting persisted secrets. It is about
-  generation ownership and the local token-refresh write in server-backed mode.
-
-**Decision (EC1=A):** make server generation the only path in Fastify mode —
-**remove `useServerGeneration`** (const-true in Fastify), make browser dispatch
-unreachable (unsupported formats error explicitly), and move the Vertex token
-refresh server-side. See [`decisions.md`](./decisions.md#ec1).
-
 ## F2 → EC2 (P1): Plugin APIs still expose durable browser storage in Fastify mode
 
 The plugin sandbox still exposes durable browser-local storage in server-backed
@@ -63,7 +34,7 @@ Precision (from audit) — narrower than originally written:
   `server/fastify/__tests__/commands.test.ts:4622`.
 - **Normal `risuai.pluginStorage` is already server-backed/routed** — distinct
   from `getLocalPluginStorage()`, which returns the explicitly device-local
-  `SafeLocalPluginStorage`. The unresolved *async* local surface is specifically
+  `SafeLocalPluginStorage`. The unresolved _async_ local surface is specifically
   `getLocalPluginStorage()`/`SafeLocalPluginStorage`; its Fastify treatment is an
   open decision ([`decisions.md`](./decisions.md#ec2)).
 - **Write-time reserved-key shadowing is already blocked** in server mode at
@@ -118,7 +89,7 @@ items are still reachable through a settings command.
 Precision (from audit) — partly stale:
 
 - **Message duplicate ids are already rejected** by `validateUniqueMessageIds`
-  (`messages.ts:97`, `:158`; tests `commands.test.ts:3134`). Only the *missing*
+  (`messages.ts:97`, `:158`; tests `commands.test.ts:3134`). Only the _missing_
   `chatId` generation remains.
 - **Prompt-item CRUD/reorder already exists** with resource-specific events
   (`commands.ts:1357`, `:1393`, `:1432`, `:1466`; tests `commands.test.ts:1322`),

@@ -30,6 +30,7 @@ import {
   formatToServerProvider,
   getServerCompletionProvider,
   requestServerCompletion,
+  resolveServerCompletionRoute,
 } from '../serverCompletion'
 
 function seedDb(overrides: Partial<Database> = {}): void {
@@ -41,15 +42,11 @@ function seedDb(overrides: Partial<Database> = {}): void {
     botPresetsId: 0,
     statics: { messages: 0 } as unknown as Database['statics'],
     promptInfoInsideChat: false,
-    useServerGeneration: true,
     echoMessage: 'Echo Message',
     echoDelay: 0,
     ...overrides,
   } as unknown as Database
   setDatabase(seed)
-  if (overrides.useServerGeneration !== undefined) {
-    DBState.db.useServerGeneration = overrides.useServerGeneration
-  }
   if (overrides.echoMessage !== undefined) {
     DBState.db.echoMessage = overrides.echoMessage
   }
@@ -157,15 +154,24 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBeNull()
   })
 
-  it('returns null when db.useServerGeneration is false', () => {
-    seedDb({ useServerGeneration: false })
+  it('routes through the server even if a legacy useServerGeneration=false value exists', () => {
+    seedDb({ useServerGeneration: false } as unknown as Partial<Database>)
     const r = getServerCompletionProvider(makeTarg())
+    expect(r).toBe('echo')
+  })
+
+  it('returns null when previewBody is true', () => {
+    const r = getServerCompletionProvider(makeTarg({ previewBody: true }))
     expect(r).toBeNull()
   })
 
-  it('returns null when previewBody is true (preview-prompt stays local)', () => {
-    const r = getServerCompletionProvider(makeTarg({ previewBody: true }))
-    expect(r).toBeNull()
+  it('reports previewBody as unsupported in Fastify mode instead of falling back locally', () => {
+    const r = resolveServerCompletionRoute(makeTarg({ previewBody: true }))
+    expect(r).toEqual({
+      type: 'unsupported',
+      reason:
+        'Provider preview bodies are not supported in Fastify server mode because browser-side provider dispatch is disabled.',
+    })
   })
 
   it('returns null for a format with no server implementation yet', () => {
@@ -182,6 +188,23 @@ describe('getServerCompletionProvider', () => {
       }),
     )
     expect(r).toBeNull()
+  })
+
+  it('reports formats with no server implementation as unsupported in Fastify mode', () => {
+    const r = resolveServerCompletionRoute(
+      makeTarg({
+        aiModel: 'kayra-v1',
+        modelInfo: {
+          id: 'kayra-v1',
+          format: LLMFormat.NovelAI,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toMatchObject({
+      type: 'unsupported',
+      reason:
+        'Generation for kayra-v1 is not supported in Fastify server mode. Select a server-routed provider or change this model before retrying.',
+    })
   })
 
   it('maps a vanilla OpenAI model to "openai"', () => {
