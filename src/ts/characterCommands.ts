@@ -112,6 +112,36 @@ export function dispatchCompatibleCharacterUpdate(
   dispatchUpdateCharacter(characterId, patch, previous)
 }
 
+// A4EC2 / B1: factory-list form of dispatchCompatibleCharacterUpdate so the
+// V3 plugin API site can route through runOptimisticCommandSequence instead
+// of a fire-and-forget dispatch. Returns the (possibly empty) factories
+// array and a rollback closure that restores the character snapshot.
+export function prepareCompatibleCharacterUpdate(
+  previousCharacter: character | undefined,
+  nextCharacter: character | undefined,
+  previous: CharacterStateSnapshot,
+): {
+  factories: Array<(baseRevision: number) => Promise<ServerCommandResult>>
+  rollback: () => void
+} {
+  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
+  const characterId = nextCharacter?.chaId ?? previousCharacter?.chaId
+  if (characterId && previousCharacter && nextCharacter) {
+    const patch = changedCharacterFields(previousCharacter, nextCharacter)
+    const commandPatch = sanitizeCharacterPatch(patch)
+    if (Object.keys(commandPatch).length > 0) {
+      factories.push((baseRevision) =>
+        updateCharacterCommand({
+          baseRevision,
+          characterId,
+          patch: commandPatch,
+        }),
+      )
+    }
+  }
+  return { factories, rollback: () => restoreCharacterState(previous) }
+}
+
 export function dispatchDeleteCharacter(
   characterId: string,
   previous: CharacterStateSnapshot,

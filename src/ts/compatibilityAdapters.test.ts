@@ -31,8 +31,14 @@ import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGu
 import {
   currentCharacterStateSnapshot,
   dispatchCompatibleCharacterUpdate,
+  prepareCompatibleCharacterUpdate,
 } from './characterCommands'
-import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from './chatCommands'
+import {
+  currentChatStateSnapshot,
+  dispatchCompatibleChatUpdate,
+  prepareCompatibleChatUpdate,
+  runOptimisticCommandSequence,
+} from './chatCommands'
 import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
 import { DBState, selectedCharID } from './stores.svelte'
@@ -268,6 +274,79 @@ describe('Phase 9-3f compatibility adapters', () => {
       { baseRevision: 12, patch: { $old: '3' }, deleteKeys: ['$gone'] },
     ])
     expect(DBState.db.characters[0].chats[0]).toEqual(nextChat)
+  })
+
+  it('prepareCompatibleCharacterUpdate returns one update factory routed through the sequencer', async () => {
+    // A4EC2 / B1: the V3 plugin API uses prepareCompatibleCharacterUpdate +
+    // runOptimisticCommandSequence so the dispatch sits inside the
+    // allowed-sequencer scope. Verify factories build the update with the
+    // sequenced baseRevision and rollback restores the snapshot.
+    const calls = stubCommandFetch()
+    const previousCharacter = snapshot(DBState.db.characters[0])
+    const previous = currentCharacterStateSnapshot()
+    const next = { ...previousCharacter, name: 'Prepared name' } as character
+    DBState.db.characters[0] = next
+
+    const { factories, rollback } = prepareCompatibleCharacterUpdate(
+      previousCharacter,
+      next,
+      previous,
+    )
+    expect(factories).toHaveLength(1)
+    runOptimisticCommandSequence(factories, rollback)
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a')).toBe(true)
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-a')).toMatchObject({
+      method: 'PATCH',
+      body: { baseRevision: 10, patch: { name: 'Prepared name' } },
+    })
+  })
+
+  it('prepareCompatibleChatUpdate returns the three child factories in their sequenced order', async () => {
+    const calls = stubRevisionCheckedCommandFetch()
+    const previousChat = snapshot(DBState.db.characters[0].chats[0]) as Chat
+    const previous = currentChatStateSnapshot()
+    const nextChat: Chat = {
+      ...previousChat,
+      note: 'prepared note',
+      message: [
+        { role: 'user', data: 'replacement', chatId: 'msg-a' },
+        { role: 'char', data: 'new', chatId: 'msg-b' },
+      ],
+      scriptstate: { $old: '4' },
+    }
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
+    expect(factories).toHaveLength(3)
+    runOptimisticCommandSequence(factories, rollback)
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(
+        true,
+      )
+    })
+    const commandBodies = calls
+      .filter((call) => call.url !== '/api/v1/bootstrap')
+      .map((call) => call.body)
+    // Sequenced through runOptimisticCommandSequence — each command reads
+    // the revision advanced by the previous result.
+    expect(commandBodies).toEqual([
+      { baseRevision: 10, patch: { note: 'prepared note' }, select: false },
+      { baseRevision: 11, messages: nextChat.message },
+      { baseRevision: 12, patch: { $old: '4' }, deleteKeys: ['$gone'] },
+    ])
+  })
+
+  it('prepareCompatibleChatUpdate returns an empty factory list when nothing changed', () => {
+    const previousChat = snapshot(DBState.db.characters[0].chats[0]) as Chat
+    const previous = currentChatStateSnapshot()
+    const nextChat = snapshot(previousChat)
+    const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
+    expect(factories).toEqual([])
+    expect(typeof rollback).toBe('function')
   })
 
   it('does not dispatch compatibility commands outside Fastify mode', async () => {

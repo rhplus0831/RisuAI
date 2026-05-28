@@ -169,49 +169,64 @@ export function dispatchCompatibleChatUpdate(
   nextChat: Chat | undefined,
   previous: ChatStateSnapshot,
 ): void {
+  const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
+  if (factories.length > 0) runChatCommandSequence(factories, rollback)
+}
+
+// A4EC2 / B1: factory-list form of dispatchCompatibleChatUpdate so the V3
+// plugin API site can route through runOptimisticCommandSequence instead of
+// a fire-and-forget dispatch. Returns the (possibly empty) factories array
+// and a rollback closure that restores the chat snapshot.
+export function prepareCompatibleChatUpdate(
+  previousChat: Chat | undefined,
+  nextChat: Chat | undefined,
+  previous: ChatStateSnapshot,
+): {
+  factories: Array<(baseRevision: number) => Promise<ServerCommandResult>>
+  rollback: () => void
+} {
+  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
   const chatId = nextChat?.id ?? previousChat?.id
-  if (!chatId || !previousChat || !nextChat) return
-
-  const metadataPatch = changedChatMetadata(previousChat, nextChat)
-  const commands: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
-  if (Object.keys(metadataPatch).length > 0) {
-    commands.push((baseRevision) =>
-      updateChatCommand({
-        baseRevision,
-        chatId,
-        patch: sanitizeChatPatch(metadataPatch),
-        select: false,
-      }),
-    )
-  }
-
-  if (snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? [])) {
-    for (const message of nextChat.message ?? []) {
-      ensureMessageId(message)
+  if (chatId && previousChat && nextChat) {
+    const metadataPatch = changedChatMetadata(previousChat, nextChat)
+    if (Object.keys(metadataPatch).length > 0) {
+      factories.push((baseRevision) =>
+        updateChatCommand({
+          baseRevision,
+          chatId,
+          patch: sanitizeChatPatch(metadataPatch),
+          select: false,
+        }),
+      )
     }
-    const messages = (nextChat.message ?? []).map(toMessageSnapshot)
-    commands.push((baseRevision) =>
-      replaceMessagesCommand({
-        baseRevision,
-        chatId,
-        messages,
-      }),
-    )
-  }
 
-  const scriptstatePatch = changedScriptstatePatch(previousChat.scriptstate, nextChat.scriptstate)
-  if (Object.keys(scriptstatePatch.patch).length > 0 || scriptstatePatch.deleteKeys.length > 0) {
-    commands.push((baseRevision) =>
-      patchChatScriptstateCommand({
-        baseRevision,
-        chatId,
-        patch: sanitizeScriptstatePatch(scriptstatePatch.patch),
-        deleteKeys: scriptstatePatch.deleteKeys.filter((key) => key.length > 0),
-      }),
-    )
-  }
+    if (snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? [])) {
+      for (const message of nextChat.message ?? []) {
+        ensureMessageId(message)
+      }
+      const messages = (nextChat.message ?? []).map(toMessageSnapshot)
+      factories.push((baseRevision) =>
+        replaceMessagesCommand({
+          baseRevision,
+          chatId,
+          messages,
+        }),
+      )
+    }
 
-  runChatCommandSequence(commands, () => restoreChatState(previous))
+    const scriptstatePatch = changedScriptstatePatch(previousChat.scriptstate, nextChat.scriptstate)
+    if (Object.keys(scriptstatePatch.patch).length > 0 || scriptstatePatch.deleteKeys.length > 0) {
+      factories.push((baseRevision) =>
+        patchChatScriptstateCommand({
+          baseRevision,
+          chatId,
+          patch: sanitizeScriptstatePatch(scriptstatePatch.patch),
+          deleteKeys: scriptstatePatch.deleteKeys.filter((key) => key.length > 0),
+        }),
+      )
+    }
+  }
+  return { factories, rollback: () => restoreChatState(previous) }
 }
 
 export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {

@@ -14,9 +14,13 @@ import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginC
 import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
 import {
   currentCharacterStateSnapshot,
-  dispatchCompatibleCharacterUpdate,
+  prepareCompatibleCharacterUpdate,
 } from 'src/ts/characterCommands'
-import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from 'src/ts/chatCommands'
+import {
+  currentChatStateSnapshot,
+  prepareCompatibleChatUpdate,
+  runOptimisticCommandSequence,
+} from 'src/ts/chatCommands'
 import {
   SafeLocalPluginStorage,
   assertDeviceLocalPluginStorageEnabled,
@@ -977,7 +981,15 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         withTrustedServerProjectionWrite(() => {
           DBState.db.characters[charId] = char
         })
-        dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
+        // A4EC2 / B1: route through the sequencer so this call shares a
+        // single revision baseline with anything else the audit groups
+        // inside makeRisuaiAPIV3.
+        const { factories, rollback } = prepareCompatibleCharacterUpdate(
+          previousCharacter,
+          char,
+          previous,
+        )
+        runOptimisticCommandSequence(factories, rollback)
       }
     },
     getChatFromIndex: (characterIndex: number, chatIndex: number) => {
@@ -1004,7 +1016,15 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
           withTrustedServerProjectionWrite(() => {
             DBState.db.characters[charId].chats[chatIndex] = chat
           })
-          dispatchCompatibleChatUpdate(previousChat, chat, previous)
+          // A4EC2 / B1: route through the sequencer so this call shares a
+          // single revision baseline with anything else the audit groups
+          // inside makeRisuaiAPIV3.
+          const { factories, rollback } = prepareCompatibleChatUpdate(
+            previousChat,
+            chat,
+            previous,
+          )
+          runOptimisticCommandSequence(factories, rollback)
         }
       }
     },
