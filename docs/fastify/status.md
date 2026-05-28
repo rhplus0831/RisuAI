@@ -3,13 +3,16 @@
 Date: 2026-05-28
 
 All Phases 0-9 are complete. No open findings remain. The follow-up
-client-thinning alpha workstream also closed AF1 through AF10 and AEC1 through
-AEC7; see [`client-thinning-alpha/final-audit.md`](client-thinning-alpha/final-audit.md)
-for the final verification pass. A follow-up Fastify-only lockdown removed the
-residual no-port runtime surfaces (alternative server adapters, legacy client
-wrappers, service worker, browser-side persistence, legacy client endpoints);
-see [`phases-completed/fastify-only.md`](phases-completed/fastify-only.md) for
-that no-port cleanup.
+client-thinning alpha workstream closed AF1 through AF10 and AEC1 through AEC7;
+see [`client-thinning-alpha/final-audit.md`](client-thinning-alpha/final-audit.md)
+for that first alpha verification pass. Alpha 2 then closed the remaining
+Fastify server-projection invariant gaps; see
+[`client-thinning-alpha-2/final-audit.md`](client-thinning-alpha-2/final-audit.md)
+for the latest client-thinning closeout. A follow-up Fastify-only lockdown
+removed the residual no-port runtime surfaces (alternative server adapters,
+legacy client wrappers, service worker, browser-side persistence, legacy client
+endpoints); see [`phases-completed/fastify-only.md`](phases-completed/fastify-only.md)
+for that no-port cleanup.
 
 Policy: no actual Fastify users yet. Update schemas and import paths
 directly; do not write compatibility migrations.
@@ -20,8 +23,8 @@ Latest full verification on 2026-05-28:
 
 - `pnpm client-thinning:audit`: passed.
 - `pnpm check`: 0 errors, 0 warnings.
-- `pnpm test`: 78 files, 786 passed, 4 skipped.
-- `pnpm api:test`: 69 files, 1246 passed.
+- `pnpm test`: 78 files, 788 passed, 4 skipped.
+- `pnpm api:test`: 69 files, 1249 passed.
 - `pnpm build`: passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser`: 1 browser smoke test passed.
 
@@ -43,12 +46,15 @@ Latest full verification on 2026-05-28:
 ## Closeout Rules
 
 - Each future finding must include focused regression tests.
-- Run `pnpm check`, `pnpm test`, `pnpm api:test`, `pnpm build`, and
-  `pnpm smoke:fastify-browser` before closing any new finding.
+- Run `pnpm client-thinning:audit`, `pnpm check`, `pnpm test`,
+  `pnpm api:test`, `pnpm build`, and `pnpm smoke:fastify-browser` before
+  closing any new finding.
 
 ## References
 
 - Phase details: [`phases-completed/`](phases-completed/)
 - Next steps: [`status/next-steps.md`](status/next-steps.md)
+- Latest client-thinning closeout:
+  [`client-thinning-alpha-2/final-audit.md`](client-thinning-alpha-2/final-audit.md)
 - Server status: [`status/server.md`](status/server.md)
 - sendChat status: [`status/sendchat.md`](status/sendchat.md)

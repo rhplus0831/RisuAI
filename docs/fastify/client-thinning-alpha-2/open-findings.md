@@ -2,8 +2,11 @@
 
 Date: 2026-05-28
 
-These findings seed the Alpha 2 task list. They were identified after the
+These findings seeded the Alpha 2 task list. They were identified after the
 `client-thinning-alpha` closeout at HEAD `a7b74eb8`.
+
+Status: **closed 2026-05-28.** No Alpha 2 findings remain open. The final
+verification pass is recorded in [`final-audit.md`](./final-audit.md).
 
 ## Summary
 
@@ -12,7 +15,7 @@ These findings seed the Alpha 2 task list. They were identified after the
 | A2F1 - Chat fork command mints ids                          | High     | A2EC1 / A2EC3 | Closed 2026-05-28 | 1      |
 | A2F2 - Memory mutations bypass active-writer classification | High     | A2EC2 / A2EC3 | Closed 2026-05-28 | 2      |
 | A2F3 - Audit proof is narrower than the stated invariant    | Medium   | A2EC3         | Closed 2026-05-28 | 3      |
-| A2F4 - Alpha 2 docs/status closeout                         | Medium   | A2EC4         | Open              | 4      |
+| A2F4 - Alpha 2 docs/status closeout                         | Medium   | A2EC4         | Closed 2026-05-28 | 4      |
 
 ## A2F1 - Chat Fork Command Mints IDs
 
@@ -197,19 +200,35 @@ Original required closeout:
 
 Severity: **Medium**
 
-The repo currently contains several closed-status docs that were true for the
-previous alpha pass but are no longer sufficient after A2F1 through A2F3:
+Status: **Closed 2026-05-28.** Resolved in Bucket 4 and copied to
+[`history.md`](./history.md). This directory now has a final audit, all Alpha 2
+findings and buckets are marked closed, and the top-level Fastify status docs
+point to the Alpha 2 closeout as the latest client-thinning follow-up.
+
+Original evidence before Bucket 4: the repo contained several closed-status
+docs that were true for the previous alpha pass but were no longer sufficient
+after A2F1 through A2F3:
 
 - `docs/fastify/status.md` says all phases and the alpha workstream are closed.
 - `docs/fastify/status/next-steps.md` says no open findings remain.
-- `docs/fastify/client-thinning-alpha/open-findings.md` is correctly empty for
-  the first alpha pass, but future agents need a new live handoff source.
+- `docs/fastify/client-thinning-alpha/open-findings.md` was correctly empty for
+  the first alpha pass, but future agents needed a dedicated Alpha 2 handoff
+  source.
 
-Impact: future task agents can start from the wrong status file and close the
-same cycle again.
+Original impact: future task agents could start from the wrong status file and
+close the same cycle again.
 
-Required closeout:
+Original required closeout:
 
 - Keep this Alpha 2 directory as the live source while A2F3 remains open.
 - After code/audit fixes land, move A2 findings to `history.md`, mark buckets
   closed, create `final-audit.md`, and update high-level status docs.
+
+Closed proof:
+
+- `pnpm client-thinning:audit`
+- `pnpm check`
+- `pnpm test`
+- `pnpm api:test`
+- `pnpm build`
+- `pnpm smoke:fastify-browser`

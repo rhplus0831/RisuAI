@@ -6,24 +6,24 @@ This is the ordered task-agent work breakdown for Alpha 2. Each bucket closes
 one or more findings from [`open-findings.md`](./open-findings.md). A bucket is
 done only when code, focused tests, audit coverage, and docs are all updated.
 
-Current status: **open.** Buckets 1, 2, and 3 are closed; the next open work
-item is Bucket 4, Alpha 2 docs/status closeout.
+Current status: **closed 2026-05-28.** Buckets 1 through 4 are closed, and the
+final verification ladder is recorded in [`final-audit.md`](./final-audit.md).
 
 | Order | Bucket                                 | Closes       | Status            | Primary ownership                                                                                                                                                                                                                                |
 | ----- | -------------------------------------- | ------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1     | Chat fork stable id semantics          | A2F1 / A2EC1 | Closed 2026-05-28 | `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts`                                                                                                                            |
 | 2     | Memory mutation active-writer coverage | A2F2 / A2EC2 | Closed 2026-05-28 | `server/fastify/src/activeWriter.ts`, `server/fastify/src/routes/memoryJobs.ts`, `server/fastify/src/routes/generationChat.ts`, `src/ts/process/request/serverMemory.ts`, active-writer/memory/generation tests, `util/client-thinning-audit.ts` |
 | 3     | Audit invariant broadening             | A2F3 / A2EC3 | Closed 2026-05-28 | `util/client-thinning-audit.ts`, route/audit tests as needed                                                                                                                                                                                     |
-| 4     | Alpha 2 docs/status closeout           | A2F4 / A2EC4 | Open              | `docs/fastify/client-thinning-alpha-2/*`, `docs/fastify/status.md`, `docs/fastify/status/next-steps.md`                                                                                                                                          |
+| 4     | Alpha 2 docs/status closeout           | A2F4 / A2EC4 | Closed 2026-05-28 | `docs/fastify/client-thinning-alpha-2/*`, `docs/fastify/status.md`, `docs/fastify/status/next-steps.md`                                                                                                                                          |
 
 ## Parallelization Notes
 
-- Buckets 1 and 3 both touch `util/client-thinning-audit.ts`; sequence them or
-  coordinate carefully.
-- Buckets 2 and 3 also both touch the active-writer audit classifier. Bucket 2
-  has landed behavior and targeted route proof; Bucket 3 still owns broader
-  structural discovery.
-- Bucket 4 must close last.
+- Buckets 1 and 3 both touched `util/client-thinning-audit.ts`; they were
+  sequenced.
+- Buckets 2 and 3 also both touched the active-writer audit classifier. Bucket 2
+  landed behavior and targeted route proof; Bucket 3 owned broader structural
+  discovery.
+- Bucket 4 closed last.
 
 ## 1. Chat Fork Stable Id Semantics
 
@@ -69,7 +69,7 @@ Goal: close A2F2.
 
 Closed implementation:
 
-- Add `POST /api/v1/memory/jobs` and `DELETE /api/v1/memory/jobs/:id` to the
+- Added `POST /api/v1/memory/jobs` and `DELETE /api/v1/memory/jobs/:id` to the
   active-writer protected mutation set.
 - Added `POST /api/v1/generate/chat` and
   `POST /api/v1/generate/preview-prompt` to the protected mutation set because
@@ -141,21 +141,22 @@ asset-reference fields without validator ownership.
 
 ## 4. Alpha 2 Docs/Status Closeout
 
-Status: **Open.**
+Status: **Closed 2026-05-28.**
 
 Goal: close A2F4 after Buckets 1 through 3 land.
 
-Required implementation:
+Closed implementation:
 
-- Keep A2F1 through A2F3 recorded as closed in [`history.md`](./history.md) with
+- Kept A2F1 through A2F3 recorded as closed in [`history.md`](./history.md) with
   resolved notes and proof commands.
-- Mark Bucket 4 closed in this file after the final ladder passes.
-- Create `final-audit.md` with the final verdict and verification ladder.
-- Update `docs/fastify/status.md` and `docs/fastify/status/next-steps.md` so
-  they point to this Alpha 2 closeout instead of saying no open findings remain
-  prematurely.
+- Recorded A2F4 in [`history.md`](./history.md).
+- Marked Bucket 4 closed in this file after the final ladder passed.
+- Created [`final-audit.md`](./final-audit.md) with the final verdict and
+  verification ladder.
+- Updated `docs/fastify/status.md` and `docs/fastify/status/next-steps.md` so
+  they point to this Alpha 2 closeout as the latest client-thinning follow-up.
 
-Focused proof:
+Closeout proof:
 
 ```bash
 pnpm client-thinning:audit
@@ -166,5 +167,5 @@ pnpm build
 pnpm smoke:fastify-browser
 ```
 
-Done when all Alpha 2 docs agree, high-level status docs agree, and the full
-ladder is recorded.
+All Alpha 2 docs agree, high-level status docs agree, and the full ladder is
+recorded in [`final-audit.md`](./final-audit.md).

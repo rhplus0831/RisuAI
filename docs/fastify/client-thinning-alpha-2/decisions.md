@@ -104,6 +104,10 @@ classification table with reviewed exclusions.
 **Decision:** do not update top-level status docs to "closed" until Buckets 1
 through 3 have landed code, tests, and audit coverage.
 
-**Why:** The close/reopen cycle is partly documentation drift. While Alpha 2 is
-open, this directory is the live source of truth. Once closed, status docs should
+**Landed 2026-05-28:** Bucket 4 updated the Alpha 2 directory, created
+[`final-audit.md`](./final-audit.md), and reconciled the top-level Fastify
+status docs after the full verification ladder passed.
+
+**Why:** The close/reopen cycle is partly documentation drift. During Alpha 2,
+this directory was the working handoff source. Once closed, status docs should
 point here the same way they currently point to the first alpha closeout.

@@ -1,18 +1,18 @@
-# Fastify Client Thinning Alpha 2 - Remaining Tasks
+# Fastify Client Thinning Alpha 2 - Closeout Record
 
 Date: 2026-05-28
 
-Status: **open task-agent handoff.** Buckets 1, 2, and 3 closed on
-2026-05-28; the next open work item is Bucket 4, Alpha 2 docs/status closeout.
-This directory records the next reopened client-thinning alpha pass after
+Status: **closed 2026-05-28.** Buckets 1 through 4 are complete; the
+Alpha 2 invariant gaps are fixed, covered by the repeatable audit, and recorded
+in [`final-audit.md`](./final-audit.md).
+This directory records the reopened client-thinning alpha pass after
 [`../client-thinning-alpha/`](../client-thinning-alpha/) closed AF1 through
 AF10 and AEC1 through AEC7.
 
 The earlier client-thinning and alpha directories remain historical records.
-Do not rewrite them to explain away this pass. Close this alpha-2 directory only
-after the findings in [`open-findings.md`](./open-findings.md) are fixed, the
-repeatable audit catches the bug classes, and the verification ladder below is
-green.
+Do not rewrite them to explain away this pass. This alpha-2 directory is now
+the closed record for the follow-up invariant gaps found after the first alpha
+closeout.
 
 ## Why Alpha 2 Exists
 
@@ -76,12 +76,12 @@ Current progress:
 - A2EC1 is closed by Bucket 1.
 - A2EC2 is closed by Bucket 2.
 - A2EC3 is closed by Bucket 3.
-- A2EC4 remains open.
+- A2EC4 is closed by Bucket 4.
 
 ## Verification Ladder
 
-Run focused proof first for each bucket, then the shared ladder before marking
-Alpha 2 closed:
+Focused proof was run for Buckets 1 through 3 before closeout. The shared
+ladder passed on 2026-05-28 before Alpha 2 was marked closed:
 
 ```bash
 pnpm client-thinning:audit
@@ -92,15 +92,18 @@ pnpm build
 pnpm smoke:fastify-browser
 ```
 
+Latest closeout results are recorded in [`final-audit.md`](./final-audit.md).
 `pnpm tauribuild` is not a current package script and is not an Alpha 2 closeout
 gate.
 
 ## Document Map
 
-- [`open-findings.md`](./open-findings.md) - live Alpha 2 findings and evidence.
-- [`decisions.md`](./decisions.md) - starting decisions and acceptable
-  alternatives.
-- [`closeout-buckets.md`](./closeout-buckets.md) - ordered task-agent work.
-- [`history.md`](./history.md) - resolved Alpha 2 findings as buckets close.
-- `final-audit.md` - create only after all Alpha 2 buckets close and the ladder
-  has been rerun.
+- [`open-findings.md`](./open-findings.md) - Alpha 2 findings and closed
+  evidence.
+- [`decisions.md`](./decisions.md) - landed decisions and acceptable
+  alternatives considered during the pass.
+- [`closeout-buckets.md`](./closeout-buckets.md) - ordered task-agent work and
+  closeout proof.
+- [`history.md`](./history.md) - resolved Alpha 2 findings.
+- [`final-audit.md`](./final-audit.md) - final Alpha 2 verdict and verification
+  ladder results.

@@ -2,9 +2,9 @@
 
 Date: 2026-05-28
 
-This file records Alpha 2 findings as buckets close. The live handoff remains
-[`open-findings.md`](./open-findings.md) and [`closeout-buckets.md`](./closeout-buckets.md)
-until all buckets are closed.
+This file records Alpha 2 findings as buckets close. Alpha 2 is closed as of
+2026-05-28; the final verdict and shared verification ladder are recorded in
+[`final-audit.md`](./final-audit.md).
 
 ## A2F1 - Chat Fork Command Mints IDs
 
@@ -34,8 +34,7 @@ pnpm test src/ts/server/commands.test.ts -- --run
 pnpm check
 ```
 
-Next open bucket after this closeout: Bucket 2, memory mutation active-writer
-coverage.
+Bucket 2 followed this closeout: memory mutation active-writer coverage.
 
 ## A2F2 - Memory Mutations Bypass Active-Writer Classification
 
@@ -69,7 +68,7 @@ pnpm test src/ts/process/request/tests/serverMemory.test.ts src/ts/process/reque
 pnpm client-thinning:audit
 ```
 
-Next open bucket after this closeout: Bucket 3, audit invariant broadening.
+Bucket 3 followed this closeout: audit invariant broadening.
 
 ## A2F3 - Audit Proof Is Narrower Than The Stated Invariant
 
@@ -100,4 +99,33 @@ pnpm client-thinning:audit
 pnpm api:test server/fastify/__tests__/commands.test.ts server/fastify/__tests__/activeWriter.test.ts -- --run
 ```
 
-Next open bucket after this closeout: Bucket 4, Alpha 2 docs/status closeout.
+Bucket 4 followed this closeout and closed the Alpha 2 docs/status record.
+
+## A2F4 - Alpha 2 Docs/Status Closeout
+
+Status: **Closed 2026-05-28.**
+
+Bucket: 4 - Alpha 2 docs/status closeout.
+
+Resolution:
+
+- Created [`final-audit.md`](./final-audit.md) with the final Alpha 2 verdict,
+  criterion status, and verification ladder.
+- Marked all Alpha 2 findings and buckets closed.
+- Updated this directory's README, open findings, closeout buckets, decisions,
+  and history so they agree on the closed state.
+- Updated the high-level Fastify status docs to point to the Alpha 2 closeout as
+  the latest client-thinning follow-up.
+
+Verification:
+
+```bash
+pnpm client-thinning:audit
+pnpm check
+pnpm test
+pnpm api:test
+pnpm build
+pnpm smoke:fastify-browser
+```
+
+Alpha 2 has no remaining open buckets after this closeout.
