@@ -1,6 +1,6 @@
 # Audit
 
-Date: 2026-05-28
+Date: 2026-05-29
 
 Read this when changing `util/client-thinning-audit.ts`, adding invariant
 rules, or selecting audit fixture work.
@@ -11,19 +11,31 @@ The executable audit is `pnpm client-thinning:audit`, defined in
 `package.json`. The script uses `ts-morph` plus source-text checks over a
 bounded source set.
 
-Current structural rule families:
+Current structural checks:
 
-- passive bootstrap refresh writer ownership
-- conflict replay outside central wrapper
-- transitive command-path id minting
-- globally addressed resolver normalization
-- asset reference parser and validator parity
-- wildcard secret row identity
-- asset URL gate
-- composite command fan-out
-- backup data-directory inventory
-- bounded process-lifetime accumulators
-- `saveAsset` filename classification
+- `EC5 active-writer guard`
+- `EC4 stable command ids`
+- `EC2 plugin storage gates`
+- `EC6 asset walker validator drift`
+- `AEC2 import/export current shape`
+- `AEC4 chat folder identity scope`
+- `AEC5 module reference semantics`
+- `AEC6 asset persistence semantics`
+- `EC1 provider ownership`
+- `A4R1 passive refresh writer ownership`
+- `A4R2 conflict replay outside central wrapper`
+- `A4R3 transitive command-path id minting`
+- `A4R4 globally-addressed resolver normalize`
+- `A4R5 asset reference parser parity`
+- `A4R6 wildcard secret row identity`
+- `A4R7 asset URL gate`
+- `A4R-fanout composite command race`
+- `A4R-backup data dir inventory`
+- `A4R-bounded process-lifetime accumulators`
+- `A4R-saveasset filename classification`
+
+The fixture inventory for these checks lives in
+[`../coverage/audit.md`](../coverage/audit.md).
 
 ## Open Work
 
@@ -34,9 +46,20 @@ on that fixture.
 The rule should catch the invariant class, not only the original spelling of a
 past bug. Narrow rules need an explicit reason.
 
+The rule inventory is complete as of 2026-05-29. The next implementation slice
+is the fixture harness: add a reusable test runner that can execute the audit
+against committed fixture source trees and assert non-zero exit, stderr/stdout,
+and the intended check id.
+
 ## Direction
 
 - Add a fixture/test before claiming a rule complete.
+- Put proposed fixtures under
+  `util/client-thinning-audit-fixtures/<rule-slug>/` unless the harness chooses
+  a clearer local path.
+- Keep fixture source minimal: include only the files required by the audited
+  `sourcePaths`, plus a `tsconfig.json` if the harness runs the audit with the
+  fixture directory as `cwd`.
 - If a new bug appears, extend the invariant and audit in the same batch as the
   runtime fix.
 - Keep one `pnpm client-thinning:audit` entry point even if internals split.

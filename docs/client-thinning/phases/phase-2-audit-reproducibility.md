@@ -1,6 +1,6 @@
 # Phase 2: Audit Reproducibility
 
-Date: 2026-05-28
+Date: 2026-05-29
 
 Status: active and first priority.
 
@@ -14,6 +14,8 @@ the rule exits non-zero for that regression class.
 
 - `pnpm client-thinning:audit` exists.
 - Rules are structural and source-derived in many places.
+- Rule inventory is reconciled with the 20 concrete checks in
+  `util/client-thinning-audit.ts`; see `../coverage/audit.md`.
 - Fixture/test proof for each rule is not yet present in this active workstream.
 
 ## Deliverables
@@ -31,8 +33,9 @@ the rule exits non-zero for that regression class.
      `status/audit.md` and `coverage/audit.md`.
    - Scope: planning docs and audit-test design only; do not mark a rule
      covered until fixture/test proof exists.
-   - Done: each rule family has a named fixture target, expected failing shape,
-     and non-zero assertion to implement.
+   - Status: complete as of 2026-05-29.
+   - Done: each rule has a named fixture target, expected failing shape, and
+     non-zero assertion to implement in `../coverage/audit.md`.
 2. Fixture harness.
    - Objective: add a reusable test harness that runs the audit against
      committed fixture source trees and returns exit code, stdout, and stderr
@@ -72,3 +75,10 @@ the rule exits non-zero for that regression class.
   without checking out old commits.
 - The audit still runs through one package script.
 - New audit rules include fixture/test proof by default.
+
+## Next Handoff
+
+Pick slice 2 next. Build the fixture harness before adding the full matrix of
+fixtures. The recommended first fixture proof after the harness is either
+`A4R-saveasset filename classification` or `A4R-backup data dir inventory`
+because both need only a small fixture source surface.
