@@ -104,6 +104,13 @@ If implementation finds that unresolved module ids are a deliberate compatibilit
 feature, record that exception here and add explicit tests showing they are
 tolerated intentionally.
 
+**Implementation note:** Bucket 6 closed AF6 and AF7 by validating normal
+chat/character module link commands against existing non-MCP module rows.
+Command writes now reject nonexistent ids and MCP module ids for `chat.modules`,
+chat fork `sourcePatch.modules`, forked chat `modules`, and character module
+relinks. Import/bootstrap repair remains separate from this command-write
+boundary.
+
 ## AEC6 - Asset persistence and optional clears
 
 **Decision:** Asset metadata and blob storage should converge on re-upload.

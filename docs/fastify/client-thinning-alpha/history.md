@@ -14,7 +14,7 @@ Opened on 2026-05-28 from the cross-verification of:
 
 Bucket 1 closed AF1 on 2026-05-28. Bucket 2 closed AF2 on 2026-05-28. Bucket 3
 closed AF3 on 2026-05-28. Bucket 4 closed AF4 on 2026-05-28. Bucket 5 closed
-AF5 on 2026-05-28.
+AF5 on 2026-05-28. Bucket 6 closed AF6 and AF7 on 2026-05-28.
 
 ## Resolved findings
 
@@ -115,6 +115,27 @@ Regression proof:
   global folder-id repair pass and that both command create surfaces use the
   global duplicate guard.
 
+### Bucket 6 - Module reference and MCP boundary semantics
+
+Resolved: **AF6, AF7 / AEC5**.
+
+Normal command-written module reference lists now target existing non-MCP module
+rows. Chat create, chat patch, chat fork source patches, forked chat payloads,
+and character module relinks reject nonexistent module ids and MCP module ids
+before persistence. Module ordering can still include MCP rows because that
+command orders the full module collection rather than linking normal
+character/chat references.
+
+Regression proof:
+
+- `server/fastify/__tests__/commands.test.ts` covers nonexistent and MCP module
+  rejection for `chat.modules`, fork `sourcePatch.modules`, forked chat
+  `modules`, and character module relinks, with no revision bump on rejected
+  writes.
+- `util/client-thinning-audit.ts` now checks that normal module-link validation
+  excludes MCP rows, rejects unresolved ids, and is wired into the command
+  surfaces that persist normal module reference lists.
+
 ## Verification results
 
 Bucket 1 verifier result:
@@ -147,6 +168,13 @@ Bucket 5 verifier result:
 
 - `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: passed
   (75 tests).
+- `pnpm client-thinning:audit`: passed.
+
+Bucket 6 verifier result:
+
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: passed
+  (76 tests).
+- `pnpm test src/ts/server/commands.test.ts -- --run`: passed (36 tests).
 - `pnpm client-thinning:audit`: passed.
 
 Initial verifier result:

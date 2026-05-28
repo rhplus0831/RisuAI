@@ -8,7 +8,7 @@ alpha findings are not closed yet.
 
 ## Current verdict
 
-AEC1, AEC2, AEC3, and AEC4 are closed; AEC5 through AEC7 remain open. The
+AEC1, AEC2, AEC3, AEC4, and AEC5 are closed; AEC6 and AEC7 remain open. The
 original read-only cross-verification found two High, three Medium, and five Low
 findings; see [`audit.md`](./audit.md), [`open-findings.md`](./open-findings.md),
 and [`history.md`](./history.md).
@@ -16,8 +16,9 @@ and [`history.md`](./history.md).
 The current `pnpm client-thinning:audit` script passes and now covers AF1's root
 create helper blind spot, AF2's import/export current-shape blind spot, and
 AF3's preset-image walker/validator blind spot, and AF4's ROOT_COMPONENT
-reserved-key blind spot, and AF5's chat folder identity-scope blind spot. That
-pass is still not an alpha closeout signal because AF6 through AF10 remain open.
+reserved-key blind spot, AF5's chat folder identity-scope blind spot, and
+AF6/AF7's module reference/MCP boundary blind spot. That pass is still not an
+alpha closeout signal because AF8 through AF10 remain open.
 
 ## Required final-audit shape
 
@@ -42,15 +43,15 @@ pnpm smoke:fastify-browser
 
 ## Current AEC table
 
-| Criterion | Status | Blocking findings |
-| --- | --- | --- |
-| AEC1 Root command ids | Closed | None |
-| AEC2 Import/export current shape | Closed | None |
-| AEC3 Asset walker/validator parity | Closed | None |
-| AEC4 Chat folder identity | Closed | None |
-| AEC5 Module reference semantics | Open | AF6, AF7 |
-| AEC6 Asset persistence and optional clears | Open | AF8, AF10 |
-| AEC7 Docs and audit state | Open | AF9 plus audit updates from closed/open buckets |
+| Criterion                                  | Status | Blocking findings                               |
+| ------------------------------------------ | ------ | ----------------------------------------------- |
+| AEC1 Root command ids                      | Closed | None                                            |
+| AEC2 Import/export current shape           | Closed | None                                            |
+| AEC3 Asset walker/validator parity         | Closed | None                                            |
+| AEC4 Chat folder identity                  | Closed | None                                            |
+| AEC5 Module reference semantics            | Closed | None                                            |
+| AEC6 Asset persistence and optional clears | Open   | AF8, AF10                                       |
+| AEC7 Docs and audit state                  | Open   | AF9 plus audit updates from closed/open buckets |
 
 ## Closeout rule
 

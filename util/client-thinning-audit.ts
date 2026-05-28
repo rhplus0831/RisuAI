@@ -522,6 +522,55 @@ function checkChatFolderIdentityScope(): void {
   }
 }
 
+function checkModuleReferenceSemantics(): void {
+  const check = 'AEC5 module reference semantics'
+  const modules = source('server/fastify/src/commands/modules.ts')
+  const routesText = text('server/fastify/src/routes/commands.ts')
+  const validateBody = getFunctionBodyText(modules, 'validateNormalModuleLinks')
+
+  if (!validateBody.includes('!module.mcp')) {
+    fail(
+      check,
+      'Normal module-link validation must exclude MCP module rows from linkable command ids.',
+      modules.getFunction('validateNormalModuleLinks'),
+    )
+  }
+
+  if (!validateBody.includes('Unknown module id in ${label}')) {
+    fail(
+      check,
+      'Normal module-link validation must reject unresolved module ids instead of tolerating them.',
+      modules.getFunction('validateNormalModuleLinks'),
+    )
+  }
+
+  const normalLinkChecks = routesText.match(/validateNormalModuleLinks\(/g) ?? []
+  if (normalLinkChecks.length < 4) {
+    fail(
+      check,
+      'Chat create, patch, fork sourcePatch, and forked-chat writes must all validate normal module links.',
+      undefined,
+      'server/fastify/src/routes/commands.ts',
+    )
+  }
+
+  for (const needle of [
+    "'chat.modules'",
+    "'patch.modules'",
+    "'sourcePatch.modules'",
+    'validateCharacterModuleLinks(modules, moduleIds)',
+  ]) {
+    if (!routesText.includes(needle)) {
+      fail(
+        check,
+        `Command route module-link validation is missing ${needle}.`,
+        undefined,
+        'server/fastify/src/routes/commands.ts',
+      )
+    }
+  }
+}
+
 function checkProviderOwnership(): void {
   const check = 'EC1 provider ownership'
   const serverCompletion = source('src/ts/process/request/serverCompletion.ts')
@@ -586,6 +635,7 @@ runChecks([
   { id: 'EC6 asset walker validator drift', run: checkAssetWalkerValidators },
   { id: 'AEC2 import/export current shape', run: checkRisuSaveImportExportShape },
   { id: 'AEC4 chat folder identity scope', run: checkChatFolderIdentityScope },
+  { id: 'AEC5 module reference semantics', run: checkModuleReferenceSemantics },
   { id: 'EC1 provider ownership', run: checkProviderOwnership },
 ])
 

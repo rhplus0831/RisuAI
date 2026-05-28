@@ -7,19 +7,19 @@ one or more findings from [`open-findings.md`](./open-findings.md). A bucket is
 done only when code, focused tests, relevant audit-script coverage, and docs are
 all updated.
 
-Current pickup: **Bucket 6.** Buckets 1 through 5 are closed; the next ordered
-open item is module reference and MCP boundary semantics.
+Current pickup: **Bucket 7.** Buckets 1 through 6 are closed; the next ordered
+open item is asset blob healing and optional clear tests.
 
-| Order | Bucket | Closes | Status | Primary ownership |
-| --- | --- | --- | --- | --- |
-| 1 | Root create id validation + audit expansion | AEC1 / AF1 | Closed | `server/fastify/src/commands/*`, `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts` |
-| 2 | JSON import/export current-shape parity | AEC2 / AF2 | Closed | `server/fastify/src/routes/save.ts`, `server/fastify/src/risuSave/importSnapshot.ts`, `server/fastify/src/risuSave/exportSnapshot.ts`, import/export tests |
-| 3 | Preset image validation + walker audit parity | AEC3 / AF3 | Closed | `server/fastify/src/commands/presets.ts`, preset routes/tests, `server/fastify/src/risuSave/assetReferences.ts`, `util/client-thinning-audit.ts` |
-| 4 | ROOT_COMPONENT reserved-key guard | AEC2 / AF4 | Closed | `server/fastify/src/risuSave/importSnapshot.ts`, `.risu` import tests |
-| 5 | Chat folder identity scope | AEC4 / AF5 | Closed | `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/chats.ts`, command tests, `util/client-thinning-audit.ts` |
-| 6 | Module reference and MCP boundary semantics | AEC5 / AF6, AF7 | Open | `server/fastify/src/commands/chats.ts`, `server/fastify/src/commands/modules.ts`, prompt/module tests |
-| 7 | Asset blob healing + optional clear tests | AEC6 / AF8, AF10 | Open | `server/fastify/src/repository.ts`, `server/fastify/src/routes/assets.ts`, command/assets tests |
-| 8 | Documentation/status reconciliation | AEC7 / AF9 | Open | `docs/fastify/client-thinning-alpha/*`, relevant historical status docs |
+| Order | Bucket                                        | Closes           | Status | Primary ownership                                                                                                                                          |
+| ----- | --------------------------------------------- | ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Root create id validation + audit expansion   | AEC1 / AF1       | Closed | `server/fastify/src/commands/*`, `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts`     |
+| 2     | JSON import/export current-shape parity       | AEC2 / AF2       | Closed | `server/fastify/src/routes/save.ts`, `server/fastify/src/risuSave/importSnapshot.ts`, `server/fastify/src/risuSave/exportSnapshot.ts`, import/export tests |
+| 3     | Preset image validation + walker audit parity | AEC3 / AF3       | Closed | `server/fastify/src/commands/presets.ts`, preset routes/tests, `server/fastify/src/risuSave/assetReferences.ts`, `util/client-thinning-audit.ts`           |
+| 4     | ROOT_COMPONENT reserved-key guard             | AEC2 / AF4       | Closed | `server/fastify/src/risuSave/importSnapshot.ts`, `.risu` import tests                                                                                      |
+| 5     | Chat folder identity scope                    | AEC4 / AF5       | Closed | `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/chats.ts`, command tests, `util/client-thinning-audit.ts`                            |
+| 6     | Module reference and MCP boundary semantics   | AEC5 / AF6, AF7  | Closed | `server/fastify/src/commands/chats.ts`, `server/fastify/src/commands/modules.ts`, prompt/module tests                                                      |
+| 7     | Asset blob healing + optional clear tests     | AEC6 / AF8, AF10 | Open   | `server/fastify/src/repository.ts`, `server/fastify/src/routes/assets.ts`, command/assets tests                                                            |
+| 8     | Documentation/status reconciliation           | AEC7 / AF9       | Open   | `docs/fastify/client-thinning-alpha/*`, relevant historical status docs                                                                                    |
 
 ## Parallelization notes
 
@@ -148,6 +148,8 @@ pnpm client-thinning:audit
 ```
 
 ## 6. Module reference and MCP boundary semantics
+
+Status: **Closed 2026-05-28.** See [`history.md`](./history.md#bucket-6---module-reference-and-mcp-boundary-semantics).
 
 Goal: close AF6 and AF7.
 

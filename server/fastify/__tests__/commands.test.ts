@@ -3297,6 +3297,122 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(charB.chats[0].folderId).toBe(charB.chatFolders[0].id)
   })
 
+  it('rejects chat module links to missing and MCP modules without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modules: [
+        { id: 'mod-a', name: 'A', description: '' },
+        { id: 'mcp-a', name: 'MCP', description: '', mcp: { url: 'internal:risuai' } },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              modules: ['mod-a'],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const missingCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-missing',
+          name: 'Missing module chat',
+          note: '',
+          message: [],
+          localLore: [],
+          modules: ['missing-module'],
+        },
+      },
+    })
+    expect(missingCreate.statusCode).toBe(400)
+    expect(missingCreate.json().error).toBe('Unknown module id in chat.modules: missing-module')
+
+    const mcpPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { modules: ['mcp-a'] },
+      },
+    })
+    expect(mcpPatch.statusCode).toBe(400)
+    expect(mcpPatch.json().error).toBe('Unknown module id in patch.modules: mcp-a')
+
+    const mcpForkSource = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        sourcePatch: { modules: ['mcp-a'] },
+        chat: {
+          id: 'chat-fork',
+          name: 'Fork',
+          note: '',
+          message: [],
+          localLore: [],
+          modules: ['mod-a'],
+        },
+      },
+    })
+    expect(mcpForkSource.statusCode).toBe(400)
+    expect(mcpForkSource.json().error).toBe('Unknown module id in sourcePatch.modules: mcp-a')
+
+    const missingForkChat = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-fork',
+          name: 'Fork',
+          note: '',
+          message: [],
+          localLore: [],
+          modules: ['missing-module'],
+        },
+      },
+    })
+    expect(missingForkChat.statusCode).toBe(400)
+    expect(missingForkChat.json().error).toBe('Unknown module id in chat.modules: missing-module')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].chats).toMatchObject([
+      {
+        id: 'chat-a',
+        name: 'A chat',
+        note: '',
+        message: [],
+        localLore: [],
+        modules: ['mod-a'],
+      },
+    ])
+  })
+
   it('rejects malformed chat commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -4869,6 +4985,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
       modules: [
         { id: 'mod-a', name: 'A', description: 'Alpha' },
         { id: 'mod-b', name: 'B', description: 'Beta' },
+        { id: 'mcp-a', name: 'MCP', description: '', mcp: { url: 'internal:risuai' } },
       ],
       characters: [{ chaId: 'char-a', name: 'A', modules: [], chats: [], chatFolders: [] }],
       characterOrder: ['char-a'],
@@ -4931,6 +5048,15 @@ describe('Phase 9-4c module record and enablement commands', () => {
     expect(badAdd.statusCode).toBe(400)
     expect(badAdd.json().error).toBe('Unknown module id in moduleIds: mod-missing')
     expect(bootstrap.json().revision).toBe(4)
+
+    const badMcpAdd = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4, moduleIds: ['mod-b', 'mcp-a'] },
+    })
+    expect(badMcpAdd.statusCode).toBe(400)
+    expect(badMcpAdd.json().error).toBe('Unknown module id in moduleIds: mcp-a')
   })
 
   it('rejects malformed module commands without bumping revision', async () => {

@@ -164,14 +164,22 @@ export function validateCharacterModuleLinks(
   modules: readonly ModuleRecord[],
   moduleIds: readonly string[],
 ): void {
-  const available = new Set(modules.map((module) => module.id))
+  validateNormalModuleLinks(modules, moduleIds, 'moduleIds')
+}
+
+export function validateNormalModuleLinks(
+  modules: readonly ModuleRecord[],
+  moduleIds: readonly string[],
+  label = 'moduleIds',
+): void {
+  const available = new Set(modules.filter((module) => !module.mcp).map((module) => module.id))
   const seen = new Set<string>()
   for (const moduleId of moduleIds) {
     if (!available.has(moduleId)) {
-      throw new ValidationError(`Unknown module id in moduleIds: ${moduleId}`)
+      throw new ValidationError(`Unknown module id in ${label}: ${moduleId}`)
     }
     if (seen.has(moduleId)) {
-      throw new ValidationError(`Duplicate module id in moduleIds: ${moduleId}`)
+      throw new ValidationError(`Duplicate module id in ${label}: ${moduleId}`)
     }
     seen.add(moduleId)
   }

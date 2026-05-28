@@ -159,6 +159,7 @@ import {
   requireModuleIndex,
   validateCharacterModuleLinks,
   validateFullModuleOrder,
+  validateNormalModuleLinks,
 } from '../commands/modules.js'
 import {
   createPluginRecord,
@@ -2386,12 +2387,17 @@ export function registerCommandRoutes(
         baseRevision,
         eventSink,
         mutate(database) {
-          const characters = normalizeAllCharacterChats(database)
+          const target = ensureModuleCommandDatabase(database)
+          const characters = normalizeAllCharacterChats(target)
+          const modules = ensureModuleRecords(target)
           const character = characters[requireCharacterIndex(characters, characterId)]
           const previousSelectedChatId = selectedChatId(character)
           const chats = ensureCharacterChats(character)
           if (chats.some((existing) => existing.id === chat.id)) {
             throw new ValidationError(`Duplicate chat id: ${chat.id}`)
+          }
+          if (chat.modules) {
+            validateNormalModuleLinks(modules, chat.modules, 'chat.modules')
           }
           if (chat.folderId) {
             const folders = ensureCharacterChatFolders(character)
@@ -2439,8 +2445,13 @@ export function registerCommandRoutes(
         baseRevision,
         eventSink,
         mutate(database) {
-          const characters = normalizeAllCharacterChats(database)
+          const target = ensureModuleCommandDatabase(database)
+          const characters = normalizeAllCharacterChats(target)
+          const modules = ensureModuleRecords(target)
           const { character, chatIndex } = requireChatLocation(characters, chatId)
+          if (patch.modules) {
+            validateNormalModuleLinks(modules, patch.modules as string[], 'patch.modules')
+          }
           if (patch.folderId) {
             const folders = ensureCharacterChatFolders(character)
             if (!folders.some((folder) => folder.id === patch.folderId)) {
@@ -2533,7 +2544,9 @@ export function registerCommandRoutes(
         baseRevision,
         eventSink,
         mutate(database) {
-          const characters = normalizeAllCharacterChats(database)
+          const target = ensureModuleCommandDatabase(database)
+          const characters = normalizeAllCharacterChats(target)
+          const modules = ensureModuleRecords(target)
           const {
             character,
             chat: sourceChat,
@@ -2553,6 +2566,13 @@ export function registerCommandRoutes(
               throw new ValidationError(`Unknown chat folder id: ${sourcePatch.folderId}`)
             }
           }
+          if (sourcePatch.modules) {
+            validateNormalModuleLinks(
+              modules,
+              sourcePatch.modules as string[],
+              'sourcePatch.modules',
+            )
+          }
           chats[chatIndex] = {
             ...chats[chatIndex],
             ...sourcePatch,
@@ -2568,6 +2588,9 @@ export function registerCommandRoutes(
             })
           if (chats.some((existing) => existing.id === nextChat.id)) {
             throw new ValidationError(`Duplicate chat id: ${nextChat.id}`)
+          }
+          if (nextChat.modules) {
+            validateNormalModuleLinks(modules, nextChat.modules, 'chat.modules')
           }
           if (nextChat.folderId && !folders.some((existing) => existing.id === nextChat.folderId)) {
             throw new ValidationError(`Unknown chat folder id: ${nextChat.folderId}`)

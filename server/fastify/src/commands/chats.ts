@@ -17,6 +17,7 @@ export interface ChatRecord extends JsonRecord {
   localLore: unknown[]
   scriptstate?: Record<string, string | number | boolean>
   folderId?: string | null
+  modules?: string[]
 }
 
 export interface ChatFolderRecord extends JsonRecord {
