@@ -7,13 +7,13 @@ one or more findings from [`open-findings.md`](./open-findings.md). A bucket is
 done only when code, focused tests, relevant audit-script coverage, and docs are
 all updated.
 
-Current pickup: **Bucket 2.** Bucket 1 is closed; the next highest-risk open
-item is JSON import/export current-shape parity.
+Current pickup: **Bucket 3.** Buckets 1 and 2 are closed; the next ordered open
+item is preset image validation plus walker audit parity.
 
 | Order | Bucket | Closes | Status | Primary ownership |
 | --- | --- | --- | --- | --- |
 | 1 | Root create id validation + audit expansion | AEC1 / AF1 | Closed | `server/fastify/src/commands/*`, `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts` |
-| 2 | JSON import/export current-shape parity | AEC2 / AF2 | Open | `server/fastify/src/routes/save.ts`, `server/fastify/src/risuSave/importSnapshot.ts`, `server/fastify/src/risuSave/exportSnapshot.ts`, import/export tests |
+| 2 | JSON import/export current-shape parity | AEC2 / AF2 | Closed | `server/fastify/src/routes/save.ts`, `server/fastify/src/risuSave/importSnapshot.ts`, `server/fastify/src/risuSave/exportSnapshot.ts`, import/export tests |
 | 3 | Preset image validation + walker audit parity | AEC3 / AF3 | Open | `server/fastify/src/commands/presets.ts`, preset routes/tests, `server/fastify/src/risuSave/assetReferences.ts`, `util/client-thinning-audit.ts` |
 | 4 | ROOT_COMPONENT reserved-key guard | AEC2 / AF4 | Open | `server/fastify/src/risuSave/importSnapshot.ts`, `.risu` import tests |
 | 5 | Chat folder identity scope | AEC4 / AF5 | Open | `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/chats.ts`, command tests |
@@ -58,6 +58,8 @@ repair still normalizes legacy missing ids.
 
 ## 2. JSON import/export current-shape parity
 
+Status: **Closed 2026-05-28.** See [`history.md`](./history.md#bucket-2---json-importexport-current-shape-parity).
+
 Goal: close AF2.
 
 Required implementation:
@@ -75,7 +77,13 @@ Focused proof:
 ```bash
 pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts -- --run
 pnpm api:test server/fastify/__tests__/risuSaveExportRoute.test.ts -- --run
+pnpm client-thinning:audit
 ```
+
+Done when minimal JSON imports and missing required resource-family imports
+persist an exportable current shape, older persisted minimal databases export
+through the same normalizer, and the invariant audit covers import/export shape
+drift.
 
 ## 3. Preset image validation + walker audit parity
 

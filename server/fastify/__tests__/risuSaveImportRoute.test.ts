@@ -15,6 +15,14 @@ interface Harness {
   commandEvents: CommandEventSink
 }
 
+const EXPORT_REQUIRED_ARRAY_FAMILIES = [
+  'characters',
+  'botPresets',
+  'modules',
+  'loadouts',
+  'plugins',
+] as const
+
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-risu-import-'))
@@ -80,6 +88,14 @@ function multipartTextOnly() {
   }
 }
 
+function expectExportRequiredShape(database: Record<string, unknown>): void {
+  for (const key of EXPORT_REQUIRED_ARRAY_FAMILIES) {
+    expect(Array.isArray(database[key]), key).toBe(true)
+  }
+  expect(database.pluginCustomStorage).toEqual(expect.any(Object))
+  expect(Array.isArray(database.pluginCustomStorage)).toBe(false)
+}
+
 let harness: Harness
 
 beforeEach(async () => {
@@ -109,6 +125,75 @@ describe('Phase 9-8a multipart .risu import route', () => {
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
     expect(harness.commandEvents.list()).toEqual([imported.json().event])
+
+    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expectExportRequiredShape(bootstrap.json().database)
+
+    const exported = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=risusave-blocks',
+    })
+    expect(exported.statusCode).toBe(200)
+  })
+
+  it.each([...EXPORT_REQUIRED_ARRAY_FAMILIES, 'pluginCustomStorage'] as const)(
+    'normalizes JSON imports that are missing database.%s',
+    async (missingKey) => {
+      const database: Record<string, unknown> = {
+        characters: [],
+        botPresets: [],
+        modules: [],
+        loadouts: [],
+        plugins: [],
+        pluginCustomStorage: {},
+      }
+      delete database[missingKey]
+
+      const imported = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        payload: { database },
+      })
+
+      expect(imported.statusCode).toBe(200)
+
+      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      expectExportRequiredShape(bootstrap.json().database)
+
+      const exported = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/export/risusave?envelope=risusave-blocks',
+      })
+      expect(exported.statusCode).toBe(200)
+    },
+  )
+
+  it('normalizes malformed JSON resource families into the exportable current shape', async () => {
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          characters: 'not an array',
+          botPresets: 'not an array',
+          modules: 'not an array',
+          loadouts: 'not an array',
+          plugins: 'not an array',
+          pluginCustomStorage: [],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expectExportRequiredShape(bootstrap.json().database)
+
+    const exported = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=risusave-blocks',
+    })
+    expect(exported.statusCode).toBe(200)
   })
 
   it('normalizes JSON database imports through the current-shape .risu normalizer', async () => {

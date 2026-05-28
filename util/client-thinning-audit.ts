@@ -33,6 +33,8 @@ const sourcePaths = [
   'server/fastify/src/routes/**/*.ts',
   'server/fastify/src/commands/**/*.ts',
   'server/fastify/src/risuSave/assetReferences.ts',
+  'server/fastify/src/risuSave/exportSnapshot.ts',
+  'server/fastify/src/risuSave/importSnapshot.ts',
   'src/ts/server/commands.ts',
   'src/ts/plugins/pluginSafeClass.ts',
   'src/ts/plugins/plugins.svelte.ts',
@@ -398,6 +400,50 @@ function checkAssetWalkerValidators(): void {
   }
 }
 
+function checkRisuSaveImportExportShape(): void {
+  const check = 'AEC2 import/export current shape'
+  const importer = source('server/fastify/src/risuSave/importSnapshot.ts')
+  const exporterText = text('server/fastify/src/risuSave/exportSnapshot.ts')
+  const normalizeBody = getFunctionBodyText(importer, 'normalizeImportDatabase')
+
+  const requiredExportNeedles = [
+    'database.characters',
+    'database.botPresets',
+    'database.modules',
+    'database.loadouts',
+    'database.plugins',
+    'database.pluginCustomStorage',
+  ]
+  for (const needle of requiredExportNeedles) {
+    if (!exporterText.includes(needle)) {
+      fail(
+        check,
+        `Block export no longer requires ${needle}; update the AEC2 audit shape contract.`,
+        undefined,
+        'server/fastify/src/risuSave/exportSnapshot.ts',
+      )
+    }
+  }
+
+  const requiredImportNeedles = [
+    'normalizeCharacterCollection(target)',
+    'normalizePresetCollection(target)',
+    'ensureModuleRecords(target)',
+    'normalizeLoadoutCollection(target)',
+    'ensurePluginRecords(target)',
+    'ensurePluginCustomStorage(target)',
+  ]
+  for (const needle of requiredImportNeedles) {
+    if (!normalizeBody.includes(needle)) {
+      fail(
+        check,
+        `normalizeImportDatabase must call ${needle} so accepted imports stay block-exportable.`,
+        importer.getFunction('normalizeImportDatabase'),
+      )
+    }
+  }
+}
+
 function checkProviderOwnership(): void {
   const check = 'EC1 provider ownership'
   const serverCompletion = source('src/ts/process/request/serverCompletion.ts')
@@ -460,6 +506,7 @@ runChecks([
   { id: 'EC4 stable command ids', run: checkStableIdCommandPaths },
   { id: 'EC2 plugin storage gates', run: checkPluginStorageGates },
   { id: 'EC6 asset walker validator drift', run: checkAssetWalkerValidators },
+  { id: 'AEC2 import/export current shape', run: checkRisuSaveImportExportShape },
   { id: 'EC1 provider ownership', run: checkProviderOwnership },
 ])
 

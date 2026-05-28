@@ -17,6 +17,13 @@ interface Harness {
 }
 
 const ASSET_ID = 'c'.repeat(64)
+const EXPORT_REQUIRED_ARRAY_FAMILIES = [
+  'characters',
+  'botPresets',
+  'modules',
+  'loadouts',
+  'plugins',
+] as const
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
@@ -73,6 +80,14 @@ function persistExportableDatabase(dataDir: string): void {
     },
     assets: [{ id: ASSET_ID, ext: 'png', size: 12, contentType: 'image/png' }],
   })
+}
+
+function expectExportRequiredShape(database: Record<string, unknown>): void {
+  for (const key of EXPORT_REQUIRED_ARRAY_FAMILIES) {
+    expect(Array.isArray(database[key]), key).toBe(true)
+  }
+  expect(database.pluginCustomStorage).toEqual(expect.any(Object))
+  expect(Array.isArray(database.pluginCustomStorage)).toBe(false)
 }
 
 async function setupPassword(app: FastifyInstance): Promise<void> {
@@ -161,6 +176,23 @@ describe('Phase 9-8b repository .risu export route', () => {
     const decoded = decodeRisuSaveImportSnapshot(bytes)
     expect(decoded.envelope).toBe('legacy-raw')
     expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(ASSET_ID)
+  })
+
+  it('normalizes missing resource families before block export', async () => {
+    writePersisted(harness.dataDir, {
+      _version: 1,
+      database: { v: 1 },
+      assets: [],
+    })
+
+    const exported = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=risusave-blocks',
+    })
+
+    expect(exported.statusCode).toBe(200)
+    const decoded = decodeRisuSaveImportSnapshot(new Uint8Array(exported.rawPayload))
+    expectExportRequiredShape(decoded.database)
   })
 
   it('rejects unauthenticated exports once a password is set', async () => {

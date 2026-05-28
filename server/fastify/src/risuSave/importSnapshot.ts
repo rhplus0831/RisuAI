@@ -15,6 +15,7 @@ import { normalizePersonaCollection } from '../commands/personas.js'
 import { normalizeTranslatorPresetCollection } from '../commands/translatorPresets.js'
 import { normalizeLoadoutCollection } from '../commands/loadouts.js'
 import { normalizeAllChatMessages } from '../commands/messages.js'
+import { normalizeCharacterCollection } from '../commands/characters.js'
 import { ensureModuleRecords, ensureEnabledModules } from '../commands/modules.js'
 import { ensurePluginRecords } from '../commands/plugins.js'
 import { ensurePluginCustomStorage } from '../commands/pluginStorage.js'
@@ -155,10 +156,9 @@ function assembleBlockDatabase(
 function normalizeImportDatabase(database: unknown): JsonRecord {
   const target = readJsonObject(cloneJson(database), 'database')
   normalizeAllChatMessages(target)
+  normalizeCharacterCollection(target)
 
-  if (hasAnyKey(target, ['botPresets', 'botPresetsId'])) {
-    normalizePresetCollection(target)
-  }
+  normalizePresetCollection(target)
   normalizePromptTemplateCollection(target)
   if (hasAnyKey(target, ['personas', 'selectedPersona', 'username', 'userIcon', 'personaPrompt'])) {
     normalizePersonaCollection(target)
@@ -173,20 +173,12 @@ function normalizeImportDatabase(database: unknown): JsonRecord {
   ) {
     normalizeTranslatorPresetCollection(target)
   }
-  if (hasAnyKey(target, ['loadouts', 'lastLoadedLoadoutName'])) {
-    normalizeLoadoutCollection(target)
-  }
-  if (hasAnyKey(target, ['modules', 'enabledModules'])) {
-    ensureModuleRecords(target)
-    ensureEnabledModules(target)
-  }
-  if (hasAnyKey(target, ['plugins', 'currentPluginProvider'])) {
-    ensurePluginRecords(target)
-    if (typeof target.currentPluginProvider !== 'string') target.currentPluginProvider = ''
-  }
-  if ('pluginCustomStorage' in target) {
-    ensurePluginCustomStorage(target)
-  }
+  normalizeLoadoutCollection(target)
+  ensureModuleRecords(target)
+  ensureEnabledModules(target)
+  ensurePluginRecords(target)
+  if (typeof target.currentPluginProvider !== 'string') target.currentPluginProvider = ''
+  ensurePluginCustomStorage(target)
   if ('loreBook' in target) {
     ensureGlobalLorebookCollection(target)
   }

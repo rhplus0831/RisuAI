@@ -11,7 +11,6 @@ against the codebase from [`../../audit-codex.md`](../../audit-codex.md) and
 
 | Finding | Severity | Criterion | Status | Bucket |
 | --- | --- | --- | --- | --- |
-| AF2 | High | AEC2 | Open | 2 |
 | AF3 | Medium | AEC3 | Open | 3 |
 | AF4 | Medium | AEC2 | Open | 4 |
 | AF5 | Medium | AEC4 | Open | 5 |
@@ -20,37 +19,6 @@ against the codebase from [`../../audit-codex.md`](../../audit-codex.md) and
 | AF8 | Low | AEC6 | Open | 7 |
 | AF9 | Low | AEC7 | Open | 8 |
 | AF10 | Low | AEC6 | Open | 7 |
-
-## AF2 - JSON import can create state that block export rejects
-
-Severity: **High**
-
-Source: `docs/audit-codex.md` P2.
-
-Evidence:
-
-- JSON import calls `normalizeRisuSaveImportDatabase` at
-  `server/fastify/src/routes/save.ts:66-68`.
-- The normalizer conditionally creates only some top-level collections at
-  `server/fastify/src/risuSave/importSnapshot.ts:155-194`.
-- The route test accepts `{ database: { v: 1 } }` at
-  `server/fastify/__tests__/risuSaveImportRoute.test.ts:94-101`.
-- Block export requires arrays such as `database.botPresets`,
-  `database.modules`, and `database.loadouts` at
-  `server/fastify/src/risuSave/exportSnapshot.ts:62-78`.
-
-Impact:
-
-An accepted JSON import can persist a database shape that later fails block
-export validation. This contradicts the import current-shape criterion and
-invalidates any PASS claim that only checks duplicate/missing child ids.
-
-Done when:
-
-- Minimal accepted JSON imports either normalize to an exportable current shape
-  or return 400 before persistence.
-- Import and export tests cover the minimal shape and at least one missing-family
-  case for every export-required collection.
 
 ## AF3 - Preset image is walked as an asset reference but not validated
 

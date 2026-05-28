@@ -12,7 +12,7 @@ Opened on 2026-05-28 from the cross-verification of:
 - [`../../audit-codex.md`](../../audit-codex.md)
 - [`../../audit-claude.md`](../../audit-claude.md)
 
-Bucket 1 closed AF1 on 2026-05-28.
+Bucket 1 closed AF1 on 2026-05-28. Bucket 2 closed AF2 on 2026-05-28.
 
 ## Resolved findings
 
@@ -33,6 +33,27 @@ Regression proof:
 - `util/client-thinning-audit.ts` now checks the root create helpers for
   `randomUUID()` reintroduction.
 
+### Bucket 2 - JSON import/export current-shape parity
+
+Resolved: **AF2 / AEC2 partial**.
+
+JSON import, multipart `.risu` import, bootstrap-normalized state, and block
+export now share the same current-shape repair boundary for the export-required
+top-level resource families. Accepted imports always persist `characters`,
+`botPresets`, `modules`, `loadouts`, and `plugins` as arrays plus
+`pluginCustomStorage` as an object. Older persisted minimal databases are also
+normalized before block export.
+
+Regression proof:
+
+- `server/fastify/__tests__/risuSaveImportRoute.test.ts` covers minimal
+  `{ database: { v: 1 } }`, every missing export-required family, malformed
+  resource-family repair, and immediate block export after import.
+- `server/fastify/__tests__/risuSaveExportRoute.test.ts` covers block export of
+  an older persisted minimal database through the same normalizer.
+- `util/client-thinning-audit.ts` now checks that import normalization covers
+  every resource family required by block export.
+
 ## Verification results
 
 Bucket 1 verifier result:
@@ -41,12 +62,21 @@ Bucket 1 verifier result:
   (71 tests).
 - `pnpm client-thinning:audit`: passed.
 
+Bucket 2 verifier result:
+
+- `pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts -- --run`:
+  passed (17 tests).
+- `pnpm api:test server/fastify/__tests__/risuSaveExportRoute.test.ts -- --run`:
+  passed (7 tests).
+- `pnpm client-thinning:audit`: passed.
+
 Initial verifier result:
 
 - `pnpm client-thinning:audit`: passed.
 
-That pass is not sufficient for alpha closeout because AF1 and AF3 are audit
-blind spots.
+That initial pass was not sufficient for alpha closeout because AF1, AF2, and
+AF3 were audit blind spots. AF1 and AF2 now have invariant-audit coverage; AF3
+remains open.
 
 ## Archived baseline
 

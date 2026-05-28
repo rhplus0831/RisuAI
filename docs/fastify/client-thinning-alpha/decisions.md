@@ -43,6 +43,13 @@ resource-family keys into arbitrary shapes after resource block normalization.
 Reserved families should be ignored from ROOT_COMPONENT, rejected, or routed
 through the same family-specific normalizer.
 
+**Implementation note:** Bucket 2 closed AF2 by making the shared import
+normalizer always produce the block-export-required families:
+`characters`, `botPresets`, `modules`, `loadouts`, and `plugins` as arrays plus
+`pluginCustomStorage` as an object. Existing family-specific repair helpers own
+any additional defaults they add, such as character ordering or selected preset
+indices.
+
 ## AEC3 - Asset walker/validator parity
 
 **Decision:** Every field walked by
