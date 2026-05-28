@@ -60,6 +60,7 @@ describe('client-thinning audit fixtures', () => {
   const stableCommandIdsCheck = 'EC4 stable command ids'
   const pluginStorageCheck = 'EC2 plugin storage gates'
   const providerOwnershipCheck = 'EC1 provider ownership'
+  const chatFolderScopeCheck = 'AEC4 chat folder identity scope'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -431,6 +432,30 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'provider-ownership/server-routed-bypass',
       providerOwnershipCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that normalizes chat folder ids only per character', async () => {
+    const result = await runAuditFixture(
+      'chat-folder-identity-scope/failing-per-character',
+      chatFolderScopeCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${chatFolderScopeCheck}]`)
+    expect(result.stderr).toContain(
+      'normalizeAllCharacterChats must repair chat folder ids globally across characters.',
+    )
+  })
+
+  it('allows global chat folder id normalization with global create guards', async () => {
+    const result = await runAuditFixture(
+      'chat-folder-identity-scope/global-scope-bypass',
+      chatFolderScopeCheck,
     )
 
     expect(result.exitCode).toBe(0)
