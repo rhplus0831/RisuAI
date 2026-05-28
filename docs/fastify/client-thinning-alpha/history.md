@@ -13,7 +13,7 @@ Opened on 2026-05-28 from the cross-verification of:
 - [`../../audit-claude.md`](../../audit-claude.md)
 
 Bucket 1 closed AF1 on 2026-05-28. Bucket 2 closed AF2 on 2026-05-28. Bucket 3
-closed AF3 on 2026-05-28.
+closed AF3 on 2026-05-28. Bucket 4 closed AF4 on 2026-05-28.
 
 ## Resolved findings
 
@@ -74,6 +74,25 @@ Regression proof:
 - `util/client-thinning-audit.ts` now checks that the asset walker field
   `database.botPresets[*].image` has matching preset command validation.
 
+### Bucket 4 - ROOT_COMPONENT reserved-key guard
+
+Resolved: **AF4 / AEC2**.
+
+RISUSAVE ROOT_COMPONENT blocks now reject block-export-owned resource keys before
+they can assign arbitrary top-level database values. The reserved keys are
+`characters`, `botPresets`, `modules`, `loadouts`, `plugins`,
+`pluginCustomStorage`, and `__directory`. Non-reserved ROOT_COMPONENT fields
+continue to import as top-level database fields.
+
+Regression proof:
+
+- `server/fastify/__tests__/risuSaveImportRoute.test.ts` covers successful
+  non-reserved ROOT_COMPONENT import, reserved `characters` overwrite rejection,
+  no mutation on rejected import, and successful block export after rejection.
+- `util/client-thinning-audit.ts` now checks that the ROOT_COMPONENT reserved-key
+  set matches block export's resource-key set and that the importer guards the
+  assignment path.
+
 ## Verification results
 
 Bucket 1 verifier result:
@@ -96,13 +115,20 @@ Bucket 3 verifier result:
   (73 tests).
 - `pnpm client-thinning:audit`: passed.
 
+Bucket 4 verifier result:
+
+- `pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts -- --run`:
+  passed (19 tests).
+- `pnpm client-thinning:audit`: passed.
+
 Initial verifier result:
 
 - `pnpm client-thinning:audit`: passed.
 
-That initial pass was not sufficient for alpha closeout because AF1, AF2, and
-AF3 were audit blind spots. AF1 and AF2 now have invariant-audit coverage; AF3
-remains open.
+That initial pass was not sufficient for alpha closeout because AF1, AF2, AF3,
+and AF4 were audit blind spots. AF1 through AF4 now have focused regression
+coverage, and AF1 through AF4 have invariant-audit coverage where their bug
+classes were previously invisible.
 
 ## Archived baseline
 

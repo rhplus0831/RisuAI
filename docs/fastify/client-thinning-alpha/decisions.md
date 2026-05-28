@@ -50,6 +50,12 @@ normalizer always produce the block-export-required families:
 any additional defaults they add, such as character ordering or selected preset
 indices.
 
+**Implementation note:** Bucket 4 closed AF4 by rejecting ROOT_COMPONENT blocks
+whose `key` is one of the block-export-owned resource keys: `characters`,
+`botPresets`, `modules`, `loadouts`, `plugins`, `pluginCustomStorage`, or
+`__directory`. Non-reserved ROOT_COMPONENT fields continue to import as
+top-level database fields.
+
 ## AEC3 - Asset walker/validator parity
 
 **Decision:** Every field walked by

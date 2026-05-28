@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
-import { RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
+import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { writePersisted } from '../src/repository.js'
 
 interface Harness {
@@ -396,6 +396,85 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     expect(persisted.database.version).toBe(1)
     expect(persisted.database.__directory).toBeUndefined()
+  })
+
+  it('imports non-reserved RISUSAVE root-component fields', async () => {
+    const upload = multipartRisuSave(
+      encodeRisuSaveBlockEnvelope([
+        {
+          name: 'root',
+          type: RisuSaveBlockType.ROOT,
+          data: JSON.stringify({ version: 1, __directory: ['root-component'] }),
+        },
+        {
+          name: 'root-component',
+          type: RisuSaveBlockType.ROOT_COMPONENT,
+          data: JSON.stringify({ key: 'customRootField', data: { enabled: true } }),
+        },
+      ]),
+    )
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().database.customRootField).toEqual({ enabled: true })
+    expectExportRequiredShape(bootstrap.json().database)
+  })
+
+  it('rejects RISUSAVE root-component resource-family overwrites without mutating persistence', async () => {
+    const seeded = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { version: 1, customRootField: { kept: true } } },
+    })
+    expect(seeded.statusCode).toBe(200)
+
+    const upload = multipartRisuSave(
+      encodeRisuSaveBlockEnvelope([
+        {
+          name: 'root',
+          type: RisuSaveBlockType.ROOT,
+          data: JSON.stringify({ version: 2, __directory: ['bad-component'] }),
+        },
+        {
+          name: 'bad-component',
+          type: RisuSaveBlockType.ROOT_COMPONENT,
+          data: JSON.stringify({ key: 'characters', data: 'not an array' }),
+        },
+      ]),
+    )
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json()).toEqual({
+      error: 'bad-component block key characters is reserved for resource blocks',
+    })
+    expect(harness.commandEvents.list()).toEqual([seeded.json().event])
+
+    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.version).toBe(1)
+    expect(bootstrap.json().database.customRootField).toEqual({ kept: true })
+    expectExportRequiredShape(bootstrap.json().database)
+
+    const exported = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=risusave-blocks',
+    })
+    expect(exported.statusCode).toBe(200)
   })
 
   it('rejects multipart requests without an uploaded file', async () => {

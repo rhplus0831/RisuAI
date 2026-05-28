@@ -115,6 +115,10 @@ function getFunctionBodyText(sourceFile: SourceFile, name: string): string {
   return sourceFile.getFunction(name)?.getBodyText() ?? ''
 }
 
+function sortedValues(values: readonly string[]): string[] {
+  return [...values].sort((a, b) => a.localeCompare(b))
+}
+
 function routeRegistrations(files: SourceFile[]): RouteRegistration[] {
   const routes: RouteRegistration[] = []
   for (const file of files) {
@@ -416,8 +420,10 @@ function checkAssetWalkerValidators(): void {
 function checkRisuSaveImportExportShape(): void {
   const check = 'AEC2 import/export current shape'
   const importer = source('server/fastify/src/risuSave/importSnapshot.ts')
+  const exporter = source('server/fastify/src/risuSave/exportSnapshot.ts')
   const exporterText = text('server/fastify/src/risuSave/exportSnapshot.ts')
   const normalizeBody = getFunctionBodyText(importer, 'normalizeImportDatabase')
+  const assembleBody = getFunctionBodyText(importer, 'assembleBlockDatabase')
 
   const requiredExportNeedles = [
     'database.characters',
@@ -454,6 +460,29 @@ function checkRisuSaveImportExportShape(): void {
         importer.getFunction('normalizeImportDatabase'),
       )
     }
+  }
+
+  const exportResourceKeys = sortedValues(getStringArray(exporter, 'BLOCK_RESOURCE_KEYS'))
+  const rootComponentReservedKeys = sortedValues(
+    getStringArray(importer, 'ROOT_COMPONENT_RESERVED_KEYS'),
+  )
+  if (exportResourceKeys.join('\0') !== rootComponentReservedKeys.join('\0')) {
+    fail(
+      check,
+      `ROOT_COMPONENT reserved keys must match block export resource keys. export=${exportResourceKeys.join(',')} import=${rootComponentReservedKeys.join(',')}`,
+      importer.getVariableDeclaration('ROOT_COMPONENT_RESERVED_KEYS'),
+    )
+  }
+
+  if (
+    !assembleBody.includes('ROOT_COMPONENT_RESERVED_KEYS.has(component.key)') ||
+    !assembleBody.includes('reserved for resource blocks')
+  ) {
+    fail(
+      check,
+      'ROOT_COMPONENT import must reject reserved resource-family keys before assigning database[component.key].',
+      importer.getFunction('assembleBlockDatabase'),
+    )
   }
 }
 

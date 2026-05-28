@@ -11,39 +11,12 @@ against the codebase from [`../../audit-codex.md`](../../audit-codex.md) and
 
 | Finding | Severity | Criterion | Status | Bucket |
 | --- | --- | --- | --- | --- |
-| AF4 | Medium | AEC2 | Open | 4 |
 | AF5 | Medium | AEC4 | Open | 5 |
 | AF6 | Low | AEC5 | Open | 6 |
 | AF7 | Low | AEC5 | Open | 6 |
 | AF8 | Low | AEC6 | Open | 7 |
 | AF9 | Low | AEC7 | Open | 8 |
 | AF10 | Low | AEC6 | Open | 7 |
-
-## AF4 - ROOT_COMPONENT import can overwrite reserved top-level state
-
-Severity: **Medium**
-
-Source: lower-confidence edge from `docs/audit-codex.md`, confirmed during
-cross-verification.
-
-Evidence:
-
-- `.risu` import allows arbitrary top-level assignment at
-  `server/fastify/src/risuSave/importSnapshot.ts:133-139`.
-- Block export later requires specific shapes at
-  `server/fastify/src/risuSave/exportSnapshot.ts:62-93`.
-
-Impact:
-
-Even if normal resource blocks are normalized, a ROOT_COMPONENT block can
-overwrite reserved resource-family keys such as `characters` into a shape that
-export rejects.
-
-Done when:
-
-- ROOT_COMPONENT import rejects or ignores reserved resource-family keys that
-  must be owned by normalized resource block handling.
-- Tests cover a reserved-key overwrite attempt and prove export remains valid.
 
 ## AF5 - Chat folder ids are scoped on create but global on patch/delete
 

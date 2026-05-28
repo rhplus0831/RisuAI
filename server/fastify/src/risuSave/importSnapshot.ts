@@ -24,6 +24,16 @@ import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitio
 
 type JsonRecord = Record<string, unknown>
 
+const ROOT_COMPONENT_RESERVED_KEYS = new Set([
+  'characters',
+  'botPresets',
+  'modules',
+  'loadouts',
+  'plugins',
+  'pluginCustomStorage',
+  '__directory',
+])
+
 export interface RisuSaveImportUnsupportedReference {
   name: string
   type: RisuSaveBlockType.REMOTE
@@ -135,6 +145,11 @@ function assembleBlockDatabase(
         const component = readJsonObject(parsed, `${block.name} block`)
         if (typeof component.key !== 'string' || component.key.trim() === '') {
           throw new ValidationError(`${block.name} block key must be a non-empty string`)
+        }
+        if (ROOT_COMPONENT_RESERVED_KEYS.has(component.key)) {
+          throw new ValidationError(
+            `${block.name} block key ${component.key} is reserved for resource blocks`,
+          )
         }
         database[component.key] = cloneJson(component.data)
         break
