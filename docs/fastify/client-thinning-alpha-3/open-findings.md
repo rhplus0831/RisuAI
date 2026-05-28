@@ -17,10 +17,10 @@ fix should keep narrowing the repeatable audit failure list.
 | A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | A3EC2 / A3EC6 | R3                             | Closed | 2                |
 | A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | A3EC3 / A3EC6 | R4                             | Closed | 3                |
 | A3F6 - Preset import bypasses preset image asset validation                | Medium   | A3EC4 / A3EC6 | R3 overlap plus focused tests  | Closed | 2                |
-| A3F7 - Asset reads can fetch arbitrary URLs with `risu-auth`               | High     | A3EC4 / A3EC6 | R7                             | Open   | 4                |
-| A3F8 - Server backups do not preserve asset bytes                          | Medium   | A3EC4         | Focused tests/contract         | Open   | 4                |
-| A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | A3EC4 / A3EC6 | R5                             | Open   | 4                |
-| A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | A3EC4         | Focused tests/contract         | Open   | 4                |
+| A3F7 - Asset reads can fetch arbitrary URLs with `risu-auth`               | High     | A3EC4 / A3EC6 | R7                             | Closed | 4                |
+| A3F8 - Server backups do not preserve asset bytes                          | Medium   | A3EC4         | Focused tests/contract         | Closed | 4                |
+| A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | A3EC4 / A3EC6 | R5                             | Closed | 4                |
+| A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | A3EC4         | Focused tests/contract         | Closed | 4                |
 | A3F11 - Masked array secrets restore by index                              | Medium   | A3EC5 / A3EC6 | R6                             | Open   | 5                |
 | A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | A3EC1         | Focused tests/contract         | Closed | 1                |
 | A3F13 - Command event sink keeps unbounded event history                   | Low      | A3EC6         | Focused tests/retention policy | Open   | 6                |
@@ -281,13 +281,11 @@ and risks leaking short-lived auth to a CORS-allowing external origin.
 
 Required closeout:
 
-- Audit gate: R7, invalid asset references must be rejected before `risu-auth`
-  is attached.
-- Reject unknown asset references in Fastify mode, or fetch external URLs only
-  without `risu-auth` after explicit classification.
-- Add a browser-side test that an arbitrary URL does not receive `risu-auth`.
-- Extend the audit to check asset read helpers cannot combine arbitrary fallback
-  fetch with auth headers.
+- Closed in Bucket 4. `readServerAssetBytes` now throws for unknown references
+  before resolving auth, so only raw server asset ids and supported legacy
+  `assets/<sha>.<ext>` paths reach `/api/v1/assets/:id`.
+- Regression proof: `src/ts/server/assets.test.ts`.
+- Audit gate: R7 no longer appears in `pnpm client-thinning:audit`.
 
 ## A3F8 - Server Backups Do Not Preserve Asset Bytes
 
@@ -312,12 +310,11 @@ point to missing asset files.
 
 Required closeout:
 
-- No dedicated R-rule is required unless the implementation exposes a reusable
-  audit pattern; close with focused backup contract tests.
-- Include asset files in backups and restore them atomically with `db.json`, or
-  document backups as metadata-only and stop implying asset preservation.
-- Add backup/restore tests that upload an asset, create a backup, remove live
-  files, restore, and read the asset bytes.
+- Closed in Bucket 4. Server backups copy `data/assets` into the backup
+  snapshot and restore that asset directory alongside `db.json`.
+- Regression proof: `server/fastify/__tests__/backups.test.ts` uploads an asset,
+  creates a backup, removes live asset files, restores, and reads the bytes.
+- Contract decision: server backups preserve asset bytes, not metadata only.
 
 ## A3F9 - Bundle Asset Walker Ignores Supported Legacy Asset-Path Refs
 
@@ -341,12 +338,13 @@ read, especially imported/current-shape data that still uses legacy asset paths.
 
 Required closeout:
 
-- Audit gate: R5, the server asset walker and client asset-reference parser must
-  accept the same shapes, or the downgrade must be explicitly enforced.
-- Decide whether Fastify current-shape data may contain `assets/<sha>.<ext>`.
-  If yes, collect those refs in the walker and include them in bundles. If no,
-  reject or normalize them at import/command boundaries.
-- Update the walker test to reflect the chosen contract.
+- Closed in Bucket 4. Fastify current-shape data may contain supported legacy
+  `assets/<sha>.<ext>` references, and the server walker now collects them as
+  the underlying server asset id.
+- Regression proof:
+  `server/fastify/__tests__/risuSaveAssetReferences.test.ts` and
+  `server/fastify/__tests__/risuSaveBundleExportRoute.test.ts`.
+- Audit gate: R5 no longer appears in `pnpm client-thinning:audit`.
 
 ## A3F10 - Fastify Asset Uploads Can Lose MIME/Extension Metadata
 
@@ -373,12 +371,13 @@ round-trippable through bundle export.
 
 Required closeout:
 
-- No dedicated R-rule is required unless the implementation exposes a reusable
-  audit pattern; close with focused upload metadata tests.
-- Require filename/content type for non-image asset saves, or infer from payload
-  only where reliable.
-- Add focused upload metadata tests for non-image callers that remain supported
-  in Fastify mode.
+- Closed in Bucket 4. Transformer ONNX imports pass the `.onnx` filename to
+  `saveAsset`, and Fastify asset upload metadata now supports
+  `application/x-onnx` / `.onnx`.
+- Regression proof: `server/fastify/__tests__/assets.test.ts`.
+- Contract decision: image callers may keep the existing PNG default; supported
+  non-image callers must pass a filename/content type path instead of relying on
+  the image default.
 
 ## A3F11 - Masked Array Secrets Restore By Index
 

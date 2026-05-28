@@ -78,6 +78,13 @@ auth, lose asset bytes, or export incomplete bundles.
 or local-only, document it in the closeout and make tests prove that the UI does
 not expect the server to round-trip those bytes.
 
+**Bucket 4 implementation:** Fastify asset reads now authenticate only raw server
+asset ids and supported legacy `assets/<sha>.<ext>` paths. The server RisuSave
+asset walker accepts both shapes and bundle export includes those bytes. Server
+backups preserve asset bytes by copying/restoring `data/assets`. Transformer
+ONNX assets pass filenames and persist `application/x-onnx` / `.onnx` metadata;
+the existing PNG default remains for image callers that omit a filename.
+
 ## A3EC5 - Secret Placeholder Row Identity
 
 **Default decision:** masked secret placeholders in arrays must restore by

@@ -6,26 +6,26 @@ This is the suggested task-agent breakdown for Alpha 3. Each bucket should land
 behavior, focused tests, audit coverage where practical, and doc updates before
 being marked closed.
 
-Current status: **open.** Buckets 0, 1, 2, and 3 have landed. Bucket 1 clears
+Current status: **open.** Buckets 0, 1, 2, 3, and 4 have landed. Bucket 1 clears
 A3F1, A3F2, and A3F12. Bucket 2 clears A3F3, A3F4, and the A3F6 preset-import
 validator overlap. Bucket 3 clears A3F5 global chat/message addressing;
-`pnpm client-thinning:audit` is still red on the remaining A3R5 through A3R7
-findings.
+Bucket 4 clears A3F7, A3F8, A3F9, and A3F10. `pnpm client-thinning:audit` is
+still red on the remaining A3R6 finding.
 
 Rule-first gate: Bucket 0 lands before behavior closeout. No behavior bucket may
 be marked closed until its corresponding R rule fails on the pre-fix tree and
 passes after the fix. Findings without a dedicated R rule still need a focused
 failing-then-passing regression test or an explicit tested contract decision.
 
-| Order | Bucket                                   | Closes                                                                       | Primary ownership                                                                                                                                                               |
-| ----- | ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | Landed in `util/client-thinning-audit.ts`; current failures are documented below.                                                                                               |
-| 1     | Active-writer and conflict semantics     | A3F1, A3F2, A3F12                                                            | Landed. Passive refresh is read-only, generic settings conflicts roll back without replay, and whole-chat compatibility command fan-out is serialized.                          |
-| 2     | Stable-id command holes                  | A3F3, A3F4, A3F6 preset-import overlap                                       | Landed. Preset copy/import no longer mint ids, last-lorebook delete returns 400, and preset import validates image asset refs.                                                  |
-| 3     | Global id addressing                     | A3F5                                                                         | Landed. Chat/message ids are globally normalized or rejected on command writes while the public globally addressed route contract remains unchanged.                             |
-| 4     | Asset ownership and backup durability    | A3F7, A3F8, A3F9, A3F10                                                      | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`, `server/fastify/src/repository.ts`, RisuSave walker/bundle export, backup and asset tests, audit checks                |
-| 5     | Secret placeholder row identity          | A3F11                                                                        | `server/fastify/src/providerSecrets.ts`, settings command tests, masking tests, audit checks                                                                                    |
-| 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | `server/fastify/src/commands/events.ts`, event tests, `docs/fastify/client-thinning-alpha-3/*`, top-level status docs after full ladder                                         |
+| Order | Bucket                                   | Closes                                                                       | Primary ownership                                                                                                                                                      |
+| ----- | ---------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Audit rules R1-R7 and exclusions         | A3EC6 gate for A3F1, A3F2, A3F3, A3F4, A3F5, A3F6 overlap, A3F7, A3F9, A3F11 | Landed in `util/client-thinning-audit.ts`; current failures are documented below.                                                                                      |
+| 1     | Active-writer and conflict semantics     | A3F1, A3F2, A3F12                                                            | Landed. Passive refresh is read-only, generic settings conflicts roll back without replay, and whole-chat compatibility command fan-out is serialized.                 |
+| 2     | Stable-id command holes                  | A3F3, A3F4, A3F6 preset-import overlap                                       | Landed. Preset copy/import no longer mint ids, last-lorebook delete returns 400, and preset import validates image asset refs.                                         |
+| 3     | Global id addressing                     | A3F5                                                                         | Landed. Chat/message ids are globally normalized or rejected on command writes while the public globally addressed route contract remains unchanged.                   |
+| 4     | Asset ownership and backup durability    | A3F7, A3F8, A3F9, A3F10                                                      | Landed. Authenticated asset reads reject unknown refs, bundle walking includes legacy asset paths, backups preserve asset bytes, and ONNX upload metadata is retained. |
+| 5     | Secret placeholder row identity          | A3F11                                                                        | `server/fastify/src/providerSecrets.ts`, settings command tests, masking tests, audit checks                                                                           |
+| 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | `server/fastify/src/commands/events.ts`, event tests, `docs/fastify/client-thinning-alpha-3/*`, top-level status docs after full ladder                                |
 
 ## Parallelization Notes
 
@@ -81,15 +81,11 @@ pattern.
 
 ## Current Audit Output
 
-`pnpm client-thinning:audit` currently fails by design with these remaining
-Alpha 3 gates:
+`pnpm client-thinning:audit` currently fails by design with this remaining
+Alpha 3 gate:
 
-- A3R5: the client accepts legacy `assets/<id>.<ext>` references that the
-  RisuSave asset walker ignores.
 - A3R6: masked array secrets for `authRefreshes`, `botPresets`, and
   `customModels` restore by array index.
-- A3R7: `readServerAssetBytes` can fetch arbitrary references while attaching
-  `risu-auth`.
 
-Next agent: start Bucket 4, then continue through the behavior buckets until all
-A3R gates pass. Keep broad status docs untouched until the final closeout.
+Next agent: start Bucket 5, then continue through event retention and final
+closeout. Keep broad status docs untouched until the final closeout.

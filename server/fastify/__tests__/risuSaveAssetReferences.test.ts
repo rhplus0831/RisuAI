@@ -118,11 +118,36 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
     })
   })
 
+  it('accepts legacy local asset paths that the Fastify client can read', () => {
+    const report = buildRisuSaveAssetReport(
+      {
+        customBackground: `assets/${CUSTOM_BACKGROUND}.webp`,
+        userIcon: `assets/${USER_ICON}.png`,
+      },
+      [asset(USER_ICON), asset(CUSTOM_BACKGROUND)],
+    )
+
+    expect(report.referenced).toEqual([
+      {
+        id: CUSTOM_BACKGROUND,
+        paths: ['database.customBackground'],
+      },
+      {
+        id: USER_ICON,
+        paths: ['database.userIcon'],
+      },
+    ])
+    expect(summarizeRisuSaveAssetReport(report)).toEqual({
+      referencedCount: 2,
+      missingCount: 0,
+      orphanedCount: 0,
+    })
+  })
+
   it('ignores non-server asset strings instead of recursively over-including arbitrary JSON', () => {
     const report = buildRisuSaveAssetReport(
       {
         customBackground: 'assets/not-a-server-id.png',
-        userIcon: `assets/${USER_ICON}.png`,
         pluginCustomStorage: { arbitrary: CHAR_IMAGE },
         characters: [
           {

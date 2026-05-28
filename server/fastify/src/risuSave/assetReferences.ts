@@ -144,10 +144,15 @@ function addGptSoVitsReference(
 }
 
 function addReference(found: Map<string, Set<string>>, value: unknown, path: string): void {
-  if (typeof value !== 'string' || !isValidAssetId(value)) return
-  const paths = found.get(value) ?? new Set<string>()
+  if (typeof value !== 'string') return
+  const localAssetPath = value.startsWith('assets/')
+    ? /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i.exec(value)
+    : null
+  const id = isValidAssetId(value) ? value : (localAssetPath?.[1] ?? null)
+  if (!id) return
+  const paths = found.get(id) ?? new Set<string>()
   paths.add(path)
-  found.set(value, paths)
+  found.set(id, paths)
 }
 
 function readRecord(value: unknown): JsonRecord | null {

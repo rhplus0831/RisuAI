@@ -51,10 +51,16 @@ command-created chats and messages reject ids that already exist under another
 parent, and the existing globally addressed patch/delete/fork routes remain
 unambiguous without changing the public route contract.
 
+Bucket 4 has now landed asset ownership and backup durability fixes. Fastify
+asset reads reject unknown references before attaching `risu-auth`, the
+RisuSave asset walker and bundle export include supported legacy
+`assets/<sha>.<ext>` references, server backups copy/restore asset bytes, and
+ONNX transformer asset uploads preserve `.onnx` metadata.
+
 `pnpm client-thinning:audit` is still expected to fail until later buckets land,
-but A3R1, A3R2, A3R3, and A3R4 should no longer appear. The next implementation
-agent should start with Bucket 4 and make A3R5/A3R7 pass while adding focused
-asset ownership and backup durability tests.
+but A3R1, A3R2, A3R3, A3R4, A3R5, and A3R7 should no longer appear. The next
+implementation agent should start with Bucket 5 and make A3R6 pass while adding
+focused masked-array secret placeholder tests.
 
 Do not reconcile `docs/fastify/status.md`,
 `docs/fastify/status/next-steps.md`, or other broad status docs until the

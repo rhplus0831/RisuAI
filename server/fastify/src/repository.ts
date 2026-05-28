@@ -5,6 +5,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { bumpRevision, getSchemaState } from './db.js'
 
 export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
+  'application/x-onnx': 'onnx',
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
@@ -223,6 +224,7 @@ export function createBackup(
   const dir = backupDir(dataDir, id)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'db.json'), JSON.stringify(persisted))
+  copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
   const manifest: BackupManifest = {
     _version: BACKUP_MANIFEST_VERSION,
     id,
@@ -252,11 +254,7 @@ export function listBackups(dataDir: string): BackupManifest[] {
   return manifests
 }
 
-export function restoreBackup(
-  db: DatabaseSync,
-  dataDir: string,
-  id: string,
-): { revision: number } {
+export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { revision: number } {
   if (!isValidBackupId(id)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
@@ -266,8 +264,34 @@ export function restoreBackup(
   }
   const live = path.join(dataDir, 'db.json')
   const tmp = `${live}.tmp`
+  const liveAssets = assetsDir(dataDir)
+  const backupAssets = path.join(backupDir(dataDir, id), 'assets')
+  const tmpAssets = path.join(dataDir, `.assets-${id}.tmp`)
+  const oldAssets = path.join(dataDir, `.assets-${id}.old`)
+
+  rmDirectoryIfPresent(tmpAssets)
+  rmDirectoryIfPresent(oldAssets)
+  if (fs.existsSync(backupAssets)) {
+    fs.cpSync(backupAssets, tmpAssets, { recursive: true })
+  } else {
+    fs.mkdirSync(tmpAssets, { recursive: true })
+  }
+
   fs.copyFileSync(snapshot, tmp)
-  fs.renameSync(tmp, live)
+  if (fs.existsSync(liveAssets)) {
+    fs.renameSync(liveAssets, oldAssets)
+  }
+  try {
+    fs.renameSync(tmpAssets, liveAssets)
+    fs.renameSync(tmp, live)
+  } catch (err) {
+    rmDirectoryIfPresent(liveAssets)
+    if (fs.existsSync(oldAssets)) {
+      fs.renameSync(oldAssets, liveAssets)
+    }
+    throw err
+  }
+  rmDirectoryIfPresent(oldAssets)
   const revision = bumpRevision(db)
   return { revision }
 }
@@ -280,5 +304,14 @@ export function deleteBackup(dataDir: string, id: string): void {
   if (!fs.existsSync(dir)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
+  fs.rmSync(dir, { recursive: true, force: true })
+}
+
+function copyDirectoryIfPresent(from: string, to: string): void {
+  if (!fs.existsSync(from)) return
+  fs.cpSync(from, to, { recursive: true })
+}
+
+function rmDirectoryIfPresent(dir: string): void {
   fs.rmSync(dir, { recursive: true, force: true })
 }

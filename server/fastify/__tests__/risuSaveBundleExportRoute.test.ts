@@ -209,6 +209,44 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     })
   })
 
+  it('includes assets referenced through legacy local asset paths', async () => {
+    writePersisted(harness.dataDir, {
+      _version: 1,
+      database: {
+        version: 1,
+        selectedCharID: 0,
+        userIcon: `assets/${INCLUDED_ASSET}.png`,
+        characters: [],
+        characterOrder: [],
+        botPresets: [],
+        modules: [],
+        loadouts: [],
+        plugins: [],
+        pluginCustomStorage: {},
+      },
+      assets: [{ id: INCLUDED_ASSET, ext: 'png', size: 12, contentType: 'image/png' }],
+    })
+    const dir = assetsDir(harness.dataDir)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, `${INCLUDED_ASSET}.png`), Buffer.from('legacy-path-png'))
+
+    const exported = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/export/bundle',
+    })
+
+    expect(exported.statusCode).toBe(200)
+    const files = unzipBundle(exported.rawPayload)
+    expect(Buffer.from(files[`assets/${INCLUDED_ASSET}.png`]).toString('utf8')).toBe(
+      'legacy-path-png',
+    )
+    expect(parseManifest(files).assetReport).toEqual({
+      referencedCount: 1,
+      missingCount: 0,
+      orphanedCount: 0,
+    })
+  })
+
   it('rejects unauthenticated bundle exports once a password is set', async () => {
     persistBundleDatabase(harness.dataDir)
     await setupPassword(harness.app)

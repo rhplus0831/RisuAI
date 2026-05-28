@@ -21,7 +21,10 @@ export async function readServerAssetBytes(
   loc: string,
   options: ReadServerAssetOptions = {},
 ): Promise<Uint8Array> {
-  const assetUrl = serverAssetUrl(loc) ?? loc
+  const assetUrl = serverAssetUrl(loc)
+  if (!assetUrl) {
+    throw new Error(`Unsupported server asset reference: ${loc}`)
+  }
   const auth =
     options.auth ?? (await (await import('../storage/nodeStorage')).getNodeServerProxyAuth())
   const fetchImpl = options.fetchImpl ?? fetch

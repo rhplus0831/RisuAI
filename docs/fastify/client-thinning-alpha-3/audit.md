@@ -69,21 +69,21 @@ audit currently passes while missing most Alpha 3 bug classes.
 
 ## Confirmed Findings
 
-| Finding                                                                    | Severity | Merged audit result              | Closeout gate                    |
-| -------------------------------------------------------------------------- | -------- | -------------------------------- | -------------------------------- |
-| A3F1 - Passive bootstrap refresh steals active-writer ownership            | High     | Real                             | R1                               |
-| A3F2 - Generic settings blindly replay 409 conflicts                       | High     | Real                             | R2                               |
-| A3F3 - Preset copy/import still mint command-path ids                      | High     | Closed in Bucket 2               | R3                               |
-| A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | Closed in Bucket 2               | R3                               |
-| A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | Closed in Bucket 3               | R4                               |
-| A3F6 - Preset import bypasses preset image asset validation                | Medium   | Closed in Bucket 2               | R3 overlap plus focused tests    |
-| A3F7 - Asset reads can fetch arbitrary URLs with `risu-auth`               | High     | Real                             | R7                               |
-| A3F8 - Server backups do not preserve asset bytes                          | Medium   | Real                             | Focused tests/contract decision  |
-| A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | Real                             | R5                               |
-| A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | Real                             | Focused tests/contract decision  |
-| A3F11 - Masked array secrets restore by index                              | Medium   | Real                             | R6                               |
-| A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | Real                             | Focused tests/contract decision  |
-| A3F13 - Command event sink keeps unbounded event history                   | Low      | Real                             | Focused tests/retention decision |
+| Finding                                                                    | Severity | Merged audit result | Closeout gate                    |
+| -------------------------------------------------------------------------- | -------- | ------------------- | -------------------------------- |
+| A3F1 - Passive bootstrap refresh steals active-writer ownership            | High     | Real                | R1                               |
+| A3F2 - Generic settings blindly replay 409 conflicts                       | High     | Real                | R2                               |
+| A3F3 - Preset copy/import still mint command-path ids                      | High     | Closed in Bucket 2  | R3                               |
+| A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | Closed in Bucket 2  | R3                               |
+| A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | Closed in Bucket 3  | R4                               |
+| A3F6 - Preset import bypasses preset image asset validation                | Medium   | Closed in Bucket 2  | R3 overlap plus focused tests    |
+| A3F7 - Asset reads can fetch arbitrary URLs with `risu-auth`               | High     | Closed in Bucket 4  | R7                               |
+| A3F8 - Server backups do not preserve asset bytes                          | Medium   | Closed in Bucket 4  | Focused tests/contract decision  |
+| A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | Closed in Bucket 4  | R5                               |
+| A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | Closed in Bucket 4  | Focused tests/contract decision  |
+| A3F11 - Masked array secrets restore by index                              | Medium   | Real                | R6                               |
+| A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | Real                | Focused tests/contract decision  |
+| A3F13 - Command event sink keeps unbounded event history                   | Low      | Real                | Focused tests/retention decision |
 
 The independent sweep in the Claude audit found no additional genuine Alpha 3
 bug classes. Three proposed additions involving personas, loadouts, and
@@ -138,8 +138,21 @@ Bucket 3 landed the A3EC3 global chat/message id addressing fixes:
 - Message append/replace/generation routes reject message ids already used under
   another chat while preserving same-chat replacement semantics.
 
-After Bucket 3, A3R1, A3R2, A3R3, and A3R4 pass. `pnpm client-thinning:audit`
-remains red on the remaining A3R5 through A3R7 buckets.
+After Bucket 3, A3R1, A3R2, A3R3, and A3R4 pass.
+
+Bucket 4 landed the A3EC4 asset ownership fixes:
+
+- Fastify asset reads now reject values that are neither raw server asset ids nor
+  supported legacy `assets/<sha>.<ext>` paths before `risu-auth` is attached.
+- The RisuSave asset walker accepts the same raw-id and legacy-path shapes as
+  the client asset parser, so bundle export includes those referenced bytes.
+- Server backups copy the asset directory into the backup snapshot and restore
+  it alongside `db.json`.
+- Transformer ONNX asset uploads pass a filename and persist
+  `application/x-onnx` / `.onnx` metadata instead of falling back to PNG.
+
+After Bucket 4, A3R5 and A3R7 pass. `pnpm client-thinning:audit` remains red on
+the remaining A3R6 Bucket 5 gate.
 
 The audit still intentionally relies on focused behavior tests or later
 documented contract decisions for these Alpha 3 classes:
@@ -182,18 +195,13 @@ implementation exposes a repeatable source pattern worth guarding.
 
 ## Current Observed Failures
 
-After Bucket 3, `pnpm client-thinning:audit` is intentionally red on the
-remaining behavior buckets. The observed Alpha 3 failures are:
+After Bucket 4, `pnpm client-thinning:audit` is intentionally red on the
+remaining behavior bucket. The observed Alpha 3 failure is:
 
-- **A3R5:** client asset reads accept `assets/<id>.<ext>` but the RisuSave
-  asset walker records only raw ids.
 - **A3R6:** wildcard array secrets restore from `source[i]`.
-- **A3R7:** `readServerAssetBytes` falls back to arbitrary `loc` values with
-  `risu-auth`.
 
-The next implementation pass should start with Bucket 4, make A3R5/A3R7 pass,
-and add or update focused tests for the corresponding asset ownership and backup
-durability findings.
+The next implementation pass should start with Bucket 5, make A3R6 pass, and
+add focused tests for masked array secret placeholder row identity.
 
 ## Loop-Exit Checklist
 

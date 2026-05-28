@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { webcrypto } from 'node:crypto'
+import { createHash, webcrypto } from 'node:crypto'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
+import { assetsDir } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
+const PNG_BYTES = Buffer.from(
+  '89504e470d0a1a0a0000000d4948445200000001000000010806000000' +
+    '1f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082',
+  'hex',
+)
+const PNG_SHA = createHash('sha256').update(PNG_BYTES).digest('hex')
 
 interface Harness {
   app: FastifyInstance
@@ -282,6 +289,47 @@ describe('Phase 2D backups', () => {
       pluginCustomStorage: {},
     })
     expect(afterRestore.json().revision).toBe(revisionAfter)
+  })
+
+  it('round-trips asset bytes with the backup snapshot', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const upload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(upload.statusCode).toBe(201)
+
+    await importDb(harness.app, assertion, { userIcon: PNG_SHA })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'asset snapshot' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const backupId = backup.json().id
+    expect(
+      readFileSync(path.join(harness.dataDir, 'backups', backupId, 'assets', `${PNG_SHA}.png`)),
+    ).toEqual(PNG_BYTES)
+
+    rmSync(assetsDir(harness.dataDir), { recursive: true, force: true })
+    writeFileSync(path.join(harness.dataDir, 'db.json'), JSON.stringify({ database: { tag: 'B' } }))
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const asset = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/assets/${PNG_SHA}`,
+    })
+    expect(asset.statusCode).toBe(200)
+    expect(Buffer.from(asset.rawPayload)).toEqual(PNG_BYTES)
   })
 
   it('restore of an unknown id returns 404', async () => {

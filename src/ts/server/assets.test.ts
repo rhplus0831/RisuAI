@@ -26,11 +26,24 @@ describe('Fastify server asset helpers', () => {
     })
   })
 
+  it('rejects unsupported references before attaching auth', async () => {
+    const fetchImpl = vi.fn()
+
+    await expect(
+      readServerAssetBytes('https://example.invalid/missing.png', {
+        auth: 'asset-auth',
+        fetchImpl,
+      }),
+    ).rejects.toThrow('Unsupported server asset reference')
+
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it('surfaces server asset read failures', async () => {
     const fetchImpl = vi.fn(async () => new Response('', { status: 404 }))
 
     await expect(
-      readServerAssetBytes('https://example.invalid/missing.png', {
+      readServerAssetBytes('d'.repeat(64), {
         auth: 'asset-auth',
         fetchImpl,
       }),

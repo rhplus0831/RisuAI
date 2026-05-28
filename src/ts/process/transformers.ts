@@ -200,7 +200,7 @@ export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]
     const file = unziped[key]
-    const fid = await saveAsset(file)
+    const fid = await saveAsset(file, '', key.endsWith('.onnx') ? key : '')
     let url = key
     if (url.startsWith('/')) {
       url = url.substring(1)

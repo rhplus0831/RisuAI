@@ -58,7 +58,10 @@ import {
   parseProxyJobWsEvent,
 } from './network/proxyJobWs'
 import { getNodeServerProxyAuth } from './storage/nodeStorage'
-import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './server/activeWriterSession'
+import {
+  activeWriterSessionHeader,
+  handleActiveWriterStaleResponse,
+} from './server/activeWriterSession'
 import { setCachedServerCommandRevision } from './server/commands'
 import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
 import { readServerAssetBytes, serverAssetUrl } from './server/assets'
@@ -115,6 +118,7 @@ let fileCache: {
 }
 
 const SERVER_ASSET_CONTENT_TYPES: Record<string, string> = {
+  onnx: 'application/x-onnx',
   png: 'image/png',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
