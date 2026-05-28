@@ -4,8 +4,8 @@ Date: 2026-05-28
 
 ## Open
 
-- Audit fixtures/tests are missing.
-- `coverage/latest-verification.md` has no active-folder command/result yet.
+- Audit fixtures/tests are missing for most rule families; the reusable
+  harness and `A4R-saveasset filename classification` proof exist.
 - `sendChat` server prompt assembly is not default-thin because
   `useServerPromptAssembly` defaults false.
 - Default chat-screen submission still performs browser-side durable transcript

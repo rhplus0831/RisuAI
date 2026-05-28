@@ -10,32 +10,36 @@ Date: 2026-05-29
 - Archived rule work moved the audit toward invariants; the active task now
   needs reproducible fixtures/tests.
 - Rule inventory is reconciled with `util/client-thinning-audit.ts` as of
-  2026-05-29. Fixture/test proof is still open.
+  2026-05-29.
+- `util/client-thinning-audit.test.ts` provides the reusable fixture harness.
+  It runs the audit script with a fixture root as `cwd` and
+  `CLIENT_THINNING_AUDIT_CHECK_IDS` selecting one rule.
+- `A4R-saveasset filename classification` has committed failing and bypass
+  fixtures under
+  `util/client-thinning-audit-fixtures/saveasset-filename-classification/`.
 
 ## Open Proof
 
-Each rule needs:
+Each remaining rule needs:
 
 - a committed pre-fix fixture
 - a test that runs the rule against the fixture
 - an assertion that the rule exits non-zero
 - a bypass-shape case when a narrow rule could otherwise pass
 
-## Fixture Harness Target
+## Fixture Harness
 
-Recommended next slice:
+Implemented:
 
-- Add `util/client-thinning-audit.test.ts` or an equivalent focused Vitest
-  test file.
-- Add committed fixture source roots under
+- `util/client-thinning-audit.test.ts` spawns
+  `node_modules/.bin/tsx util/client-thinning-audit.ts`.
+- Fixture source roots live under
   `util/client-thinning-audit-fixtures/<rule-slug>/`.
-- Run the audit against each fixture without checking out old commits. A
-  simple implementation can invoke the audit script with the fixture directory
-  as `cwd`, provided each fixture root contains the minimal `tsconfig.json` and
-  source paths needed by the audited rule.
-- Assert the process exits non-zero and the output contains the intended check
-  id. When a rule has a narrow allowed bypass, include a second fixture or case
-  proving the bypass shape remains accepted.
+- Each fixture root contains the minimal `tsconfig.json` and source paths
+  needed by the selected audit rule.
+- Failing fixtures assert non-zero exit and the intended check id in stderr.
+- Bypass fixtures assert zero exit for accepted shapes where the rule has a
+  narrow allowed exception.
 - Preserve the live repository entry point: `pnpm client-thinning:audit`.
 
 ## Rule Inventory
@@ -64,18 +68,20 @@ existing files yet.
 | `A4R-fanout composite command race` | `composite-command-fanout` | Dispatch two or more mutating command helpers in one scope without awaiting each previous call or routing through `runChatCommandSequence`/`runOptimisticCommandSequence`. | Non-zero exit with `A4R-fanout composite command race`. |
 | `A4R-backup data dir inventory` | `backup-data-dir-inventory` | Add a child to `KNOWN_DATA_DIR_CHILDREN` without referencing it in both `createBackup` and `restoreBackup`, or remove the inventory declaration. | Non-zero exit with `A4R-backup data dir inventory`. |
 | `A4R-bounded process-lifetime accumulators` | `bounded-process-lifetime-accumulators` | Declare an exported top-level `Set`, `Map`, or `Array` under `server/fastify/src/` without bounded classification, or remove visible eviction from a declared accumulator. | Non-zero exit with `A4R-bounded process-lifetime accumulators`. |
-| `A4R-saveasset filename classification` | `saveasset-filename-classification` | Call `saveAsset(bytes)` or `saveAsset(..., '', '')` without a real filename and without a nearby `// audit:image-default` rationale. | Non-zero exit with `A4R-saveasset filename classification`. |
+| `A4R-saveasset filename classification` | `saveasset-filename-classification` | Call `saveAsset(bytes)` or `saveAsset(..., '', '')` without a real filename and without a nearby `// audit:image-default` rationale. | Covered: failing fixture exits non-zero with `A4R-saveasset filename classification`; bypass fixture with `// audit:image-default` exits zero. |
 
 ## Suggested First Proof
 
-Start with `A4R-saveasset filename classification` or `A4R-backup data dir
-inventory`. They have the smallest fixture surface: one or two source files can
-trigger the intended diagnostic, and the bypass case is easy to express.
-Avoid starting with `EC5 active-writer guard` or `EC4 stable command ids`; they
-span more source paths and will likely drive harness design too early.
+`A4R-saveasset filename classification` is complete. Continue with
+`A4R-backup data dir inventory`; it should only need a minimal
+`server/fastify/src/repository.ts` fixture that declares an extra
+`KNOWN_DATA_DIR_CHILDREN` entry missing from `createBackup` or `restoreBackup`.
+Avoid jumping to `EC5 active-writer guard` or `EC4 stable command ids` until
+several small fixtures have proven the harness shape.
 
 ## Commands
 
 ```sh
 pnpm client-thinning:audit
+pnpm exec vitest run util/client-thinning-audit.test.ts
 ```

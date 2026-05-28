@@ -39,17 +39,22 @@ The fixture inventory for these checks lives in
 
 ## Open Work
 
-Audit fixture reproducibility remains open: every audit rule should have a
-committed pre-fix fixture and a `*.test.ts` proof that the rule exits non-zero
-on that fixture.
+Audit fixture reproducibility remains open for the remaining rule families:
+every audit rule should have a committed pre-fix fixture and a `*.test.ts`
+proof that the rule exits non-zero on that fixture.
 
 The rule should catch the invariant class, not only the original spelling of a
 past bug. Narrow rules need an explicit reason.
 
-The rule inventory is complete as of 2026-05-29. The next implementation slice
-is the fixture harness: add a reusable test runner that can execute the audit
-against committed fixture source trees and assert non-zero exit, stderr/stdout,
-and the intended check id.
+The rule inventory is complete as of 2026-05-29. The reusable fixture harness
+now lives in `util/client-thinning-audit.test.ts`; it runs
+`util/client-thinning-audit.ts` against committed fixture roots with
+`CLIENT_THINNING_AUDIT_CHECK_IDS` selecting the intended rule and asserts exit
+code, stdout/stderr, and check id.
+
+First fixture proof is complete for `A4R-saveasset filename classification`.
+The next small rule-family proof should be `A4R-backup data dir inventory`
+unless source inventory reveals a more urgent audit-rule gap.
 
 ## Direction
 
@@ -68,5 +73,5 @@ and the intended check id.
 ## Proof Leads
 
 - `pnpm client-thinning:audit`
-- Future audit fixture tests
+- `pnpm exec vitest run util/client-thinning-audit.test.ts`
 - `util/client-thinning-audit.ts`

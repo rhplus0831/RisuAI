@@ -2602,6 +2602,31 @@ function checkAlpha4SaveAssetClassification(): void {
   }
 }
 
+function selectedChecks(checks: AuditCheck[]): AuditCheck[] {
+  const selected = process.env.CLIENT_THINNING_AUDIT_CHECK_IDS
+  if (!selected) return checks
+
+  const ids = selected
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+  if (ids.length === 0) return checks
+
+  const byId = new Map(checks.map((check) => [check.id, check]))
+  const missing = ids.filter((id) => !byId.has(id))
+  if (missing.length > 0) {
+    findings.push({
+      check: 'audit check selector',
+      message: `Unknown CLIENT_THINNING_AUDIT_CHECK_IDS value(s): ${missing.join(', ')}`,
+    })
+  }
+
+  return ids.flatMap((id) => {
+    const check = byId.get(id)
+    return check ? [check] : []
+  })
+}
+
 function runChecks(checks: AuditCheck[]): void {
   for (const check of checks) {
     try {
@@ -2615,7 +2640,7 @@ function runChecks(checks: AuditCheck[]): void {
   }
 }
 
-runChecks([
+const auditChecks: AuditCheck[] = [
   { id: 'EC5 active-writer guard', run: checkActiveWriterGuard },
   { id: 'EC4 stable command ids', run: checkStableIdCommandPaths },
   { id: 'EC2 plugin storage gates', run: checkPluginStorageGates },
@@ -2636,7 +2661,9 @@ runChecks([
   { id: 'A4R-backup data dir inventory', run: checkAlpha4BackupInventory },
   { id: 'A4R-bounded process-lifetime accumulators', run: checkAlpha4BoundedAccumulators },
   { id: 'A4R-saveasset filename classification', run: checkAlpha4SaveAssetClassification },
-])
+]
+
+runChecks(selectedChecks(auditChecks))
 
 if (findings.length > 0) {
   console.error('Client-thinning audit failed:')

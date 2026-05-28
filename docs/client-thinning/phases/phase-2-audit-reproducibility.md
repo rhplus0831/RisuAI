@@ -43,6 +43,7 @@ the rule exits non-zero for that regression class.
    - Scope: audit tooling and tests only. Preserve
      `pnpm client-thinning:audit` as the single package entry point for the
      live repository audit.
+   - Status: complete as of 2026-05-29.
    - Done: a test can run one fixture in isolation and assert the audit exits
      non-zero without checking out old commits.
 3. First rule-family proof.
@@ -50,6 +51,8 @@ the rule exits non-zero for that regression class.
      rule family, preferably the smallest family from the inventory.
    - Scope: one rule family, its fixture files, and any harness adjustment
      needed to make the assertion specific to that rule.
+   - Status: complete for `A4R-saveasset filename classification` as of
+     2026-05-29.
    - Done: the test proves the fixture fails with the intended diagnostic, the
      live audit still passes, and the fixture layout is reusable for the
      remaining families.
@@ -78,7 +81,11 @@ the rule exits non-zero for that regression class.
 
 ## Next Handoff
 
-Pick slice 2 next. Build the fixture harness before adding the full matrix of
-fixtures. The recommended first fixture proof after the harness is either
-`A4R-saveasset filename classification` or `A4R-backup data dir inventory`
-because both need only a small fixture source surface.
+Continue slice 4 by adding the next rule-family fixture proof. Start with
+`A4R-backup data dir inventory` unless current source inventory reveals a more
+urgent rule gap. Follow the established pattern in
+`util/client-thinning-audit.test.ts` and
+`util/client-thinning-audit-fixtures/saveasset-filename-classification/`: add a
+minimal fixture root, select one audit check with
+`CLIENT_THINNING_AUDIT_CHECK_IDS`, assert non-zero exit with the intended check
+id, and keep `pnpm client-thinning:audit` passing.
