@@ -48,6 +48,7 @@ describe('client-thinning audit fixtures', () => {
   const boundedAccumulatorCheck = 'A4R-bounded process-lifetime accumulators'
   const assetUrlGateCheck = 'A4R7 asset URL gate'
   const saveAssetCheck = 'A4R-saveasset filename classification'
+  const compositeFanoutCheck = 'A4R-fanout composite command race'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -138,6 +139,30 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'saveasset-filename-classification/image-default-bypass',
       saveAssetCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that fans out two mutating dispatches in one scope', async () => {
+    const result = await runAuditFixture(
+      'composite-command-fanout/failing',
+      compositeFanoutCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${compositeFanoutCheck}]`)
+    expect(result.stderr).toContain(
+      'src/ts/process/triggers.ts function applyTriggerEdits dispatches 2 mutating commands (dispatchAppendMessage, dispatchUpdateMessage) without serialization.',
+    )
+  })
+
+  it('allows fan-out routed through a sequencer or an awaited dispatch chain', async () => {
+    const result = await runAuditFixture(
+      'composite-command-fanout/serialized-bypass',
+      compositeFanoutCheck,
     )
 
     expect(result.exitCode).toBe(0)
