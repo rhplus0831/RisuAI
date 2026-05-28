@@ -2,10 +2,10 @@
 
 Date: 2026-05-28
 
-Status: **open.** These findings were discovered after the
+Status: **closed 2026-05-28.** These findings were discovered after the
 [`../client-thinning-alpha-2/`](../client-thinning-alpha-2/) closeout. The
-Alpha 3 audit now fails intentionally on the remaining behavior buckets, so each
-fix should keep narrowing the repeatable audit failure list.
+Alpha 3 closeout fixed A3F1 through A3F13 with repeatable audit gates or
+focused regression tests. No Alpha 3 findings remain open.
 
 ## Summary
 
@@ -23,11 +23,12 @@ fix should keep narrowing the repeatable audit failure list.
 | A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | A3EC4         | Focused tests/contract         | Closed | 4                |
 | A3F11 - Masked array secrets restore by index                              | Medium   | A3EC5 / A3EC6 | R6                             | Closed | 5                |
 | A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | A3EC1         | Focused tests/contract         | Closed | 1                |
-| A3F13 - Command event sink keeps unbounded event history                   | Low      | A3EC6         | Focused tests/retention policy | Open   | 6                |
+| A3F13 - Command event sink keeps unbounded event history                   | Low      | A3EC6         | Focused tests/retention policy | Closed | 6                |
 
 The latest Codex and Claude audits are merged in [`audit.md`](./audit.md).
-Closeout is rule-first: R1-R7 should fail on the pre-fix tree and pass after
-their corresponding fixes before a behavior bucket is marked closed.
+Closeout was rule-first: R1-R7 fail on the old source patterns and pass after
+their corresponding fixes; A3F8, A3F10, A3F12, and A3F13 are covered by focused
+tests and documented contract decisions.
 
 ## A3F1 - Passive Bootstrap Refresh Steals Active-Writer Ownership
 
@@ -479,7 +480,12 @@ semantics are supposed to be durable.
 
 Required closeout:
 
-- No dedicated R-rule is required; close with a focused retention policy test or
-  a documented explicit retention contract.
-- Bound the buffer, remove history if not needed, or document and test the
-  intended retention policy.
+- Closed in Bucket 6. `InMemoryCommandEventSink` now retains only the latest
+  1000 command events for `list()` diagnostics and trims older history on emit.
+  Live subscribers still receive every emitted event; event replay is not a
+  durable process-lifetime contract.
+- Regression proof:
+  `server/fastify/__tests__/events.test.ts` covers bounded retained history,
+  live fanout preservation, and `clear()` behavior.
+- No dedicated R-rule was added because the retention limit is local to the
+  event sink implementation and is covered directly by the focused test.

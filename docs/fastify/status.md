@@ -6,8 +6,10 @@ All Phases 0-9 are complete. No open findings remain. The follow-up
 client-thinning alpha workstream closed AF1 through AF10 and AEC1 through AEC7;
 see [`client-thinning-alpha/final-audit.md`](client-thinning-alpha/final-audit.md)
 for that first alpha verification pass. Alpha 2 then closed the remaining
-Fastify server-projection invariant gaps; see
-[`client-thinning-alpha-2/final-audit.md`](client-thinning-alpha-2/final-audit.md)
+Fastify server-projection invariant gaps. Alpha 3 then closed the later
+Fastify-only projection gaps around passive reads, stable ids, asset ownership,
+secret row identity, and command event retention; see
+[`client-thinning-alpha-3/final-audit.md`](client-thinning-alpha-3/final-audit.md)
 for the latest client-thinning closeout. A follow-up Fastify-only lockdown
 removed the residual no-port runtime surfaces (alternative server adapters,
 legacy client wrappers, service worker, browser-side persistence, legacy client
@@ -19,12 +21,12 @@ directly; do not write compatibility migrations.
 
 ## Verification
 
-Latest full verification on 2026-05-28:
+Latest full verification on 2026-05-28 for the Alpha 3 closeout:
 
 - `pnpm client-thinning:audit`: passed.
 - `pnpm check`: 0 errors, 0 warnings.
-- `pnpm test`: 78 files, 788 passed, 4 skipped.
-- `pnpm api:test`: 69 files, 1249 passed.
+- `pnpm test`: 79 files passed; 793 tests passed, 4 skipped.
+- `pnpm api:test`: 70 files passed; 1267 tests passed.
 - `pnpm build`: passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser`: 1 browser smoke test passed.
 
@@ -55,6 +57,6 @@ Latest full verification on 2026-05-28:
 - Phase details: [`phases-completed/`](phases-completed/)
 - Next steps: [`status/next-steps.md`](status/next-steps.md)
 - Latest client-thinning closeout:
-  [`client-thinning-alpha-2/final-audit.md`](client-thinning-alpha-2/final-audit.md)
+  [`client-thinning-alpha-3/final-audit.md`](client-thinning-alpha-3/final-audit.md)
 - Server status: [`status/server.md`](status/server.md)
 - sendChat status: [`status/sendchat.md`](status/sendchat.md)

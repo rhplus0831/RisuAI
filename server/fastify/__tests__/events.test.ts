@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import {
+  InMemoryCommandEventSink,
   createCommandEventSink,
   type CommandEvent,
   type CommandEventListener,
@@ -182,6 +183,30 @@ afterEach(async () => {
 })
 
 describe('Phase 9-5a command events stream', () => {
+  it('bounds retained command event history while preserving live fanout', () => {
+    const sink = new InMemoryCommandEventSink(2)
+    const seen: CommandEvent[] = []
+    sink.subscribe((event) => {
+      seen.push(event)
+    })
+
+    const events: CommandEvent[] = [
+      { type: 'settings.updated', revision: 1, resource: 'settings' },
+      { type: 'preset.updated', revision: 2, resource: 'preset', id: 'preset-1' },
+      { type: 'chat.updated', revision: 3, resource: 'chat', id: 'chat-1' },
+    ]
+
+    for (const event of events) {
+      sink.emit(event)
+    }
+
+    expect(seen).toEqual(events)
+    expect(sink.list()).toEqual(events.slice(1))
+
+    sink.clear()
+    expect(sink.list()).toEqual([])
+  })
+
   it('keeps memory event bus delivery best-effort across throwing subscribers', () => {
     const bus = createMemoryEventBus()
     const event: MemoryEvent = {

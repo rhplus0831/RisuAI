@@ -1,12 +1,11 @@
-# Fastify Client Thinning Alpha 3 - Audit Handoff
+# Fastify Client Thinning Alpha 3 - Closeout Record
 
 Date: 2026-05-28
 
-Status: **open.** This directory records the third client-thinning follow-up
+Status: **closed.** This directory records the third client-thinning follow-up
 pass after [`../client-thinning-alpha-2/`](../client-thinning-alpha-2/) closed.
-The Alpha 2 audit is still valuable, but a deeper read found additional
-Fastify server-projection invariant gaps that `pnpm client-thinning:audit` did
-not previously catch.
+Alpha 3 invariant gaps are fixed, covered by repeatable audit rules or focused
+regression tests, and recorded in [`final-audit.md`](./final-audit.md).
 
 ## Why Alpha 3 Exists
 
@@ -64,14 +63,11 @@ masked placeholders when identity is missing, duplicated, or unknown. Focused
 tests cover reorder/delete behavior for provider settings arrays plus direct
 masking coverage for bot presets and character-owned TTS secrets.
 
-After Bucket 5, `pnpm client-thinning:audit` passes all Alpha 3 R1-R7 gates. The
-next implementation agent should start with Bucket 6: close A3F13 event
-retention, run the full closeout ladder, then reconcile broad status docs only
-after Alpha 3 is ready to close.
-
-Do not reconcile `docs/fastify/status.md`,
-`docs/fastify/status/next-steps.md`, or other broad status docs until the
-behavior buckets are fixed and the full closeout ladder passes.
+Bucket 6 has now landed event retention and final closeout. The in-memory
+command event sink retains only the latest 1000 command events for diagnostics
+while preserving live fanout to active subscribers. Focused tests cover the
+bounded retention contract, and the broad status docs now point to this Alpha 3
+closeout after the full ladder passed.
 
 ## Scope
 
@@ -122,8 +118,7 @@ committed regression proof.
 
 ## Verification Baseline
 
-The following commands were recorded across the latest read-only Alpha 3 audits
-and passed:
+The following commands passed on 2026-05-28 before Alpha 3 was marked closed:
 
 ```bash
 pnpm client-thinning:audit
@@ -134,22 +129,24 @@ pnpm build
 pnpm smoke:fastify-browser
 ```
 
-Passing these commands is not enough to close Alpha 3; they are the baseline that
-missed the open findings.
+The focused Bucket 6 proof is:
 
-After Bucket 3, `pnpm client-thinning:audit` is intentionally red until the
-remaining behavior buckets remove the flagged patterns. The latest observed
-failures are recorded in [`audit.md`](./audit.md).
+```bash
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/events.test.ts
+```
 
 ## Document Map
 
-- [`audit.md`](./audit.md) - combined Codex/Claude latest audit verdict,
-  conflict resolution, R1-R7 gates, and loop-exit checklist.
-- [`open-findings.md`](./open-findings.md) - live Alpha 3 findings.
-- [`closeout-buckets.md`](./closeout-buckets.md) - suggested task order and
-  ownership.
+- [`audit.md`](./audit.md) - combined Codex/Claude audit verdict, R1-R7 gates,
+  and closeout checklist.
+- [`open-findings.md`](./open-findings.md) - Alpha 3 findings and closed
+  status.
+- [`closeout-buckets.md`](./closeout-buckets.md) - bucket order and closed
+  ownership record.
 - [`decisions.md`](./decisions.md) - default decisions and acceptable
   alternatives to settle before implementation.
+- [`final-audit.md`](./final-audit.md) - final Alpha 3 verdict and verification
+  record.
 - [`../../audit-codex-latest.md`](../../audit-codex-latest.md) and
   [`../../audit-claude-latest.md`](../../audit-claude-latest.md) - source latest
   read-only audits combined into this folder.

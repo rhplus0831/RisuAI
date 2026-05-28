@@ -124,3 +124,9 @@ Rule map:
 - R5: server bundle asset walking and client asset-reference parsing must agree.
 - R6: wildcard array secrets require row-identity-safe restoration or rejection.
 - R7: asset reads must reject unknown references before attaching `risu-auth`.
+
+**Bucket 6 implementation:** A3F13 closes with a documented tested retention
+contract instead of a dedicated audit rule. `InMemoryCommandEventSink` retains
+the latest 1000 command events for diagnostics through `list()`, trims older
+history during `emit()`, and preserves best-effort live fanout to all active
+subscribers. Event history is not a durable replay log.

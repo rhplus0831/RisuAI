@@ -17,6 +17,8 @@ export interface CommandEventSink {
   subscribe(listener: CommandEventListener): () => void
 }
 
+export const COMMAND_EVENT_HISTORY_LIMIT = 1000
+
 export const COMMAND_EVENT_CATALOG = {
   settingsUpdated: {
     type: 'settings.updated',
@@ -328,8 +330,17 @@ export class InMemoryCommandEventSink implements CommandEventSink {
   private readonly events: CommandEvent[] = []
   private readonly listeners = new Set<CommandEventListener>()
 
+  constructor(private readonly historyLimit = COMMAND_EVENT_HISTORY_LIMIT) {
+    if (!Number.isSafeInteger(historyLimit) || historyLimit < 1) {
+      throw new RangeError('Command event history limit must be a positive safe integer')
+    }
+  }
+
   emit(event: CommandEvent): void {
     this.events.push(event)
+    if (this.events.length > this.historyLimit) {
+      this.events.splice(0, this.events.length - this.historyLimit)
+    }
     for (const listener of this.listeners) {
       try {
         listener(event)

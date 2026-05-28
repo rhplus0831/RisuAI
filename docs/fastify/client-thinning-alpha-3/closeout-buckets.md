@@ -2,16 +2,17 @@
 
 Date: 2026-05-28
 
-This is the suggested task-agent breakdown for Alpha 3. Each bucket should land
+This is the ordered task-agent breakdown for Alpha 3. Each bucket landed
 behavior, focused tests, audit coverage where practical, and doc updates before
 being marked closed.
 
-Current status: **open.** Buckets 0, 1, 2, 3, 4, and 5 have landed. Bucket 1
+Current status: **closed.** Buckets 0, 1, 2, 3, 4, 5, and 6 have landed. Bucket 1
 clears A3F1, A3F2, and A3F12. Bucket 2 clears A3F3, A3F4, and the A3F6
 preset-import validator overlap. Bucket 3 clears A3F5 global chat/message
 addressing; Bucket 4 clears A3F7, A3F8, A3F9, and A3F10. Bucket 5 clears A3F11
-masked array secret row identity. `pnpm client-thinning:audit` now passes;
-Bucket 6 remains for A3F13 event retention and final closeout.
+masked array secret row identity. Bucket 6 clears A3F13 command event
+retention and final docs/status closeout. `pnpm client-thinning:audit` passes
+all Alpha 3 R1-R7 gates.
 
 Rule-first gate: Bucket 0 lands before behavior closeout. No behavior bucket may
 be marked closed until its corresponding R rule fails on the pre-fix tree and
@@ -26,7 +27,7 @@ failing-then-passing regression test or an explicit tested contract decision.
 | 3     | Global id addressing                     | A3F5                                                                         | Landed. Chat/message ids are globally normalized or rejected on command writes while the public globally addressed route contract remains unchanged.                     |
 | 4     | Asset ownership and backup durability    | A3F7, A3F8, A3F9, A3F10                                                      | Landed. Authenticated asset reads reject unknown refs, bundle walking includes legacy asset paths, backups preserve asset bytes, and ONNX upload metadata is retained.   |
 | 5     | Secret placeholder row identity          | A3F11                                                                        | Landed. Masked array placeholders restore by stable row identity or reject missing/duplicated/unknown row identity, with provider settings and masking regression tests. |
-| 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | `server/fastify/src/commands/events.ts`, event tests, `docs/fastify/client-thinning-alpha-3/*`, top-level status docs after full ladder                                  |
+| 6     | Event retention and final audit closeout | A3F13, A3EC6 docs                                                            | Closed. `InMemoryCommandEventSink` retains the latest 1000 events, focused event tests prove retention/fanout behavior, and top-level status docs point to Alpha 3.       |
 
 ## Parallelization Notes
 
@@ -40,15 +41,15 @@ failing-then-passing regression test or an explicit tested contract decision.
   walking, and upload metadata.
 - Bucket 5 is independent from command id work and now prevents masked-array
   placeholder regressions through R6 plus focused tests.
-- Bucket 6 should close last, after the full verification ladder passes.
+- Bucket 6 closed last after the full verification ladder passed.
 - A3F5 no longer includes chat folders. Folder global uniqueness is already
   covered by `normalizeGlobalChatFolderIds` and audit rule AEC4
   (`util/client-thinning-audit.ts:1071-1105`).
 
 ## Expected Closeout Ladder
 
-Run focused tests for each bucket, then the shared ladder before marking Alpha 3
-closed:
+Focused tests landed for each bucket, then the shared ladder passed before Alpha
+3 was marked closed:
 
 ```bash
 pnpm client-thinning:audit
@@ -84,6 +85,5 @@ pattern.
 
 `pnpm client-thinning:audit` currently passes all Alpha 3 R1-R7 gates.
 
-Next agent: start Bucket 6, close A3F13 event retention with focused tests, then
-run the full closeout ladder. Keep broad status docs untouched until the final
-closeout.
+Next agent: Alpha 3 is closed. Start new Fastify client-thinning work only if a
+fresh finding appears, and record it outside this closed Alpha 3 bucket list.

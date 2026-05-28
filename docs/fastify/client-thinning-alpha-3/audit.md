@@ -2,10 +2,10 @@
 
 Date: 2026-05-28
 
-Status: **open.** This file combines the latest read-only audit results from
+Status: **closed.** This file combines the latest read-only audit results from
 [`../../audit-codex-latest.md`](../../audit-codex-latest.md) and
 [`../../audit-claude-latest.md`](../../audit-claude-latest.md) into the Alpha 3
-workstream folder.
+workstream folder, then records the final Alpha 3 closeout.
 
 ## Verdict
 
@@ -17,10 +17,10 @@ Both latest audits agree on the core result:
   projection gaps.
 - A3F1 through A3F13 are real against the audited checkout
   `c42b215f docs: close client thinning alpha 2`.
-- The current verification ladder can pass while Alpha 3 bugs remain, so green
-  verification is a baseline, not closeout proof.
-- Closeout must add repeatable audit coverage where practical before behavior
-  buckets are considered closed.
+- The initial verification ladder could pass while Alpha 3 bugs remained, so
+  green verification was only a baseline until the behavior buckets landed.
+- Closeout added repeatable audit coverage where practical and focused tests for
+  documented contract decisions before behavior buckets were marked closed.
 
 One scope correction from the Claude audit is binding for this folder: A3F5 is
 narrowed to chats and messages. Chat folder global-id uniqueness is already
@@ -71,8 +71,8 @@ audit currently passes while missing most Alpha 3 bug classes.
 
 | Finding                                                                    | Severity | Merged audit result | Closeout gate                    |
 | -------------------------------------------------------------------------- | -------- | ------------------- | -------------------------------- |
-| A3F1 - Passive bootstrap refresh steals active-writer ownership            | High     | Real                | R1                               |
-| A3F2 - Generic settings blindly replay 409 conflicts                       | High     | Real                | R2                               |
+| A3F1 - Passive bootstrap refresh steals active-writer ownership            | High     | Closed in Bucket 1  | R1                               |
+| A3F2 - Generic settings blindly replay 409 conflicts                       | High     | Closed in Bucket 1  | R2                               |
 | A3F3 - Preset copy/import still mint command-path ids                      | High     | Closed in Bucket 2  | R3                               |
 | A3F4 - Empty-lorebook delete fallback mints a command-path id              | High     | Closed in Bucket 2  | R3                               |
 | A3F5 - Global chat/message addressing can hit the wrong duplicate id       | High     | Closed in Bucket 3  | R4                               |
@@ -82,8 +82,8 @@ audit currently passes while missing most Alpha 3 bug classes.
 | A3F9 - Bundle asset walker ignores supported legacy asset-path refs        | Medium   | Closed in Bucket 4  | R5                               |
 | A3F10 - Fastify asset uploads can lose MIME/extension metadata             | Low      | Closed in Bucket 4  | Focused tests/contract decision  |
 | A3F11 - Masked array secrets restore by index                              | Medium   | Closed in Bucket 5  | R6                               |
-| A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | Real                | Focused tests/contract decision  |
-| A3F13 - Command event sink keeps unbounded event history                   | Low      | Real                | Focused tests/retention decision |
+| A3F12 - Compatibility adapters can fan out conflicting concurrent commands | Medium   | Closed in Bucket 1  | Focused tests/contract decision  |
+| A3F13 - Command event sink keeps unbounded event history                   | Low      | Closed in Bucket 6  | Focused tests/retention decision |
 
 The independent sweep in the Claude audit found no additional genuine Alpha 3
 bug classes. Three proposed additions involving personas, loadouts, and
@@ -163,11 +163,19 @@ Bucket 5 landed the A3EC5 masked secret row identity fixes:
 - Reorder/delete tests prove provider array secrets are preserved on their own
   rows; direct masking tests cover bot presets and character-owned TTS secrets.
 
-After Bucket 5, A3R6 passes and `pnpm client-thinning:audit` is green. Alpha 3
-remains open for Bucket 6 event retention/final closeout.
+After Bucket 5, A3R6 passed and `pnpm client-thinning:audit` was green.
 
-The audit still intentionally relies on focused behavior tests or later
-documented contract decisions for these Alpha 3 classes:
+Bucket 6 landed the A3F13 command event retention fix and final closeout:
+
+- `InMemoryCommandEventSink` retains only the latest 1000 command events for
+  `list()` diagnostics.
+- Older retained history is trimmed on emit, but live subscribers still receive
+  every emitted event.
+- `server/fastify/__tests__/events.test.ts` proves bounded retained history,
+  live fanout preservation, and `clear()` behavior.
+
+The Alpha 3 closeout intentionally relies on focused behavior tests and
+documented contract decisions for these classes:
 
 - Backup/restore asset-byte preservation.
 - Upload metadata defaults for non-image assets.
@@ -201,22 +209,19 @@ should fail on the pre-fix tree and pass after the behavior fix.
   raw server asset ids nor supported local asset paths before adding
   `risu-auth`.
 
-A3F8, A3F10, A3F12, and A3F13 can close with focused regression tests and a
-documented contract decision. Add structural audit coverage for them only if the
-implementation exposes a repeatable source pattern worth guarding.
+A3F8, A3F10, A3F12, and A3F13 closed with focused regression tests and
+documented contract decisions. Add structural audit coverage for future similar
+classes only if the implementation exposes a repeatable source pattern worth
+guarding.
 
 ## Current Observed Failures
 
-After Bucket 5, `pnpm client-thinning:audit` passes. There are no remaining
-R1-R7 audit failures.
-
-The next implementation pass should start with Bucket 6 and close A3F13 command
-event retention with focused retention-policy tests before running the full
-closeout ladder.
+After Bucket 6, `pnpm client-thinning:audit` passes. There are no remaining
+R1-R7 audit failures or open Alpha 3 findings.
 
 ## Loop-Exit Checklist
 
-Alpha 3 closes only when all of the following are true:
+Alpha 3 closed after all of the following became true:
 
 - R1-R7 are implemented in `util/client-thinning-audit.ts`, with proof that each
   relevant rule fails on the old pattern and passes after the fix.
@@ -227,5 +232,5 @@ Alpha 3 closes only when all of the following are true:
 - A3F10, A3F12, and A3F13 have focused regression tests even without dedicated
   audit rules.
 - The full ladder passes on the closeout checkout.
-- Only then are `docs/fastify/status.md`,
-  `docs/fastify/status/next-steps.md`, and other broad status docs reconciled.
+- `docs/fastify/status.md`, `docs/fastify/status/next-steps.md`, and other
+  broad status docs are reconciled.
