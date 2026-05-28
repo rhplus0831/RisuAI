@@ -50,6 +50,7 @@ describe('client-thinning audit fixtures', () => {
   const saveAssetCheck = 'A4R-saveasset filename classification'
   const compositeFanoutCheck = 'A4R-fanout composite command race'
   const resolverNormalizeCheck = 'A4R4 globally-addressed resolver normalize'
+  const parserParityCheck = 'A4R5 asset reference parser parity'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -188,6 +189,27 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'resolver-normalize/normalize-first-bypass',
       resolverNormalizeCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture where the walker regex drifts from the client parser', async () => {
+    const result = await runAuditFixture('asset-reference-parser-parity/failing', parserParityCheck)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${parserParityCheck}]`)
+    expect(result.stderr).toContain(
+      'Walker addReference does not contain a regex literal equal to client LOCAL_ASSET_PATH_RE',
+    )
+  })
+
+  it('allows a walker regex literal identical to the client parser', async () => {
+    const result = await runAuditFixture(
+      'asset-reference-parser-parity/parity-bypass',
+      parserParityCheck,
     )
 
     expect(result.exitCode).toBe(0)
