@@ -1,6 +1,7 @@
 import { language } from 'src/lang'
 import { alertError, alertInput, waitAlert } from '../alert'
 import { isFastifyServer } from '../platform'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from '../server/activeWriterSession'
 import { base64url, getKeypairStore, saveKeypairStore } from '../util'
 
 const ROUTES = {
@@ -106,9 +107,11 @@ export class NodeStorage {
         'content-type': 'application/octet-stream',
         'file-path': Buffer.from(key, 'utf-8').toString('hex'),
         'risu-auth': await this.createAuth(),
+        ...activeWriterSessionHeader(),
       },
     })
     if (da.status < 200 || da.status >= 300) {
+      handleActiveWriterStaleResponse(da)
       throw 'setItem Error'
     }
     const data = await da.json()
@@ -161,9 +164,11 @@ export class NodeStorage {
       headers: {
         'file-path': filePath,
         'risu-auth': await this.createAuth(),
+        ...activeWriterSessionHeader(),
       },
     })
     if (da.status < 200 || da.status >= 300) {
+      handleActiveWriterStaleResponse(da)
       throw 'removeItem Error'
     }
     const data = await da.json()

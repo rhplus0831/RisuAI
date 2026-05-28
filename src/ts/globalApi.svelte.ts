@@ -58,6 +58,7 @@ import {
   parseProxyJobWsEvent,
 } from './network/proxyJobWs'
 import { getNodeServerProxyAuth } from './storage/nodeStorage'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './server/activeWriterSession'
 import { setCachedServerCommandRevision } from './server/commands'
 import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
 import { readServerAssetBytes, serverAssetUrl } from './server/assets'
@@ -228,10 +229,12 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
       headers: {
         'content-type': contentType,
         'risu-auth': auth,
+        ...activeWriterSessionHeader(),
       },
       body: uploadBody,
     })
     if (!response.ok) {
+      handleActiveWriterStaleResponse(response)
       const body = await response.text().catch(() => '')
       throw new Error(body || `Failed to upload server asset: ${response.status}`)
     }

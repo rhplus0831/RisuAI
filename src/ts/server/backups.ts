@@ -1,5 +1,6 @@
 import { isFastifyServer } from '../platform'
 import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import { setCachedServerCommandRevision, type CommandEvent } from './commands'
 
 const BACKUPS_ENDPOINT = '/api/v1/backups'
@@ -117,6 +118,7 @@ async function requestServerBackupJson<T, R extends Record<string, unknown>>(
       headers: {
         ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
         'risu-auth': auth,
+        ...activeWriterSessionHeader(),
       },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
     })
@@ -133,6 +135,7 @@ async function requestServerBackupJson<T, R extends Record<string, unknown>>(
   }
 
   if (!response.ok) {
+    handleActiveWriterStaleResponse(response)
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
 

@@ -14,30 +14,6 @@ Each finding states the **problem** as it exists in the code today; the chosen
 **direction** is summarized in the Decision line and detailed in
 [`decisions.md`](./decisions.md) / [`closeout-buckets.md`](./closeout-buckets.md).
 
-## F5 → EC5 (P2): Higher-level command wrappers hide 409 conflicts by replaying stale payloads
-
-On a first 409, the high-level browser wrappers resend the same stale payload
-with the newer revision (last-writer-wins).
-
-- `src/ts/server/commands.ts:2145` reads a base revision, `:2151` sends the command, and `:2152` retries the same `input.command` with `result.currentRevision` after a conflict.
-- **Second retry site:** `patchServerBackedSettings` has its own blind retry at `src/ts/server/commands.ts:1038`, replaying the same patch with `result.currentRevision`.
-- The retry is **one-shot** (a second 409 can roll back), but the first conflict is already hidden.
-- The low-level transport already surfaces conflicts as `{ status: "conflict", currentRevision }` at `src/ts/server/commands.ts:2204`; direct typed helpers can return visible conflicts (coverage `commands.test.ts:313`).
-- The server correctly rejects stale revisions (`server/fastify/src/commands/mutations.ts:50`) and maps to 409 (`server/fastify/src/routes/commands.ts:4194`; coverage `commands.test.ts:190`).
-- Browser tests still encode replay for several families: settings `src/ts/server/commands.test.ts:486`, presets `:646`, prompts `:821`.
-- Other mutating routes do **not** take a `baseRevision`: import (`save.ts:48`) and asset upload (`assets.ts:35`); backups (`backups.ts:25`, `:46`, `:62`) and legacy storage writes (`legacyStorage.ts:67`, `:88`) are also mutating endpoints. The active-writer guard must cover them ([`decisions.md`](./decisions.md#ec5)).
-
-Precision (from audit): conflict-hiding is **not** limited to `runServerCommand`;
-callers are widespread (settings bridge `settingsBridge.svelte.ts:114`, presets
-`database.svelte.ts:99`, plugin/module/chat wrappers `pluginCommands.ts:59`,
-`moduleCommands.ts:50`, `chatCommands.ts:85`).
-
-**Decision (EC5=session single-writer lock):** prevent the conflict instead of
-resolving it — only the most recently bootstrapped session may mutate; stale
-sessions get **423** → notify + reload. Still remove the blind 409 replay at both
-sites as a backstop. This drops the conflict-resolution page and the retry-safety
-classification. See [`decisions.md`](./decisions.md#ec5).
-
 ## F6 → EC6 (P2): Asset reference validation is incomplete for character audio refs
 
 The asset-reference walker treats character audio fields as server asset

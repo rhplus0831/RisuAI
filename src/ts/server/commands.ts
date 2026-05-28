@@ -1,5 +1,6 @@
 import { isFastifyServer } from '../platform'
 import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
@@ -1040,17 +1041,7 @@ export async function patchServerBackedSettings(
       return { status: 'error', error: 'Unable to read server command revision' }
     }
 
-    let result = await patchSettingsGroup({ group, baseRevision, patch }, input.signal)
-    if (result.status === 'conflict') {
-      result = await patchSettingsGroup(
-        {
-          group,
-          baseRevision: result.currentRevision,
-          patch,
-        },
-        input.signal,
-      )
-    }
+    const result = await patchSettingsGroup({ group, baseRevision, patch }, input.signal)
 
     if (result.status !== 'ok') {
       input.rollback?.()
@@ -2167,10 +2158,7 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
     return { status: 'error', error: 'Unable to read server command revision' }
   }
 
-  let result = await input.command(baseRevision)
-  if (result.status === 'conflict') {
-    result = await input.command(result.currentRevision)
-  }
+  const result = await input.command(baseRevision)
 
   if (result.status !== 'ok') {
     input.rollback?.()
@@ -2205,6 +2193,7 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
       headers: {
         'content-type': 'application/json',
         'risu-auth': auth,
+        ...activeWriterSessionHeader(),
       },
       body: JSON.stringify(init.body),
     })
@@ -2226,6 +2215,10 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     return currentRevision === null
       ? { status: 'error', error: errorMessageFromBody(body, 'HTTP 409') }
       : { status: 'conflict', currentRevision }
+  }
+
+  if (handleActiveWriterStaleResponse(response)) {
+    return { status: 'error', error: errorMessageFromBody(body, 'HTTP 423') }
   }
 
   if (!response.ok) {

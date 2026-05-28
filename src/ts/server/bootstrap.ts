@@ -1,6 +1,7 @@
 import type { Database } from '../storage/database.svelte'
 import { isFastifyServer } from '../platform'
 import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { activeWriterSessionHeader } from './activeWriterSession'
 import { setCachedServerCommandRevision } from './commands'
 
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
@@ -34,6 +35,7 @@ export async function fetchServerBootstrapProjection(
       signal: signal ?? undefined,
       headers: {
         'risu-auth': auth,
+        ...activeWriterSessionHeader(),
       },
     })
   } catch (err) {

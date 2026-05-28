@@ -5,6 +5,7 @@ import fastifyMultipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
+import { createActiveWriterState, registerActiveWriterGuard } from './activeWriter.js'
 import { type AppConfig, loadConfig } from './config.js'
 import { createAuthState } from './auth.js'
 import { createCommandEventSink, type CommandEventSink } from './commands/events.js'
@@ -92,6 +93,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   await app.register(fastifyWebsocket)
 
   const db = openDatabase(config.dataDir)
+  const activeWriterState = createActiveWriterState()
   backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {
@@ -151,7 +153,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   registerHealthRoutes(app, db)
   registerAuthRoutes(app, authState)
-  registerBootstrapRoutes(app, db, authState, config.dataDir)
+  registerBootstrapRoutes(app, db, authState, config.dataDir, activeWriterState)
+  registerActiveWriterGuard(app, activeWriterState)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerEventsRoutes(app, authState, commandEventSink, memoryEventBus)

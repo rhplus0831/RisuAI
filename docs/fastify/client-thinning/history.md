@@ -108,7 +108,40 @@ Verification:
 - `pnpm test src/ts/server/commands.test.ts -- --run`: 36 passed.
 - `pnpm check`: passed, 0 errors / 0 warnings.
 
-Next pickup: **EC5/F5 — Single active-writer session lock**.
+## Single active-writer session lock (EC5/F5)
+
+Closed on 2026-05-28.
+
+- Fastify tracks a per-page-load `risu-writer-session` header. Bootstrap
+  registers the active writer, and the latest bootstrapped session wins.
+- A centralized active-writer guard returns **423** for stale writers on
+  server-owned mutating routes: `/api/v1/commands/*`, JSON/multipart import,
+  asset upload, backup create/restore/delete, and legacy storage write/remove.
+  Read routes remain unguarded.
+- The browser sends the writer-session header from bootstrap, command mutation,
+  asset upload, backup, and legacy storage mutation clients.
+- The browser reacts to 423 by showing the existing reload-session message and
+  reloading, which re-bootstraps and re-registers the page.
+- The blind 409 conflict replays in `patchServerBackedSettings` and
+  `runServerCommand` were removed; a 409 now surfaces as a typed conflict/error
+  instead of replaying stale payloads with the newer revision.
+
+Verification:
+
+- `pnpm api:test server/fastify/__tests__/activeWriter.test.ts -- --run`: 3
+  passed.
+- `pnpm api:test server/fastify/__tests__/activeWriter.test.ts server/fastify/__tests__/commands.test.ts -- --run`:
+  72 passed.
+- `pnpm test src/ts/server/commands.test.ts src/ts/server/bootstrap.test.ts src/ts/server/backups.test.ts src/ts/storage/nodeStorage.test.ts -- --run`:
+  46 passed.
+
+Note: `pnpm api:test server/fastify/__tests__/bootstrap.test.ts -- --run` was
+also checked during EC5 closeout and still fails on pre-existing EC4-era
+normalization expectations (`modules: []` no longer added when absent). That is
+not part of EC5, but the next agent should be aware before using that suite as a
+signal.
+
+Next pickup: **EC6/F6 — Character asset-reference validation**.
 
 ## Archived migration slices
 

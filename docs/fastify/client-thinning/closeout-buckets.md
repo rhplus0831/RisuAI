@@ -8,9 +8,9 @@ criterion ([`README.md`](./README.md)) and its finding
 ([`open-findings.md`](./open-findings.md)). A bucket is done only when its
 finding is resolved **and** the exit criterion's regression proof is committed.
 
-Current pickup: **Bucket 5 — Single active-writer session lock (EC5/F5)**.
-Buckets 1, 2, 3, and 4 closed on 2026-05-28; see
-[`history.md`](./history.md#provider-ownership-ec1f1).
+Current pickup: **Bucket 6 — Character asset-reference validation (EC6/F6)**.
+Buckets 1, 2, 3, 4, and 5 closed on 2026-05-28; see
+[`history.md`](./history.md).
 
 | Order | Bucket                                             | Closes | Finding | Status            |
 | ----- | -------------------------------------------------- | ------ | ------- | ----------------- |
@@ -18,7 +18,7 @@ Buckets 1, 2, 3, and 4 closed on 2026-05-28; see
 | 2     | Plugin durable storage + Compatibility Mode        | EC2    | F2      | Closed 2026-05-28 |
 | 3     | Import current-shape normalization                 | EC3    | F3      | Closed 2026-05-28 |
 | 4     | Stable-id validation + prompt-item semantics       | EC4    | F4      | Closed 2026-05-28 |
-| 5     | Single active-writer session lock                  | EC5    | F5      | Open              |
+| 5     | Single active-writer session lock                  | EC5    | F5      | Closed 2026-05-28 |
 | 6     | Character asset-reference validation               | EC6    | F6      | Open              |
 | 7     | Repeatable audit script + full verification ladder | EC7    | —       | Open              |
 
@@ -59,16 +59,18 @@ Buckets 1, 2, 3, and 4 closed on 2026-05-28; see
    enable toggle. Focused proof:
    `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`,
    `pnpm test src/ts/server/commands.test.ts -- --run`, and `pnpm check`.
-5. **Single active-writer session lock (EC5).** Port the `Risuai-NodeOnly`
-   reference (`1c1d7bc6`): mint a per-page-load session id; register the active
-   writer on **bootstrap** (last-loader-wins); reject non-active sessions with
-   **423** on **every server-owned mutating route** — `/api/v1/commands/*`,
-   import (`save.ts`), asset upload (`assets.ts`), backups (`backups.ts`), and
-   legacy storage writes (`legacyStorage.ts`); read routes are untouched. The
-   client reacts on 423 by notifying the user and reloading (re-bootstrap +
-   re-register). Still remove the blind 409 replay at `commands.ts:2152` and
-   `:1038` as a backstop; a stray same-session 409 surfaces a plain error/reload.
-   No conflict-resolution page; no retry-safety classification.
+5. **Single active-writer session lock (EC5) — closed 2026-05-28.** Fastify now
+   tracks a per-page-load `risu-writer-session` header. Bootstrap registers the
+   active writer (last-loader-wins); stale sessions receive **423** on
+   server-owned mutating routes — `/api/v1/commands/*`, import, asset upload,
+   backups, and legacy storage writes/removes — while read routes stay untouched.
+   The browser sends the header from bootstrap and mutation clients and reacts to
+   423 by notifying and reloading. The blind 409 replays in
+   `patchServerBackedSettings` and `runServerCommand` were removed; conflicts are
+   surfaced. Focused proof:
+   `pnpm api:test server/fastify/__tests__/activeWriter.test.ts server/fastify/__tests__/commands.test.ts -- --run`
+   and
+   `pnpm test src/ts/server/commands.test.ts src/ts/server/bootstrap.test.ts src/ts/server/backups.test.ts src/ts/storage/nodeStorage.test.ts -- --run`.
 6. **Asset-reference validation (EC6).** Extend `validateCharacterAssetRefs`
    (`characters.ts:371`) to iterate the `vits.files` dynamic map (report
    `vits.files.<key>`) and validate `gptSoVitsConfig.ref_audio_data.assetId`,

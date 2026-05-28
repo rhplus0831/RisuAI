@@ -485,7 +485,7 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('retries a server-backed settings patch on conflict', async () => {
+  it('surfaces server-backed settings patch conflicts without retrying', async () => {
     let providerAttempts = 0
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 4 }
@@ -494,10 +494,7 @@ describe('server command API adapter', () => {
         if (providerAttempts === 1) {
           return jsonResponse({ error: 'revision_conflict', currentRevision: 8 }, 409)
         }
-        return {
-          revision: 9,
-          event: { type: 'settings.updated', revision: 9, resource: 'settings' },
-        }
+        throw new Error('unexpected retry')
       }
       return { revision: 10 }
     })
@@ -507,16 +504,11 @@ describe('server command API adapter', () => {
       patchServerBackedSettings({
         patch: { openrouterKey: 'secret' },
       }),
-    ).resolves.toEqual({
-      status: 'ok',
-      revision: 9,
-      event: { type: 'settings.updated', revision: 9, resource: 'settings' },
-    })
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 8 })
 
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       null,
       { baseRevision: 4, patch: { openrouterKey: 'secret' } },
-      { baseRevision: 8, patch: { openrouterKey: 'secret' } },
     ])
   })
 
@@ -645,7 +637,7 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('runs server preset commands with revision lookup and one conflict retry', async () => {
+  it('runs server preset commands with revision lookup and surfaces conflicts', async () => {
     let selectAttempts = 0
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 5 }
@@ -653,11 +645,7 @@ describe('server command API adapter', () => {
       if (selectAttempts === 1) {
         return jsonResponse({ error: 'revision_conflict', currentRevision: 8 }, 409)
       }
-      return {
-        revision: 9,
-        event: { type: 'preset.selected', revision: 9, resource: 'preset', id: 'preset-b' },
-        presetId: 'preset-b',
-      }
+      throw new Error('unexpected retry')
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
 
@@ -669,12 +657,11 @@ describe('server command API adapter', () => {
             presetId: 'preset-b',
           }),
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 9, presetId: 'preset-b' })
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 8 })
 
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       null,
       { baseRevision: 5, presetId: 'preset-b' },
-      { baseRevision: 8, presetId: 'preset-b' },
     ])
   })
 
@@ -839,7 +826,7 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('runs prompt commands with revision lookup and one conflict retry', async () => {
+  it('runs prompt commands with revision lookup and surfaces conflicts', async () => {
     let attempts = 0
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 11 }
@@ -847,11 +834,7 @@ describe('server command API adapter', () => {
       if (attempts === 1) {
         return jsonResponse({ error: 'revision_conflict', currentRevision: 14 }, 409)
       }
-      return {
-        revision: 15,
-        event: { type: 'prompt.item.updated', revision: 15, resource: 'promptItem', id: 'item-a' },
-        itemId: 'item-a',
-      }
+      throw new Error('unexpected retry')
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
 
@@ -864,12 +847,11 @@ describe('server command API adapter', () => {
             patch: { type: 'memory' },
           }),
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 15, itemId: 'item-a' })
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 14 })
 
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       null,
       { baseRevision: 11, patch: { type: 'memory' } },
-      { baseRevision: 14, patch: { type: 'memory' } },
     ])
   })
 
@@ -1009,7 +991,7 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('runs persona commands with revision lookup and one conflict retry', async () => {
+  it('runs persona commands with revision lookup and surfaces conflicts', async () => {
     let attempts = 0
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 20 }
@@ -1017,11 +999,7 @@ describe('server command API adapter', () => {
       if (attempts === 1) {
         return jsonResponse({ error: 'revision_conflict', currentRevision: 23 }, 409)
       }
-      return {
-        revision: 24,
-        event: { type: 'persona.selected', revision: 24, resource: 'persona', id: 'persona-b' },
-        personaId: 'persona-b',
-      }
+      throw new Error('unexpected retry')
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
 
@@ -1033,12 +1011,11 @@ describe('server command API adapter', () => {
             personaId: 'persona-b',
           }),
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 24, personaId: 'persona-b' })
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 23 })
 
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       null,
       { baseRevision: 20, personaId: 'persona-b' },
-      { baseRevision: 23, personaId: 'persona-b' },
     ])
   })
 
@@ -1179,7 +1156,7 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('runs translator preset commands with revision lookup and one conflict retry', async () => {
+  it('runs translator preset commands with revision lookup and surfaces conflicts', async () => {
     let attempts = 0
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 30 }
@@ -1187,16 +1164,7 @@ describe('server command API adapter', () => {
       if (attempts === 1) {
         return jsonResponse({ error: 'revision_conflict', currentRevision: 33 }, 409)
       }
-      return {
-        revision: 34,
-        event: {
-          type: 'translatorPreset.selected',
-          revision: 34,
-          resource: 'translatorPreset',
-          id: 'translator-b',
-        },
-        presetId: 'translator-b',
-      }
+      throw new Error('unexpected retry')
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
 
@@ -1208,12 +1176,11 @@ describe('server command API adapter', () => {
             presetId: 'translator-b',
           }),
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 34, presetId: 'translator-b' })
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 33 })
 
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       null,
       { baseRevision: 30, presetId: 'translator-b' },
-      { baseRevision: 33, presetId: 'translator-b' },
     ])
   })
 
@@ -1360,7 +1327,7 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('runs loadout commands with revision lookup and one conflict retry', async () => {
+  it('runs loadout commands with revision lookup and surfaces conflicts', async () => {
     let attempts = 0
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 40 }
@@ -1368,11 +1335,7 @@ describe('server command API adapter', () => {
       if (attempts === 1) {
         return jsonResponse({ error: 'revision_conflict', currentRevision: 43 }, 409)
       }
-      return {
-        revision: 44,
-        event: { type: 'loadout.favorited', revision: 44, resource: 'loadout', id: 'loadout-a' },
-        loadoutId: 'loadout-a',
-      }
+      throw new Error('unexpected retry')
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
 
@@ -1385,12 +1348,11 @@ describe('server command API adapter', () => {
             favorite: false,
           }),
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 44, loadoutId: 'loadout-a' })
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 43 })
 
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       null,
       { baseRevision: 40, favorite: false },
-      { baseRevision: 43, favorite: false },
     ])
   })
 
@@ -1552,7 +1514,7 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('runs character commands with revision lookup and one conflict retry', async () => {
+  it('runs character commands with revision lookup and surfaces conflicts', async () => {
     let attempts = 0
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 50 }
@@ -1560,11 +1522,7 @@ describe('server command API adapter', () => {
       if (attempts === 1) {
         return jsonResponse({ error: 'revision_conflict', currentRevision: 52 }, 409)
       }
-      return {
-        revision: 53,
-        event: { type: 'character.selected', revision: 53, resource: 'character', id: 'char-a' },
-        characterId: 'char-a',
-      }
+      throw new Error('unexpected retry')
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
 
@@ -1576,12 +1534,11 @@ describe('server command API adapter', () => {
             characterId: 'char-a',
           }),
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 53, characterId: 'char-a' })
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 52 })
 
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       null,
       { baseRevision: 50, characterId: 'char-a' },
-      { baseRevision: 52, characterId: 'char-a' },
     ])
   })
 
