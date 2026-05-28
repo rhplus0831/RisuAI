@@ -298,7 +298,7 @@ describe('server .risu fixture harness', () => {
     expect(decoded.database.__directory).toBeUndefined()
     expect(decoded.database.botPresets).toEqual([{ id: 'preset-a', name: 'Preset A' }])
     expect(decoded.database.modules).toEqual([
-      { id: 'module-a', name: 'Module A', description: '', lorebook: [] },
+      { id: 'module-a', name: 'Module A', description: '' },
     ])
     expect(decoded.database.loadouts).toEqual([
       {

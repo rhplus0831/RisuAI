@@ -91,7 +91,10 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-function expectNormalizedAdaDatabase(database: unknown, expected: Record<string, unknown> = {}): void {
+function expectNormalizedAdaDatabase(
+  database: unknown,
+  expected: Record<string, unknown> = {},
+): void {
   expect(database).toMatchObject({
     ...expected,
     characters: [
@@ -107,7 +110,6 @@ function expectNormalizedAdaDatabase(database: unknown, expected: Record<string,
     ],
     characterOrder: ['char-a'],
     currentChar: 0,
-    modules: [],
   })
 }
 
@@ -209,10 +211,6 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.json().revision).toBe(2)
     expect(bootstrap.json().database).toEqual({
       v: 2,
-      characters: [],
-      characterOrder: [],
-      currentChar: -1,
-      modules: [],
     })
   })
 

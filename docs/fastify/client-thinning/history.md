@@ -159,7 +159,40 @@ Verification:
 
 - `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: 70 passed.
 
-Next pickup: **EC7 — Repeatable invariant audit + full verification ladder**.
+## Repeatable invariant audit (EC7)
+
+Closed on 2026-05-28.
+
+- Added `util/client-thinning-audit.ts`, wired as
+  `pnpm client-thinning:audit`.
+- The audit checks the current server-projection invariant surface: active-writer
+  guard wiring/classification for server-owned mutating routes; command-path
+  stable child-id validators do not mint ids; prompt items are not reachable
+  through generic settings; plugin device-local storage APIs are gated by Plugin
+  Compatibility Mode; plugin V3 reports server save semantics; asset-reference
+  walker fields are covered by command validators; and Fastify provider routing
+  remains server-owned.
+- Closed the walker-vs-validator drift for `characterOrder.img`: when it is a
+  server asset id, character-order commands now validate that the asset exists.
+  Legacy URL-style `img` values remain allowed; `imgFile` keeps strict optional
+  server-asset validation.
+- Updated stale import/bootstrap fixture expectations to the current EC4
+  normalization contract: imports no longer synthesize absent empty resource
+  families such as `modules`.
+- Updated the Fastify browser smoke hook so direct mutating smoke fetches reuse
+  the active-writer session header, matching normal browser command/import/asset
+  clients.
+
+Verification:
+
+- `pnpm client-thinning:audit`: passed.
+- `pnpm check`: passed, 0 errors / 0 warnings.
+- `pnpm test`: 786 passed, 4 skipped.
+- `pnpm api:test`: 1228 passed.
+- `pnpm build`: built with pre-existing CSS `::highlight`, browser-externalized
+  module, plugin-timing, chunk-size, and ineffective-dynamic-import warnings.
+- `pnpm smoke:fastify-browser`: 1 passed, with the same pre-existing build
+  warnings as `pnpm build`.
 
 ## Archived migration slices
 

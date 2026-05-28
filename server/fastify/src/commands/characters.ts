@@ -10,6 +10,8 @@ import {
 
 type JsonRecord = Record<string, unknown>
 
+const SERVER_ASSET_ID_RE = /^[0-9a-fA-F]{64}$/
+
 export interface CharacterRecord extends JsonRecord {
   chaId: string
   name?: string
@@ -218,8 +220,18 @@ export function validateCharacterOrderAssetRefs(
 ): void {
   order.forEach((entry, index) => {
     if (typeof entry === 'string') return
+    validateCharacterOrderLegacyImageRef(dataDir, entry.img, `characterOrder[${index}].img`)
     validateOptionalServerAssetRef(dataDir, entry.imgFile, `characterOrder[${index}].imgFile`)
   })
+}
+
+function validateCharacterOrderLegacyImageRef(
+  dataDir: string,
+  value: unknown,
+  label: string,
+): void {
+  if (typeof value !== 'string' || !SERVER_ASSET_ID_RE.test(value)) return
+  validateOptionalServerAssetRef(dataDir, value, label)
 }
 
 function normalizeCharacterOrder(

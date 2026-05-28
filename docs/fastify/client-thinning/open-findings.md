@@ -3,13 +3,14 @@
 Date: 2026-05-28
 
 There are currently **no unresolved F-numbered server-projection findings** from
-the audited list. EC1 through EC6 are closed with regression coverage; see
+the audited list. EC1 through EC7 are closed with regression coverage; see
 [`history.md`](./history.md).
 
-Client thinning is still **not complete**: EC7 remains open. The next agent
-should implement the repeatable invariant audit described in
-[`closeout-buckets.md`](./closeout-buckets.md#ec7-audit-script-specification),
-then run the verification ladder from [`README.md`](./README.md#verification-ladder).
+The repeatable invariant audit is now `pnpm client-thinning:audit`. The next
+agent should run it with the verification ladder from
+[`README.md`](./README.md#verification-ladder) before claiming any future
+client-thinning closeout, and should extend it when a new invariant class is
+found.
 
 Resolved findings remain documented in [`history.md`](./history.md) so future
 audits can compare new failures against prior decisions instead of re-deriving

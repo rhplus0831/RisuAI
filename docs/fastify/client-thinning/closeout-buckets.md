@@ -8,9 +8,9 @@ criterion ([`README.md`](./README.md)) and its finding
 ([`open-findings.md`](./open-findings.md)). A bucket is done only when its
 finding is resolved **and** the exit criterion's regression proof is committed.
 
-Current pickup: **Bucket 7 — Repeatable audit script + full verification ladder
-(EC7)**. Buckets 1, 2, 3, 4, 5, and 6 closed on 2026-05-28; see
-[`history.md`](./history.md).
+Current pickup: **none.** Buckets 1 through 7 closed on 2026-05-28; see
+[`history.md`](./history.md). Future work should open a new finding/bucket here
+instead of reusing the closed EC1-EC7 closeout set.
 
 | Order | Bucket                                             | Closes | Finding | Status            |
 | ----- | -------------------------------------------------- | ------ | ------- | ----------------- |
@@ -20,7 +20,7 @@ Current pickup: **Bucket 7 — Repeatable audit script + full verification ladde
 | 4     | Stable-id validation + prompt-item semantics       | EC4    | F4      | Closed 2026-05-28 |
 | 5     | Single active-writer session lock                  | EC5    | F5      | Closed 2026-05-28 |
 | 6     | Character asset-reference validation               | EC6    | F6      | Closed 2026-05-28 |
-| 7     | Repeatable audit script + full verification ladder | EC7    | —       | Open              |
+| 7     | Repeatable audit script + full verification ladder | EC7    | —       | Closed 2026-05-28 |
 
 1. **Provider ownership (EC1=A) — closed 2026-05-28.** Server generation is now
    mandatory in Fastify mode: `useServerGeneration` no longer gates dispatch or
@@ -80,42 +80,42 @@ Current pickup: **Bucket 7 — Repeatable audit script + full verification ladde
    walker-vs-validator drift class (e.g. `characterOrder.img` vs `imgFile`) is
    left to EC7's audit. Focused proof:
    `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`.
-7. **Repeatable audit + ladder (EC7).** Land the audit script below, then run the
-   full ladder. No audit/invariant package script and no `ts-morph` dependency
-   exist yet (`package.json`); both must be added and wired (the ladder scripts
-   already exist; `tauribuild` is correctly absent).
+7. **Repeatable audit + ladder (EC7) — closed 2026-05-28.** The audit script
+   landed as `util/client-thinning-audit.ts`, wired through
+   `pnpm client-thinning:audit`, and the full ladder is green. `ts-morph` is
+   already present in `package.json`; `tauribuild` is correctly absent.
 
 ## EC7: audit-script specification
 
-The point of EC7 is to stop the "closed, then rediscovered" cycle by turning the
+EC7 stops the "closed, then rediscovered" cycle by turning the
 invariants into repeatable structural checks. `ts-morph` is more useful here than
 LSP/`pnpm check`: most remaining failures are semantic contract gaps, not type
 errors, so `pnpm check` can pass while the contract is still wrong.
 
-Candidate checks (ts-morph + `rg`):
+Implemented checks (`pnpm client-thinning:audit`, ts-morph + structural text
+checks):
 
 - **EC5:** assert **no `/api/v1/commands/*` mutation route or import/asset-write
   route bypasses the active-session check** (every mutating handler runs the
   guard). Replaces the previous "classify retry safety" check, which the
   session-lock decision made unnecessary.
-- **EC4:** find **command-path helpers that call `randomUUID()`** / otherwise mint
-  ids (must be none; repair lives only in import/bootstrap `repairX` helpers).
+- **EC4:** find stable child-id command validators that call `randomUUID()` /
+  otherwise mint ids; repair lives only in import/bootstrap repair helpers.
 - **EC4:** find resources reachable through **both** a typed command **and** a
   generic-settings/whole-array channel (the `promptTemplate`-style dual path).
 - **EC2:** with Compatibility Mode off, assert **no sandbox path exposes sync
-  `localStorage`/IndexedDB durable writes** (the browser smoke currently patches
-  IndexedDB/OPFS, not `localStorage` — extend it or scope the assertion to match);
-  compare `allowedDbKeys`,
-  `unsupportedServerBridgeKeys`, settings maps, and command dispatch tables for
-  drift; flag `pluginV2`-style allowed keys with no command path.
+  `localStorage`/IndexedDB durable writes** by checking the SafeLocalStorage,
+  SafeLocalPluginStorage, SafeIdbFactory, and V3 local-storage bridges; compare
+  `allowedDbKeys` and `unsupportedServerBridgeKeys` for `pluginV2`-style drift.
 - **EC6:** compare the **asset-reference walker fields** against the owning command
   validators (no walker field without a validator).
-- **EC1:** flag **browser provider-dispatch fallbacks** reachable without server
-  ownership, and durable writes inside `withTrustedServerProjectionWrite` with no
-  command/import follow-up.
+- **EC1:** flag provider route-resolution drift that would let Fastify mode fall
+  back to browser dispatch, and ensure browser Vertex token projection writes are
+  gated out of Fastify mode.
 
-The script decides no semantic policy on its own; it makes the audit repeatable
-so a future "complete" claim is checkable rather than re-derived by hand.
+The script intentionally encodes the current EC1/EC2/EC4/EC5/EC6 invariant
+surface. If a future audit discovers another class of violation, add a finding
+and extend the script in the same change that fixes it.
 
 ## On tooling
 

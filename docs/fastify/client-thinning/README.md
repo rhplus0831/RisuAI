@@ -2,8 +2,8 @@
 
 Date: 2026-05-28
 
-Status: **reopened / not complete.** The original Phase 9 _migration milestone_
-(linear 0→9 client-thinning) is archived as closed under
+Status: **current exit set complete / standing workstream.** The original Phase 9
+_migration milestone_ (linear 0→9 client-thinning) is archived as closed under
 [`../phases-completed/`](../phases-completed/) and stays closed. Client thinning
 itself continues here as a **standing workstream**, because every audit pass that
 treats "Phase 9 complete" as a checklist of known direct writes keeps
@@ -61,13 +61,16 @@ all criteria map to closeout buckets in
 | EC6 | **Asset references validated where written.** `validateCharacterAssetRefs` covers the character **audio** fields the bundle walker treats as references — `vits.files.*` and `gptSoVitsConfig.ref_audio_data.assetId` (create + patch). The general walker-vs-validator drift class (e.g. `characterOrder.img`) is checked by EC7.                                                                                                                                               | Character create/patch tests for valid, missing, and malformed audio asset refs.                                                        |
 | EC7 | **Repeatable invariant audit exists.** A ts-morph/rg audit script re-checks the invariants (no mutation route bypasses the active-session check; no command-path helper mints ids; no resource has both a typed command and a generic-settings channel; sandbox storage APIs gated; asset-walker fields covered by validators), and the full ladder is green.                                                                                                                    | Audit script committed in repo + the ladder below.                                                                                      |
 
-Progress as of 2026-05-28: **EC1, EC2, EC3, EC4, EC5, and EC6 are closed**. The
-next pickup is **EC7 — Repeatable invariant audit**; see
-[`closeout-buckets.md`](./closeout-buckets.md).
+Progress as of 2026-05-28: **EC1 through EC7 are closed**. The repeatable audit
+landed as `pnpm client-thinning:audit`; see
+[`closeout-buckets.md`](./closeout-buckets.md). Future client-thinning work
+should add new findings here and extend that audit when a new invariant class is
+discovered.
 
 ## Verification ladder
 
 ```bash
+pnpm client-thinning:audit
 pnpm check
 pnpm test
 pnpm api:test

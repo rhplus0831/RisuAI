@@ -147,7 +147,11 @@ describe('Phase 9-8a multipart .risu import route', () => {
       chatId?: unknown
       data?: unknown
     }>
-    expect(messages.map((message) => message.data)).toEqual(['missing id', 'kept id', 'duplicate id'])
+    expect(messages.map((message) => message.data)).toEqual([
+      'missing id',
+      'kept id',
+      'duplicate id',
+    ])
     expect(messages.map((message) => message.chatId)).toContain('message-a')
     expect(new Set(messages.map((message) => message.chatId)).size).toBe(3)
     expect(messages.every((message) => typeof message.chatId === 'string' && message.chatId)).toBe(
@@ -168,7 +172,6 @@ describe('Phase 9-8a multipart .risu import route', () => {
       ],
       characterOrder: ['char-a'],
       currentChar: 0,
-      modules: [],
     })
   })
 

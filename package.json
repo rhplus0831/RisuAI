@@ -14,6 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "client-thinning:audit": "tsx util/client-thinning-audit.ts",
     "smoke:fastify-browser": "cross-env VITE_FASTIFY_BROWSER_SMOKE=TRUE VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm buildsite && playwright test -c playwright.fastify-smoke.config.ts",
     "buildsite": "cross-env VITE_RISU_LEGAL_CONFIGURED=TRUE vite build --sourcemap --outDir dist",
     "api:dev": "tsx watch server/fastify/src/index.ts",

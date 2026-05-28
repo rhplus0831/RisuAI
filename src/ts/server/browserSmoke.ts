@@ -1,12 +1,14 @@
 import { get } from 'svelte/store'
 import { loadedStore } from '../stores.svelte'
 import { getDatabase, type Database } from '../storage/database.svelte'
+import { activeWriterSessionHeader } from './activeWriterSession'
 import { patchRuntimeSettings, runServerCommand, type ServerCommandResult } from './commands'
 
 declare global {
   interface Window {
     __RISU_FASTIFY_BROWSER_SMOKE__?: {
       assertDirectProjectionWriteRejected: () => boolean
+      activeWriterHeaders: () => Record<string, string>
       getDatabaseSnapshot: () => Database
       isLoaded: () => boolean
       patchRuntimeSettings: (
@@ -19,6 +21,7 @@ declare global {
 
 export function installFastifyBrowserSmokeHook() {
   window.__RISU_FASTIFY_BROWSER_SMOKE__ = {
+    activeWriterHeaders: () => activeWriterSessionHeader(),
     assertDirectProjectionWriteRejected: () => {
       try {
         ;(getDatabase() as unknown as Record<string, unknown>).language =

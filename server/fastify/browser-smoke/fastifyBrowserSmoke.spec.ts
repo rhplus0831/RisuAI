@@ -24,6 +24,7 @@ declare global {
     }
     __RISU_FASTIFY_BROWSER_SMOKE__?: {
       assertDirectProjectionWriteRejected: () => boolean
+      activeWriterHeaders: () => Record<string, string>
       getDatabaseSnapshot: () => Record<string, unknown>
       patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>
       waitForLoaded: () => Promise<void>
@@ -201,9 +202,11 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     const exported = await fetch('/api/v1/export/risusave')
     const exportedBytes = await exported.blob()
     const importForm = new FormData()
+    const activeWriterHeaders = window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
     importForm.append('file', exportedBytes, 'database.risu')
     const imported = await fetch('/api/v1/import/risusave', {
       body: importForm,
+      headers: activeWriterHeaders,
       method: 'POST',
     })
     const importedBody = await imported.json()
@@ -211,7 +214,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
 
     const uploaded = await fetch('/api/v1/assets', {
       body: new Uint8Array([1, 2, 3]),
-      headers: { 'content-type': 'image/png' },
+      headers: { ...activeWriterHeaders, 'content-type': 'image/png' },
       method: 'POST',
     })
     const uploadedBody = await uploaded.json()

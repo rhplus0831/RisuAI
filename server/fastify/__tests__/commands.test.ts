@@ -5174,6 +5174,28 @@ describe('Phase 9-4d asset reference commands', () => {
     expect(missing.statusCode).toBe(400)
     expect(missing.json().error).toBe('patch.assets[0][1] references a missing server asset')
 
+    const missingOrderImage = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        characterOrder: [
+          {
+            id: 'folder-a',
+            name: 'Folder A',
+            color: '',
+            img: missingAssetId,
+            data: ['char-a'],
+          },
+        ],
+      },
+    })
+    expect(missingOrderImage.statusCode).toBe(400)
+    expect(missingOrderImage.json().error).toBe(
+      'characterOrder[0].img references a missing server asset',
+    )
+
     const valid = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/personas/persona-a',
