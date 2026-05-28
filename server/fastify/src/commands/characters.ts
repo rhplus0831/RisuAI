@@ -58,7 +58,7 @@ export function ensureCharacterCollection(database: JsonRecord): CharacterRecord
   const characters = (database.characters as unknown[]).map((raw, index) => {
     const character =
       raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
-    const record = createCharacterRecord({
+    const record = repairCharacterRecord({
       name: `Character ${index + 1}`,
       firstMessage: '',
       desc: '',
@@ -109,6 +109,16 @@ export function normalizeCharacterCollection(database: unknown): void {
 }
 
 export function createCharacterRecord(
+  input: unknown,
+  options: { assetDataDir?: string } = {},
+): CharacterRecord {
+  const character = readJsonObject(input, 'character') as CharacterRecord
+  character.chaId = readCharacterId(character.chaId, 'character.chaId')
+  validateCharacterRecord(character, 'character', options)
+  return character
+}
+
+function repairCharacterRecord(
   input: unknown,
   options: { assetDataDir?: string } = {},
 ): CharacterRecord {

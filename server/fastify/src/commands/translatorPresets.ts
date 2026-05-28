@@ -20,7 +20,7 @@ export function ensureDatabaseObject(database: unknown): JsonRecord {
 export function ensureTranslatorPresetCollection(database: JsonRecord): TranslatorPresetRecord[] {
   if (!Array.isArray(database.translatorPresets)) {
     database.translatorPresets = [
-      createTranslatorPresetRecord({
+      repairTranslatorPresetRecord({
         name: 'Default',
         prompt: stringValue(database.translatorPrompt),
         maxResponse: numberValue(database.translatorMaxResponse, 1000),
@@ -31,7 +31,7 @@ export function ensureTranslatorPresetCollection(database: JsonRecord): Translat
   const seen = new Set<string>()
   const presets = (database.translatorPresets as unknown[]).map((raw, index) => {
     const preset = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
-    const record = createTranslatorPresetRecord({
+    const record = repairTranslatorPresetRecord({
       id: preset.id,
       name:
         typeof preset.name === 'string' && preset.name.trim().length > 0
@@ -68,6 +68,18 @@ export function normalizeTranslatorPresetCollection(database: unknown): void {
 }
 
 export function createTranslatorPresetRecord(input: unknown): TranslatorPresetRecord {
+  const preset = readJsonObject(input, 'translatorPreset')
+  const record: TranslatorPresetRecord = {
+    id: readTranslatorPresetId(preset.id, 'translatorPreset.id'),
+    name: typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'New Preset',
+    prompt: typeof preset.prompt === 'string' ? preset.prompt : '',
+    maxResponse: numberValue(preset.maxResponse, 1000),
+  }
+  validateTranslatorPresetRecord(record, 'translatorPreset')
+  return record
+}
+
+function repairTranslatorPresetRecord(input: unknown): TranslatorPresetRecord {
   const preset = readJsonObject(input, 'translatorPreset')
   const record: TranslatorPresetRecord = {
     id: typeof preset.id === 'string' && preset.id.trim() ? preset.id : randomUUID(),

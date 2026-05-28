@@ -11,7 +11,6 @@ against the codebase from [`../../audit-codex.md`](../../audit-codex.md) and
 
 | Finding | Severity | Criterion | Status | Bucket |
 | --- | --- | --- | --- | --- |
-| AF1 | High | AEC1 | Open | 1 |
 | AF2 | High | AEC2 | Open | 2 |
 | AF3 | Medium | AEC3 | Open | 3 |
 | AF4 | Medium | AEC2 | Open | 4 |
@@ -21,43 +20,6 @@ against the codebase from [`../../audit-codex.md`](../../audit-codex.md) and
 | AF8 | Low | AEC6 | Open | 7 |
 | AF9 | Low | AEC7 | Open | 8 |
 | AF10 | Low | AEC6 | Open | 7 |
-
-## AF1 - Public command create helpers still mint ids
-
-Severity: **High**
-
-Source: `docs/audit-codex.md` P1 and `docs/audit-claude.md` F-A.
-
-Evidence:
-
-- `server/fastify/src/commands/characters.ts:117`
-- `server/fastify/src/commands/presets.ts:165`
-- `server/fastify/src/commands/personas.ts:62`
-- `server/fastify/src/commands/translatorPresets.ts:73`
-- `server/fastify/src/commands/loadouts.ts:60`
-- `server/fastify/src/commands/modules.ts:75`
-- `server/fastify/src/commands/chats.ts:118`
-- `server/fastify/src/commands/chats.ts:129`
-- `server/fastify/src/commands/lorebooks.ts:139`
-- Public routes call these helpers from `server/fastify/src/routes/commands.ts`
-  around `:1024`, `:1548`, `:1806`, `:1996`, `:2184`, `:2375`, `:2662`,
-  `:3125`, and `:3420`.
-- The audit whitelist only checks narrower child validators in
-  `util/client-thinning-audit.ts:222-227`.
-
-Impact:
-
-The command contract says public create commands require stable client-supplied
-ids, but requests with missing ids still succeed with server-generated UUIDs.
-The repeatable audit passes while the documented invariant is false.
-
-Done when:
-
-- Every public command create path rejects a missing durable id with 400 unless
-  [`decisions.md`](./decisions.md) records a deliberate exception.
-- Import/bootstrap repair still handles malformed legacy data separately.
-- The invariant audit covers root create helpers and catches future
-  command-path `randomUUID()` reintroduction.
 
 ## AF2 - JSON import can create state that block export rejects
 

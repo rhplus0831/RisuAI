@@ -30,7 +30,7 @@ export function ensureLoadoutCollection(database: JsonRecord): LoadoutRecord[] {
   const seen = new Set<string>()
   const loadouts = (database.loadouts as unknown[]).map((raw, index) => {
     const loadout = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
-    const record = createLoadoutRecord({
+    const record = repairLoadoutRecord({
       name: `Loadout ${index + 1}`,
       ...loadout,
     })
@@ -55,6 +55,23 @@ export function normalizeLoadoutCollection(database: unknown): void {
 }
 
 export function createLoadoutRecord(input: unknown): LoadoutRecord {
+  const loadout = readJsonObject(input, 'loadout')
+  const record: LoadoutRecord = {
+    id: readLoadoutId(loadout.id, 'loadout.id'),
+    name: typeof loadout.name === 'string' && loadout.name.trim() ? loadout.name : 'New Loadout',
+    lastUsed: numberValue(loadout.lastUsed, Date.now()),
+    favorite: booleanValue(loadout.favorite, false),
+    characterIds: stringArrayValue(loadout.characterIds, 'loadout.characterIds'),
+    modules: stringArrayValue(loadout.modules, 'loadout.modules'),
+    globalVariables: stringRecordValue(loadout.globalVariables, 'loadout.globalVariables'),
+    presetName: typeof loadout.presetName === 'string' ? loadout.presetName : '',
+    personaId: typeof loadout.personaId === 'string' ? loadout.personaId : '',
+  }
+  validateLoadoutRecord(record, 'loadout')
+  return record
+}
+
+function repairLoadoutRecord(input: unknown): LoadoutRecord {
   const loadout = readJsonObject(input, 'loadout')
   const record: LoadoutRecord = {
     id: typeof loadout.id === 'string' && loadout.id.trim() ? loadout.id : randomUUID(),

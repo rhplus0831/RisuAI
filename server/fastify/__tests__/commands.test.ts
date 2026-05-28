@@ -1016,6 +1016,113 @@ describe('Phase 9-2a scalar settings groups', () => {
 })
 
 describe('Phase 9-2b bot preset commands', () => {
+  it('rejects missing durable ids on public root create commands', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'A' }],
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+      translatorPresets: [{ id: 'translator-a', name: 'A', prompt: '', maxResponse: 100 }],
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [],
+          chatFolders: [],
+          chatPage: 0,
+          viewScreen: 'none',
+          bias: [],
+          emotionImages: [],
+          globalLore: [],
+          sdData: [],
+          customscript: [],
+          triggerscript: [],
+        },
+      ],
+      characterOrder: ['char-a'],
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      modules: [{ id: 'mod-a', name: 'A', description: '' }],
+    })
+
+    const cases = [
+      {
+        url: '/api/v1/commands/presets',
+        payload: { baseRevision: revision, preset: { name: 'Missing id' } },
+        error: 'preset.id must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/personas',
+        payload: { baseRevision: revision, persona: { name: 'Missing id' } },
+        error: 'persona.id must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/translator-presets',
+        payload: { baseRevision: revision, preset: { name: 'Missing id' } },
+        error: 'translatorPreset.id must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/loadouts',
+        payload: { baseRevision: revision, loadout: { name: 'Missing id' } },
+        error: 'loadout.id must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/characters',
+        payload: { baseRevision: revision, character: { name: 'Missing id' } },
+        error: 'character.chaId must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/chats',
+        payload: { baseRevision: revision, chat: { name: 'Missing id' } },
+        error: 'chat.id must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/chat-folders',
+        payload: { baseRevision: revision, folder: { name: 'Missing id' } },
+        error: 'folder.id must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/lorebooks',
+        payload: { baseRevision: revision, lorebook: { name: 'Missing id', data: [] } },
+        error: 'lorebook.id must be a non-empty string',
+      },
+      {
+        url: '/api/v1/commands/modules',
+        payload: { baseRevision: revision, module: { name: 'Missing id' } },
+        error: 'module.id must be a non-empty string',
+      },
+    ]
+
+    for (const testCase of cases) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: testCase.url,
+        headers: { 'risu-auth': assertion },
+        payload: testCase.payload,
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error).toBe(testCase.error)
+    }
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+  })
+
   it('creates and updates presets with command events', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

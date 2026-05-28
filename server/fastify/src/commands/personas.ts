@@ -32,7 +32,7 @@ export function ensurePersonaCollection(database: JsonRecord): PersonaRecord[] {
     const id = seen.has(rawId) ? randomUUID() : rawId
     seen.add(id)
     persona.id = id
-    return persona as PersonaRecord
+    return repairPersonaRecord(persona)
   })
   database.personas = personas
 
@@ -55,6 +55,16 @@ export function normalizePersonaCollection(database: unknown): void {
 }
 
 export function createPersonaRecord(
+  input: unknown,
+  options: { assetDataDir?: string } = {},
+): PersonaRecord {
+  const persona = readJsonObject(input, 'persona') as PersonaRecord
+  persona.id = readPersonaId(persona.id, 'persona.id')
+  validatePersonaRecord(persona, 'persona', options)
+  return persona
+}
+
+function repairPersonaRecord(
   input: unknown,
   options: { assetDataDir?: string } = {},
 ): PersonaRecord {

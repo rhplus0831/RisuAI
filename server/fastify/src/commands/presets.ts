@@ -162,6 +162,16 @@ export function normalizePresetCollection(database: unknown): void {
 
 export function createPresetRecord(input: JsonRecord, fallbackName = 'New Preset'): PresetRecord {
   const preset = cloneJson(input) as PresetRecord
+  preset.id = readPresetId(preset.id, 'preset.id')
+  if (preset.name !== undefined && typeof preset.name !== 'string') {
+    throw new ValidationError('preset.name must be a string')
+  }
+  preset.name ??= fallbackName
+  return preset
+}
+
+export function repairPresetRecord(input: JsonRecord, fallbackName = 'New Preset'): PresetRecord {
+  const preset = cloneJson(input) as PresetRecord
   preset.id = typeof preset.id === 'string' && preset.id.trim() ? preset.id : randomUUID()
   if (preset.name !== undefined && typeof preset.name !== 'string') {
     throw new ValidationError('preset.name must be a string')

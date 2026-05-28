@@ -7,12 +7,12 @@ one or more findings from [`open-findings.md`](./open-findings.md). A bucket is
 done only when code, focused tests, relevant audit-script coverage, and docs are
 all updated.
 
-Current pickup: **Bucket 1.** It closes the highest-risk invariant blind spot and
-should land before any final alpha closeout claim.
+Current pickup: **Bucket 2.** Bucket 1 is closed; the next highest-risk open
+item is JSON import/export current-shape parity.
 
 | Order | Bucket | Closes | Status | Primary ownership |
 | --- | --- | --- | --- | --- |
-| 1 | Root create id validation + audit expansion | AEC1 / AF1 | Open | `server/fastify/src/commands/*`, `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts` |
+| 1 | Root create id validation + audit expansion | AEC1 / AF1 | Closed | `server/fastify/src/commands/*`, `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts` |
 | 2 | JSON import/export current-shape parity | AEC2 / AF2 | Open | `server/fastify/src/routes/save.ts`, `server/fastify/src/risuSave/importSnapshot.ts`, `server/fastify/src/risuSave/exportSnapshot.ts`, import/export tests |
 | 3 | Preset image validation + walker audit parity | AEC3 / AF3 | Open | `server/fastify/src/commands/presets.ts`, preset routes/tests, `server/fastify/src/risuSave/assetReferences.ts`, `util/client-thinning-audit.ts` |
 | 4 | ROOT_COMPONENT reserved-key guard | AEC2 / AF4 | Open | `server/fastify/src/risuSave/importSnapshot.ts`, `.risu` import tests |
@@ -31,6 +31,8 @@ should land before any final alpha closeout claim.
   directory while implementation is still open.
 
 ## 1. Root create id validation + audit expansion
+
+Status: **Closed 2026-05-28.** See [`history.md`](./history.md#bucket-1---root-create-id-validation--audit-expansion).
 
 Goal: close AF1 and make the audit catch the full root-create class.
 

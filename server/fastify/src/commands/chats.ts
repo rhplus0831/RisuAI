@@ -57,7 +57,7 @@ export function ensureCharacterChats(character: CharacterRecord): ChatRecord[] {
 
   const seen = new Set<string>()
   const chats = (character.chats as unknown[]).map((raw, index) => {
-    const chat = createChatRecord(
+    const chat = repairChatRecord(
       {
         message: [],
         note: '',
@@ -95,7 +95,7 @@ export function ensureCharacterChatFolders(character: CharacterRecord): ChatFold
 
   const seen = new Set<string>()
   const folders = (character.chatFolders as unknown[]).map((raw, index) => {
-    const folder = createChatFolderRecord(
+    const folder = repairChatFolderRecord(
       {
         name: `New Folder ${index + 1}`,
         folded: false,
@@ -115,7 +115,7 @@ export function ensureCharacterChatFolders(character: CharacterRecord): ChatFold
 
 export function createChatRecord(input: unknown, label = 'chat'): ChatRecord {
   const chat = readJsonObject(input, label) as ChatRecord
-  chat.id = typeof chat.id === 'string' && chat.id.trim() ? chat.id : randomUUID()
+  chat.id = readChatId(chat.id, `${label}.id`)
   chat.message = Array.isArray(chat.message) ? chat.message : []
   chat.note = typeof chat.note === 'string' ? chat.note : ''
   chat.name = typeof chat.name === 'string' && chat.name.trim() ? chat.name : 'New Chat'
@@ -125,6 +125,25 @@ export function createChatRecord(input: unknown, label = 'chat'): ChatRecord {
 }
 
 export function createChatFolderRecord(input: unknown, label = 'folder'): ChatFolderRecord {
+  const folder = readJsonObject(input, label) as ChatFolderRecord
+  folder.id = readChatFolderId(folder.id, `${label}.id`)
+  folder.folded = typeof folder.folded === 'boolean' ? folder.folded : false
+  validateChatFolderRecord(folder, label)
+  return folder
+}
+
+function repairChatRecord(input: unknown, label = 'chat'): ChatRecord {
+  const chat = readJsonObject(input, label) as ChatRecord
+  chat.id = typeof chat.id === 'string' && chat.id.trim() ? chat.id : randomUUID()
+  chat.message = Array.isArray(chat.message) ? chat.message : []
+  chat.note = typeof chat.note === 'string' ? chat.note : ''
+  chat.name = typeof chat.name === 'string' && chat.name.trim() ? chat.name : 'New Chat'
+  chat.localLore = Array.isArray(chat.localLore) ? chat.localLore : []
+  validateChatRecord(chat, label)
+  return chat
+}
+
+function repairChatFolderRecord(input: unknown, label = 'folder'): ChatFolderRecord {
   const folder = readJsonObject(input, label) as ChatFolderRecord
   folder.id = typeof folder.id === 'string' && folder.id.trim() ? folder.id : randomUUID()
   folder.folded = typeof folder.folded === 'boolean' ? folder.folded : false

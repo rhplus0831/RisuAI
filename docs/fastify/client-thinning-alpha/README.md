@@ -101,7 +101,7 @@ and has committed regression proof.
 | AEC6 | **Asset persistence is consistent.** Re-uploading an existing asset id cannot leave metadata present while the blob is missing, and optional asset clear values are covered by tests. | Missing-blob re-upload behavior is tested; `null`, `""`, and `"-"` clear paths are tested for optional character audio refs. |
 | AEC7 | **Docs and audit state agree.** Closeout/status docs reflect the actual alpha result, and any newly discovered invariant class is added to the audit script before closeout. | `README`, `open-findings`, `closeout-buckets`, `history`, and `final-audit` agree after the full ladder passes. |
 
-Progress as of 2026-05-28: **AEC1 through AEC7 are open.**
+Progress as of 2026-05-28: **AEC1 is closed; AEC2 through AEC7 are open.**
 
 ## Verification ladder
 

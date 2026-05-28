@@ -12,13 +12,34 @@ Opened on 2026-05-28 from the cross-verification of:
 - [`../../audit-codex.md`](../../audit-codex.md)
 - [`../../audit-claude.md`](../../audit-claude.md)
 
-No alpha findings are closed yet.
+Bucket 1 closed AF1 on 2026-05-28.
 
 ## Resolved findings
 
-None.
+### Bucket 1 - Root create id validation + audit expansion
+
+Resolved: **AF1 / AEC1**.
+
+Public command-path root create helpers now require caller-supplied durable ids
+for characters, presets, personas, translator presets, loadouts, modules, chats,
+chat folders, and lorebooks. Legacy/default repair paths use separate repair
+helpers, so import/bootstrap normalization can still mint ids for malformed
+persisted data without weakening the command contract.
+
+Regression proof:
+
+- `server/fastify/__tests__/commands.test.ts` rejects missing-id POSTs for every
+  public root create route and confirms the revision is not bumped.
+- `util/client-thinning-audit.ts` now checks the root create helpers for
+  `randomUUID()` reintroduction.
 
 ## Verification results
+
+Bucket 1 verifier result:
+
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: passed
+  (71 tests).
+- `pnpm client-thinning:audit`: passed.
 
 Initial verifier result:
 

@@ -46,7 +46,7 @@ export function ensureModuleRecords(database: JsonRecord): ModuleRecord[] {
 
   const seen = new Set<string>()
   const modules = (database.modules as unknown[]).map((raw, index) => {
-    const module = createModuleRecord(
+    const module = repairModuleRecord(
       {
         name: `Module ${index + 1}`,
         description: '',
@@ -66,6 +66,20 @@ export function ensureModuleRecords(database: JsonRecord): ModuleRecord[] {
 }
 
 export function createModuleRecord(
+  input: unknown,
+  label = 'module',
+  options: { allowMcp?: boolean } = {},
+  assetOptions: { assetDataDir?: string } = {},
+): ModuleRecord {
+  const module = readJsonObject(input, label) as ModuleRecord
+  module.id = readModuleId(module.id, `${label}.id`)
+  module.name = typeof module.name === 'string' && module.name.trim() ? module.name : 'New Module'
+  module.description = typeof module.description === 'string' ? module.description : ''
+  validateModuleRecord(module, label, options, assetOptions)
+  return module
+}
+
+function repairModuleRecord(
   input: unknown,
   label = 'module',
   options: { allowMcp?: boolean } = {},

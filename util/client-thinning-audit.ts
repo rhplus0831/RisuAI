@@ -218,11 +218,25 @@ function checkStableIdCommandPaths(): void {
   const messages = source('server/fastify/src/commands/messages.ts')
   const lorebooks = source('server/fastify/src/commands/lorebooks.ts')
   const scripts = source('server/fastify/src/commands/scriptDefinitions.ts')
+  const characters = source('server/fastify/src/commands/characters.ts')
+  const presets = source('server/fastify/src/commands/presets.ts')
+  const personas = source('server/fastify/src/commands/personas.ts')
+  const translatorPresets = source('server/fastify/src/commands/translatorPresets.ts')
+  const loadouts = source('server/fastify/src/commands/loadouts.ts')
+  const modules = source('server/fastify/src/commands/modules.ts')
+  const chats = source('server/fastify/src/commands/chats.ts')
 
   const noMintFunctions = new Map<SourceFile, string[]>([
+    [characters, ['createCharacterRecord']],
+    [presets, ['createPresetRecord']],
+    [personas, ['createPersonaRecord']],
+    [translatorPresets, ['createTranslatorPresetRecord']],
+    [loadouts, ['createLoadoutRecord']],
+    [modules, ['createModuleRecord']],
+    [chats, ['createChatRecord', 'createChatFolderRecord']],
     [prompts, ['createPromptItemRecord']],
     [messages, ['createMessageRecord', 'readReplacementMessages', 'readGenerationResult']],
-    [lorebooks, ['readLorebookEntries']],
+    [lorebooks, ['createGlobalLorebookRecord', 'readLorebookEntries']],
     [scripts, ['readScriptDefinitions', 'readTriggerDefinitions']],
   ])
 

@@ -50,7 +50,7 @@ export function ensureGlobalLorebookCollection(database: JsonRecord): GlobalLore
 
   const seen = new Set<string>()
   const lorebooks = (database.loreBook as unknown[]).map((raw, index) => {
-    const lorebook = createGlobalLorebookRecord(
+    const lorebook = repairGlobalLorebookRecord(
       {
         name: `LoreBook ${index + 1}`,
         data: [],
@@ -132,6 +132,19 @@ export function ensureModuleCollection(database: JsonRecord): ModuleRecord[] {
 }
 
 export function createGlobalLorebookRecord(
+  input: unknown,
+  label = 'lorebook',
+): GlobalLorebookRecord {
+  const lorebook = readJsonObject(input, label) as GlobalLorebookRecord
+  lorebook.id = readLorebookId(lorebook.id, `${label}.id`)
+  lorebook.name =
+    typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
+  lorebook.data = repairLorebookEntries(lorebook.data ?? [], `${label}.data`)
+  validateGlobalLorebookRecord(lorebook, label)
+  return lorebook
+}
+
+export function repairGlobalLorebookRecord(
   input: unknown,
   label = 'lorebook',
 ): GlobalLorebookRecord {

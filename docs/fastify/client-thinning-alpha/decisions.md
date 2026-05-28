@@ -22,6 +22,10 @@ which side may mint.
 **Audit rule:** `pnpm client-thinning:audit` must inspect root create helpers in
 `server/fastify/src/commands/*`, not just child-record validators.
 
+**Implementation note:** Bucket 1 closed this by keeping public
+`create*Record` helpers strict and moving legacy/default id minting into
+separate repair helpers used by import/bootstrap/default-generation paths.
+
 ## AEC2 - Import/export current shape
 
 **Decision:** Any import path that accepts a database must persist an

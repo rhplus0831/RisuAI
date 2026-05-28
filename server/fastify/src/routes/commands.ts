@@ -37,6 +37,7 @@ import {
   readOptionalBoolean,
   readOptionalString,
   readPresetId,
+  repairPresetRecord,
   requirePresetIndex,
   saveCurrentPresetSnapshot,
   selectedPresetId,
@@ -129,6 +130,7 @@ import {
   readLorebookId,
   readLorebookIdList,
   readModuleId,
+  repairGlobalLorebookRecord,
   requireGlobalLorebookIndex,
   requireModule,
   validateFullLorebookOrder,
@@ -1180,7 +1182,7 @@ export function registerCommandRoutes(
             saveCurrentPresetSnapshot(target, presets)
           }
           const index = requirePresetIndex(presets, presetId)
-          const copy = createPresetRecord({
+          const copy = repairPresetRecord({
             ...presets[index],
             id: undefined,
             name: name ?? `${presets[index].name ?? 'Preset'} Copy`,
@@ -1251,7 +1253,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
-      const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'Imported')
+      const preset = repairPresetRecord(readJsonObject(body.preset, 'preset'), 'Imported')
       const result = applyJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
@@ -3206,7 +3208,7 @@ export function registerCommandRoutes(
           lorebooks.splice(index, 1)
           target.loreBookPage = 0
           if (lorebooks.length === 0) {
-            lorebooks.push(createGlobalLorebookRecord({ name: 'My First LoreBook', data: [] }))
+            lorebooks.push(repairGlobalLorebookRecord({ name: 'My First LoreBook', data: [] }))
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookDeleted, id: lorebookId },
