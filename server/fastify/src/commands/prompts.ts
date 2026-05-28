@@ -16,7 +16,6 @@ export const PROMPT_SETTINGS_KEYS = [
   'promptPreprocess',
   'presetRegex',
   'promptSettings',
-  'promptTemplate',
   'jsonSchemaEnabled',
   'jsonSchema',
   'strictJsonSchema',
@@ -63,7 +62,9 @@ export function normalizePromptTemplateCollection(database: unknown): void {
 
 export function createPromptItemRecord(input: unknown): PromptItemRecord {
   const item = readJsonObject(input, 'promptItem') as PromptItemRecord
-  item.id = typeof item.id === 'string' && item.id.trim() ? item.id : randomUUID()
+  if (typeof item.id !== 'string' || item.id.trim() === '') {
+    throw new ValidationError('promptItem.id must be a non-empty string')
+  }
   return item
 }
 
@@ -173,9 +174,6 @@ function validatePromptSettingValue(key: string, value: unknown): void {
   }
   if (key === 'promptSettings' && (!value || typeof value !== 'object' || Array.isArray(value))) {
     throw new ValidationError('promptSettings must be an object')
-  }
-  if (key === 'promptTemplate' && value !== null && !Array.isArray(value)) {
-    throw new ValidationError('promptTemplate must be an array or null')
   }
   if (key === 'fallbackModels' && (!value || typeof value !== 'object' || Array.isArray(value))) {
     throw new ValidationError('fallbackModels must be an object')

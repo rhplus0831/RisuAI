@@ -71,21 +71,33 @@ export function ensureGlobalLorebookCollection(database: JsonRecord): GlobalLore
 }
 
 export function ensureAllChildLorebooks(database: JsonRecord): void {
-  const characters = ensureCharacterCollection(database)
-  for (const character of characters) {
-    ensureCharacterLorebooks(character)
-    for (const chat of ensureCharacterChats(character)) {
-      chat.localLore = ensureLorebookEntries(chat.localLore, `chat ${chat.id}.localLore`)
+  if (Array.isArray(database.characters)) {
+    const characters = ensureCharacterCollection(database)
+    for (const character of characters) {
+      ensureCharacterLorebooks(character)
+      for (const chat of ensureCharacterChats(character)) {
+        chat.localLore = repairLorebookEntries(chat.localLore, `chat ${chat.id}.localLore`)
+      }
     }
   }
 
-  for (const module of ensureModuleCollection(database)) {
-    module.lorebook = ensureLorebookEntries(module.lorebook ?? [], `module ${module.id}.lorebook`)
+  if (Array.isArray(database.modules)) {
+    for (const rawModule of database.modules) {
+      if (!rawModule || typeof rawModule !== 'object' || Array.isArray(rawModule)) {
+        continue
+      }
+      const module = rawModule as ModuleRecord
+      if (Array.isArray(module.lorebook)) {
+        const label =
+          typeof module.id === 'string' && module.id.trim() ? `module ${module.id}` : 'module'
+        module.lorebook = repairLorebookEntries(module.lorebook, `${label}.lorebook`)
+      }
+    }
   }
 }
 
 export function ensureCharacterLorebooks(character: CharacterRecord): LorebookEntryRecord[] {
-  character.globalLore = ensureLorebookEntries(
+  character.globalLore = repairLorebookEntries(
     Array.isArray(character.globalLore) ? character.globalLore : [],
     `character ${character.chaId}.globalLore`,
   )
@@ -112,7 +124,7 @@ export function ensureModuleCollection(database: JsonRecord): ModuleRecord[] {
       module.id = randomUUID()
     }
     seen.add(module.id)
-    module.lorebook = ensureLorebookEntries(module.lorebook ?? [], `module ${module.id}.lorebook`)
+    module.lorebook = repairLorebookEntries(module.lorebook ?? [], `module ${module.id}.lorebook`)
     return module
   })
   database.modules = modules
@@ -127,7 +139,7 @@ export function createGlobalLorebookRecord(
   lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : randomUUID()
   lorebook.name =
     typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
-  lorebook.data = ensureLorebookEntries(lorebook.data ?? [], `${label}.data`)
+  lorebook.data = repairLorebookEntries(lorebook.data ?? [], `${label}.data`)
   validateGlobalLorebookRecord(lorebook, label)
   return lorebook
 }
@@ -163,10 +175,22 @@ export function readLorebookIdList(input: unknown, label = 'lorebookIds'): strin
 }
 
 export function readLorebookEntries(input: unknown, label = 'entries'): LorebookEntryRecord[] {
+  return validateLorebookEntries(input, label)
+}
+
+export function validateLorebookEntries(input: unknown, label = 'entries'): LorebookEntryRecord[] {
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
   }
-  return ensureLorebookEntries(input, label)
+  const seen = new Set<string>()
+  return input.map((raw, index) => {
+    const entry = createLorebookEntryRecord(raw, `${label}[${index}]`, { repairId: false })
+    if (seen.has(entry.id)) {
+      throw new ValidationError(`Duplicate lorebook entry id: ${entry.id}`)
+    }
+    seen.add(entry.id)
+    return entry
+  })
 }
 
 export function requireGlobalLorebookIndex(
@@ -215,14 +239,14 @@ export function validateFullLorebookOrder(
   }
 }
 
-export function ensureLorebookEntries(input: unknown, label: string): LorebookEntryRecord[] {
+export function repairLorebookEntries(input: unknown, label: string): LorebookEntryRecord[] {
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
   }
 
   const seen = new Set<string>()
   return input.map((raw, index) => {
-    const entry = createLorebookEntryRecord(raw, `${label}[${index}]`)
+    const entry = createLorebookEntryRecord(raw, `${label}[${index}]`, { repairId: true })
     if (seen.has(entry.id)) {
       entry.id = randomUUID()
     }
@@ -251,7 +275,7 @@ export function normalizeSelectedChatLorebooks(
 ): { character: CharacterRecord; chat: { localLore: LorebookEntryRecord[] }; parentId: string } {
   const characters = ensureCharacterCollection(database)
   const location = requireChatLocation(characters, chatId)
-  location.chat.localLore = ensureLorebookEntries(
+  location.chat.localLore = repairLorebookEntries(
     location.chat.localLore,
     `chat ${chatId}.localLore`,
   )
@@ -262,7 +286,11 @@ export function normalizeSelectedChatLorebooks(
   }
 }
 
-function createLorebookEntryRecord(input: unknown, label: string): LorebookEntryRecord {
+function createLorebookEntryRecord(
+  input: unknown,
+  label: string,
+  options: { repairId: boolean },
+): LorebookEntryRecord {
   const entry = readJsonObject(
     {
       key: '',
@@ -277,7 +305,12 @@ function createLorebookEntryRecord(input: unknown, label: string): LorebookEntry
     },
     label,
   ) as LorebookEntryRecord
-  entry.id = typeof entry.id === 'string' && entry.id.trim() ? entry.id : randomUUID()
+  if (typeof entry.id !== 'string' || entry.id.trim() === '') {
+    if (!options.repairId) {
+      throw new ValidationError(`${label}.id must be a non-empty string`)
+    }
+    entry.id = randomUUID()
+  }
   validateLorebookEntryRecord(entry, label)
   return entry
 }

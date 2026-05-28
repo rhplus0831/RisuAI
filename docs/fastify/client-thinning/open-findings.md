@@ -14,38 +14,6 @@ Each finding states the **problem** as it exists in the code today; the chosen
 **direction** is summarized in the Decision line and detailed in
 [`decisions.md`](./decisions.md) / [`closeout-buckets.md`](./closeout-buckets.md).
 
-## F4 → EC4 (P1/P2): Public command paths still repair stable ids / bypass resource semantics
-
-Several public replacement helpers still repair durable child ids, and prompt
-items are still reachable through a settings command.
-
-- Lorebook entry replacement repairs ids: `ensureLorebookEntries` generates missing and replaces duplicate ids around `server/fastify/src/commands/lorebooks.ts:218`, `:226`, `:280`; public routes at `server/fastify/src/routes/commands.ts:3272`, `:3309`, `:3343`, `:3916`.
-- Script/trigger replacement repairs ids: `ensureDefinitionRecords` around `server/fastify/src/commands/scriptDefinitions.ts:97`, `:104`, `:127`; public routes at `server/fastify/src/routes/commands.ts:3950`, `:3984`, `:4018`, `:4052`.
-- Message `createMessageRecord` still generates a missing `chatId` around `server/fastify/src/commands/messages.ts:68`; `ensureChatMessages` repairs existing malformed DB state around `:50`.
-- `promptTemplate` is accepted as a raw `array|null` through the dedicated prompt-settings command: `server/fastify/src/commands/prompts.ts:11`, `:177`, applied at `server/fastify/src/routes/commands.ts:1328`, `:1341`, emitting `prompt.settings.updated` (`events.ts:53`).
-- Prompt-item **create** still mints ids server-side at `server/fastify/src/commands/prompts.ts:64`.
-
-Precision (from audit) — partly stale:
-
-- **Message duplicate ids are already rejected** by `validateUniqueMessageIds`
-  (`messages.ts:97`, `:158`; tests `commands.test.ts:3134`). Only the _missing_
-  `chatId` generation remains.
-- **Prompt-item CRUD/reorder already exists** with resource-specific events
-  (`commands.ts:1357`, `:1393`, `:1432`, `:1466`; tests `commands.test.ts:1322`),
-  and the UI already uses it. The bypass is specifically the
-  `/commands/prompt-settings` route (the generic `/commands/settings/:group`
-  already rejects the `prompt` group). The one known raw client use is the
-  enable/disable toggle patching `{ promptTemplate: [] }` at
-  `src/lib/Setting/Pages/BotSettings.svelte:1455`.
-
-**Decision (EC4):** **4a** split each id helper into `repairX` (import, may mint
-ids) + `validateX` (command, rejects missing/dup) — messages need only to stop
-generating the missing `chatId`; lorebook entries and script/trigger defs get the
-full split. Create commands (incl. prompt-item create, `prompts.ts:64`) require a
-client-supplied id — minting lives only in import/bootstrap. **4b** subtractive: drop `promptTemplate` from `/commands/prompt-settings`
-and route the `BotSettings` toggle through a command; the `/prompt-items/*`
-commands are the only editing path. See [`decisions.md`](./decisions.md#ec4).
-
 ## F5 → EC5 (P2): Higher-level command wrappers hide 409 conflicts by replaying stale payloads
 
 On a first 409, the high-level browser wrappers resend the same stale payload

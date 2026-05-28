@@ -81,7 +81,34 @@ Verification:
 - `pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts -- --run`:
   17 passed.
 
-Next pickup: **EC4/F4 — Stable-id validation + prompt-item semantics**.
+## Stable-id validation + prompt-item semantics (EC4/F4)
+
+Closed on 2026-05-28.
+
+- Public command paths now validate durable child ids instead of repairing them:
+  prompt-item create requires a client-supplied `id`; message append, replacement,
+  and generation-result persistence require `chatId`; lorebook entry replacement
+  rejects missing/duplicate entry ids; and script/trigger replacement rejects
+  missing/duplicate definition ids.
+- Import/bootstrap repair remains separate and may still mint ids for malformed
+  legacy/current-shape input. The command-side validators do not call
+  `randomUUID()`.
+- `promptTemplate` was removed from `/api/v1/commands/prompt-settings`; prompt
+  item edits now go through `/api/v1/commands/prompt-items/*`.
+- The Bot Settings prompt-template enable toggle now uses the new
+  `/api/v1/commands/prompt-items/enable` command instead of patching
+  `{ promptTemplate: [] }` through prompt settings.
+- Import normalization now avoids adding empty character/module scaffolding when
+  the imported JSON has no such resource family, while still repairing existing
+  malformed message ids.
+
+Verification:
+
+- `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`: 69 passed.
+- `pnpm test src/ts/server/commands.test.ts -- --run`: 36 passed.
+- `pnpm check`: passed, 0 errors / 0 warnings.
+
+Next pickup: **EC5/F5 — Single active-writer session lock**.
 
 ## Archived migration slices
 

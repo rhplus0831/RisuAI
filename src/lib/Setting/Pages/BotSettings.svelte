@@ -58,6 +58,7 @@
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     canUseServerCommands,
+    enablePromptItemsCommand,
     patchPromptSettingsCommand,
     runServerCommand,
     type SettingsPatch,
@@ -1455,9 +1456,9 @@
           if (canUseServerCommands()) {
             void runServerCommand({
               command: (baseRevision) =>
-                patchPromptSettingsCommand({
+                enablePromptItemsCommand({
                   baseRevision,
-                  patch: { promptTemplate: [] },
+                  enabled: true,
                 }),
               rollback: () => {
                 withTrustedServerProjectionWrite(() => {

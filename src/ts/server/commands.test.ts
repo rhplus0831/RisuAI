@@ -44,6 +44,7 @@ import {
   deletePluginStorageCommand,
   deletePromptItemCommand,
   deleteTranslatorPresetCommand,
+  enablePromptItemsCommand,
   favoriteLoadoutCommand,
   enablePluginCommand,
   enableModuleCommand,
@@ -711,6 +712,13 @@ describe('server command API adapter', () => {
           event: { type: 'prompt.item.reordered', revision: 6, resource: 'promptItem' },
         }
       }
+      if (url.endsWith('/prompt-items/enable')) {
+        return {
+          revision: 7,
+          event: { type: 'prompt.item.enabled', revision: 7, resource: 'promptItem' },
+          enabled: true,
+        }
+      }
       if (url.endsWith('/prompt-items/item-a')) {
         return {
           revision: 5,
@@ -777,6 +785,13 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 6 })
 
+    await expect(
+      enablePromptItemsCommand({
+        baseRevision: 6,
+        enabled: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 7, enabled: true })
+
     expect(
       commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
     ).toEqual([
@@ -815,6 +830,11 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/prompt-items/reorder',
         method: 'POST',
         body: { baseRevision: 5, itemIds: ['item-b'] },
+      },
+      {
+        url: '/api/v1/commands/prompt-items/enable',
+        method: 'POST',
+        body: { baseRevision: 6, enabled: true },
       },
     ])
   })

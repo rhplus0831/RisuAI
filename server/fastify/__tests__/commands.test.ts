@@ -1443,6 +1443,42 @@ describe('Phase 9-2c prompt template and item commands', () => {
     expect(settings.statusCode).toBe(400)
     expect(settings.json().error).toBe('jsonSchemaEnabled must be a boolean')
 
+    const promptTemplateSettings = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { promptTemplate: [] },
+      },
+    })
+    expect(promptTemplateSettings.statusCode).toBe(400)
+    expect(promptTemplateSettings.json().error).toBe('Unsupported prompt setting: promptTemplate')
+
+    const missingId = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        promptItem: { type: 'memory' },
+      },
+    })
+    expect(missingId.statusCode).toBe(400)
+    expect(missingId.json().error).toBe('promptItem.id must be a non-empty string')
+
+    const duplicateCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        promptItem: { id: 'item-a', type: 'memory' },
+      },
+    })
+    expect(duplicateCreate.statusCode).toBe(400)
+    expect(duplicateCreate.json().error).toBe('Duplicate prompt item id: item-a')
+
     const reorder = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/prompt-items/reorder',
@@ -1464,6 +1500,46 @@ describe('Phase 9-2c prompt template and item commands', () => {
     expect(bootstrap.json().database.promptTemplate.map((item: { id: string }) => item.id)).toEqual(
       ['item-a', 'item-b'],
     )
+  })
+
+  it('enables and disables prompt items through prompt-item commands', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {})
+
+    const enabled = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/enable',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        enabled: true,
+      },
+    })
+    expect(enabled.statusCode).toBe(200)
+    expect(enabled.json()).toMatchObject({
+      revision: 2,
+      event: { type: 'prompt.item.enabled', resource: 'promptItem' },
+      enabled: true,
+    })
+
+    const disabled = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/enable',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: enabled.json().revision,
+        enabled: false,
+      },
+    })
+    expect(disabled.statusCode).toBe(200)
+    expect(disabled.json()).toMatchObject({ revision: 3, enabled: false })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.promptTemplate).toBeUndefined()
   })
 
   it('returns 404 and 409 for missing prompt items and stale revisions', async () => {
@@ -3149,6 +3225,30 @@ describe('Phase 9-3c message history commands', () => {
     expect(duplicateReplacement.statusCode).toBe(400)
     expect(duplicateReplacement.json().error).toBe('Duplicate message id: same')
 
+    const missingAppendId = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        message: { role: 'user', data: 'missing id' },
+      },
+    })
+    expect(missingAppendId.statusCode).toBe(400)
+    expect(missingAppendId.json().error).toBe('message.chatId must be a non-empty string')
+
+    const missingReplacementId = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        messages: [{ role: 'user', data: 'missing id' }],
+      },
+    })
+    expect(missingReplacementId.statusCode).toBe(400)
+    expect(missingReplacementId.json().error).toBe('messages[0].chatId must be a non-empty string')
+
     const badPatch = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/messages/dup',
@@ -3168,11 +3268,13 @@ describe('Phase 9-3c message history commands', () => {
     })
     expect(bootstrap.json().revision).toBe(1)
     const messages = bootstrap.json().database.characters[0].chats[0].message
-    expect(messages).toEqual([
-      { role: 'user', data: 'missing id' },
-      { role: 'char', data: 'duplicate a', chatId: 'dup' },
-      { role: 'user', data: 'duplicate b', chatId: 'dup' },
+    expect(messages.map((message: { role: string; data: string }) => message.data)).toEqual([
+      'missing id',
+      'duplicate a',
+      'duplicate b',
     ])
+    expect(messages.map((message: { chatId: string }) => message.chatId)).toHaveLength(3)
+    expect(new Set(messages.map((message: { chatId: string }) => message.chatId)).size).toBe(3)
   })
 
   it('returns 404 and 409 for missing messages and stale message revisions', async () => {
@@ -3399,6 +3501,26 @@ describe('Phase 9-3d generation persistence command', () => {
     })
     expect(missingInfo.statusCode).toBe(400)
     expect(missingInfo.json().error).toBe('generationResult.message.generationInfo is required')
+
+    const missingMessageId = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'missing id',
+            generationInfo: { generationId: 'gen-1' },
+          },
+        },
+      },
+    })
+    expect(missingMessageId.statusCode).toBe(400)
+    expect(missingMessageId.json().error).toBe(
+      'generationResult.message.chatId must be a non-empty string',
+    )
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -3873,6 +3995,64 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(malformed.statusCode).toBe(400)
     expect(malformed.json().error).toBe('entries[0].insertorder must be a finite number')
 
+    const missingEntryId = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        entries: [
+          {
+            key: '',
+            secondkey: '',
+            insertorder: 100,
+            comment: '',
+            content: '',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ],
+      },
+    })
+    expect(missingEntryId.statusCode).toBe(400)
+    expect(missingEntryId.json().error).toBe('entries[0].id must be a non-empty string')
+
+    const duplicateEntryId = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        entries: [
+          {
+            id: 'entry-a',
+            key: '',
+            secondkey: '',
+            insertorder: 100,
+            comment: '',
+            content: '',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+          {
+            id: 'entry-a',
+            key: '',
+            secondkey: '',
+            insertorder: 100,
+            comment: '',
+            content: '',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ],
+      },
+    })
+    expect(duplicateEntryId.statusCode).toBe(400)
+    expect(duplicateEntryId.json().error).toBe('Duplicate lorebook entry id: entry-a')
+
     const badReorder = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/lorebooks/reorder',
@@ -4041,6 +4221,33 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(badScript.statusCode).toBe(400)
     expect(badScript.json().error).toBe('scripts[0].in must be a string')
 
+    const missingScriptId = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        scripts: [{ comment: 'Missing', in: '', out: '', type: 'editinput' }],
+      },
+    })
+    expect(missingScriptId.statusCode).toBe(400)
+    expect(missingScriptId.json().error).toBe('scripts[0].id must be a non-empty string')
+
+    const duplicateScriptId = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        scripts: [
+          { id: 'script-a', comment: 'A', in: '', out: '', type: 'editinput' },
+          { id: 'script-a', comment: 'B', in: '', out: '', type: 'editinput' },
+        ],
+      },
+    })
+    expect(duplicateScriptId.statusCode).toBe(400)
+    expect(duplicateScriptId.json().error).toBe('Duplicate script definition id: script-a')
+
     const badTrigger = await harness.app.inject({
       method: 'PUT',
       url: '/api/v1/commands/characters/char-a/triggers',
@@ -4052,6 +4259,33 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     })
     expect(badTrigger.statusCode).toBe(400)
     expect(badTrigger.json().error).toBe('triggers[0].conditions must be an array')
+
+    const missingTriggerId = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        triggers: [{ comment: 'Missing', type: 'start', conditions: [], effect: [] }],
+      },
+    })
+    expect(missingTriggerId.statusCode).toBe(400)
+    expect(missingTriggerId.json().error).toBe('triggers[0].id must be a non-empty string')
+
+    const duplicateTriggerId = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        triggers: [
+          { id: 'trigger-a', comment: 'A', type: 'start', conditions: [], effect: [] },
+          { id: 'trigger-a', comment: 'B', type: 'start', conditions: [], effect: [] },
+        ],
+      },
+    })
+    expect(duplicateTriggerId.statusCode).toBe(400)
+    expect(duplicateTriggerId.json().error).toBe('Duplicate trigger definition id: trigger-a')
 
     const bootstrap = await harness.app.inject({
       method: 'GET',

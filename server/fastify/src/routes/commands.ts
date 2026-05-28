@@ -200,6 +200,7 @@ interface PromptCommandBody {
   promptItem?: unknown
   patch?: unknown
   itemIds?: unknown
+  enabled?: unknown
 }
 
 interface PersonaCommandBody {
@@ -1449,6 +1450,45 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.promptItemDeleted, id: itemId },
             extra: { itemId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/prompt-items/enable', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PromptCommandBody
+      const baseRevision = readBaseRevision(body)
+      if (typeof body.enabled !== 'boolean') {
+        throw new ValidationError('enabled must be a boolean')
+      }
+      const enabled = body.enabled
+      const result = applyJsonCommandMutation<{ enabled: boolean }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureDatabaseObject(database)
+          if (enabled) {
+            ensurePromptTemplateCollection(target)
+          } else {
+            delete target.promptTemplate
+          }
+          return {
+            event: COMMAND_EVENT_CATALOG.promptItemsEnabled,
+            extra: { enabled },
           }
         },
       })

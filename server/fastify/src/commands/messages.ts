@@ -38,6 +38,12 @@ const ALLOWED_MESSAGE_PATCH_KEYS = new Set([
 ])
 
 export function normalizeAllChatMessages(database: unknown): CharacterRecord[] {
+  if (!database || typeof database !== 'object' || Array.isArray(database)) {
+    return normalizeAllCharacterChats(database)
+  }
+  if (!Array.isArray((database as JsonRecord).characters)) {
+    return []
+  }
   const characters = normalizeAllCharacterChats(database)
   for (const character of characters) {
     for (const chat of ensureCharacterChats(character)) {
@@ -54,7 +60,7 @@ export function ensureChatMessages(chat: ChatRecord): MessageRecord[] {
 
   const seen = new Set<string>()
   const messages = (chat.message as unknown[]).map((raw, index) => {
-    const message = createMessageRecord(raw, `message[${index}]`)
+    const message = repairMessageRecord(raw, `message[${index}]`)
     if (seen.has(message.chatId)) {
       message.chatId = randomUUID()
     }
@@ -66,6 +72,12 @@ export function ensureChatMessages(chat: ChatRecord): MessageRecord[] {
 }
 
 export function createMessageRecord(input: unknown, label = 'message'): MessageRecord {
+  const message = readJsonObject(input, label) as MessageRecord
+  validateMessageRecord(message, label)
+  return message
+}
+
+function repairMessageRecord(input: unknown, label = 'message'): MessageRecord {
   const message = readJsonObject(input, label) as MessageRecord
   message.chatId =
     typeof message.chatId === 'string' && message.chatId.trim() ? message.chatId : randomUUID()
@@ -170,7 +182,10 @@ function validateMessageRecord(
   label: string,
   options: { partial?: boolean } = {},
 ): void {
-  if ('chatId' in record && (typeof record.chatId !== 'string' || record.chatId.trim() === '')) {
+  if (
+    (!options.partial || 'chatId' in record) &&
+    (typeof record.chatId !== 'string' || record.chatId.trim() === '')
+  ) {
     throw new ValidationError(`${label}.chatId must be a non-empty string`)
   }
   if (!options.partial || 'role' in record) {

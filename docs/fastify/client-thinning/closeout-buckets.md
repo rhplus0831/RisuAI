@@ -8,8 +8,8 @@ criterion ([`README.md`](./README.md)) and its finding
 ([`open-findings.md`](./open-findings.md)). A bucket is done only when its
 finding is resolved **and** the exit criterion's regression proof is committed.
 
-Current pickup: **Bucket 4 — Stable-id validation + prompt-item semantics (EC4/F4)**.
-Buckets 1, 2, and 3 closed on 2026-05-28; see
+Current pickup: **Bucket 5 — Single active-writer session lock (EC5/F5)**.
+Buckets 1, 2, 3, and 4 closed on 2026-05-28; see
 [`history.md`](./history.md#provider-ownership-ec1f1).
 
 | Order | Bucket                                             | Closes | Finding | Status            |
@@ -17,7 +17,7 @@ Buckets 1, 2, and 3 closed on 2026-05-28; see
 | 1     | Provider ownership (server-only generation)        | EC1    | F1      | Closed 2026-05-28 |
 | 2     | Plugin durable storage + Compatibility Mode        | EC2    | F2      | Closed 2026-05-28 |
 | 3     | Import current-shape normalization                 | EC3    | F3      | Closed 2026-05-28 |
-| 4     | Stable-id validation + prompt-item semantics       | EC4    | F4      | Open              |
+| 4     | Stable-id validation + prompt-item semantics       | EC4    | F4      | Closed 2026-05-28 |
 | 5     | Single active-writer session lock                  | EC5    | F5      | Open              |
 | 6     | Character asset-reference validation               | EC6    | F6      | Open              |
 | 7     | Repeatable audit script + full verification ladder | EC7    | —       | Open              |
@@ -48,24 +48,17 @@ Buckets 1, 2, and 3 closed on 2026-05-28; see
    JSON imports of non-object database payloads now return 400, and bootstrap
    tests now expect current-shape output after JSON import. Focused proof:
    `pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/bootstrap.test.ts -- --run`.
-4. **Stable-id validation + prompt items (EC4).**
-   - _4a (split helpers):_ split each id helper into `repairX` (import/bootstrap
-     only, may mint ids) and `validateX` (command path, rejects missing/duplicate
-     with 400). Lorebook entries (`ensureLorebookEntries`) and script/trigger defs
-     (`ensureDefinitionRecords`) get the full split; messages need only to **stop
-     generating the missing `chatId`** (`createMessageRecord:68`) — duplicate
-     rejection already exists. Create commands require a client-supplied id and
-     reject missing (incl. prompt-item create, `prompts.ts:64`); no command-path
-     helper may call `randomUUID()`.
-   - _4b (subtractive prompt items):_ drop `promptTemplate` from
-     `PROMPT_SETTINGS_KEYS` (`prompts.ts:19`) and remove prompt-settings
-     acceptance + validation for it (`prompts.ts:177`); note `commands.ts:1328`
-     only _reads_ prompt settings (generic apply is around `:1341`/`:4184`). The
-     existing `/prompt-items/*` CRUD/reorder commands become the only editing
-     path; preset switch already carries `promptTemplate` server-side via
-     `applyPreset`. Route the `BotSettings.svelte:1455` enable/disable toggle
-     (`{ promptTemplate: [] }`) through a command (clear/delete-all) instead of
-     the settings patch.
+4. **Stable-id validation + prompt items (EC4) — closed 2026-05-28.** Command
+   paths now reject missing/duplicate child ids instead of repairing them:
+   prompt-item create requires `promptItem.id`, message append/replace/generation
+   result requires `chatId`, lorebook entry replacement validates entry ids, and
+   script/trigger replacement validates definition ids. Repair/minting remains in
+   import/bootstrap normalizers (`repair*` helpers). The `promptTemplate`
+   prompt-settings channel was removed; `/prompt-items/*` owns prompt item edits,
+   including the new `/prompt-items/enable` command used by the Bot Settings
+   enable toggle. Focused proof:
+   `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`,
+   `pnpm test src/ts/server/commands.test.ts -- --run`, and `pnpm check`.
 5. **Single active-writer session lock (EC5).** Port the `Risuai-NodeOnly`
    reference (`1c1d7bc6`): mint a per-page-load session id; register the active
    writer on **bootstrap** (last-loader-wins); reject non-active sessions with

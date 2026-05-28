@@ -46,13 +46,13 @@ export function ensureAllScriptDefinitionCollections(database: JsonRecord): void
           ? `character ${character.chaId}`
           : 'character'
       if (Array.isArray(character.customscript)) {
-        character.customscript = ensureScriptDefinitions(
+        character.customscript = repairScriptDefinitions(
           character.customscript,
           `${label}.customscript`,
         )
       }
       if (Array.isArray(character.triggerscript)) {
-        character.triggerscript = ensureTriggerDefinitions(
+        character.triggerscript = repairTriggerDefinitions(
           character.triggerscript,
           `${label}.triggerscript`,
         )
@@ -69,10 +69,10 @@ export function ensureAllScriptDefinitionCollections(database: JsonRecord): void
       const label =
         typeof module.id === 'string' && module.id.trim() ? `module ${module.id}` : 'module'
       if (Array.isArray(module.regex)) {
-        module.regex = ensureScriptDefinitions(module.regex, `${label}.regex`)
+        module.regex = repairScriptDefinitions(module.regex, `${label}.regex`)
       }
       if (Array.isArray(module.trigger)) {
-        module.trigger = ensureTriggerDefinitions(module.trigger, `${label}.trigger`)
+        module.trigger = repairTriggerDefinitions(module.trigger, `${label}.trigger`)
       }
     }
   }
@@ -98,7 +98,7 @@ export function readScriptDefinitions(input: unknown, label = 'scripts'): Script
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
   }
-  return ensureScriptDefinitions(input, label)
+  return validateScriptDefinitions(input, label)
 }
 
 export function readTriggerDefinitions(
@@ -108,18 +108,26 @@ export function readTriggerDefinitions(
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
   }
-  return ensureTriggerDefinitions(input, label)
+  return validateTriggerDefinitions(input, label)
 }
 
-function ensureScriptDefinitions(input: unknown[], label: string): ScriptDefinitionRecord[] {
-  return ensureDefinitionRecords(input, label, 'script') as ScriptDefinitionRecord[]
+function repairScriptDefinitions(input: unknown[], label: string): ScriptDefinitionRecord[] {
+  return repairDefinitionRecords(input, label, 'script') as ScriptDefinitionRecord[]
 }
 
-function ensureTriggerDefinitions(input: unknown[], label: string): TriggerDefinitionRecord[] {
-  return ensureDefinitionRecords(input, label, 'trigger') as TriggerDefinitionRecord[]
+function repairTriggerDefinitions(input: unknown[], label: string): TriggerDefinitionRecord[] {
+  return repairDefinitionRecords(input, label, 'trigger') as TriggerDefinitionRecord[]
 }
 
-function ensureDefinitionRecords(
+function validateScriptDefinitions(input: unknown[], label: string): ScriptDefinitionRecord[] {
+  return validateDefinitionRecords(input, label, 'script') as ScriptDefinitionRecord[]
+}
+
+function validateTriggerDefinitions(input: unknown[], label: string): TriggerDefinitionRecord[] {
+  return validateDefinitionRecords(input, label, 'trigger') as TriggerDefinitionRecord[]
+}
+
+function repairDefinitionRecords(
   input: unknown[],
   label: string,
   kind: 'script' | 'trigger',
@@ -131,6 +139,26 @@ function ensureDefinitionRecords(
     const normalizedId = seen.has(id) ? randomUUID() : id
     record.id = normalizedId
     seen.add(normalizedId)
+    validateDefinitionRecord(record, `${label}[${index}]`, kind)
+    return record
+  })
+}
+
+function validateDefinitionRecords(
+  input: unknown[],
+  label: string,
+  kind: 'script' | 'trigger',
+): JsonRecord[] {
+  const seen = new Set<string>()
+  return input.map((raw, index) => {
+    const record = readJsonObject(raw, `${label}[${index}]`)
+    if (typeof record.id !== 'string' || record.id.trim() === '') {
+      throw new ValidationError(`${label}[${index}].id must be a non-empty string`)
+    }
+    if (seen.has(record.id)) {
+      throw new ValidationError(`Duplicate ${kind} definition id: ${record.id}`)
+    }
+    seen.add(record.id)
     validateDefinitionRecord(record, `${label}[${index}]`, kind)
     return record
   })

@@ -585,6 +585,11 @@ export interface ReorderPromptItemsCommandInput {
   itemIds: string[]
 }
 
+export interface EnablePromptItemsCommandInput {
+  baseRevision: number
+  enabled: boolean
+}
+
 export interface PersonaCommandInput {
   baseRevision: number
 }
@@ -1224,6 +1229,20 @@ export async function reorderPromptItemsCommand(
     body: {
       baseRevision: input.baseRevision,
       itemIds: input.itemIds,
+    },
+    signal,
+  })
+}
+
+export async function enablePromptItemsCommand(
+  input: EnablePromptItemsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ enabled: boolean }>> {
+  return requestCommandJson('/prompt-items/enable', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      enabled: input.enabled,
     },
     signal,
   })

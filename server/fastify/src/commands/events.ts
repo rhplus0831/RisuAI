@@ -70,6 +70,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'prompt.item.reordered',
     resource: 'promptItem',
   },
+  promptItemsEnabled: {
+    type: 'prompt.item.enabled',
+    resource: 'promptItem',
+  },
   personaCreated: {
     type: 'persona.created',
     resource: 'persona',
