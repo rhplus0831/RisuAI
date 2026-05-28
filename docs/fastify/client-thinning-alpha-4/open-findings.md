@@ -2,18 +2,19 @@
 
 Date: 2026-05-28
 
-Findings B1-B10 were discovered by the 2026-05-28 verification audit after the
+Status: **closed 2026-05-28.** Findings B1-B10 were discovered by the
+2026-05-28 verification audit after the
 [`../client-thinning-alpha-3/`](../client-thinning-alpha-3/) closeout. The
-verification confirmed every documented A3F# fix is in place and every R1-R7
-rule passes; B1-B10 are the bugs the audit cannot see because each R rule
-matches the literal pre-fix shape rather than the invariant.
+Alpha 4 closeout fixed every finding with structural audit gates or
+focused regression tests. No Alpha 4 findings remain open. See
+[`final-audit.md`](./final-audit.md).
 
 ## Summary
 
 | Finding | Severity | Criterion           | Status |
 | ------- | -------- | ------------------- | ------ |
-| B1 - Composite command fan-out at six unfixed call sites | Medium  | A4EC1 / A4EC2 | **Partial — 3/7 sites closed 2026-05-28 (SideChatList, applyModule); 4 remain** |
-| B2 - Public lorebook create transitively mints entry ids | High    | A4EC1 / A4EC3 | Open |
+| B1 - Composite command fan-out at seven unfixed call sites | Medium  | A4EC1 / A4EC2 | **Closed 2026-05-28** (all seven sites routed through `runOptimisticCommandSequence`) |
+| B2 - Public lorebook create transitively mints entry ids | High    | A4EC1 / A4EC3 | **Closed 2026-05-28** (no-mint `validate*` helpers replace the repair-permissive constructors on the 5 red routes) |
 | B3 - `ensure*Collection` repair-on-read mints ids reachable from command routes | Medium  | A4EC1 / A4EC3 | **Resolved 2026-05-28 by classification** (audit treats `ensure*`/`normalize*` as non-propagating with arg-provenance check) |
 | B4 - Backup omits `data/risu.db` (SQLite memory database)                       | Medium  | A4EC1 / A4EC4 | **Closed 2026-05-28** |
 | B5 - Backup omits `data/save/` (legacy storage directory)                       | Medium  | A4EC1 / A4EC4 | **Closed 2026-05-28** |
@@ -21,7 +22,7 @@ matches the literal pre-fix shape rather than the invariant.
 | B7 - `saveAsset` callers ship no filename for non-PNG bytes                     | Medium  | A4EC1 / A4EC6 | **Closed 2026-05-28** |
 | B8 - `getFileSrc` Fastify fallback returns arbitrary URL strings                | Low     | A4EC1 / A4EC7 | **Closed 2026-05-28** |
 | B9 - `/chats/:chatId/lorebooks` skips global chat normalization                 | Low (defense in depth) | A4EC1 / A4EC8 | **Closed 2026-05-28** |
-| B10 - `repairPresetRecord` is dead but exported                                 | Low     | A4EC1 / A4EC3 | Open (delete the export; awaiting Bucket 2 work) |
+| B10 - `repairPresetRecord` is dead but exported                                 | Low     | A4EC1 / A4EC3 | **Closed 2026-05-28** (export deleted) |
 
 ## B1 - Composite Command Fan-out at Six Unfixed Call Sites
 

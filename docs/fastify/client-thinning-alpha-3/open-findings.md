@@ -258,7 +258,8 @@ Required closeout:
 - Regression proof: `server/fastify/__tests__/commands.test.ts` covers
   malformed and missing `image` refs for `/commands/presets/import`.
 - Audit gate: R3 overlap, because preset import was rewritten away from
-  `repairPresetRecord`.
+  `repairPresetRecord`. The unused `repairPresetRecord` export survived
+  Alpha 3 and was finally deleted in Alpha 4 / B10.
 
 ## A3F7 - Asset Reads Can Fetch Arbitrary URLs With `risu-auth`
 

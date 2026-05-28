@@ -1,9 +1,13 @@
-# Fastify Client Thinning Alpha 4 - Open
+# Fastify Client Thinning Alpha 4 - Closed
 
 Date: 2026-05-28
 
-Status: **open.** This directory records the fourth client-thinning follow-up
-pass after [`../client-thinning-alpha-3/`](../client-thinning-alpha-3/) closed.
+Status: **closed 2026-05-28.** This directory records the fourth
+client-thinning follow-up pass after
+[`../client-thinning-alpha-3/`](../client-thinning-alpha-3/) closed. All
+B1-B10 findings are resolved against the rebuilt invariant-derived audit
+script; see [`final-audit.md`](./final-audit.md) and
+[`history.md`](./history.md).
 
 ## Why Alpha 4 Exists
 

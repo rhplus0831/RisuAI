@@ -5,7 +5,7 @@ Date: 2026-05-28
 All Phases 0-9 are closed. No open findings remain. The source of
 truth for current state is [`../status.md`](../status.md). The latest
 client-thinning follow-up is closed in
-[`../client-thinning-alpha-3/final-audit.md`](../client-thinning-alpha-3/final-audit.md).
+[`../client-thinning-alpha-4/final-audit.md`](../client-thinning-alpha-4/final-audit.md).
 
 Policy: no actual Fastify users exist yet. Update current schemas,
 commands, and import paths directly.

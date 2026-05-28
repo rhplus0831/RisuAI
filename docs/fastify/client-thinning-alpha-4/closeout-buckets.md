@@ -11,13 +11,13 @@ is resolved with focused regression proof.
 | Order | Bucket                                              | Closes                | Status |
 | ----- | --------------------------------------------------- | --------------------- | ------ |
 | 0     | Audit rewrite (invariant-derived rules)             | A4EC1                 | **Closed 2026-05-28** |
-| 1     | Composite command fan-out serialization             | A4EC2 / B1            | **Partial — 3 of 7 call sites closed (SideChatList, applyModule); 4 remain** |
-| 2     | Transitive id minting + classification              | A4EC3 / B2 / B3 / B10 | Open   |
+| 1     | Composite command fan-out serialization             | A4EC2 / B1            | **Closed 2026-05-28** (all seven call sites) |
+| 2     | Transitive id minting + classification              | A4EC3 / B2 / B3 / B10 | **Closed 2026-05-28** |
 | 3     | Backup directory inventory                          | A4EC4 / B4 / B5       | **Closed 2026-05-28** |
 | 4     | In-memory accumulator bounds                        | A4EC5 / B6            | **Closed 2026-05-28** |
 | 5     | `saveAsset` caller classification                   | A4EC6 / B7            | **Closed 2026-05-28** |
 | 6     | Asset URL gate + global normalization route hole    | A4EC7 / A4EC8 / B8 / B9 | **Closed 2026-05-28** |
-| 7     | Final docs/status/ladder                            | A4EC9                 | Open   |
+| 7     | Final docs/status/ladder                            | A4EC9                 | **Closed 2026-05-28** |
 
 ## Bucket 0 - Audit Rewrite (closed 2026-05-28)
 
@@ -122,84 +122,108 @@ Closed via:
   general invariant across every server-side function that uses the
   resolver.
 
-## Bucket 1 - Composite Command Fan-out Serialization (partial)
+## Bucket 1 - Composite Command Fan-out Serialization (closed 2026-05-28)
 
-Status: **partial.** 3 of 7 call sites are closed; 4 remain open.
+All seven call sites route through `runOptimisticCommandSequence` /
+`runChatCommandSequence`. The audit rule **A4R-fanout** is the standing
+gate.
 
-Closed:
+First-pass closeout (two sites):
 
 - **SideChatList drag-end folder + chat reorder**
-  (`src/lib/SideBars/SideChatList.svelte:246-255`) — replaced the two
-  fire-and-forget dispatchers with `runOptimisticCommandSequence` over the
-  underlying `reorderChatFoldersCommand` and `reorderChatsCommand`. The
+  (`src/lib/SideBars/SideChatList.svelte:246-255`) — the two
+  fire-and-forget dispatchers route through `runOptimisticCommandSequence`
+  over `reorderChatFoldersCommand` and `reorderChatsCommand`. The
   legacy-mode `dispatchReorderChat*` calls were removed (they would have
   been no-ops outside server mode anyway). `runOptimisticCommandSequence`
   is now exported from `src/ts/chatCommands.ts`.
 - **applyModule** (`src/ts/process/modules.ts:548`) — the three child
-  replacement dispatches (lorebooks/scripts/triggers) now route through
-  the sequencer with `replaceCharacterLorebooksCommand` /
+  replacement dispatches (lorebooks / scripts / triggers) now route
+  through the sequencer with `replaceCharacterLorebooksCommand` /
   `replaceCharacterScriptsCommand` / `replaceCharacterTriggersCommand`
-  builders. The rollback restores both lorebook and script-definition
-  states atomically. `ensureClientLorebookEntryIds` /
-  `ensureClientScriptDefinitionIds` / `ensureClientTriggerDefinitionIds`
-  / `restoreLorebookState` / `restoreScriptDefinitionState` are re-exported
-  for use. Regression test in `src/ts/process/modules.test.ts` asserts the
-  sequencer is called with the three factories.
+  builders. Rollback restores both lorebook and script-definition states
+  atomically.
 
-Open (still flagged by the audit):
+Second-pass closeout (four sites):
 
-- `src/ts/process/sendChatContext.ts:78` — `dispatchUpdateCharacter` +
-  `dispatchReplaceMessages` in the message-id backfill path.
-- `src/ts/plugins/plugins.svelte.ts:787` — `dispatchModuleCollectionPatch`
-  iterates module diffs and fires create/update/delete/reorder against one
-  optimistic snapshot. Needs queueing.
-- `src/ts/plugins/plugins.svelte.ts:821` — `dispatchEnabledModulesPatch`
-  iterates enable/disable flag diffs.
-- `src/ts/plugins/apiV3/v3.svelte.ts:980` — `makeRisuaiAPIV3` arrow
-  dispatches compatible character + chat updates back-to-back.
+- **`setupSendChatContext`** (`src/ts/process/sendChatContext.ts`) — the
+  lastInteraction patch and the message-id backfill collect into one
+  factory list and run through `runOptimisticCommandSequence`. Single
+  chat-state rollback covers both mutations. Regression test in
+  `src/ts/process/__tests__/sendChatContext.test.ts` asserts the second
+  command reads the revision returned by the first.
+- **`dispatchModuleCollectionPatch`** (`src/ts/plugins/plugins.svelte.ts`)
+  — collects create/update/delete/reorder factories into one sequencer
+  call with `restoreModuleState` rollback. Coverage in
+  `src/ts/plugins/plugins.test.ts`.
+- **`dispatchEnabledModulesPatch`** (same file) — same shape with
+  `enableModuleCommand` factories.
+- **V3 plugin API `setCharacterToIndex` / `setChatToIndex`**
+  (`src/ts/plugins/apiV3/v3.svelte.ts`) — new helpers
+  `prepareCompatibleCharacterUpdate` / `prepareCompatibleChatUpdate`
+  return the factory list each composite would have dispatched. The V3
+  call sites now run those factories through
+  `runOptimisticCommandSequence` directly. The existing
+  `dispatchCompatibleChatUpdate` is now a thin wrapper over the prepare
+  helper. Regression coverage in
+  `src/ts/compatibilityAdapters.test.ts`.
 
-The audit rule **A4R-fanout** keeps firing on each of these until closed;
-they are gated against regression.
+## Bucket 2 - Transitive Id Minting + Classification (closed 2026-05-28)
 
-## Bucket 2 - Transitive Id Minting + Classification (open)
+All five red A4R3 routes share a single chain: command path →
+intermediate helper (`createGlobalLorebookRecord` / `readLorebookEntries`)
+→ `repair*` mapper → `randomUUID()`. Broken at the intermediate helper:
 
-Status: **open.** The audit rule **A4R3** flags every remaining instance:
+- `validateLorebookEntry` (no minting; rejects missing id) and
+  `repairLorebookEntry` (mints) replace the unified
+  `createLorebookEntryRecord` in
+  `server/fastify/src/commands/lorebooks.ts`.
+- `validateLorebookEntries(input, label)` replaces the dead
+  `readLorebookEntries` alias and uses `validateLorebookEntry` per entry,
+  rejecting cross-entry duplicate ids.
+- `validateGlobalLorebookCreate(input, label)` is the new no-mint
+  exported constructor for `POST /api/v1/commands/lorebooks`. It wraps
+  `validateGlobalLorebookRecord` plus `validateLorebookEntries`.
+- The five routes (POST `/lorebooks`, PUT
+  `/lorebooks/:id/entries`, `/characters/:id/lorebooks`,
+  `/chats/:id/lorebooks`, `/modules/:id/lorebooks`) now reach only the
+  validate-only helpers. A4R3 confirms no transitive `randomUUID()` is
+  reachable.
 
-- **B2 (`createGlobalLorebookRecord` transitive entry-id mint)**: `POST
-  /api/v1/commands/lorebooks` → `createGlobalLorebookRecord` →
-  `repairLorebookEntries({ repairId: true })` → mint. Fix: split the
-  helper so the command-path constructor rejects missing entry ids; the
-  import-path repair stays.
-- **`readLorebookEntries`-using replace routes** (4 routes): same class,
-  the replace helper internally calls `repairLorebookEntries`. Fix is
-  parallel: route them through a no-mint validator that requires
-  client-supplied ids.
-- **B10**: `repairPresetRecord` is exported but unused in production. Fix:
-  delete the export. The audit also asserts no route file imports an
-  id-minting `repair*` helper.
+B10 closed by deleting the unused `repairPresetRecord` export at
+`server/fastify/src/commands/presets.ts`. Bootstrap minting still
+happens via `ensurePresetCollection`. `rg "repairPresetRecord" server/
+src/` is now empty.
 
-## Bucket 7 - Final docs/status/ladder (open)
+The EC4 stable-id audit list was updated to reference
+`validateGlobalLorebookCreate` and `validateLorebookEntries` instead of
+the deleted `readLorebookEntries` alias — the audit defends the no-mint
+validator name that public routes actually call.
 
-Status: open until all behavior buckets close. Tracked: write
-`final-audit.md` + `history.md`, reconcile `docs/fastify/status.md` and
-`docs/fastify/status/next-steps.md`, correct the stale Alpha-3 doc claim
-about `repairPresetRecord`.
+Regression coverage in `server/fastify/__tests__/commands.test.ts`
+exercises missing and duplicate entry ids at every reachable route.
 
-## Verification Snapshot 2026-05-28
+## Bucket 7 - Final docs/status/ladder (closed 2026-05-28)
 
-After the buckets that landed in this session:
+- `docs/fastify/client-thinning-alpha-4/final-audit.md` written.
+- `docs/fastify/client-thinning-alpha-4/history.md` written.
+- `docs/fastify/status.md` and `docs/fastify/status/next-steps.md`
+  updated to point at the Alpha 4 closeout.
+- The stale Alpha-3 line about `repairPresetRecord` was corrected to
+  note its Alpha-4 deletion.
 
-- `pnpm client-thinning:audit` — red on remaining B1 (4 sites) and B2/B10
-  (5 sites). Each finding includes a structural rule-based diagnostic, not
-  a one-off pattern match.
+## Verification Snapshot 2026-05-28 (closeout)
+
+After all buckets landed:
+
+- `pnpm client-thinning:audit` — passes.
 - `pnpm check` — 0 errors / 0 warnings.
-- `pnpm test` — 800 passed / 4 skipped (the modules.test.ts mock was
-  extended for the new sequencer pattern).
-- `pnpm api:test` — 1272 passed.
+- `pnpm test` — 807 passed / 4 skipped.
+- `pnpm api:test` — 1274 passed.
 - `pnpm build` — passes with pre-existing nonblocking warnings.
-- `pnpm smoke:fastify-browser` — not rerun this session; expected green
-  since browser-touched paths are unchanged.
+- `pnpm smoke:fastify-browser` — 1 browser smoke test passes.
 
-The audit will keep firing on every open B-bucket until each is closed.
-That is by design: the structural rules are the gate, and they cannot be
-satisfied by partial fixes.
+The structural rules in `util/client-thinning-audit.ts` are the standing
+defense. Future Fastify client-thinning findings should be opened as a
+new follow-up workstream; reopening Alpha 4 requires evidence that one
+of the A4EC# invariants no longer holds.
