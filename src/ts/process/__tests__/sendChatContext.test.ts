@@ -267,6 +267,68 @@ describe('setupSendChatContext - DB side effects', () => {
       },
     })
   })
+
+  it('serializes the character + message backfill commands against one revision baseline', async () => {
+    // A4EC2 / B1: the message-id backfill path dispatches lastInteraction
+    // then replaceMessages back-to-back. Pre-fix both ran with the same
+    // cached baseRevision and the second 409d; the sequencer must replay
+    // the revision returned by the first into the second.
+    platformState.isFastifyServer = true
+    let nextRevision = 21
+    const captured: { url: string; body: { baseRevision?: number } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: nextRevision })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, body })
+        // Each mutating call advances the server revision; the next call
+        // must read this advanced value via the sequencer.
+        nextRevision += 1
+        const event: CommandEvent = {
+          type: 'context.updated',
+          revision: nextRevision,
+          resource: 'context',
+        }
+        return jsonResponse({ revision: nextRevision, event })
+      }) as unknown as typeof fetch,
+    )
+
+    seedDb({
+      characters: [
+        makeChar({
+          chats: [
+            {
+              id: 'chat-1',
+              name: 'main',
+              note: '',
+              localLore: [],
+              scriptstate: {},
+              fmIndex: -1,
+              message: [
+                { role: 'char', data: 'b', chatId: undefined as unknown as string, time: 0 },
+              ],
+            } as character['chats'][number],
+          ],
+        }),
+      ],
+    })
+
+    setupSendChatContext({ chatProcessIndex: -1 })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(2)
+    })
+    expect(captured[0].url).toBe('/api/v1/commands/characters/cha-1')
+    expect(captured[0].body?.baseRevision).toBe(21)
+    expect(captured[1].url).toBe('/api/v1/commands/chats/chat-1/messages')
+    // Pre-fix: 21 (raced on the cached baseline). Post-fix: 22 (read from
+    // the first command's response by runOptimisticCommandSequence).
+    expect(captured[1].body?.baseRevision).toBe(22)
+  })
 })
 
 describe('setupSendChatContext - promptInfo seed', () => {

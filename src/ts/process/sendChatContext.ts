@@ -11,11 +11,18 @@ import { selectedCharID } from '../stores.svelte'
 import { ChatTokenizer } from '../tokenizer'
 import { parseToggleSyntax } from '../util'
 import {
-  currentCharacterStateSnapshot,
-  dispatchUpdateCharacter,
-} from '../characterCommands'
-import { currentChatStateSnapshot, dispatchReplaceMessages } from '../chatCommands'
-import { canUseServerCommands } from '../server/commands'
+  type ChatStateSnapshot,
+  currentChatStateSnapshot,
+  restoreChatState,
+  runOptimisticCommandSequence,
+  toMessageSnapshot,
+} from '../chatCommands'
+import {
+  canUseServerCommands,
+  replaceMessagesCommand,
+  updateCharacterCommand,
+  type ServerCommandResult,
+} from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { getModuleToggles } from './modules'
 
@@ -70,27 +77,59 @@ export function setupSendChatContext(args: {
   const lastInteraction = Date.now()
 
   if (serverBacked) {
+    // A4EC2 / B1: serialize the lastInteraction update and the message-id
+    // backfill against one optimistic snapshot. The two dispatchers shared
+    // a single cached baseRevision; the second one 409d after the first
+    // succeeded. The sequencer awaits each response so the next reads the
+    // updated revision.
+    const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
+    let rollbackSnapshot: ChatStateSnapshot | null = null
+
     withTrustedServerProjectionWrite(() => {
       const nowChatroom = DBState.db.characters[selectedChar]
-      if (nowChatroom.chaId) {
-        const previous = currentCharacterStateSnapshot()
-        nowChatroom.lastInteraction = lastInteraction
-        dispatchUpdateCharacter(nowChatroom.chaId, { lastInteraction }, previous)
-      } else {
-        nowChatroom.lastInteraction = lastInteraction
-      }
-
+      const characterId = nowChatroom.chaId
       const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
       const needsMessageIdBackfill = selectedChatRecord.message.some((v) => v.chatId === undefined)
-      const previousChatState = needsMessageIdBackfill ? currentChatStateSnapshot() : null
+
+      // Single snapshot covers both rollbacks: chat-state restores the
+      // characters array, which carries both lastInteraction and message
+      // chatId fields.
+      if (characterId || needsMessageIdBackfill) {
+        rollbackSnapshot = currentChatStateSnapshot()
+      }
+
+      nowChatroom.lastInteraction = lastInteraction
+      if (characterId) {
+        factories.push((baseRevision) =>
+          updateCharacterCommand({
+            baseRevision,
+            characterId,
+            patch: { lastInteraction },
+          }),
+        )
+      }
+
       selectedChatRecord.message = selectedChatRecord.message.map((v) => {
         v.chatId = v.chatId ?? v4()
         return v
       })
-      if (previousChatState && selectedChatRecord.id) {
-        dispatchReplaceMessages(selectedChatRecord.id, selectedChatRecord.message, previousChatState)
+      if (needsMessageIdBackfill && selectedChatRecord.id) {
+        const chatId = selectedChatRecord.id
+        const messages = selectedChatRecord.message.map(toMessageSnapshot)
+        factories.push((baseRevision) =>
+          replaceMessagesCommand({
+            baseRevision,
+            chatId,
+            messages,
+          }),
+        )
       }
     })
+
+    if (factories.length > 0 && rollbackSnapshot) {
+      const snapshot = rollbackSnapshot
+      runOptimisticCommandSequence(factories, () => restoreChatState(snapshot))
+    }
   } else {
     const nowChatroom = DBState.db.characters[selectedChar]
     nowChatroom.lastInteraction = lastInteraction
