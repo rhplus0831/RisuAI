@@ -60,6 +60,12 @@ Date: 2026-05-29
   `activeWriterSessionHeader(`), and `writer-intent-bypass` (the writer helper
   is only called from the allowlisted page-load entrypoint). This completes the
   A4R rule family.
+- `EC6 asset walker validator drift` has committed `failing-missing-owner` and
+  `owned-bypass` fixtures under
+  `util/client-thinning-audit-fixtures/asset-walker-validator-drift/`. The
+  bypass reproduces the real walker's collected fields and carries every owner
+  validator needle; the failing fixture adds an unowned walker field
+  (`database.legacyAvatar`).
 
 ## Open Proof
 
@@ -95,7 +101,7 @@ existing files yet.
 | `EC5 active-writer guard` | `active-writer-guard` | Move or omit `registerActiveWriterGuard`, add an unclassified mutating Fastify route, drop active-writer classifier needles, or remove client stale-writer handling from server chat/memory helpers. | Non-zero exit with `EC5 active-writer guard`. |
 | `EC4 stable command ids` | `stable-command-ids` | Let command-path constructors mint `randomUUID()`, expose `promptTemplate` through generic settings commands, or allow command routes to mint durable ids from request payloads. | Non-zero exit with `EC4 stable command ids`. |
 | `EC2 plugin storage gates` | `plugin-storage-gates` | Touch localStorage, plugin storage, or IndexedDB bridge methods without `assertDeviceLocalPluginStorageEnabled()`, expose `pluginV2`, or remove Fastify server/local save-mode separation. | Non-zero exit with `EC2 plugin storage gates`. |
-| `EC6 asset walker validator drift` | `asset-walker-validator-drift` | Add an asset walker field without validator ownership, leave stale ownership for a removed walker field, or drop a required validator needle. | Non-zero exit with `EC6 asset walker validator drift`. |
+| `EC6 asset walker validator drift` | `asset-walker-validator-drift` | Add an asset walker field without validator ownership, leave stale ownership for a removed walker field, or drop a required validator needle. | Covered: failing fixture (unowned walker field) exits non-zero with `EC6 asset walker validator drift`; owned bypass (collected fields equal the owner table, all validator needles present) exits zero. |
 | `AEC2 import/export current shape` | `import-export-current-shape` | Remove a block-export resource family, stop import normalization for a block-exported family, desync reserved root keys, or allow root component import to overwrite resource blocks. | Non-zero exit with `AEC2 import/export current shape`. |
 | `AEC4 chat folder identity scope` | `chat-folder-identity-scope` | Normalize chat folder ids only per character, fail to update chat `folderId` references after repair, or omit global duplicate-id rejection on create surfaces. | Non-zero exit with `AEC4 chat folder identity scope`. |
 | `AEC5 module reference semantics` | `module-reference-semantics` | Treat MCP modules as normal link targets, tolerate unresolved normal module ids, or skip module-link validation on chat create/patch/fork writes. | Non-zero exit with `AEC5 module reference semantics`. |
@@ -118,16 +124,15 @@ existing files yet.
 `A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
 `A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
 `A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
-Every A4R rule (`A4R1`–`A4R7` plus the `A4R-` named rules) now has committed
-fixtures. The remaining open rules are the EC/AEC structural invariants:
-`EC5 active-writer guard`, `EC4 stable command ids`, `EC2 plugin storage gates`,
-`EC6 asset walker validator drift`, `EC1 provider ownership`,
+Every A4R rule (`A4R1`–`A4R7` plus the `A4R-` named rules) and
+`EC6 asset walker validator drift` now have committed fixtures. The remaining
+open rules are the EC/AEC structural invariants: `EC5 active-writer guard`,
+`EC4 stable command ids`, `EC2 plugin storage gates`, `EC1 provider ownership`,
 `AEC2 import/export current shape`, `AEC4 chat folder identity scope`,
 `AEC5 module reference semantics`, and `AEC6 asset persistence semantics`. A
-good next small target is `EC6 asset walker validator drift`: its fixture should
-prove that adding an asset walker field without a validator owner (or leaving a
-stale owner for a removed field) exits non-zero, while a fully-owned walker stays
-accepted.
+good next target is `EC5 active-writer guard`: its fixture should prove that an
+unclassified mutating Fastify route (or a missing `registerActiveWriterGuard`)
+exits non-zero, while a properly classified route set stays accepted.
 
 ## Commands
 
