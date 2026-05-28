@@ -400,6 +400,9 @@ export class CharXImporter {
     try {
       await this.semaphore.acquire()
       acquired = true
+      // audit:image-default — CharX zip asset payloads are image bytes by
+      // convention; PNG default matches the existing `assets/<sha>.png`
+      // path scheme used by `skipSaving`.
       const assetSaveId = this.skipSaving
         ? `assets/${await hasher(asset.data)}.png`
         : await saveAsset(asset.data)
@@ -422,7 +425,10 @@ export class CharXImporter {
    * Saves hash signal if needed and marks the queue as complete.
    */
   async #finalize() {
-    // Save hash signal for server sync if needed
+    // Save hash signal for server sync if needed.
+    // audit:image-default — the hash signal is an opaque tracking marker
+    // persisted alongside the CharX asset set; the persisted extension is
+    // immaterial because the bytes are never re-served as a media file.
     if (this.hashSignal) {
       await saveAsset(new TextEncoder().encode(this.hashSignal))
     }

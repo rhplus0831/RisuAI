@@ -1159,6 +1159,9 @@ export const getV2PluginAPIs = () => {
       return readImage('assets/' + path)
     },
     saveAsset: (data: Uint8Array) => {
+      // audit:image-default — plugin V2 bridge API has no extension hint;
+      // plugins that need an honest extension should use the V3 API which
+      // accepts a filename.
       return saveAsset(data)
     },
   }
