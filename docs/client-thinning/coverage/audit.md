@@ -47,6 +47,12 @@ Date: 2026-05-29
   failing fixture proves both the direct route-handler mint and the transitive
   helper mint exit non-zero; the bypass takes the id from a validated request
   param and calls a normalize-on-read helper with a persisted-state binding.
+- `A4R2 conflict replay outside central wrapper` has committed failing and
+  surface-conflict-bypass fixtures under
+  `util/client-thinning-audit-fixtures/conflict-replay/`. The failing fixture
+  replays a mutating command after a conflict in a non-wrapper helper; the
+  bypass surfaces the conflict and proves the `runServerCommand`/`commands.ts`
+  exemption is load-bearing (the same body fails when not at the exempt path).
 
 ## Open Proof
 
@@ -89,7 +95,7 @@ existing files yet.
 | `AEC6 asset persistence semantics` | `asset-persistence-semantics` | Stop healing missing asset blobs for existing metadata, reject documented clear values, or omit optional audio asset reference validation from character commands. | Non-zero exit with `AEC6 asset persistence semantics`. |
 | `EC1 provider ownership` | `provider-ownership` | Reintroduce browser provider fallback in Fastify mode, allow Fastify preview bodies without explicit support, permit browser Vertex projection writes in Fastify mode, or expose `useServerGeneration` as a server setting command. | Non-zero exit with `EC1 provider ownership`. |
 | `A4R1 passive refresh writer ownership` | `passive-refresh-writer-ownership` | Make a read-only bootstrap helper attach `activeWriterSessionHeader()` or call the writer-registering bootstrap helper from a passive refresh path outside `WRITER_BOOTSTRAP_CALLERS`. | Non-zero exit with `A4R1 passive refresh writer ownership`. |
-| `A4R2 conflict replay outside central wrapper` | `conflict-replay` | Branch on `result.status === 'conflict'` outside `runServerCommand` and then resend a mutating command with `baseRevision` through a command helper or fetch. | Non-zero exit with `A4R2 conflict replay outside central wrapper`. |
+| `A4R2 conflict replay outside central wrapper` | `conflict-replay` | Branch on `result.status === 'conflict'` outside `runServerCommand` and then resend a mutating command with `baseRevision` through a command helper or fetch. | Covered: failing fixture (non-wrapper helper replays after a conflict) exits non-zero with `A4R2 conflict replay outside central wrapper`; surface-conflict bypass (plus the exempt central wrapper) exits zero. |
 | `A4R3 transitive command-path id minting` | `transitive-command-id-minting` | Mint ids directly in a `/api/v1/commands/*` route, call a `repair*` id-minting helper from a command route, pass request-derived data to `ensure*`/`normalize*`, or call an unclassified transitive minter. | Covered: failing fixture (direct route-handler mint + transitive helper mint) exits non-zero with `A4R3 transitive command-path id minting`; validated-param + normalize-on-read bypass exits zero. |
 | `A4R4 globally-addressed resolver normalize` | `resolver-normalize` | Call `requireChatLocation()` or `requireMessageLocation()` before the matching global normalizer in the same handler/helper scope. | Covered: failing fixture exits non-zero with `A4R4 globally-addressed resolver normalize` for both resolver pairs; normalize-first bypass exits zero. |
 | `A4R5 asset reference parser parity` | `asset-reference-parser-parity` | Change the client `LOCAL_ASSET_PATH_RE` without the server walker accepting the same regex shape, or remove the walker `addReference` parity surface. | Covered: failing fixture (walker regex drifted from client) exits non-zero with `A4R5 asset reference parser parity`; identical-regex bypass exits zero. |
@@ -105,14 +111,15 @@ existing files yet.
 `A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
 `A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
 `A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
-`A4R5 asset reference parser parity`, `A4R6 wildcard secret row identity`, and
-`A4R3 transitive command-path id minting` are complete. Continue with the
-remaining A4R rules unless source inventory reveals a more urgent rule gap.
-`A4R2 conflict replay outside central wrapper` is a good next small target: its
-fixture should prove that branching on `result.status === 'conflict'` and
-re-sending a mutating command with `baseRevision` outside `runServerCommand`
-exits non-zero, while routing the replay through the central wrapper stays
-accepted. After that, `A4R1` remains.
+`A4R5 asset reference parser parity`, `A4R6 wildcard secret row identity`,
+`A4R3 transitive command-path id minting`, and
+`A4R2 conflict replay outside central wrapper` are complete. `A4R1 passive
+refresh writer ownership` is the last open A4R rule: its fixture should prove
+that a read-only bootstrap helper attaching `activeWriterSessionHeader()` (or a
+passive refresh path calling the writer-registering bootstrap helper outside
+`WRITER_BOOTSTRAP_CALLERS`) exits non-zero, while the writer-intent vs read-only
+split stays accepted. After A4R1, the remaining EC/AEC structural rules still
+need committed fixtures.
 
 ## Commands
 

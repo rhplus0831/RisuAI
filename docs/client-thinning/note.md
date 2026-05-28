@@ -64,7 +64,8 @@ Bounded or partial:
   `A4R7 asset URL gate`, `A4R-fanout composite command race`,
   `A4R4 globally-addressed resolver normalize`,
   `A4R5 asset reference parser parity`, `A4R6 wildcard secret row identity`,
-  and `A4R3 transitive command-path id minting`; remaining audit rules still
+  `A4R3 transitive command-path id minting`, and
+  `A4R2 conflict replay outside central wrapper`; remaining audit rules still
   need committed pre-fix fixtures and tests proving non-zero exit.
 - `util/client-thinning-audit.ts` is broad and structural, but currently lives
   as one monolithic script. Treat new findings as audit-rule work plus
@@ -90,8 +91,8 @@ Client-owned, no-port, or deferred:
    failing audit before selecting wider runtime work.
 2. Continue audit fixture reproducibility unless source inventory proves a more
    urgent live bug. The next small fixture target is
-   `A4R2 conflict replay outside central wrapper`; `A4R1` is the remaining A4R
-   rule after it.
+   `A4R1 passive refresh writer ownership` (the last A4R rule); after that the
+   remaining EC/AEC structural rules still need committed fixtures.
 3. If adding a new finding, update the invariant, audit rule, fixture, test, and
    the smallest relevant status/coverage shard in the same batch.
 4. Treat `sendChat` client-thinning as a separate sub-family. A valid batch must

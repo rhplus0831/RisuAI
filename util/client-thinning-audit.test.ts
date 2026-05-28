@@ -53,6 +53,7 @@ describe('client-thinning audit fixtures', () => {
   const parserParityCheck = 'A4R5 asset reference parser parity'
   const wildcardSecretCheck = 'A4R6 wildcard secret row identity'
   const idMintingCheck = 'A4R3 transitive command-path id minting'
+  const conflictReplayCheck = 'A4R2 conflict replay outside central wrapper'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -257,6 +258,27 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'transitive-command-id-minting/validated-id-bypass',
       idMintingCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that replays a conflict outside the central wrapper', async () => {
+    const result = await runAuditFixture('conflict-replay/failing', conflictReplayCheck)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${conflictReplayCheck}]`)
+    expect(result.stderr).toContain(
+      "src/ts/chatCommands.ts function applyMessageEdit branches on result.status === 'conflict' and resends a mutating command.",
+    )
+  })
+
+  it('allows surfacing a conflict and exempts the central command wrapper', async () => {
+    const result = await runAuditFixture(
+      'conflict-replay/surface-conflict-bypass',
+      conflictReplayCheck,
     )
 
     expect(result.exitCode).toBe(0)
