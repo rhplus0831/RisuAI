@@ -228,28 +228,129 @@ describe('plugin database command bridge', () => {
       expect(calls.some((call) => call.url === '/api/v1/commands/modules')).toBe(true)
       expect(calls.some((call) => call.url === '/api/v1/commands/modules/enable')).toBe(true)
     })
+    // A4EC2 / B1: dispatchModuleCollectionPatch and dispatchEnabledModulesPatch
+    // now route through runOptimisticCommandSequence. Within one sequencer
+    // each command awaits the previous response, so baseRevision is read
+    // from cache after each result, not from the original bootstrap.
     expect(calls.find((call) => call.url === '/api/v1/commands/modules/mod-a')).toMatchObject({
       method: 'PATCH',
       body: {
-        baseRevision: 10,
+        baseRevision: expect.any(Number),
         patch: expect.objectContaining({ description: 'updated' }),
       },
     })
     expect(calls.find((call) => call.url === '/api/v1/commands/modules')).toMatchObject({
       method: 'POST',
       body: {
-        baseRevision: 10,
+        baseRevision: expect.any(Number),
         module: expect.objectContaining({ id: 'mod-b', description: 'new module' }),
       },
     })
     expect(calls.find((call) => call.url === '/api/v1/commands/modules/enable')).toMatchObject({
       method: 'POST',
       body: {
-        baseRevision: 10,
+        baseRevision: expect.any(Number),
         moduleId: 'mod-b',
         enabled: true,
       },
     })
+  })
+
+  it('serializes module collection patch commands against advancing revisions', async () => {
+    // A4EC2 / B1: dispatchModuleCollectionPatch fans out update/create/delete/
+    // reorder calls against one optimistic snapshot. Pre-fix all N shared the
+    // same cached baseRevision and only the first won, the rest 409d. The
+    // sequencer must read the revision returned by each command into the
+    // next.
+    let nextRevision = 100
+    const captured: { url: string; body: { baseRevision?: number } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: nextRevision })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, body })
+        nextRevision += 1
+        return jsonResponse({
+          revision: nextRevision,
+          event: {
+            type: 'module.updated',
+            revision: nextRevision,
+            resource: 'module',
+          } as unknown as CommandEvent,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    DBState.db.modules = [seedModule('mod-a')]
+    DBState.db.enabledModules = []
+    const apis = getV2PluginAPIs()
+
+    // Only patch `modules` (not enabledModules) so the assertion sees a
+    // single sequencer drain in deterministic order.
+    apis.setDatabaseLite({
+      modules: [
+        seedModule('mod-a', { description: 'updated' }),
+        seedModule('mod-b', { description: 'new module' }),
+      ],
+    })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(2)
+    })
+    expect(captured[0].url).toBe('/api/v1/commands/modules/mod-a')
+    expect(captured[0].body?.baseRevision).toBe(100)
+    expect(captured[1].url).toBe('/api/v1/commands/modules')
+    // Pre-fix: 100 (parallel race on shared cache). Post-fix: 101 (read
+    // from cache after the first command returns).
+    expect(captured[1].body?.baseRevision).toBe(101)
+  })
+
+  it('serializes enabled-modules diff commands against advancing revisions', async () => {
+    // A4EC2 / B1: dispatchEnabledModulesPatch fans out N enable/disable
+    // calls against one optimistic snapshot. The sequencer must thread the
+    // revision returned by each command into the next.
+    let nextRevision = 200
+    const captured: { url: string; body: { baseRevision?: number } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: nextRevision })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, body })
+        nextRevision += 1
+        return jsonResponse({
+          revision: nextRevision,
+          event: {
+            type: 'module.enabled',
+            revision: nextRevision,
+            resource: 'module',
+          } as unknown as CommandEvent,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    DBState.db.modules = [seedModule('mod-a'), seedModule('mod-b')]
+    DBState.db.enabledModules = ['mod-a']
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      enabledModules: ['mod-b'],
+    })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(2)
+    })
+    expect(captured.every((c) => c.url === '/api/v1/commands/modules/enable')).toBe(true)
+    expect(captured[0].body?.baseRevision).toBe(200)
+    // Second enable command reads the cached revision returned by the first.
+    expect(captured[1].body?.baseRevision).toBe(201)
   })
 
   it('keeps unknown plugin database keys on plugin storage commands', async () => {

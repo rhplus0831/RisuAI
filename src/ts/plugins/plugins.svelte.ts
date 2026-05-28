@@ -38,18 +38,24 @@ import {
 } from '../pluginCommands'
 import {
   currentModuleStateSnapshot,
-  dispatchCreateModule,
-  dispatchDeleteModule,
-  dispatchEnableModule,
-  dispatchReorderModules,
-  dispatchUpdateModule,
+  restoreModuleState,
+  sanitizeModulePatch,
   toModuleSnapshot,
 } from '../moduleCommands'
 import {
   currentCharacterStateSnapshot,
   dispatchCompatibleCharacterUpdate,
 } from '../characterCommands'
-import { canUseServerCommands } from '../server/commands'
+import { runOptimisticCommandSequence } from '../chatCommands'
+import {
+  canUseServerCommands,
+  createModuleCommand,
+  deleteModuleCommand,
+  enableModuleCommand,
+  reorderModulesCommand,
+  updateModuleCommand,
+  type ServerCommandResult,
+} from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
 export const customProviderStore = writable([] as string[])
@@ -780,28 +786,53 @@ function dispatchModuleCollectionPatch(
   const beforeModules = new Map(previous.modules.map((module) => [module.id, module]))
   const nextModules = new Map(modules.map((module) => [module.id, module]))
 
+  // A4EC2 / B1: collect every diff into one sequenced factory list. Pre-fix
+  // each create/update/delete/reorder fired against the shared optimistic
+  // snapshot on the same cached baseRevision; only the first won, the rest
+  // 409d. The sequencer awaits each response so the next reads the updated
+  // revision.
+  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
+
   for (const module of modules) {
     if (typeof module.id !== 'string' || module.id.trim() === '') continue
     const before = beforeModules.get(module.id)
     if (!before) {
-      dispatchCreateModule(module, previous)
+      const moduleSnapshot = toModuleSnapshot(module)
+      factories.push((baseRevision) =>
+        createModuleCommand({ baseRevision, module: moduleSnapshot }),
+      )
       continue
     }
     if (JSON.stringify(before) !== JSON.stringify(module)) {
-      dispatchUpdateModule(module.id, toModuleSnapshot(module), previous)
+      const commandPatch = sanitizeModulePatch(toModuleSnapshot(module))
+      if (Object.keys(commandPatch).length === 0) continue
+      const moduleId = module.id
+      factories.push((baseRevision) =>
+        updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }),
+      )
     }
   }
 
   for (const module of previous.modules) {
     if (typeof module.id === 'string' && module.id.trim() && !nextModules.has(module.id)) {
-      dispatchDeleteModule(module.id, previous)
+      const moduleId = module.id
+      factories.push((baseRevision) =>
+        deleteModuleCommand({ baseRevision, moduleId }),
+      )
     }
   }
 
   const beforeOrder = previous.modules.map((module) => module.id).join('\n')
   const nextOrder = modules.map((module) => module.id).join('\n')
   if (beforeOrder !== nextOrder && modules.every((module) => beforeModules.has(module.id))) {
-    dispatchReorderModules(previous)
+    const moduleIds = modules.map((module) => module.id)
+    factories.push((baseRevision) =>
+      reorderModulesCommand({ baseRevision, moduleIds }),
+    )
+  }
+
+  if (factories.length > 0) {
+    runOptimisticCommandSequence(factories, () => restoreModuleState(previous))
   }
 }
 
@@ -816,15 +847,28 @@ function dispatchEnabledModulesPatch(
   const next = new Set(enabledModules.filter((id): id is string => typeof id === 'string'))
   const knownModules = new Set(modules.map((module) => module.id))
 
+  // A4EC2 / B1: serialize enable/disable diffs against one optimistic
+  // snapshot. The previous fan-out fired N back-to-back enableModule calls
+  // on the same cached baseRevision, racing on response order.
+  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
+
   for (const moduleId of next) {
     if (!before.has(moduleId) && knownModules.has(moduleId)) {
-      dispatchEnableModule(moduleId, true, previous)
+      factories.push((baseRevision) =>
+        enableModuleCommand({ baseRevision, moduleId, enabled: true }),
+      )
     }
   }
   for (const moduleId of before) {
     if (!next.has(moduleId) && knownModules.has(moduleId)) {
-      dispatchEnableModule(moduleId, false, previous)
+      factories.push((baseRevision) =>
+        enableModuleCommand({ baseRevision, moduleId, enabled: false }),
+      )
     }
+  }
+
+  if (factories.length > 0) {
+    runOptimisticCommandSequence(factories, () => restoreModuleState(previous))
   }
 }
 
