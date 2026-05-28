@@ -52,6 +52,7 @@ describe('client-thinning audit fixtures', () => {
   const resolverNormalizeCheck = 'A4R4 globally-addressed resolver normalize'
   const parserParityCheck = 'A4R5 asset reference parser parity'
   const wildcardSecretCheck = 'A4R6 wildcard secret row identity'
+  const idMintingCheck = 'A4R3 transitive command-path id minting'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -232,6 +233,30 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'wildcard-secret-row-identity/classified-bypass',
       wildcardSecretCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that mints command-path ids directly and transitively', async () => {
+    const result = await runAuditFixture('transitive-command-id-minting/failing', idMintingCheck)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${idMintingCheck}]`)
+    expect(result.stderr).toContain(
+      'POST /api/v1/commands/messages mints durable ids directly in the route handler.',
+    )
+    expect(result.stderr).toContain(
+      'POST /api/v1/commands/chats calls createChatRecord() which transitively reaches a propagating mint',
+    )
+  })
+
+  it('allows command routes that take ids from validated params with normalize-on-read', async () => {
+    const result = await runAuditFixture(
+      'transitive-command-id-minting/validated-id-bypass',
+      idMintingCheck,
     )
 
     expect(result.exitCode).toBe(0)

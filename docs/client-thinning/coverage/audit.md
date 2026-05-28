@@ -41,6 +41,12 @@ Date: 2026-05-29
   The failing fixture declares a wildcard object-array secret (`customModels`)
   with no entry in `ARRAY_ROW_IDENTITY_KEYS`; the bypass classifies every
   wildcard array secret with a stable row identity key.
+- `A4R3 transitive command-path id minting` has committed failing and
+  validated-id-bypass fixtures under
+  `util/client-thinning-audit-fixtures/transitive-command-id-minting/`. The
+  failing fixture proves both the direct route-handler mint and the transitive
+  helper mint exit non-zero; the bypass takes the id from a validated request
+  param and calls a normalize-on-read helper with a persisted-state binding.
 
 ## Open Proof
 
@@ -84,7 +90,7 @@ existing files yet.
 | `EC1 provider ownership` | `provider-ownership` | Reintroduce browser provider fallback in Fastify mode, allow Fastify preview bodies without explicit support, permit browser Vertex projection writes in Fastify mode, or expose `useServerGeneration` as a server setting command. | Non-zero exit with `EC1 provider ownership`. |
 | `A4R1 passive refresh writer ownership` | `passive-refresh-writer-ownership` | Make a read-only bootstrap helper attach `activeWriterSessionHeader()` or call the writer-registering bootstrap helper from a passive refresh path outside `WRITER_BOOTSTRAP_CALLERS`. | Non-zero exit with `A4R1 passive refresh writer ownership`. |
 | `A4R2 conflict replay outside central wrapper` | `conflict-replay` | Branch on `result.status === 'conflict'` outside `runServerCommand` and then resend a mutating command with `baseRevision` through a command helper or fetch. | Non-zero exit with `A4R2 conflict replay outside central wrapper`. |
-| `A4R3 transitive command-path id minting` | `transitive-command-id-minting` | Mint ids directly in a `/api/v1/commands/*` route, call a `repair*` id-minting helper from a command route, pass request-derived data to `ensure*`/`normalize*`, or call an unclassified transitive minter. | Non-zero exit with `A4R3 transitive command-path id minting`. |
+| `A4R3 transitive command-path id minting` | `transitive-command-id-minting` | Mint ids directly in a `/api/v1/commands/*` route, call a `repair*` id-minting helper from a command route, pass request-derived data to `ensure*`/`normalize*`, or call an unclassified transitive minter. | Covered: failing fixture (direct route-handler mint + transitive helper mint) exits non-zero with `A4R3 transitive command-path id minting`; validated-param + normalize-on-read bypass exits zero. |
 | `A4R4 globally-addressed resolver normalize` | `resolver-normalize` | Call `requireChatLocation()` or `requireMessageLocation()` before the matching global normalizer in the same handler/helper scope. | Covered: failing fixture exits non-zero with `A4R4 globally-addressed resolver normalize` for both resolver pairs; normalize-first bypass exits zero. |
 | `A4R5 asset reference parser parity` | `asset-reference-parser-parity` | Change the client `LOCAL_ASSET_PATH_RE` without the server walker accepting the same regex shape, or remove the walker `addReference` parity surface. | Covered: failing fixture (walker regex drifted from client) exits non-zero with `A4R5 asset reference parser parity`; identical-regex bypass exits zero. |
 | `A4R6 wildcard secret row identity` | `wildcard-secret-row-identity` | Add a wildcard object-array secret path without `ARRAY_ROW_IDENTITY_KEYS`, add an unclassified flat string-array secret, or let wildcard placeholder resolution skip the rejected-row sentinel. | Covered: failing fixture (object-array secret missing a row identity key) exits non-zero with `A4R6 wildcard secret row identity`; fully-classified bypass exits zero. |
@@ -99,14 +105,14 @@ existing files yet.
 `A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
 `A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
 `A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
-`A4R5 asset reference parser parity`, and `A4R6 wildcard secret row identity`
-are complete. Continue with the remaining A4R rules unless source inventory
-reveals a more urgent rule gap. `A4R3 transitive command-path id minting` is a
-good next small target: its fixture should prove that a `/api/v1/commands/*`
-route that mints durable ids from request payloads (directly, or transitively
-via a `repair*`/`ensure*`/`normalize*` helper) exits non-zero, while a route
-that takes ids only from validated request params stays accepted. After that,
-`A4R2` and `A4R1` remain.
+`A4R5 asset reference parser parity`, `A4R6 wildcard secret row identity`, and
+`A4R3 transitive command-path id minting` are complete. Continue with the
+remaining A4R rules unless source inventory reveals a more urgent rule gap.
+`A4R2 conflict replay outside central wrapper` is a good next small target: its
+fixture should prove that branching on `result.status === 'conflict'` and
+re-sending a mutating command with `baseRevision` outside `runServerCommand`
+exits non-zero, while routing the replay through the central wrapper stays
+accepted. After that, `A4R1` remains.
 
 ## Commands
 
