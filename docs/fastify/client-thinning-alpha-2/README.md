@@ -2,9 +2,9 @@
 
 Date: 2026-05-28
 
-Status: **open task-agent handoff.** Buckets 1 and 2 closed on 2026-05-28; the
-next open work item is Bucket 3, audit invariant broadening. This
-directory records the next reopened client-thinning alpha pass after
+Status: **open task-agent handoff.** Buckets 1, 2, and 3 closed on
+2026-05-28; the next open work item is Bucket 4, Alpha 2 docs/status closeout.
+This directory records the next reopened client-thinning alpha pass after
 [`../client-thinning-alpha/`](../client-thinning-alpha/) closed AF1 through
 AF10 and AEC1 through AEC7.
 
@@ -25,9 +25,7 @@ follow-up audit found three remaining invariant gaps:
   closed by Bucket 2 and recorded in [`history.md`](./history.md).
 - The invariant audit still proves less than the docs claim for route-local id
   minting, active-writer mutation discovery, and asset-walker validator parity.
-  Buckets 1 and 2 added targeted coverage for route-local command id minting and
-  memory/generation active-writer routes; the remaining structural audit
-  broadening belongs to Bucket 3.
+  This is now closed by Bucket 3 and recorded in [`history.md`](./history.md).
 
 These are not failures of the original Phase 9 migration slices. They are
 follow-up gaps in the standing Fastify server-projection contract.
@@ -77,7 +75,8 @@ Current progress:
 
 - A2EC1 is closed by Bucket 1.
 - A2EC2 is closed by Bucket 2.
-- A2EC3 and A2EC4 remain open.
+- A2EC3 is closed by Bucket 3.
+- A2EC4 remains open.
 
 ## Verification Ladder
 

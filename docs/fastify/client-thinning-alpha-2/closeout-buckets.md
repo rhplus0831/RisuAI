@@ -6,14 +6,14 @@ This is the ordered task-agent work breakdown for Alpha 2. Each bucket closes
 one or more findings from [`open-findings.md`](./open-findings.md). A bucket is
 done only when code, focused tests, audit coverage, and docs are all updated.
 
-Current status: **open.** Buckets 1 and 2 are closed; the next open work item is
-Bucket 3, audit invariant broadening.
+Current status: **open.** Buckets 1, 2, and 3 are closed; the next open work
+item is Bucket 4, Alpha 2 docs/status closeout.
 
 | Order | Bucket                                 | Closes       | Status            | Primary ownership                                                                                                                                                                                                                                |
 | ----- | -------------------------------------- | ------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1     | Chat fork stable id semantics          | A2F1 / A2EC1 | Closed 2026-05-28 | `server/fastify/src/routes/commands.ts`, `server/fastify/__tests__/commands.test.ts`, `util/client-thinning-audit.ts`                                                                                                                            |
 | 2     | Memory mutation active-writer coverage | A2F2 / A2EC2 | Closed 2026-05-28 | `server/fastify/src/activeWriter.ts`, `server/fastify/src/routes/memoryJobs.ts`, `server/fastify/src/routes/generationChat.ts`, `src/ts/process/request/serverMemory.ts`, active-writer/memory/generation tests, `util/client-thinning-audit.ts` |
-| 3     | Audit invariant broadening             | A2F3 / A2EC3 | Open              | `util/client-thinning-audit.ts`, route/audit tests as needed                                                                                                                                                                                     |
+| 3     | Audit invariant broadening             | A2F3 / A2EC3 | Closed 2026-05-28 | `util/client-thinning-audit.ts`, route/audit tests as needed                                                                                                                                                                                     |
 | 4     | Alpha 2 docs/status closeout           | A2F4 / A2EC4 | Open              | `docs/fastify/client-thinning-alpha-2/*`, `docs/fastify/status.md`, `docs/fastify/status/next-steps.md`                                                                                                                                          |
 
 ## Parallelization Notes
@@ -101,35 +101,43 @@ are documented/classified, and normal active-writer memory flows still pass.
 
 ## 3. Audit Invariant Broadening
 
-Status: **Open.**
+Status: **Closed 2026-05-28.**
 
 Goal: close A2F3 and make the audit prove the documented invariant rather than
 only the previous known list. Bucket 1 already landed command route-local id
 minting coverage; this bucket still owns active-writer route discovery and full
 asset-walker validator ownership.
 
-Required implementation:
+Closed implementation:
 
-- Stable ids: scan public command route code for route-local id minting used by
-  durable command mutations. Allow import/bootstrap repair helpers only when the
-  path is explicitly classified as repair, not command write.
-- Active writer: discover mutating Fastify routes and compare them against
-  guarded, read-only/runtime-only, and explicitly exempt classifications. Do not
-  let the implementation and audit silently share the same incomplete allowlist.
-- Asset walker: enumerate every field collected by
-  `risuSave/assetReferences.ts` and map it to an owning command validator or a
-  documented indirect-safe path.
-- Document any deliberate exemption in [`decisions.md`](./decisions.md).
+- Kept the Bucket 1 stable-id route-local command minting audit in place.
+- Broadened Fastify route discovery in `util/client-thinning-audit.ts` so it
+  scans direct method registrations and `route({ method, url })` registrations.
+- Replaced the active-writer audit's narrow known-route filter with a reviewed
+  classification table over every discovered `POST`, `PATCH`, `PUT`, and
+  `DELETE` route.
+- The audit now fails on any new mutating route until it is classified as
+  active-writer guarded or explicitly exempt as auth/session, read-only POST,
+  runtime generation, runtime proxy, or stateless helper.
+- Active-writer classifications independently assert the production
+  `activeWriter.ts` source covers the guarded route instead of reusing the same
+  production predicate.
+- Expanded asset-walker validation proof so every collector field in
+  `server/fastify/src/risuSave/assetReferences.ts` is mapped to an owning
+  validator or indirect-safe owner.
+- Documented the deliberate mutating-route exemptions in
+  [`decisions.md`](./decisions.md).
 
-Focused proof:
+Closed proof:
 
 ```bash
 pnpm client-thinning:audit
 pnpm api:test server/fastify/__tests__/commands.test.ts server/fastify/__tests__/activeWriter.test.ts -- --run
 ```
 
-Done when the audit catches the A2F1/A2F2 classes structurally and fully
-documents asset-walker validator ownership.
+The audit now catches unclassified Fastify mutation routes, production
+active-writer classifier drift for guarded routes, and newly walked RisuSave
+asset-reference fields without validator ownership.
 
 ## 4. Alpha 2 Docs/Status Closeout
 
@@ -139,9 +147,9 @@ Goal: close A2F4 after Buckets 1 through 3 land.
 
 Required implementation:
 
-- Move A2F1 through A2F3 from [`open-findings.md`](./open-findings.md) into a
-  new `history.md` with resolved notes and proof commands.
-- Mark buckets closed in this file.
+- Keep A2F1 through A2F3 recorded as closed in [`history.md`](./history.md) with
+  resolved notes and proof commands.
+- Mark Bucket 4 closed in this file after the final ladder passes.
 - Create `final-audit.md` with the final verdict and verification ladder.
 - Update `docs/fastify/status.md` and `docs/fastify/status/next-steps.md` so
   they point to this Alpha 2 closeout instead of saying no open findings remain

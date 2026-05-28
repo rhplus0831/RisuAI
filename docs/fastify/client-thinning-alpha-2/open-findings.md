@@ -11,7 +11,7 @@ These findings seed the Alpha 2 task list. They were identified after the
 | ----------------------------------------------------------- | -------- | ------------- | ----------------- | ------ |
 | A2F1 - Chat fork command mints ids                          | High     | A2EC1 / A2EC3 | Closed 2026-05-28 | 1      |
 | A2F2 - Memory mutations bypass active-writer classification | High     | A2EC2 / A2EC3 | Closed 2026-05-28 | 2      |
-| A2F3 - Audit proof is narrower than the stated invariant    | Medium   | A2EC3         | Open              | 3      |
+| A2F3 - Audit proof is narrower than the stated invariant    | Medium   | A2EC3         | Closed 2026-05-28 | 3      |
 | A2F4 - Alpha 2 docs/status closeout                         | Medium   | A2EC4         | Open              | 4      |
 
 ## A2F1 - Chat Fork Command Mints IDs
@@ -134,6 +134,22 @@ Original required closeout:
 
 Severity: **Medium**
 
+Status: **Closed 2026-05-28.** Resolved in Bucket 3 and copied to
+[`history.md`](./history.md). `pnpm client-thinning:audit` now discovers all
+Fastify `POST`, `PATCH`, `PUT`, and `DELETE` routes, including
+`route({ method, url })` registrations, and requires each route to be classified
+as active-writer guarded or explicitly exempt. The audit independently checks
+that guarded classifications are covered by `activeWriter.ts`. It also
+enumerates every field collected by `risuSave/assetReferences.ts` and maps each
+one to a validator or indirect-safe owner.
+
+Closed proof:
+
+- `pnpm client-thinning:audit`
+- `pnpm api:test server/fastify/__tests__/commands.test.ts server/fastify/__tests__/activeWriter.test.ts -- --run`
+
+Original evidence before Bucket 3:
+
 `docs/fastify/client-thinning/README.md` and
 `docs/fastify/client-thinning-alpha/README.md` describe the audit as the gate
 that stops the close/reopen cycle. The current audit is useful and green, but
@@ -160,11 +176,11 @@ Several omitted asset validators appear to exist manually, for example:
 - Module `assets` validation:
   `server/fastify/src/commands/modules.ts:279`.
 
-Impact: the audit can pass while the docs claim broader invariant proof than it
-actually provides. This is the same pattern that caused repeated close/reopen
-cycles.
+Original impact: the audit can pass while the docs claim broader invariant
+proof than it actually provides. This is the same pattern that caused repeated
+close/reopen cycles.
 
-Required closeout:
+Original required closeout:
 
 - Expand the stable-id audit to include public command route files and route
   fallbacks that call `randomUUID()` or equivalent id minting. Bucket 1 added

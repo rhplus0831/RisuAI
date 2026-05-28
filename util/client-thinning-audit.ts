@@ -21,6 +21,38 @@ interface RouteRegistration {
   line: number
 }
 
+type MutatingRouteKind =
+  | 'active-writer'
+  | 'auth-session'
+  | 'read-only-post'
+  | 'runtime-generation'
+  | 'runtime-proxy'
+  | 'stateless-helper'
+
+interface MutatingRouteRule {
+  methods?: string[]
+  route?: string
+  routePrefix?: string
+  kind: MutatingRouteKind
+  reason: string
+  activeWriterNeedles?: string[]
+}
+
+interface AssetWalkerField {
+  collector: string
+  value: string
+  path: string
+}
+
+interface AssetWalkerOwner {
+  collector: string
+  value: string
+  path: string
+  owner: string
+  validatorFile: string
+  validatorNeedles: string[]
+}
+
 const root = process.cwd()
 const project = new Project({
   tsConfigFilePath: path.join(root, 'tsconfig.json'),
@@ -87,7 +119,10 @@ function assertCheck(check: string, condition: boolean, message: string, node?: 
 
 function getStringArray(sourceFile: SourceFile, name: string): string[] {
   const declaration = sourceFile.getVariableDeclaration(name)
-  const initializer = declaration?.getInitializer()
+  let initializer = declaration?.getInitializer()
+  while (initializer && Node.isAsExpression(initializer)) {
+    initializer = initializer.getExpression()
+  }
   const array =
     initializer?.asKind(SyntaxKind.ArrayLiteralExpression) ??
     initializer
@@ -99,6 +134,49 @@ function getStringArray(sourceFile: SourceFile, name: string): string[] {
     .getElements()
     .map((element) => element.asKind(SyntaxKind.StringLiteral)?.getLiteralText())
     .filter((value): value is string => typeof value === 'string')
+}
+
+function propertyInitializer(node: Node, name: string): Node | undefined {
+  if (!Node.isObjectLiteralExpression(node)) return undefined
+  for (const property of node.getProperties()) {
+    if (!Node.isPropertyAssignment(property)) continue
+    const nameNode = property.getNameNode()
+    const propertyName = Node.isStringLiteral(nameNode)
+      ? nameNode.getLiteralText()
+      : nameNode.getText()
+    if (propertyName === name) return property.getInitializer()
+  }
+  return undefined
+}
+
+function routeStringFromInitializer(initializer: Node | undefined): string | undefined {
+  return initializer?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
+}
+
+function methodStringsFromInitializer(
+  initializer: Node | undefined,
+  sourceFile: SourceFile,
+): string[] {
+  if (!initializer) return []
+  const literal = initializer.asKind(SyntaxKind.StringLiteral)
+  if (literal) return [literal.getLiteralText().toUpperCase()]
+
+  if (Node.isIdentifier(initializer)) {
+    return getStringArray(sourceFile, initializer.getText()).map((method) => method.toUpperCase())
+  }
+
+  const array = initializer.asKind(SyntaxKind.ArrayLiteralExpression)
+  if (!array) return []
+
+  return array.getElements().flatMap((element) => {
+    const elementLiteral = element.asKind(SyntaxKind.StringLiteral)
+    if (elementLiteral) return [elementLiteral.getLiteralText().toUpperCase()]
+    if (element.getKind() === SyntaxKind.SpreadElement) {
+      const identifier = element.getText().slice(3)
+      return getStringArray(sourceFile, identifier).map((method) => method.toUpperCase())
+    }
+    return []
+  })
 }
 
 function objectLiteralStringKeys(sourceFile: SourceFile, name: string): string[] {
@@ -130,11 +208,27 @@ function routeRegistrations(files: SourceFile[]): RouteRegistration[] {
       const expression = node.getExpression()
       if (!Node.isPropertyAccessExpression(expression)) return
       const method = expression.getName().toUpperCase()
+      const pos = file.getLineAndColumnAtPos(node.getStart())
+      if (method === 'ROUTE') {
+        const config = node.getArguments()[0]
+        if (!config) return
+        const route =
+          routeStringFromInitializer(propertyInitializer(config, 'url')) ??
+          routeStringFromInitializer(propertyInitializer(config, 'path'))
+        if (!route) return
+        const methods = methodStringsFromInitializer(propertyInitializer(config, 'method'), file)
+        for (const configuredMethod of methods) {
+          if (!['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(configuredMethod))
+            continue
+          routes.push({ method: configuredMethod, route, file: rel(file), line: pos.line })
+        }
+        return
+      }
+
       if (!['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return
       const firstArg = node.getArguments()[0]
       const route = firstArg?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
       if (!route) return
-      const pos = file.getLineAndColumnAtPos(node.getStart())
       routes.push({ method, route, file: rel(file), line: pos.line })
     })
   }
@@ -241,21 +335,164 @@ function checkCommandRouteLocalIdMinting(check: string, sourceFile: SourceFile):
   })
 }
 
-function isKnownServerOwnedMutation(method: string, route: string): boolean {
-  if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return false
-  if (route.startsWith('/api/v1/commands/')) return true
-  if (method === 'POST' && route === '/api/v1/import/risusave') return true
-  if (method === 'POST' && route === '/api/v1/assets') return true
-  if (route.startsWith('/api/v1/backups')) return true
-  if (
-    method === 'POST' &&
-    (route === '/api/v1/generate/chat' || route === '/api/v1/generate/preview-prompt')
-  ) {
-    return true
+const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE'])
+
+const MUTATING_ROUTE_RULES: MutatingRouteRule[] = [
+  {
+    routePrefix: '/api/v1/commands/',
+    kind: 'active-writer',
+    reason: 'public command routes mutate server-owned JSON state',
+    activeWriterNeedles: ["path.startsWith('/api/v1/commands/')"],
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/import/risusave',
+    kind: 'active-writer',
+    reason: 'risusave import replaces the repository database',
+    activeWriterNeedles: ["path === '/api/v1/import/risusave'"],
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/assets',
+    kind: 'active-writer',
+    reason: 'asset upload writes repository asset metadata and blobs',
+    activeWriterNeedles: ["path === '/api/v1/assets'"],
+  },
+  {
+    routePrefix: '/api/v1/backups',
+    kind: 'active-writer',
+    reason: 'backup create, restore, and delete mutate server-owned backup/repository state',
+    activeWriterNeedles: ["path.startsWith('/api/v1/backups')"],
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/generate/chat',
+    kind: 'active-writer',
+    reason: 'chat generation can create memory chunks and enqueue memory jobs',
+    activeWriterNeedles: ["path === '/api/v1/generate/chat'"],
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/generate/preview-prompt',
+    kind: 'active-writer',
+    reason: 'prompt preview can run generation-time memory planning',
+    activeWriterNeedles: ["path === '/api/v1/generate/preview-prompt'"],
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/memory/jobs',
+    kind: 'active-writer',
+    reason: 'memory job creation writes durable SQLite job state',
+    activeWriterNeedles: ["path === '/api/v1/memory/jobs'"],
+  },
+  {
+    methods: ['DELETE'],
+    route: '/api/v1/memory/jobs/:id',
+    kind: 'active-writer',
+    reason: 'memory job cancellation writes durable SQLite job state',
+    activeWriterNeedles: ["method === 'DELETE'", "path.startsWith('/api/v1/memory/jobs/')"],
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/storage/write',
+    kind: 'active-writer',
+    reason: 'legacy storage write mutates server-owned compatibility files',
+    activeWriterNeedles: ["path === '/api/v1/storage/write'"],
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/storage/remove',
+    kind: 'active-writer',
+    reason: 'legacy storage remove mutates server-owned compatibility files',
+    activeWriterNeedles: ["path === '/api/v1/storage/remove'"],
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/auth/setup',
+    kind: 'auth-session',
+    reason: 'auth bootstrap writes password state before a browser writer session exists',
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/auth/login',
+    kind: 'auth-session',
+    reason: 'login records trusted public keys as auth metadata, not Risu JSON/SQLite state',
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/auth/crypto',
+    kind: 'stateless-helper',
+    reason: 'crypto helper returns a hash and does not persist state',
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/assets/exists',
+    kind: 'read-only-post',
+    reason: 'asset existence probe reads repository state despite using POST for request size',
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/generate/completion',
+    kind: 'runtime-generation',
+    reason: 'provider completion is a runtime request and does not write local durable state',
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/proxy/fetch',
+    kind: 'runtime-proxy',
+    reason: 'generic fetch proxy forwards an upstream request without local durable writes',
+  },
+  {
+    methods: ['POST'],
+    route: '/api/v1/proxy/stream-jobs',
+    kind: 'runtime-proxy',
+    reason: 'stream job creation stores only in-memory proxy job state',
+  },
+  {
+    methods: ['DELETE'],
+    route: '/api/v1/proxy/stream-jobs/:id',
+    kind: 'runtime-proxy',
+    reason: 'stream job cancellation deletes only in-memory proxy job state',
+  },
+  {
+    methods: ['POST', 'PUT', 'PATCH', 'DELETE'],
+    routePrefix: '/api/v1/hub/',
+    kind: 'runtime-proxy',
+    reason: 'hub routes forward to the configured hub service instead of mutating local state',
+  },
+]
+
+function isMutatingMethod(method: string): boolean {
+  return MUTATING_METHODS.has(method)
+}
+
+function routeRuleMatches(rule: MutatingRouteRule, route: RouteRegistration): boolean {
+  if (rule.methods && !rule.methods.includes(route.method)) return false
+  if (rule.route && rule.route === route.route) return true
+  if (rule.routePrefix && route.route.startsWith(rule.routePrefix)) return true
+  return false
+}
+
+function classifyMutatingRoute(route: RouteRegistration): MutatingRouteRule | undefined {
+  return MUTATING_ROUTE_RULES.find((rule) => routeRuleMatches(rule, route))
+}
+
+function routeKey(route: Pick<RouteRegistration, 'method' | 'route'>): string {
+  return `${route.method} ${route.route}`
+}
+
+function assertMutatingRouteRulesAreLive(
+  check: string,
+  mutatingRoutes: readonly RouteRegistration[],
+): void {
+  for (const rule of MUTATING_ROUTE_RULES) {
+    const matchingRoutes = mutatingRoutes.filter((route) => routeRuleMatches(rule, route))
+    if (matchingRoutes.length === 0) {
+      const target = rule.route ?? `${rule.routePrefix}*`
+      const methods = rule.methods?.join('/') ?? 'POST/PATCH/PUT/DELETE'
+      fail(check, `mutating route classification is stale: no discovered ${methods} ${target}.`)
+    }
   }
-  if (method === 'POST' && route === '/api/v1/memory/jobs') return true
-  if (method === 'DELETE' && route.startsWith('/api/v1/memory/jobs/')) return true
-  return method === 'POST' && ['/api/v1/storage/write', '/api/v1/storage/remove'].includes(route)
 }
 
 function checkActiveWriterGuard(): void {
@@ -263,17 +500,19 @@ function checkActiveWriterGuard(): void {
   const appText = text('server/fastify/src/app.ts')
   const bootstrapIndex = appText.indexOf('registerBootstrapRoutes(')
   const guardIndex = appText.indexOf('registerActiveWriterGuard(app, activeWriterState)')
-  const firstMutationIndex = Math.min(
-    ...[
-      'registerSaveRoutes(',
-      'registerCommandRoutes(',
-      'registerAssetsRoutes(',
-      'registerBackupRoutes(',
-      'registerLegacyStorageRoutes(',
-      'registerGenerationChatRoutes(',
-      'registerMemoryJobRoutes(',
-    ].map((needle) => appText.indexOf(needle)),
-  )
+  const mutationRegistrarIndexes = [
+    'registerSaveRoutes(',
+    'registerCommandRoutes(',
+    'registerAssetsRoutes(',
+    'registerBackupRoutes(',
+    'registerLegacyStorageRoutes(',
+    'registerGenerationChatRoutes(',
+    'registerMemoryJobRoutes(',
+  ]
+    .map((needle) => appText.indexOf(needle))
+    .filter((index) => index >= 0)
+  const firstMutationIndex =
+    mutationRegistrarIndexes.length > 0 ? Math.min(...mutationRegistrarIndexes) : -1
   if (guardIndex === -1) {
     fail(
       check,
@@ -301,47 +540,41 @@ function checkActiveWriterGuard(): void {
   }
 
   const activeWriterText = text('server/fastify/src/activeWriter.ts')
-  const expectedClassifierNeedles = [
-    "'/api/v1/commands/'",
-    "'/api/v1/import/risusave'",
-    "'/api/v1/assets'",
-    "'/api/v1/backups'",
-    "'/api/v1/generate/chat'",
-    "'/api/v1/generate/preview-prompt'",
-    "'/api/v1/memory/jobs'",
-    "'/api/v1/memory/jobs/'",
-    "'/api/v1/storage/write'",
-    "'/api/v1/storage/remove'",
-  ]
-  for (const needle of expectedClassifierNeedles) {
-    if (!activeWriterText.includes(needle)) {
-      fail(
-        check,
-        `active-writer classifier is missing ${needle}.`,
-        undefined,
-        'server/fastify/src/activeWriter.ts',
-      )
-    }
-  }
 
   const routeFiles = project
     .getSourceFiles()
     .filter((file) => rel(file).startsWith('server/fastify/src/routes/'))
-  const mutations = routeRegistrations(routeFiles).filter((route) =>
-    isKnownServerOwnedMutation(route.method, route.route),
+  const mutatingRoutes = routeRegistrations(routeFiles).filter((route) =>
+    isMutatingMethod(route.method),
   )
-  if (mutations.length === 0) {
-    fail(check, 'No server-owned mutating routes were discovered; audit route extraction is stale.')
+  if (mutatingRoutes.length === 0) {
+    fail(check, 'No mutating Fastify routes were discovered; audit route extraction is stale.')
   }
-  const expectedMutationRoutes = [
-    ['POST', '/api/v1/generate/chat'],
-    ['POST', '/api/v1/generate/preview-prompt'],
-    ['POST', '/api/v1/memory/jobs'],
-    ['DELETE', '/api/v1/memory/jobs/:id'],
-  ]
-  for (const [method, route] of expectedMutationRoutes) {
-    if (!mutations.some((mutation) => mutation.method === method && mutation.route === route)) {
-      fail(check, `active-writer route discovery is missing ${method} ${route}.`, undefined)
+
+  assertMutatingRouteRulesAreLive(check, mutatingRoutes)
+
+  for (const route of mutatingRoutes) {
+    const classification = classifyMutatingRoute(route)
+    if (!classification) {
+      fail(
+        check,
+        `Unclassified mutating Fastify route: ${routeKey(route)}. Add a guarded or explicit exemption classification.`,
+        undefined,
+        path.join(root, route.file),
+      )
+      continue
+    }
+
+    if (classification.kind !== 'active-writer') continue
+    for (const needle of classification.activeWriterNeedles ?? []) {
+      if (!activeWriterText.includes(needle)) {
+        fail(
+          check,
+          `active-writer classifier does not cover ${routeKey(route)} (${classification.reason}); missing ${needle}.`,
+          undefined,
+          'server/fastify/src/activeWriter.ts',
+        )
+      }
     }
   }
 
@@ -522,55 +755,246 @@ function checkPluginStorageGates(): void {
   }
 }
 
+const ASSET_WALKER_COLLECTORS = new Set([
+  'addReference',
+  'addTupleReferences',
+  'addCcAssetReferences',
+  'addVitsReferences',
+  'addReferenceList',
+  'addGptSoVitsReference',
+])
+
+const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
+  {
+    collector: 'addReference',
+    value: 'root.userIcon',
+    path: 'database.userIcon',
+    owner: 'legacy profile mirror from selected persona icon',
+    validatorFile: 'server/fastify/src/commands/personas.ts',
+    validatorNeedles: [
+      'validateOptionalServerAssetRef(options.assetDataDir, record.icon',
+      'database.userIcon = stringValue(persona.icon)',
+    ],
+  },
+  {
+    collector: 'addReference',
+    value: 'root.customBackground',
+    path: 'database.customBackground',
+    owner: 'display settings command validator',
+    validatorFile: 'server/fastify/src/routes/commands.ts',
+    validatorNeedles: [
+      'validateSettingsAssetRefs(dataDir, patch)',
+      "'customBackground' in patch",
+      "validateOptionalServerAssetRef(dataDir, patch.customBackground, 'customBackground')",
+    ],
+  },
+  {
+    collector: 'addReference',
+    value: 'record.icon',
+    path: 'database.personas[*].icon',
+    owner: 'persona create/patch validators',
+    validatorFile: 'server/fastify/src/commands/personas.ts',
+    validatorNeedles: [
+      "'icon' in record",
+      'validateOptionalServerAssetRef(options.assetDataDir, record.icon',
+    ],
+  },
+  {
+    collector: 'addReference',
+    value: 'record.img',
+    path: 'database.characterOrder[*].img',
+    owner: 'character order reorder validator',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: [
+      'validateCharacterOrderLegacyImageRef(dataDir, entry.img',
+      'validateOptionalServerAssetRef(dataDir, value, label)',
+    ],
+  },
+  {
+    collector: 'addReference',
+    value: 'record.imgFile',
+    path: 'database.characterOrder[*].imgFile',
+    owner: 'character order reorder validator',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: [
+      'validateOptionalServerAssetRef(dataDir, entry.imgFile',
+      'validateCharacterOrderAssetRefs',
+    ],
+  },
+  {
+    collector: 'addReference',
+    value: 'record.image',
+    path: 'database.botPresets[*].image',
+    owner: 'preset create/patch validators',
+    validatorFile: 'server/fastify/src/commands/presets.ts',
+    validatorNeedles: [
+      "'image' in record",
+      'validateOptionalServerAssetRef(options.assetDataDir, record.image',
+    ],
+  },
+  {
+    collector: 'addTupleReferences',
+    value: 'record.assets',
+    path: 'database.modules[*].assets[*][1]',
+    owner: 'module create/patch validators',
+    validatorFile: 'server/fastify/src/commands/modules.ts',
+    validatorNeedles: ["'assets' in record", 'validateAssetTriples(assetOptions.assetDataDir'],
+  },
+  {
+    collector: 'addReference',
+    value: 'record.image',
+    path: 'database.characters[*].image',
+    owner: 'character create/patch validators',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: ["'image' in record", 'validateOptionalServerAssetRef(dataDir, record.image'],
+  },
+  {
+    collector: 'addTupleReferences',
+    value: 'record.emotionImages',
+    path: 'database.characters[*].emotionImages[*][1]',
+    owner: 'character create/patch validators',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: ["'emotionImages' in record", 'validateEmotionImageRefs(dataDir'],
+  },
+  {
+    collector: 'addTupleReferences',
+    value: 'record.additionalAssets',
+    path: 'database.characters[*].additionalAssets[*][1]',
+    owner: 'character create/patch validators',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: ["'additionalAssets' in record", 'validateAssetTriples(dataDir'],
+  },
+  {
+    collector: 'addCcAssetReferences',
+    value: 'record.ccAssets',
+    path: 'database.characters[*].ccAssets[*].uri',
+    owner: 'character create/patch validators',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: ["'ccAssets' in record", 'validateCcAssetRefs(dataDir'],
+  },
+  {
+    collector: 'addVitsReferences',
+    value: 'record.vits',
+    path: 'database.characters[*].vits.files.*',
+    owner: 'character create/patch validators',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: ["'vits' in record", 'validateVitsAssetRefs(dataDir'],
+  },
+  {
+    collector: 'addReferenceList',
+    value: 'record.prebuiltAssetExclude',
+    path: 'database.characters[*].prebuiltAssetExclude[*]',
+    owner: 'character create/patch validators',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: ["'prebuiltAssetExclude' in record", 'validateAssetIdList(dataDir'],
+  },
+  {
+    collector: 'addGptSoVitsReference',
+    value: 'record.gptSoVitsConfig',
+    path: 'database.characters[*].gptSoVitsConfig.ref_audio_data.assetId',
+    owner: 'character create/patch validators',
+    validatorFile: 'server/fastify/src/commands/characters.ts',
+    validatorNeedles: ["'gptSoVitsConfig' in record", 'validateGptSoVitsAssetRefs(dataDir'],
+  },
+]
+
+function normalizeAssetWalkerLabel(labelExpression: Node | undefined): string | undefined {
+  if (!labelExpression) return undefined
+  const literal = labelExpression.asKind(SyntaxKind.StringLiteral)
+  if (literal) return literal.getLiteralText()
+
+  const raw = labelExpression.getText()
+  const withoutTicks = raw.startsWith('`') && raw.endsWith('`') ? raw.slice(1, -1) : raw
+  return withoutTicks.replaceAll('${index}', '*').replaceAll('${prefix}', 'database.characters[*]')
+}
+
+function expandAssetWalkerPath(collector: string, label: string): string {
+  switch (collector) {
+    case 'addTupleReferences':
+      return `${label}[*][1]`
+    case 'addCcAssetReferences':
+      return `${label}[*].uri`
+    case 'addVitsReferences':
+      return `${label}.*`
+    case 'addReferenceList':
+      return `${label}[*]`
+    case 'addGptSoVitsReference':
+      return `${label}.ref_audio_data.assetId`
+    default:
+      return label
+  }
+}
+
+function assetWalkerFieldKey(field: AssetWalkerField): string {
+  return `${field.collector} ${field.value} -> ${field.path}`
+}
+
+function collectAssetWalkerFields(sourceFile: SourceFile): AssetWalkerField[] {
+  const collectFunction = sourceFile.getFunction('collectRisuSaveAssetReferences')
+  const fields: AssetWalkerField[] = []
+  collectFunction?.forEachDescendant((node) => {
+    if (!Node.isCallExpression(node)) return
+    const expression = node.getExpression()
+    if (!Node.isIdentifier(expression)) return
+    const collector = expression.getText()
+    if (!ASSET_WALKER_COLLECTORS.has(collector)) return
+    const args = node.getArguments()
+    const value = args[1]?.getText()
+    const label = normalizeAssetWalkerLabel(args[2])
+    if (!value || !label) return
+    fields.push({ collector, value, path: expandAssetWalkerPath(collector, label) })
+  })
+  return fields
+}
+
 function checkAssetWalkerValidators(): void {
   const check = 'EC6 asset walker validator drift'
-  const walkerText = text('server/fastify/src/risuSave/assetReferences.ts')
-  const characterText = text('server/fastify/src/commands/characters.ts')
-  const presetText = text('server/fastify/src/commands/presets.ts')
-  const requiredCharacterValidators = [
-    ['record.image', "'image' in record"],
-    ['record.emotionImages', "'emotionImages' in record"],
-    ['record.additionalAssets', "'additionalAssets' in record"],
-    ['record.ccAssets', "'ccAssets' in record"],
-    ['record.prebuiltAssetExclude', "'prebuiltAssetExclude' in record"],
-    ['record.vits', "'vits' in record"],
-    ['record.gptSoVitsConfig', "'gptSoVitsConfig' in record"],
-  ]
-  for (const [walkerNeedle, validatorNeedle] of requiredCharacterValidators) {
-    if (walkerText.includes(walkerNeedle) && !characterText.includes(validatorNeedle)) {
-      fail(
-        check,
-        `Asset walker reads ${walkerNeedle}, but character command validation lacks ${validatorNeedle}.`,
-        undefined,
-        'server/fastify/src/commands/characters.ts',
-      )
-    }
+  const walker = source('server/fastify/src/risuSave/assetReferences.ts')
+  const collected = collectAssetWalkerFields(walker)
+  if (collected.length === 0) {
+    fail(
+      check,
+      'No asset walker fields were discovered; audit collector extraction is stale.',
+      walker,
+    )
+    return
   }
 
-  const orderValidators = [
-    ['record.img, `database.characterOrder', '.img`'],
-    ['record.imgFile, `database.characterOrder', '.imgFile`'],
-  ]
-  for (const [walkerNeedle, validatorNeedle] of orderValidators) {
-    if (walkerText.includes(walkerNeedle) && !characterText.includes(validatorNeedle)) {
-      fail(
-        check,
-        `Asset walker reads characterOrder${validatorNeedle.slice(0, -1)}, but character-order command validation does not validate it.`,
-        undefined,
-        'server/fastify/src/commands/characters.ts',
-      )
-    }
+  const collectedKeys = sortedValues(collected.map(assetWalkerFieldKey))
+  const ownerKeys = sortedValues(ASSET_WALKER_OWNERS.map(assetWalkerFieldKey))
+  const collectedSet = new Set(collectedKeys)
+  const ownerSet = new Set(ownerKeys)
+  const missingOwners = collectedKeys.filter((key) => !ownerSet.has(key))
+  const staleOwners = ownerKeys.filter((key) => !collectedSet.has(key))
+
+  if (missingOwners.length > 0) {
+    fail(
+      check,
+      `Asset walker fields lack validator ownership: ${missingOwners.join('; ')}.`,
+      undefined,
+      walker,
+    )
+  }
+  if (staleOwners.length > 0) {
+    fail(
+      check,
+      `Asset walker validator ownership table is stale: ${staleOwners.join('; ')}.`,
+      undefined,
+      walker,
+    )
   }
 
-  const presetValidators = [['record.image, `database.botPresets', "'image' in record"]]
-  for (const [walkerNeedle, validatorNeedle] of presetValidators) {
-    if (walkerText.includes(walkerNeedle) && !presetText.includes(validatorNeedle)) {
-      fail(
-        check,
-        'Asset walker reads botPresets[*].image, but preset command validation does not validate it.',
-        undefined,
-        'server/fastify/src/commands/presets.ts',
-      )
+  for (const owner of ASSET_WALKER_OWNERS) {
+    const validatorText = text(owner.validatorFile)
+    for (const needle of owner.validatorNeedles) {
+      if (!validatorText.includes(needle)) {
+        fail(
+          check,
+          `Asset walker path ${owner.path} is owned by ${owner.owner}, but ${owner.validatorFile} is missing ${needle}.`,
+          undefined,
+          owner.validatorFile,
+        )
+      }
     }
   }
 }

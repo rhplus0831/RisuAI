@@ -70,3 +70,34 @@ pnpm client-thinning:audit
 ```
 
 Next open bucket after this closeout: Bucket 3, audit invariant broadening.
+
+## A2F3 - Audit Proof Is Narrower Than The Stated Invariant
+
+Status: **Closed 2026-05-28.**
+
+Bucket: 3 - Audit invariant broadening.
+
+Resolution:
+
+- `util/client-thinning-audit.ts` now discovers Fastify route registrations from
+  direct method calls and `route({ method, url })` objects.
+- Every discovered `POST`, `PATCH`, `PUT`, and `DELETE` route must match a
+  reviewed classification table.
+- Routes classified as active-writer guarded independently check the production
+  `activeWriter.ts` source for classifier coverage.
+- Runtime/auth/read-only exemptions are explicit in
+  [`decisions.md`](./decisions.md).
+- The asset-walker audit now extracts every collector field from
+  `server/fastify/src/risuSave/assetReferences.ts` and compares it against an
+  ownership table.
+- Each walked asset field is mapped to an owning command validator or, for
+  `database.userIcon`, an indirect-safe selected-persona mirror path.
+
+Verification:
+
+```bash
+pnpm client-thinning:audit
+pnpm api:test server/fastify/__tests__/commands.test.ts server/fastify/__tests__/activeWriter.test.ts -- --run
+```
+
+Next open bucket after this closeout: Bucket 4, Alpha 2 docs/status closeout.

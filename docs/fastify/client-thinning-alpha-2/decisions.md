@@ -60,6 +60,35 @@ an explicit exemption. Current code does not meet that exemption bar.
 **Decision:** prefer discovery plus explicit classifications over narrow
 whitelists.
 
+**Landed 2026-05-28:** Bucket 3 kept the command route-local id minting audit
+from Bucket 1 and broadened the remaining invariant checks. The audit now
+discovers Fastify mutating routes from both direct method calls and
+`route({ method, url })` registrations, then compares every `POST`, `PATCH`,
+`PUT`, and `DELETE` route against a reviewed classification table. Routes
+classified as active-writer guarded must also have independent source proof in
+`activeWriter.ts`.
+
+Explicit mutating-route exemptions:
+
+- `POST /api/v1/auth/setup` and `POST /api/v1/auth/login` are auth/session
+  metadata routes. They may write password or trusted-key files, but they are
+  outside the browser writer-session contract for Risu JSON/SQLite state.
+- `POST /api/v1/auth/crypto` is stateless hashing.
+- `POST /api/v1/assets/exists` is a read-only asset existence probe that uses
+  POST for request-body shape.
+- `POST /api/v1/generate/completion` is runtime provider generation and does
+  not write local durable state.
+- `POST /api/v1/proxy/fetch`, `POST /api/v1/proxy/stream-jobs`,
+  `DELETE /api/v1/proxy/stream-jobs/:id`, and mutating
+  `/api/v1/hub/*` methods are proxy/runtime surfaces rather than local durable
+  Risu state writes.
+
+The asset-walker audit now enumerates every collector field in
+`server/fastify/src/risuSave/assetReferences.ts` and requires an owning
+validator or indirect-safe owner. The current indirect-safe root profile case is
+`database.userIcon`, which is written through the selected persona mirror from a
+validated persona `icon`.
+
 **Why:** Phase 9 has repeatedly closed local symptoms while the global invariant
 stayed underspecified. The audit should therefore discover public command route
 minting, discover Fastify mutating routes, and enumerate walked asset-reference
