@@ -7,8 +7,12 @@ It records documentation-direction variables only: stale assumptions, already
 existing code, newly broadened scope, and wording that could steer the remaining
 client-thinning work incorrectly.
 
-No exit criterion is resolved by this audit. EC1 through EC7 remain open against
-the current codebase.
+Historical snapshot: at the time this audit was written, no exit criterion was
+resolved by this audit and EC1 through EC7 remained open against that codebase.
+This file is no longer the current closeout state. The original EC1 through EC7
+workstream later closed in this directory, and the follow-up alpha findings are
+tracked and closed under
+[`../client-thinning-alpha/`](../client-thinning-alpha/).
 
 ## Sub-agent coverage
 

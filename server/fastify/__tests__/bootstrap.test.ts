@@ -209,8 +209,14 @@ describe('Phase 2A bootstrap + import', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toEqual({
+    expect(bootstrap.json().database).toMatchObject({
       v: 2,
+      characters: [],
+      botPresets: [],
+      modules: [],
+      loadouts: [],
+      plugins: [],
+      pluginCustomStorage: {},
     })
   })
 

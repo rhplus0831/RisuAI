@@ -140,3 +140,10 @@ not present stale open/closed claims as current truth.
 **Why:** The client-thinning workstream exists because local fixes were claimed
 complete while broader invariants stayed underspecified. Documentation drift is a
 real closeout risk for future task agents.
+
+**Implementation note:** Bucket 8 closed AF9 by making the alpha README,
+open-findings list, closeout bucket table, history, and final audit agree that
+AF1 through AF10 and AEC1 through AEC7 are closed. The stale open-status claim
+in the historical `../client-thinning/final-audit.md` is now explicitly marked
+as a superseded snapshot, and `docs/fastify/status.md` points to the alpha
+closeout.

@@ -7,8 +7,8 @@ one or more findings from [`open-findings.md`](./open-findings.md). A bucket is
 done only when code, focused tests, relevant audit-script coverage, and docs are
 all updated.
 
-Current pickup: **Bucket 8.** Buckets 1 through 7 are closed; the next ordered
-open item is documentation/status reconciliation.
+Current status: **all buckets closed.** Bucket 8 was the final ordered item and
+closed the documentation/status reconciliation gap.
 
 | Order | Bucket                                        | Closes           | Status | Primary ownership                                                                                                                                          |
 | ----- | --------------------------------------------- | ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -19,7 +19,7 @@ open item is documentation/status reconciliation.
 | 5     | Chat folder identity scope                    | AEC4 / AF5       | Closed | `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/chats.ts`, command tests, `util/client-thinning-audit.ts`                            |
 | 6     | Module reference and MCP boundary semantics   | AEC5 / AF6, AF7  | Closed | `server/fastify/src/commands/chats.ts`, `server/fastify/src/commands/modules.ts`, prompt/module tests                                                      |
 | 7     | Asset blob healing + optional clear tests     | AEC6 / AF8, AF10 | Closed | `server/fastify/src/repository.ts`, `server/fastify/src/routes/assets.ts`, command/assets tests                                                            |
-| 8     | Documentation/status reconciliation           | AEC7 / AF9       | Open   | `docs/fastify/client-thinning-alpha/*`, relevant historical status docs                                                                                    |
+| 8     | Documentation/status reconciliation           | AEC7 / AF9       | Closed | `docs/fastify/client-thinning-alpha/*`, relevant historical status docs                                                                                    |
 
 ## Parallelization notes
 
@@ -27,8 +27,8 @@ open item is documentation/status reconciliation.
   run in parallel.
 - Buckets 2 and 4 both touch import normalization and should either be sequenced
   or assigned to the same task agent.
-- Bucket 8 should be last unless a task agent is only updating this alpha
-  directory while implementation is still open.
+- Bucket 8 was intentionally closed last, after buckets 1 through 7 landed their
+  code, focused tests, audit coverage, and history notes.
 
 ## 1. Root create id validation + audit expansion
 
@@ -190,6 +190,8 @@ pnpm api:test server/fastify/__tests__/assets.test.ts -- --run
 ```
 
 ## 8. Documentation/status reconciliation
+
+Status: **Closed 2026-05-28.** See [`history.md`](./history.md#bucket-8---documentationstatus-reconciliation).
 
 Goal: close AF9 and prepare final alpha closeout.
 

@@ -14,7 +14,8 @@ Opened on 2026-05-28 from the cross-verification of:
 
 Bucket 1 closed AF1 on 2026-05-28. Bucket 2 closed AF2 on 2026-05-28. Bucket 3
 closed AF3 on 2026-05-28. Bucket 4 closed AF4 on 2026-05-28. Bucket 5 closed
-AF5 on 2026-05-28. Bucket 6 closed AF6 and AF7 on 2026-05-28.
+AF5 on 2026-05-28. Bucket 6 closed AF6 and AF7 on 2026-05-28. Bucket 7 closed
+AF8 and AF10 on 2026-05-28. Bucket 8 closed AF9 on 2026-05-28.
 
 ## Resolved findings
 
@@ -159,6 +160,23 @@ Regression proof:
   blobs for existing metadata and that optional server asset refs preserve the
   documented clear-value semantics.
 
+### Bucket 8 - Documentation/status reconciliation
+
+Resolved: **AF9 / AEC7**.
+
+The alpha closeout docs now agree that AF1 through AF10 and AEC1 through AEC7
+are closed. [`open-findings.md`](./open-findings.md) is empty,
+[`closeout-buckets.md`](./closeout-buckets.md) marks Bucket 8 closed, and
+[`final-audit.md`](./final-audit.md) records the final AEC table. The stale
+claim in [`../client-thinning/final-audit.md`](../client-thinning/final-audit.md)
+is marked as a superseded historical audit snapshot instead of current status.
+
+Regression proof:
+
+- `pnpm client-thinning:audit` passes after the documentation reconciliation.
+- The full verification ladder is recorded below and in
+  [`final-audit.md`](./final-audit.md).
+
 ## Verification results
 
 Bucket 1 verifier result:
@@ -208,19 +226,34 @@ Bucket 7 verifier result:
   (77 tests).
 - `pnpm client-thinning:audit`: passed.
 
+Bucket 8 verifier result:
+
+- `pnpm client-thinning:audit`: passed.
+- Full verification ladder: passed after updating stale API assertions for
+  current-shape import/bootstrap normalization.
+
 Initial verifier result:
 
 - `pnpm client-thinning:audit`: passed.
 
 That initial pass was not sufficient for alpha closeout because AF1, AF2, AF3,
-AF4, AF5, AF6, AF7, AF8, and AF10 were audit or regression blind spots. AF1
-through AF8 and AF10 now have focused regression coverage, and the invariant
-audit covers each bug class that was appropriate for repeatable structural
-checking.
+AF4, AF5, AF6, AF7, AF8, and AF10 were audit or regression blind spots, and AF9
+was a documentation/status reconciliation gap. AF1 through AF10 now have focused
+regression coverage or closeout proof as appropriate, and the invariant audit
+covers each bug class that was appropriate for repeatable structural checking.
+
+Full alpha closeout ladder on 2026-05-28:
+
+- `pnpm client-thinning:audit`: passed.
+- `pnpm check`: passed, 0 errors and 0 warnings.
+- `pnpm test`: passed, 78 files and 786 tests passed, 4 skipped.
+- `pnpm api:test`: passed, 69 files and 1246 tests passed.
+- `pnpm build`: passed with nonblocking existing warnings.
+- `pnpm smoke:fastify-browser`: passed, 1 Playwright smoke test passed.
 
 ## Archived baseline
 
 The baseline client-thinning workstream remains in
 [`../client-thinning/`](../client-thinning/). Treat that directory as historical
-context for the original EC1-EC7 contract. This alpha directory is the current
-handoff for the newly verified follow-up findings.
+context for the original EC1-EC7 contract. This alpha directory is the closed
+handoff for the verified follow-up findings.

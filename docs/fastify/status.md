@@ -1,24 +1,27 @@
 # Migration Status
 
-Date: 2026-05-27
+Date: 2026-05-28
 
-All Phases 0-9 are complete. No open findings remain. A follow-up
-Fastify-only lockdown then removed the residual no-port runtime
-surfaces (alternative server adapters, legacy client wrappers, service
-worker, browser-side persistence, legacy client endpoints); see
-[`phases-completed/fastify-only.md`](phases-completed/fastify-only.md)
-for that no-port cleanup.
+All Phases 0-9 are complete. No open findings remain. The follow-up
+client-thinning alpha workstream also closed AF1 through AF10 and AEC1 through
+AEC7; see [`client-thinning-alpha/final-audit.md`](client-thinning-alpha/final-audit.md)
+for the final verification pass. A follow-up Fastify-only lockdown removed the
+residual no-port runtime surfaces (alternative server adapters, legacy client
+wrappers, service worker, browser-side persistence, legacy client endpoints);
+see [`phases-completed/fastify-only.md`](phases-completed/fastify-only.md) for
+that no-port cleanup.
 
 Policy: no actual Fastify users yet. Update schemas and import paths
 directly; do not write compatibility migrations.
 
 ## Verification
 
-Latest full verification on 2026-05-27:
+Latest full verification on 2026-05-28:
 
+- `pnpm client-thinning:audit`: passed.
 - `pnpm check`: 0 errors, 0 warnings.
-- `pnpm test`: 76 files, 772 passed, 4 skipped.
-- `pnpm api:test`: 68 files, 1217 passed.
+- `pnpm test`: 78 files, 786 passed, 4 skipped.
+- `pnpm api:test`: 69 files, 1246 passed.
 - `pnpm build`: passed with nonblocking build warnings.
 - `pnpm smoke:fastify-browser`: 1 browser smoke test passed.
 

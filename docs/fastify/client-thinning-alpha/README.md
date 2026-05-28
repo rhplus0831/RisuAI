@@ -2,15 +2,17 @@
 
 Date: 2026-05-28
 
-Status: **open alpha workstream / task-agent handoff.** This directory is a
-sibling to [`../client-thinning/`](../client-thinning/) and uses the same
-structure: invariant, exit criteria, open findings, decisions, buckets, audit,
-and history.
+Status: **closed alpha workstream / historical handoff complete.** This
+directory is a sibling to [`../client-thinning/`](../client-thinning/) and uses
+the same structure: invariant, exit criteria, open findings, decisions, buckets,
+audit, and history.
 
 The original `client-thinning` closeout remains the historical baseline. This
-alpha workstream exists because the follow-up Codex/Claude audits found new
-server-projection gaps that are not caught by the current
-`pnpm client-thinning:audit` script.
+alpha workstream existed because the follow-up Codex/Claude audits found new
+server-projection gaps that were not caught by the then-current
+`pnpm client-thinning:audit` script. AF1 through AF10 are now closed, and the
+audit script covers the newly closed bug classes that are suitable for
+repeatable structural checking.
 
 ## Why this is an alpha workstream
 
@@ -24,9 +26,10 @@ audits found blind spots in the repeatable invariant gate:
 - Some identity/reference scopes remain ambiguous, such as chat folders and chat
   module references.
 
-This directory turns those audit findings into task-agent work. Do not use it to
-rewrite the historical `client-thinning` record; use it to close the alpha
-findings with code, tests, and audit-script coverage.
+This directory records how those audit findings were turned into task-agent
+work. Do not rewrite the historical `client-thinning` record; use this alpha
+record as the closeout trail for the follow-up findings and open a new finding
+if another invariant gap is discovered.
 
 ## Fastify-served web mode
 
@@ -101,9 +104,10 @@ and has committed regression proof.
 | AEC6 | **Asset persistence is consistent.** Re-uploading an existing asset id cannot leave metadata present while the blob is missing, and optional asset clear values are covered by tests.                                                                                                                                           | Missing-blob re-upload behavior is tested; `null`, `""`, and `"-"` clear paths are tested for optional character audio refs.                                                                      |
 | AEC7 | **Docs and audit state agree.** Closeout/status docs reflect the actual alpha result, and any newly discovered invariant class is added to the audit script before closeout.                                                                                                                                                    | `README`, `open-findings`, `closeout-buckets`, `history`, and `final-audit` agree after the full ladder passes.                                                                                   |
 
-Progress as of 2026-05-28: **AEC1, AEC2, AEC3, AEC4, AEC5, and AEC6 are
-closed; AEC7 is open.** Next ordered pickup: Bucket 8, documentation/status
-reconciliation.
+Progress as of 2026-05-28: **AEC1 through AEC7 are closed.** Bucket 8 closed
+AF9 by reconciling alpha status docs, marking the stale historical audit as a
+superseded snapshot, and refreshing the final alpha audit after the verification
+ladder.
 
 ## Verification ladder
 
@@ -124,15 +128,15 @@ gate.
 
 ## Document map
 
-- [`open-findings.md`](./open-findings.md) - verified open alpha findings,
-  mapped to exit criteria and task-agent buckets.
+- [`open-findings.md`](./open-findings.md) - currently empty alpha finding list;
+  use it for any future reopened findings.
 - [`decisions.md`](./decisions.md) - implementation decisions and rationale for
   each alpha criterion.
 - [`closeout-buckets.md`](./closeout-buckets.md) - task-agent work breakdown,
   ownership boundaries, and focused proof commands.
 - [`audit.md`](./audit.md) - cross-audit verification summary used to seed this
   workstream.
-- [`final-audit.md`](./final-audit.md) - current alpha final-audit state and the
-  template for the eventual closeout pass.
+- [`final-audit.md`](./final-audit.md) - final alpha closeout audit and
+  verification ladder result.
 - [`history.md`](./history.md) - resolved alpha findings and verification
-  results. It is intentionally sparse until buckets close.
+  results.

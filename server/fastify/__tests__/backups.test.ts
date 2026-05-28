@@ -239,7 +239,15 @@ describe('Phase 2D backups', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(beforeRestore.json().database).toEqual({ tag: 'B' })
+    expect(beforeRestore.json().database).toMatchObject({
+      tag: 'B',
+      characters: [],
+      botPresets: [],
+      modules: [],
+      loadouts: [],
+      plugins: [],
+      pluginCustomStorage: {},
+    })
 
     const restored = await harness.app.inject({
       method: 'POST',
@@ -264,7 +272,15 @@ describe('Phase 2D backups', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterRestore.json().database).toEqual({ tag: 'A' })
+    expect(afterRestore.json().database).toMatchObject({
+      tag: 'A',
+      characters: [],
+      botPresets: [],
+      modules: [],
+      loadouts: [],
+      plugins: [],
+      pluginCustomStorage: {},
+    })
     expect(afterRestore.json().revision).toBe(revisionAfter)
   })
 

@@ -2,33 +2,39 @@
 
 Date: 2026-05-28
 
-Status: **not final / alpha open.** This file mirrors the role of
-[`../client-thinning/final-audit.md`](../client-thinning/final-audit.md), but the
-alpha findings are not closed yet.
+Status: **final / alpha closed.** This file mirrors the role of
+[`../client-thinning/final-audit.md`](../client-thinning/final-audit.md) for the
+follow-up alpha findings.
 
 ## Current verdict
 
-AEC1, AEC2, AEC3, AEC4, AEC5, and AEC6 are closed; AEC7 remains open. The
-original read-only cross-verification found two High, three Medium, and five Low
-findings; see [`audit.md`](./audit.md), [`open-findings.md`](./open-findings.md),
-and [`history.md`](./history.md).
+PASS. AEC1 through AEC7 are closed in Fastify-served web mode, and AF1 through
+AF10 are resolved. The original read-only cross-verification found two High,
+three Medium, and five Low findings; all are now closed with code, focused
+tests, audit coverage where applicable, or documentation closeout proof. See
+[`audit.md`](./audit.md), [`open-findings.md`](./open-findings.md), and
+[`history.md`](./history.md).
 
-The current `pnpm client-thinning:audit` script passes and now covers AF1's root
-create helper blind spot, AF2's import/export current-shape blind spot, and
-AF3's preset-image walker/validator blind spot, and AF4's ROOT_COMPONENT
-reserved-key blind spot, AF5's chat folder identity-scope blind spot, and
-AF6/AF7's module reference/MCP boundary blind spot, and AF8/AF10's asset
-persistence/clear-value blind spots. That pass is still not an alpha closeout
-signal because AF9 remains open.
+Reviewed branch: `fastify` on 2026-05-28, after Bucket 8 documentation/status
+reconciliation and the stale API import/bootstrap expectations were updated to
+assert current-shape normalization.
 
-## Required final-audit shape
+## Focused proof
 
-When all buckets close, replace this section with a final validation pass that
-records:
+| Bucket | Proof command(s) | Result |
+| ------ | ---------------- | ------ |
+| 1 | `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`; `pnpm client-thinning:audit` | Passed |
+| 2 | `pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts -- --run`; `pnpm api:test server/fastify/__tests__/risuSaveExportRoute.test.ts -- --run`; `pnpm client-thinning:audit` | Passed |
+| 3 | `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`; `pnpm client-thinning:audit` | Passed |
+| 4 | `pnpm api:test server/fastify/__tests__/risuSaveImportRoute.test.ts -- --run`; `pnpm client-thinning:audit` | Passed |
+| 5 | `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`; `pnpm client-thinning:audit` | Passed |
+| 6 | `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`; `pnpm test src/ts/server/commands.test.ts -- --run`; `pnpm client-thinning:audit` | Passed |
+| 7 | `pnpm api:test server/fastify/__tests__/assets.test.ts -- --run`; `pnpm api:test server/fastify/__tests__/commands.test.ts -- --run`; `pnpm client-thinning:audit` | Passed |
+| 8 | Full verification ladder below | Passed |
 
-- The commit or branch reviewed.
-- The focused proof command for each closed bucket.
-- The full verification ladder result:
+## Full ladder
+
+Final validation pass on 2026-05-28:
 
 ```bash
 pnpm client-thinning:audit
@@ -39,23 +45,38 @@ pnpm build
 pnpm smoke:fastify-browser
 ```
 
-- Any warnings that are pre-existing and not alpha blockers.
-- A table mapping AEC1-AEC7 to PASS/PARTIAL/FAIL.
+- `pnpm client-thinning:audit`: passed.
+- `pnpm check`: passed with 0 errors and 0 warnings.
+- `pnpm test`: passed, 78 files and 786 tests passed, 4 skipped.
+- `pnpm api:test`: passed, 69 files and 1246 tests passed.
+- `pnpm build`: passed with nonblocking existing warnings.
+- `pnpm smoke:fastify-browser`: passed, 1 Playwright smoke test passed.
 
-## Current AEC table
+Nonblocking build/smoke warnings observed:
 
-| Criterion                                  | Status | Blocking findings                               |
-| ------------------------------------------ | ------ | ----------------------------------------------- |
-| AEC1 Root command ids                      | Closed | None                                            |
-| AEC2 Import/export current shape           | Closed | None                                            |
-| AEC3 Asset walker/validator parity         | Closed | None                                            |
-| AEC4 Chat folder identity                  | Closed | None                                            |
-| AEC5 Module reference semantics            | Closed | None                                            |
-| AEC6 Asset persistence and optional clears | Closed | None                                            |
-| AEC7 Docs and audit state                  | Open   | AF9 plus audit updates from closed/open buckets |
+- CSS optimization/minification warns that `::highlight(...)` is not recognized
+  as a valid pseudo-element.
+- Vite/Rolldown reports browser-compatible externalization for several
+  dependency imports of Node modules.
+- Vite reports ineffective dynamic imports, chunks larger than 2000 kB, and
+  plugin timing warnings.
+- The smoke command reports Node's `NO_COLOR` warning because `FORCE_COLOR` is
+  also set.
+
+## AEC table
+
+| Criterion                                  | Result | Blocking findings |
+| ------------------------------------------ | ------ | ----------------- |
+| AEC1 Root command ids                      | PASS   | None              |
+| AEC2 Import/export current shape           | PASS   | None              |
+| AEC3 Asset walker/validator parity         | PASS   | None              |
+| AEC4 Chat folder identity                  | PASS   | None              |
+| AEC5 Module reference semantics            | PASS   | None              |
+| AEC6 Asset persistence and optional clears | PASS   | None              |
+| AEC7 Docs and audit state                  | PASS   | None              |
 
 ## Closeout rule
 
-Do not change the alpha README to "closed" until this file records a PASS for
-every AEC and [`history.md`](./history.md) contains the resolved finding notes
-with verification results.
+The alpha README may remain marked closed while this file records PASS for every
+AEC, [`history.md`](./history.md) contains the resolved finding notes with
+verification results, and [`open-findings.md`](./open-findings.md) remains empty.
