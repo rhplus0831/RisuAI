@@ -104,6 +104,13 @@ Date: 2026-05-29
   excludes MCP rows from linkable ids, rejects unknown ids, and validates normal
   module links on all four chat write paths plus character module links; the
   failing fixture drops the `!module.mcp` exclusion.
+- `AEC6 asset persistence semantics` has committed `failing-no-heal` and
+  `heal-and-clear-bypass` fixtures under
+  `util/client-thinning-audit-fixtures/asset-persistence-semantics/`. The bypass
+  heals missing blobs for existing metadata, preserves the `''`/`'-'`/`null`
+  clear values, and validates the optional vits/gptSoVits audio asset refs; the
+  failing fixture drops the `if (!fs.existsSync(file))` heal guard from
+  `addAsset`.
 
 ## Open Proof
 
@@ -143,7 +150,7 @@ existing files yet.
 | `AEC2 import/export current shape` | `import-export-current-shape` | Remove a block-export resource family, stop import normalization for a block-exported family, desync reserved root keys, or allow root component import to overwrite resource blocks. | Non-zero exit with `AEC2 import/export current shape`. |
 | `AEC4 chat folder identity scope` | `chat-folder-identity-scope` | Normalize chat folder ids only per character, fail to update chat `folderId` references after repair, or omit global duplicate-id rejection on create surfaces. | Covered: failing fixture (per-character folder-id normalization) exits non-zero with `AEC4 chat folder identity scope`; global-scope bypass exits zero. |
 | `AEC5 module reference semantics` | `module-reference-semantics` | Treat MCP modules as normal link targets, tolerate unresolved normal module ids, or skip module-link validation on chat create/patch/fork writes. | Covered: failing fixture (MCP rows linkable as normal modules) exits non-zero with `AEC5 module reference semantics`; typed-links bypass exits zero. |
-| `AEC6 asset persistence semantics` | `asset-persistence-semantics` | Stop healing missing asset blobs for existing metadata, reject documented clear values, or omit optional audio asset reference validation from character commands. | Non-zero exit with `AEC6 asset persistence semantics`. |
+| `AEC6 asset persistence semantics` | `asset-persistence-semantics` | Stop healing missing asset blobs for existing metadata, reject documented clear values, or omit optional audio asset reference validation from character commands. | Covered: failing fixture (`addAsset` drops the missing-blob heal guard) exits non-zero with `AEC6 asset persistence semantics`; heal + clear-value bypass exits zero. |
 | `EC1 provider ownership` | `provider-ownership` | Reintroduce browser provider fallback in Fastify mode, allow Fastify preview bodies without explicit support, permit browser Vertex projection writes in Fastify mode, or expose `useServerGeneration` as a server setting command. | Covered: failing fixture (exposes `useServerGeneration` as a settings command) exits non-zero with `EC1 provider ownership`; server-routed bypass exits zero. |
 | `A4R1 passive refresh writer ownership` | `passive-refresh-writer-ownership` | Make a read-only bootstrap helper attach `activeWriterSessionHeader()` or call the writer-registering bootstrap helper from a passive refresh path outside `WRITER_BOOTSTRAP_CALLERS`. | Covered: `failing-passive-caller` and `failing-readonly-header` exit non-zero with `A4R1 passive refresh writer ownership`; `writer-intent-bypass` (writer helper called only from the allowlisted entrypoint) exits zero. |
 | `A4R2 conflict replay outside central wrapper` | `conflict-replay` | Branch on `result.status === 'conflict'` outside `runServerCommand` and then resend a mutating command with `baseRevision` through a command helper or fetch. | Covered: failing fixture (non-wrapper helper replays after a conflict) exits non-zero with `A4R2 conflict replay outside central wrapper`; surface-conflict bypass (plus the exempt central wrapper) exits zero. |
@@ -163,13 +170,13 @@ existing files yet.
 `A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
 `A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
 Every A4R rule (`A4R1`–`A4R7` plus the `A4R-` named rules), all EC rules (`EC1`,
-`EC2`, `EC4`, `EC5`, `EC6`), `AEC4 chat folder identity scope`, and
-`AEC5 module reference semantics` now have committed fixtures. The remaining open
-rules are `AEC6 asset persistence semantics` and `AEC2 import/export current
-shape`. A good next target is `AEC6 asset persistence semantics`: its fixture
-should prove that dropping blob-healing for existing asset metadata (or removing
-a documented clear value) exits non-zero, while the full heal + clear-value
-shape stays accepted.
+`EC2`, `EC4`, `EC5`, `EC6`), `AEC4 chat folder identity scope`,
+`AEC5 module reference semantics`, and `AEC6 asset persistence semantics` now
+have committed fixtures. The only remaining open rule is `AEC2 import/export
+current shape`: its fixture should prove that removing a block-export resource
+family (or desyncing the reserved root keys / letting root-component import
+overwrite resource blocks) exits non-zero, while the current import/export shape
+stays accepted.
 
 ## Commands
 

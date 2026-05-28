@@ -62,6 +62,7 @@ describe('client-thinning audit fixtures', () => {
   const providerOwnershipCheck = 'EC1 provider ownership'
   const chatFolderScopeCheck = 'AEC4 chat folder identity scope'
   const moduleReferenceCheck = 'AEC5 module reference semantics'
+  const assetPersistenceCheck = 'AEC6 asset persistence semantics'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -481,6 +482,30 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'module-reference-semantics/typed-links-bypass',
       moduleReferenceCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture where addAsset stops healing missing blobs', async () => {
+    const result = await runAuditFixture(
+      'asset-persistence-semantics/failing-no-heal',
+      assetPersistenceCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${assetPersistenceCheck}]`)
+    expect(result.stderr).toContain(
+      'addAsset must heal missing blobs for existing asset metadata; missing if (!fs.existsSync(file)).',
+    )
+  })
+
+  it('allows blob healing with documented clear values and audio asset refs', async () => {
+    const result = await runAuditFixture(
+      'asset-persistence-semantics/heal-and-clear-bypass',
+      assetPersistenceCheck,
     )
 
     expect(result.exitCode).toBe(0)
