@@ -3,8 +3,8 @@
 Last explored: 2026-05-28.
 
 This folder is a navigation-first companion to the migration/status docs in
-[`docs/fastify/`](../fastify/README.md). Use it when you need to find the right
-part of the codebase quickly before making a change.
+[`docs/archive/fastify/`](../archive/fastify/README.md). Use it when you
+need to find the right part of the codebase quickly before making a change.
 
 ## Read Order
 
@@ -16,10 +16,10 @@ part of the codebase quickly before making a change.
 6. [`testing-and-operations.md`](testing-and-operations.md) - scripts, test split, env, Docker.
 7. [`generated-and-legacy.md`](generated-and-legacy.md) - generated files and removed/no-port surfaces.
 
-For migration background and current policy, start with
-[`docs/fastify/README.md`](../fastify/README.md). That document is still the
-source of truth for the Fastify migration read order, status shards, and
-historical phase logs.
+For migration background, start with
+[`docs/archive/fastify/README.md`](../archive/fastify/README.md). The
+Fastify migration is closed; that archive holds the consolidated
+invariant contract, phase scope docs, and design references.
 
 ## Top-Level Map
 
@@ -40,7 +40,7 @@ historical phase logs.
 | `src/ts/storage/`                | Client database state, server-backed storage auth, `.risu` import/export helpers.            |
 | `public/`                        | Static source assets copied by Vite.                                                         |
 | `dist/`                          | Generated Vite output; do not hand-edit.                                                     |
-| `docs/fastify/`                  | Fastify migration status, architecture, coverage, and historical plans.                      |
+| `docs/archive/fastify/`          | Archived Fastify migration: invariant contract, phase scope docs, architecture, coverage.    |
 
 ## Standing Conventions
 

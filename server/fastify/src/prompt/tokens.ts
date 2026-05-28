@@ -10,7 +10,7 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
  * `OpenAIChat` per-message overhead.
  *
  * Out of scope (see the archived Phase 7 scope re-verification in
- * docs/fastify/phases-completed/):
+ * docs/archive/fastify/phases/phase-7-prompt-assembly.md):
  * Svelte stores, plugin / custom tokenizer hooks,
  * `@mlc-ai/web-tokenizers` providers (Claude / Llama / Mistral /
  * NovelAI / NovelList / Gemma / Cohere / DeepSeek / GLM), Google

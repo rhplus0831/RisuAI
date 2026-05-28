@@ -29,7 +29,7 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
  * contribute only their content + overhead here. The multimodal-only
  * survival filter still applies. Exact image-token accounting lands
  * only when a fixture forces it (Phase 7 scope re-verification,
- * archived in docs/fastify/phases-completed/).
+ * archived in docs/archive/fastify/phases/phase-7-prompt-assembly.md).
  */
 
 export type FinalizeRequestBudgetResult =

@@ -176,7 +176,7 @@ describe('getServerCompletionProvider', () => {
 
   it('returns null for a format with no server implementation yet', () => {
     // NovelAI / NovelList stay deferred per
-    // docs/fastify/design/novelai-novellist-stringlize.md; both should
+    // docs/archive/fastify/other/design/novelai-novellist-stringlize.md; both should
     // return null from formatToServerProvider (and therefore from
     // getServerCompletionProvider) until Phase 7 lands.
     const r = getServerCompletionProvider(

@@ -9,7 +9,7 @@ import type { AssembleMutationPayload } from './assemble.js'
  * (`type`) is encoded as the SSE event name; the JSON `data:` line carries
  * the remaining fields.
  *
- * IMPORTANT: per `docs/fastify/phases/phase-7-prompt-assembly.md`, this
+ * IMPORTANT: per `docs/archive/fastify/phases/phase-7-prompt-assembly.md`, this
  * shape is locked once shipped. Phase 9 must not rename events. Adding new
  * fields is fine; renaming or removing is not.
  */

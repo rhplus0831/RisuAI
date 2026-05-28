@@ -1,0 +1,179 @@
+# Server Route Tests
+
+Date: 2026-05-27
+
+Status: Phase 1, Phase 2, Phase 3, the original Phase 6
+completion-route tests, Phase 7 `/chat` / `/preview-prompt`, and Phase 8
+memory job/read routes have coverage under `server/fastify/__tests__/`.
+Phase 9 command routes are covered through the 9-4 resource families, the
+command-event SSE stream has focused route tests, backup restore emits
+`state.restored`, bootstrap secret masking is covered, and server `.risu`
+codec / import / export / bundle behavior is covered by focused Fastify
+tests.
+Browser projection, storage gates, and residual-sweep coverage live in
+the frontend test suite when they are not route behavior.
+Audit follow-up for completion streaming errors, proxy header alignment,
+the public Drive artifact, and memory events is closed in
+the follow-up phase docs.
+
+## Phase 1: Foundation
+
+| Route                          | Pinned behavior                                | Status      |
+| ------------------------------ | ---------------------------------------------- | ----------- |
+| `GET /api/v1/health`           | Returns `{ status: 'ok', revision, schemaVersion }`. | covered by `server/fastify/__tests__/smoke.test.ts` |
+| `GET /api/v1/auth/status`      | Reports `noPassword` before setup; accepts valid assertions and rejects expired ones. | covered by `server/fastify/__tests__/smoke.test.ts` |
+| `POST /api/v1/auth/setup`      | First call sets password; second rejects.      | covered by `server/fastify/__tests__/smoke.test.ts` |
+| `POST /api/v1/auth/login`      | Registers a public key after password match; matching ES256 assertions authorize later status checks. | covered by `server/fastify/__tests__/smoke.test.ts` |
+
+## Phase 2: Storage, Import, Assets, Backups
+
+| Route                                       | Pinned behavior                            | Status      |
+| ------------------------------------------- | ------------------------------------------ | ----------- |
+| `GET /api/v1/bootstrap`                     | Fresh data dir returns `revision: 0`, current `schemaVersion`, `database: null`, and `assetBaseUrl`. Requires auth once a password is set. | covered by `server/fastify/__tests__/bootstrap.test.ts` |
+| `POST /api/v1/import/risusave`              | JSON `{ database }` replaces `db.json.database`, bumps revision, rejects missing database, and reports referenced/missing/orphaned server asset counts; multipart `.risu` uploads decode through the server codec, apply normalized imports, report unsupported remote/cache-only references and asset counts, and reject malformed files without mutating persistence. | covered by `server/fastify/__tests__/bootstrap.test.ts` and `server/fastify/__tests__/risuSaveImportRoute.test.ts` |
+| `GET /api/v1/export/risusave`               | Auth-gated download returns repository-backed `.risu` bytes; supports RISUSAVE block and legacy envelope query options and validates malformed exports. | covered by `server/fastify/__tests__/risuSaveExportRoute.test.ts` |
+| `GET /api/v1/export/bundle`                 | Auth-gated ZIP download returns `database.risu`, `manifest.json`, and only walked referenced asset files that exist in repository metadata and on disk; reports missing references, missing files, and orphaned stored assets without bundling orphaned files. | covered by `server/fastify/__tests__/risuSaveBundleExportRoute.test.ts` |
+| `POST /api/v1/assets`                       | Auth-gated raw upload computes SHA-256, writes `data/assets/<sha>.<ext>`, returns metadata + revision, and is idempotent on re-upload. | covered by `server/fastify/__tests__/assets.test.ts` |
+| `GET /api/v1/assets/:id`                    | Public read serves stored bytes with Content-Type, immutable cache header, and 404 for unknown / malformed ids. | covered by `server/fastify/__tests__/assets.test.ts` |
+| `HEAD /api/v1/assets/:id`                   | Mirrors GET headers with no body.          | covered by `server/fastify/__tests__/assets.test.ts` |
+| `POST /api/v1/assets/exists`                | Public preflight returns missing SHA-256 ids and validates `ids: string[]`. | covered by `server/fastify/__tests__/assets.test.ts` |
+| `GET /api/v1/backups`                       | Auth-gated list returns backups newest-first or an empty array. | covered by `server/fastify/__tests__/backups.test.ts` |
+| `POST /api/v1/backups`                      | Auth-gated create snapshots `db.json`, writes manifest + snapshot, accepts optional string label, does not bump revision. | covered by `server/fastify/__tests__/backups.test.ts` |
+| `POST /api/v1/backups/:id/restore`          | Auth-gated restore copies snapshot to live `db.json`, bumps revision, emits `state.restored`, and rejects unknown / malformed ids. | covered by `server/fastify/__tests__/backups.test.ts` |
+| `DELETE /api/v1/backups/:id`                | Auth-gated delete removes backup directory and rejects unknown / malformed ids. | covered by `server/fastify/__tests__/backups.test.ts` |
+
+Static serving is covered by `server/fastify/__tests__/static.test.ts`:
+Fastify serves `index.html`, nested static assets, SPA fallback for
+unknown non-API GETs, no fallback for `/api/*` or non-GET routes,
+and clean API behavior when `staticRoot` is absent.
+
+No Phase 2 server routes exist for asset delete or asset GC. The legacy JSON
+import route remains here; server `.risu` codec core, multipart import route,
+repository export route, and bundle export route wiring landed in Phase 9.
+
+## Phase 3: Proxy + Hub
+
+| Route                                          | Pinned behavior                          | Status      |
+| ---------------------------------------------- | ---------------------------------------- | ----------- |
+| `POST /api/v1/proxy/fetch`                     | Auth-gated POST proxy forwards upstream status/body, raw body bytes, filtered response headers, sanitized request headers, and `risu-header` overrides. | covered by `server/fastify/__tests__/proxy.test.ts` |
+| `POST /api/v1/proxy/fetch` (SSE)               | Streams a multi-chunk `text/event-stream` upstream body through without route-level buffering. | covered by `server/fastify/__tests__/proxy.test.ts` |
+| `POST /api/v1/proxy/fetch` (timeout)           | Honors `risu-timeout-ms` and returns 504 on timeout. | covered by `server/fastify/__tests__/proxy.test.ts` |
+| `POST /api/v1/proxy/fetch` (client disconnect) | Direct request-close abort wiring is not separately implemented; hung upstreams are bounded by `risu-timeout-ms`. | known gap |
+| `POST /api/v1/proxy/stream-jobs`               | Auth-gated create returns `jobId` + normalized `heartbeatSec`; rejects non-local targets, disallowed methods, and oversized `bodyBase64`. | covered by `server/fastify/__tests__/streamJobsRoutes.test.ts` |
+| `GET /api/v1/proxy/stream-jobs/:id/ws`         | Sends `job_accepted`, flushed pending events, `upstream_headers`, `chunk`, `done`, and accepts `risu-auth` via header or query string. | covered by `server/fastify/__tests__/streamJobsRoutes.test.ts` |
+| `DELETE /api/v1/proxy/stream-jobs/:id`         | Cancels an existing in-flight job and returns success for unknown ids. | covered by `server/fastify/__tests__/streamJobsRoutes.test.ts` |
+| Stream-job lifecycle helpers                   | URL sanitization, private/local host detection, timeout/heartbeat normalization, pending-event caps, GC, delete abort, and mid-stream abort events. | covered by `server/fastify/__tests__/streamJobs.test.ts` |
+| `ANY /api/v1/hub/*`                            | Auth-gated hub passthrough forwards path/query and body to `RISU_HUB_URL`, strips hop-by-hop/auth headers, rewrites origin, strips unsafe response headers, follows one redirect, and returns 502 on upstream failure. | covered by `server/fastify/__tests__/hub.test.ts` |
+| `ANY /api/v1/hub/*` (x-risu-node-path)         | Honors the override header as a complete upstream URL. | covered by `server/fastify/__tests__/hub.test.ts` |
+| `GET /api/v1/storage/list`                     | Auth-gated list returns utf-8 decoded keys from hex filenames. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+| `GET /api/v1/storage/read`                     | Auth-gated read validates hex path, streams raw bytes, and returns an empty octet-stream body for missing keys. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+| `POST /api/v1/storage/write`                   | Auth-gated raw write validates hex path, rejects empty bodies, and writes bytes under `${dataDir}/save`. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+| `POST /api/v1/storage/remove`                  | Auth-gated remove deletes one or many `$$`-joined hex keys and is idempotent for missing keys. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+| `POST /api/v1/auth/crypto`                     | Returns sha256 hex for string `data` and rejects non-string payloads. | covered by `server/fastify/__tests__/legacyStorage.test.ts` |
+
+## Phase 6: Generation Helpers
+
+| Route                                      | Pinned behavior                            | Status      |
+| ------------------------------------------ | ------------------------------------------ | ----------- |
+| `POST /api/v1/generate/completion`         | Auth, request validation, `501` for unsupported providers, normalized SSE envelope, buffered/streaming dispatch for the original Phase 6 provider matrix, and typed streaming `provider_error` frames for upstream failures. Stable Horde text is provider `horde` on this route; no separate Horde route exists. | covered by `server/fastify/__tests__/generation.completion.test.ts`, `echo.test.ts`, `openai.test.ts`, `additionalParams.test.ts`, `anthropic.test.ts`, `mistral.test.ts`, `cohere.test.ts`, `gemini.test.ts`, `vertexAuth.test.ts`, `openaiLegacyInstruct.test.ts`, `openaiResponses.test.ts`, `kobold.test.ts`, `oobaLegacy.test.ts`, `ollama.test.ts`, `bedrock.test.ts`, `sigv4.test.ts`, `horde.test.ts`, and `src/ts/process/request/tests/serverCompletion.test.ts` |
+
+No current Fastify routes exist for translate, TTS generation, image
+generation, token counting, tokenizer listing, or standalone trigger
+execution. Those helper families are no-port for the completed roadmap
+unless a new phase reopens them.
+
+Per-provider request / response coverage lives in
+[`providers.md`](providers.md).
+
+## Phase 7: Chat / Prompt Assembly
+
+| Route                                       | Pinned behavior                           | Status      |
+| ------------------------------------------- | ----------------------------------------- | ----------- |
+| `POST /api/v1/generate/chat` (validation)   | Auth, body validation for modes/ids/options (pre-stream 400), `text/event-stream` response. | covered by `server/fastify/__tests__/generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (assembly)     | Calls `assemblePrompt`; successful assembly streams `stage(validate)` -> `stage(prompt,start)` -> `prompt` -> optional `message_patch` -> `stage(prompt,end)` -> `info` -> `done`. `stopSending`/bad-ID/missing-DB returns terminal SSE `error` + `done` with no `info`; stop-trigger aborts emit `message_patch` and restoration before the terminal error. | covered by `generation.chat.test.ts` and `assemble.test.ts` |
+| `POST /api/v1/generate/chat` (`varChanged`) | Persists chat variable writes for send/continue/regenerate requests while keeping preview modes read-only. | covered by `generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (transport)    | Internal provider chunk transport maps `CompletionStreamFrame` sources to chat `token`, `error`, and enriched `done` after `prompt` / `message_patch` / `info`. | covered (7-12d-iii-a/b) by `providerTransport.test.ts` and `generation.chat.test.ts` |
+| `POST /api/v1/generate/chat` (dispatch)     | Real provider dispatch behind `db.useServerPromptAssembly`, browser send orchestration, unsupported-provider guards, `generationId`, `generationInfo`, enriched `done`, and `addRerolls` accumulation. | covered by `generation.chat.test.ts`, `providerTransport.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `sendChat.serverPreview.test.ts`, and `sendChat.fixtures.serverBacked.test.ts` |
+| `POST /api/v1/generate/chat` (side effects / restoration) | Typed `tts` `side_effect` and `error.restoration` rollback after browser-visible mutations begin. | covered (7-12d-iv) by `generation.chat.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `serverMessagePatch.test.ts`, and `sendChat.fixtures.serverBacked.test.ts` |
+| `POST /api/v1/generate/chat` (continue)     | Resumes assistant row.                    | assembled and server-dispatched through the common send/continue path |
+| `POST /api/v1/generate/chat` (regenerate)   | Route validates `regenerateMessageId`; browser wiring sends it, assembly truncates the latest assistant response, emits a `regenerate` `message_patch`, and dispatches through `/chat`. | covered by `generation.chat.test.ts`, `assemble.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `sendChat.serverPreview.test.ts`, and `sendChat.fixtures.serverBacked.test.ts` |
+| `POST /api/v1/generate/preview-prompt`      | One-shot JSON assembled prompt; `result.prompt` on success, `{ stopSending }` on abort, HTTP 404 for bad IDs / missing DB. | covered (7-11h) by `generation.chat.test.ts` |
+
+Plus: prompt snapshot tests - given a canned DB + preset + chat
+state, the assembled `messages[]` matches a recorded snapshot.
+Prompt leaf tests already exist for `variables.ts`,
+`staticSections.ts`, `plainSections.ts`, `history.ts`,
+`scripts.ts`, `modules.ts`, `lorebook.ts`, `tokens.ts`,
+`preflight.ts`, `budgetFinalize.ts`, `triggers.ts`,
+`templates.ts`, `memory.ts`, and `assemble.ts` (the full
+7-11a–f chain); a recorded `messages[]` snapshot suite can layer
+on now that `assemblePrompt` is real.
+
+## Phase 8: Memory
+
+| Route                                       | Pinned behavior                           | Status      |
+| ------------------------------------------- | ----------------------------------------- | ----------- |
+| `GET /api/v1/memory/chunks/:chatId`         | Auth-gated list by chat, repository ordering, empty results, and current row shape. | covered by `server/fastify/__tests__/memoryReadRoutes.test.ts` |
+| `GET /api/v1/memory/summaries/:chatId`      | Auth-gated list by chat, optional model filter, empty results, and current row shape. | covered by `server/fastify/__tests__/memoryReadRoutes.test.ts` |
+| `POST /api/v1/memory/jobs`                  | Auth-gated enqueue for `chunk`, `embed`, and `summarize`; emits `memory.job`. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
+| `GET /api/v1/memory/jobs`                   | Lists active jobs with chat/kind/status filters and validation. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
+| `DELETE /api/v1/memory/jobs/:id`            | Cancels pending/running jobs, emits progress, and returns 404 once the job is missing or already terminal. | covered by `server/fastify/__tests__/memoryJobsRoutes.test.ts` |
+
+Plus: repository primitives, job lifecycle (`pending -> running ->
+completed`), retry/backoff, boot recovery, progress events, memory
+planning/chunk creation helpers, summary and embedding adapters/job
+handlers, similarity ranking, budget allocation, prompt-memory
+selection, and prompt follow-up enqueueing are covered by focused memory
+tests under `server/fastify/__tests__/memory*.test.ts` plus
+`promptMemoryAdapter.test.ts` and `assemble.test.ts`.
+
+The public route surface intentionally does not include a chunk-planning
+endpoint. Live chunk planning runs from prompt assembly context and
+enqueues follow-up summarize/embed work without putting provider calls in
+route handlers.
+
+## Phase 9: Commands
+
+The command names, payload rules, id-vs-index policy, event names, and
+test expectations were locked by 9-0 in
+[`../../client-thinning/command-map.md`](../../client-thinning/command-map.md).
+
+| Resource family           | Endpoints                                         | Status      |
+| ------------------------- | ------------------------------------------------- | ----------- |
+| settings                  | patch per group                                    | landed; covered by command suites |
+| preset                    | create / patch / delete / copy / import / reorder | landed; covered by command suites |
+| prompt settings/items     | patch settings + prompt-item CRUD/reorder          | landed; covered by command suites |
+| persona / translator      | create / patch / delete / select / reorder         | landed; covered by command suites |
+| loadout                   | create / patch / delete / favorite / touch         | landed; covered by command suites |
+| character                 | create / patch / delete / select / reorder         | landed; covered by command suites |
+| chat / chat folder        | create / patch / delete / fork / reorder           | landed; covered by command suites |
+| message                   | append / edit / delete / truncate / replace        | landed; covered by command suites |
+| generation persistence    | persist assistant result and metadata              | landed; covered by command suites |
+| chat scriptstate          | patch/delete scriptstate keys                      | landed; covered by command suites |
+| compatibility adapters    | route legacy setters/MCP writes or reject          | landed; covered by adapter suites |
+| lorebook collections      | global CRUD/reorder + child replacements           | landed; covered by command suites |
+| script/trigger definitions | replace character/module child definitions        | landed; covered by command suites |
+| module records/enablement | create / patch / delete / enable / reorder         | landed; covered by command suites |
+| asset references          | durable references through owning commands         | landed; covered by command suites |
+| plugin records/config     | create / patch / delete / enable / provider        | landed; covered by command suites |
+| plugin-storage            | put/delete/bulk kv                                 | landed; covered by command suites |
+| events                    | command-event SSE stream                           | landed; covered by `server/fastify/__tests__/events.test.ts` |
+
+Plus: landed command families cover revision conflict
+(`409 + currentRevision`), rollback/no-revision-bump failure behavior,
+bootstrap visibility, mapped command events, and browser helper request
+shapes.
+
+## Phase 9: Storage Gates And `.risu` Codec
+
+| Surface                         | Pinned behavior                                   | Status      |
+| ------------------------------- | ------------------------------------------------- | ----------- |
+| bootstrap provider secrets      | `/api/v1/bootstrap` masks provider/media/memory secrets while settings commands preserve masked placeholders as "leave unchanged". | covered by `server/fastify/__tests__/bootstrap.test.ts` and `server/fastify/__tests__/commands.test.ts` |
+| server-backed backups           | Browser helpers use `/api/v1/backups`; no-port file restore and partial backup flows return explicit unsupported behavior in Fastify mode. | covered by `src/ts/server/backups.test.ts` and `src/ts/storage/backup.test.ts` |
+| server-backed asset reads       | `loadAsset()` and `readImage()` fetch Fastify asset ids through `/api/v1/assets/:id` with `risu-auth`, without falling through to local storage. | covered by `src/ts/server/assets.test.ts`, `src/ts/bootstrap.test.ts`, and `server/fastify/__tests__/assets.test.ts` |
+| no-port residual caches         | RISUSAVE cache/remotes, cold-storage helpers, and Google Search MCP credential storage are gated or explicitly unsupported in Fastify mode. | covered by `src/ts/storage/risuSave.test.ts`, `src/ts/process/coldstorage.test.ts`, and `src/ts/process/mcp/googlesearchclient.test.ts` |
+| server `.risu` codec / import snapshot | Legacy envelopes and RISUSAVE blocks decode through server-safe codecs; decoded saves normalize into current Phase 9 import snapshots and malformed rows reject. | covered by `server/fastify/__tests__/risuSaveCodec.test.ts` |
+| multipart `.risu` import route | `/api/v1/import/risusave` accepts one uploaded `.risu`, applies the normalized import through repository helpers, runs memory legacy replacement, and reports unsupported references without browser cache recovery. | covered by `server/fastify/__tests__/risuSaveImportRoute.test.ts` |
+| repository `.risu` export route | `/api/v1/export/risusave` returns downloadable repository-backed `.risu` bytes from the current server store. | covered by `server/fastify/__tests__/risuSaveExportRoute.test.ts` |
+| bundle export route             | `/api/v1/export/bundle` returns a ZIP with `database.risu`, `manifest.json`, and only walked present asset files. | covered by `server/fastify/__tests__/risuSaveBundleExportRoute.test.ts` |
+| Fastify browser smoke / storage-write audit | `pnpm smoke:fastify-browser` runs the built SPA through Fastify startup, bootstrap/events, a runtime command, server completion, memory reads, `.risu` export, bundle export, asset upload/read, projection refresh, and the no-local-storage-write audit. | covered by `server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts` |

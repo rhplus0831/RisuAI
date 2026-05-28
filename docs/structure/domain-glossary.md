@@ -37,7 +37,7 @@ The current Fastify docs split `sendChat` into stages:
 | Stage 3 | Server        | Provider dispatch and token/message streaming.                                    |
 | Stage 4 | Mostly server | Final trimming, auto-continue, emotion rewrite, reroll metadata, output triggers. |
 
-See `docs/fastify/runtime-stages.md` for the longer version.
+See `docs/archive/fastify/other/runtime-stages.md` for the longer version.
 
 ## Identity Rules
 

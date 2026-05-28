@@ -28,7 +28,7 @@ import {
  * everything else → overhead 3 / `name`).
  *
  * Out of scope per the archived Phase 7 scope re-verification
- * (docs/fastify/phases-completed/phase-7-prompt-assembly-through-7-12c.md):
+ * (docs/archive/fastify/phases/phase-7-prompt-assembly.md):
  * multimodal image-token math (the SPA's `tokenizeMultiModal` is
  * fixture-gated; the server adds it only when a fixture forces the
  * issue), final budget pruning + fallback chains (7-8c), card

@@ -17,7 +17,7 @@ import type { CompletionResult } from './frames.js'
  * the resulting string in `options.horde.prompt`. The server keeps no
  * character / user context; the unstringlize step happens client-side
  * after the result lands. This matches the strategy laid out in
- * `docs/fastify/design/novelai-novellist-stringlize.md` (option B);
+ * `docs/archive/fastify/other/design/novelai-novellist-stringlize.md` (option B);
  * Phase 7 may move the flatten + unstringlize work server-side, at
  * which point the wire contract here can switch back to `messages`.
  *

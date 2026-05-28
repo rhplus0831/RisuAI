@@ -14,8 +14,8 @@ generated, local-only, historical, or intentionally no-port.
 | `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                              |
 | `src/ts/rpack/`                                 | Vendored rpack implementation; also excluded from Prettier.                                                              |
 
-`docs/fastify/coverage/*.md` is tracked despite the directory name, so treat
-those files as source documentation.
+`docs/archive/fastify/other/coverage/*.md` holds the test-coverage inventories;
+treat those files as source documentation.
 
 ## Public Assets
 
@@ -34,11 +34,11 @@ of native wrappers, browser-side persistence as primary runtime, peer sync,
 Drive sync, and service worker behavior are archival unless a new plan says
 otherwise.
 
-The historical phase logs under `docs/fastify/phases-completed/` are useful for
-why decisions were made, but they are not always current implementation
-guidance. Prefer the present-tense docs in `docs/fastify/README.md`,
-`docs/fastify/status.md`, `docs/fastify/architecture.md`, and this
-`docs/structure/` folder.
+The archived phase scope docs under `docs/archive/fastify/phases/` are useful
+for why decisions were made, but they are not always current implementation
+guidance. Prefer the present-tense docs in this `docs/structure/` folder, and
+treat `docs/archive/fastify/other/architecture.md` and
+`docs/archive/fastify/client-thinning/` as the locked references they are.
 
 ## Legacy Names That Are Still Active
 
