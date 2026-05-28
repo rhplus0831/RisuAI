@@ -4,10 +4,18 @@ import { createHash, webcrypto } from 'node:crypto'
 
 const subtle = webcrypto.subtle
 
+// Soft cap on the in-memory and on-disk known-key set. Evicts the
+// least-recently-seen hash when the set would otherwise exceed the cap. The
+// cap is deliberately conservative; the only operational cost of eviction is
+// that an evicted client must log in again. See A4EC5 / B6.
+const KNOWN_KEY_HASH_CAP = 4096
+
 export interface AuthState {
   passwordPath: string
   knownKeysPath: string
   password: string
+  // The Set preserves insertion order; we treat `delete` + `add` as
+  // "touch" to maintain an LRU on `verifyAssertion` / `registerPublicKey`.
   knownKeyHashes: Set<string>
 }
 
@@ -30,8 +38,24 @@ export function createAuthState(dataDir: string): AuthState {
       // ignore malformed cache; will be rewritten on next login
     }
   }
+  // Trim any legacy oversize cache to the cap before first use.
+  trimToCap(knownKeyHashes)
 
   return { passwordPath, knownKeysPath, password, knownKeyHashes }
+}
+
+function trimToCap(set: Set<string>): void {
+  while (set.size > KNOWN_KEY_HASH_CAP) {
+    const oldest = set.values().next().value
+    if (oldest === undefined) break
+    set.delete(oldest)
+  }
+}
+
+function touch(set: Set<string>, hash: string): void {
+  // Move-to-end LRU: delete and re-add to make this hash the most recent.
+  set.delete(hash)
+  set.add(hash)
 }
 
 export function hasPassword(state: AuthState): boolean {
@@ -43,11 +67,20 @@ export function setPassword(state: AuthState, password: string): void {
   fs.writeFileSync(state.passwordPath, password, 'utf-8')
 }
 
+function persistKnownKeys(state: AuthState): void {
+  fs.writeFileSync(state.knownKeysPath, JSON.stringify(Array.from(state.knownKeyHashes)), 'utf-8')
+}
+
 export function registerPublicKey(state: AuthState, publicKey: unknown): void {
   const hash = hashJSON(publicKey)
-  if (state.knownKeyHashes.has(hash)) return
+  if (state.knownKeyHashes.has(hash)) {
+    touch(state.knownKeyHashes, hash)
+    persistKnownKeys(state)
+    return
+  }
   state.knownKeyHashes.add(hash)
-  fs.writeFileSync(state.knownKeysPath, JSON.stringify(Array.from(state.knownKeyHashes)), 'utf-8')
+  trimToCap(state.knownKeyHashes)
+  persistKnownKeys(state)
 }
 
 export function passwordMatches(state: AuthState, candidate: string | undefined): boolean {
@@ -116,6 +149,10 @@ export async function verifyAssertion(state: AuthState, token: string): Promise<
 
   const pubHash = hashJSON(decoded.payload.pub)
   if (!state.knownKeyHashes.has(pubHash)) return { ok: false, reason: 'unknown-key' }
+
+  // Touch on successful verification so the LRU keeps recently-active keys.
+  // Persistence happens lazily on register; the in-memory LRU is the gate.
+  touch(state.knownKeyHashes, pubHash)
 
   try {
     const key = await subtle.importKey(
