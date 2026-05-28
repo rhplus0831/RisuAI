@@ -1,0 +1,67 @@
+# Decisions
+
+Date: 2026-05-28
+
+Starting decisions for the Alpha 2 task list. Update this file if a bucket
+chooses a different implementation and lands tests proving the new contract.
+
+## A2EC1 - Chat Fork Stable Ids
+
+**Default decision:** public chat fork creation follows the same command-path
+stable-id rule as public create commands. The client supplies the fork chat id;
+the server validates it and rejects missing or duplicate ids.
+
+**Why:** The standing invariant depends on the browser owning optimistic durable
+ids for command writes. A route-local `randomUUID()` fallback is easy for the
+current helper-level audit to miss, and it reintroduces the exact stable-id class
+that Alpha 1 closed for root create helpers.
+
+**Acceptable alternative:** If fork-without-payload is intentionally a
+server-generated clone command, update the stable-id contract to name that
+exception, add focused tests, and extend the audit so the exception is explicit
+rather than invisible. Do not leave an unclassified route-local fallback.
+
+## A2EC2 - Memory Mutations And Active Writer
+
+**Default decision:** browser-triggered memory mutation entrypoints are durable
+server-owned mutations and must be active-writer guarded. This includes memory
+job create/cancel routes and generation-time prompt assembly paths that can
+create memory chunks or enqueue memory jobs.
+
+**Why:** Jobs and memory chunks are persisted in SQLite, can cause later memory
+writes, and can be created or cancelled from browser-triggered flows. A stale
+tab should not enqueue, cancel, or plan durable memory work after another tab has
+become the active writer. Read/list routes remain unguarded.
+
+Background worker writes are different: claiming a job, completing a summary, or
+writing embeddings is an internal continuation of work already accepted by the
+server. Those writes do not carry a browser session header, so they should be
+classified as internal rather than forced through the active-writer hook.
+
+**Acceptable alternative:** Document memory jobs as runtime-only exempt state
+only if tests prove they cannot affect durable user state and the audit contains
+an explicit exemption. Current code does not meet that exemption bar.
+
+## A2EC3 - Audit Shape
+
+**Decision:** prefer discovery plus explicit classifications over narrow
+whitelists.
+
+**Why:** Phase 9 has repeatedly closed local symptoms while the global invariant
+stayed underspecified. The audit should therefore discover public command route
+minting, discover Fastify mutating routes, and enumerate walked asset-reference
+fields, then compare them against explicit allowed/guarded/validated
+classifications.
+
+The audit may still use targeted source checks where TypeScript structure makes
+full semantic proof impractical, but every target list should be named as a
+classification table with reviewed exclusions.
+
+## A2EC4 - Status Closeout
+
+**Decision:** do not update top-level status docs to "closed" until Buckets 1
+through 3 have landed code, tests, and audit coverage.
+
+**Why:** The close/reopen cycle is partly documentation drift. While Alpha 2 is
+open, this directory is the live source of truth. Once closed, status docs should
+point here the same way they currently point to the first alpha closeout.
