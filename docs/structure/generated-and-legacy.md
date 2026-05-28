@@ -36,9 +36,10 @@ otherwise.
 
 The archived phase scope docs under `docs/archive/fastify/phases/` are useful
 for why decisions were made, but they are not always current implementation
-guidance. Prefer the present-tense docs in this `docs/structure/` folder, and
-treat `docs/archive/fastify/other/architecture.md` and
-`docs/archive/fastify/client-thinning/` as the locked references they are.
+guidance. Prefer the present-tense docs in this `docs/structure/` folder and
+the active client-thinning docs in `docs/client-thinning/`. Treat
+`docs/archive/fastify/other/architecture.md` and
+`docs/archive/fastify/client-thinning/` as historical references.
 
 ## Legacy Names That Are Still Active
 
