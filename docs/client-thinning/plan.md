@@ -1,107 +1,120 @@
 # Client Thinning Plan
 
-Date: 2026-05-28
+Date: 2026-05-29
 
 ## Goal
 
-Finish client thinning as an independent workstream instead of treating it as a
-small tail of the Fastify migration. In Fastify-served web mode, the browser is
-a projection of server-owned durable state: it renders UI, forwards user intent,
-applies server projections/events, and handles browser-only effects. Durable
-writes go through server commands, import routes, asset routes, generation
-routes, memory routes, or explicitly documented server-owned routes.
-
-This folder defines a new active task family. Archived migration notes seed the
-invariants, but work is selected from the current source tree rather than from a
-numbered archive milestone.
+Make the server own the chat process so the browser stays a thin projection. The
+project is Fastify-only; durable writes go through server commands, import/asset/
+generation/memory routes, or explicitly documented server-owned routes. The
+browser renders, forwards intent, applies projections/events, runs browser-only
+effects, and issues commands.
 
 End state:
 
 - Fastify owns durable data in `data/db.json`, `data/assets/`, `data/risu.db`,
   `data/save/`, backups, and auth files.
-- Browser code cannot mutate projected server state outside trusted projection
-  writes or command-backed optimistic paths.
-- Public mutation routes enforce active-writer ownership, stable ids, revision
-  checks, validation, rollback, and events.
-- Server provider dispatch is the Fastify generation boundary; unsupported
-  providers fail explicitly.
-- Prompt assembly and sendChat post-generation thinning are handled as named
-  sub-families with proof, not as a catch-all Phase 9 tail.
-- `pnpm client-thinning:audit` is reproducible in CI-like form: every invariant
-  rule has a fixture/test that demonstrates the rule would catch the regression
-  class.
+- The browser cannot mutate projected server state outside trusted projection
+  writes or command-backed paths.
+- The server decides/derives all durable chat state: the assembled prompt, the
+  LLM call, and post-generation message/scriptstate mutations.
+- The browser keeps only effects, transient UI, orchestration, and command
+  issuance.
+- Legacy features (group chat, and the historical no-port list) are removed, not
+  merely unsupported.
 
-## Boundary Sources
+## The Three Chat-Process Boundaries (current reality)
 
-- [`docs/archive/fastify/client-thinning/`](../archive/fastify/client-thinning/README.md)
-  is the archived contract seed and rationale.
-- [`docs/archive/fastify/phases/phase-9-client-thinning.md`](../archive/fastify/phases/phase-9-client-thinning.md)
-  records the original Phase 9 command/projection plan and closeout.
-- [`docs/structure/`](../structure/README.md) is the current codebase map.
-- [`util/client-thinning-audit.ts`](../../util/client-thinning-audit.ts) is the
-  executable invariant audit.
-- This folder owns active sequencing, status, and future handoff notes.
+The chat process is not one toggle. Three independent boundaries gate it:
 
-## Current Baseline
+1. **Prompt assembly** — gated by the user flag `useServerPromptAssembly`
+   (default **false**), so the DEFAULT is local/browser assembly.
+2. **Provider dispatch (LLM call + credentials)** — gated by the platform marker
+   `isFastifyServer`, with NO user flag, so the DEFAULT is server-routed via
+   `/api/v1/generate/completion`. Unsupported providers fail hard; `local` only
+   when `!isFastifyServer`.
+3. **Post-generation + persistence** — always client-orchestrated; durable writes
+   flow through command routes the browser triggers. The generation routes are
+   stateless w.r.t. the chat blob.
 
-Implemented:
+So today's default Fastify flow is: **browser assembles the prompt, server makes
+the LLM call, browser orchestrates post-gen, persistence via browser-issued
+commands.** Flag history: `useServerGeneration` was a dead flag, removed
+2026-05-29; `isFastifyServer` and `useServerPromptAssembly` are kept and
+annotated in-code (not deprecated).
 
-- Fastify route registration and SPA marker injection live in
-  `server/fastify/src/app.ts`.
-- Bootstrap projection, active-writer registration, command revision caching,
-  projection write guard, command-event SSE, and browser command helpers are in
-  place.
-- Command resources cover settings, presets, prompt items, personas, translator
-  presets, loadouts, characters, chats, messages, lorebooks, scripts/triggers,
-  modules, plugins, and plugin storage.
-- Server `.risu` import/export/bundle routes, asset validation, backup/restore,
-  provider secret masking, and server-side Hypa V3 memory infrastructure exist.
-- Fastify generation routes provide `/api/v1/generate/completion`,
-  `/api/v1/generate/chat`, and `/api/v1/generate/preview-prompt`.
-- The audit script checks structural invariants around writer ownership,
-  command conflict replay, command-path id minting, resolver normalization,
-  asset parser parity, wildcard secret identity, asset URL gates, composite
-  command fan-out, backup inventory, bounded accumulators, and `saveAsset`
-  filename classification.
+## The Blocker Classification (the work breakdown)
 
-## Boundaries And Gaps
+### A. Hard blockers — must move server-side or be explicitly classified unsupported
 
-- Audit fixture reproducibility is open. The audit rules need committed pre-fix
-  fixtures plus tests that prove non-zero exit for each regression class.
-- Prompt assembly still has a client fallback in `sendChat`; the server path is
-  gated by `useServerPromptAssembly`, which defaults false.
-- Stage 4 and browser post-generation behavior are still mixed. Server-backed
-  generation result persistence exists, but local orchestration remains around
-  response processing, auto-continue/resend, display, and browser effects.
-- Event handling is conservative: command events trigger debounced bootstrap
-  refresh rather than surgical local patches.
-- Legacy storage route naming is historical but still active. Do not delete it
-  because it says "legacy".
-- Manual legacy local client verification remains deferred and should be scoped
-  separately from Fastify projection hardening.
+- **A1. Prompt-assembly content parity.** The server produces a *different
+  prompt* than the browser for: multimodal/asset inlining (server `NO_ASSETS`,
+  `inlayAssets` accepted-but-unused), Lua `editRequest` (server runs identity),
+  and Lua/plugin-V2 script hooks (`editprocess`, plus input-trigger/`editinput`
+  scripts at submit; server does regex scripts only). Assembly is all-or-nothing
+  per send, so these cannot silently stay browser-side — port them or classify
+  the send as server-unsupported. Foundational gap: there is no
+  `resolveServerPromptAssembly` classifier (mirror `resolveServerCompletionRoute`)
+  and `useServerPromptAssembly` defaults off.
+- **A2. Post-generation durable derivation with no server path.** The **output
+  trigger** (the server has no `'output'` trigger invocation at all — only
+  `'start'` is wired) and **`editoutput` script processing** derive durable
+  scriptstate/message mutations. Requires server-side script/trigger execution.
+- **A3. Provider coverage.** Unsupported providers (NovelAI, Ooba, Plugin,
+  WebLLM, non-vanilla OpenAI-compat) cannot be server-routed. Already handled
+  correctly: `resolveServerCompletionRoute` returns `unsupported` and hard-fails
+  (no browser fallback). A support cap, not a thinness leak.
+
+### B. Fine to leave in the browser
+
+- **B1. Permanent client-owned (server cannot do it; no-port).** Notification
+  (Web/OS API), TTS playback, automatic image-generation call + inlay-screen
+  rendering, emotion selection → transient `CharEmotion` store, HypaV3 progress
+  UI, input plumbing (slash text, file-inlay insertion, say-nothing rows, reroll
+  trim, abort), plugin runtime execution, rendering/UI state.
+- **B2. Acceptable, browser orchestrates/requests (optimizable later, not a
+  correctness problem).** Auto-continue/resend recursion (control flow that
+  re-issues `sendChat`), result/scriptstate persistence via command replay
+  (`dispatchPersistGenerationResult`/`dispatchPatchChatScriptstate`), and
+  stage-timing metadata. Optional later wins: route-direct persistence closes a
+  small durability window and saves a round-trip.
+
+### Legacy / removed — no-port AND remove from the client
+
+- **Group chat** (reclassified 2026-05-29): fully legacy. Not "unsupported under
+  server assembly" — it must not remain usable from the client either. See
+  [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md) for the
+  removal item and code surface.
+- The historical no-port list: native/mobile wrappers, Tauri/Hono/Express,
+  service workers, peer sync, Google Drive sync, Risu Account Sync, SupaMemory/
+  Hypa V2/Hanurai and removed memory engines, server-side plugin code execution,
+  and per-event surgical projection patching without a separate event contract.
+
+## Closed / Stable Areas
+
+Treat as closed unless current source inventory proves drift: command boundary
+and major resource command families, bootstrap projection and command-event
+invalidation, `.risu` import/export/bundle routes, asset-byte routes and
+reference validation baseline, backup/restore coverage, provider secret masking,
+and Fastify provider dispatch for supported provider shapes.
 
 ## Near-Term Order
 
-1. Establish the active docs and record the first active-folder verification.
-2. Implement audit fixture reproducibility for `pnpm client-thinning:audit`.
-3. Split or shard the audit only when doing so improves fixture coverage or
-   maintainability without weakening invariant derivation.
-4. Pick one live invariant family when adding runtime work: command identity,
-   active writer, projection write guard, event refresh, asset/import/backup
-   boundary, provider routing, memory mutation, or sendChat prompt/post-gen
-   thinning.
-5. For sendChat thinning, first decide whether a batch removes client prompt
-   assembly fallback, moves one post-generation branch server-side, or only adds
-   proof. Do not mix those classes in one review.
-6. Keep archive-derived closed areas closed unless current source inventory
-   proves drift.
+1. Run `pnpm client-thinning:audit`. If red, fix or triage before runtime work.
+2. **A1 foundation:** build `resolveServerPromptAssembly` (server/local/unsupported)
+   and make the supported text-send subset server-mandatory (single character,
+   server-routable provider, no asset/image-gen/Lua/plugin content). This makes
+   "the local fallback is gone" provable for that subset.
+3. **C-A1 (post-gen, smallest, no parity blockers):** move assembly-time
+   scriptstate persistence into `/generate/chat`; retire the command replay.
+4. Port A1 content classes one batch at a time (multimodal, then Lua/plugin
+   hooks), each graduating from `unsupported` to server-mandatory.
+5. **A2:** server output-trigger + `editoutput` (needs server script execution).
+6. **Group-chat legacy removal** (separate from thinning).
+7. **Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
+   (A4R2, A4R7, fanout-svelte path, EC2) to AST invariants; add adversarial
+   fixtures. See [`status/audit.md`](status/audit.md).
+8. Keep **event patching deferred** until SSE reconnect/replay exists.
 
-## Non-Goals
-
-- Do not reintroduce native/mobile wrappers, Tauri, Hono, browser-local durable
-  persistence as the primary runtime, Drive sync, Risu Account Sync, service
-  worker behavior, peer sync, group chat, Supa/Hanurai/Hypa V2, or removed local
-  memory engines.
-- Do not add server-side plugin code execution as part of client thinning.
-- Do not convert command events into surgical patches until there is a separate
-  event-contract plan.
+Each batch names one browser branch, the server contract that replaces it, and
+the proof the local fallback is gone — and does not mix classes in one review.

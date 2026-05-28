@@ -1,64 +1,130 @@
-# sendChat Thinning
+# Chat-Process Ownership (sendChat)
 
-Date: 2026-05-28
+Date: 2026-05-29
 
-Read this when a client-thinning batch touches chat submission, prompt assembly,
-server chat SSE, provider routing, generation result persistence, or
-post-generation browser branches.
+The detailed blocker triage for "the server owns the chat process." Read this for
+any batch touching chat submission, prompt assembly, server chat SSE, provider
+routing, generation persistence, or post-generation branches.
 
-## Implemented
+## Dividing Line
 
-- Fastify mode routes supported provider dispatch through
-  `resolveServerCompletionRoute()` and `/api/v1/generate/completion`.
-- `/api/v1/generate/chat` validates chat intent, assembles prompts, emits chat
-  SSE frames, and can dispatch the provider when server prompt assembly is
-  enabled.
-- The browser has a server-backed adapter in
-  `src/ts/process/serverBackedSendChat.ts`.
-- Server-backed sendChat can apply server message patches, scriptstate patch
-  commands, Hypa V3 progress, and terminal payloads.
+The server must own anything that **decides or derives durable state**: the
+assembled prompt, the LLM call, and post-generation message/scriptstate mutations.
+The browser may keep anything where it only **triggers, plays, orchestrates, or
+requests a write** — it never becomes the authority.
 
-## Bounded Or Partial
+## Pipeline Owners (current)
 
-- `DefaultChatScreen.svelte::sendMain` still handles slash commands, file inlay
-  text insertion, say-nothing rows, input triggers, editinput scripts, local
-  transcript replacement, reroll trimming, and abort setup before calling
-  `sendChat`.
-- `src/ts/process/index.svelte.ts::sendChat` still owns the busy lock, local
-  prompt fallback, dispatch handoff, response orchestration, recursive
-  continue/resend, stage 4, and final persistence.
-- `src/ts/process/sendChatPromptAssembly.ts` remains the local prompt assembly
-  fallback.
-- `src/ts/process/serverBackedSendChat.ts` still replays some server-detected
-  chat variable/scriptstate mutations through browser command helpers.
-- `src/ts/process/postGeneration/runStage4.ts` still owns browser notification,
-  emotion fallback, image generation, resend, and final stage metadata.
+`DefaultChatScreen.svelte::sendMain` → `src/ts/process/index.svelte.ts::sendChat`
+→ assembly → dispatch → `postGeneration/orchestrateResponse.ts` →
+`postGeneration/runStage4.ts` → persist.
 
-## Candidate Batches
+| Stage | Default owner | Notes |
+| --- | --- | --- |
+| Pre-send input | Browser | UID/input plumbing; rows persist via commands (B1). |
+| Prompt assembly | **Browser** (`assembleLocalSendChatPrompt`) | `useServerPromptAssembly` off; server path is `/api/v1/generate/chat` → `prompt/assemble.ts`. Blocker **A1**. |
+| Provider dispatch | **Server** (`/generate/completion`) | `resolveServerCompletionRoute`; `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
+| Token streaming → rows | Browser | Writes the projection. |
+| Post-generation | **Browser** | `editoutput`, inlay-screen, output trigger, auto-continue, IGP (blocker **A2** for the durable ones). |
+| Stage-4 closeout | **Browser** | Notification, emotion, image-gen, TTS, stage metadata (B1/B2). |
+| HypaV3 memory | **Server** | Persistence + jobs server-side; progress UI is browser (B1). |
+| Durable persistence | **Command-backed** | Browser issues commands; generation routes are stateless re the chat blob (B2). |
 
-- Move durable input/user-message creation into the server chat route or a
-  command transaction for one supported send shape.
-- Make server prompt assembly mandatory for a documented supported subset and
-  retire the matching local fallback.
-- Persist server-detected chat-variable/scriptstate mutations inside
-  `/generate/chat` instead of returning browser command replay patches.
-- Persist assistant generation result server-side for one supported generation
-  mode.
-- Split one post-generation branch into server-durable text mutation versus
-  browser-only effect.
+## A. Hard Blockers
+
+### A1 — Prompt-assembly content parity
+
+The server `/generate/chat` assembler (`server/fastify/src/prompt/`) is at parity
+for run-vars, CBS/variable expansion, regex scripts, templates, token budget,
+lorebook + depth prompts, start triggers, and HypaV3 selection. It is NOT at
+parity for:
+
+- **Multimodal / asset inlining** — `prompt/history.ts` hardcodes `NO_ASSETS` and
+  the route never binds the `AssetLookup` seam; the request's `inlayAssets` field
+  is accepted but unused. Image/asset prompts lose their bytes.
+- **Non-vision image-caption fallback** — browser-only (`runImageEmbedding`).
+- **Image-gen instruction** (`buildInlayViewInstruction` / `newGenData`) — not
+  ported.
+- **Lua `editRequest`** — server runs identity (`templates.ts`: `editRequest =
+  rows => rows`).
+- **Lua + plugin-V2 `editprocess` script hooks**, and the input-trigger /
+  `editinput` scripts at submit — server does regex scripts only.
+
+These are *correctness* differences in the assembled prompt. Assembly is
+all-or-nothing per send, so they cannot silently stay browser-side. Resolution:
+port the class, or classify the send as server-unsupported — never a silent
+fallback.
+
+**Missing primitive:** there is no `resolveServerPromptAssembly` classifier. The
+precedent to mirror is `resolveServerCompletionRoute` (returns
+`local | server | unsupported`). Today there is only the runtime gate
+`isFastifyServer && DBState.db.useServerPromptAssembly` (default off) plus a soft
+`unavailable` escape (a non-string `send` falls back to local even with the flag
+on). "The local fallback is gone" is provable only once a classifier returns
+`unsupported` (not `local`) in Fastify mode for out-of-subset shapes.
+
+**Smallest first batch (foundation):** build the classifier and make the supported
+subset server-mandatory — single non-group character, server-routable provider,
+no asset/image-gen/Lua/plugin content. This is exactly the surface existing tests
+pin green; it needs only the classifier + gate replacement + a negative test that
+`assembleLocalSendChatPrompt` is unreachable for the subset.
+
+### A2 — Post-generation durable derivation (no server path)
+
+- **Output trigger** — `runTrigger(char, 'output', …)` mutates scriptstate and
+  messages after generation. The server has **no `'output'` invocation at all**:
+  `server/fastify/src/prompt/triggers.ts` declares the mode but only wires
+  `runStartTrigger` (`'start'`). Needs a server output-trigger pass.
+- **`editoutput` script processing** — mutates the final response text
+  (`postGeneration/streamResponse.ts`, `nonStreamResponse.ts`). Needs server-side
+  output-script execution.
+
+Both depend on server prompt/script execution parity (shares machinery with A1's
+Lua/plugin gap). Sequence after A1.
+
+### A3 — Provider coverage
+
+Unsupported providers (NovelAI, Ooba, Plugin, WebLLM, non-vanilla OpenAI-compat)
+cannot be server-routed. Already handled: `resolveServerCompletionRoute` returns
+`unsupported` and hard-fails; the in-`/chat` dispatch mirrors that. A support cap,
+not a thinness leak. No batch needed beyond keeping the hard-fail explicit.
+
+## B. Fine In The Browser
+
+- **B1 (permanent, no-port):** notification, TTS playback (server emits the `tts`
+  side-effect, browser plays), image-gen call + inlay-screen rendering, emotion
+  selection → transient `CharEmotion`, HypaV3 progress UI, input plumbing, plugin
+  runtime.
+- **B2 (acceptable, optimizable):** auto-continue/resend recursion (control flow
+  that re-issues `sendChat`); result/scriptstate persistence via command replay
+  (`dispatchPersistGenerationResult`, `dispatchPatchChatScriptstate`); stage-timing
+  metadata. Optional later win: route-direct persistence closes a small durability
+  window (browser crash between generation and replay) and saves a round-trip.
+
+### C-A1 — the smallest post-gen batch (no parity blocker)
+
+Move assembly-time scriptstate persistence into `/generate/chat`. The server
+already computes the delta (`assemble.ts::buildChatVarMutations`) and emits it as a
+`message_patch`; the browser replays it via `dispatchPatchChatScriptstate`. The
+write logic already exists server-side. The change: route persists + returns the
+new revision; the browser stops replaying and reconciles to that revision. Does
+not depend on A1. Proof: extend the server-preview/serverBacked sendChat fixtures
+to assert zero outbound `patchChatScriptstate` POSTs for an assembly-time var
+write, and that a non-active-writer `/chat` does not persist.
 
 ## Non-Targets
 
+- Group chat — **legacy**, slated for client removal; do not add a server group
+  model. See [`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
 - Do not port browser UI/display ownership.
-- Do not widen provider support while removing prompt/post-generation branches.
-- Do not combine input-row persistence, prompt defaulting, and stage 4 thinning
-  in one batch.
+- Do not widen provider support while removing prompt/post-gen branches.
+- Do not combine A1 content classes, A2, and group-chat removal in one batch.
 
 ## Proof Leads
 
 - `server/fastify/__tests__/generation.chat.test.ts`
 - `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`
+- `src/ts/process/__tests__/sendChat.serverPreview.test.ts`
+- `src/ts/process/request/tests/serverChat.test.ts`
 - `src/ts/process/request/tests/serverCompletion.test.ts`
 - `src/ts/process/__tests__/command.projectionGuard.test.ts`
-- `src/ts/process/__tests__/sendChatContext.test.ts`
-- focused command route/helper tests for any persistence change

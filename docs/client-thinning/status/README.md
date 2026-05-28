@@ -1,16 +1,20 @@
 # Client Thinning Status Shards
 
-Date: 2026-05-28
+Date: 2026-05-29
 
-Open only the shard for the behavior being changed.
+Router for the `status/` shards. Open only the one for the behavior being
+changed; the codebase is the source of truth.
 
-| Read when changing...                                                                  | Open                                                         |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Overall status, phase language, and main entry points                                  | [`overview.md`](overview.md)                                 |
-| Batch selection and near-term priority                                                 | [`next-steps.md`](next-steps.md)                             |
-| Bootstrap, projection write guard, event refresh, and storage ownership                | [`server-projection.md`](server-projection.md)               |
-| Audit rules, fixture tests, and structural invariant work                              | [`audit.md`](audit.md)                                       |
-| Command routes, command helpers, active writer, and revision behavior                  | [`command-boundaries.md`](command-boundaries.md)             |
-| Assets, import/export, bundle, and backup/restore fidelity                             | [`assets-imports-backups.md`](assets-imports-backups.md)     |
-| sendChat prompt assembly, generation persistence, and post-generation browser branches | [`sendchat-thinning.md`](sendchat-thinning.md)               |
-| Browser-owned, unsupported, no-port, and deferred behavior                             | [`client-owned-unsupported.md`](client-owned-unsupported.md) |
+- [`overview.md`](overview.md) — current phase language and main code entry points.
+- [`next-steps.md`](next-steps.md) — prioritized work order for the next batch.
+- [`sendchat-thinning.md`](sendchat-thinning.md) — the detailed chat-process
+  ownership triage (A hard blockers / B fine-in-browser, per branch).
+- [`server-projection.md`](server-projection.md) — bootstrap, projection guard,
+  and events (event patching deferred).
+- [`audit.md`](audit.md) — audit rules; reproducibility done, rule-hardening open.
+- [`command-boundaries.md`](command-boundaries.md) — command contract and
+  resource families (closed/stable).
+- [`assets-imports-backups.md`](assets-imports-backups.md) — asset routes,
+  `.risu` import/export/bundle, backup/restore (closed/stable).
+- [`client-owned-unsupported.md`](client-owned-unsupported.md) — B1 keep in the
+  browser; group chat is legacy and to be removed.

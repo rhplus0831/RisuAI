@@ -1,54 +1,82 @@
-# Client-Owned, Unsupported, And No-Port Behavior
+# Client-Owned, Legacy, And Unsupported Behavior
 
-Date: 2026-05-28
+Date: 2026-05-29
 
-This file records behavior that should not be treated as an automatic
-client-thinning target. Detailed positive server coverage lives in `status/`
-and `coverage/` shards.
+This file separates three things that are easy to conflate: behavior that stays
+in the browser **on purpose** (keep), behavior that is **legacy** (remove from
+the client), and provider shapes that are **unsupported** (fail explicitly).
 
-## Client-Owned Behavior
+## Client-Owned — Keep In The Browser (B1)
 
-- Rendering, layout, local selection state, modals, drafts, keyboard shortcuts,
-  and other UI-only state.
-- Browser route/navigation state and transient interaction state.
-- Plugin runtime execution. Server commands own plugin records and plugin
-  storage, not arbitrary plugin code execution.
-- Browser-only media and file picker APIs.
-- Browser display of command failures, active-writer reload prompts, and
-  projection refresh state.
-- Browser-side application of bootstrap projections and event-driven refreshes.
-- Local prompt/sendChat behavior until a named server contract and proof remove
-  the branch.
+The server cannot or should not do these; leaving them in the browser does not
+make the browser own durable state. They are no-port by nature:
 
-## No-Port Or Removed Areas
+- Rendering, layout, local selection, modals, drafts, keyboard shortcuts, and
+  other UI-only / transient interaction state.
+- Browser route/navigation state.
+- **Notification** (Web/OS Notification API) — the server may *signal* "notify";
+  the API call is the browser's.
+- **TTS playback** — already the correct split: the server emits a `tts`
+  side-effect event, the browser plays it via Web Audio.
+- **Automatic image-generation call** (`stableDiff`) and **inlay-screen
+  rendering** — media/rendering concern. Only the resulting asset *reference*, if
+  persisted, must be command-backed.
+- **Emotion selection → `CharEmotion` store** — a transient in-memory store, not
+  `DBState.db`.
+- **HypaV3 progress UI** — a transient projection of a server job's progress.
+- **Input plumbing** — slash-command text, file-inlay insertion, say-nothing
+  rows, reroll trimming, abort wiring. The resulting message rows persist via
+  commands. (The *script* parts of input handling — input triggers, `editinput`
+  scripts — belong to blocker A1, not here.)
+- **Plugin runtime execution** — server commands own plugin records and storage,
+  not arbitrary plugin code execution.
 
-Do not port these as part of client thinning unless a new plan explicitly
-reopens them:
+Acceptable-but-optimizable browser responsibilities (B2) — kept for now, see
+[`status/client-owned-unsupported.md`](status/client-owned-unsupported.md):
+auto-continue/resend recursion, result/scriptstate persistence via command
+replay, and stage-timing metadata.
 
-- Native/mobile wrapper runtime modes.
-- Browser local persistence as the primary supported runtime.
-- Tauri, Hono, Express, service worker persistence, or alternative servers.
-- Peer sync, Google Drive sync, and Risu Account Sync.
-- Group chat.
+## Legacy — Remove From The Client (No-Port)
+
+Do not port these to the server, and do not keep them usable in the browser.
+
+- **Group chat** (reclassified 2026-05-29 — fully legacy, not merely
+  "unsupported under server assembly"). It must not remain usable from the client.
+  - **Why:** the server chat route has no group/member model; group chat is a
+    pre-Fastify multi-character flow outside the supported single-character chat
+    process. Keeping it as a browser-only path would preserve a durable-state
+    path the server cannot own.
+  - **Removal item (separate from thinning; a code change, not done yet):**
+    inventory and remove the group surface — the `chatProcessIndex` group-member
+    recursion in `sendChat` (`src/ts/process/index.svelte.ts`, recursion calls
+    around the post-generation tail), the `isGroupChat` flag (type in
+    `src/ts/process/request/request.ts`, hardcoded `false` in
+    `src/ts/process/dispatch/dispatchRequest.ts`), group character/message-type
+    handling (`src/ts/util.ts` group/groupEnd/divider rows), and any UI entry
+    points for creating/selecting group chats. A dedicated task must map the full
+    surface before removal.
+- Native/mobile wrapper runtime modes; browser local persistence as the primary
+  runtime; Tauri, Hono, Express, service-worker persistence, or alternative
+  servers.
+- Peer sync, Google Drive sync, Risu Account Sync.
 - SupaMemory, Hypa V2, Hanurai, and removed browser-local memory engines.
 - Server-side plugin code execution.
-- Per-event surgical projection patching without a separate event contract.
+- Per-event surgical projection patching without a separate event contract (the
+  current command events are invalidation signals; see
+  [`status/server-projection.md`](status/server-projection.md)).
 
-## Deferred Or Separate Work
+## Unsupported Provider Shapes (Fail Explicitly)
 
-- Manual legacy local client verification is separate from Fastify projection
+Fastify mode must not silently fall back to browser provider dispatch.
+Unsupported provider shapes (NovelAI, NovelList, Ooba, Plugin, WebLLM,
+reverse-proxy-Ooba, non-vanilla OpenAI-compat, etc.) fail explicitly through
+`resolveServerCompletionRoute()` (`no-retry`). Provider expansion needs one named
+route contract, request shape, credential boundary, response extraction rule,
+warning/error behavior, and tests.
+
+## Deferred / Separate
+
+- Manual legacy local-client verification is separate from Fastify projection
   hardening.
-- Prompt assembly defaulting and sendChat post-generation thinning are valid
-  client-thinning sub-families, but they need their own scope, contract, and
-  proof.
-- Legacy storage route naming is historical. `/api/v1/storage/*` remains active
-  for current Fastify web behavior and should not be removed by filename alone.
-
-## Unsupported Provider Shapes
-
-Fastify mode should not silently use browser provider dispatch. Unsupported
-provider shapes should fail explicitly through
-`resolveServerCompletionRoute()` or the relevant server route.
-
-Provider expansion needs one named route contract, request shape, credential
-boundary, response extraction rule, warning/error behavior, and tests.
+- Audit-rule hardening (the shallow rules) is tracked in
+  [`status/audit.md`](status/audit.md).

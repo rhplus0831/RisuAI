@@ -1,74 +1,43 @@
 # Status Overview
 
-Date: 2026-05-28
+Date: 2026-05-29
 
 Read this when starting a client-thinning task, checking phase language, or
-finding canonical code entry points.
-
-## Current Status
-
-- Fastify-served web mode is projection-backed: bootstrap projection,
-  command-backed writes, command/memory events, and projection guard are
-  implemented.
-- The old Fastify Phase 9 milestone is archived. This folder tracks remaining
-  client-thinning work as a standalone major task.
-- `pnpm client-thinning:audit` is the main invariant audit, but fixture
-  reproducibility is open.
-- Server provider dispatch is the Fastify generation boundary for supported
-  providers. Unsupported provider shapes fail explicitly.
-- Server prompt assembly is not default-thin: `sendChat` still has local prompt
-  assembly fallback unless `useServerPromptAssembly` is true.
-- Default chat-screen submission still has browser-side user-row creation,
-  input trigger/editinput execution, message replacement, reroll trimming, and
-  abort setup before `sendChat`.
-- Event handling remains invalidation-based. Command events cause projection
-  refresh; they are not surgical patch contracts.
+finding canonical code entry points. Full direction is in [`../plan.md`](../plan.md);
+current snapshot in [`../status.md`](../status.md).
 
 ## Phase Language
 
-- Phase 0 extraction: active for this docs split, then complete.
-- Phase 1 baseline contract: mostly complete; update only when source inventory
-  changes the invariant.
-- Phase 2 audit reproducibility: active and first priority.
-- Phase 3 command/projection hardening: active only for one invariant family at
-  a time.
-- Phase 4 sendChat thinning: active only when a batch names one prompt or
-  post-generation branch and matching server proof.
-- Phase 5 closeout: blocked until audit reproducibility and latest verification
-  are current.
+- **Phases 0–3: DONE.** Workstream extraction, baseline projection/command/
+  active-writer/guard contract, audit fixture reproducibility, and the
+  command/projection invariant hardening families are complete. See
+  [`../phases/README.md`](../phases/README.md).
+- **Phase 4: ACTIVE — chat-process server ownership.** Drive it by the blocker
+  classification: A1 prompt-assembly content parity, then A2 post-generation
+  durable derivation. One blocker item per batch.
+- **Phase 5: closeout** — every A-item resolved or explicitly classified
+  unsupported, group-chat legacy removal done, audit-rule hardening done, event
+  patching shipped behind a closed reconnect/replay gap or still deferred.
 
-## Code Entry Points
+## Main Code Entry Points
 
 Server:
 
 - `server/fastify/src/app.ts`
 - `server/fastify/src/routes/bootstrap.ts`
 - `server/fastify/src/routes/commands.ts`
-- `server/fastify/src/commands/`
-- `server/fastify/src/commands/mutations.ts`
-- `server/fastify/src/activeWriter.ts`
-- `server/fastify/src/routes/events.ts`
-- `server/fastify/src/routes/assets.ts`
-- `server/fastify/src/routes/save.ts`
-- `server/fastify/src/routes/backups.ts`
-- `server/fastify/src/routes/generation.ts`
 - `server/fastify/src/routes/generationChat.ts`
+- `server/fastify/src/prompt/assemble.ts`
 
-Frontend:
+Browser:
 
-- `src/ts/bootstrap.ts`
-- `src/ts/server/bootstrap.ts`
-- `src/ts/server/commands.ts`
-- `src/ts/server/events.ts`
-- `src/ts/server/projectionWriteGuard.svelte.ts`
-- `src/ts/storage/database.svelte.ts`
 - `src/ts/process/index.svelte.ts`
-- `src/ts/process/serverBackedSendChat.ts`
-- `src/ts/process/sendChatPromptAssembly.ts`
-- `src/ts/process/postGeneration/`
 - `src/ts/process/request/serverCompletion.ts`
-- `src/ts/process/request/serverChat.ts`
+- `src/ts/storage/database.svelte.ts`
 
-Audit:
+## Routers
 
-- `util/client-thinning-audit.ts`
+- [`../plan.md`](../plan.md) — goal and blocker classification.
+- [`../status.md`](../status.md) — current snapshot.
+- [`next-steps.md`](next-steps.md) — prioritized work order.
+- [`sendchat-thinning.md`](sendchat-thinning.md) — detailed A/B triage.

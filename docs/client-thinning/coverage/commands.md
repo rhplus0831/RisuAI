@@ -1,42 +1,19 @@
 # Command Coverage
 
-Date: 2026-05-28
+Date: 2026-05-29
 
-## Current Proof
+Status: CLOSED. The command contract (baseRevision, 409, 423 active-writer,
+single revision bump, one command event, rollback) and resource families are
+proven by the inventory below; see [`../status/command-boundaries.md`](../status/command-boundaries.md).
 
-Server:
+## Proof
 
-- `server/fastify/__tests__/commands.test.ts`
-- `server/fastify/__tests__/activeWriter.test.ts`
-- `server/fastify/__tests__/events.test.ts`
+- `server/fastify/__tests__/commands.test.ts` — route contract and resource families.
+- `server/fastify/__tests__/activeWriter.test.ts` — active-writer 423 behavior.
+- `src/ts/server/commands.test.ts` — browser command helpers (path, body, auth,
+  conflict handling).
+- `pnpm client-thinning:audit` — conflict replay, id minting, fan-out, and route
+  classification invariants.
 
-Browser:
-
-- `src/ts/server/commands.test.ts`
-- Domain helper tests such as `src/ts/plugins/plugins.test.ts`,
-  `src/ts/process/__tests__/sendChatContext.test.ts`, and module/chat helper
-  tests where command sequencing is involved.
-
-Audit:
-
-- `pnpm client-thinning:audit` checks conflict replay, id minting, fan-out,
-  route classification, and related invariants.
-
-## Expected Coverage Shape
-
-For command changes, prove:
-
-- auth rejection where applicable
-- missing/invalid `baseRevision`
-- stale 409 behavior
-- active-writer 423 behavior when route classification changes
-- validation failure without revision bump
-- successful mutation with one revision bump and one command event
-- rollback on throw or validation failure
-- browser helper path, method, body, auth, and conflict handling
-
-## Known Gaps
-
-- Audit fixture/test proof is missing.
-- New command families must update both server route tests and browser helper
-  tests where a browser helper is added.
+New command families must update both the server route test and the browser
+helper test in the same batch.

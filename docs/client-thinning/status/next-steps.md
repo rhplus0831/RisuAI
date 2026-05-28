@@ -1,60 +1,63 @@
 # Next Steps
 
-Date: 2026-05-28
+Date: 2026-05-29
 
-Read this when choosing the next client-thinning batch.
+Read this when choosing the next client-thinning batch. Full classification in
+[`../plan.md`](../plan.md); detailed triage in
+[`sendchat-thinning.md`](sendchat-thinning.md).
 
 ## Start Point
 
-- Run `pnpm client-thinning:audit`.
-- If the audit is red, fix or explicitly triage the audit before selecting
-  wider runtime work.
-- If the audit passes, record the latest result in
-  `../coverage/latest-verification.md`.
+- Run `pnpm client-thinning:audit`. If red, fix or explicitly triage before
+  selecting runtime work; if green, record in
+  [`../coverage/latest-verification.md`](../coverage/latest-verification.md).
 - Before editing runtime code, write a compact scope: invariant, owner, timing,
   inputs, allowed mutations, persistence, errors, rollback, active-writer
-  behavior, projection refresh behavior, and proof command.
+  behavior, projection refresh, and proof command.
 
-## Current Best Targets
+## Prioritized Work Order
 
-1. Audit fixture reproducibility: add committed pre-fix fixtures and tests for
-   audit rules so each invariant is demonstrably red on the regression class.
-2. Audit maintainability only where it supports fixture coverage. Keep one
-   `pnpm client-thinning:audit` entry point.
-3. One command/projection hardening family if source inventory reveals a live
-   bug: active writer, command id minting, fan-out, conflict replay, projection
-   writes, asset references, backup inventory, or bounded accumulators.
-4. One sendChat thinning branch if the batch names the exact default-screen,
-   local prompt, server-backed replay, or post-generation branch, the server
-   replacement contract, and proof.
-5. Documentation-only reconciliation when code and docs drift but runtime
-   behavior does not need to change.
+1. **A1 foundation — prompt-assembly classifier.** Build
+   `resolveServerPromptAssembly` (`server | local | unsupported`, mirroring
+   `resolveServerCompletionRoute`) and replace the `useServerPromptAssembly`
+   runtime gate. Make the supported text-send subset server-mandatory (single
+   non-group character, server-routable provider, no asset/image-gen/Lua/plugin
+   content). Proof: `assembleLocalSendChatPrompt` is unreachable for the subset.
+2. **C-A1 — server-side scriptstate persistence.** Move assembly-time chat-var
+   persistence into `/generate/chat`; retire the command replay. No parity
+   blocker; smallest real post-gen batch.
+3. **A1 content classes, one batch each** — multimodal/asset inlining, then
+   Lua/plugin-V2 + input scripts, then image-gen instruction. Each graduates its
+   send shape from `unsupported` to server-mandatory.
+4. **A2 — server output-trigger + `editoutput`.** Needs server output-script
+   execution; sequence after A1's Lua/plugin parity.
+5. **Group-chat legacy removal.** Separate from thinning — inventory and remove
+   the client surface (see [`client-owned-unsupported.md`](client-owned-unsupported.md)).
+6. **Audit-rule hardening.** Convert A4R2, A4R7, the fanout `.svelte` path, and
+   EC2 from string/regex to AST invariants; add adversarial fixtures
+   ([`audit.md`](audit.md)).
+7. Documentation-only reconciliation when code and docs drift without behavior
+   change.
 
-## No-Port Or Blocked
+## Blocked / No-Port
 
-- Do not broaden the task into all client thinning at once.
-- Do not remove active legacy-named routes just because the name says legacy.
+- **Event patching stays deferred** until the SSE reconnect/replay gap is closed
+   (precondition). Do not ship a surgical applier before that.
 - Do not add browser provider fallback in Fastify mode.
-- Do not reopen native/mobile wrappers, service workers, group chat, peer sync,
-  Drive sync, Risu Account Sync, or removed memory engines.
-- Do not add server-side plugin code execution.
+- Do not add a server group-chat model; group chat is legacy.
+- Do not reopen native/mobile wrappers, service workers, peer/Drive/Account sync,
+  or removed memory engines; do not add server-side plugin code execution.
 
 ## Closed Areas
 
-Treat these as closed unless current source inventory proves drift:
-
-- Command foundation and major resource command families.
-- Bootstrap projection and command-event invalidation.
-- Server `.risu` import/export/bundle routes.
-- Asset-byte routes and asset-reference validation baseline.
-- Backup/restore coverage of known server-owned data directory children.
-- Provider secret masking baseline.
-- Fastify provider dispatch for supported provider shapes.
+Treat as closed unless source inventory proves drift: command foundation and
+resource families, bootstrap projection + command-event invalidation, `.risu`
+import/export/bundle, asset routes + reference validation baseline, backup/restore,
+provider secret masking, and supported-provider server dispatch.
 
 ## Selection Order
 
-1. Fix or prove the audit baseline.
-2. Make audit rules reproducible through fixtures/tests.
-3. Close one source-proven invariant drift.
-4. Remove one named browser branch with server proof.
-5. Update docs after the code and proof are complete.
+1. Prove or fix the audit baseline.
+2. Remove one named browser branch with a server contract and proof, or remove one
+   legacy surface — never both in one batch.
+3. Update docs after the code and proof are complete.

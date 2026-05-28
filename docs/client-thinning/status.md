@@ -1,83 +1,70 @@
 # Client Thinning Status
 
-Date: 2026-05-28
+Date: 2026-05-29
 
-This is the status router for the standalone client-thinning workstream. The
-codebase is the source of truth; detailed inventories belong in the shards.
+Status router for the Fastify-only client-thinning workstream. The codebase is
+the source of truth; detailed inventories live in the shards.
 
 ## Current Snapshot
 
-Implemented:
+Implemented / closed:
 
-- Fastify-served web mode is the supported web runtime. Fastify injects the
-  browser marker when serving the SPA.
-- The browser loads a bootstrap projection, caches the command revision, and
-  receives command/memory events.
-- Durable resource mutation is command-backed for the major resource families.
-  Commands use `baseRevision`, return conflicts, bump revision once on success,
-  and emit command events.
-- The active-writer guard protects server-owned mutation routes.
-- Projection writes are guarded in Fastify mode outside trusted projection
-  write scopes.
-- Provider dispatch is server-routed in Fastify mode for supported provider
-  shapes; unsupported provider shapes fail explicitly.
-- The client-thinning audit exists and is wired as `pnpm client-thinning:audit`.
+- Fastify-served web mode is the supported runtime; it injects the browser
+  marker (`globalThis.__FASTIFY__`) when serving the SPA.
+- Durable resource mutation is command-backed for the major resource families
+  (`baseRevision`, 409 conflict, single revision bump, command events).
+- The active-writer guard protects server-owned mutation routes; the projection
+  write guard freezes `DBState.db` outside trusted projection writes.
+- Provider dispatch is server-routed in Fastify mode for supported shapes;
+  unsupported shapes fail explicitly (no browser fallback).
+- Bootstrap projection, command-event invalidation, `.risu` import/export/bundle,
+  asset routes, backup/restore, and provider secret masking are closed.
+- The client-thinning audit is wired as `pnpm client-thinning:audit` and its
+  fixture reproducibility is complete (20 rules, 41 tests).
 
-Bounded or partial:
+Active blocker set (see [`plan.md`](plan.md) for the full classification):
 
-- Audit fixture reproducibility is complete. All 20 audit rules have a committed
-  pre-fix fixture and test proof in `util/client-thinning-audit.test.ts`.
-- `sendChat` prompt assembly is server-capable but not default-thin. The
-  browser still falls back to local prompt assembly unless
-  `useServerPromptAssembly` is enabled.
-- Post-generation orchestration remains mixed between server and browser.
-- Event handling uses debounced bootstrap refresh rather than per-resource
-  event patching.
-- Manual legacy local client verification is outside the Fastify projection
-  closeout and remains separate.
+- **A1** prompt-assembly content parity (multimodal, Lua `editRequest`,
+  Lua/plugin-V2 + input scripts) — server produces a different prompt; needs a
+  `resolveServerPromptAssembly` classifier; `useServerPromptAssembly` defaults
+  off, so local assembly is still the production path.
+- **A2** post-generation durable derivation — the **output trigger** (no server
+  `'output'` invocation) and **`editoutput`** — needs server script execution.
+- **A3** provider coverage — already hard-fails for unsupported shapes.
 
-Client-owned, unsupported, or no-port:
+Fine in the browser (not blockers): **B1** permanent client-owned effects, and
+**B2** orchestration/command-replay that the browser may keep. See
+[`status/client-owned-unsupported.md`](status/client-owned-unsupported.md).
 
-- The browser owns rendering, route/navigation state, local UI interaction,
-  browser media APIs, plugin runtime execution, and browser-only effects.
-- Plugin storage is server-backed, but plugin code execution remains
-  browser-side.
-- Historical local persistence runtimes, native/mobile wrappers, service
-  worker behavior, group chat, peer sync, Drive sync, and removed memory
-  engines are not client-thinning targets.
+Legacy / removed: **group chat** is now fully legacy and must be removed from the
+client, not merely unsupported. Event patching stays deferred. Flags:
+`useServerGeneration` removed (2026-05-29); `isFastifyServer` and
+`useServerPromptAssembly` kept and annotated in-code, not deprecated.
+
+Caveat on the audit: reproducible but not uniformly robust — ~12/20 rules are
+string/regex matchers and four were empirically defeated by sincere refactors.
+Audit-rule hardening is a tracked work item. See [`status/audit.md`](status/audit.md).
 
 ## Active Direction
 
 - Treat the workstream as active, not complete.
 - Start with the audit. If `pnpm client-thinning:audit` is red, fix or triage
-  that before selecting wider runtime changes.
-- Audit fixture reproducibility is now complete (all 20 rules have committed
-  fixture/test proof). Pick a live invariant family for the next batch instead
-  of more audit fixtures, unless a new audit rule is added.
-- Runtime expansion or deletion must name one invariant family and one proof
-  command before editing.
+  before wider runtime changes; then record in
+  [`coverage/latest-verification.md`](coverage/latest-verification.md).
+- Pick one blocker item per batch; name the browser branch, the server contract,
+  and the proof. Do not mix A1 content classes, A2, and group-chat removal in one
+  review.
 
 ## Start Here
 
-- [Status overview](status/overview.md) - current phase language and main code
-  entry points.
-- [Next steps](status/next-steps.md) - priority, non-goals, and closed areas.
-- [Server projection](status/server-projection.md) - bootstrap, guard, events,
-  and storage ownership.
-- [Audit](status/audit.md) - audit rules and reproducibility target.
-- [Command boundaries](status/command-boundaries.md) - command contract and
-  active-writer behavior.
-- [Assets, imports, backups](status/assets-imports-backups.md) - durable
-  boundary fidelity.
-- [sendChat thinning](status/sendchat-thinning.md) - prompt assembly,
-  generation persistence, and post-generation browser branches.
-- [Client-owned unsupported](status/client-owned-unsupported.md) - no-port and
-  browser-owned behavior.
-
-## Maintenance Rules
-
-- Keep one canonical home for each detailed claim; root docs summarize and
-  link only.
-- Update `coverage/latest-verification.md` only after running a verification.
-- When a new finding appears, update the invariant, audit, fixture/test, and
-  relevant status/coverage shard together.
+- [Overview](status/overview.md) — phase language and main entry points.
+- [Next steps](status/next-steps.md) — prioritized work order.
+- [sendChat / chat-process ownership](status/sendchat-thinning.md) — the detailed
+  A/B blocker triage.
+- [Server projection](status/server-projection.md) — bootstrap, guard, events
+  (event patching deferred).
+- [Audit](status/audit.md) — reproducibility done; rule-hardening open.
+- [Command boundaries](status/command-boundaries.md) — closed/stable.
+- [Assets, imports, backups](status/assets-imports-backups.md) — closed/stable.
+- [Client-owned / legacy](status/client-owned-unsupported.md) — B1 keep, group
+  chat remove.

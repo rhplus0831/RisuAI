@@ -1,21 +1,19 @@
 # Client Thinning Phases
 
-Date: 2026-05-28
+Date: 2026-05-29
 
-Use these files for phase-specific status, remaining work, and exit criteria.
-They sequence the standalone client-thinning workstream; archived Phase 9 stays
-in `../../archive/fastify/phases/phase-9-client-thinning.md`.
+Historical sequencing for the standalone client-thinning workstream. Phases 0–3
+are done; phase 4 is the active chat-process ownership work; phase 5 is closeout.
 
-- [`phase-0-workstream-extraction.md`](phase-0-workstream-extraction.md) -
-  create active docs and separate this work from Fastify archive history.
-- [`phase-1-baseline-contract.md`](phase-1-baseline-contract.md) - lock the
-  current projection contract and source map.
-- [`phase-2-audit-reproducibility.md`](phase-2-audit-reproducibility.md) -
-  finish fixture/test proof for the invariant audit.
+- [`phase-0-workstream-extraction.md`](phase-0-workstream-extraction.md) — DONE.
+  Extracted client thinning into this folder.
+- [`phase-1-baseline-contract.md`](phase-1-baseline-contract.md) — DONE. Locked
+  the projection/command/active-writer/guard baseline.
+- [`phase-2-audit-reproducibility.md`](phase-2-audit-reproducibility.md) — DONE.
+  Committed fixture proof for all 20 audit rules (shallow-rule robustness carried
+  to phase 5).
 - [`phase-3-command-projection-hardening.md`](phase-3-command-projection-hardening.md)
-  - close source-proven command/projection invariant drift.
-- [`phase-4-sendchat-thinning.md`](phase-4-sendchat-thinning.md) - handle
-  prompt assembly defaulting and post-generation client thinning as focused
-  sub-families.
-- [`phase-5-closeout.md`](phase-5-closeout.md) - final verification, docs, and
-  smoke/manual evidence.
+  — DONE. Closed the command/projection invariant families.
+- [`phase-4-sendchat-thinning.md`](phase-4-sendchat-thinning.md) — ACTIVE. Server
+  ownership of the chat process, driven by the blocker classification (A1, A2).
+- [`phase-5-closeout.md`](phase-5-closeout.md) — closeout criteria.
