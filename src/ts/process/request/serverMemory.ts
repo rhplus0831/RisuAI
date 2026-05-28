@@ -1,4 +1,8 @@
 import { isFastifyServer } from '../../platform'
+import {
+  activeWriterSessionHeader,
+  handleActiveWriterStaleResponse,
+} from '../../server/activeWriterSession'
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
 import { hypaV3ProgressStore } from '../../stores.svelte'
 
@@ -109,6 +113,7 @@ function errorMessageFromBody(body: unknown, fallback: string): string {
 async function requestMemoryJson<T>(
   path: string,
   init: RequestInit = {},
+  options: { activeWriter?: boolean } = {},
 ): Promise<ServerMemoryResult<T>> {
   if (!canUseServerMemoryApi()) return { status: 'unavailable' }
 
@@ -120,6 +125,7 @@ async function requestMemoryJson<T>(
       headers: {
         ...(init.headers ?? {}),
         'risu-auth': auth,
+        ...(options.activeWriter ? activeWriterSessionHeader() : {}),
       },
     })
   } catch (err) {
@@ -135,6 +141,7 @@ async function requestMemoryJson<T>(
   }
 
   if (!response.ok) {
+    handleActiveWriterStaleResponse(response)
     return {
       status: 'error',
       error: errorMessageFromBody(body, `HTTP ${response.status}`),
@@ -186,5 +193,6 @@ export async function cancelServerMemoryJob(
   return requestMemoryJson<{ job: ServerMemoryJob }>(
     `${MEMORY_ENDPOINT}/jobs/${encodeURIComponent(jobId)}`,
     { method: 'DELETE', signal: signal ?? undefined },
+    { activeWriter: true },
   )
 }

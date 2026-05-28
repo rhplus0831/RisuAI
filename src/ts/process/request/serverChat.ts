@@ -16,6 +16,10 @@
 
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
 import type { MessageGenerationInfo } from '../../storage/database.svelte'
+import {
+  activeWriterSessionHeader,
+  handleActiveWriterStaleResponse,
+} from '../../server/activeWriterSession'
 import { iterateSseEvents } from './sseParse'
 import type {
   DoneEvent,
@@ -109,6 +113,7 @@ async function openChatResponse(
       headers: {
         'content-type': 'application/json',
         'risu-auth': auth,
+        ...activeWriterSessionHeader(),
       },
       body: JSON.stringify(input),
       signal: signal ?? undefined,
@@ -128,6 +133,7 @@ async function openChatResponse(
     } catch {
       // ignore parse failure
     }
+    handleActiveWriterStaleResponse(response)
     return { status: 'error', error: reason }
   }
 

@@ -10,20 +10,14 @@ export function createActiveWriterState(): ActiveWriterState {
   return { sessionId: null }
 }
 
-export function registerActiveWriterSession(
-  state: ActiveWriterState,
-  req: FastifyRequest,
-): void {
+export function registerActiveWriterSession(state: ActiveWriterState, req: FastifyRequest): void {
   const sessionId = readActiveWriterSessionId(req)
   if (sessionId !== null) {
     state.sessionId = sessionId
   }
 }
 
-export function registerActiveWriterGuard(
-  app: FastifyInstance,
-  state: ActiveWriterState,
-): void {
+export function registerActiveWriterGuard(app: FastifyInstance, state: ActiveWriterState): void {
   app.addHook('preHandler', async (req, reply) => {
     if (!isServerOwnedMutation(req)) return
     if (isActiveWriter(state, req)) return
@@ -61,6 +55,10 @@ function isServerOwnedMutation(req: FastifyRequest): boolean {
   if (method === 'POST' && path === '/api/v1/import/risusave') return true
   if (method === 'POST' && path === '/api/v1/assets') return true
   if (path.startsWith('/api/v1/backups')) return true
+  if (method === 'POST' && path === '/api/v1/generate/chat') return true
+  if (method === 'POST' && path === '/api/v1/generate/preview-prompt') return true
+  if (method === 'POST' && path === '/api/v1/memory/jobs') return true
+  if (method === 'DELETE' && path.startsWith('/api/v1/memory/jobs/')) return true
   return (
     method === 'POST' && (path === '/api/v1/storage/write' || path === '/api/v1/storage/remove')
   )

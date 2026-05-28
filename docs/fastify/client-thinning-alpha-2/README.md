@@ -2,8 +2,8 @@
 
 Date: 2026-05-28
 
-Status: **open task-agent handoff.** Bucket 1 closed on 2026-05-28; the next
-open work item is Bucket 2, memory mutation active-writer coverage. This
+Status: **open task-agent handoff.** Buckets 1 and 2 closed on 2026-05-28; the
+next open work item is Bucket 3, audit invariant broadening. This
 directory records the next reopened client-thinning alpha pass after
 [`../client-thinning-alpha/`](../client-thinning-alpha/) closed AF1 through
 AF10 and AEC1 through AEC7.
@@ -21,11 +21,13 @@ follow-up audit found three remaining invariant gaps:
 
 - A route-local chat fork fallback still minted a command-path chat id. This is
   now closed by Bucket 1 and recorded in [`history.md`](./history.md).
-- Durable memory-job mutations are outside the active-writer lock.
+- Durable memory-job mutations were outside the active-writer lock. This is now
+  closed by Bucket 2 and recorded in [`history.md`](./history.md).
 - The invariant audit still proves less than the docs claim for route-local id
   minting, active-writer mutation discovery, and asset-walker validator parity.
-  Bucket 1 added route-local command id minting coverage; the remaining audit
-  broadening belongs to Buckets 2 and 3.
+  Buckets 1 and 2 added targeted coverage for route-local command id minting and
+  memory/generation active-writer routes; the remaining structural audit
+  broadening belongs to Bucket 3.
 
 These are not failures of the original Phase 9 migration slices. They are
 follow-up gaps in the standing Fastify server-projection contract.
@@ -74,7 +76,8 @@ committed regression proof.
 Current progress:
 
 - A2EC1 is closed by Bucket 1.
-- A2EC2, A2EC3, and A2EC4 remain open.
+- A2EC2 is closed by Bucket 2.
+- A2EC3 and A2EC4 remain open.
 
 ## Verification Ladder
 

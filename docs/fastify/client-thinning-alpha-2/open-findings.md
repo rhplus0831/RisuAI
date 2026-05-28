@@ -10,7 +10,7 @@ These findings seed the Alpha 2 task list. They were identified after the
 | Finding                                                     | Severity | Criterion     | Status            | Bucket |
 | ----------------------------------------------------------- | -------- | ------------- | ----------------- | ------ |
 | A2F1 - Chat fork command mints ids                          | High     | A2EC1 / A2EC3 | Closed 2026-05-28 | 1      |
-| A2F2 - Memory mutations bypass active-writer classification | High     | A2EC2 / A2EC3 | Open              | 2      |
+| A2F2 - Memory mutations bypass active-writer classification | High     | A2EC2 / A2EC3 | Closed 2026-05-28 | 2      |
 | A2F3 - Audit proof is narrower than the stated invariant    | Medium   | A2EC3         | Open              | 3      |
 | A2F4 - Alpha 2 docs/status closeout                         | Medium   | A2EC4         | Open              | 4      |
 
@@ -70,9 +70,18 @@ Original required closeout:
 
 Severity: **High**
 
+Status: **Closed 2026-05-28.** Resolved in Bucket 2 and copied to
+[`history.md`](./history.md). Memory job create/cancel, `/api/v1/generate/chat`,
+and `/api/v1/generate/preview-prompt` are now active-writer guarded. The browser
+memory cancel helper and server-chat helper send `risu-writer-session` and use
+shared 423 handling. Worker claim/complete/retry writes are classified as
+internal continuations rather than browser entrypoints.
+
+Original evidence before Bucket 2:
+
 The EC5 wording says only the most recently bootstrapped Fastify session may
-mutate. The implemented guard covers the original closeout route list, but
-memory mutation entrypoints write durable SQLite state and are not fully
+mutate. The implemented guard covered the original closeout route list, but
+memory mutation entrypoints wrote durable SQLite state and were not fully
 classified:
 
 - `server/fastify/src/routes/memoryJobs.ts:84` enqueues memory jobs through
@@ -96,12 +105,18 @@ classified:
 - `src/ts/process/request/serverMemory.ts:109` through `124` sends auth headers
   but no `risu-writer-session` header and has no 423 handling.
 
-Impact: a stale tab can enqueue/cancel durable memory jobs or trigger durable
+Original impact: a stale tab could enqueue/cancel durable memory jobs or trigger durable
 memory planning after a newer tab has become the active writer. Worker commits
 may be legitimate internal follow-through, but they still need explicit
 classification so the audit does not treat them as accidental bypasses.
 
-Required closeout:
+Closed proof:
+
+- `pnpm api:test server/fastify/__tests__/activeWriter.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/generation.chat.test.ts -- --run`
+- `pnpm test src/ts/process/request/tests/serverMemory.test.ts src/ts/process/request/tests/serverChat.test.ts -- --run`
+- `pnpm client-thinning:audit`
+
+Original required closeout:
 
 - Add memory job create/cancel routes to the active-writer classifier, or record
   an explicit exemption in `decisions.md` with tests proving why they are not
@@ -127,8 +142,10 @@ the Alpha 2 investigation found it still relies on narrow whitelists:
 - Route-local id minting in `server/fastify/src/routes/commands.ts` is not
   covered by `checkStableIdCommandPaths`, which mainly checks selected helper
   functions in `server/fastify/src/commands/*`.
-- Memory job mutation routes are invisible to the active-writer classifier check
-  because both code and audit use the same narrow route allowlist.
+- Memory job mutation routes were invisible to the active-writer classifier
+  check before Bucket 2 because both code and audit used the same narrow route
+  allowlist. Bucket 2 added targeted memory/generation route discovery proof;
+  Bucket 3 still owns the broader mutating-route classifier.
 - `server/fastify/src/risuSave/assetReferences.ts:57` through `95` walks root
   profile/background fields, personas, character order, bot presets, modules,
   and character fields; `util/client-thinning-audit.ts:368` through `418`
@@ -177,7 +194,6 @@ same cycle again.
 
 Required closeout:
 
-- Keep this Alpha 2 directory as the live source while A2F1 through A2F3 are
-  open.
+- Keep this Alpha 2 directory as the live source while A2F3 remains open.
 - After code/audit fixes land, move A2 findings to `history.md`, mark buckets
   closed, create `final-audit.md`, and update high-level status docs.

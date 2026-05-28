@@ -17,6 +17,11 @@ vi.mock('../../../storage/nodeStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 
+vi.mock('../../../server/activeWriterSession', () => ({
+  activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-session-1' }),
+  handleActiveWriterStaleResponse: vi.fn((response: Response) => response.status === 423),
+}))
+
 import {
   applyServerHypaV3Progress,
   cancelServerMemoryJob,
@@ -28,6 +33,7 @@ import {
   type ServerMemoryJob,
   type ServerMemorySummary,
 } from '../serverMemory'
+import { handleActiveWriterStaleResponse } from '../../../server/activeWriterSession'
 import { hypaV3ProgressStore } from '../../../stores.svelte'
 
 interface CapturedFetch {
@@ -103,6 +109,7 @@ function makeMemoryFetch(bodyForUrl: (url: string, init: RequestInit) => unknown
 
 beforeEach(() => {
   platformState.isFastifyServer = true
+  vi.mocked(handleActiveWriterStaleResponse).mockClear()
   hypaV3ProgressStore.set({
     open: false,
     miniMsg: '',
@@ -180,7 +187,12 @@ describe('server memory API adapter', () => {
   })
 
   it('cancels jobs with DELETE and encoded job id', async () => {
-    const memoryFetch = makeMemoryFetch(() => ({ job: { ...baseJob, status: 'cancelled' } }))
+    const memoryFetch = makeMemoryFetch((_url, init) => {
+      expect((init.headers as Record<string, string>)['risu-writer-session']).toBe(
+        'writer-session-1',
+      )
+      return { job: { ...baseJob, status: 'cancelled' } }
+    })
     vi.stubGlobal('fetch', memoryFetch.fetch)
 
     const result = await cancelServerMemoryJob('job/1')
@@ -254,6 +266,21 @@ describe('server memory API adapter', () => {
     ])
   })
 
+  it('handles stale writer responses from memory mutations', async () => {
+    const memoryFetch = makeMemoryFetch((_url, init) => {
+      expect((init.headers as Record<string, string>)['risu-writer-session']).toBe(
+        'writer-session-1',
+      )
+      return jsonResponse({ error: 'active_writer_stale' }, 423)
+    })
+    vi.stubGlobal('fetch', memoryFetch.fetch)
+
+    const result = await cancelServerMemoryJob('job/1')
+
+    expect(result).toEqual({ status: 'error', error: 'active_writer_stale' })
+    expect(handleActiveWriterStaleResponse).toHaveBeenCalledTimes(1)
+  })
+
   it('returns unavailable without fetching when the Fastify gate is closed', async () => {
     platformState.isFastifyServer = false
     const memoryFetch = makeMemoryFetch(() => ({ chunks: [baseChunk] }))
@@ -314,9 +341,7 @@ describe('server memory API adapter', () => {
       subMsg: 'existing sub',
     })
 
-    expect(applyServerHypaV3Progress({ open: true, miniMsg: 1, msg: '', subMsg: '' })).toBe(
-      false,
-    )
+    expect(applyServerHypaV3Progress({ open: true, miniMsg: 1, msg: '', subMsg: '' })).toBe(false)
     expect(get(hypaV3ProgressStore)).toEqual({
       open: true,
       miniMsg: '1',

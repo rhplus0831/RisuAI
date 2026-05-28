@@ -4,7 +4,13 @@ vi.mock('../../../storage/nodeStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 
+vi.mock('../../../server/activeWriterSession', () => ({
+  activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-session-1' }),
+  handleActiveWriterStaleResponse: vi.fn((response: Response) => response.status === 423),
+}))
+
 import { requestServerChat, requestServerChatGeneration, type ServerChatInput } from '../serverChat'
+import { handleActiveWriterStaleResponse } from '../../../server/activeWriterSession'
 import type { ServerChatMessagePatch } from '../serverChatEvents'
 import {
   getServerChatCalls,
@@ -26,6 +32,7 @@ const baseInput: ServerChatInput = {
 
 beforeEach(() => {
   resetServerChatState()
+  vi.mocked(handleActiveWriterStaleResponse).mockClear()
 })
 
 afterEach(() => {
@@ -93,7 +100,7 @@ describe('requestServerChat', () => {
     expect(res.messagePatches).toEqual([patch])
   })
 
-  it('sends the intent body and the risu-auth header', async () => {
+  it('sends the intent body with auth and active-writer headers', async () => {
     vi.stubGlobal('fetch', serverChatFetch)
     await requestServerChat(baseInput, null)
 
@@ -102,6 +109,7 @@ describe('requestServerChat', () => {
     expect(calls[0]).toMatchObject({
       method: 'POST',
       authHeader: 'test-auth-token',
+      writerHeader: 'writer-session-1',
       chatId: 'chat-1',
       characterId: 'char-1',
       mode: 'send',
@@ -182,6 +190,23 @@ describe('requestServerChat', () => {
 
     const res = await requestServerChat({ ...baseInput, chatId: '' }, null)
     expect(res).toEqual({ status: 'error', error: 'chatId is required' })
+  })
+
+  it('handles stale writer responses before opening the stream', async () => {
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      expect((init?.headers as Record<string, string>)['risu-writer-session']).toBe(
+        'writer-session-1',
+      )
+      return new Response(JSON.stringify({ error: 'active_writer_stale' }), {
+        status: 423,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+
+    const res = await requestServerChat(baseInput, null)
+
+    expect(res).toEqual({ status: 'error', error: 'active_writer_stale' })
+    expect(handleActiveWriterStaleResponse).toHaveBeenCalledTimes(1)
   })
 
   it('returns status:aborted when the signal is already aborted', async () => {

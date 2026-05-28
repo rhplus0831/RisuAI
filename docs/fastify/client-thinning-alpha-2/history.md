@@ -36,3 +36,37 @@ pnpm check
 
 Next open bucket after this closeout: Bucket 2, memory mutation active-writer
 coverage.
+
+## A2F2 - Memory Mutations Bypass Active-Writer Classification
+
+Status: **Closed 2026-05-28.**
+
+Bucket: 2 - Memory mutation active-writer coverage.
+
+Resolution:
+
+- `POST /api/v1/memory/jobs` and `DELETE /api/v1/memory/jobs/:id` are now
+  active-writer guarded as browser-triggered durable memory mutations.
+- `POST /api/v1/generate/chat` and `POST /api/v1/generate/preview-prompt` are
+  now active-writer guarded because prompt assembly can create memory chunks and
+  enqueue memory jobs.
+- Memory job read/list routes remain unguarded.
+- The browser memory cancel helper now sends `risu-writer-session` and calls the
+  shared stale-writer 423 handler. There is no browser memory job create helper
+  in the current codebase.
+- The browser server-chat helper now sends `risu-writer-session` and calls the
+  shared stale-writer 423 handler for pre-stream failures.
+- Background worker job claim/complete/retry writes remain classified as
+  internal continuations of already accepted work.
+- `pnpm client-thinning:audit` now checks the targeted memory/generation
+  active-writer route coverage and the affected browser helper header/423 paths.
+
+Verification:
+
+```bash
+pnpm api:test server/fastify/__tests__/activeWriter.test.ts server/fastify/__tests__/memoryJobsRoutes.test.ts server/fastify/__tests__/generation.chat.test.ts -- --run
+pnpm test src/ts/process/request/tests/serverMemory.test.ts src/ts/process/request/tests/serverChat.test.ts -- --run
+pnpm client-thinning:audit
+```
+
+Next open bucket after this closeout: Bucket 3, audit invariant broadening.

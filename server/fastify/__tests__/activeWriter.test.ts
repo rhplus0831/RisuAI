@@ -23,6 +23,7 @@ async function startHarness(): Promise<Harness> {
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
+    memoryWorker: false,
   })
   return { app, dataDir }
 }
@@ -170,6 +171,91 @@ describe('active writer session guard', () => {
         headers: {
           [ACTIVE_WRITER_SESSION_HEADER]: 'session-a',
           'file-path': Buffer.from('legacy-key').toString('hex'),
+        },
+      }),
+    )
+  })
+
+  it('rejects stale memory job create and cancel mutations while keeping list reads open', async () => {
+    await bootstrapSession(harness.app, 'session-a')
+    await bootstrapSession(harness.app, 'session-b')
+
+    expectStaleWriter(
+      await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/memory/jobs',
+        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        payload: {
+          chatId: 'chat-1',
+          kind: 'summarize',
+          payload: { chunkId: 'chunk-1', model: 'model-a' },
+        },
+      }),
+    )
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/memory/jobs',
+      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+      payload: {
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: { chunkId: 'chunk-1', model: 'model-a' },
+      },
+    })
+    expect(created.statusCode).toBe(201)
+    const jobId = created.json().job.id as string
+
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/jobs?chatId=chat-1',
+      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+    })
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json().jobs).toHaveLength(1)
+
+    expectStaleWriter(
+      await harness.app.inject({
+        method: 'DELETE',
+        url: `/api/v1/memory/jobs/${encodeURIComponent(jobId)}`,
+        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+      }),
+    )
+
+    const cancelled = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/memory/jobs/${encodeURIComponent(jobId)}`,
+      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+    })
+    expect(cancelled.statusCode).toBe(200)
+    expect(cancelled.json().job.status).toBe('cancelled')
+  })
+
+  it('rejects stale generation-time memory planning entrypoints', async () => {
+    await bootstrapSession(harness.app, 'session-a')
+    await bootstrapSession(harness.app, 'session-b')
+
+    expectStaleWriter(
+      await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        payload: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          mode: 'preview_prompt',
+        },
+      }),
+    )
+
+    expectStaleWriter(
+      await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/preview-prompt',
+        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        payload: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
         },
       }),
     )

@@ -17,6 +17,7 @@ export interface ServerChatCall {
   url: string
   method: string
   authHeader: string | null
+  writerHeader: string | null
   chatId: string
   characterId: string
   mode: string
@@ -272,7 +273,9 @@ export async function serverChatFetch(
   }
 
   const method = init?.method ?? 'POST'
-  const auth = (init?.headers as Record<string, string> | undefined)?.['risu-auth'] ?? null
+  const headers = init?.headers as Record<string, string> | undefined
+  const auth = headers?.['risu-auth'] ?? null
+  const writer = headers?.['risu-writer-session'] ?? null
   const rawBody = typeof init?.body === 'string' ? init.body : ''
   const body = JSON.parse(rawBody) as ChatPayload
 
@@ -280,6 +283,7 @@ export async function serverChatFetch(
     url,
     method,
     authHeader: auth,
+    writerHeader: writer,
     chatId: typeof body.chatId === 'string' ? body.chatId : '',
     characterId: typeof body.characterId === 'string' ? body.characterId : '',
     mode: typeof body.mode === 'string' ? body.mode : '',

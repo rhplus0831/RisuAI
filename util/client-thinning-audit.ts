@@ -41,6 +41,8 @@ const sourcePaths = [
   'src/ts/plugins/plugins.svelte.ts',
   'src/ts/plugins/apiV3/v3.svelte.ts',
   'src/ts/process/request/serverCompletion.ts',
+  'src/ts/process/request/serverChat.ts',
+  'src/ts/process/request/serverMemory.ts',
   'src/ts/process/request/request.ts',
   'src/ts/process/request/google.ts',
   'src/ts/server/projectionWriteGuard.svelte.ts',
@@ -245,6 +247,14 @@ function isKnownServerOwnedMutation(method: string, route: string): boolean {
   if (method === 'POST' && route === '/api/v1/import/risusave') return true
   if (method === 'POST' && route === '/api/v1/assets') return true
   if (route.startsWith('/api/v1/backups')) return true
+  if (
+    method === 'POST' &&
+    (route === '/api/v1/generate/chat' || route === '/api/v1/generate/preview-prompt')
+  ) {
+    return true
+  }
+  if (method === 'POST' && route === '/api/v1/memory/jobs') return true
+  if (method === 'DELETE' && route.startsWith('/api/v1/memory/jobs/')) return true
   return method === 'POST' && ['/api/v1/storage/write', '/api/v1/storage/remove'].includes(route)
 }
 
@@ -260,6 +270,8 @@ function checkActiveWriterGuard(): void {
       'registerAssetsRoutes(',
       'registerBackupRoutes(',
       'registerLegacyStorageRoutes(',
+      'registerGenerationChatRoutes(',
+      'registerMemoryJobRoutes(',
     ].map((needle) => appText.indexOf(needle)),
   )
   if (guardIndex === -1) {
@@ -294,6 +306,10 @@ function checkActiveWriterGuard(): void {
     "'/api/v1/import/risusave'",
     "'/api/v1/assets'",
     "'/api/v1/backups'",
+    "'/api/v1/generate/chat'",
+    "'/api/v1/generate/preview-prompt'",
+    "'/api/v1/memory/jobs'",
+    "'/api/v1/memory/jobs/'",
     "'/api/v1/storage/write'",
     "'/api/v1/storage/remove'",
   ]
@@ -316,6 +332,45 @@ function checkActiveWriterGuard(): void {
   )
   if (mutations.length === 0) {
     fail(check, 'No server-owned mutating routes were discovered; audit route extraction is stale.')
+  }
+  const expectedMutationRoutes = [
+    ['POST', '/api/v1/generate/chat'],
+    ['POST', '/api/v1/generate/preview-prompt'],
+    ['POST', '/api/v1/memory/jobs'],
+    ['DELETE', '/api/v1/memory/jobs/:id'],
+  ]
+  for (const [method, route] of expectedMutationRoutes) {
+    if (!mutations.some((mutation) => mutation.method === method && mutation.route === route)) {
+      fail(check, `active-writer route discovery is missing ${method} ${route}.`, undefined)
+    }
+  }
+
+  const serverMemoryText = text('src/ts/process/request/serverMemory.ts')
+  for (const needle of [
+    'activeWriterSessionHeader',
+    'handleActiveWriterStaleResponse',
+    '{ activeWriter: true }',
+  ]) {
+    if (!serverMemoryText.includes(needle)) {
+      fail(
+        check,
+        `server memory client helper is missing active-writer handling: ${needle}.`,
+        undefined,
+        'src/ts/process/request/serverMemory.ts',
+      )
+    }
+  }
+
+  const serverChatText = text('src/ts/process/request/serverChat.ts')
+  for (const needle of ['activeWriterSessionHeader', 'handleActiveWriterStaleResponse']) {
+    if (!serverChatText.includes(needle)) {
+      fail(
+        check,
+        `server chat client helper is missing active-writer handling: ${needle}.`,
+        undefined,
+        'src/ts/process/request/serverChat.ts',
+      )
+    }
   }
 }
 

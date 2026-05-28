@@ -33,6 +33,14 @@ server-owned mutations and must be active-writer guarded. This includes memory
 job create/cancel routes and generation-time prompt assembly paths that can
 create memory chunks or enqueue memory jobs.
 
+**Landed 2026-05-28:** Bucket 2 chose the default decision. The active-writer
+classifier now guards `POST /api/v1/memory/jobs`,
+`DELETE /api/v1/memory/jobs/:id`, `POST /api/v1/generate/chat`, and
+`POST /api/v1/generate/preview-prompt`. The memory cancel helper and server-chat
+helper send `risu-writer-session` and use shared 423 handling. The current
+browser codebase does not have a memory job create helper; create is guarded on
+the server route. Memory job list/read routes remain unguarded.
+
 **Why:** Jobs and memory chunks are persisted in SQLite, can cause later memory
 writes, and can be created or cancelled from browser-triggered flows. A stale
 tab should not enqueue, cancel, or plan durable memory work after another tab has
