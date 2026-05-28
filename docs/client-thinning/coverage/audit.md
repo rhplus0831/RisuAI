@@ -53,6 +53,13 @@ Date: 2026-05-29
   replays a mutating command after a conflict in a non-wrapper helper; the
   bypass surfaces the conflict and proves the `runServerCommand`/`commands.ts`
   exemption is load-bearing (the same body fails when not at the exempt path).
+- `A4R1 passive refresh writer ownership` has committed fixtures under
+  `util/client-thinning-audit-fixtures/passive-refresh-writer-ownership/`:
+  `failing-passive-caller` (a non-allowlisted file calls the writer-intent
+  bootstrap helper), `failing-readonly-header` (a read-only helper attaches
+  `activeWriterSessionHeader(`), and `writer-intent-bypass` (the writer helper
+  is only called from the allowlisted page-load entrypoint). This completes the
+  A4R rule family.
 
 ## Open Proof
 
@@ -94,7 +101,7 @@ existing files yet.
 | `AEC5 module reference semantics` | `module-reference-semantics` | Treat MCP modules as normal link targets, tolerate unresolved normal module ids, or skip module-link validation on chat create/patch/fork writes. | Non-zero exit with `AEC5 module reference semantics`. |
 | `AEC6 asset persistence semantics` | `asset-persistence-semantics` | Stop healing missing asset blobs for existing metadata, reject documented clear values, or omit optional audio asset reference validation from character commands. | Non-zero exit with `AEC6 asset persistence semantics`. |
 | `EC1 provider ownership` | `provider-ownership` | Reintroduce browser provider fallback in Fastify mode, allow Fastify preview bodies without explicit support, permit browser Vertex projection writes in Fastify mode, or expose `useServerGeneration` as a server setting command. | Non-zero exit with `EC1 provider ownership`. |
-| `A4R1 passive refresh writer ownership` | `passive-refresh-writer-ownership` | Make a read-only bootstrap helper attach `activeWriterSessionHeader()` or call the writer-registering bootstrap helper from a passive refresh path outside `WRITER_BOOTSTRAP_CALLERS`. | Non-zero exit with `A4R1 passive refresh writer ownership`. |
+| `A4R1 passive refresh writer ownership` | `passive-refresh-writer-ownership` | Make a read-only bootstrap helper attach `activeWriterSessionHeader()` or call the writer-registering bootstrap helper from a passive refresh path outside `WRITER_BOOTSTRAP_CALLERS`. | Covered: `failing-passive-caller` and `failing-readonly-header` exit non-zero with `A4R1 passive refresh writer ownership`; `writer-intent-bypass` (writer helper called only from the allowlisted entrypoint) exits zero. |
 | `A4R2 conflict replay outside central wrapper` | `conflict-replay` | Branch on `result.status === 'conflict'` outside `runServerCommand` and then resend a mutating command with `baseRevision` through a command helper or fetch. | Covered: failing fixture (non-wrapper helper replays after a conflict) exits non-zero with `A4R2 conflict replay outside central wrapper`; surface-conflict bypass (plus the exempt central wrapper) exits zero. |
 | `A4R3 transitive command-path id minting` | `transitive-command-id-minting` | Mint ids directly in a `/api/v1/commands/*` route, call a `repair*` id-minting helper from a command route, pass request-derived data to `ensure*`/`normalize*`, or call an unclassified transitive minter. | Covered: failing fixture (direct route-handler mint + transitive helper mint) exits non-zero with `A4R3 transitive command-path id minting`; validated-param + normalize-on-read bypass exits zero. |
 | `A4R4 globally-addressed resolver normalize` | `resolver-normalize` | Call `requireChatLocation()` or `requireMessageLocation()` before the matching global normalizer in the same handler/helper scope. | Covered: failing fixture exits non-zero with `A4R4 globally-addressed resolver normalize` for both resolver pairs; normalize-first bypass exits zero. |
@@ -111,15 +118,16 @@ existing files yet.
 `A4R-saveasset filename classification`, `A4R-backup data dir inventory`,
 `A4R-bounded process-lifetime accumulators`, `A4R7 asset URL gate`,
 `A4R-fanout composite command race`, `A4R4 globally-addressed resolver normalize`,
-`A4R5 asset reference parser parity`, `A4R6 wildcard secret row identity`,
-`A4R3 transitive command-path id minting`, and
-`A4R2 conflict replay outside central wrapper` are complete. `A4R1 passive
-refresh writer ownership` is the last open A4R rule: its fixture should prove
-that a read-only bootstrap helper attaching `activeWriterSessionHeader()` (or a
-passive refresh path calling the writer-registering bootstrap helper outside
-`WRITER_BOOTSTRAP_CALLERS`) exits non-zero, while the writer-intent vs read-only
-split stays accepted. After A4R1, the remaining EC/AEC structural rules still
-need committed fixtures.
+Every A4R rule (`A4R1`–`A4R7` plus the `A4R-` named rules) now has committed
+fixtures. The remaining open rules are the EC/AEC structural invariants:
+`EC5 active-writer guard`, `EC4 stable command ids`, `EC2 plugin storage gates`,
+`EC6 asset walker validator drift`, `EC1 provider ownership`,
+`AEC2 import/export current shape`, `AEC4 chat folder identity scope`,
+`AEC5 module reference semantics`, and `AEC6 asset persistence semantics`. A
+good next small target is `EC6 asset walker validator drift`: its fixture should
+prove that adding an asset walker field without a validator owner (or leaving a
+stale owner for a removed field) exits non-zero, while a fully-owned walker stays
+accepted.
 
 ## Commands
 
