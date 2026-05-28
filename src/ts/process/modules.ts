@@ -41,13 +41,24 @@ import { createGlobalModule } from '../moduleCommands'
 import {
   currentLorebookStateSnapshot,
   dispatchReplaceCharacterLorebooks,
+  ensureClientLorebookEntryIds,
+  restoreLorebookState,
 } from '../server/lorebookBridge.svelte'
 import {
   currentScriptDefinitionStateSnapshot,
   dispatchReplaceCharacterScripts,
   dispatchReplaceCharacterTriggers,
+  ensureClientScriptDefinitionIds,
+  ensureClientTriggerDefinitionIds,
+  restoreScriptDefinitionState,
 } from '../server/scriptDefinitionBridge.svelte'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { runOptimisticCommandSequence } from '../chatCommands'
+import {
+  replaceCharacterLorebooksCommand,
+  replaceCharacterScriptsCommand,
+  replaceCharacterTriggersCommand,
+} from '../server/commands'
 
 export interface MCPModule {
   url: string
@@ -216,7 +227,14 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
           if (!module.assets?.[task.index]) {
             throw new Error(`Missing asset metadata for index ${task.index}`)
           }
-          module.assets[task.index][1] = await saveAsset(decoded)
+          // Preserve the module asset's declared filename (the [2] slot of
+          // the [name, asset_id, filename] tuple) so persisted metadata
+          // matches the source extension.
+          module.assets[task.index][1] = await saveAsset(
+            decoded,
+            '',
+            module.assets[task.index][2] ?? '',
+          )
           completed += 1
         } catch (error) {
           failed.push(task)
@@ -537,15 +555,68 @@ export async function applyModule() {
     if (nextTriggers) target.triggerscript = safeStructuredClone(nextTriggers)
   })
 
-  if (characterId && nextLorebooks && lorePrevious) {
-    dispatchReplaceCharacterLorebooks(characterId, nextLorebooks, lorePrevious, 0)
+  // A4EC2 / B1: serialize the three module-apply replacements against one
+  // optimistic snapshot. The dispatcher path (bridge timer + delay=0) fired
+  // all three on the same macrotask, racing on cachedServerCommandRevision;
+  // the second/third command 409d after the first succeeded. The sequencer
+  // awaits each response so the next reads the updated cached revision.
+  if (characterId) {
+    const factories: Array<(baseRevision: number) => Promise<unknown>> = []
+    if (nextLorebooks && lorePrevious) {
+      const lorebookEntries = ensureClientLorebookEntryIds(nextLorebooks)
+      const lorebookSnapshot = safeStructuredClone(lorebookEntries) as Parameters<
+        typeof replaceCharacterLorebooksCommand
+      >[0]['entries']
+      factories.push((baseRevision) =>
+        replaceCharacterLorebooksCommand({
+          baseRevision,
+          characterId,
+          entries: lorebookSnapshot,
+        }),
+      )
+    }
+    if (nextScripts && scriptPrevious) {
+      const scriptDefs = ensureClientScriptDefinitionIds(nextScripts)
+      const scriptsSnapshot = safeStructuredClone(scriptDefs) as Parameters<
+        typeof replaceCharacterScriptsCommand
+      >[0]['scripts']
+      factories.push((baseRevision) =>
+        replaceCharacterScriptsCommand({
+          baseRevision,
+          characterId,
+          scripts: scriptsSnapshot,
+        }),
+      )
+    }
+    if (nextTriggers && scriptPrevious) {
+      const triggerDefs = ensureClientTriggerDefinitionIds(nextTriggers)
+      const triggersSnapshot = safeStructuredClone(triggerDefs) as Parameters<
+        typeof replaceCharacterTriggersCommand
+      >[0]['triggers']
+      factories.push((baseRevision) =>
+        replaceCharacterTriggersCommand({
+          baseRevision,
+          characterId,
+          triggers: triggersSnapshot,
+        }),
+      )
+    }
+    if (factories.length > 0) {
+      runOptimisticCommandSequence(
+        factories as Parameters<typeof runOptimisticCommandSequence>[0],
+        () => {
+          if (lorePrevious) restoreLorebookState(lorePrevious)
+          if (scriptPrevious) restoreScriptDefinitionState(scriptPrevious)
+        },
+      )
+    }
   }
-  if (characterId && nextScripts && scriptPrevious) {
-    dispatchReplaceCharacterScripts(characterId, nextScripts, scriptPrevious, 0)
-  }
-  if (characterId && nextTriggers && scriptPrevious) {
-    dispatchReplaceCharacterTriggers(characterId, nextTriggers, scriptPrevious, 0)
-  }
+  // Keep the bridge dispatchers imported so a future change that needs the
+  // delay-based coalescing can re-use them without re-importing. Reference
+  // them via void to satisfy the linter without dispatching.
+  void dispatchReplaceCharacterLorebooks
+  void dispatchReplaceCharacterScripts
+  void dispatchReplaceCharacterTriggers
 
   alertNormal(language.successApplyModule)
 }

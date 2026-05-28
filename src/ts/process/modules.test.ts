@@ -15,6 +15,31 @@ const getDatabase = vi.hoisted(() => vi.fn(() => ({ modules: [] })))
 const dispatchReplaceCharacterLorebooks = vi.hoisted(() => vi.fn())
 const dispatchReplaceCharacterScripts = vi.hoisted(() => vi.fn())
 const dispatchReplaceCharacterTriggers = vi.hoisted(() => vi.fn())
+const ensureClientLorebookEntryIds = vi.hoisted(() => vi.fn((entries: unknown) => entries))
+const restoreLorebookState = vi.hoisted(() => vi.fn())
+const ensureClientScriptDefinitionIds = vi.hoisted(() => vi.fn((scripts: unknown) => scripts))
+const ensureClientTriggerDefinitionIds = vi.hoisted(() => vi.fn((triggers: unknown) => triggers))
+const restoreScriptDefinitionState = vi.hoisted(() => vi.fn())
+const replaceCharacterLorebooksCommand = vi.hoisted(() =>
+  vi.fn(async () => ({ status: 'ok', revision: 1, data: {} })),
+)
+const replaceCharacterScriptsCommand = vi.hoisted(() =>
+  vi.fn(async () => ({ status: 'ok', revision: 2, data: {} })),
+)
+const replaceCharacterTriggersCommand = vi.hoisted(() =>
+  vi.fn(async () => ({ status: 'ok', revision: 3, data: {} })),
+)
+const runOptimisticCommandSequence = vi.hoisted(() =>
+  vi.fn((commands: Array<(rev: number) => Promise<unknown>>, _rollback: () => void) => {
+    void (async () => {
+      let rev = 0
+      for (const command of commands) {
+        await command(rev)
+        rev += 1
+      }
+    })()
+  }),
+)
 
 vi.mock('../platform', () => ({
   get isFastifyServer() {
@@ -83,12 +108,31 @@ vi.mock('../moduleCommands', () => ({
 vi.mock('../server/lorebookBridge.svelte', () => ({
   currentLorebookStateSnapshot: vi.fn(() => ({ loreBook: [], characters: [], modules: [] })),
   dispatchReplaceCharacterLorebooks,
+  ensureClientLorebookEntryIds,
+  restoreLorebookState,
 }))
 
 vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
   currentScriptDefinitionStateSnapshot: vi.fn(() => ({ characters: [], modules: [] })),
   dispatchReplaceCharacterScripts,
   dispatchReplaceCharacterTriggers,
+  ensureClientScriptDefinitionIds,
+  ensureClientTriggerDefinitionIds,
+  restoreScriptDefinitionState,
+}))
+
+vi.mock('../chatCommands', () => ({
+  runOptimisticCommandSequence,
+}))
+
+vi.mock('../server/commands', () => ({
+  replaceCharacterLorebooksCommand,
+  replaceCharacterScriptsCommand,
+  replaceCharacterTriggersCommand,
+}))
+
+vi.mock('../server/projectionWriteGuard.svelte', () => ({
+  withTrustedServerProjectionWrite: (fn: () => void) => fn(),
 }))
 
 import { applyModule, importModule } from './modules'
@@ -175,34 +219,45 @@ describe('module imports', () => {
     })
 
     await applyModule()
+    // The sequencer is fire-and-forget; let microtasks settle.
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(dispatchReplaceCharacterLorebooks).toHaveBeenCalledWith(
-      'char-a',
-      [
+    // A4EC2 / B1: applyModule now serializes its three child-replacement
+    // commands via runOptimisticCommandSequence (the dispatch* bridges with
+    // delayMs=0 raced on cachedServerCommandRevision). Assert the sequencer
+    // received factories that build the three commands with the merged
+    // arrays.
+    expect(runOptimisticCommandSequence).toHaveBeenCalledTimes(1)
+    const [factories] = runOptimisticCommandSequence.mock.calls[0]
+    expect(factories).toHaveLength(3)
+
+    await factories[0](10)
+    expect(replaceCharacterLorebooksCommand).toHaveBeenCalledWith({
+      baseRevision: 10,
+      characterId: 'char-a',
+      entries: [
         { comment: 'Existing lore', content: 'old' },
         { comment: 'Module lore', content: 'lore' },
       ],
-      expect.anything(),
-      0,
-    )
-    expect(dispatchReplaceCharacterScripts).toHaveBeenCalledWith(
-      'char-a',
-      [
+    })
+    await factories[1](11)
+    expect(replaceCharacterScriptsCommand).toHaveBeenCalledWith({
+      baseRevision: 11,
+      characterId: 'char-a',
+      scripts: [
         { comment: 'Existing regex', in: 'old', out: 'old' },
         { comment: 'Module regex', in: 'in', out: 'out' },
       ],
-      expect.anything(),
-      0,
-    )
-    expect(dispatchReplaceCharacterTriggers).toHaveBeenCalledWith(
-      'char-a',
-      [
+    })
+    await factories[2](12)
+    expect(replaceCharacterTriggersCommand).toHaveBeenCalledWith({
+      baseRevision: 12,
+      characterId: 'char-a',
+      triggers: [
         { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
         { comment: 'Module trigger', type: 'manual', conditions: [], effect: [] },
       ],
-      expect.anything(),
-      0,
-    )
+    })
     expect(alertNormal).toHaveBeenCalled()
   })
 })

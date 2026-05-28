@@ -42,14 +42,18 @@
     dispatchDeleteChat,
     dispatchDeleteChatFolder,
     dispatchForkChat,
-    dispatchReorderChatFoldersByIds,
-    dispatchReorderChatFolders,
-    dispatchReorderChatsByIds,
     dispatchReorderChats,
+    dispatchReorderChatsByIds,
     dispatchUpdateChat,
     dispatchUpdateChatFolder,
+    restoreChatState,
+    runOptimisticCommandSequence,
   } from 'src/ts/chatCommands'
-  import { canUseServerCommands } from 'src/ts/server/commands'
+  import {
+    canUseServerCommands,
+    reorderChatFoldersCommand,
+    reorderChatsCommand,
+  } from 'src/ts/server/commands'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
 
   interface Props {
@@ -244,14 +248,37 @@
 
         const selectedChatId = chara.chats[currentChatPage]?.id
         if (canUseServerCommands()) {
-          dispatchReorderChatFoldersByIds(chara.chaId, folderIds, previous, selectedChatId)
-          dispatchReorderChatsByIds(chara.chaId, chatIds, folderByChatId, previous, selectedChatId)
+          // A4EC2 / B1: serialize the folder+chat reorder commands against
+          // one optimistic snapshot. Without serialization the second call
+          // reads the cached baseRevision before the first response updates
+          // it, races, and 409s — leaving folders moved but chats not.
+          const folderIdsSnapshot = [...folderIds]
+          const chatIdsSnapshot = [...chatIds]
+          const folderByChatIdSnapshot = { ...folderByChatId }
+          runOptimisticCommandSequence(
+            [
+              (baseRevision) =>
+                reorderChatFoldersCommand({
+                  baseRevision,
+                  characterId: chara.chaId,
+                  folderIds: folderIdsSnapshot,
+                  selectedChatId,
+                }),
+              (baseRevision) =>
+                reorderChatsCommand({
+                  baseRevision,
+                  characterId: chara.chaId,
+                  chatIds: chatIdsSnapshot,
+                  folderByChatId: folderByChatIdSnapshot,
+                  selectedChatId,
+                }),
+            ],
+            () => restoreChatState(previous),
+          )
         } else {
           chara.chatFolders = newFolders
           changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
           chara.chats = newChats
-          dispatchReorderChatFolders(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
-          dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
         }
         try {
           folderStb.destroy()
