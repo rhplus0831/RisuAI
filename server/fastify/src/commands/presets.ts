@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
+import { validateOptionalServerAssetRef } from './assets.js'
 
 type JsonRecord = Record<string, unknown>
+type AssetValidationOptions = { assetDataDir?: string }
 
 export interface PresetRecord extends JsonRecord {
   id: string
@@ -160,14 +162,28 @@ export function normalizePresetCollection(database: unknown): void {
   ensurePresetCollection(target)
 }
 
-export function createPresetRecord(input: JsonRecord, fallbackName = 'New Preset'): PresetRecord {
+export function createPresetRecord(
+  input: JsonRecord,
+  fallbackName = 'New Preset',
+  options: AssetValidationOptions = {},
+): PresetRecord {
   const preset = cloneJson(input) as PresetRecord
   preset.id = readPresetId(preset.id, 'preset.id')
   if (preset.name !== undefined && typeof preset.name !== 'string') {
     throw new ValidationError('preset.name must be a string')
   }
+  validatePresetAssetRefs(preset, 'preset', options)
   preset.name ??= fallbackName
   return preset
+}
+
+export function readPresetPatch(
+  input: JsonRecord,
+  options: AssetValidationOptions = {},
+): JsonRecord {
+  const patch = cloneJson(input) as JsonRecord
+  validatePresetAssetRefs(patch, 'patch', options)
+  return patch
 }
 
 export function repairPresetRecord(input: JsonRecord, fallbackName = 'New Preset'): PresetRecord {
@@ -245,6 +261,16 @@ export function validateFullPresetIdList(presets: readonly PresetRecord[], prese
       throw new ValidationError(`Unknown preset id: ${id}`)
     }
     seen.add(id)
+  }
+}
+
+function validatePresetAssetRefs(
+  record: JsonRecord,
+  label: string,
+  options: AssetValidationOptions,
+): void {
+  if (options.assetDataDir && 'image' in record) {
+    validateOptionalServerAssetRef(options.assetDataDir, record.image, `${label}.image`)
   }
 }
 

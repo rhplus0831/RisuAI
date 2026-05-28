@@ -36,6 +36,7 @@ import {
   readJsonObject,
   readOptionalBoolean,
   readOptionalString,
+  readPresetPatch,
   readPresetId,
   repairPresetRecord,
   requirePresetIndex,
@@ -1023,7 +1024,9 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
-      const preset = createPresetRecord(readJsonObject(body.preset, 'preset'))
+      const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'New Preset', {
+        assetDataDir: dataDir,
+      })
       const result = applyJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
@@ -1060,7 +1063,7 @@ export function registerCommandRoutes(
       const presetId = readPresetId((req.params as { presetId?: unknown }).presetId)
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readJsonObject(body.patch, 'patch')
+      const patch = readPresetPatch(readJsonObject(body.patch, 'patch'), { assetDataDir: dataDir })
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }

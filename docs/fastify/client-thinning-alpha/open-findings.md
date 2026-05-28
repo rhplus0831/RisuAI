@@ -11,7 +11,6 @@ against the codebase from [`../../audit-codex.md`](../../audit-codex.md) and
 
 | Finding | Severity | Criterion | Status | Bucket |
 | --- | --- | --- | --- | --- |
-| AF3 | Medium | AEC3 | Open | 3 |
 | AF4 | Medium | AEC2 | Open | 4 |
 | AF5 | Medium | AEC4 | Open | 5 |
 | AF6 | Low | AEC5 | Open | 6 |
@@ -19,37 +18,6 @@ against the codebase from [`../../audit-codex.md`](../../audit-codex.md) and
 | AF8 | Low | AEC6 | Open | 7 |
 | AF9 | Low | AEC7 | Open | 8 |
 | AF10 | Low | AEC6 | Open | 7 |
-
-## AF3 - Preset image is walked as an asset reference but not validated
-
-Severity: **Medium**
-
-Source: `docs/audit-claude.md` F-B.
-
-Evidence:
-
-- The asset walker includes `database.botPresets[*].image` at
-  `server/fastify/src/risuSave/assetReferences.ts:73-77`.
-- `createPresetRecord` validates only `name` at
-  `server/fastify/src/commands/presets.ts:163-170`.
-- Preset patch accepts raw JSON and merges it at
-  `server/fastify/src/routes/commands.ts:1058-1078`.
-- Invalid non-asset strings are ignored by the walker at
-  `server/fastify/src/risuSave/assetReferences.ts:146-148`, but valid-looking
-  missing asset ids are reported as missing.
-
-Impact:
-
-Preset commands can persist asset references that export/bundle tooling later
-treats as missing. The EC7 walker-vs-validator audit currently misses this
-top-level field.
-
-Done when:
-
-- Preset create and patch validate `image` with the same optional server-asset
-  semantics used for other walked optional refs.
-- The audit enumerates all top-level walker fields, not only character and
-  character-order fields.
 
 ## AF4 - ROOT_COMPONENT import can overwrite reserved top-level state
 

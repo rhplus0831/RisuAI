@@ -364,6 +364,7 @@ function checkAssetWalkerValidators(): void {
   const check = 'EC6 asset walker validator drift'
   const walkerText = text('server/fastify/src/risuSave/assetReferences.ts')
   const characterText = text('server/fastify/src/commands/characters.ts')
+  const presetText = text('server/fastify/src/commands/presets.ts')
   const requiredCharacterValidators = [
     ['record.image', "'image' in record"],
     ['record.emotionImages', "'emotionImages' in record"],
@@ -395,6 +396,18 @@ function checkAssetWalkerValidators(): void {
         `Asset walker reads characterOrder${validatorNeedle.slice(0, -1)}, but character-order command validation does not validate it.`,
         undefined,
         'server/fastify/src/commands/characters.ts',
+      )
+    }
+  }
+
+  const presetValidators = [['record.image, `database.botPresets', "'image' in record"]]
+  for (const [walkerNeedle, validatorNeedle] of presetValidators) {
+    if (walkerText.includes(walkerNeedle) && !presetText.includes(validatorNeedle)) {
+      fail(
+        check,
+        'Asset walker reads botPresets[*].image, but preset command validation does not validate it.',
+        undefined,
+        'server/fastify/src/commands/presets.ts',
       )
     }
   }

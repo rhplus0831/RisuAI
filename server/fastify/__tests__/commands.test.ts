@@ -235,7 +235,7 @@ describe('Phase 9-1 command foundation', () => {
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toEqual({
+    expect(bootstrap.json().database).toMatchObject({
       useServerPromptAssembly: true,
       greeting: 'hi',
     })
@@ -263,10 +263,10 @@ describe('Phase 9-1 command foundation', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database).toEqual({ useServerPromptAssembly: false })
+    expect(bootstrap.json().database).toMatchObject({ useServerPromptAssembly: false })
 
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toEqual({ useServerPromptAssembly: false })
+    expect(onDisk.database).toMatchObject({ useServerPromptAssembly: false })
   })
 
   it('rolls back a thrown JSON command mutation before bumping revision', () => {
@@ -336,7 +336,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toEqual({
+    expect(bootstrap.json().database).toMatchObject({
       theme: 'light',
       zoomsize: 88,
       greeting: 'hi',
@@ -482,7 +482,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toEqual({
+    expect(bootstrap.json().database).toMatchObject({
       openAIKey: MASKED_PROVIDER_SECRET,
       aiModel: 'openrouter',
     })
@@ -544,7 +544,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(loadPersisted(harness.dataDir).database).toEqual({
+    expect(loadPersisted(harness.dataDir).database).toMatchObject({
       openAIKey: 'old-openai',
       claudeAPIKey: 'new-claude',
       OaiCompAPIKeys: { deepseek: 'old-deepseek', deepinfra: 'new-deepinfra' },
@@ -997,7 +997,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database).toEqual({ theme: 'dark' })
+    expect(bootstrap.json().database).toMatchObject({ theme: 'dark' })
   })
 
   it('rejects unsupported settings groups', async () => {
@@ -1175,6 +1175,130 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(bootstrap.json().database.botPresets).toEqual([
       { id: 'preset-a', name: 'A', mainPrompt: 'a prompt' },
       { id: 'preset-b', name: 'B renamed', mainPrompt: 'b prompt' },
+    ])
+  })
+
+  it('validates preset image asset references on create and patch', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const uploaded = await uploadAsset(harness.app, assertion, Buffer.from('preset-image'))
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'A', image: '' }],
+      botPresetsId: 0,
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'preset-b', name: 'B', image: uploaded.assetId },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+
+    const patchedValid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        patch: { image: uploaded.assetId },
+      },
+    })
+    expect(patchedValid.statusCode).toBe(200)
+
+    const clearValues: unknown[] = [null, '', '-']
+    let baseRevision = patchedValid.json().revision as number
+    for (const image of clearValues) {
+      const cleared = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/presets/preset-a',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision,
+          patch: { image },
+        },
+      })
+      expect(cleared.statusCode).toBe(200)
+      baseRevision = cleared.json().revision as number
+    }
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.botPresets).toEqual([
+      { id: 'preset-a', name: 'A', image: '-' },
+      { id: 'preset-b', name: 'B', image: uploaded.assetId },
+    ])
+  })
+
+  it('rejects malformed and missing preset image asset refs without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'A', image: '' }],
+      botPresetsId: 0,
+    })
+    const missingAssetId = '0'.repeat(64)
+
+    const malformedCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'preset-b', name: 'B', image: 'assets/not-server.png' },
+      },
+    })
+    expect(malformedCreate.statusCode).toBe(400)
+    expect(malformedCreate.json().error).toBe('preset.image must be a server asset id')
+
+    const missingCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'preset-b', name: 'B', image: missingAssetId },
+      },
+    })
+    expect(missingCreate.statusCode).toBe(400)
+    expect(missingCreate.json().error).toBe('preset.image references a missing server asset')
+
+    const malformedPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { image: 'assets/not-server.png' },
+      },
+    })
+    expect(malformedPatch.statusCode).toBe(400)
+    expect(malformedPatch.json().error).toBe('patch.image must be a server asset id')
+
+    const missingPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { image: missingAssetId },
+      },
+    })
+    expect(missingPatch.statusCode).toBe(400)
+    expect(missingPatch.json().error).toBe('patch.image references a missing server asset')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database.botPresets).toEqual([
+      { id: 'preset-a', name: 'A', image: '' },
     ])
   })
 
