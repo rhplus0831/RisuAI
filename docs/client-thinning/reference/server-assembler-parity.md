@@ -37,6 +37,15 @@ triggers (an A2 concern; see [`post-generation-and-persistence.md`](post-generat
 Everything else is at parity, so the supported text-send subset is already
 correct server-side — which is why A1's foundation batch can make it mandatory.
 
+**As of slice 1, the three A1 GAP rows are *classified* `unsupported`, not
+silently mis-assembled.** `resolveServerPromptAssembly`
+(`src/ts/process/request/serverPromptAssembly.ts`) detects each content class via
+its own named predicate (multimodal/asset markers + `message[].multimodals`;
+`triggerlua` triggers + non-empty pluginV2 edit sets; `currentChar.inlayViewScreen`)
+and routes any send carrying one to `unsupported` (hard fail) instead of letting
+the server drop its bytes/instructions. Each later content slice (3a/3b/3c) ports
+one row to parity and flips its detector to `→ server`.
+
 ## `prompt/assemble.ts` — the facade
 
 Root entry `assemblePrompt(input, deps)` (`assemble.ts:1096-1143`) chains the

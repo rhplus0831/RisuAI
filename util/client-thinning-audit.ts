@@ -86,6 +86,7 @@ const sourcePaths = [
   'src/ts/plugins/plugins.svelte.ts',
   'src/ts/plugins/apiV3/v3.svelte.ts',
   'src/ts/process/request/serverCompletion.ts',
+  'src/ts/process/request/serverPromptAssembly.ts',
   'src/ts/process/request/serverChat.ts',
   'src/ts/process/request/serverMemory.ts',
   'src/ts/process/request/request.ts',
@@ -1246,6 +1247,26 @@ function checkProviderOwnership(): void {
         `serverCompletion route resolution is missing the Fastify server-mode guard: ${needle}`,
         undefined,
         serverCompletion,
+      )
+    }
+  }
+
+  // The prompt-assembly classifier mirrors the completion route: it must exist
+  // and pin the browser-local verdict to `!isFastifyServer` so the supported
+  // text-send subset is server-mandatory in Fastify mode (no silent local
+  // fall-through). See docs/client-thinning/reference/prompt-assembly-classifier.md.
+  const serverPromptAssembly = source('src/ts/process/request/serverPromptAssembly.ts')
+  const serverPromptAssemblyText = serverPromptAssembly.getFullText()
+  for (const needle of [
+    'export function resolveServerPromptAssembly',
+    "if (!isFastifyServer) return { type: 'local' }",
+  ]) {
+    if (!serverPromptAssemblyText.includes(needle)) {
+      fail(
+        check,
+        `serverPromptAssembly classifier is missing the Fastify server-mandatory guard: ${needle}`,
+        undefined,
+        serverPromptAssembly,
       )
     }
   }

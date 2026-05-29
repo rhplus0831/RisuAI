@@ -43,7 +43,6 @@ export type ServerBackedDispatch = {
 }
 
 export type ServerBackedAssemblyResult =
-  | { status: 'unavailable' }
   | { status: 'aborted' }
   | { status: 'failed'; error: string; currentChat: Chat }
   | { status: 'preview'; formated?: OpenAIChat[]; body?: string }
@@ -136,11 +135,13 @@ export async function assembleServerBackedSendChat(args: {
   continue?: boolean
   regenerateMessageId?: string
 }): Promise<ServerBackedAssemblyResult> {
+  // `resolveServerPromptAssembly` (the gate's classifier) has already verified
+  // the structural precondition — for `mode === 'send'` the last message is a
+  // text user message — before routing here, so the old silent `unavailable`
+  // escape is gone. We only re-derive `userMessage` to populate the request body.
   const mode = serverChatMode(args)
   const lastMessage = args.currentChat.message.at(-1)
   const userMessage = mode === 'send' && lastMessage?.role === 'user' ? lastMessage.data : undefined
-  const canUseServerAssembly = mode !== 'send' || typeof userMessage === 'string'
-  if (!canUseServerAssembly) return { status: 'unavailable' }
 
   args.setProcessStage(1)
   args.stageTimings.stage1Start = Date.now()

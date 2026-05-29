@@ -13,6 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 
+// Negative-reachability probe: when armed, entering the local assembler throws.
+// Defaults to a passthrough so the rest of the suite (incl. the gate-off test,
+// which legitimately runs local assembly) is unaffected.
+const localAssemblerState = vi.hoisted(() => ({ throwIfEntered: false }))
+
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
   return {
@@ -40,6 +45,21 @@ vi.mock('../memory/hypav3', async (importActual) => {
 })
 
 vi.mock('../scriptings', () => import('../__fixtures__/mocks/scriptings'))
+
+vi.mock('../sendChatPromptAssembly', async (importActual) => {
+  const actual = await importActual<typeof import('../sendChatPromptAssembly')>()
+  return {
+    ...actual,
+    assembleLocalSendChatPrompt: (
+      ...args: Parameters<typeof actual.assembleLocalSendChatPrompt>
+    ) => {
+      if (localAssemblerState.throwIfEntered) {
+        throw new Error('local assembler entered for a server-mandatory subset')
+      }
+      return actual.assembleLocalSendChatPrompt(...args)
+    },
+  }
+})
 
 vi.mock('@mlc-ai/web-tokenizers', () => ({
   Tokenizer: {
@@ -81,6 +101,7 @@ beforeEach(() => {
   doingChat.set(false)
   abortChat.set(false)
   chatProcessStage.set(0)
+  localAssemblerState.throwIfEntered = false
 })
 
 afterEach(() => {
@@ -267,5 +288,51 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       expect.stringContaining('mutated before stop'),
     ])
     expect(getServerCompletionCalls()).toEqual([])
+  })
+
+  it('does not enter the local assembler for the supported subset (server-mandatory)', async () => {
+    await seedEcho()
+    // Armed: if the classifier wrongly routed this in-subset send to local, the
+    // local assembler would throw and the await below would reject.
+    localAssemblerState.throwIfEntered = true
+    setServerChatPrompt(
+      [{ role: 'user', content: 'server-only prompt' }],
+      { promptText: 'SERVER PROMPT', inputTokens: 11, outputTokens: 22 },
+      { formated: [{ role: 'user', content: 'server-only prompt' }] },
+    )
+    setServerChatDispatchResult('fixture echo reply', {
+      model: 'echo_model',
+      generationId: 'uuid-0',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const ok = await chatModule.sendChat(-1)
+    expect(ok).toBe(true)
+    expect(getServerChatCalls()[0]).toMatchObject({ mode: 'send', userMessage: 'ping' })
+  })
+
+  it('hard-fails an out-of-subset send (Lua trigger) as unsupported, never reaching local or /chat', async () => {
+    await seedEcho()
+    localAssemblerState.throwIfEntered = true
+    // A triggerlua effect is a content class the server assembler cannot yet
+    // reproduce, so the classifier must return `unsupported` (hard fail) rather
+    // than silently assembling on the server or falling back to local.
+    DBState.db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        lowLevelAccess: false,
+        effect: [{ type: 'triggerlua', code: '' }],
+      },
+    ] as never
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const ok = await chatModule.sendChat(-1)
+    expect(ok).toBe(false)
+    expect(getServerChatCalls()).toHaveLength(0)
   })
 })

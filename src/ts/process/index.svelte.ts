@@ -7,7 +7,7 @@ import { orchestrateResponse } from './postGeneration/orchestrateResponse'
 import { runStage4 } from './postGeneration/runStage4'
 import { dispatchRequest } from './dispatch/dispatchRequest'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
-import { isFastifyServer } from '../platform'
+import { resolveServerPromptAssembly } from './request/serverPromptAssembly'
 import {
   applyServerBackedTerminal,
   assembleServerBackedSendChat,
@@ -152,14 +152,30 @@ export async function sendChat(
     let serverDispatch: ServerBackedDispatch | undefined
 
     // Server-side prompt assembly with browser-side patch replay. Send-like
-    // calls now consume the `/chat` provider stream; preview modes still only
-    // read the assembled prompt payload.
-    // Server prompt assembly is gated behind the (default-off) experimental
-    // `useServerPromptAssembly` flag; the `!assembledByServer` fallback below is the
-    // live local assembly path. Neither is deprecated — see the flag's JSDoc in
-    // database.svelte.ts. Removing the fallback is the end of the prompt-assembly
-    // thinning sub-family, not a precursor.
-    if (isFastifyServer && DBState.db.useServerPromptAssembly) {
+    // calls consume the `/chat` provider stream; preview modes only read the
+    // assembled prompt payload. `resolveServerPromptAssembly` mirrors
+    // `resolveServerCompletionRoute`: in Fastify mode with the experimental
+    // `useServerPromptAssembly` master-enable on, the supported text-send subset
+    // is server-mandatory (`server`) and every out-of-subset send hard-fails
+    // (`unsupported`) — there is no silent local fall-through. `local` (the
+    // `!assembledByServer` branch below) is reached only when the server path is
+    // not engaged: `!isFastifyServer` (dev/web/tests) or the flag is off. Neither
+    // the flag nor the local fallback is deprecated — see the flag's JSDoc in
+    // database.svelte.ts; removing them is the END of the prompt-assembly thinning
+    // sub-family, not a precursor.
+    const assemblyRoute = resolveServerPromptAssembly({
+      currentChar,
+      currentChat,
+      preview: arg.preview,
+      previewPrompt: arg.previewPrompt,
+      continue: arg.continue,
+      regenerateMessageId: arg.regenerateMessageId,
+    })
+    if (assemblyRoute.type === 'unsupported') {
+      throwError(assemblyRoute.reason)
+      return false
+    }
+    if (assemblyRoute.type === 'server') {
       const serverAssembly = await assembleServerBackedSendChat({
         selectedChar,
         selectedChat,
@@ -198,6 +214,7 @@ export async function sendChat(
         generationInfo = serverAssembly.dispatch?.generationInfo
       }
     }
+    // assemblyRoute.type === 'local' falls through to the local assembler below.
 
     if (!assembledByServer) {
       const localAssembly = await assembleLocalSendChatPrompt({

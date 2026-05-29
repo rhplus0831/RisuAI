@@ -223,13 +223,24 @@ Every production read of `useServerPromptAssembly`:
 
 ## The target — `resolveServerPromptAssembly`
 
-It does not exist yet (`rg resolveServerPromptAssembly` is empty). Build it to
-mirror `resolveServerCompletionRoute`: a pure function returning
+**Landed (slice 1).** `src/ts/process/request/serverPromptAssembly.ts` exports the
+pure `resolveServerPromptAssembly(input)` returning
 `{ type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason }`,
-with `local` reachable only when `!isFastifyServer`, and `unsupported` carrying a
-user-facing reason. Replace the boolean gate at `index.svelte.ts:162`, route
-`server`/`local` to the existing assembly paths, and make `unsupported` a hard
-fail (no fall-through to local).
+mirroring `resolveServerCompletionRoute`. It replaced the boolean gate at
+`index.svelte.ts`: the gate is now a switch on the verdict — `server` runs
+`assembleServerBackedSendChat`, `unsupported` calls `throwError(reason)` +
+`return false` (no fall-through), and `local` falls through to
+`assembleLocalSendChatPrompt`. The silent `unavailable` escape in
+`serverBackedSendChat.ts` is deleted.
+
+Decision order in the implementation: `!isFastifyServer` → `local`; the
+experimental `useServerPromptAssembly` master-enable off → `local` (the one
+`local` verdict that survives in Fastify mode, gone when the flag is removed at
+the end of the sub-family); then mode/user-message structural check, group check,
+provider routability (delegated to `resolveServerCompletionRoute`), and the
+content-signal check — each out-of-subset signal → `unsupported`; otherwise
+`server`. The content detector keeps one named predicate per class so a later
+content slice flips exactly one.
 
 ### The supported subset (returns `server`)
 

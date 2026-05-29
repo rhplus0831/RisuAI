@@ -22,7 +22,7 @@ requests a write** — it never becomes the authority.
 | Stage | Default owner | Notes |
 | --- | --- | --- |
 | Pre-send input | Browser | UID/input plumbing; rows persist via commands (B1). |
-| Prompt assembly | **Browser** (`assembleLocalSendChatPrompt`) | `useServerPromptAssembly` off; server path is `/api/v1/generate/chat` → `prompt/assemble.ts`. Blocker **A1**. |
+| Prompt assembly | **Server-mandatory for the text-send subset** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier (`request/serverPromptAssembly.ts`): in Fastify mode + `useServerPromptAssembly`, the pure-text subset routes `server`, every content class routes `unsupported` (hard fail). Blocker **A1** content classes (3a/3b/3c) graduate the rest. |
 | Provider dispatch | **Server** (`/generate/completion`) | `resolveServerCompletionRoute`; `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
 | Token streaming → rows | Browser | Writes the projection. |
 | Post-generation | **Browser** | `editoutput`, inlay-screen, output trigger, auto-continue, IGP (blocker **A2** for the durable ones). |
@@ -55,19 +55,23 @@ all-or-nothing per send, so they cannot silently stay browser-side. Resolution:
 port the class, or classify the send as server-unsupported — never a silent
 fallback.
 
-**Missing primitive:** there is no `resolveServerPromptAssembly` classifier. The
-precedent to mirror is `resolveServerCompletionRoute` (returns
-`local | server | unsupported`). Today there is only the runtime gate
-`isFastifyServer && DBState.db.useServerPromptAssembly` (default off) plus a soft
-`unavailable` escape (a non-string `send` falls back to local even with the flag
-on). "The local fallback is gone" is provable only once a classifier returns
-`unsupported` (not `local`) in Fastify mode for out-of-subset shapes.
+**Foundation primitive (landed, slice 1):** `resolveServerPromptAssembly`
+(`src/ts/process/request/serverPromptAssembly.ts`) mirrors
+`resolveServerCompletionRoute` and returns `local | server | unsupported`. It
+replaced the boolean gate at `index.svelte.ts`: in Fastify mode with
+`useServerPromptAssembly` on, the supported pure-text-send subset routes `server`
+(local assembler unreachable for it), and **every** content class above
+(asset/image-gen/Lua/plugin), a non-user-message send, a group character, and a
+non-server-routable provider route `unsupported` and hard-fail. The soft
+`unavailable` escape (the silent non-string-`send` → local fall-through) is
+deleted. `local` is reached only when `!isFastifyServer` or the flag is off.
 
-**Smallest first batch (foundation):** build the classifier and make the supported
-subset server-mandatory — single non-group character, server-routable provider,
-no asset/image-gen/Lua/plugin content. This is exactly the surface existing tests
-pin green; it needs only the classifier + gate replacement + a negative test that
-`assembleLocalSendChatPrompt` is unreachable for the subset.
+**Remaining A1 work — content graduation (slices 3a/3b/3c):** each later content
+slice ports one class to the server assembler and flips its detector in the
+classifier from `→ unsupported` to `→ server`. Each detector is already isolated
+behind its own named predicate. Until then the classifier reads
+`useServerPromptAssembly` as the experimental master enable; removing that flag is
+the END of the sub-family, after the last content class graduates.
 
 ### A2 — Post-generation durable derivation (no server path)
 
