@@ -3,7 +3,10 @@
 Date: 2026-05-29
 
 Read this after [`status.md`](status.md) and before editing code. It maps the
-implementation to files, contracts, and proof points.
+implementation to files, contracts, and proof points. For the active Phase 4
+chat-process batches, [`reference/`](reference/README.md) is the deeper,
+per-work-item routing (exact signatures, parity matrix, persistence round-trip,
+proof points).
 
 ## Projection Path
 

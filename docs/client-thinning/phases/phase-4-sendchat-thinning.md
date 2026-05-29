@@ -15,6 +15,11 @@ Today's default Fastify flow: the browser assembles the prompt
 (unsupported providers hard-fail via `resolveServerCompletionRoute`), and the
 browser orchestrates post-gen with persistence via browser-issued commands.
 
+The code-level detail for each batch below — exact entry points and signatures,
+the server/browser parity matrix, the persistence round-trip, and the proof
+points — is organized under [`../reference/`](../reference/README.md), one shard
+per work-order item.
+
 ## Work Order
 
 1. **A1 foundation — prompt-assembly classifier.** Build

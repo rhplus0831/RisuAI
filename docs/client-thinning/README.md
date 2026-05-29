@@ -48,12 +48,16 @@ command-issuance. See [`plan.md`](plan.md) for the full breakdown.
 8. [`coverage.md`](coverage.md) — test/audit coverage router.
 9. [`architecture.md`](architecture.md) — module ownership and complexity.
 10. [`phases/`](phases/README.md) — phase sequencing (0–3 done; 4 active; 5 closeout).
+11. [`reference/`](reference/README.md) — deep, code-grounded routing for the
+    active Phase 4 batches (classifier, parity matrix, persistence round-trip,
+    proof points).
 
 ## Canonical Detail
 
 - Direction and work breakdown: [`plan.md`](plan.md).
 - Detailed chat-process ownership triage: [`status/sendchat-thinning.md`](status/sendchat-thinning.md).
 - Code entry points and proof commands: [`implementation-map.md`](implementation-map.md).
+- Phase 4 code-level detail (per work-order item): [`reference/`](reference/README.md).
 - Client-owned vs legacy/removed: [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
 - Latest recorded verification: [`coverage/latest-verification.md`](coverage/latest-verification.md).
 
