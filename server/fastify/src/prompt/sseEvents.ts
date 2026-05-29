@@ -90,11 +90,48 @@ export interface ErrorEvent {
   restoration?: unknown
 }
 
+/**
+ * Slice 4 (A2): the server post-generation derivation surfaced on the terminal
+ * `done` frame. Additive to the locked SSE contract. Present only when the
+ * post-gen pass produced something — the byte-identical trigger-less / script-less
+ * send omits it entirely, so the `done` frame stays `{ result, generationId,
+ * generationInfo }` exactly as before.
+ */
+export interface PostGenerationFrame {
+  /**
+   * The `editoutput`'d + run-var'd assistant text (server-owned final text). The
+   * browser writes it onto the just-streamed assistant message in place of its
+   * own copy (it no longer runs `editoutput` on the server path). Present only
+   * when the pass actually changed the text.
+   */
+  finalText?: string
+  /**
+   * The post-generation scriptstate (+ any output-trigger message) delta — the
+   * same shape as the assembly `message_patch`. The browser applies it to its
+   * projection at terminal time (after the stream, not at assembly time).
+   */
+  messagePatch?: AssembleMutationPayload
+  /**
+   * The `'output'` trigger requested a resend (`sendAIprompt`). The browser
+   * re-issues `sendChat` — the resend control flow stays browser-side (B2).
+   */
+  resendChat?: boolean
+  /**
+   * The chat revision after the route persisted the post-gen scriptstate delta.
+   * The browser reconciles its cached command revision to it so the follow-up
+   * generation-result command does not revision-conflict. Mirrors C-A1's
+   * `info.revision`, but for the post-gen write.
+   */
+  revision?: number
+}
+
 export interface DoneEvent {
   type: 'done'
   result?: string
   generationId?: string
   generationInfo?: Record<string, unknown>
+  /** Slice 4 (A2): server post-generation derivation. See {@link PostGenerationFrame}. */
+  postGeneration?: PostGenerationFrame
 }
 
 export type PromptChatEvent =

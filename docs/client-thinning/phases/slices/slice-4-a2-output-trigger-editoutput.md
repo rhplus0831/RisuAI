@@ -154,10 +154,38 @@ re-open C-A1's assembly-time delta. Do not bundle group-chat removal.
 
 ## When this slice is done
 
-- [ ] The server runs the run-var pass, `'output'` trigger, and `editoutput` over
-      the completion text, deriving the durable delta.
-- [ ] The delta is persisted via the slice-2 route path (revision bump + event),
+- [x] The server runs the run-var pass, `'output'` trigger, and `editoutput` over
+      the completion text, deriving the durable delta. (`runServerPostGeneration`
+      in `assemble.ts`, wired via `providerTransport.ts`'s `postGeneration` hook.)
+- [x] The delta is persisted via the slice-2 route path (revision bump + event),
       and the browser's durable derivation is removed for the server path.
-- [ ] Resend is reported to the browser, not driven server-side; B1 effects intact.
-- [ ] Server-side output-trigger/`editoutput` tests are green; the browser pin is
+      (`generationChat.ts::buildPostGenerationFrame` → `persistAssemblyMutations`;
+      `orchestrateResponse` `serverOwnsPostGeneration` skips `applyOutputTrigger` +
+      `editoutput`; `applyServerBackedTerminal` consumes the patch + final text.)
+- [x] Resend is reported to the browser, not driven server-side; B1 effects intact.
+      (`done.postGeneration.resendChat` → `applyServerBackedTerminal` →
+      `runStage4` resend; inlay render + TTS stay browser.)
+- [x] Server-side output-trigger/`editoutput` tests are green; the browser pin is
       flipped; the A2 parity rows are updated — closing the last A-blocker.
+      (`generation.chat.test.ts`, `sendChat.fixtures.serverBacked.test.ts`,
+      `orchestrateResponse.test.ts`; parity/status/closeout docs updated.)
+
+## Scope notes (decisions taken)
+
+- **What the server persists vs surfaces.** The post-gen pass persists the durable
+  **scriptstate delta** (run-var + output-trigger `setvar`/`v2SetVar`) through the
+  slice-2 writer. The `editoutput`'d + run-var'd **final text** rides on
+  `done.postGeneration.finalText`; the browser writes it onto the assistant message
+  and its existing generation-result command (B2) persists it — B2 stays
+  browser-owned (the C-A1 route-backed test pins that the generation-result POST
+  still fires). The server does **not** persist the assistant message, avoiding a
+  double-write with B2.
+- **Output-trigger message surgery** (impersonate/cutchat/modifychat) is surfaced
+  in the post-gen `message_patch` for the projection (matching today's
+  projection-only behavior), not separately persisted — the scriptstate delta is
+  the durable A2 derivation this slice lands. `editoutput`-that-adds-inlay-markers
+  is the one exotic ordering the terminal pass does not specially reconcile.
+- **Streaming display.** The server streams raw tokens for live display; the
+  `editoutput`/run-var transform is applied once the full text is known and
+  surfaced on `done`. The inlay-screen render (B1) runs once, at terminal time,
+  over the server-owned final text.

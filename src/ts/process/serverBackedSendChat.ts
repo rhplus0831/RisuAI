@@ -13,6 +13,7 @@ import {
 } from '../chatCommands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { getInlayAsset } from './files/inlays'
+import { runInlayScreen } from './inlayScreen'
 import { applyServerHypaV3Progress } from './request/serverMemory'
 import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
 import {
@@ -57,8 +58,8 @@ export type ServerBackedAssemblyResult =
     }
 
 export type ServerBackedTerminalResult =
-  | { status: 'ok'; currentChat: Chat }
-  | { status: 'failed'; error: string; currentChat: Chat }
+  | { status: 'ok'; currentChat: Chat; resendChat: boolean }
+  | { status: 'failed'; error: string; currentChat: Chat; resendChat: boolean }
 
 function numberFrom(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
@@ -292,6 +293,9 @@ export async function applyServerBackedTerminal(args: {
   selectedChar: number
   selectedChat: number
   generationInfo: MessageGenerationInfo
+  /** Continue/regenerate target message id, so the post-gen final text + inlay land
+   * on the right row when it is not keyed by `generationId` (the continue case). */
+  targetMessageId?: string
 }): Promise<ServerBackedTerminalResult> {
   const terminalInfo = args.terminal.done?.generationInfo
   if (terminalInfo && typeof terminalInfo === 'object') {
@@ -308,6 +312,7 @@ export async function applyServerBackedTerminal(args: {
       status: 'failed',
       error: args.terminal.error ?? 'provider dispatch failed',
       currentChat: DBState.db.characters[args.selectedChar].chats[args.selectedChat],
+      resendChat: false,
     }
   }
 
@@ -330,9 +335,49 @@ export async function applyServerBackedTerminal(args: {
     }
   }
 
+  // Slice 4 (A2): apply the server-owned post-generation derivation. The browser
+  // skipped `editoutput` + `applyOutputTrigger` on this path (`orchestrateResponse`
+  // `serverOwnsPostGeneration`), so here it: (1) applies the post-gen scriptstate
+  // (+ any output-trigger message) patch to the projection, and (2) renders the
+  // inlay screen (B1) over the server-owned final text written onto the assistant
+  // message. The generation-result persist (B2) then writes this final text. Resend
+  // is reported back so the coordinator can re-issue (the recursion stays browser).
+  const postGen = args.terminal.done?.postGeneration
+  const resendChat = !!postGen?.resendChat
+  const generationId = args.generationInfo.generationId ?? ''
+  let inlayPromise: Promise<string> | undefined
+  let assistant: Message | undefined
+  withTrustedServerProjectionWrite(() => {
+    const liveChat = DBState.db.characters[args.selectedChar].chats[args.selectedChat]
+    if (postGen?.messagePatch) {
+      applyServerMessagePatch(liveChat, postGen.messagePatch)
+    }
+    assistant =
+      findGeneratedAssistantMessage(liveChat, generationId) ??
+      (args.targetMessageId
+        ? liveChat.message.find(
+            (message) => message.chatId === args.targetMessageId && message.role === 'char',
+          )
+        : undefined)
+    if (assistant) {
+      const baseText = typeof postGen?.finalText === 'string' ? postGen.finalText : assistant.data
+      const inlay = runInlayScreen(args.currentChar, baseText)
+      assistant.data = inlay.text
+      inlayPromise = inlay.promise ?? undefined
+    }
+  })
+  if (inlayPromise && assistant) {
+    const resolved = await inlayPromise
+    const ref = assistant
+    withTrustedServerProjectionWrite(() => {
+      ref.data = resolved
+    })
+  }
+
   return {
     status: 'ok',
     currentChat: DBState.db.characters[args.selectedChar].chats[args.selectedChat],
+    resendChat,
   }
 }
 

@@ -23,6 +23,12 @@ export interface ApplyNonStreamResponseOptions {
   generationInfo: MessageGenerationInfo
   promptInfo: MessagePresetInfo
   reformatContent: (data: string) => string
+  /**
+   * Slice 4 (A2): when the server owns the post-generation pass, skip `editoutput`
+   * here — the server runs it. (Server dispatch always streams, so this branch is
+   * local-only in practice; the flag keeps the non-stream path faithful too.)
+   */
+  skipEditOutput?: boolean
 }
 
 export interface ApplyNonStreamResponseResult {
@@ -45,7 +51,18 @@ export async function applyNonStreamResponse(
     generationInfo,
     promptInfo,
     reformatContent,
+    skipEditOutput,
   } = opts
+
+  // A2: `editoutput` runs server-side on the server-owned path; here it degrades
+  // to the reformatted text (the server ships the final text on `done`).
+  const runEditOutput = (
+    text: string,
+    idx: number,
+  ): Promise<{ data: string; emoChanged: boolean }> =>
+    skipEditOutput
+      ? Promise.resolve({ data: reformatContent(text), emoChanged: false })
+      : processScriptFull(nowChatroom, reformatContent(text), 'editoutput', idx)
 
   const msgs =
     req.type === 'success'
@@ -65,21 +82,11 @@ export async function applyNonStreamResponse(
     const msg = msgs[i]
     const mess = msg[1]
     let msgIndex = messagesAt().length
-    let result2 = await processScriptFull(
-      nowChatroom,
-      reformatContent(mess),
-      'editoutput',
-      msgIndex,
-    )
+    let result2 = await runEditOutput(mess, msgIndex)
     if (i === 0 && arg.continue) {
       msgIndex -= 1
       const beforeChat = messagesAt()[msgIndex]
-      result2 = await processScriptFull(
-        nowChatroom,
-        reformatContent(beforeChat.data + mess),
-        'editoutput',
-        msgIndex,
-      )
+      result2 = await runEditOutput(beforeChat.data + mess, msgIndex)
     }
     if (DBState.db.removeIncompleteResponse) {
       result2.data = trimUntilPunctuation(result2.data)

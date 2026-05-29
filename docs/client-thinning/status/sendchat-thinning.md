@@ -25,7 +25,7 @@ requests a write** — it never becomes the authority.
 | Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models + non-interactive Lua edit/input hooks + image-gen instruction** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier; slice 3a graduated multimodal/asset; slice 3b graduated Lua `editRequest`, `editprocess`, input-trigger, and `editinput`; slice 3c graduated the image-gen instruction. Remaining `unsupported`: non-vision caption (class 2), interactive Lua dialogs, and permanent pluginV2. |
 | Provider dispatch | **Server** (`/generate/completion`) | `resolveServerCompletionRoute`; `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
 | Token streaming → rows | Browser | Writes the projection. |
-| Post-generation | **Browser** | `editoutput`, inlay-screen, output trigger, auto-continue, IGP (blocker **A2** for the durable ones). |
+| Post-generation | **Server (durable) + Browser (effects)** | Durable derivation — `editoutput`, run-var pass, `'output'` trigger — is **server-owned (A2 done, slice 4)**: `runServerPostGeneration` derives + persists the scriptstate delta and ships the final text on `done.postGeneration`. Browser keeps inlay-screen render (B1), auto-continue/IGP recursion (B2). |
 | Stage-4 closeout | **Browser** | Notification, emotion, image-gen, TTS, stage metadata (B1/B2). |
 | HypaV3 memory | **Server** | Persistence + jobs server-side; progress UI is browser (B1). |
 | Durable persistence | **Mixed** | Assembly-time scriptstate delta is now persisted by `/generate/chat` itself (**C-A1, done**); final-message persistence is still command-backed (B2). |
@@ -82,19 +82,26 @@ predicate. The classifier still reads `useServerPromptAssembly` as the
 experimental master enable; removing that flag is the END of the sub-family, now
 that the last content class has graduated.
 
-### A2 — Post-generation durable derivation (no server path)
+### A2 — Post-generation durable derivation — DONE (slice 4)
 
-- **Output trigger** — `runTrigger(char, 'output', …)` mutates scriptstate and
-  messages after generation. The server trigger engine is already used for
-  `'start'` and submit-time `'input'`, but `/generate/chat` has **no
-  post-generation `'output'` invocation**. Needs a server output-trigger pass.
-- **`editoutput` script processing** — mutates the final response text
-  (`postGeneration/streamResponse.ts`, `nonStreamResponse.ts`). Needs server-side
-  output-script execution.
+`runServerPostGeneration` (`assemble.ts`) runs the post-generation pass after
+dispatch, reusing the assembler state + the Lua/trigger machinery A1 landed:
 
-Both depend on server post-generation script execution and reuse the Lua/trigger
-machinery that A1 now has for assembly-time hooks. A1 content graduation is
-complete (slices 3a/3b/3c), so A2 (slice 4) is the next batch.
+- **`editoutput`** — Lua `editOutput` → CBS → regex `editoutput` over the
+  completion text; the derived final text rides the terminal `done.postGeneration`,
+  and the browser writes it onto the assistant message (B2 persists it).
+- **Pre-trigger run-var pass + `'output'` trigger** — `runTrigger(char, 'output', …)`
+  + the run-var pass derive the durable `chat.scriptstate` delta, which the route
+  persists through the slice-2 writer (`persistAssemblyMutations`, one revision
+  bump) and surfaces as a post-gen `message_patch`. Resend (`sendAIprompt`) is
+  reported on `done`; the resend recursion stays browser-side (B2).
+
+The browser's durable derivation is removed on the server-owned path
+(`orchestrateResponse` `serverOwnsPostGeneration` skips `applyOutputTrigger` +
+`editoutput`; `applyServerBackedTerminal` consumes the patch + final text + resend).
+Output-trigger message surgery is surfaced to the projection. Proven by the A2
+cases in `generation.chat.test.ts`, the output-trigger / editoutput cases in
+`sendChat.fixtures.serverBacked.test.ts`, and the flip in `orchestrateResponse.test.ts`.
 
 ### A3 — Provider coverage
 

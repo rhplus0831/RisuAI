@@ -306,6 +306,10 @@ export async function sendChat(
       reformatContent,
       runCurrentChatFunction,
       suppressStreamingTts: !!serverDispatch,
+      // A2: the server owns the post-gen derivation (editoutput + run-var +
+      // output trigger) on the server-dispatch path; the browser relays the
+      // stream for display and applies the terminal patch instead of deriving.
+      serverOwnsPostGeneration: !!serverDispatch,
     })
     if (orchestrate.status === 'aborted') {
       return false
@@ -324,7 +328,9 @@ export async function sendChat(
     currentChat = orchestrate.currentChat
     const result = orchestrate.result
     const emoChanged = orchestrate.emoChanged
-    const resendChat = orchestrate.resendChat
+    // A2: on the server-dispatch path the resend request rides the terminal
+    // (`done.postGeneration.resendChat`); orchestrate no longer derives it.
+    let resendChat = orchestrate.resendChat
 
     if (serverTerminal) {
       const terminal = await serverTerminal
@@ -334,11 +340,15 @@ export async function sendChat(
         selectedChar,
         selectedChat,
         generationInfo,
+        targetMessageId: serverGenerationTargetMessageId,
       })
       currentChat = terminalResult.currentChat
       if (terminalResult.status === 'failed') {
         throwError(terminalResult.error)
         return false
+      }
+      if (terminalResult.resendChat) {
+        resendChat = true
       }
     }
 

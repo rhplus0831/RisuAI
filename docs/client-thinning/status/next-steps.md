@@ -19,18 +19,16 @@ Read this when choosing the next client-thinning batch. Full classification in
 
 Completed context: slice 1 (`resolveServerPromptAssembly`), slice 2 (C-A1),
 slice 3a (multimodal/asset on image-input models), pluginV2 permanent
-unsupported, and all slice 3b Lua sub-slices have landed.
+unsupported, all slice 3b Lua sub-slices, slice 3c (image-gen view instruction),
+and **slice 4 (A2 — server output-trigger + `editoutput`)** have landed. **All
+A-blockers (A1/A2/A3) are now resolved.**
 
-1. **Slice 3c — image-gen view instruction.** Port the static prompt instruction
-   branch and graduate that detector.
-2. **A2 — server output-trigger + `editoutput`.** Needs server output-script
-   execution; sequence after A1's image-gen slice.
-3. **Group-chat legacy removal.** Separate from thinning — inventory and remove
+1. **Group-chat legacy removal.** Separate from thinning — inventory and remove
    the client surface (see [`client-owned-unsupported.md`](client-owned-unsupported.md)).
-4. **Audit-rule hardening.** Convert A4R2, A4R7, the fanout `.svelte` path, and
+2. **Audit-rule hardening.** Convert A4R2, A4R7, the fanout `.svelte` path, and
    EC2 from string/regex to AST invariants; add adversarial fixtures
    ([`audit.md`](audit.md)).
-5. Documentation-only reconciliation when code and docs drift without behavior
+3. Documentation-only reconciliation when code and docs drift without behavior
    change.
 
 ## Blocked / No-Port

@@ -814,6 +814,114 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
+  // Slice 4 (A2): the server now owns the post-generation derivation — the
+  // `'output'` trigger + run-var pass + `editoutput` over the just-generated text.
+  // These route-backed tests prove the browser consumes the server's derivation
+  // (the scriptstate patch + final text on the terminal `done` frame) and no longer
+  // re-derives it (zero scriptstate re-POSTs; editoutput applied server-side).
+  it('derives an output-trigger scriptstate delta server-side with zero browser re-POSTs (A2)', async () => {
+    const harness = await createRouteBackedHarness()
+    try {
+      const loaded = await loadFixture('simple-send')
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture('simple-send')
+      // An OUTPUT trigger sets `$mood` AFTER generation — the durable derivation the
+      // browser used to run in `applyOutputTrigger`. The server runs + persists it;
+      // the browser must consume the terminal patch, not re-POST a scriptstate command.
+      DBState.db.characters[0].triggerscript = [
+        {
+          comment: '',
+          type: 'output',
+          conditions: [],
+          effect: [{ type: 'setvar', operator: '=', var: 'mood', value: 'happy' }],
+        },
+      ]
+      await harness.seed(DBState.db)
+      vi.stubGlobal('fetch', harness.fetch)
+      harness.setDispatchText('route-backed reply')
+
+      // Browser starts on the pre-persist revision; the only way it reaches the
+      // bumped revision is the SSE reconcile on the post-gen `done` frame.
+      clearCachedServerCommandRevision()
+      setCachedServerCommandRevision(1)
+      setServerProjectionWriteGuardEnabled(true)
+      const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+      await drainRouteBackedCommands()
+      expect(ok).toBe(true)
+
+      // Zero browser-side durable derivation: no scriptstate command POSTs.
+      const scriptstatePosts = harness.commandCalls.filter((call) =>
+        call.url.includes('/scriptstate'),
+      )
+      expect(scriptstatePosts).toEqual([])
+
+      // The projection reflects the server-derived scriptstate, applied from the
+      // terminal post-gen patch (not a browser `applyOutputTrigger`).
+      expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $mood: 'happy' })
+
+      // Durable: the route persisted the post-gen write + bumped the revision
+      // (seed = 1 → post-gen persist = 2).
+      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      expect(bootstrap.statusCode).toBe(200)
+      expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toMatchObject({
+        $mood: 'happy',
+      })
+      expect(bootstrap.json().revision).toBe(2)
+
+      // Revision reconciliation: the generation-result persist (B2) POSTs the
+      // post-gen revision the `done` frame surfaced, not the stale cached 1.
+      const generationResultPost = harness.commandCalls.find((call) =>
+        call.url.includes('/generation-result'),
+      )
+      expect(generationResultPost).toBeDefined()
+      expect(generationResultPost?.body.baseRevision).toBe(2)
+      expect(getServerCompletionCalls()).toEqual([])
+    } finally {
+      await drainRouteBackedCommands()
+      await harness.close()
+    }
+  })
+
+  it('applies the server-owned editoutput final text to the assistant message (A2)', async () => {
+    const harness = await createRouteBackedHarness()
+    try {
+      const loaded = await loadFixture('simple-send')
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture('simple-send')
+      // A regex editoutput the SERVER (not the browser) applies post-generation:
+      // 'route-backed reply' → 'route-backed REPLY'.
+      DBState.db.characters[0].customscript = [
+        { comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false },
+      ]
+      await harness.seed(DBState.db)
+      vi.stubGlobal('fetch', harness.fetch)
+      harness.setDispatchText('route-backed reply')
+
+      clearCachedServerCommandRevision()
+      setServerProjectionWriteGuardEnabled(true)
+      const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+      await drainRouteBackedCommands()
+      expect(ok).toBe(true)
+
+      // The browser wrote the server-owned editoutput final text onto the assistant
+      // message (it skipped `editoutput` itself on this path) and shipped it to B2.
+      const liveChat = DBState.db.characters[0].chats[0]
+      const assistant = [...liveChat.message].reverse().find((m) => m.role === 'char')
+      expect(assistant?.data).toBe('route-backed REPLY')
+      const generationResultPost = harness.commandCalls.find((call) =>
+        call.url.includes('/generation-result'),
+      )
+      expect(
+        (generationResultPost?.body.generationResult as { message?: { data?: string } } | undefined)
+          ?.message?.data,
+      ).toBe('route-backed REPLY')
+      expect(getServerCompletionCalls()).toEqual([])
+    } finally {
+      await drainRouteBackedCommands()
+      await harness.close()
+    }
+  })
+
   it('assembles inlay multimodal bytes server-side with byte-parity to the local golden (slice 3a)', async () => {
     const harness = await createRouteBackedHarness()
     try {

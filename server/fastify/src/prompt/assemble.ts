@@ -137,6 +137,7 @@ export type AssembleMutationSource =
   | 'start_trigger'
   | 'input_trigger'
   | 'editinput'
+  | 'output_trigger'
 
 export type ChatVarMutationValue = string | number | boolean | null
 
@@ -231,6 +232,15 @@ export interface AssembleResult {
    * so the route leaves message persistence to the browser exactly as before.
    */
   submitTranscriptChanged?: boolean
+  /**
+   * Slice 4 (A2): the internal assembler state, exposed **route-only** (never on
+   * the SSE wire) so the route can run {@link runServerPostGeneration} over the
+   * just-generated assistant text after provider dispatch — it reuses the same
+   * chat clone, expansion context, var-engine coordinates, and persisted
+   * scriptstate baseline assembly built. Present only on the dispatch-ready
+   * success path (omitted for `stopSending`, which never dispatches).
+   */
+  state?: AssemblyState
 }
 
 /**
@@ -1397,5 +1407,232 @@ export async function assemblePrompt(
     restoration: buildRestorationPayload(state),
     submitMessages: state.submitMessages,
     submitTranscriptChanged: submitTranscriptChanged(state),
+    // Slice 4 (A2): hand the assembler state to the route so it can run the
+    // post-generation pass (`runServerPostGeneration`) over the provider's
+    // completion text after dispatch, reusing this exact chat/var context.
+    state,
+  }
+}
+
+// ── Slice 4 (A2): server post-generation pass ────────────────────────────────
+//
+// After the provider produces the completion text, the server runs the same
+// durable post-generation derivation the browser used to own
+// (`postGeneration/outputTrigger.ts` + the `editoutput` arm of
+// `processScriptFull`): `editoutput` over the completion, the pre-trigger
+// **run-var pass**, and the `'output'` trigger. It derives the durable
+// `chat.scriptstate` delta (run-var + output-trigger `setvar`/`v2SetVar`) and the
+// final assistant text, and reports whether the output trigger requested a resend.
+//
+// The scriptstate delta is persisted by the route through the slice-2 writer
+// (`persistAssemblyMutations`); the final text rides back on the `done` frame so
+// the browser's generation-result persist (B2) writes the server-owned text. The
+// assistant message itself is **not** persisted here — B2 owns that — so the pass
+// derives the delta against the post-assembly scriptstate baseline and never
+// emits a transcript write for the appended assistant row.
+
+/** Route inputs for {@link runServerPostGeneration}. */
+export interface ServerPostGenerationInput {
+  /** The raw provider completion text (pre-`editoutput`). */
+  completionText: string
+  /** The assistant message id (`generationId`); B2 keys the persist on it. */
+  generationId: string
+  /** `createGenerationInfo` output, stamped onto the appended assistant row. */
+  generationInfo?: Record<string, unknown>
+  /** Assembled prompt-info, stamped onto the appended assistant row. */
+  promptInfo?: Record<string, unknown>
+}
+
+/** Result of {@link runServerPostGeneration}. */
+export interface ServerPostGenerationResult {
+  /** The `editoutput`'d + run-var'd assistant text (server-owned final text). */
+  finalText: string
+  /** True when `editoutput` / run-var changed the text vs the reformatted completion. */
+  textChanged: boolean
+  /** The post-gen delta (scriptstate + any output-trigger message surgery). */
+  mutations: AssembleMutationPayload
+  /** The output trigger requested a resend (`sendAIprompt`). Browser re-issues it. */
+  resendChat: boolean
+  /** A durable chat-var write occurred; the route persists when true. */
+  changed: boolean
+}
+
+/** `reformatContent` (`index.svelte.ts:91`) is `.trim()`; mirror it server-side. */
+function reformatCompletion(text: string): string {
+  return text.trim()
+}
+
+/**
+ * The `editoutput` transform of the completion text, mirroring
+ * `processScriptFull(…, 'editoutput', msgIndex)` (`scripts.ts:121-160`): the Lua
+ * `editOutput` hook → CBS expansion → the regex `editoutput` scripts. Identical in
+ * shape to the slice-3b-4 `applyEditInput`. pluginV2 stays permanent-unsupported,
+ * so its arm is intentionally absent. Lua var writes fold into the chat-var delta.
+ */
+async function applyEditOutput(
+  state: AssemblyState,
+  text: string,
+  msgIndex: number,
+): Promise<string> {
+  const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
+  let out = await runLuaEditTrigger(
+    state.currentChar,
+    'editoutput',
+    text,
+    { index: msgIndex },
+    editCtx,
+  )
+  out = expandVariables(out, { ...state.ctx, chara: state.currentChar }).text
+  out = processScript(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
+  if (varEngine.varChanged) {
+    state.varChanged = true
+    syncWorkingScriptstate(state)
+  }
+  return out
+}
+
+/**
+ * Append (send / regenerate) or extend (continue) the assistant row carrying the
+ * `editoutput`'d text, mirroring `consumeStreamResponse` / `applyNonStreamResponse`.
+ * For `continue` the trailing assistant row is rewritten in place (keeping its
+ * id/metadata so B2's `targetMessageId` replace lands); otherwise a fresh row is
+ * pushed with the generation metadata so B2 finds it by `chatId === generationId`.
+ */
+function appendAssistantRow(
+  state: AssemblyState,
+  editedText: string,
+  input: ServerPostGenerationInput,
+  isContinue: boolean,
+  continueIndex: number,
+): void {
+  const messages = (state.currentChat.message ??= [])
+  if (isContinue && messages[continueIndex]?.role === 'char') {
+    messages[continueIndex] = { ...messages[continueIndex], data: editedText }
+    return
+  }
+  messages.push({
+    role: 'char',
+    data: editedText,
+    saying: state.currentChar.chaId,
+    time: Date.now(),
+    chatId: input.generationId,
+    ...(input.generationInfo ? { generationInfo: input.generationInfo } : {}),
+    ...(input.promptInfo ? { promptInfo: input.promptInfo } : {}),
+  } as Message)
+}
+
+/**
+ * The `'output'` trigger over the post-generation transcript, mirroring
+ * `applyOutputTrigger` (`postGeneration/outputTrigger.ts:29`) and reusing the
+ * slice-3b-4 input-trigger wiring (the Lua VM seam, the var-engine writethrough).
+ * `setvar`/`v2SetVar` arms fold into the chat-var delta; a transcript rewrite is
+ * captured as an `output_trigger` message mutation (surfaced for the projection,
+ * not persisted here). Returns the trigger's resend request (`sendAIprompt`).
+ */
+async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
+  const { currentChar } = state
+  const db = state.database
+  const triggerCtx: TriggerRunContext = {
+    modules: getActiveModules(db, currentChar, state.currentChat),
+    model: db.aiModel,
+    database: db,
+    selectedCharID: state.selectedCharID,
+    chatPage: state.chatPage,
+    runLua: async ({ code, mode, lowLevelAccess, chat, varEngine }) => {
+      const result = await runServerLua(
+        { code, mode, lowLevelAccess },
+        {
+          chat,
+          database: db,
+          selectedCharID: state.selectedCharID,
+          chatPage: state.chatPage,
+          varEngine,
+          char: currentChar,
+          model: db.aiModel,
+        },
+      )
+      return { chat, stopSending: result.stopSending }
+    },
+  }
+
+  const result = await runTrigger(triggerCtx, currentChar, 'output', { chat: state.currentChat })
+  if (!result) return false
+
+  state.varChanged = !!state.varChanged || result.varChanged
+  syncWorkingScriptstate(state)
+  state.currentChat = result.chat
+  // No-op when the trigger left the transcript untouched (`equalJson` guard).
+  captureMessageReplacement(state, 'output_trigger')
+  return !!result.sendAIprompt
+}
+
+/** Read the assistant text back after run-var + the output trigger may have run. */
+function assistantTextAfterPass(
+  state: AssemblyState,
+  input: ServerPostGenerationInput,
+  isContinue: boolean,
+  continueIndex: number,
+  fallback: string,
+): string {
+  const messages = state.currentChat.message ?? []
+  if (isContinue) {
+    return messages[continueIndex]?.data ?? fallback
+  }
+  const byId = messages.find((message) => message.chatId === input.generationId)
+  return byId?.data ?? messages.at(-1)?.data ?? fallback
+}
+
+/**
+ * Run the server post-generation pass over the provider's completion text. Reuses
+ * the assembler state from {@link assemblePrompt} (handed back on `AssembleResult.state`).
+ * See the section header above for the full contract.
+ */
+export async function runServerPostGeneration(
+  state: AssemblyState,
+  input: ServerPostGenerationInput,
+): Promise<ServerPostGenerationResult> {
+  const isContinue = state.input.mode === 'continue'
+  const messages = (state.currentChat.message ??= [])
+  const continueIndex = messages.length - 1
+  const continueBase =
+    isContinue && messages[continueIndex]?.role === 'char'
+      ? (messages[continueIndex].data ?? '')
+      : ''
+  const editIndex = isContinue ? continueIndex : messages.length
+
+  // Baseline the post-gen delta against the post-assembly scriptstate (the route
+  // already persisted the assembly-time delta), and clear the assembly-time
+  // mutation accumulators so the payload carries only post-gen writes.
+  state.initialScriptstate = cloneScriptstate(currentPersistedChat(state)?.scriptstate)
+  state.varChanged = false
+  state.messageMutations = []
+  state.additionalSystemPromptMutations = []
+
+  const reformatted = reformatCompletion(continueBase + input.completionText)
+  const editedText = await applyEditOutput(state, reformatted, editIndex)
+
+  appendAssistantRow(state, editedText, input, isContinue, continueIndex)
+
+  // The run-var pass rewrites the assistant body (stripping `{{setvar}}` etc.); that
+  // rewrite is the *final text*, surfaced on `done`, not a transcript mutation — so
+  // discard the run-var capture and re-baseline the message checkpoint to the
+  // post-run-var transcript before the output trigger.
+  state.messageMutationCheckpoint = cloneMessages(state.currentChat.message ?? [])
+  applyCurrentChatRunVars(state)
+  state.messageMutations = []
+  state.messageMutationCheckpoint = cloneMessages(state.currentChat.message ?? [])
+
+  const resendChat = await runOutputTrigger(state)
+
+  const finalText = assistantTextAfterPass(state, input, isContinue, continueIndex, editedText)
+  const mutations = buildMutationPayload(state)
+  const changed = mutations.varChanged || mutations.chatVarMutations.length > 0
+
+  return {
+    finalText,
+    textChanged: finalText !== reformatted,
+    mutations,
+    resendChat,
+    changed,
   }
 }

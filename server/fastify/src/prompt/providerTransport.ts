@@ -1,5 +1,10 @@
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import type { DoneEvent, ErrorEvent, PromptChatEvent } from './sseEvents.js'
+import type {
+  DoneEvent,
+  ErrorEvent,
+  PostGenerationFrame,
+  PromptChatEvent,
+} from './sseEvents.js'
 
 export type PromptChatEmit = (event: PromptChatEvent) => void
 
@@ -17,6 +22,16 @@ export interface ProviderChunkTransportOptions {
   doneMetadata?: ProviderDoneMetadata
   sideEffects?: (result: string) => PromptChatEvent[]
   errorRestoration?: () => ErrorEvent['restoration']
+  /**
+   * Slice 4 (A2): the server post-generation pass, run over the full completion
+   * text after the stream succeeds and **before** the terminal `done`. Its
+   * result is folded into the `done` frame's `postGeneration` field so the
+   * derived scriptstate delta / final text / resend reach the browser in-band.
+   * Runs only on a successful completion (never on abort / error). Returns
+   * `undefined` (or throws — the route callback swallows its own failures) to
+   * leave `done` untouched.
+   */
+  postGeneration?: (result: string) => Promise<PostGenerationFrame | undefined>
 }
 
 function errorMessage(err: unknown): string {
@@ -44,6 +59,22 @@ export async function emitProviderChunks(
       emit(event)
     }
   }
+  // Slice 4 (A2): run the post-generation pass, then emit the terminal `done` with
+  // its derivation folded in. Only the success paths call this; error/abort paths
+  // emit a bare `done` (no post-gen). The route's callback owns its own try/catch,
+  // so a post-gen failure degrades to a plain `done` rather than failing the send.
+  const emitSuccessDone = async (): Promise<void> => {
+    emitSideEffects()
+    const postGeneration = normalizedOptions.postGeneration
+      ? await normalizedOptions.postGeneration(result)
+      : undefined
+    emit({
+      type: 'done',
+      result,
+      ...(normalizedOptions.doneMetadata?.(result) ?? {}),
+      ...(postGeneration ? { postGeneration } : {}),
+    })
+  }
 
   if (signal?.aborted) {
     return { status: 'aborted', result }
@@ -70,8 +101,7 @@ export async function emitProviderChunks(
         return { status: 'error', result }
       }
 
-      emitSideEffects()
-      emit({ type: 'done', result, ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
+      await emitSuccessDone()
       return {
         status: 'done',
         result,
@@ -91,7 +121,6 @@ export async function emitProviderChunks(
     return { status: 'error', result }
   }
 
-  emitSideEffects()
-  emit({ type: 'done', result, ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
+  await emitSuccessDone()
   return { status: 'done', result }
 }

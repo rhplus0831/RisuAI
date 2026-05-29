@@ -385,6 +385,12 @@ export async function requestServerChatGeneration(
                   tokenResult = donePayload.result
                   controller.enqueue({ [streamKey]: tokenResult })
                 }
+                // A2: the post-gen pass may have persisted a scriptstate delta and
+                // bumped the revision; reconcile it (like C-A1's `info.revision`) so
+                // the follow-up generation-result command POSTs the right baseRevision.
+                if (typeof donePayload.postGeneration?.revision === 'number') {
+                  setCachedServerCommandRevision(donePayload.postGeneration.revision)
+                }
                 maybeResolveReady()
                 if (!readyResolved) {
                   resolveReadyOnce({

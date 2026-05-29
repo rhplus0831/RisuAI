@@ -306,6 +306,39 @@ describe('orchestrateResponse - auto-continue handoff', () => {
   })
 })
 
+describe('orchestrateResponse - server-owned post-generation (A2)', () => {
+  it('skips applyOutputTrigger, inlay, and TTS on the server-owned path', async () => {
+    // Slice 4 (A2): the server runs the run-var pass, `'output'` trigger, and
+    // `editoutput`; the browser relays the stream for display only. The durable
+    // derivation (`applyOutputTrigger`) is removed here — it is consumed from the
+    // terminal patch (`applyServerBackedTerminal`) instead. Inlay + final text +
+    // resend are applied at terminal time, so none of those fire in this branch.
+    seedDb({ ttsAutoSpeech: true })
+    fakes.stream.next = {
+      result: 'streamed',
+      emoChanged: false,
+      msgIndex: 0,
+      lastResponseChunk: { '0': 'streamed' },
+      streamAborted: false,
+    }
+    // Stage a trigger result that WOULD fire if applyOutputTrigger were called.
+    fakes.output.next = { chat: makeChat(), triggerChat: makeChat(), resendChat: true }
+
+    const result = await orchestrateResponse(baseArgs({ serverOwnsPostGeneration: true }))
+
+    expect(result.status).toBe('done')
+    if (result.status !== 'done') throw new Error('unexpected status')
+    // The stream was still relayed for display…
+    expect(fakes.stream.calls).toBe(1)
+    // …but the browser did NOT re-derive: no output trigger, no inlay, no TTS here.
+    expect(fakes.output.calls).toBe(0)
+    expect(fakes.inlay.calls).toBe(0)
+    expect(fakes.tts.calls).toBe(0)
+    // Resend is reported from the terminal, not derived here.
+    expect(result.resendChat).toBe(false)
+  })
+})
+
 describe('orchestrateResponse - happy path returns', () => {
   it('returns done with all fields populated from the streaming branch', async () => {
     seedDb()

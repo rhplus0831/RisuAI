@@ -1339,6 +1339,202 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         generationId: info.data.generationId,
       },
     })
+    // Slice 4 (A2): a trigger-less / script-less send runs the post-gen pass as a
+    // no-op, so the `done` frame omits `postGeneration` entirely (byte-parity).
+    expect((events.at(-1)?.data as { postGeneration?: unknown }).postGeneration).toBeUndefined()
+  })
+
+  // ── Slice 4 (A2): server post-generation pass (output trigger + editoutput) ──
+  //
+  // After the provider produces the completion, the server runs the run-var pass,
+  // the `'output'` trigger, and `editoutput` over the just-generated text — the
+  // durable derivations the browser used to own (`postGeneration/outputTrigger.ts`
+  // + the `editoutput` arm of `processScriptFull`). The chat-var delta is persisted
+  // through the slice-2 writer (revision bump) and surfaced, with the final text /
+  // resend, on the terminal `done.postGeneration`. (wasmoon-in-node is why the Lua
+  // proof lives here, like the slice-3b proofs above.)
+
+  /** A server-dispatch echo db (`useServerPromptAssembly` + echo) with char overrides. */
+  function dbWithServerDispatch(charOverride: Record<string, unknown>): unknown {
+    return {
+      ...fixtureDatabase,
+      useServerPromptAssembly: true,
+      aiModel: 'echo_model',
+      echoMessage: 'server echo reply',
+      echoDelay: 0,
+      characters: [{ ...fixtureDatabase.characters[0], ...charOverride }],
+    }
+  }
+
+  function doneFrame(events: ParsedEvent[]): {
+    result?: string
+    postGeneration?: {
+      finalText?: string
+      revision?: number
+      resendChat?: boolean
+      messagePatch?: {
+        varChanged?: boolean
+        chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }>
+        messageMutations?: unknown[]
+      }
+    }
+  } {
+    const done = events.at(-1)
+    expect(done?.type).toBe('done')
+    return done!.data as ReturnType<typeof doneFrame>
+  }
+
+  it('persists an output-trigger scriptstate delta server-side and surfaces it on done (A2)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [{ type: 'setvar', operator: '=', var: 'mood', value: 'happy' }],
+          },
+        ],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const done = doneFrame(events)
+
+    // The output trigger's `setvar` rode the post-gen message_patch + bumped the
+    // revision. The completion text is unchanged (no editoutput), so no finalText.
+    expect(done.postGeneration?.messagePatch?.varChanged).toBe(true)
+    expect(done.postGeneration?.messagePatch?.chatVarMutations).toEqual([
+      { key: '$mood', before: null, after: 'happy' },
+    ])
+    expect(done.postGeneration?.finalText).toBeUndefined()
+    // Assembly had no chat-var write (no start trigger), so info.revision is unset;
+    // the post-gen write is the first persist → revision 1 → 2.
+    expect(events.find((e) => e.type === 'info')?.data.revision).toBeUndefined()
+    expect(done.postGeneration?.revision).toBe(2)
+
+    // Durable: bootstrap shows the post-gen scriptstate write + bumped revision.
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(2)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
+  })
+
+  it('runs the pre-trigger run-var pass server-side over the completion text (A2)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    // The echo completion carries a `{{setvar}}` the run-var pass evaluates + strips,
+    // mirroring `applyOutputTrigger`'s pre-trigger run-var pass over the new turn.
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({}) as Record<string, unknown>),
+      echoMessage: 'reply {{setvar::seen::1}}done',
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+
+    // The run-var pass stripped the `{{setvar}}` from the final text and persisted
+    // the chat-var write.
+    expect(done.postGeneration?.finalText).toBe('reply done')
+    expect(done.postGeneration?.messagePatch?.chatVarMutations).toEqual([
+      { key: '$seen', before: null, after: '1' },
+    ])
+    expect(done.postGeneration?.revision).toBe(2)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $seen: '1' })
+  })
+
+  it('runs a regex editoutput script server-side: the final text reflects the transform (A2)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        customscript: [
+          { comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false },
+        ],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const done = doneFrame(events)
+
+    // The raw streamed text is unchanged; the server-owned `editoutput` transform
+    // rides on `finalText` (the browser writes it onto the assistant message). No
+    // chat-var write, so no revision bump.
+    expect(done.result).toBe('server echo reply')
+    expect(done.postGeneration?.finalText).toBe('server echo REPLY')
+    expect(done.postGeneration?.revision).toBeUndefined()
+    expect(done.postGeneration?.messagePatch).toBeUndefined()
+  })
+
+  it('runs a Lua editOutput hook server-side over the completion (A2 / slice 3b VM)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [
+              {
+                type: 'triggerlua',
+                code: `
+                  listenEdit('editOutput', function(id, data, meta)
+                    return data .. ' [LUA-OUT]'
+                  end)
+                `,
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+    // The Lua `editOutput` listener ran on the server VM over the completion text.
+    expect(done.postGeneration?.finalText).toBe('server echo reply [LUA-OUT]')
   })
 
   it.each([

@@ -8,7 +8,10 @@ Status: blocked until the phase-4 chat-process ownership work lands.
 
 - Every blocker **A**-item (A1 prompt-assembly content parity, A2 post-generation
   durable derivation) is resolved server-side or explicitly classified
-  unsupported — never a silent browser fallback.
+  unsupported — never a silent browser fallback. **A-items resolved:** A1 (content
+  graduation, slices 3a/3b/3c), A2 (post-generation `'output'` trigger + run-var +
+  `editoutput`, **slice 4**), and A3 (provider coverage — hard-fail support cap).
+  Last A-blocker closed by slice 4.
 - **Group-chat legacy removal** is done: removed from the client, not merely
   unsupported under server assembly.
 - **Audit-rule hardening** is done: the four empirically-defeated rules (`A4R2`,

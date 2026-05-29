@@ -17,6 +17,7 @@ import {
 } from '../repository.js'
 import {
   assemblePrompt,
+  runServerPostGeneration,
   type AssembleDeps,
   type AssembleInput,
   type AssembleMutationPayload,
@@ -28,6 +29,7 @@ import { applyJsonCommandMutation } from '../commands/mutations.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import {
+  type PostGenerationFrame,
   type PromptChatEvent,
   type PromptEvent,
   writePromptChatEvent,
@@ -360,6 +362,61 @@ function persistAssemblyMutations(args: {
 }
 
 /**
+ * Slice 4 (A2): run the server post-generation pass over the provider's
+ * completion text and build the `done.postGeneration` frame. Runs the run-var
+ * pass, the `'output'` trigger, and `editoutput` (`runServerPostGeneration`),
+ * persists the derived chat-var delta through the same slice-2 writer the
+ * assembly delta uses (`persistAssemblyMutations` — no second writer), and
+ * surfaces the final text / delta / resend / bumped revision for the browser.
+ *
+ * The assistant message itself is **not** persisted here: the browser's
+ * generation-result command (B2) owns that write and uses `finalText` so the
+ * server-derived `editoutput` text is what lands. A derivation failure is
+ * swallowed so a healthy completion still terminates cleanly (the browser keeps
+ * its own streamed copy).
+ */
+async function buildPostGenerationFrame(args: {
+  state: NonNullable<Parameters<typeof runServerPostGeneration>[0]>
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  input: AssembleInput
+  completionText: string
+  generationId: string
+  generationInfo: Record<string, unknown>
+}): Promise<PostGenerationFrame | undefined> {
+  try {
+    const postGen = await runServerPostGeneration(args.state, {
+      completionText: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+    })
+    const frame: PostGenerationFrame = {}
+    if (postGen.changed) {
+      const revision = persistAssemblyMutations({
+        db: args.db,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        input: args.input,
+        mutations: postGen.mutations,
+      })
+      if (revision !== undefined) frame.revision = revision
+    }
+    if (postGen.textChanged) frame.finalText = postGen.finalText
+    if (
+      postGen.mutations.chatVarMutations.length > 0 ||
+      postGen.mutations.messageMutations.length > 0
+    ) {
+      frame.messagePatch = postGen.mutations
+    }
+    if (postGen.resendChat) frame.resendChat = true
+    return Object.keys(frame).length > 0 ? frame : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Phase 7-11g: stream the assembled prompt. The SSE head is written
  * up front, so every assembly failure (bad IDs, missing database, a
  * trigger/overflow `stopSending`) is a terminal `error` event rather
@@ -500,6 +557,19 @@ async function streamAssembly(
                     ]
                   : [],
               errorRestoration: () => successfulResult.restoration,
+              postGeneration: (completionText) =>
+                successfulResult.state
+                  ? buildPostGenerationFrame({
+                      state: successfulResult.state,
+                      db,
+                      dataDir,
+                      eventSink,
+                      input,
+                      completionText,
+                      generationId,
+                      generationInfo,
+                    })
+                  : Promise.resolve(undefined),
             })
             terminalDoneEmitted = transportResult.status !== 'aborted'
           }

@@ -31,7 +31,7 @@ drift; symbol names are the stable handle.
 | **Lua `editprocess`** | **AT PARITY (slice 3b sub-slice 3)** — wired at the two history `processScript('editprocess')` sites as a faithful runtime no-op (the Lua arm is a browser no-op) | `assemble.ts::fillHistoryAndBias` → `history.ts` `editProcess` seam → `prompt/luaRuntime.ts` |
 | **Lua `editinput` + input trigger (`'input'`)** | **AT PARITY (slice 3b sub-slice 4)** — `assemble.ts::runInputTrigger` (`runTrigger('input')`, `triggerlua` on the VM) + `applyEditInput` (Lua `editInput` → CBS → regex) run at submit; the browser sends raw user text and the route owns the post-`editinput` transcript write | `assemble.ts::runInputTrigger`/`applyEditInput`; `triggers.ts::runTrigger` `runLua` seam; `generationChat.ts::persistAssemblyMutations` |
 | **pluginV2 `editRequest` / `editprocess` / replacers** | **PERMANENT `unsupported`** — no-port list; classifier hard-fails via `hasPluginV2EditSet`; protected by the `A4R-pluginv2` audit invariant | classifier `serverPromptAssembly.ts`; invariant `util/client-thinning-audit.ts` |
-| **Output triggers (`'output'`)** | **GAP** — declared, never invoked | `triggers.ts:103`; no `runTrigger(…,'output',…)` exists |
+| **Output triggers (`'output'`) + `editoutput`** | **AT PARITY (slice 4 / A2)** — `runServerPostGeneration` runs the run-var pass + `runTrigger(…,'output',…)` + `editoutput` over the completion after dispatch; the scriptstate delta is persisted via the slice-2 writer and the final text + delta + resend ride the terminal `done.postGeneration`. Output-trigger message surgery is surfaced to the projection; B2 still persists the assistant message. | `assemble.ts::runServerPostGeneration`; `generationChat.ts::buildPostGenerationFrame`; `providerTransport.ts` post-gen hook; `sseEvents.ts::PostGenerationFrame` |
 | Assembly-time scriptstate persistence | **DONE (C-A1)** — route persists the delta via `applyJsonCommandMutation`, returns the bumped revision over SSE | `generationChat.ts` `persistAssemblyMutations` |
 | Submit-time transcript persistence | **DONE (slice 3b sub-slice 4)** — route owns the post-`editinput` user-message transcript write (combined with the chat-var delta), only when a submit hook changed it; plain sends stay browser-persisted | `generationChat.ts::persistAssemblyMutations` (`messages.replaced` arm) |
 | Final-message (generation result) persistence | **GAP by design** — still command-backed; browser POSTs `generation-result` (B2) | `index.svelte.ts:351` → `persistGenerationResultCommand` |
@@ -41,7 +41,9 @@ content — **now ported (slice 3a)**, (b) image-gen instruction — **now porte
 (slice 3c)**, (c) Lua `editRequest` / `editprocess` / `editinput` + the submit-time
 input trigger — **all now ported (slice 3b sub-slices 2/3/4)**; pluginV2's
 equivalents are *permanent* `unsupported`, not a gap to close, and (d) `'output'`
-triggers (an A2 concern; see
+triggers + `editoutput` — **now ported (slice 4 / A2)**: the post-generation pass
+(`runServerPostGeneration`) runs them server-side and persists the derived
+scriptstate (see
 [`post-generation-and-persistence.md`](post-generation-and-persistence.md)).
 Everything else is at parity, so the supported text-send subset is already
 correct server-side — which is why A1's foundation batch can make it mandatory.
@@ -104,11 +106,12 @@ So chat-var mutations are *computed* server-side during assembly, emitted as a
 patch for the browser's projection, **and (C-A1, done) persisted by the route
 itself** through `persistAssemblyMutations` → `applyJsonCommandMutation` for
 persisting modes; the route returns the bumped revision on the `info` frame and
-the browser no longer replays the delta as a command. **Crucially, this delta
-reflects assembly-time work (`'start'`, run-var, and now submit-time input
-scripts), never the post-gen `'output'` trigger** (which has no server path).
-C-A1 moved the persistence into the route; porting the output trigger is A2.
-They are distinct — see
+the browser no longer replays the delta as a command. **This `info`-frame delta
+reflects assembly-time work (`'start'`, run-var, and submit-time input scripts);
+the post-gen `'output'` trigger + run-var pass are a distinct delta** — derived by
+`runServerPostGeneration` after dispatch, persisted via the same writer, and
+returned on the terminal `done.postGeneration` (slice 4 / A2). They remain
+distinct deltas — see
 [`post-generation-and-persistence.md`](post-generation-and-persistence.md).
 
 ## `prompt/history.ts` — the multimodal / asset seam (now fed, slice 3a)
@@ -170,20 +173,22 @@ reintroducing a server-side plugin execution path in this dir.
 
 `TriggerMode` declares six modes (`triggers.ts:99-107`):
 `'start' | 'manual' | 'output' | 'input' | 'display' | 'request'`. Server-side
-assembly now invokes `'start'` and submit-time `'input'`; recursion arms can force
-`'manual'`. No post-generation `'output'` pass exists yet.
+assembly invokes `'start'` and submit-time `'input'`; the post-generation pass
+invokes `'output'` (slice 4); recursion arms can force `'manual'`.
 
 - `runStartTrigger` (`triggers.ts:876-892`) ends with
   `runTrigger(runCtx, char, 'start', { chat })`; its sole consumer is
   `buildHistoryWindow` (`history.ts:470`) — i.e. **assembly time**, not post-gen.
 - `assemble.ts::runInputTrigger` calls `runTrigger(..., 'input', ...)` before the
   user message is appended; `triggerlua` effects run through the injected VM seam.
+- `assemble.ts::runServerPostGeneration` calls `runTrigger(..., 'output', ...)`
+  over the completion after dispatch (slice 4 / A2), reusing the same VM seam.
 - the two recursion arms force `'manual'` (`triggers.ts:538,766`).
 
-**No `runTrigger(…, 'output', …)` invocation exists anywhere on the server.**
+**`runTrigger(…, 'output', …)` is invoked by `runServerPostGeneration` (slice 4).**
 The runner accepts the `'output'` mode value and the `setvar`/`v2SetVar` arms are
-durable via the `TriggerVarEngine`; what's missing is *calling* it on the
-completion text post-generation.
+durable via the `TriggerVarEngine`; the post-gen pass calls it on the completion
+text and persists the derived delta through the slice-2 writer.
 
 ## `routes/generationChat.ts` — the route (`/generate/chat`)
 
@@ -253,6 +258,6 @@ before persisting.
 | `tokens.ts` | Minimal server tokenizer. |
 | `triggerDataEffects.ts` | V2 trigger "safe data helper" leaf arms. |
 | `triggerVars.ts` | Trigger variable engine (`getVar`/`setVar`, chat-var persistence into the snapshot). |
-| `triggers.ts` | Trigger model + runner; `'start'`, submit-time `'input'`, and manual recursion are invoked; no post-gen `'output'` pass yet. |
+| `triggers.ts` | Trigger model + runner; `'start'`, submit-time `'input'`, the post-gen `'output'` pass (slice 4), and manual recursion are invoked. |
 | `templates.ts` | Template normalize + render; `editRequest` seam supplied by the Lua VM hook when relevant. |
 | `variables.ts` | Server `risuChatParser` entry (`expandVariables`). |

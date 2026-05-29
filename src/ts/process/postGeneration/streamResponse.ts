@@ -23,6 +23,13 @@ export interface ConsumeStreamResponseOptions {
   promptInfo: MessagePresetInfo
   abortSignal: AbortSignal
   reformatContent: (data: string) => string
+  /**
+   * Slice 4 (A2): when the server owns the post-generation pass, skip the
+   * `editoutput` transform here — the server runs it and ships the final text on
+   * the terminal `done` frame. The browser still writes the streamed (reformatted)
+   * text for live display; the server-owned final text is applied at terminal time.
+   */
+  skipEditOutput?: boolean
 }
 
 export interface ConsumeStreamResponseResult {
@@ -48,6 +55,7 @@ export async function consumeStreamResponse(
     promptInfo,
     abortSignal,
     reformatContent,
+    skipEditOutput,
   } = opts
 
   const reader = req.result.getReader()
@@ -104,18 +112,25 @@ export async function consumeStreamResponse(
         if (DBState.db.removeIncompleteResponse) {
           result = trimUntilPunctuation(result)
         }
-        const result2 = await processScriptFull(
-          nowChatroom,
-          reformatContent(prefix + result),
-          'editoutput',
-          msgIndex,
-        )
+        let nextData: string
+        if (skipEditOutput) {
+          // A2: the server owns `editoutput`; write the reformatted stream for
+          // display and defer the final text to the terminal `done` frame.
+          nextData = reformatContent(prefix + result)
+        } else {
+          const result2 = await processScriptFull(
+            nowChatroom,
+            reformatContent(prefix + result),
+            'editoutput',
+            msgIndex,
+          )
+          nextData = result2.data
+          emoChanged = result2.emoChanged
+        }
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data =
-            result2.data
+          DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = nextData
           DBState.db.characters[selectedChar].reloadKeys += 1
         })
-        emoChanged = result2.emoChanged
       }
       if (readed.done) {
         break

@@ -18,11 +18,13 @@ There are **two** scriptstate delta families, often conflated:
   it in `/generate/chat` for persisting modes, and returns the bumped revision
   over SSE. **C-A1 is done.**
 - **Post-generation** scriptstate (the `'output'` trigger + `editoutput`, derived
-  from the just-generated assistant text). The server has **no path** for this —
-  this is the **A2** blocker (needs server post-gen script/trigger execution).
+  from the just-generated assistant text). **DONE (slice 4 / A2):**
+  `runServerPostGeneration` (`assemble.ts`) runs this after dispatch; the route
+  persists the derived scriptstate delta via the slice-2 writer and surfaces the
+  final text + delta + resend on the terminal `done.postGeneration`.
 
-A2 needs a server post-generation invocation/persistence path. The Lua machinery
-from A1 is now available; pluginV2 remains permanent unsupported.
+A2's server post-generation invocation/persistence path now exists (slice 4),
+reusing the Lua/trigger machinery from A1; pluginV2 remains permanent unsupported.
 
 ## Stage taxonomy (there is no `runStage1/2/3`)
 
@@ -69,7 +71,19 @@ diffusion (`:112-114`, `imggenStableDiff.ts` — emotion/inlay side effect → *
 stage timings + `generationInfo` onto the last message via a trusted projection
 write (`:35-39`) — metadata, B2-adjacent.
 
-## A2 — durable post-gen derivations (hard blocker, no server path)
+## A2 — durable post-gen derivations — DONE (slice 4)
+
+> **Status (2026-05-30): LANDED.** `runServerPostGeneration` (`assemble.ts`) runs
+> the run-var pass, the `'output'` trigger, and `editoutput` over the completion
+> text after dispatch (`generationChat.ts::buildPostGenerationFrame`, wired through
+> `providerTransport.ts`'s async `postGeneration` hook). The derived scriptstate
+> delta is persisted via the slice-2 writer (`persistAssemblyMutations`), and the
+> final text / delta / resend / bumped revision ride the terminal
+> `done.postGeneration` (`sseEvents.ts::PostGenerationFrame`). The browser removes
+> its durable derivation on the server path (`orchestrateResponse`
+> `serverOwnsPostGeneration`) and consumes the terminal patch + final text + resend
+> (`applyServerBackedTerminal`). The subsections below keep the pre-A2 browser-owner
+> description for context.
 
 ### Output trigger — `runTrigger(char, 'output', …)`
 
@@ -112,24 +126,25 @@ the output trigger as A2.
 
 ### Server cross-check
 
-The server runs `processScript` for assembly-time `editprocess` and submit-time
-`editinput`, but not for post-generation `editoutput`. The provider-dispatch path
-(`routes/generationChat.ts`, `prompt/chatDispatch.ts`, `prompt/providerTransport.ts`)
-has no post-generation `runTrigger('output')` call and no `editoutput`. **Reusable
-machinery for A2:** the ported `runTrigger` already accepts the `'output'` mode
-value and has durable `setvar`/`v2SetVar` arms returning `varChanged`
-(`prompt/triggers.ts:155-164`); `processScript(…, 'editoutput', …)` is fully
-implemented and only needs to be *called* on the completion text; the
-`message_patch` contract is the natural carrier for any post-gen delta. Lua can
-use the landed VM; pluginV2 remains permanent unsupported.
+The server runs `processScript` for assembly-time `editprocess`, submit-time
+`editinput`, and — **as of slice 4** — post-generation `editoutput`. The
+provider-dispatch path now runs a post-generation `runTrigger('output')` +
+run-var pass + `editoutput` via `runServerPostGeneration` (`assemble.ts`), wired
+into the route through `providerTransport.ts`'s async `postGeneration` hook
+(`generationChat.ts::buildPostGenerationFrame`). **Machinery reused for A2:** the
+ported `runTrigger` accepts the `'output'` mode and has durable `setvar`/`v2SetVar`
+arms returning `varChanged` (`prompt/triggers.ts:155-164`); `processScript(…,
+'editoutput', …)` runs over the completion text; the `message_patch` contract
+carries the post-gen scriptstate delta, surfaced on `done.postGeneration`. Lua
+uses the landed VM (`editOutput`); pluginV2 remains permanent unsupported.
 
 ## Master post-gen table
 
 | Effect | Owner (browser) | Durable? | Server path? | Class |
 | --- | --- | --- | --- | --- |
-| `editoutput` on response text | `streamResponse.ts:107-112`, `nonStreamResponse.ts:68-82` | **Yes** (saved `.data`) | No post-gen invocation (server runs assembly-time `editprocess` / submit-time `editinput`) | **A2** |
-| Pre-trigger run-var pass | `outputTrigger.ts:23-27` → `chatVar.svelte.ts:31-40` | **Yes** (`scriptstate`) | Partial (server run-var at assembly, not post-gen) | **A2** |
-| `runTrigger('output', …)` | `outputTrigger.ts:29` | **Yes** (`scriptstate`+`message`) | No (`'output'` never invoked) | **A2** |
+| `editoutput` on response text | `streamResponse.ts:107-112`, `nonStreamResponse.ts:68-82` (browser skips on server path) | **Yes** (saved `.data`) | **DONE (slice 4)** — `runServerPostGeneration` runs Lua `editOutput` → CBS → regex; final text on `done.postGeneration.finalText` | **A2 — DONE** |
+| Pre-trigger run-var pass | `outputTrigger.ts:23-27` → `chatVar.svelte.ts:31-40` (browser skips on server path) | **Yes** (`scriptstate`) | **DONE (slice 4)** — `runServerPostGeneration` runs `applyCurrentChatRunVars` over the new turn | **A2 — DONE** |
+| `runTrigger('output', …)` | `outputTrigger.ts:29` (browser skips on server path) | **Yes** (`scriptstate`+`message`) | **DONE (slice 4)** — `runServerPostGeneration` invokes it; scriptstate persisted via the slice-2 writer, surfaced on `done.postGeneration` | **A2 — DONE** |
 | Inlay-screen text write | `orchestrateResponse.ts:129-142` | Yes (rides on `.data`) | No | A2-adjacent |
 | Streaming / terminal TTS | `orchestrateResponse.ts:143-145`; server `side_effect kind:'tts'` (`generationChat.ts:337-346`) | No | Yes (server emits, browser plays) | **B1** |
 | Desktop notification | `runStage4.ts:77-79` | No | No (browser API) | **B1** |
@@ -239,8 +254,12 @@ returns 423 before any mutation).
   `baseRevision`). `generation.chat.test.ts` expects persistence, keeps preview
   read-only, and proves a non-active-writer
   `/chat` 423s before persisting.
-- **A2:** a server `'output'` trigger pass + `editoutput` execution that derive
-  the post-gen scriptstate/message delta and surface it (patch or persisted),
-  with the browser branch removed; sequence after A1 Lua hook parity.
+- **A2 (satisfied, slice 4):** `runServerPostGeneration` runs the run-var pass +
+  `'output'` trigger + `editoutput`, derives the post-gen scriptstate delta +
+  final text, persists the scriptstate via the slice-2 writer (revision bump), and
+  surfaces it on `done.postGeneration`; the browser's durable derivation is removed
+  on the server path. Proven by the A2 cases in `generation.chat.test.ts`, the
+  output-trigger / editoutput cases in `sendChat.fixtures.serverBacked.test.ts`, and
+  the `serverOwnsPostGeneration` flip in `orchestrateResponse.test.ts`.
 
 See [`proof-points.md`](proof-points.md) for the test files and harness mechanics.

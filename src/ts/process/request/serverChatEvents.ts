@@ -66,6 +66,9 @@ export type ServerChatMutationSource =
   | 'run_var'
   | 'history_normalize'
   | 'start_trigger'
+  | 'input_trigger'
+  | 'editinput'
+  | 'output_trigger'
 
 export type ServerChatVarMutationValue = string | number | boolean | null
 
@@ -144,11 +147,27 @@ export interface ErrorEvent {
   restoration?: ServerChatRestoration
 }
 
+/**
+ * Slice 4 (A2): the server post-generation derivation, surfaced on the terminal
+ * `done` frame. Mirrors `PostGenerationFrame` in the server `sseEvents.ts`. The
+ * browser applies `messagePatch` to its projection, writes `finalText` onto the
+ * just-streamed assistant message (it no longer runs `editoutput` on the server
+ * path), reconciles `revision`, and re-issues on `resendChat`.
+ */
+export interface ServerChatPostGeneration {
+  finalText?: string
+  messagePatch?: ServerChatMessagePatch
+  resendChat?: boolean
+  revision?: number
+}
+
 export interface DoneEvent {
   type: 'done'
   result?: string
   generationId?: string
   generationInfo?: Record<string, unknown>
+  /** Slice 4 (A2): server post-generation derivation. See {@link ServerChatPostGeneration}. */
+  postGeneration?: ServerChatPostGeneration
 }
 
 export type PromptChatEvent =
