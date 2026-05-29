@@ -94,10 +94,10 @@ Focused forms and the exact proof-lead files are in
 [`../../reference/proof-points.md`](../../reference/proof-points.md). After a
 recordable run, replace
 [`../../coverage/latest-verification.md`](../../coverage/latest-verification.md)
-with only the latest command + result.
+with the latest verification batch commands and results.
 
 ## The rule (inherited from the phase doc)
 
-For follow-up work, keep group-chat removal, audit-rule hardening, event-patching,
-and docs-only reconciliation in separate batches. Update the status/coverage/
-parity shards after code and proof land.
+For follow-up work, keep group-chat removal, any newly justified audit-rule
+hardening, event-patching, and docs-only reconciliation in separate batches.
+Update the status/coverage/parity shards after code and proof land.

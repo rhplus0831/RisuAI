@@ -193,10 +193,10 @@ POST mechanics (`serverChat.ts:111-120`): `content-type: application/json`,
 - **`useServerPromptAssembly`** (`src/ts/storage/database.svelte.ts`): default
   `false` at `database.svelte.ts:779` (`data.useServerPromptAssembly ??= false`);
   type + JSDoc at `:1354-1368`. The JSDoc calls it an "EXPERIMENTAL /
-  INCOMPLETE-MIGRATION GATE — not a stable user setting and NOT deprecated …
-  Do NOT default-enable or delete this flag until server assembly reaches parity
-  and the local fallback is retired — removing it is the END of that work, not a
-  precursor."
+  INCOMPLETE-MIGRATION GATE — not a stable user setting and NOT deprecated."
+  A1 content parity is landed, but the flag remains default-off while local
+  assembly is still the default production path and the remaining unsupported
+  cases / provider-resolver differences are explicit.
 - **`useServerGeneration`**: removed 2026-05-29 (was dead).
 
 Every production read of `useServerPromptAssembly`:
@@ -224,12 +224,15 @@ mirroring `resolveServerCompletionRoute`. It replaced the boolean gate at
 
 Decision order in the implementation: `!isFastifyServer` → `local`; the
 experimental `useServerPromptAssembly` master-enable off → `local` (the one
-`local` verdict that survives in Fastify mode, gone when the flag is removed at
-the end of the sub-family); then mode/user-message structural check, group check,
-provider routability (delegated to `resolveServerCompletionRoute`), and the
-content-signal check — each out-of-subset signal → `unsupported`; otherwise
-`server`. The content detector keeps one named predicate per class so a later
-content slice flips exactly one.
+`local` verdict that survives in Fastify mode until a separate flag-removal
+closeout); then mode/user-message structural check, group check, provider
+routability (delegated to `resolveServerCompletionRoute`), and the content-signal
+check — each out-of-subset signal → `unsupported`; otherwise `server`. Note the
+route itself also runs the `/generate/chat` provider resolver in
+`prompt/chatDispatch.ts`, so `/chat` can still hard-fail a provider shape that the
+completion resolver supports; there is still no browser fallback. The content
+detector keeps one named predicate per class so future changes can flip exactly
+one class.
 
 ### The supported subset (returns `server`)
 

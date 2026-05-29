@@ -120,8 +120,8 @@ function hasPluginV2EditSet(): boolean {
  * `alertConfirm`): those need a browser the server lacks, so this predicate keeps
  * them `unsupported`. The `editprocess`/`editinput` execution seams graduate in
  * sub-slices 3/4; until then a non-interactive Lua char routes `server` even if it
- * only hooks those (acceptable pre-ship — `useServerPromptAssembly` defaults off
- * and there are no users; see `docs/client-thinning/phases/slices/slice-3b-lua/`).
+ * only hooks those. The Lua edit/input sub-slices have landed; see
+ * `docs/client-thinning/phases/slices/slice-3b-lua/`.
  * Kept separate from `hasPluginV2EditSet` so the permanent pluginV2 hard-fail is
  * undisturbed.
  */
@@ -200,10 +200,8 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
  *   1b. master enable off → `local`. `useServerPromptAssembly` is an experimental,
  *       default-off migration gate (`database.svelte.ts:1354`); while off, server
  *       assembly is not attempted and the send uses the local assembler exactly as
- *       before. This is the one `local` verdict that survives in Fastify mode; it
- *       disappears with the flag at the END of the prompt-assembly thinning
- *       sub-family (after slices 3a/3b/3c), leaving `!isFastifyServer` as the sole
- *       `local` return — the precedent's shape.
+ *       before. This is the one `local` verdict that survives in Fastify mode
+ *       until a deliberate closeout removes/default-enables the migration gate.
  *   2. mode / user-message structural check (subsumes the old, silently-falling
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
  *   3. single, non-group character.

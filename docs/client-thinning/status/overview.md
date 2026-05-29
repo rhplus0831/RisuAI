@@ -15,9 +15,10 @@ current snapshot in [`../status.md`](../status.md).
 - **Phase 4: DONE — chat-process server ownership.** A1 prompt-assembly content
   parity (slices 3a/3b/3c) and A2 post-generation durable derivation (slice 4)
   are **landed**; A3 is a hard-fail support cap.
-- **Phase 5: ACTIVE closeout** — every A-item resolved or explicitly classified
-  unsupported, group-chat legacy removal done, audit-rule hardening done, event
-  patching shipped behind a closed reconnect/replay gap or still deferred.
+- **Phase 5: ACTIVE closeout.** A-items are resolved and the known defeated audit
+  rules are hardened. Group-chat legacy removal is still open and separately
+  scoped; event patching remains deferred unless the reconnect/replay gap is
+  closed first.
 
 ## Main Code Entry Points
 

@@ -49,6 +49,12 @@ A chat-process/runtime batch should prove:
   stay explicit `unsupported`.
 - A2 is server-owned on the server-dispatch path; the local-assembly/completion
   path still uses the browser post-generation derivation while the flag is off.
+  If server post-generation derivation throws, `/generate/chat` currently omits
+  the post-generation frame and the browser does not run the skipped local
+  derivation fallback.
 - Final-message persistence still depends on a browser-issued command (**B2**,
   acceptable). Assembly-time scriptstate persistence is route-owned.
+- `/generate/completion` and `/generate/chat` have separate provider resolver
+  implementations. Both hard-fail unsupported shapes; their exact supported sets
+  should be checked in source before adding provider claims.
 - Group chat is legacy and slated for client removal — not a coverage target.

@@ -82,8 +82,11 @@ write (`:35-39`) — metadata, B2-adjacent.
 > `done.postGeneration` (`sseEvents.ts::PostGenerationFrame`). The browser removes
 > its durable derivation on the server path (`orchestrateResponse`
 > `serverOwnsPostGeneration`) and consumes the terminal patch + final text + resend
-> (`applyServerBackedTerminal`). The subsections below keep the pre-A2 browser-owner
-> description for context.
+> (`applyServerBackedTerminal`). If `runServerPostGeneration` throws,
+> `generationChat.ts::buildPostGenerationFrame` currently catches the error and
+> returns no post-generation frame; because the browser skipped the local durable
+> derivation on this path, there is no fallback derivation for that failure. The
+> subsections below keep the pre-A2 browser-owner description for context.
 
 ### Output trigger — `runTrigger(char, 'output', …)`
 
@@ -261,6 +264,8 @@ returns 423 before any mutation).
   surfaces it on `done.postGeneration`; the browser's durable derivation is removed
   on the server path. Proven by the A2 cases in `generation.chat.test.ts`, the
   output-trigger / editoutput cases in `sendChat.fixtures.serverBacked.test.ts`, and
-  the `serverOwnsPostGeneration` flip in `orchestrateResponse.test.ts`.
+  the `serverOwnsPostGeneration` flip in `orchestrateResponse.test.ts`. The
+  failure path is best-effort today: a thrown server post-generation pass is
+  swallowed and produces no browser fallback.
 
 See [`proof-points.md`](proof-points.md) for the test files and harness mechanics.

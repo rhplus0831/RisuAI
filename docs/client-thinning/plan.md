@@ -20,8 +20,11 @@ End state:
   LLM call, and post-generation message/scriptstate mutations.
 - The browser keeps only effects, transient UI, orchestration, and command
   issuance.
-- Legacy features (group chat, and the historical no-port list) are removed, not
-  merely unsupported.
+- Legacy features that remain live in the Fastify web surface are removed rather
+  than kept as browser-only durable paths. Group chat is the active removal item;
+  the historical no-port list is a "do not port/reopen" inventory unless a
+  specific live compatibility surface is found and assigned its own
+  removal/migration task.
 
 ## The Three Chat-Process Boundaries (current reality)
 
@@ -30,20 +33,25 @@ The chat process is not one toggle. Three independent boundaries gate it:
 1. **Prompt assembly** — gated by the user flag `useServerPromptAssembly`
    (default **false**), so the DEFAULT is local/browser assembly.
 2. **Provider dispatch (LLM call + credentials)** — gated by the platform marker
-   `isFastifyServer`, with NO user flag, so the DEFAULT is server-routed via
-   `/api/v1/generate/completion`. Unsupported providers fail hard; `local` only
-   when `!isFastifyServer`.
+   `isFastifyServer`, with NO user flag. In the default flag-off flow the browser
+   assembles locally and dispatches through `/api/v1/generate/completion`; with
+   server prompt assembly enabled, `/api/v1/generate/chat` owns assembly and the
+   provider stream. Unsupported provider shapes fail hard; `local` only when
+   `!isFastifyServer`.
 3. **Post-generation + persistence** — the browser still orchestrates the stage
    flow and B1 effects. On the server-dispatch path (`/generate/chat`),
    `/generate/chat` now owns assembly-time scriptstate persistence and the A2
    post-generation derivation (`run-var` pass, `'output'` trigger, `editoutput`);
-   final-message persistence remains a browser-issued command (B2).
+   final-message persistence remains a browser-issued command (B2). If the server
+   post-generation pass throws, the route currently omits the post-generation
+   frame and does not invoke a browser derivation fallback.
 
 So today's default Fastify flow is: **browser assembles the prompt, server makes
-the LLM call, browser orchestrates post-gen, final-message persistence via a
-browser-issued command.** With server prompt assembly enabled, `/generate/chat`
-also owns assembly-time scriptstate and server-derived post-gen mutations. Flag
-history: `useServerGeneration` was a dead flag, removed 2026-05-29;
+the LLM call via `/generate/completion`, browser orchestrates post-gen,
+final-message persistence via a browser-issued command.** With server prompt
+assembly enabled, `/generate/chat` also owns assembly-time scriptstate, the
+provider stream, and server-derived post-gen mutations. Flag history:
+`useServerGeneration` was a dead flag, removed 2026-05-29;
 `isFastifyServer` and `useServerPromptAssembly` are kept and annotated in-code
 (not deprecated).
 
@@ -64,11 +72,22 @@ history: `useServerGeneration` was a dead flag, removed 2026-05-29;
   server-dispatch path. `runServerPostGeneration` runs the run-var pass,
   `runTrigger(..., 'output', ...)`, and `editoutput` after dispatch; the derived
   scriptstate delta is persisted by the slice-2 writer and the final text /
-  resend signal ride `done.postGeneration`.
-- **A3. Provider coverage.** Unsupported providers (NovelAI, Ooba, Plugin,
-  WebLLM, non-vanilla OpenAI-compat) cannot be server-routed. Already handled
-  correctly: `resolveServerCompletionRoute` returns `unsupported` and hard-fails
-  (no browser fallback). A support cap, not a thinness leak.
+  resend signal ride `done.postGeneration` when the pass succeeds. A thrown
+  server post-generation pass is currently best-effort-swallowed by
+  `/generate/chat`; no browser fallback derivation runs on that server path.
+- **A3. Provider coverage.** Unsupported provider shapes cannot be server-routed.
+  Already handled correctly: the completion resolver returns `unsupported` and
+  hard-fails (no browser fallback), and `/generate/chat` has its own provider
+  resolver that also emits explicit unsupported errors. The source of truth is
+  `resolveServerCompletionRoute` plus `server/fastify/src/prompt/chatDispatch.ts`
+  rather than a fixed prose list. Current supported families include the server
+  providers mapped by those resolvers (OpenAI/OpenRouter/OpenAI-compatible
+  variants, Anthropic, Mistral, Cohere, Gemini/Vertex, OpenAI Responses, legacy
+  instruct, NanoGPT, Kobold, Ooba legacy, Ollama, Bedrock, Horde, and Echo when
+  their resolver gates pass). Current explicit `/chat` unsupported examples
+  include NovelAI/NovelList, plugin providers, WebLLM, Ooba OpenAI-compatible
+  chat/reverse-proxy shapes, and unknown OpenAI-compatible models. A support cap,
+  not a thinness leak.
 
 ### B. Fine to leave in the browser
 
@@ -95,8 +114,9 @@ history: `useServerGeneration` was a dead flag, removed 2026-05-29;
   service workers, peer sync, Google Drive sync, Risu Account Sync, legacy memory
   engines/sync surfaces outside this thinning plan, server-side plugin code
   execution, and per-event surgical projection patching without a separate event
-  contract. Any live compatibility/migration surface needs a dedicated removal or
-  migration task; do not port it as part of client thinning.
+  contract. This list is not itself one giant closeout blocker; it means "do not
+  reopen or port." Any live compatibility/migration surface found in the Fastify
+  web path needs a dedicated removal or migration task.
 
 ## Closed / Stable Areas
 
@@ -139,7 +159,8 @@ persistence and a transient browser progress projection.
 ## Near-Term Order
 
 1. Run `pnpm client-thinning:audit`. If red, fix or triage before runtime work.
-2. **Group-chat legacy removal** (separate from thinning).
+2. **Group-chat legacy removal** (separate from thinning; scope still needs the
+   checklist in [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md)).
 3. ~~**Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
    (A4R2, A4R7, fanout-svelte path, EC2) to AST invariants; add adversarial
    fixtures.~~ DONE 2026-05-30 — all four are AST invariants with adversarial

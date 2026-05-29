@@ -54,7 +54,9 @@ Three boundaries, gated differently (see [`plan.md`](plan.md)):
   final-message command persistence. On the server-dispatch path,
   `/generate/chat` persists assembly-time scriptstate and A2 post-generation
   scriptstate deltas, returning final text / resend / revision on
-  `done.postGeneration`. B1/B2 branches stay in the browser.
+  `done.postGeneration` when derivation succeeds. If that derivation throws,
+  `/generate/chat` currently omits the post-generation frame and the browser does
+  not run the skipped local derivation. B1/B2 branches stay in the browser.
 - **HypaV3 memory** — server-side persistence and jobs; progress UI is a
   transient browser projection.
 
@@ -66,5 +68,6 @@ slated for client removal — see
 
 Assert projection invariants structurally; keep findings from becoming one-off
 fixes; record verification after runtime changes. Audit fixture reproducibility is
-done (21 rules, 45 tests), but rule robustness is open — four rules were
-empirically defeated by sincere refactors. See [`status/audit.md`](status/audit.md).
+done (21 rules, 52 tests), and the four empirically defeated rules are now
+hardened AST invariants. Some other rules remain shallow and should be hardened
+only after a sincere defeat is demonstrated. See [`status/audit.md`](status/audit.md).

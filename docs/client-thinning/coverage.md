@@ -7,7 +7,8 @@ shards; open only the one for the surface being changed. Coverage proves
 implemented or historical behavior — it does not widen runtime support.
 
 - [`coverage/latest-verification.md`](coverage/latest-verification.md) — the
-  latest command and result (do not edit unless a new verification was run).
+  latest verification batch commands and results (do not edit unless a new
+  verification was run).
 - [`coverage/audit.md`](coverage/audit.md) — `pnpm client-thinning:audit`,
   structural rules, fixture proof, and the rule-hardening caveat.
 - [`coverage/commands.md`](coverage/commands.md) — command routes, helpers,

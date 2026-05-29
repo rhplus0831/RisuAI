@@ -11,7 +11,8 @@ changed; the codebase is the source of truth.
   ownership triage (A hard blockers / B fine-in-browser, per branch).
 - [`server-projection.md`](server-projection.md) — bootstrap, projection guard,
   and events (event patching deferred).
-- [`audit.md`](audit.md) — audit rules; reproducibility done, rule-hardening open.
+- [`audit.md`](audit.md) — audit rules; reproducibility done, four defeated rules
+  hardened, remaining shallow-rule work conditional.
 - [`command-boundaries.md`](command-boundaries.md) — command contract and
   resource families (closed/stable).
 - [`assets-imports-backups.md`](assets-imports-backups.md) — asset routes,

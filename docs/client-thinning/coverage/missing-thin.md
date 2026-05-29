@@ -23,17 +23,23 @@ in [`../plan.md`](../plan.md).
 - **Durable/resumable generation** — still separate and not achieved: `/chat`
   aborts on disconnect and final-result persistence remains browser-command
   backed.
+- **A2 derivation failure policy** — success-path A2 is landed, but
+  `buildPostGenerationFrame` currently swallows server post-generation derivation
+  failures and there is no browser fallback on the server-dispatch path. Decide
+  whether this is accepted best-effort behavior or a follow-up correctness task.
 
 ## Open (Optimizable, B2 — not correctness)
 
 - Final-result persistence via command could become route-direct (closes a small
-  durability window, saves a round-trip).
+  durability window, saves a round-trip), but that needs its own owner and
+  acceptance criteria and may belong with durable/resumable generation.
 - Stage timing is browser-measured.
 
 ## Open (Other)
 
-- **Audit-rule robustness** — several rules are shallow; four were empirically
-  defeated. See [`../status/audit.md`](../status/audit.md).
+- **Audit-rule robustness** — the four empirically defeated rules are hardened;
+  some other rules remain shallow and should only become work after a sincere
+  defeat is demonstrated. See [`../status/audit.md`](../status/audit.md).
 - **Group-chat legacy removal** — group chat must be removed from the client; not a
   thinning batch. See [`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
 

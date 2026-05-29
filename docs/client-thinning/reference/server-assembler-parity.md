@@ -31,7 +31,7 @@ drift; symbol names are the stable handle.
 | **Lua `editprocess`** | **AT PARITY (slice 3b sub-slice 3)** — wired at the two history `processScript('editprocess')` sites as a faithful runtime no-op (the Lua arm is a browser no-op) | `assemble.ts::fillHistoryAndBias` → `history.ts` `editProcess` seam → `prompt/luaRuntime.ts` |
 | **Lua `editinput` + input trigger (`'input'`)** | **AT PARITY (slice 3b sub-slice 4)** — `assemble.ts::runInputTrigger` (`runTrigger('input')`, `triggerlua` on the VM) + `applyEditInput` (Lua `editInput` → CBS → regex) run at submit; the browser sends raw user text and the route owns the post-`editinput` transcript write | `assemble.ts::runInputTrigger`/`applyEditInput`; `triggers.ts::runTrigger` `runLua` seam; `generationChat.ts::persistAssemblyMutations` |
 | **pluginV2 `editRequest` / `editprocess` / replacers** | **PERMANENT `unsupported`** — no-port list; classifier hard-fails via `hasPluginV2EditSet`; protected by the `A4R-pluginv2` audit invariant | classifier `serverPromptAssembly.ts`; invariant `util/client-thinning-audit.ts` |
-| **Output triggers (`'output'`) + `editoutput`** | **AT PARITY (slice 4 / A2)** — `runServerPostGeneration` runs the run-var pass + `runTrigger(…,'output',…)` + `editoutput` over the completion after dispatch; the scriptstate delta is persisted via the slice-2 writer and the final text + delta + resend ride the terminal `done.postGeneration`. Output-trigger message surgery is surfaced to the projection; B2 still persists the assistant message. | `assemble.ts::runServerPostGeneration`; `generationChat.ts::buildPostGenerationFrame`; `providerTransport.ts` post-gen hook; `sseEvents.ts::PostGenerationFrame` |
+| **Output triggers (`'output'`) + `editoutput`** | **AT PARITY on successful derivation (slice 4 / A2)** — `runServerPostGeneration` runs the run-var pass + `runTrigger(…,'output',…)` + `editoutput` over the completion after dispatch; the scriptstate delta is persisted via the slice-2 writer and the final text + delta + resend ride the terminal `done.postGeneration`. Output-trigger message surgery is surfaced to the projection; B2 still persists the assistant message. If the server pass throws, `/generate/chat` currently omits the post-gen frame and there is no browser derivation fallback on that path. | `assemble.ts::runServerPostGeneration`; `generationChat.ts::buildPostGenerationFrame`; `providerTransport.ts` post-gen hook; `sseEvents.ts::PostGenerationFrame` |
 | Assembly-time scriptstate persistence | **DONE (C-A1)** — route persists the delta via `applyJsonCommandMutation`, returns the bumped revision over SSE | `generationChat.ts` `persistAssemblyMutations` |
 | Submit-time transcript persistence | **DONE (slice 3b sub-slice 4)** — route owns the post-`editinput` user-message transcript write (combined with the chat-var delta), only when a submit hook changed it; plain sends stay browser-persisted | `generationChat.ts::persistAssemblyMutations` (`messages.replaced` arm) |
 | Final-message (generation result) persistence | **GAP by design** — still command-backed; browser POSTs `generation-result` (B2) | `index.svelte.ts:351` → `persistGenerationResultCommand` |
@@ -223,6 +223,11 @@ text and persists the derived delta through the slice-2 writer.
   `assetPath`, re-wraps as a png data URI); `beginAssembly` folds it plus the
   request `inlayAssets` into `state.assetLookup`. `RouteAssembleDeps` still also
   carries `getDatabase()`.
+- **Provider dispatch support is resolver-defined.** `/generate/chat` uses
+  `prompt/chatDispatch.ts`, not the client completion resolver directly. It
+  supports the providers `resolveProvider` can map and hard-fails unsupported
+  shapes through `unsupportedChatProviderReason`; do not treat a prose provider
+  list as canonical.
 
 C-A1 is pinned by `server/fastify/__tests__/generation.chat.test.ts` — a `setvar`
 start trigger emits `chatVarMutations` in the patch **and** bootstrap afterwards

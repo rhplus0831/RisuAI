@@ -1358,12 +1358,12 @@ export interface Database {
    *
    * EXPERIMENTAL / INCOMPLETE-MIGRATION GATE — not a stable user setting and NOT
    * deprecated. Defaults to `false`, so local prompt assembly
-   * (`assembleLocalSendChatPrompt`) is still the production path, because the
-   * server `/chat` path is not yet at parity (multimodal/asset inlining, image-gen
-   * instruction, Lua `editRequest`, plugin-V2 script hooks, group chat). Do NOT
-   * default-enable or delete this flag until server assembly reaches parity and the
-   * local fallback is retired — removing it is the END of that work, not a
-   * precursor. See docs/client-thinning/.
+   * (`assembleLocalSendChatPrompt`) is still the production path. A1 parity is
+   * landed for the supported subset; remaining explicit hard-fails are non-vision
+   * image caption fallback, interactive Lua dialogs, plugin-V2 script hooks, and
+   * group-chat legacy. Do NOT default-enable or delete this flag until the local
+   * fallback/default path is retired as a deliberate closeout decision. See
+   * docs/client-thinning/.
    */
   useServerPromptAssembly?: boolean
   createFolderOnBranch?: boolean

@@ -78,6 +78,6 @@ Two facts that recur across these docs and are easy to get wrong:
 
 ## Scope discipline
 
-For closeout work, keep group-chat removal, audit-rule hardening, event-patching,
-and docs-only reconciliation in separate batches. Update docs after code and
-proof land.
+For closeout work, keep group-chat removal, any newly justified audit-rule
+hardening, event-patching, and docs-only reconciliation in separate batches.
+Update docs after code and proof land.

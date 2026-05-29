@@ -23,9 +23,9 @@ requests a write** — it never becomes the authority.
 | --- | --- | --- |
 | Pre-send input | Browser | UID/input plumbing; rows persist via commands (B1). |
 | Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models + non-interactive Lua edit/input hooks + image-gen instruction** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier; slice 3a graduated multimodal/asset; slice 3b graduated Lua `editRequest`, `editprocess`, input-trigger, and `editinput`; slice 3c graduated the image-gen instruction. Remaining `unsupported`: non-vision caption (class 2), interactive Lua dialogs, and permanent pluginV2. |
-| Provider dispatch | **Server** (`/generate/completion`) | `resolveServerCompletionRoute`; `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
+| Provider dispatch | **Server** (`/generate/completion` in the default flag-off flow; `/generate/chat` when server prompt assembly is enabled) | `resolveServerCompletionRoute` gates the completion path; `/generate/chat` uses `server/fastify/src/prompt/chatDispatch.ts`. `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
 | Token streaming → rows | Browser | Writes the projection. |
-| Post-generation | **Server (durable) + Browser (effects)** | Durable derivation — `editoutput`, run-var pass, `'output'` trigger — is **server-owned (A2 done, slice 4)**: `runServerPostGeneration` derives + persists the scriptstate delta and ships the final text on `done.postGeneration`. Browser keeps inlay-screen render (B1), auto-continue/IGP recursion (B2). |
+| Post-generation | **Server (durable) + Browser (effects)** | Durable derivation — `editoutput`, run-var pass, `'output'` trigger — is **server-owned (A2 done, slice 4)** when derivation succeeds: `runServerPostGeneration` derives + persists the scriptstate delta and ships the final text on `done.postGeneration`. If derivation throws, `/generate/chat` omits that frame and the browser does not run a local derivation fallback on this path. Browser keeps inlay-screen render (B1), auto-continue/IGP recursion (B2). |
 | Stage-4 closeout | **Browser** | Notification, emotion, image-gen, TTS, stage metadata (B1/B2). |
 | HypaV3 memory | **Server** | Persistence + jobs server-side; progress UI is browser (B1). |
 | Durable persistence | **Mixed** | Assembly-time scriptstate delta is now persisted by `/generate/chat` itself (**C-A1, done**); final-message persistence is still command-backed (B2). |
@@ -103,12 +103,22 @@ Output-trigger message surgery is surfaced to the projection. Proven by the A2
 cases in `generation.chat.test.ts`, the output-trigger / editoutput cases in
 `sendChat.fixtures.serverBacked.test.ts`, and the flip in `orchestrateResponse.test.ts`.
 
+Current caveat: `generationChat.ts::buildPostGenerationFrame` catches
+`runServerPostGeneration` failures and returns no post-generation frame. Because
+the browser has already skipped the local `editoutput` / output-trigger
+derivation when `serverOwnsPostGeneration` is true, there is no fallback
+derivation for that failed server pass.
+
 ### A3 — Provider coverage
 
-Unsupported providers (NovelAI, Ooba, Plugin, WebLLM, non-vanilla OpenAI-compat)
-cannot be server-routed. Already handled: `resolveServerCompletionRoute` returns
-`unsupported` and hard-fails; the in-`/chat` dispatch mirrors that. A support cap,
-not a thinness leak. No batch needed beyond keeping the hard-fail explicit.
+Unsupported provider shapes cannot be server-routed. Already handled:
+`resolveServerCompletionRoute` returns `unsupported` and hard-fails on the
+completion path; `/generate/chat` performs its own resolver check in
+`prompt/chatDispatch.ts` and emits explicit unsupported-provider errors with no
+browser fallback. The supported sets are source-defined, not a fixed prose list;
+today `/chat` still rejects NovelAI/NovelList, plugin providers, WebLLM, Ooba
+OpenAI-compatible chat/reverse-proxy shapes, and unknown OpenAI-compatible
+models. This is a support cap, not a thinness leak. Keep the hard-fail explicit.
 
 ## B. Fine In The Browser
 
@@ -143,8 +153,8 @@ reconciliation), and the C-A1 persistence / 423 assertions in
   model. See [`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
 - Do not port browser UI/display ownership.
 - Do not widen provider support while removing prompt/post-gen branches.
-- A1/A2 are landed. Do not mix group-chat removal, audit-rule hardening,
-  event-patching, and docs-only reconciliation in one batch.
+- A1/A2 are landed. Do not mix group-chat removal, any newly justified audit-rule
+  hardening, event-patching, and docs-only reconciliation in one batch.
 - **Durable/resumable generation** (survive client disconnect, server-owned result
   persistence, reconnect/replay) is a separate future workstream, **not** part of
   these slices. C-A1 / slice 2 moves persistence server-side as a *prerequisite*,

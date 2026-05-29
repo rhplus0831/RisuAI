@@ -51,9 +51,10 @@ class `unsupported`; 3a/3b/3c each flip one to `server`).
    `editoutput` server-side on the server-dispatch path, persists the scriptstate
    delta, and removes the browser durable derivation for that path.
 
-Group chat is **legacy** and removed elsewhere — do not add a server group model
-here. See [`../status/sendchat-thinning.md`](../status/sendchat-thinning.md) for
-the detailed A/B triage and [`../plan.md`](../plan.md) for the spine.
+Group chat is **legacy** and tracked elsewhere for client removal — do not add a
+server group model here. See
+[`../status/sendchat-thinning.md`](../status/sendchat-thinning.md) for the
+detailed A/B triage and [`../plan.md`](../plan.md) for the spine.
 
 ## Rule
 

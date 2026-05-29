@@ -50,10 +50,19 @@ Do not port these to the server, and do not keep them usable in the browser.
     path the server cannot own.
   - **Removal item (separate from thinning; a code change, not done yet):**
     inventory and remove the remaining UI/type compatibility surface. Current
-    Fastify data loading filters group characters, and request dispatch hardcodes
-    `isGroupChat: false`; `chatProcessIndex` is reentrancy/preset-chain state, not
-    the group surface. Treat dead group UI branches and type compatibility as the
-    removal target.
+    Fastify data loading filters group characters, request dispatch hardcodes
+    `isGroupChat: false`, and server prompt assembly explicitly rejects a group
+    character; `chatProcessIndex` is reentrancy/preset-chain state, not the group
+    surface. Treat dead `type === 'group'` UI branches and type compatibility as
+    the first removal target.
+  - **Scope decision before editing:** keep `Message.saying` unless a separate
+    speaker-attribution replacement is designed. It is still active for
+    single-character transcript attribution and prompt/export/lorebook paths, so
+    it is not synonymous with group-chat UI.
+  - **Proof shape:** tests or audit should show group characters remain filtered
+    on load, server prompt assembly still hard-fails any surviving group
+    character, `dispatchRequest` still sends `isGroupChat: false`, and removed UI
+    branches no longer expose a usable group-chat path.
 - Native/mobile wrapper runtime modes; browser local persistence as the primary
   runtime; Tauri, Hono, Express, service-worker persistence, or alternative
   servers.
@@ -69,11 +78,14 @@ Do not port these to the server, and do not keep them usable in the browser.
 ## Unsupported Provider Shapes (Fail Explicitly)
 
 Fastify mode must not silently fall back to browser provider dispatch.
-Unsupported provider shapes (NovelAI, NovelList, Ooba, Plugin, WebLLM,
-reverse-proxy-Ooba, non-vanilla OpenAI-compat, etc.) fail explicitly through
-`resolveServerCompletionRoute()` (`no-retry`). Provider expansion needs one named
-route contract, request shape, credential boundary, response extraction rule,
-warning/error behavior, and tests.
+Unsupported provider shapes fail explicitly through `resolveServerCompletionRoute()`
+on the completion path (`no-retry`) and through `prompt/chatDispatch.ts` on the
+`/generate/chat` path. The current supported and unsupported sets are the resolver
+tables in source; do not keep a stale prose list as truth. Provider expansion
+needs one named route contract, request shape, credential boundary, response
+extraction rule, warning/error behavior, and tests. As of 2026-05-30, `/chat`
+still explicitly rejects NovelAI/NovelList, plugin providers, WebLLM, Ooba
+OpenAI-compatible chat/reverse-proxy shapes, and unknown OpenAI-compatible models.
 
 ## Unsupported Prompt-Assembly Content (Fail Explicitly)
 
@@ -117,5 +129,6 @@ documented here.
 
 - Manual legacy local-client verification is separate from Fastify projection
   hardening.
-- Audit-rule hardening (the shallow rules) is tracked in
-  [`status/audit.md`](status/audit.md).
+- Additional audit-rule hardening is conditional on first demonstrating a sincere
+  defeat of a remaining shallow rule; the four known defeated rules are already
+  hardened. See [`status/audit.md`](status/audit.md).

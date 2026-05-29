@@ -33,11 +33,14 @@ Implemented / closed:
 - A2 is landed on the server-dispatch path: `runServerPostGeneration` runs the
   run-var pass, `runTrigger(..., 'output', ...)`, and `editoutput`; the route
   persists the derived scriptstate delta and returns final text / resend /
-  revision on `done.postGeneration`.
+  revision on `done.postGeneration` when derivation succeeds. Derivation errors
+  are currently swallowed by `/generate/chat`; the browser does not run a local
+  derivation fallback on that path.
 - Bootstrap projection, command-event invalidation, `.risu` import/export/bundle,
   asset routes, backup/restore, and provider secret masking are closed.
 - The client-thinning audit is wired as `pnpm client-thinning:audit` and its
-  fixture reproducibility is complete (21 rules, 45 tests).
+  fixture reproducibility is complete (21 rules, 52 tests). The four known
+  defeated shallow rules were hardened on 2026-05-30.
 
 Resolved A-items (see [`plan.md`](plan.md) for the full classification):
 
@@ -60,9 +63,10 @@ client, not merely unsupported. Event patching stays deferred. Flags:
 `useServerGeneration` removed (2026-05-29); `isFastifyServer` and
 `useServerPromptAssembly` kept and annotated in-code, not deprecated.
 
-Caveat on the audit: reproducible but not uniformly robust — roughly a dozen rules are
-string/regex matchers and four were empirically defeated by sincere refactors.
-Audit-rule hardening is a tracked work item. See [`status/audit.md`](status/audit.md).
+Caveat on the audit: reproducible but not uniformly robust — some rules still use
+source-text needles/regex counts. The four empirically defeated rules are now AST
+invariants; hardening any remaining shallow rule requires first demonstrating a
+sincere defeat against the real binary. See [`status/audit.md`](status/audit.md).
 
 ## Active Direction
 
@@ -70,9 +74,10 @@ Audit-rule hardening is a tracked work item. See [`status/audit.md`](status/audi
 - Start with the audit. If `pnpm client-thinning:audit` is red, fix or triage
   before wider runtime changes; then record in
   [`coverage/latest-verification.md`](coverage/latest-verification.md).
-- Next work is group-chat legacy removal, audit-rule hardening, and any
-  documentation reconciliation after source changes. Keep event patching
-  deferred until SSE reconnect/replay exists.
+- Next work is group-chat legacy removal and any documentation reconciliation
+  after source changes. Additional audit-rule hardening is only opened after a
+  demonstrated defeat. Keep event patching deferred until SSE reconnect/replay
+  exists.
 
 ## Start Here
 
@@ -82,7 +87,7 @@ Audit-rule hardening is a tracked work item. See [`status/audit.md`](status/audi
   A/B blocker triage.
 - [Server projection](status/server-projection.md) — bootstrap, guard, events
   (event patching deferred).
-- [Audit](status/audit.md) — reproducibility done; rule-hardening open.
+- [Audit](status/audit.md) — reproducibility done; four defeated rules hardened.
 - [Command boundaries](status/command-boundaries.md) — closed/stable.
 - [Assets, imports, backups](status/assets-imports-backups.md) — closed/stable.
 - [Client-owned / legacy](status/client-owned-unsupported.md) — B1 keep, group

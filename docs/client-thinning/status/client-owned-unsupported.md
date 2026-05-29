@@ -25,6 +25,10 @@ server prompt assembly now owns non-interactive submit-time input-trigger /
   Optional later win: route-direct final-result persistence closes a small
   durability window (crash between generation and command) and saves a round-trip.
   Assembly-time scriptstate replay is gone; `/generate/chat` owns that write.
+  Treat route-direct persistence as a separate B2/durable-generation design task,
+  not as a hidden client-thinning blocker: it needs an owner, revision semantics,
+  double-write avoidance, and reconnect/read behavior if it is bundled with
+  durable generation.
 - **Stage-timing metadata** — browser-measured wall-clock telemetry, persisted via
   command.
 

@@ -32,10 +32,13 @@ stable handle. All paths from the repo root.
   `chatVarMutations: [{ key:'$score', before:null, after:'9' }]`; `/generate/chat`
   persists it, returns a bumped revision, and bootstrap afterwards shows
   `scriptstate: { $score: '9' }`. Preview remains read-only.
-- **Classifier precedent:** the unsupported-provider `it.each` matrix (`:728-819`)
-  — NovelAI/NovelList/Ooba/plugin/WebLLM/unknown-OpenAI-compat each emit `error`
-  ("unsupported /chat provider … must use local dispatch") with no token frames.
-  This is the server mirror of `resolveServerCompletionRoute`'s `unsupported` arm.
+- **Classifier precedent:** the unsupported-provider `it.each` matrix proves the
+  `/generate/chat` provider resolver emits explicit `error` frames with no token
+  frames for unsupported `/chat` shapes (NovelAI/NovelList, plugin providers,
+  WebLLM, Ooba OpenAI-compatible chat/reverse-proxy, unknown OpenAI-compatible
+  models). This is the server-chat counterpart to `resolveServerCompletionRoute`'s
+  `unsupported` arm; the supported provider sets are source-defined and not
+  identical between `/generate/completion` and `/generate/chat`.
 - **Gate on:** `:679-725` seeds `useServerPromptAssembly: true` + an echo model and
   asserts production server dispatch.
 
@@ -114,7 +117,7 @@ an assembly-time var write, and a non-active-writer `/chat` does not persist.
 ## Audit (`util/client-thinning-audit.ts`)
 
 21 checks registered in `auditChecks`, selectable by id via
-`CLIENT_THINNING_AUDIT_CHECK_IDS` (`:2606`).
+`CLIENT_THINNING_AUDIT_CHECK_IDS`.
 
 - **EC1 provider ownership — `checkProviderOwnership`** (`:1234`, registered
   `:2652`): the most chat-relevant rule. Pins literal needles in
@@ -131,29 +134,37 @@ an assembly-time var write, and a non-active-writer `/chat` does not persist.
   (`:387-400`) and requires the client `serverChat.ts` helper to carry the writer
   header + stale handling (`:617-627`).
 
-### The four shallow rules to harden (Phase 5 closeout)
+### The four defeated rules hardened in phase 5
 
-These were empirically defeated by sincere refactors (string/regex matchers, not
-AST invariants):
+These were empirically defeated by sincere refactors and are now AST-backed
+invariants with adversarial fixtures:
 
-- **A4R2 — `checkAlpha4ConflictRetry`** (`:1394`): `bodyText.includes("'conflict'")`
-  + a regex over the tail (`:1408-1417`). A rename of the status literal defeats it.
-- **A4R7 — `checkAlpha4AssetUrlGate`** (`:2016`): regex on the `?? loc`
-  anti-pattern (`:2029,2039,2061-2085`).
-- **A4R-fanout (svelte) — `checkAlpha4CompositeFanout`** (`:2248`): the TS branch
-  is AST-based, but `svelteScan` (`:2291-2346`) is a line-adjacency text scan over
-  a **hardcoded file list** `['src/lib/SideBars/SideChatList.svelte']` (`:2349-2351`).
-- **EC2 — `checkPluginStorageGates`** (`:707`): substring presence of gate calls.
+- **A4R2 — `checkAlpha4ConflictRetry`**: conflict-status comparisons are located
+  structurally, with aliased string literals handled, and command replay in the
+  conflict branch is detected.
+- **A4R7 — `checkAlpha4AssetUrlGate`**: Fastify/browser branches are located by
+  guard polarity and asset URL helper shapes are validated instead of relying on
+  a `?? loc` text needle.
+- **A4R-fanout — `checkAlpha4CompositeFanout`**: `.svelte` files now parse
+  `<script>` blocks and markup event handlers into ts-morph before the same scope
+  analysis used for `.ts` files.
+- **EC2 — `checkPluginStorageGates`**: the sink set is derived from browser
+  storage globals and `localforage.createInstance` declarations, so new
+  device-local methods cannot bypass a fixed name list.
+
+Remaining shallow string/regex rules are not automatically phase-5 work; the bar
+for opening another hardening batch is a sincere defeat against the real audit
+binary.
 
 ### Running the audit
 
 - Entry point: `package.json` → `"client-thinning:audit": "tsx util/client-thinning-audit.ts"`.
   Exits 1 on any finding.
-- Regression tests: `util/client-thinning-audit.test.ts` — **45 `it`s** over the
+- Regression tests: `util/client-thinning-audit.test.ts` — **52 tests** over the
   21 rules, each spawning the real audit with a per-rule `CLIENT_THINNING_AUDIT_CHECK_IDS`
   against a fixture. Fixtures in `util/client-thinning-audit-fixtures/<rule>/{failing*, *-bypass}/`
-  (a failing fixture exits non-zero, a bypass fixture exits 0); some rules have two
-  failing fixtures, hence 45 > 21.
+  (a failing fixture exits non-zero, a bypass fixture exits 0); some rules have
+  multiple failing/adversarial fixtures, hence 52 > 21.
 
 ## Verification commands
 
@@ -173,10 +184,10 @@ AST invariants):
 - `pnpm smoke:fastify-browser` — build + Playwright smoke (long).
 - Focused (the form the docs use):
   - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts src/ts/process/request/tests/serverCompletion.test.ts` (the "163 tests" = 38 local fixtures + 125 classifier cases).
-  - `pnpm exec vitest run util/client-thinning-audit.test.ts` (45 tests).
+  - `pnpm exec vitest run util/client-thinning-audit.test.ts` (52 tests).
   - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts src/ts/process/request/tests/serverChat.test.ts`.
   - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts`.
 
 After a recordable verification, replace
 [`../coverage/latest-verification.md`](../coverage/latest-verification.md) with
-only the latest command and result.
+the latest verification batch commands and results.

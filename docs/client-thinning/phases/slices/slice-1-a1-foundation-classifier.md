@@ -180,11 +180,12 @@ context.
   co-located test). Alternative: fold into `serverBackedSendChat.ts`. The
   reference assumes the former.
 - **Do not delete `useServerPromptAssembly`.** Its JSDoc
-  (`database.svelte.ts:1354-1368`) says removing the flag is the *end* of the
-  whole prompt-assembly thinning sub-family, not this slice. This slice replaces
-  the *gate's decision logic*; the flag stays until the local fallback is gone
-  for all classes (after 3a/3b/3c). The classifier may still read the flag as the
-  master enable while content classes remain `unsupported`.
+  (`database.svelte.ts:1354-1368`) says the flag is a default-off migration gate,
+  not a stable user setting and not deprecated. This slice replaced the *gate's
+  decision logic*; later slices landed the A1 content classes, but removing or
+  default-enabling the flag is still a separate closeout decision while local
+  assembly remains the default production path and unsupported provider/content
+  cases are explicit.
 
 ## Scope guard
 

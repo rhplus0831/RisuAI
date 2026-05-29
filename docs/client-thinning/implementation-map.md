@@ -42,8 +42,12 @@ Three boundaries (see [`status/sendchat-thinning.md`](status/sendchat-thinning.m
 - **Provider dispatch (server, platform-gated, no flag):**
   `src/ts/process/request/serverCompletion.ts::resolveServerCompletionRoute`
   returns `local | server | unsupported`; `local` only when `!isFastifyServer`;
-  supported → `/api/v1/generate/completion`; unsupported → hard fail. This is the
-  precedent to mirror for prompt assembly.
+  supported default flag-off dispatch → `/api/v1/generate/completion`;
+  unsupported → hard fail. With server prompt assembly enabled, `/generate/chat`
+  owns both assembly and provider streaming through
+  `server/fastify/src/prompt/chatDispatch.ts`, whose support set is similar but
+  not identical; `/chat` still hard-fails unsupported provider shapes instead of
+  falling back. This is the precedent to mirror for prompt assembly.
 - **Prompt assembly (browser by default):**
   `src/ts/process/request/serverPromptAssembly.ts::resolveServerPromptAssembly`
   decides `local | server | unsupported`. `local` is reached when
@@ -62,6 +66,9 @@ Three boundaries (see [`status/sendchat-thinning.md`](status/sendchat-thinning.m
   `src/ts/process/postGeneration/orchestrateResponse.ts` skips browser
   `editoutput` + output-trigger derivation when `serverOwnsPostGeneration` is
   true; B1 effects and B2 final-message persistence remain browser-orchestrated.
+  If the server post-generation derivation throws, `/generate/chat` currently
+  omits `done.postGeneration` and still completes the provider response; there is
+  no browser derivation fallback on the server-dispatch path.
 - **HypaV3 memory:** server-side persistence/jobs under
   `server/fastify/src/routes/memory*.ts`; progress UI is a transient browser
   projection.
@@ -98,8 +105,8 @@ slated for client removal as a separate task — see
 
 Invariant · owner · timing · input context · allowed mutations · persistence shape
 · error shape · projection behavior · proof. For closeout, keep group-chat
-removal, audit-rule hardening, event-patching, and docs-only reconciliation in
-separate batches.
+removal, any newly justified audit-rule hardening, event-patching, and docs-only
+reconciliation in separate batches.
 
 ## Focused Verification
 
@@ -109,5 +116,5 @@ separate batches.
 - Full: `pnpm api:test`, `pnpm test`, `pnpm smoke:fastify-browser`
 
 After a recordable verification, replace
-[`coverage/latest-verification.md`](coverage/latest-verification.md) with only the
-latest command and result.
+[`coverage/latest-verification.md`](coverage/latest-verification.md) with the
+latest verification batch commands and results.
