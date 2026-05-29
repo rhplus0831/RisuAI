@@ -30,7 +30,8 @@ implementation is now landed; closeout work remains.
   *requests* a write, but never owns durable state. B1 permanent client-owned,
   B2 acceptable-but-optimizable.
 - **Legacy / removed** — no-port *and* to be removed from the client. Group chat
-  is now in this class.
+  is now in this class; its dead `type === 'group'` UI branches were removed
+  2026-05-30 (guarded by `A4R-group-chat-removed`).
 
 The dividing line: the server must own anything that **decides or derives durable
 state** (the assembled prompt, the LLM call, post-generation message/scriptstate

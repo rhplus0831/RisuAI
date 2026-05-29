@@ -160,11 +160,11 @@ binary.
 
 - Entry point: `package.json` → `"client-thinning:audit": "tsx util/client-thinning-audit.ts"`.
   Exits 1 on any finding.
-- Regression tests: `util/client-thinning-audit.test.ts` — **52 tests** over the
-  21 rules, each spawning the real audit with a per-rule `CLIENT_THINNING_AUDIT_CHECK_IDS`
+- Regression tests: `util/client-thinning-audit.test.ts` — **55 tests** over the
+  22 rules, each spawning the real audit with a per-rule `CLIENT_THINNING_AUDIT_CHECK_IDS`
   against a fixture. Fixtures in `util/client-thinning-audit-fixtures/<rule>/{failing*, *-bypass}/`
   (a failing fixture exits non-zero, a bypass fixture exits 0); some rules have
-  multiple failing/adversarial fixtures, hence 52 > 21.
+  multiple failing/adversarial fixtures, hence 55 > 22.
 
 ## Verification commands
 
@@ -177,14 +177,14 @@ binary.
 "api:test": "vitest run --config server/fastify/vitest.config.ts"
 ```
 
-- `pnpm client-thinning:audit` — the 21-rule audit (start here; if red, fix/triage
+- `pnpm client-thinning:audit` — the 22-rule audit (start here; if red, fix/triage
   before runtime work).
 - `pnpm api:test` — server suite (incl. `generation.chat.test.ts`).
 - `pnpm test` — full client suite (incl. `src/ts/process/...`).
 - `pnpm smoke:fastify-browser` — build + Playwright smoke (long).
 - Focused (the form the docs use):
   - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts src/ts/process/request/tests/serverCompletion.test.ts` (the "163 tests" = 38 local fixtures + 125 classifier cases).
-  - `pnpm exec vitest run util/client-thinning-audit.test.ts` (52 tests).
+  - `pnpm exec vitest run util/client-thinning-audit.test.ts` (55 tests).
   - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts src/ts/process/request/tests/serverChat.test.ts`.
   - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts`.
 

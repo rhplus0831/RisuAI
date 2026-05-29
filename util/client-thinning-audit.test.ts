@@ -65,6 +65,7 @@ describe('client-thinning audit fixtures', () => {
   const assetPersistenceCheck = 'AEC6 asset persistence semantics'
   const importExportShapeCheck = 'AEC2 import/export current shape'
   const pluginV2ServerExecutionCheck = 'A4R-pluginv2 no server-side plugin execution'
+  const groupChatRemovedCheck = 'A4R-group-chat-removed legacy group chat removed from client'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -666,6 +667,38 @@ describe('client-thinning audit fixtures', () => {
       'import-export-current-shape/current-shape-bypass',
       importExportShapeCheck,
     )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that reintroduces a group-chat branch in the catalog and chat-list UI', async () => {
+    const result = await runAuditFixture('group-chat-removed/failing-ui-branch', groupChatRemovedCheck)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${groupChatRemovedCheck}]`)
+    // Both detection paths fire: GridCatalog's markup `{#if}` and ChatList's event handler.
+    expect(result.stderr).toContain('src/lib/Others/GridCatalog.svelte')
+    expect(result.stderr).toContain('src/lib/Others/ChatList.svelte')
+    expect(result.stderr).toContain("compares a character type to 'group'")
+  })
+
+  it('fails a fixture that drops the load-time filter, server hard-fail, and isGroupChat hardcode', async () => {
+    const result = await runAuditFixture(
+      'group-chat-removed/keep-layers-removed-bypass',
+      groupChatRemovedCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${groupChatRemovedCheck}]`)
+    expect(result.stderr).toContain("setDatabase no longer filters characters by type !== 'group'")
+    expect(result.stderr).toContain('serverPromptAssembly no longer hard-fails a group character')
+    expect(result.stderr).toContain('dispatchRequest no longer sends isGroupChat: false')
+  })
+
+  it('allows a client with the group-chat UI removed and the defense layers intact', async () => {
+    const result = await runAuditFixture('group-chat-removed/passing', groupChatRemovedCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')

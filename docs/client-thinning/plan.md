@@ -107,9 +107,11 @@ provider stream, and server-derived post-gen mutations. Flag history:
 ### Legacy / removed — no-port AND remove from the client
 
 - **Group chat** (reclassified 2026-05-29): fully legacy. Not "unsupported under
-  server assembly" — it must not remain usable from the client either. See
+  server assembly" — it must not remain usable from the client either. The dead
+  `type === 'group'` UI branches were removed 2026-05-30 (guarded by
+  `A4R-group-chat-removed`); the defense layers and `Message.saying` are kept. See
   [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md) for the
-  removal item and code surface.
+  remaining-scope notes and code surface.
 - The historical no-port list: native/mobile wrappers, Tauri/Hono/Express,
   service workers, peer sync, Google Drive sync, Risu Account Sync, legacy memory
   engines/sync surfaces outside this thinning plan, server-side plugin code
@@ -159,12 +161,17 @@ persistence and a transient browser progress projection.
 ## Near-Term Order
 
 1. Run `pnpm client-thinning:audit`. If red, fix or triage before runtime work.
-2. **Group-chat legacy removal** (separate from thinning; scope still needs the
-   checklist in [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md)).
+2. ~~**Group-chat legacy removal**~~ UI-branch removal DONE 2026-05-30 — the dead
+   `type === 'group'` branches in `GridCatalog.svelte` / `ChatList.svelte` and the
+   vestigial catalog `type` field are gone, guarded by `A4R-group-chat-removed`.
+   Defense layers and `Message.saying` kept. Remaining (separate decisions): the
+   load-time filter / `saying` fate, and stale group strings/comments in unrelated
+   surfaces (`removeFromGroup` lang key, `cbs.ts` / `risuai.d.ts` comments). See
+   [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
 3. ~~**Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
    (A4R2, A4R7, fanout-svelte path, EC2) to AST invariants; add adversarial
    fixtures.~~ DONE 2026-05-30 — all four are AST invariants with adversarial
-   fixtures (52 audit tests). See [`status/audit.md`](status/audit.md).
+   fixtures (55 audit tests across 22 rules). See [`status/audit.md`](status/audit.md).
 4. Keep **event patching deferred** until SSE reconnect/replay exists.
 5. Durable-generation work (job lifecycle, reconnect/read contract, route-direct
    result persistence) stays in its separate workstream.

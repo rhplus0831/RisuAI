@@ -24,13 +24,14 @@ unsupported, all slice 3b Lua sub-slices, slice 3c (image-gen view instruction),
 and **slice 4 (A2 — server output-trigger + `editoutput`)** have landed. **All
 A-blockers (A1/A2/A3) are now resolved.**
 
-1. **Group-chat legacy removal.** Separate from thinning — inventory and remove
-   the client surface (see [`client-owned-unsupported.md`](client-owned-unsupported.md)).
-   A 2026-05-30 inventory found this is low-to-moderate risk but entangles the
-   active `Message.saying` attribution field across the prompt-assembly pipeline
-   (`formatHistoryMessage`, post-generation, lorebook, export), so scope it to the
-   documented target — dead `type === 'group'` UI branches and type compatibility —
-   and decide the load-time group filter / `saying` field separately.
+1. ~~**Group-chat legacy removal.**~~ UI-branch removal DONE 2026-05-30. The dead
+   `type === 'group'` branches in `GridCatalog.svelte` / `ChatList.svelte` and the
+   vestigial catalog `type` field were removed and are guarded by the new
+   `A4R-group-chat-removed` invariant (see [`audit.md`](audit.md)). As planned, the
+   `Message.saying` attribution field and the load-time group filter were left as
+   separate decisions, and stale group references in unrelated surfaces
+   (`removeFromGroup` lang key, `cbs.ts` / `risuai.d.ts` comments) are optional
+   docs-only follow-up. See [`client-owned-unsupported.md`](client-owned-unsupported.md).
 2. ~~**Audit-rule hardening.**~~ DONE 2026-05-30 — A4R2, A4R7, the fanout `.svelte`
    path, and EC2 are now AST invariants with adversarial fixtures ([`audit.md`](audit.md)).
    Remaining audit work is only the other still-shallow string/regex rules, and it
@@ -40,14 +41,14 @@ A-blockers (A1/A2/A3) are now resolved.**
 
 ## Tasks That Need A Clearer Scope Before Implementation
 
-- **Group-chat legacy removal.** Decide the exact removal set before editing:
-  target dead UI branches (`type === 'group'` in catalog/chat-list surfaces) and
-  type compatibility separately from active single-character fields. `Message.saying`
-  is still used for speaker attribution in prompt history, lorebook, export, and
-  post-generation paths; removing it is not part of the group-chat UI cleanup
-  unless a replacement attribution model is designed. Proof should include the
-  load-time group filter, the prompt-assembly group hard-fail, and tests/audit for
-  any removed UI branch.
+- **Group-chat residual scope (UI branches already removed).** `Message.saying` is
+  still used for speaker attribution in prompt history, lorebook, export, and
+  post-generation paths; removing it was not part of the group-chat UI cleanup and
+  needs a replacement attribution model first. The load-time group filter is kept
+  by design. Stale group references in unrelated surfaces (`removeFromGroup` lang
+  key across the language files, the `cbs.ts` `{{char}}` description, the
+  `risuai.d.ts` "and group chats" comment) are optional docs-only follow-up, kept
+  out of the UI-branch batch. Proof for the landed removal is `A4R-group-chat-removed`.
 - **Historical no-port list.** Treat it as "do not port or reopen." Do not turn
   the whole list into a closeout blocker. If a live Fastify compatibility surface
   is found, create a named removal/migration task with files and proof.

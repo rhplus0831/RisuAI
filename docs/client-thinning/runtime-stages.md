@@ -68,6 +68,6 @@ slated for client removal — see
 
 Assert projection invariants structurally; keep findings from becoming one-off
 fixes; record verification after runtime changes. Audit fixture reproducibility is
-done (21 rules, 52 tests), and the four empirically defeated rules are now
+done (22 rules, 55 tests), and the four empirically defeated rules are now
 hardened AST invariants. Some other rules remain shallow and should be hardened
 only after a sincere defeat is demonstrated. See [`status/audit.md`](status/audit.md).

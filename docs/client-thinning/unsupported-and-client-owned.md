@@ -48,21 +48,35 @@ Do not port these to the server, and do not keep them usable in the browser.
     pre-Fastify multi-character flow outside the supported single-character chat
     process. Keeping it as a browser-only path would preserve a durable-state
     path the server cannot own.
-  - **Removal item (separate from thinning; a code change, not done yet):**
-    inventory and remove the remaining UI/type compatibility surface. Current
-    Fastify data loading filters group characters, request dispatch hardcodes
+  - **Removal item (separate from thinning) — UI branches DONE 2026-05-30:** the
+    dead `type === 'group'` UI branches were removed — the `GridCatalog.svelte`
+    group icon (the `Users` import and the `formatChars` `type` field went with it)
+    and the `ChatList.svelte` new-chat member-seeding block (plus its
+    `findCharacterbyId` import). The defense layers stay as before: Fastify data
+    loading filters group characters, request dispatch hardcodes
     `isGroupChat: false`, and server prompt assembly explicitly rejects a group
     character; `chatProcessIndex` is reentrancy/preset-chain state, not the group
-    surface. Treat dead `type === 'group'` UI branches and type compatibility as
-    the first removal target.
+    surface. Out-of-scope group references still present in unrelated surfaces — the
+    dead `removeFromGroup` lang key, the `cbs.ts` `{{char}}` description, and the
+    `risuai.d.ts` "and group chats" comment — are optional docs-only follow-up, not
+    part of the UI-branch removal.
   - **Scope decision before editing:** keep `Message.saying` unless a separate
     speaker-attribution replacement is designed. It is still active for
     single-character transcript attribution and prompt/export/lorebook paths, so
     it is not synonymous with group-chat UI.
-  - **Proof shape:** tests or audit should show group characters remain filtered
-    on load, server prompt assembly still hard-fails any surviving group
-    character, `dispatchRequest` still sends `isGroupChat: false`, and removed UI
-    branches no longer expose a usable group-chat path.
+  - **Proof (landed):** the `A4R-group-chat-removed` audit invariant
+    (`util/client-thinning-audit.ts`) holds all four together — negative: neither
+    `GridCatalog.svelte` nor `ChatList.svelte` compares a character `type` to
+    `'group'`; positive: `setDatabase` keeps the load-time `type !== 'group'`
+    filter, `serverPromptAssembly` keeps the `type === 'group'` → `unsupported`
+    hard-fail, and `dispatchRequest` keeps `isGroupChat: false`. Behavioral proof
+    for the two positive layers also lives in `serverPromptAssembly.test.ts` (group
+    rejection) and `dispatchRequest.test.ts` (`isGroupChat` is false). The
+    standalone behavioral test for the load-time filter was dropped — importing
+    `database.svelte` alone under vitest's per-file module isolation trips a
+    circular-import TDZ in the stores `moduleUpdate` `$effect` — so the filter's
+    proof is the audit invariant plus its execution in every existing
+    `setDatabase`-based test.
 - Native/mobile wrapper runtime modes; browser local persistence as the primary
   runtime; Tauri, Hono, Express, service-worker persistence, or alternative
   servers.

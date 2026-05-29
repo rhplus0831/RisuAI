@@ -3,7 +3,7 @@
   import { type Database } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
-  import { ArrowLeft, User, Users, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
+  import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
@@ -25,7 +25,6 @@
     let charas: {
       image: string
       index: number
-      type: string
       name: string
       desc: string
     }[] = []
@@ -47,7 +46,6 @@
         charas.push({
           image: c.image,
           index: i,
-          type: c.type,
           name: c.name,
           desc: c.creatorNotes ?? 'No description',
         })
@@ -143,11 +141,7 @@
                     ? 'background:var(--risu-theme-selected)'
                     : ''}
                 >
-                  {#if char.type === 'group'}
-                    <Users />
-                  {:else}
-                    <User />
-                  {/if}
+                  <User />
                 </BarIcon>
               {/if}
             </div>

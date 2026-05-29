@@ -9,8 +9,8 @@ in [`../coverage/audit.md`](../coverage/audit.md).
 ## Current State: Reproducible; The Four Defeated Rules Are Now AST Invariants
 
 `pnpm client-thinning:audit` runs `util/client-thinning-audit.ts` (ts-morph plus
-source-text checks). Fixture **reproducibility is complete**: all 21 rules have
-committed fixtures and tests in `util/client-thinning-audit.test.ts` (52 tests).
+source-text checks). Fixture **reproducibility is complete**: all 22 rules have
+committed fixtures and tests in `util/client-thinning-audit.test.ts` (55 tests).
 The harness is honest — it spawns the real audit binary against per-rule mini-repo
 fixtures with `CLIENT_THINNING_AUDIT_CHECK_IDS` scoping and asserts non-zero exit
 on the failing fixture (and zero on a bypass fixture where applicable). No rule is
@@ -62,6 +62,31 @@ needle rule and now fails against the hardened rule:
   cannot slip past a fixed name list. Fixture:
   `plugin-storage-gates/failing-ungated-new-method`.
 
+## A4R-group-chat-removed (added with the group-chat removal batch)
+
+`checkGroupChatRemoved` is the proof for the group-chat legacy removal — group chat
+is fully legacy (no server group/member model), so its client UI branches were
+removed and three defense layers keep a group character unreachable. The rule is
+AST-derived with two halves:
+
+- **negative** — the catalog / chat-list UI surfaces (`GridCatalog.svelte`,
+  `ChatList.svelte`) must not reintroduce a `char.type === 'group'` comparison. It
+  parses each `<script>` body AND every markup brace group (a generic
+  `extractSvelteBraceGroups` that captures attribute handlers, `{#if ...}` logic
+  blocks, and plain mustaches — broader than the fanout rule's `={ ... }`-only
+  extraction) as TS, then walks for a `.type` member compared to the `'group'`
+  literal. Scoped to those two files on purpose: the sidebar accordion
+  (`Toggles.svelte` / `util.ts`) legitimately compares an unrelated
+  `toggle.type === 'group'`.
+- **positive** — the three layers must remain: `setDatabase`'s load-time filter
+  (`type !== 'group'`), the `serverPromptAssembly` hard-fail (a `type === 'group'`
+  comparison guarding an `unsupported` return), and the `dispatchRequest`
+  `isGroupChat: false` hardcode.
+
+Fixtures: `group-chat-removed/failing-ui-branch` (both detection paths — markup
+`{#if}` and event handler), `group-chat-removed/keep-layers-removed-bypass` (all
+three defense layers dropped), `group-chat-removed/passing`.
+
 ## Hardening Work Item — Done For The Four Defeated Rules
 
 The four empirically-defeated rules above are converted and have adversarial
@@ -69,9 +94,11 @@ fixtures. Remaining optional follow-up (no known defeat yet):
 
 - The still-shallow string/regex rules can move to AST invariants if a sincere
   defeat is demonstrated against the real binary (the bar for opening this work).
-- The Svelte AST path covers `<script>` blocks and `={ ... }` attribute handlers;
-  quoted attribute interpolations (`attr="{ ... }"`) are not extracted — add if a
-  dispatch site ever lands in one.
+- The fanout rule's Svelte AST path covers `<script>` blocks and `={ ... }`
+  attribute handlers; quoted attribute interpolations (`attr="{ ... }"`) are not
+  extracted — add if a dispatch site ever lands in one. (The newer
+  `A4R-group-chat-removed` rule uses a broader `extractSvelteBraceGroups` that also
+  captures `{#if ...}` logic blocks and plain mustaches.)
 
 ## Direction
 

@@ -38,9 +38,10 @@ tightening, not correctness fixes.
 ## Legacy — Remove From The Client
 
 - **Group chat** — fully legacy as of 2026-05-29. Not "unsupported under server
-  assembly": it must not remain usable from the client. Removal is a separate
-  task; code surface and rationale are in
-  [`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
+  assembly": it must not remain usable from the client. The dead `type === 'group'`
+  UI branches were removed 2026-05-30 (guarded by `A4R-group-chat-removed`); the
+  defense layers and `Message.saying` are kept. Remaining-scope notes and rationale
+  are in [`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
 - The historical no-port list (native/mobile, Tauri/Hono/Express, service workers,
   peer/Drive/Account sync, legacy memory/sync surfaces outside this thinning
   plan, server-side plugin execution, per-event surgical patching without an

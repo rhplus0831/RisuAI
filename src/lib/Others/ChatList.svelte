@@ -14,7 +14,6 @@
   } from '@lucide/svelte'
   import { v4 } from 'uuid'
   import { exportChat, importChat } from '../../ts/characters'
-  import { findCharacterbyId } from '../../ts/util'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { changeChatTo } from 'src/ts/globalApi.svelte'
   import {
@@ -154,15 +153,6 @@
             localLore: [],
             fmIndex: -1,
             id: v4(),
-          }
-          if (cha.type === 'group') {
-            cha.characters.map((c) => {
-              chat.message.push({
-                saying: c,
-                role: 'char',
-                data: findCharacterbyId(c).firstMessage,
-              })
-            })
           }
           if (!canUseServerCommands()) {
             let chats = DBState.db.characters[$selectedCharID].chats

@@ -2,14 +2,26 @@
 
 Date: 2026-05-30
 
-- Command: `pnpm client-thinning:audit`
-- Result: Passed. The audit printed `Client-thinning audit passed.`
+Batch: group-chat legacy removal (dead `type === 'group'` UI branches + type
+compatibility) plus its proof invariant.
 
-Context: docs/client-thinning reconciliation audit. Changes update documentation
-status/provider/failure-policy wording plus comments/JSDoc only; no runtime
-behavior changed, so `pnpm api:test` / `pnpm test` were not rerun. The previous
-audit-hardening verification passed `pnpm exec vitest run
-util/client-thinning-audit.test.ts` (52 tests) and a strict typecheck of
-`util/client-thinning-audit.ts`. The latest full runtime verification in history
-(slice 4) passed `pnpm api:test` (72 files, 1314 tests) and `pnpm test` (82 files,
-889 tests, 4 skipped).
+- `pnpm client-thinning:audit` — Passed. Printed `Client-thinning audit passed.`
+  (22 rules now, including the new `A4R-group-chat-removed`).
+- `pnpm exec vitest run util/client-thinning-audit.test.ts` — 55 tests passed
+  (was 52; +3 for the new rule: a failing UI-branch fixture, a keep-layers-removed
+  bypass fixture, and the passing fixture).
+- `pnpm check` (svelte-check) — 0 errors, 0 warnings across the project (the two
+  edited Svelte files dropped dead branches and a vestigial `type` field).
+- `pnpm test` (client) — 82 files, 899 passed, 4 skipped.
+
+Not run this batch:
+
+- `pnpm api:test` — no `server/fastify/**` files changed (group-chat removal is
+  client-only), so the server suite is orthogonal; the last full server run (slice
+  4) passed `pnpm api:test` (72 files, 1314 tests).
+
+Context: client-only change. The two UI surfaces (`GridCatalog.svelte`,
+`ChatList.svelte`) lost their dead group-chat branches; the load-time filter, the
+server prompt-assembly group hard-fail, the `isGroupChat: false` request hardcode,
+and `Message.saying` are all intentionally kept and are now structurally guarded by
+the `A4R-group-chat-removed` invariant.

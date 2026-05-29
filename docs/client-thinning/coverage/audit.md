@@ -8,9 +8,9 @@ the rule inventory and direction. This file records the proof state.
 ## Reproducibility: COMPLETE
 
 - The audit runs via `pnpm client-thinning:audit` over a bounded source set.
-- All 21 audit rules have committed pre-fix fixtures (plus bypass fixtures where
+- All 22 audit rules have committed pre-fix fixtures (plus bypass fixtures where
   a rule has a narrow allowed shape) wired into the harness.
-- The harness is `util/client-thinning-audit.test.ts` (52 tests): it runs
+- The harness is `util/client-thinning-audit.test.ts` (55 tests): it runs
   `util/client-thinning-audit.ts` against fixture roots under
   `util/client-thinning-audit-fixtures/<rule-slug>/` with
   `CLIENT_THINNING_AUDIT_CHECK_IDS` selecting the rule, asserting exit code and
@@ -35,6 +35,10 @@ and fails the NEW one:
 Some other rules remain string/regex matchers but were not empirically defeated;
 moving them to AST invariants is gated on demonstrating a defeat first. See
 [`../status/audit.md`](../status/audit.md).
+
+The group-chat removal added one AST invariant, `A4R-group-chat-removed`, with its
+fixtures: `group-chat-removed/failing-ui-branch`,
+`group-chat-removed/keep-layers-removed-bypass`, `group-chat-removed/passing`.
 
 ## Commands
 

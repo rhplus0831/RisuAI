@@ -39,8 +39,9 @@ Implemented / closed:
 - Bootstrap projection, command-event invalidation, `.risu` import/export/bundle,
   asset routes, backup/restore, and provider secret masking are closed.
 - The client-thinning audit is wired as `pnpm client-thinning:audit` and its
-  fixture reproducibility is complete (21 rules, 52 tests). The four known
-  defeated shallow rules were hardened on 2026-05-30.
+  fixture reproducibility is complete (22 rules, 55 tests). The four known
+  defeated shallow rules were hardened on 2026-05-30, and the group-chat removal
+  added the `A4R-group-chat-removed` invariant.
 
 Resolved A-items (see [`plan.md`](plan.md) for the full classification):
 
@@ -58,9 +59,14 @@ Fine in the browser (not blockers): **B1** permanent client-owned effects, and
 **B2** orchestration/command-replay that the browser may keep. See
 [`status/client-owned-unsupported.md`](status/client-owned-unsupported.md).
 
-Legacy / removed: **group chat** is now fully legacy and must be removed from the
-client, not merely unsupported. Event patching stays deferred. Flags:
-`useServerGeneration` removed (2026-05-29); `isFastifyServer` and
+Legacy / removed: **group chat** is fully legacy. Its dead `type === 'group'` UI
+branches (the `GridCatalog.svelte` group icon and the `ChatList.svelte` new-chat
+member seeding) and the vestigial catalog `type` field were removed 2026-05-30, and
+`A4R-group-chat-removed` guards against reintroduction. The defense layers stay
+(load-time filter, server prompt-assembly hard-fail, `isGroupChat: false`), and
+`Message.saying` is kept (still single-character speaker attribution); the
+load-time filter / `saying` fate remains a separate decision. Event patching stays
+deferred. Flags: `useServerGeneration` removed (2026-05-29); `isFastifyServer` and
 `useServerPromptAssembly` kept and annotated in-code, not deprecated.
 
 Caveat on the audit: reproducible but not uniformly robust — some rules still use
@@ -74,10 +80,12 @@ sincere defeat against the real binary. See [`status/audit.md`](status/audit.md)
 - Start with the audit. If `pnpm client-thinning:audit` is red, fix or triage
   before wider runtime changes; then record in
   [`coverage/latest-verification.md`](coverage/latest-verification.md).
-- Next work is group-chat legacy removal and any documentation reconciliation
-  after source changes. Additional audit-rule hardening is only opened after a
-  demonstrated defeat. Keep event patching deferred until SSE reconnect/replay
-  exists.
+- Group-chat UI-branch removal is landed (2026-05-30). Remaining group-chat items
+  are deliberately separate decisions: the load-time group filter / `Message.saying`
+  fate, and any stale group-chat strings/comments in unrelated surfaces
+  (`removeFromGroup` lang key, `cbs.ts` / `risuai.d.ts` doc comments). Additional
+  audit-rule hardening is only opened after a demonstrated defeat. Keep event
+  patching deferred until SSE reconnect/replay exists.
 
 ## Start Here
 

@@ -3201,6 +3201,254 @@ function checkPluginV2NoServerExecution(): void {
   }
 }
 
+// ----- A4R-group-chat-removed: legacy group chat stays removed from the client -----
+//
+// Group chat is fully legacy (docs/client-thinning/unsupported-and-client-owned.md):
+// the server has no group/member model, so it must neither be ported nor remain a
+// usable browser-only durable path. The dead `char.type === 'group'` UI branches in
+// the character catalog / chat-list surfaces were removed; three defense layers keep
+// a group character unreachable. This invariant is AST-derived (no source-text needle)
+// and has two halves:
+//
+//   negative — the catalog / chat-list UI surfaces (GridCatalog.svelte, ChatList.svelte)
+//     must not reintroduce a character `type === 'group'` comparison. Scoped to those two
+//     files on purpose: the sidebar accordion (Toggles.svelte / util.ts) legitimately
+//     compares an unrelated `toggle.type === 'group'`, so a repo-wide scan would false-
+//     positive. Svelte <script> bodies and every markup brace group (attribute handlers
+//     and `{#if ...}`-style logic blocks) are parsed as TS and walked for the comparison.
+//   positive — the three layers that make a group character unreachable must remain:
+//     the load-time filter (setDatabase strips `type === 'group'`), the server prompt-
+//     assembly hard-fail (a `type === 'group'` comparison guarding an `unsupported`
+//     return), and the request hardcode (`isGroupChat: false`). Deleting any one would
+//     re-open a durable group-chat path the server cannot own.
+
+const GROUP_CHAT_UI_PATHS = [
+  'src/lib/Others/GridCatalog.svelte',
+  'src/lib/Others/ChatList.svelte',
+] as const
+
+function isGroupStringLiteral(node: Node): boolean {
+  return Node.isStringLiteral(node) && node.getLiteralValue() === 'group'
+}
+
+function accessesTypeMember(node: Node): boolean {
+  return Node.isPropertyAccessExpression(node) && node.getName() === 'type'
+}
+
+// True iff `scope` contains an (in)equality comparing a `.type` member access to the
+// string literal 'group' — the shape of every character-type group branch/guard.
+function findCharTypeGroupComparison(scope: Node): Node | undefined {
+  for (const bin of scope.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    const op = bin.getOperatorToken().getKind()
+    if (
+      op !== SyntaxKind.EqualsEqualsEqualsToken &&
+      op !== SyntaxKind.EqualsEqualsToken &&
+      op !== SyntaxKind.ExclamationEqualsEqualsToken &&
+      op !== SyntaxKind.ExclamationEqualsToken
+    ) {
+      continue
+    }
+    const left = bin.getLeft()
+    const right = bin.getRight()
+    const hasGroup = isGroupStringLiteral(left) || isGroupStringLiteral(right)
+    const hasType = accessesTypeMember(left) || accessesTypeMember(right)
+    if (hasGroup && hasType) return bin
+  }
+  return undefined
+}
+
+// Generic `{...}` brace-group extractor: captures both attribute expressions
+// (`onclick={() => {...}}`) and svelte logic/mustache blocks (`{#if ...}`, `{expr}`),
+// respecting nested braces and strings. Mirrors extractSvelteAttributeExpressions but
+// anchors on any `{` rather than only `={`.
+function extractSvelteBraceGroups(markup: string): string[] {
+  const groups: string[] = []
+  let i = 0
+  while (i < markup.length) {
+    const anchor = markup.indexOf('{', i)
+    if (anchor === -1) break
+    let depth = 0
+    let inString: string | null = null
+    let inner = ''
+    let j = anchor
+    let closed = false
+    for (; j < markup.length; j++) {
+      const ch = markup[j]
+      const prev = j > 0 ? markup[j - 1] : ''
+      if (inString) {
+        inner += ch
+        if (ch === inString && prev !== '\\') inString = null
+        continue
+      }
+      if (ch === '{') {
+        depth++
+        if (depth > 1) inner += ch
+        continue
+      }
+      if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          closed = true
+          break
+        }
+        inner += ch
+        continue
+      }
+      if (ch === "'" || ch === '"' || ch === '`') {
+        inString = ch
+        inner += ch
+        continue
+      }
+      inner += ch
+    }
+    if (closed && inner.trim()) groups.push(inner.trim())
+    i = j + 1
+  }
+  return groups
+}
+
+// Parse a svelte file into TS fragments: each <script> body (as statements) plus each
+// markup brace group (as an expression, after stripping a leading svelte block keyword).
+function svelteTsFragments(rl: string): string[] {
+  const svelteText = text(rl)
+  const fragments: string[] = []
+  const scriptBlockPattern = /<script\b[^>]*>([\s\S]*?)<\/script>/gi
+  for (const match of svelteText.matchAll(scriptBlockPattern)) fragments.push(match[1])
+  const markup = svelteText
+    .replace(scriptBlockPattern, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+  for (const group of extractSvelteBraceGroups(markup)) {
+    const blockMatch = group.match(/^[#:](?:if|else if|each|await|then|catch|key)\b\s*([\s\S]*)$/)
+    if (blockMatch) {
+      const expr = blockMatch[1].trim()
+      if (expr) fragments.push(`;(${expr});`)
+      continue
+    }
+    // Closing tags (`/if`), bare `:else`, and `@`-directives carry no comparison of
+    // interest; everything else is a plain mustache expression.
+    if (/^[/:@#]/.test(group)) continue
+    fragments.push(`;(${group});`)
+  }
+  return fragments
+}
+
+function svelteHasCharTypeGroupComparison(rl: string): boolean {
+  const svelteProject = new Project({ useInMemoryFileSystem: true })
+  let index = 0
+  for (const fragment of svelteTsFragments(rl)) {
+    const sf = svelteProject.createSourceFile(`fragment_${index++}.ts`, fragment)
+    if (findCharTypeGroupComparison(sf)) return true
+  }
+  return false
+}
+
+function loadOptionalSource(rl: string): SourceFile | undefined {
+  const abs = path.join(root, rl)
+  return project.getSourceFile(abs) ?? project.addSourceFileAtPathIfExists(abs)
+}
+
+// True iff `comparison` is the condition of an `if` whose then-branch returns
+// `{ type: 'unsupported', ... }` — i.e. the group send is hard-failed, not assembled.
+function comparisonGuardsUnsupportedReturn(comparison: Node): boolean {
+  const ifStatement = comparison.getFirstAncestorByKind(SyntaxKind.IfStatement)
+  if (!ifStatement) return false
+  for (const ret of ifStatement.getThenStatement().getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
+    const expr = ret.getExpression()
+    if (!expr || !Node.isObjectLiteralExpression(expr)) continue
+    const typeProp = expr.getProperty('type')
+    if (typeProp && Node.isPropertyAssignment(typeProp)) {
+      const init = typeProp.getInitializer()
+      if (init && Node.isStringLiteral(init) && init.getLiteralValue() === 'unsupported') return true
+    }
+  }
+  return false
+}
+
+function hasIsGroupChatFalse(sf: SourceFile): boolean {
+  return sf.getDescendantsOfKind(SyntaxKind.PropertyAssignment).some((pa) => {
+    if (pa.getName() !== 'isGroupChat') return false
+    const init = pa.getInitializer()
+    return !!init && init.getKind() === SyntaxKind.FalseKeyword
+  })
+}
+
+function checkGroupChatRemoved(): void {
+  const check = 'A4R-group-chat-removed legacy group chat removed from client'
+
+  // Negative half: the catalog / chat-list UI surfaces must not compare a character
+  // type to 'group'. (A missing file means a fixture exercises only the positive half.)
+  for (const rl of GROUP_CHAT_UI_PATHS) {
+    if (!fs.existsSync(path.join(root, rl))) continue
+    if (svelteHasCharTypeGroupComparison(rl)) {
+      fail(
+        check,
+        `${rl} compares a character type to 'group'; group chat is legacy and its client UI branch must stay removed.`,
+        undefined,
+        rl,
+      )
+    }
+  }
+
+  // Positive half P1: the load-time filter that strips group characters on load.
+  const dbFile = loadOptionalSource('src/ts/storage/database.svelte.ts')
+  if (!dbFile) {
+    fail(check, 'expected src/ts/storage/database.svelte.ts to exist for the load-time group filter.')
+  } else {
+    const setDatabase = dbFile.getFunction('setDatabase')
+    if (!setDatabase) {
+      fail(
+        check,
+        'database.svelte.ts no longer defines setDatabase; the load-time group filter cannot be verified.',
+        undefined,
+        dbFile,
+      )
+    } else if (!findCharTypeGroupComparison(setDatabase)) {
+      fail(
+        check,
+        "setDatabase no longer filters characters by type !== 'group'; group characters could load into client state.",
+        undefined,
+        dbFile,
+      )
+    }
+  }
+
+  // Positive half P2: server prompt assembly still hard-fails a group character.
+  const assembly = loadOptionalSource('src/ts/process/request/serverPromptAssembly.ts')
+  if (!assembly) {
+    fail(check, 'expected src/ts/process/request/serverPromptAssembly.ts to exist for the group hard-fail.')
+  } else {
+    const comparison = findCharTypeGroupComparison(assembly)
+    if (!comparison) {
+      fail(
+        check,
+        'serverPromptAssembly no longer hard-fails a group character; a surviving group send could route to server assembly.',
+        undefined,
+        assembly,
+      )
+    } else if (!comparisonGuardsUnsupportedReturn(comparison)) {
+      fail(
+        check,
+        "the group comparison in serverPromptAssembly no longer guards an 'unsupported' return.",
+        comparison,
+      )
+    }
+  }
+
+  // Positive half P3: the request boundary keeps isGroupChat hardcoded false.
+  const dispatch = loadOptionalSource('src/ts/process/dispatch/dispatchRequest.ts')
+  if (!dispatch) {
+    fail(check, 'expected src/ts/process/dispatch/dispatchRequest.ts to exist for the isGroupChat hardcode.')
+  } else if (!hasIsGroupChatFalse(dispatch)) {
+    fail(
+      check,
+      'dispatchRequest no longer sends isGroupChat: false; the request boundary must keep the group flag hardcoded false.',
+      undefined,
+      dispatch,
+    )
+  }
+}
+
 function selectedChecks(checks: AuditCheck[]): AuditCheck[] {
   const selected = process.env.CLIENT_THINNING_AUDIT_CHECK_IDS
   if (!selected) return checks
@@ -3261,6 +3509,7 @@ const auditChecks: AuditCheck[] = [
   { id: 'A4R-bounded process-lifetime accumulators', run: checkAlpha4BoundedAccumulators },
   { id: 'A4R-saveasset filename classification', run: checkAlpha4SaveAssetClassification },
   { id: 'A4R-pluginv2 no server-side plugin execution', run: checkPluginV2NoServerExecution },
+  { id: 'A4R-group-chat-removed legacy group chat removed from client', run: checkGroupChatRemoved },
 ]
 
 runChecks(selectedChecks(auditChecks))

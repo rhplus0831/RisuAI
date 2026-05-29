@@ -75,9 +75,11 @@ Three boundaries (see [`status/sendchat-thinning.md`](status/sendchat-thinning.m
 
 **Legacy — group chat:** Fastify data loading filters group characters and
 dispatch hardcodes `isGroupChat: false`; `chatProcessIndex` is reentrancy/
-preset-chain state, not the group surface. Remaining UI/type compatibility is
-slated for client removal as a separate task — see
-[`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
+preset-chain state, not the group surface. The dead `type === 'group'` UI branches
+(`GridCatalog.svelte` group icon, `ChatList.svelte` member seeding) and the
+vestigial catalog `type` field were removed 2026-05-30, guarded by the
+`A4R-group-chat-removed` audit invariant; `Message.saying` and the load-time filter
+are kept. See [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
 
 ## Runtime Gates
 
