@@ -23,7 +23,7 @@ requests a write** — it never becomes the authority.
 | --- | --- | --- |
 | Pre-send input | Browser | UID/input plumbing; rows persist via commands (B1). |
 | Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models + non-interactive Lua edit/input hooks + image-gen instruction** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier; slice 3a graduated multimodal/asset; slice 3b graduated Lua `editRequest`, `editprocess`, input-trigger, and `editinput`; slice 3c graduated the image-gen instruction. Remaining `unsupported`: non-vision caption (class 2), interactive Lua dialogs, and permanent pluginV2. |
-| Provider dispatch | **Server** (`/generate/completion` in the default flag-off flow; `/generate/chat` when server prompt assembly is enabled) | `resolveServerCompletionRoute` gates the completion path; `/generate/chat` uses `server/fastify/src/prompt/chatDispatch.ts`. `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
+| Provider dispatch | **Server** (`/generate/chat` in the default Fastify flow; `/generate/completion` only for non-Fastify or explicit local-assembly opt-out) | `resolveServerCompletionRoute` gates the completion path; `/generate/chat` uses `server/fastify/src/prompt/chatDispatch.ts`; both consume `resolveProviderCapability`. `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
 | Token streaming → rows | Browser | Writes the projection. |
 | Post-generation | **Server (durable) + Browser (effects)** | Durable derivation — `editoutput`, run-var pass, `'output'` trigger — is **server-owned (A2 done, slice 4)** when derivation succeeds: `runServerPostGeneration` derives + persists the scriptstate delta and ships the final text on `done.postGeneration`. If derivation throws, `/generate/chat` omits that frame and the browser does not run a local derivation fallback on this path. Browser keeps inlay-screen render (B1), auto-continue/IGP recursion (B2). |
 | Stage-4 closeout | **Browser** | Notification, emotion, image-gen, TTS, stage metadata (B1/B2). |
@@ -65,7 +65,7 @@ fallback.
 (`src/ts/process/request/serverPromptAssembly.ts`) mirrors
 `resolveServerCompletionRoute` and returns `local | server | unsupported`. It
 replaced the boolean gate at `index.svelte.ts`: in Fastify mode with
-`useServerPromptAssembly` on, the supported subset routes `server` (local
+`useServerPromptAssembly` on by default, the supported subset routes `server` (local
 assembler unreachable for it), and each unported/unsupported class (interactive
 Lua, pluginV2, non-vision caption), a non-user-message send, a group
 character, and a non-server-routable provider route `unsupported` and hard-fail. The soft
@@ -78,9 +78,9 @@ server assembler and flips its detector in the classifier from `→ unsupported`
 image-input models; Lua edit/input hooks → `server` except interactive dialogs;
 image-gen instruction → `server`). Non-vision caption stays `unsupported` (no
 server caption pipeline). Each detector is isolated behind its own named
-predicate. The classifier still reads `useServerPromptAssembly` as the
-experimental master enable; removing that flag is the END of the sub-family, now
-that the last content class has graduated.
+predicate. The classifier still reads `useServerPromptAssembly` as an explicit
+opt-out/test gate; removing the flag entirely would be a separate closeout, not a
+content-parity task.
 
 ### A2 — Post-generation durable derivation — DONE (slice 4)
 
@@ -113,12 +113,13 @@ derivation for that failed server pass.
 
 Unsupported provider shapes cannot be server-routed. Already handled:
 `resolveServerCompletionRoute` returns `unsupported` and hard-fails on the
-completion path; `/generate/chat` performs its own resolver check in
+completion path; `/generate/chat` performs its resolver check in
 `prompt/chatDispatch.ts` and emits explicit unsupported-provider errors with no
-browser fallback. The supported sets are source-defined, not a fixed prose list;
-today `/chat` still rejects NovelAI/NovelList, plugin providers, WebLLM, Ooba
-OpenAI-compatible chat/reverse-proxy shapes, and unknown OpenAI-compatible
-models. This is a support cap, not a thinness leak. Keep the hard-fail explicit.
+browser fallback. The routing decision is shared through `resolveProviderCapability`
+so the completion and `/chat` paths cannot drift on capability. Today `/chat`
+still rejects NovelAI/NovelList, plugin providers, WebLLM, Ooba OpenAI-compatible
+chat shapes, and unknown OpenAI-compatible models. This is a support cap, not a
+thinness leak. Keep the hard-fail explicit.
 
 ## B. Fine In The Browser
 

@@ -13,8 +13,8 @@ path, so this step runs `runServerPostGeneration` at completion and persists the
 | --- | --- |
 | **Workstream / milestone / step** | Durable generation · Milestone 1 · Step 3 |
 | **Depends on** | **Step 2** (the surviving job + terminal frame + captured writer identity); **C-A1** (the route persistence machinery, landed `654db21a`); **slice 4 / A2** (`runServerPostGeneration`, landed `fb279717`) |
-| **Reuses** | `persistAssemblyChatVars` / `applyJsonCommandMutation` (`generationChat.ts:287`, `commands/mutations.ts:39`); `reconcileServerCommandRevision` (browser) |
-| **Replaces** | the browser's `persistServerBackedGenerationResult` (`serverBackedSendChat.ts:339`, called `index.svelte.ts:368`) for the durable path |
+| **Reuses** | `persistAssemblyMutations` / `applyJsonCommandMutation` (`generationChat.ts`, `commands/mutations.ts`); `reconcileServerCommandRevision` (browser) |
+| **Replaces** | the browser's `persistServerBackedGenerationResult` (`serverBackedSendChat.ts`, called from `index.svelte.ts`) for the durable path |
 | **Goal** | When a durable-subset generation job completes, **the server writes the assistant message to `db.json` itself** (via the C-A1 command machinery), so the result is durable even if the client never returns. Closes EC-D1 (persistence half), EC-D2, EC-D4. |
 
 ## Result persistence runs the A2 post-gen pass (decision #2)
@@ -64,7 +64,7 @@ reconciliations on the browser side.
    `runServerPostGeneration` (reuse the slice-4 pass) to get the **derived** final
    text + post-gen scriptstate delta. Then construct the assistant message (role
    `char`, the **derived** final text, `generationInfo`, message id) and persist it —
-   plus the post-gen scriptstate delta — with a sibling of `persistAssemblyChatVars`,
+   plus the post-gen scriptstate delta — with a sibling of `persistAssemblyMutations`,
    the same `applyJsonCommandMutation` path: one revision bump, one event, rollback on
    failure. Match the exact persisted shape `dispatchPersistGenerationResult`
    (`chatCommands.ts:473`) writes today, so the result is byte-identical whether
@@ -72,7 +72,7 @@ reconciliations on the browser side.
 2. **Carry the revision on the terminal frame.** Like C-A1's `info` frame, the
    terminal/done frame returns the bumped revision.
 3. **Browser stops persisting; reconciles.** For the durable path, delete the
-   `persistServerBackedGenerationResult` call (`index.svelte.ts:368`); instead
+   `persistServerBackedGenerationResult` call for the durable path; instead
    `reconcileServerCommandRevision` to the revision on the terminal frame (same move
    C-A1 made for the scriptstate delta). The browser still renders the streamed text
    live; the durable write is the server's. **EC-D4: zero browser persist POSTs.**
@@ -89,9 +89,11 @@ the completion write is the server **finishing that already-authorized job**, ta
 write). Conflict-prevention is preserved by the submission gate + **one-job-per-chat**
 (Step 2), and the write still composes with any intervening edits via gotcha C ("read
 the current chat at completion"). Step 2 captures the authorization on the job at
-creation; Step 3 persists under it. **Still to locate before implementing:** where
-`/chat` enforces the writer/423 gate today (the grep found none in
-`generationChat.ts`/`mutations.ts`) — the submission gate hooks in there.
+creation; Step 3 persists under it. The submission gate already exists globally in
+`server/fastify/src/activeWriter.ts`: `isServerOwnedMutation` includes
+`POST /api/v1/generate/chat`, and the browser carries `risu-writer-session` on the
+`/chat` request. Step 2 should reuse that guard and capture the accepted writer
+identity before detaching the job.
 
 **B. Idempotency on `generationId`.** With Step 2 reattach, a client may also still be
 connected at completion. The server persist must be **idempotent**: keyed by

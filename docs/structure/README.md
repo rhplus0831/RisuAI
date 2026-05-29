@@ -54,8 +54,9 @@ invariant contract, phase scope docs, and design references.
 - Fastify is the only supported runtime. Old native/mobile wrappers, browser-side
   persistence modes, service worker behavior, peer sync, Drive sync, and removed
   memory engines are not targets for new work.
-- There are no Fastify compatibility migrations yet. Existing policy says to
-  update schemas and import paths directly.
+- There are no Fastify compatibility migrations for legacy web/runtime modes.
+  SQLite schema migrations do exist in `server/fastify/src/db.ts`; keep that
+  distinction clear when changing persisted server data.
 - New Fastify routes should be registered from `buildApp()` in
   `server/fastify/src/app.ts` and should call `requireAuth()` explicitly unless
   the route is intentionally public.

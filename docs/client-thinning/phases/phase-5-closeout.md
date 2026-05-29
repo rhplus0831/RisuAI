@@ -5,7 +5,7 @@ Date: 2026-05-30
 Status: active closeout. A-items, the known audit-hardening batch, and the
 group-chat UI-branch removal are done. The open closeout decisions were resolved
 2026-05-30 (see [Closeout Decisions](#closeout-decisions-2026-05-30)). Both
-pending-implementation batches — the provider-resolver unification (#5) and the
+former closeout implementation batches — the provider-resolver unification (#5) and the
 `useServerPromptAssembly` default flip (#1) — **landed 2026-05-30** (see
 [`../coverage/latest-verification.md`](../coverage/latest-verification.md) and
 [`../reference/provider-capability-table.md`](../reference/provider-capability-table.md));

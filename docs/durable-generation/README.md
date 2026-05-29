@@ -13,12 +13,11 @@ part that needs disk-persisted jobs.
 
 Owner decisions refining this draft:
 
-1. **Sequencing — activate after the pending client-thinning batches.** Order:
-   provider-resolver unification (client-thinning closeout decision #5) →
-   `useServerPromptAssembly` default-on (closeout decision #1) → durable-generation
-   M1. Rationale: "the client only sends a request" needs server assembly as the
-   *default* path (#1), and the unified resolver (#5) removes the
-   completion-vs-`/chat` divergence the durable job dispatches through.
+1. **Sequencing — client-thinning prerequisites landed.** Provider-resolver
+   unification (client-thinning closeout decision #5) and the
+   `useServerPromptAssembly` default-on flip (closeout decision #1) both landed on
+   2026-05-30. Durable-generation M1 is no longer blocked on those batches, but it
+   remains a separate draft workstream.
 2. **M1 coverage INCLUDES the A2 post-gen path.** The subset is widened to include
    output triggers and `editoutput` (the draft previously excluded them). This is now
    feasible because client-thinning **slice 4 (A2) landed**: the durable job runs the
@@ -31,8 +30,10 @@ Owner decisions refining this draft:
    not a long-running job — the in-memory job window is short, so restart-survival is
    low-value for now.
 
-Deferred (see [`../deferred.md`](../deferred.md)): locating the `/chat` writer/423
-gate — a code-location lookup, not a design decision.
+Resolved during the docs audit: the `/chat` writer/423 gate is already the global
+active-writer guard in `server/fastify/src/activeWriter.ts`; `isServerOwnedMutation`
+includes `POST /api/v1/generate/chat` and `/api/v1/generate/preview-prompt`.
+Remaining open/ambiguous tasks live in [`../deferred.md`](../deferred.md).
 
 ## Goal
 
@@ -100,9 +101,12 @@ restriction of this (below) and likewise never silently downgrades.
 
 Durable generation applies to sends where:
 
-- `resolveServerPromptAssembly(...) === 'server'` (server-assembled, server-routable
-  provider, single non-group character, no asset / image-gen / pluginV2 content; Lua
-  non-interactive content is in-subset now that the server Lua VM landed).
+- `resolveServerPromptAssembly(...).type === 'server'` (server-assembled,
+  server-routable provider, single non-group character, default-on server assembly
+  flag, no non-vision caption fallback, no interactive Lua dialog APIs, no pluginV2
+  edit/replacer hooks). Image-input multimodal/asset content, the image-gen view
+  instruction, and non-interactive Lua edit/input hooks are in-subset because the
+  relevant client-thinning slices have landed.
 
 Post-gen A2 derivation (`runTrigger('output')` incl. CBS/regex output triggers, and
 `editoutput`) is **in-subset as of decision #2 (2026-05-30)** — the durable job runs
@@ -112,26 +116,26 @@ landed.
 
 Out-of-subset sends keep today's connection-scoped flow, unchanged.
 
-## Coverage ceiling — scripting (depends on the server Lua VM)
+## Coverage ceiling — scripting
 
-The subset excludes Lua/plugin content, so durable generation's real-world reach is
-bounded by client-thinning's scripting decision (slice 3b):
+The subset now inherits non-interactive Lua support from client-thinning's
+server-assembly gate. Its remaining scripting ceiling is pluginV2 and interactive
+Lua dialogs:
 
-- **Lua → committed server port.** Lua is the primary bot-extension mechanism and is
-  widely used; client-thinning intends to stand up a server Lua VM (`wasmoon`) and
-  port the Lua hooks. As each Lua arm reaches parity, Lua-scripted chats graduate into
-  the server-assembled subset and therefore into durable-generation eligibility. This
-  VM is the single biggest lever on coverage — a shared prerequisite, not an optional
-  client-thinning sub-item.
+- **Lua → server port landed for non-interactive edit/input hooks.** Lua is the
+  primary bot-extension mechanism and is widely used; the server Lua VM (`wasmoon`)
+  and prompt-assembly hooks have landed. Non-interactive Lua-scripted
+  single-character chats are eligible when the rest of the assembly gate returns
+  `server`.
 - **plugin-V2 → permanent `unsupported`** (deprecated by Plugin V3; on the no-port
   list). plugin-V2-scripted chats stay outside server assembly and durable generation.
 - **Regex + non-Lua trigger engine → already server-parity.** Unscripted and
   regex-scripted chats are eligible today.
 
-End state: durable generation covers unscripted, regex-scripted, and — once the VM
-lands — Lua-scripted single-character chats on server-routable providers, but not
-plugin-V2-scripted chats. Lua hooks that call interactive APIs (`alertInput` etc.) may
-stay client-bound even with the VM.
+End state for Milestone 1: durable generation covers unscripted, regex-scripted,
+and non-interactive Lua-scripted single-character chats on server-routable providers,
+but not pluginV2-scripted chats or Lua hooks that call interactive APIs
+(`alertInput` etc.).
 
 ## Milestones and steps
 
@@ -170,29 +174,33 @@ of scope until Milestone 1 lands.
 
 - **Reattach transport:** SSE + `jobId` reattach (Step 2) — keeps the existing event
   vocabulary and client parser; no WebSocket.
-- **Registry wiring:** a dedicated generation `JobRegistry` + a transient
-  `chatId → jobId` index, instantiated + GC-ticked in `app.ts` (Step 2).
+- **Registry wiring:** a dedicated generation `JobRegistry` + a server-memory
+  `chatId → jobId` index, instantiated + GC-ticked in `app.ts` (Step 2). Bootstrap
+  should expose the index as `activeGenerationJobs` entries shaped
+  `{ chatId: string; jobId: string }` so reload-resume has a concrete wire shape.
 - **Retention / GC:** reuse the proxy defaults — 30s done-grace, 64 active-job cap; the
   chat's submission lock clears at completion/cancel, not at GC (Step 2).
 - **Modes:** `send` only for Milestone 1; `continue` / `regenerate` deferred.
-- **Writer model:** authorize at **submission** (active writer required for persisting
-  sends; preview exempt); **one running job per chat**; the result write is a
+- **Writer model:** authorize at **submission** using the existing active-writer
+  guard for `/generate/chat`; **one running job per chat**; the result write is a
   server-owned completion of that authorized job (Step 2 §writer/job model, Step 3
-  gotcha A).
+  gotcha A). Today the guard also covers `/generate/preview-prompt`; durable M1 is
+  send-only, so preview exemption is not part of the current implementation scope.
 - **Cancel policy:** generation runs until the user explicitly cancels (`DELETE`);
   cancel is authorized by the *current* active writer (handles writer handoff) (Step 2).
-- **Resume after reload:** the transient `chatId → jobId` index is surfaced via the
-  projection, so a returning client (even after a full reload) discovers + reattaches;
-  observing is open, starting/cancelling need the writer lease (Step 2).
+- **Resume after reload:** the transient `activeGenerationJobs` projection is surfaced
+  by bootstrap, so a returning client (even after a full reload) discovers +
+  reattaches; observing is open, starting/cancelling need the writer lease (Step 2).
 
-## Still open — locate before implementing
+## Still Open / Ambiguous Before Implementation
 
-- **`/chat` writer/423 gate location** — **deferred 2026-05-30** to
-  [`../deferred.md`](../deferred.md). The submission gate must hook into wherever
-  `/chat` enforces the active writer today (the grep found no `activeWriter`
-  enforcement in `generationChat.ts` / `mutations.ts`). A code-location lookup, not a
-  design decision; only needed once Step 2 starts, which is sequenced after the
-  pending client-thinning batches (decision #1).
+- **Durable post-gen failure policy:** Step 3 still needs to decide whether a
+  thrown durable-job `runServerPostGeneration` persists raw provider text with a
+  warning or records a job error.
+- **Modes beyond `send`:** `continue` and `regenerate` remain out of M1 and need
+  their own idempotency/append semantics before widening.
+- **Event patching / replay contract:** surgical projection patching remains outside
+  this work until SSE reconnect + replay semantics are specified.
 
 ---
 

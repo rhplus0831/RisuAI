@@ -16,7 +16,7 @@ imports. The three defense layers are kept (load-time filter, server prompt-asse
 hard-fail, `isGroupChat: false`) and `Message.saying` is untouched. Proof is the new
 `A4R-group-chat-removed` AST invariant (negative: no `char.type === 'group'` in the
 catalog/chat-list surfaces; positive: the three layers remain) with three committed
-fixtures; the audit fixture suite is now 55 tests across 22 rules.
+fixtures; the audit fixture suite is now 58 tests across 23 checks.
 
 The previous code change is `75082c48` (`refactor: harden 4 client-thinning audit
 rules to AST invariants`). It converted the four known defeated audit rules
@@ -42,19 +42,19 @@ current recorded commands and results.
 
 ## Current State
 
-- Default Fastify chat flow: browser assembles the prompt
-  (`useServerPromptAssembly` off), server makes the LLM call (platform-gated),
-  browser orchestrates post-gen, and final-message persistence still uses a
-  browser-issued command. When server prompt assembly is enabled,
-  `/generate/chat` now owns assembly-time scriptstate and the server-side A2
-  post-generation derivation when that derivation succeeds; derivation failures
-  currently produce no `done.postGeneration` frame and do not fall back to browser
-  derivation.
+- Default Fastify chat flow: `/generate/chat` assembles the prompt, makes the LLM
+  call, owns assembly-time scriptstate, and runs the server-side A2
+  post-generation derivation when that derivation succeeds. The browser applies
+  the stream/effects and still persists the final message via a command.
+  Local assembly + `/generate/completion` remains available only outside Fastify
+  mode or when a test/specific case sets `useServerPromptAssembly` `false`.
+  Derivation failures currently produce no `done.postGeneration` frame and do
+  not fall back to browser derivation.
 - Closed: command boundary, bootstrap projection + command-event invalidation,
   `.risu` import/export/bundle, asset routes + reference validation, backup/
   restore, provider secret masking, supported-provider server dispatch, and all
   A1/A2 chat-process blockers.
-- Audit reproducibility is complete (22 rules, 55 tests). The four empirically
+- Audit reproducibility is complete (23 checks, 58 tests). The four empirically
   defeated rules are hardened; the group-chat removal added `A4R-group-chat-removed`;
   remaining shallow rules are optional follow-up only after a sincere defeat is
   demonstrated. See [`status/audit.md`](status/audit.md).
@@ -64,11 +64,10 @@ current recorded commands and results.
 Follow the work order in [`plan.md`](plan.md):
 
 1. Run the audit; fix/triage if red.
-2. Group-chat UI-branch removal is landed. Remaining group-chat work is separate
-   decisions: the load-time filter / `Message.saying` fate, and the stale
-   group-chat strings/comments in unrelated surfaces (`removeFromGroup` lang key,
-   `cbs.ts` / `risuai.d.ts` doc comments) — out of the UI-branch scope, optional
-   docs-only follow-up.
+2. Group-chat UI-branch removal is landed. Decisions #3/#4 keep the load-time
+   filter and `Message.saying`; the remaining cleanup scope is decision #6's
+   stale strings/comments in unrelated surfaces (`removeFromGroup` lang key,
+   `cbs.ts` / `risuai.d.ts` doc comments), out of the UI-branch scope.
 3. Documentation-only reconciliation when code/docs drift.
 4. Additional audit-rule hardening only after a concrete defeat is demonstrated.
 5. Event patching stays deferred until SSE reconnect/replay exists.

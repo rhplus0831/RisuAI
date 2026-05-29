@@ -30,19 +30,18 @@ End state:
 
 The chat process is not one toggle. Three independent boundaries gate it:
 
-1. **Prompt assembly** — gated by the user flag `useServerPromptAssembly`
-   (default **false** in code today), so the current DEFAULT is local/browser
-   assembly. Decided 2026-05-30 to flip the default to **true** (server assembly
-   becomes the default supported path; tests may set `false`) — pending its own
-   implementation batch + test sweep; see
+1. **Prompt assembly** — gated by the `useServerPromptAssembly` runtime flag,
+   which now defaults **true** (landed 2026-05-30). Server assembly is the
+   supported Fastify default; tests and deliberately local paths may set the flag
+   `false` explicitly. See
    [`phases/phase-5-closeout.md`](phases/phase-5-closeout.md#closeout-decisions-2026-05-30)
    decision #1.
 2. **Provider dispatch (LLM call + credentials)** — gated by the platform marker
-   `isFastifyServer`, with NO user flag. In the default flag-off flow the browser
-   assembles locally and dispatches through `/api/v1/generate/completion`; with
-   server prompt assembly enabled, `/api/v1/generate/chat` owns assembly and the
-   provider stream. Unsupported provider shapes fail hard; `local` only when
-   `!isFastifyServer`.
+   `isFastifyServer`, with NO user flag. In the default Fastify flow
+   `/api/v1/generate/chat` owns assembly and the provider stream. The browser
+   assembles locally and dispatches through `/api/v1/generate/completion` only
+   when `!isFastifyServer` or a test/specific case sets `useServerPromptAssembly`
+   `false`. Unsupported provider shapes fail hard.
 3. **Post-generation + persistence** — the browser still orchestrates the stage
    flow and B1 effects. On the server-dispatch path (`/generate/chat`),
    `/generate/chat` now owns assembly-time scriptstate persistence and the A2
@@ -51,11 +50,12 @@ The chat process is not one toggle. Three independent boundaries gate it:
    post-generation pass throws, the route currently omits the post-generation
    frame and does not invoke a browser derivation fallback.
 
-So today's default Fastify flow is: **browser assembles the prompt, server makes
-the LLM call via `/generate/completion`, browser orchestrates post-gen,
-final-message persistence via a browser-issued command.** With server prompt
-assembly enabled, `/generate/chat` also owns assembly-time scriptstate, the
-provider stream, and server-derived post-gen mutations. Flag history:
+So today's default Fastify flow is: **server assembles the prompt and makes the
+LLM call via `/generate/chat`; the browser applies the stream/effects and still
+issues the final-message persistence command.** `/generate/chat` owns
+assembly-time scriptstate, provider streaming, and server-derived post-gen
+mutations on this path. The local assembly + `/generate/completion` path remains
+available only for non-Fastify mode or explicit test/specific opt-out. Flag history:
 `useServerGeneration` was a dead flag, removed 2026-05-29;
 `isFastifyServer` and `useServerPromptAssembly` are kept and annotated in-code
 (not deprecated).
@@ -71,8 +71,7 @@ provider stream, and server-derived post-gen mutations. Flag history:
   `editRequest`, `editprocess`, input-trigger, and `editinput` hooks are ported
   for non-interactive Lua. The image-gen view instruction is also at parity
   (slice 3c). Remaining explicit `unsupported` content: non-vision image caption
-  fallback, interactive Lua dialog APIs, and pluginV2 edit/replacer hooks. The
-  flag still defaults off, so browser assembly is the default production path.
+  fallback, interactive Lua dialog APIs, and pluginV2 edit/replacer hooks.
 - **A2. Post-generation durable derivation.** Landed in slice 4 on the
   server-dispatch path. `runServerPostGeneration` runs the run-var pass,
   `runTrigger(..., 'output', ...)`, and `editoutput` after dispatch; the derived
@@ -85,18 +84,17 @@ provider stream, and server-derived post-gen mutations. Flag history:
   Already handled correctly: the completion resolver returns `unsupported` and
   hard-fails (no browser fallback), and `/generate/chat` has its own provider
   resolver that also emits explicit unsupported errors. The source of truth is
-  `resolveServerCompletionRoute` plus `server/fastify/src/prompt/chatDispatch.ts`
+  the shared pure `resolveProviderCapability` table consumed by both
+  `resolveServerCompletionRoute` and `server/fastify/src/prompt/chatDispatch.ts`,
   rather than a fixed prose list. Current supported families include the server
   providers mapped by those resolvers (OpenAI/OpenRouter/OpenAI-compatible
   variants, Anthropic, Mistral, Cohere, Gemini/Vertex, OpenAI Responses, legacy
   instruct, NanoGPT, Kobold, Ooba legacy, Ollama, Bedrock, Horde, and Echo when
   their resolver gates pass). Current explicit `/chat` unsupported examples
   include NovelAI/NovelList, plugin providers, WebLLM, Ooba OpenAI-compatible
-  chat/reverse-proxy shapes, and unknown OpenAI-compatible models. A support cap,
-  not a thinness leak. The two resolvers' supported sets are not identical today
-  (known divergence: `reverse_proxy` + `reverseProxyOobaMode` — the completion path
-  accepts it, `/chat` rejects it); decided 2026-05-30 to **unify them onto a single
-  shared provider-capability table** (decision #5, pending implementation).
+  chat shapes, and unknown OpenAI-compatible models. A support cap, not a
+  thinness leak. The old `reverse_proxy` + `reverseProxyOobaMode` divergence is
+  closed by decision #5; both sides route through the shared capability table.
 
 ### B. Fine to leave in the browser
 
@@ -173,23 +171,27 @@ persistence and a transient browser progress projection.
 2. ~~**Group-chat legacy removal**~~ UI-branch removal DONE 2026-05-30 — the dead
    `type === 'group'` branches in `GridCatalog.svelte` / `ChatList.svelte` and the
    vestigial catalog `type` field are gone, guarded by `A4R-group-chat-removed`.
-   Defense layers and `Message.saying` kept. Remaining (separate decisions): the
-   load-time filter / `saying` fate, and stale group strings/comments in unrelated
-   surfaces (`removeFromGroup` lang key, `cbs.ts` / `risuai.d.ts` comments). See
+   Defense layers and `Message.saying` kept. Decisions #3/#4 keep
+   `Message.saying` and the load-time group filter; the only remaining group
+   cleanup scope is decision #6's stale strings/comments in unrelated surfaces
+   (`removeFromGroup` lang key, `cbs.ts` / `risuai.d.ts` comments). See
    [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
 3. ~~**Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
    (A4R2, A4R7, fanout-svelte path, EC2) to AST invariants; add adversarial
    fixtures.~~ DONE 2026-05-30 — all four are AST invariants with adversarial
-   fixtures (55 audit tests across 22 rules). See [`status/audit.md`](status/audit.md).
-4. **Provider resolver unification (decision #5).** Collapse
-   `resolveServerCompletionRoute` and the `chatDispatch.ts` resolver onto one shared
-   provider-capability table. Prerequisite for #5 below.
-5. **`useServerPromptAssembly` default flip (decision #1).** Default the flag to
-   `true` with a test sweep; do #4 first.
-6. **Event patching** — decided to keep the invalidation model for now (decision
+   fixtures; the audit suite is now 58 tests across 23 checks. See
+   [`status/audit.md`](status/audit.md).
+4. ~~**Provider resolver unification (decision #5).**~~ DONE 2026-05-30 — both
+   `resolveServerCompletionRoute` and `chatDispatch.ts` consume the shared
+   `resolveProviderCapability` table.
+5. ~~**`useServerPromptAssembly` default flip (decision #1).**~~ DONE 2026-05-30 —
+   the flag defaults `true`; local-assembly tests opt out explicitly.
+6. **Documentation-only reconciliation / ambiguous-task cleanup** — keep status,
+   durable-generation drafts, and deferred task lists aligned with source.
+7. **Event patching** — decided to keep the invalidation model for now (decision
    #8); revisit only if it blocks other work, and only after SSE reconnect/replay
    exists.
-7. Durable-generation work (job lifecycle, reconnect/read contract, route-direct
+8. Durable-generation work (job lifecycle, reconnect/read contract, route-direct
    result persistence — now incl. the handed-off decision #7) stays in its separate
    workstream.
 

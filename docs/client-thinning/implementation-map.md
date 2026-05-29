@@ -42,17 +42,16 @@ Three boundaries (see [`status/sendchat-thinning.md`](status/sendchat-thinning.m
 - **Provider dispatch (server, platform-gated, no flag):**
   `src/ts/process/request/serverCompletion.ts::resolveServerCompletionRoute`
   returns `local | server | unsupported`; `local` only when `!isFastifyServer`;
-  supported default flag-off dispatch → `/api/v1/generate/completion`;
-  unsupported → hard fail. With server prompt assembly enabled, `/generate/chat`
-  owns both assembly and provider streaming through
-  `server/fastify/src/prompt/chatDispatch.ts`, whose support set is similar but
-  not identical; `/chat` still hard-fails unsupported provider shapes instead of
-  falling back. This is the precedent to mirror for prompt assembly.
-- **Prompt assembly (browser by default):**
+  supported local-assembly opt-out dispatch → `/api/v1/generate/completion`;
+  unsupported → hard fail. In the default Fastify flow, `/generate/chat` owns both
+  assembly and provider streaming through `server/fastify/src/prompt/chatDispatch.ts`.
+  Both paths consume the shared `resolveProviderCapability` routing table, while
+  preserving their path-specific request derivation and reason prose.
+- **Prompt assembly (server by default):**
   `src/ts/process/request/serverPromptAssembly.ts::resolveServerPromptAssembly`
   decides `local | server | unsupported`. `local` is reached when
-  `!isFastifyServer` or the default-off `useServerPromptAssembly` gate is off.
-  With the flag on, the text-send subset and image-input multimodal/asset sends
+  `!isFastifyServer` or `useServerPromptAssembly` is explicitly set `false`.
+  With the default flag on, the text-send subset and image-input multimodal/asset sends
   route to `/api/v1/generate/chat`; non-interactive Lua edit/input hooks run
   server-side; the image-gen instruction is server-assembled; unsupported
   content hard-fails. PluginV2, interactive Lua dialogs, and non-vision image
@@ -86,7 +85,7 @@ are kept. See [`unsupported-and-client-owned.md`](unsupported-and-client-owned.m
 - `isFastifyServer` (`src/ts/platform.ts`): runtime seam from `__FASTIFY__`; false
   under `pnpm dev`/web(dev) and tests. Not deprecated; annotated in-code.
 - `useServerPromptAssembly` (`src/ts/storage/database.svelte.ts` default + JSDoc):
-  incomplete-migration gate, default off. Not deprecated; annotated in-code.
+  incomplete-migration gate, default on. Not deprecated; annotated in-code.
 - `useServerGeneration`: removed 2026-05-29 (was dead).
 
 ## Ownership Map

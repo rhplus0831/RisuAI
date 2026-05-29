@@ -22,7 +22,7 @@ Completed context: slice 1 (`resolveServerPromptAssembly`), slice 2 (C-A1),
 slice 3a (multimodal/asset on image-input models), pluginV2 permanent
 unsupported, all slice 3b Lua sub-slices, slice 3c (image-gen view instruction),
 and **slice 4 (A2 — server output-trigger + `editoutput`)** have landed. **All
-A-blockers (A1/A2/A3) are now resolved.** Both pending-implementation closeout
+A-blockers (A1/A2/A3) are now resolved.** Both former closeout implementation
 batches also landed 2026-05-30: the **provider-resolver unification (#5)** (shared
 `resolveProviderCapability` table) and the **`useServerPromptAssembly` default flip
 (#1)** (now defaults `true`).
@@ -31,10 +31,10 @@ batches also landed 2026-05-30: the **provider-resolver unification (#5)** (shar
    `type === 'group'` branches in `GridCatalog.svelte` / `ChatList.svelte` and the
    vestigial catalog `type` field were removed and are guarded by the new
    `A4R-group-chat-removed` invariant (see [`audit.md`](audit.md)). As planned, the
-   `Message.saying` attribution field and the load-time group filter were left as
-   separate decisions, and stale group references in unrelated surfaces
-   (`removeFromGroup` lang key, `cbs.ts` / `risuai.d.ts` comments) are optional
-   docs-only follow-up. See [`client-owned-unsupported.md`](client-owned-unsupported.md).
+   `Message.saying` attribution field and the load-time group filter were kept by
+   decisions #3/#4. The remaining group cleanup scope is decision #6's stale group
+   references in unrelated surfaces (`removeFromGroup` lang key, `cbs.ts` /
+   `risuai.d.ts` comments). See [`client-owned-unsupported.md`](client-owned-unsupported.md).
 2. ~~**Audit-rule hardening.**~~ DONE 2026-05-30 — A4R2, A4R7, the fanout `.svelte`
    path, and EC2 are now AST invariants with adversarial fixtures ([`audit.md`](audit.md)).
    Remaining audit work is only the other still-shallow string/regex rules, and it
@@ -50,20 +50,19 @@ batches also landed 2026-05-30: the **provider-resolver unification (#5)** (shar
    *completion*-dispatch fixtures (now opt the flag `false` explicitly, as that path
    uses local assembly + server completion).
 5. Documentation-only reconciliation when code and docs drift without behavior
-   change. (With #3/#4 landed, the remaining closeout items are decision #6 stale
-   group strings/comments — optional cleanup — and the deferred event-patching /
-   shallow-audit-rule work, both gated on a precondition; see the deferred section.)
+   change. (With #3/#4 landed, the remaining closeout item is decision #6 stale
+   group strings/comments; event-patching and shallow-audit-rule work stay
+   deferred/gated. See the deferred section.)
 
 ## Closeout Decisions — Resolved 2026-05-30
 
 These were the open closeout decisions; the owner resolved them on 2026-05-30. The
-canonical record (with rationale and pending-implementation status) is
+canonical record (with rationale and landed/deferred status) is
 [`../phases/phase-5-closeout.md`](../phases/phase-5-closeout.md#closeout-decisions-2026-05-30).
 Summary:
 
-- **Prompt-assembly default (#1).** Decided: flip `useServerPromptAssembly` to
-  default `true` (tests may set `false`). Pending its own batch + test sweep; code
-  default stays `false` until then.
+- **Prompt-assembly default (#1).** Decided and landed: `useServerPromptAssembly`
+  defaults `true`; tests/specific cases may set `false`.
 - **A2 derivation failure policy (#2).** Decided: keep best-effort — a thrown
   `runServerPostGeneration` is swallowed (no frame, no browser fallback). TODO added
   at `generationChat.ts` (`buildPostGenerationFrame` catch).
@@ -71,9 +70,8 @@ Summary:
   attribution model.
 - **Load-time group filter (#4).** Decided: keep as-is (enforced by
   `A4R-group-chat-removed` P1).
-- **Provider resolver parity (#5).** Decided: unify onto a single shared
-  provider-capability table (eliminates the `reverse_proxy` + Ooba divergence).
-  Pending its own batch; prerequisite for #1.
+- **Provider resolver parity (#5).** Decided and landed: a single shared
+  provider-capability table eliminates the `reverse_proxy` + Ooba divergence.
 - **Stale group strings/comments (#6).** Decided: defer to the final cleanup pass
   (`removeFromGroup` lang key, `cbs.ts` / `risuai.d.ts` comments).
 - **Route-direct final-message persistence (#7).** Decided: handed to the

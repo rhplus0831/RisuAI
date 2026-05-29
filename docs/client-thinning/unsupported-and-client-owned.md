@@ -96,20 +96,15 @@ Fastify mode must not silently fall back to browser provider dispatch.
 Unsupported provider shapes fail explicitly through `resolveServerCompletionRoute()`
 on the completion path (`no-retry`) and through `prompt/chatDispatch.ts` on the
 `/generate/chat` path. The current supported and unsupported sets are the resolver
-tables in source; do not keep a stale prose list as truth. Provider expansion
-needs one named route contract, request shape, credential boundary, response
-extraction rule, warning/error behavior, and tests. As of 2026-05-30, `/chat`
-still explicitly rejects NovelAI/NovelList, plugin providers, WebLLM, Ooba
-OpenAI-compatible chat/reverse-proxy shapes, and unknown OpenAI-compatible models.
-
-The two resolvers' supported sets are not identical today — the known divergence is
-`reverse_proxy` + `reverseProxyOobaMode`, which `resolveServerCompletionRoute`
-accepts (routes to `openai` with `oobaSystemHoist`) but `chatDispatch.ts` rejects.
-**Decided 2026-05-30 (decision #5): unify both resolvers onto a single shared
-provider-capability table** (pending implementation; prerequisite for the
-`useServerPromptAssembly` default flip, since the flag-on classifier routes via the
-completion resolver then dispatches via `/chat`). See
-[`phases/phase-5-closeout.md`](phases/phase-5-closeout.md#closeout-decisions-2026-05-30).
+table in source, now single-sourced by `resolveProviderCapability`; do not keep a
+stale prose list as truth. Provider expansion needs one named route contract,
+request shape, credential boundary, response extraction rule, warning/error
+behavior, and tests. As of 2026-05-30, `/chat` still explicitly rejects
+NovelAI/NovelList, plugin providers, WebLLM, Ooba OpenAI-compatible chat shapes,
+and unknown OpenAI-compatible models. The old `reverse_proxy` +
+`reverseProxyOobaMode` divergence is closed by decision #5; both resolvers consume
+the shared provider-capability table. See
+[`reference/provider-capability-table.md`](reference/provider-capability-table.md).
 
 ## Unsupported Prompt-Assembly Content (Fail Explicitly)
 

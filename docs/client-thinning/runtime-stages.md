@@ -43,10 +43,11 @@ Three boundaries, gated differently (see [`plan.md`](plan.md)):
 - **Provider dispatch** — server-owned in Fastify mode (platform-gated, no flag);
   unsupported shapes fail explicitly. Closed for supported providers (A3 is a
   support cap, not a leak).
-- **Prompt assembly** — gated by `useServerPromptAssembly` (default off), so the
-  browser still assembles by default. With the flag on,
-  `resolveServerPromptAssembly` makes the supported subset server-mandatory and
-  hard-fails unsupported content. A1 content graduation is complete:
+- **Prompt assembly** — gated by `useServerPromptAssembly` (default on), so
+  `resolveServerPromptAssembly` makes the supported subset server-mandatory by
+  default and hard-fails unsupported content. The browser assembles locally only
+  outside Fastify mode or when a test/specific case opts the flag out. A1 content
+  graduation is complete:
   multimodal/asset inlining, non-interactive Lua edit/input hooks, and the
   image-gen instruction are ported; non-vision caption, interactive Lua dialogs,
   and pluginV2 stay explicit `unsupported`.
@@ -68,6 +69,6 @@ slated for client removal — see
 
 Assert projection invariants structurally; keep findings from becoming one-off
 fixes; record verification after runtime changes. Audit fixture reproducibility is
-done (22 rules, 55 tests), and the four empirically defeated rules are now
+done (23 checks, 58 tests), and the four empirically defeated rules are now
 hardened AST invariants. Some other rules remain shallow and should be hardened
 only after a sincere defeat is demonstrated. See [`status/audit.md`](status/audit.md).

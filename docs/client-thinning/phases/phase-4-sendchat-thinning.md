@@ -10,12 +10,12 @@ the server must own anything that **decides or derives durable state** (the
 assembled prompt, the LLM call, post-generation message/scriptstate mutations);
 the browser may keep effects, transient UI, orchestration, and command issuance.
 
-Today's default Fastify flow: the browser assembles the prompt
-(`useServerPromptAssembly` defaults false), the server makes the LLM call
-(unsupported providers hard-fail via `resolveServerCompletionRoute`), and the
-browser orchestrates post-gen. When server prompt assembly is enabled, the
-classifier makes supported sends server-mandatory; `/generate/chat` now persists
-assembly-time scriptstate and owns the server-dispatch post-generation derivation.
+Today's default Fastify flow: `/generate/chat` assembles the prompt, makes the LLM
+call (unsupported providers hard-fail via the shared provider-capability table),
+persists assembly-time scriptstate, and owns the server-dispatch post-generation
+derivation. The browser applies streaming/effects and still issues the
+final-message persistence command. Local assembly is now an explicit opt-out for
+tests/specific cases or non-Fastify mode.
 
 The code-level detail for each batch below — exact entry points and signatures,
 the server/browser parity matrix, the persistence round-trip, and the proof

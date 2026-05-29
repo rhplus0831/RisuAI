@@ -35,10 +35,10 @@ stable handle. All paths from the repo root.
 - **Classifier precedent:** the unsupported-provider `it.each` matrix proves the
   `/generate/chat` provider resolver emits explicit `error` frames with no token
   frames for unsupported `/chat` shapes (NovelAI/NovelList, plugin providers,
-  WebLLM, Ooba OpenAI-compatible chat/reverse-proxy, unknown OpenAI-compatible
-  models). This is the server-chat counterpart to `resolveServerCompletionRoute`'s
-  `unsupported` arm; the supported provider sets are source-defined and not
-  identical between `/generate/completion` and `/generate/chat`.
+  WebLLM, Ooba OpenAI-compatible chat, unknown OpenAI-compatible models). This is
+  the server-chat counterpart to `resolveServerCompletionRoute`'s `unsupported`
+  arm; the routing decision is shared through `resolveProviderCapability`, while
+  path-specific derivation and reason prose stay source-defined.
 - **Gate on:** `:679-725` seeds `useServerPromptAssembly: true` + an echo model and
   asserts production server dispatch.
 
@@ -116,7 +116,7 @@ an assembly-time var write, and a non-active-writer `/chat` does not persist.
 
 ## Audit (`util/client-thinning-audit.ts`)
 
-21 checks registered in `auditChecks`, selectable by id via
+23 checks registered in `auditChecks`, selectable by id via
 `CLIENT_THINNING_AUDIT_CHECK_IDS`.
 
 - **EC1 provider ownership — `checkProviderOwnership`** (`:1234`, registered
@@ -160,8 +160,8 @@ binary.
 
 - Entry point: `package.json` → `"client-thinning:audit": "tsx util/client-thinning-audit.ts"`.
   Exits 1 on any finding.
-- Regression tests: `util/client-thinning-audit.test.ts` — **55 tests** over the
-  22 rules, each spawning the real audit with a per-rule `CLIENT_THINNING_AUDIT_CHECK_IDS`
+- Regression tests: `util/client-thinning-audit.test.ts` — **58 tests** over the
+  23 checks, each spawning the real audit with a per-check `CLIENT_THINNING_AUDIT_CHECK_IDS`
   against a fixture. Fixtures in `util/client-thinning-audit-fixtures/<rule>/{failing*, *-bypass}/`
   (a failing fixture exits non-zero, a bypass fixture exits 0); some rules have
   multiple failing/adversarial fixtures, hence 55 > 22.
@@ -184,7 +184,7 @@ binary.
 - `pnpm smoke:fastify-browser` — build + Playwright smoke (long).
 - Focused (the form the docs use):
   - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts src/ts/process/request/tests/serverCompletion.test.ts` (the "163 tests" = 38 local fixtures + 125 classifier cases).
-  - `pnpm exec vitest run util/client-thinning-audit.test.ts` (55 tests).
+  - `pnpm exec vitest run util/client-thinning-audit.test.ts` (58 tests).
   - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts src/ts/process/request/tests/serverChat.test.ts`.
   - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts`.
 

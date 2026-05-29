@@ -12,10 +12,10 @@ the route surface consumed by the Svelte client.
   Fastify instance, registers Fastify plugins, opens SQLite, creates event buses,
   starts the memory worker, creates auth state, registers all routes, and
   optionally serves the built SPA.
-- `server/fastify/src/config.ts` loads server env vars:
+- `server/fastify/src/config.ts` loads most server env vars:
   `RISU_API_HOST`, `RISU_API_PORT`, `RISU_API_DATA_DIR`,
   `RISU_API_BODY_LIMIT`, `TRUST_PROXY`, `RISU_API_STATIC_ROOT`, and
-  `RISU_HUB_URL`.
+  `RISU_HUB_URL`. `LOG_LEVEL` is read directly in `server/fastify/src/app.ts`.
 
 The app factory is test-friendly: many pieces are injectable through
 `BuildAppOptions`, including generation chat dispatch, memory worker behavior,
@@ -78,7 +78,7 @@ High-level flow:
 2. Attach an abort signal to the request close event.
 3. Load the persisted database projection from `data/db.json`.
 4. Call `prompt/assemble.ts`.
-5. Emit SSE stage, prompt, mutation, info, warning, token, error, and done frames.
+5. Emit SSE stage, prompt, `message_patch`, info, warning, token, error, and done frames.
 6. If dispatch is enabled, route through `prompt/chatDispatch.ts`.
 7. Convert provider frames to chat SSE in `prompt/providerTransport.ts`.
 

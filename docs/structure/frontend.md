@@ -14,6 +14,8 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
   settings, mobile, modal, welcome, and popup components. Its top-level render
   switch chooses loading, legal/setup, settings, mobile UI, grid/catalog, or the
   regular sidebar plus chat surface.
+- `src/LiteMain.svelte` is the lite UI entry shell used by the lite/mobile-ish
+  path.
 
 ## Directory Guide
 
@@ -23,6 +25,7 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
 | `src/lib/SideBars/`    | Sidebar, character config, lorebook, scripts, and navigation surfaces. |
 | `src/lib/Setting/`     | Settings pages and wrapper controls.                                   |
 | `src/lib/Mobile/`      | Mobile shell components.                                               |
+| `src/lib/LiteUI/`      | Lite UI components.                                                     |
 | `src/lib/Playground/`  | Playground/tooling UI surfaces.                                        |
 | `src/lib/UI/`          | Shared UI primitives, GUI, NewGUI, Realm components.                   |
 | `src/lib/Others/`      | Modals, alerts, welcome, editor, loadout, misc UI pieces.              |
@@ -41,10 +44,12 @@ Useful `src/ts` subdirectories:
 | `src/ts/plugins/` | Plugin loading and browser-side plugin runtime.                                    |
 | `src/ts/media/`   | Image/media helpers and compression.                                               |
 | `src/ts/gui/`     | Theme, GUI size, color scheme, and display helpers.                                |
+| `src/ts/kei/`     | Risu-Kei backup integration.                                                       |
 
 ## Server Projection Flow
 
-Startup is server-backed:
+Startup is server-backed only when the SPA is served by Fastify and
+`globalThis.__FASTIFY__` is injected:
 
 1. `src/main.ts` calls `loadData()`.
 2. `src/ts/bootstrap.ts` calls `fetchServerBootstrapProjection()`.
@@ -82,7 +87,8 @@ then call it through a browser-side command helper.
 Vite dev mode and production Fastify serving differ:
 
 - `pnpm dev` starts Vite on `0.0.0.0:5174` and proxies `/api` to
-  `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
+  `RISU_API_PROXY_TARGET` or `http://localhost:6002`, but it does not inject the
+  Fastify marker. `isFastifyServer` is false in this mode.
 - Production/static serving uses `dist/` by default through
   `RISU_API_STATIC_ROOT`.
 - Fastify injects `globalThis.__FASTIFY__ = true` into served `index.html`.

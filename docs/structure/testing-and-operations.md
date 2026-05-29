@@ -30,7 +30,8 @@ pnpm dev
 ```
 
 Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
-Fastify defaults to `0.0.0.0:6002`.
+Fastify defaults to `0.0.0.0:6002`. This is Vite `web(dev)` mode, not true
+Fastify-backed browser mode, because Vite does not inject `globalThis.__FASTIFY__`.
 
 To build the SPA and serve it through Fastify:
 
@@ -39,14 +40,15 @@ pnpm buildsite
 pnpm api:start
 ```
 
-`pnpm build` also builds the client, but `buildsite` matches the smoke and
-production legal flag behavior.
+`pnpm build` also builds the client. `buildsite` matches the browser smoke's legal
+flag behavior; Docker currently runs `pnpm build`, so its image build does not set
+`VITE_RISU_LEGAL_CONFIGURED=TRUE` unless the Dockerfile is changed.
 
 ## Test Split
 
 | Area                  | Config                               | Environment | Test Locations                                  |
 | --------------------- | ------------------------------------ | ----------- | ----------------------------------------------- |
-| Browser/client/domain | `vitest.config.ts`                   | `happy-dom` | `src/ts/**/*.test.ts`, nested `tests/` folders. |
+| Browser/client/domain | `vitest.config.ts`                   | `happy-dom` | Root suite outside `server/**`, including `src/ts/**` and `util/**/*.test.ts`. |
 | Fastify/server        | `server/fastify/vitest.config.ts`    | Node        | `server/fastify/__tests__/**/*.test.ts`.        |
 | Browser smoke         | `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`.                |
 

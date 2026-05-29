@@ -11,7 +11,7 @@ track.
 - [`phase-1-baseline-contract.md`](phase-1-baseline-contract.md) — DONE. Locked
   the projection/command/active-writer/guard baseline.
 - [`phase-2-audit-reproducibility.md`](phase-2-audit-reproducibility.md) — DONE.
-  Committed fixture proof for all 22 audit rules (shallow-rule robustness carried
+  Committed fixture proof for all 23 audit checks (shallow-rule robustness carried
   to phase 5).
 - [`phase-3-command-projection-hardening.md`](phase-3-command-projection-hardening.md)
   — DONE. Closed the command/projection invariant families.

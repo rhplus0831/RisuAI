@@ -9,8 +9,8 @@ in [`../coverage/audit.md`](../coverage/audit.md).
 ## Current State: Reproducible; The Four Defeated Rules Are Now AST Invariants
 
 `pnpm client-thinning:audit` runs `util/client-thinning-audit.ts` (ts-morph plus
-source-text checks). Fixture **reproducibility is complete**: all 22 rules have
-committed fixtures and tests in `util/client-thinning-audit.test.ts` (55 tests).
+source-text checks). Fixture **reproducibility is complete**: all 23 checks have
+committed fixtures and tests in `util/client-thinning-audit.test.ts` (58 tests).
 The harness is honest — it spawns the real audit binary against per-rule mini-repo
 fixtures with `CLIENT_THINNING_AUDIT_CHECK_IDS` scoping and asserts non-zero exit
 on the failing fixture (and zero on a bypass fixture where applicable). No rule is

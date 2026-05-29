@@ -10,7 +10,7 @@ revision-checked commands when it needs persistence.
 | SQLite      | `data/risu.db`                                           | Server | Schema version, global revision, Hypa V3 memory chunks, summaries, embeddings, jobs. |
 | Domain JSON | `data/db.json`                                           | Server | The main Risu `Database` blob and asset manifest.                                    |
 | Assets      | `data/assets/<sha256>.<ext>`                             | Server | Content-addressed images, audio, video, fonts, CSS, and other supported asset bytes. |
-| Backups     | `data/backups/<id>/`                                     | Server | Snapshot `db.json` plus `manifest.json`.                                             |
+| Backups     | `data/backups/<id>/`                                     | Server | Snapshot `db.json`, `assets/`, `risu.db`, `save/`, plus `manifest.json`.              |
 | Auth files  | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user password hash string and registered browser public key hashes.           |
 
 `server/fastify/src/repository.ts` is the main file for `db.json`, assets, and
@@ -43,6 +43,17 @@ Auth is single-user and explicit per route.
 
 Because there is no global auth hook, check new routes carefully for an explicit
 auth decision.
+
+## Active Writer Guard
+
+Fastify also has a global active-writer `preHandler` guard registered from
+`server/fastify/src/app.ts`. The browser registers writer ownership through the
+writer-intent bootstrap request and sends `risu-writer-session` on server-owned
+mutations. Stale writer sessions receive `423 active_writer_stale`.
+
+`server/fastify/src/activeWriter.ts` classifies command routes, imports, asset
+uploads, backups, `/api/v1/generate/chat`, `/api/v1/generate/preview-prompt`,
+memory jobs, and legacy storage writes/removes as guarded server-owned mutations.
 
 ## Bootstrap And Projection
 

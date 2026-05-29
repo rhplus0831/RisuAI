@@ -43,9 +43,12 @@ create → `void run…` → attach shape.
 The active-writer model's purpose (no write conflicts) is preserved by moving the
 check to **submission** and adding a **one-job-per-chat** rule:
 
-- **Authorize at submission.** A persisting send (`send`/`continue`/`regenerate`)
-  requires the caller to be the **active writer** — reject otherwise. `preview` /
-  `preview_prompt` don't write and are exempt.
+- **Authorize at submission.** A persisting send requires the caller to be the
+  **active writer** — reject otherwise. Current code enforces this with the global
+  active-writer guard in `server/fastify/src/activeWriter.ts`; it is path-based and
+  includes both `POST /api/v1/generate/chat` and
+  `/api/v1/generate/preview-prompt`. Milestone 1 is `send`-only, so do not claim a
+  preview exemption unless the guard is explicitly split.
 - **One running job per chat — no exception, even for the active writer.** Enforced via
   a transient **`chatId → jobId` index** (the new primitive). A new persisting send is
   rejected if the chat already has a *running* job.
@@ -60,11 +63,13 @@ check to **submission** and adding a **one-job-per-chat** rule:
 
 1. **One generation `JobRegistry` instance** (separate from the proxy's), created in
    `app.ts` and GC-ticked like the proxy's (`tickGc`, `streamJobs.ts:235`). It also
-   maintains a **transient `chatId → jobId` index** — server-memory only (no `db.json`),
-   surfaced via the projection (step 7) — for one-job-per-chat + reload-resume.
+   maintains a **transient `chatId → jobId` index** — server-memory only (no
+   `db.json`) — for one-job-per-chat + reload-resume. Surface it from bootstrap as
+   `activeGenerationJobs: Array<{ chatId: string; jobId: string }>` so the wire
+   shape is explicit and does not collide with persisted `database` fields.
 2. **Submission gate, then create + id first.** On `POST /api/v1/generate/chat`, for a
-   `durable` send: **(i)** require the **active writer** (reject otherwise; preview
-   exempt); **(ii)** reject if the `chatId → jobId` index already has a *running* job for
+   `durable` send: **(i)** rely on the existing active-writer guard for
+   `/generate/chat`; **(ii)** reject if the `chatId → jobId` index already has a *running* job for
    this chat. Then `registry.create(...)`, register `chatId → jobId`, and emit a **first
    frame carrying the `jobId`** (`job_accepted`/`info`) **before assembly**, so a drop
    during assembly is reattachable. Unify the id with the existing `generationId`
@@ -87,8 +92,8 @@ check to **submission** and adding a **one-job-per-chat** rule:
 7. **Reattach + resume-after-reload.** `GET /api/v1/generate/chat/:id/stream` (SSE) →
    auth → `registry.attach` → flush buffered events → live. `404` if the job is unknown
    / GC'd (a *completed* job is read from `db.json` via normal projection). A returning
-   client — **even after a full reload** — discovers the job from the projection's
-   transient `chatId → jobId` field and reattaches, so resume is **not** deferred.
+   client — **even after a full reload** — discovers the job from the bootstrap
+   `activeGenerationJobs` field and reattaches, so resume is **not** deferred.
    **Observe vs. control:** read-only reattach (observe) is open to any authenticated
    client; *starting* and *cancelling* require the active-writer lease.
 8. **Completion + grace, in order:** **Step 3 persists the result → get the bumped
@@ -114,13 +119,14 @@ Disconnect no longer aborts, so "stop" can't be "close the connection." Add
 the **current active writer**. **The browser abort button must call DELETE**;
 navigation-away does **not** cancel — the generation runs to completion (decision:
 let-it-finish; resource control is the 64-job cap + deadline GC + one-job-per-chat). On
-cancel, persist what the user already saw — verified against `streamResponse.ts:107-115`
-/ `nonStreamResponse.ts`:
+cancel, persist from the job's accumulated provider text, not from a connected
+client's local row:
 - **non-streaming → discard** (nothing was shown; abort = no done = no write);
-- **streaming → persist the accumulated-so-far text** (the streaming row keeps the
-  streamed portion today). The job already accumulates this text (step 4); on abort it
-  persists it **iff** streaming. Cancel implies a connected client, so "streamed to the
-  user" = the job's accumulated text at abort.
+- **streaming → persist the accumulated-so-far text**. The job already accumulates
+  this text (step 4); on abort it persists it **iff** streaming. Cancel can be
+  issued by the current writer even when no viewer is attached, so the source of
+  truth is the job accumulator. This is a deliberate durable-path change; the
+  non-durable inline abort path stays today's behavior.
 
 **C. Buffer eviction & the server-held result.** `pushEvent` evicts oldest events past
 `MAX_PENDING_EVENTS` (512) / `MAX_PENDING_BYTES` (2MB) (`:171-178`), so a long
@@ -154,9 +160,10 @@ captured at creation (step 3) and consumed by Step 3.
   connection mid-stream; assert the job keeps running (not aborted); reconnect via the
   reattach `GET`; assert the buffered + remaining events arrive.
 - **Resume after full reload:** a fresh client (no in-memory `jobId`) discovers the
-  running job from the projection's `chatId → jobId` field and reattaches.
+  running job from bootstrap `activeGenerationJobs` and reattaches.
 - **Submission gate:** a non-active-writer persisting send is rejected; a second send on
-  a chat with a running job is rejected; preview by a non-writer is allowed.
+  a chat with a running job is rejected; current preview/preview-prompt guard
+  behavior is either preserved or explicitly changed with tests.
 - **Lifecycle half of EC-D1:** with the client gone for the whole generation, assert
   the job reaches `done` server-side.
 - **Explicit cancel:** `DELETE /…/:id` (by the current writer) aborts the provider
@@ -183,15 +190,17 @@ captured at creation (step 3) and consumed by Step 3.
 - Server-restart durability (Milestone 2 — disk-persisted jobs).
 
 (Full-reload reattach is **no longer deferred** — resolved by the transient
-`chatId → jobId` index surfaced via the projection: design steps 1–2 + 7.)
+`activeGenerationJobs` bootstrap projection backed by the `chatId → jobId` index:
+design steps 1–2 + 7.)
 
 ## When this step is done (with Step 3)
 
 - [ ] A durable-subset generation runs as a detached `JobRegistry` job; the request
       connection is a detachable viewer, not the lifecycle owner; the job carries the
       captured writer identity and accumulates the streamed text.
-- [ ] Submission gate: non-active-writer persisting sends rejected (preview exempt);
-      one *running* job per chat via the transient `chatId → jobId` index; the lock
+- [ ] Submission gate: non-active-writer persisting sends rejected through the
+      existing `/generate/chat` guard; one *running* job per chat via the transient
+      `chatId → jobId` index; the lock
       clears at completion/cancel.
 - [ ] `req.raw.on('close')` detaches (does not abort) for the durable path; the
       non-durable path is unchanged.

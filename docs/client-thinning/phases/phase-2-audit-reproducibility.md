@@ -6,8 +6,8 @@ Status: DONE.
 
 Every client-thinning audit rule has a committed pre-fix fixture (plus a bypass
 fixture where a rule has a narrow allowed shape) and a test that proves the rule
-exits non-zero on that fixture. Phase 2 closed with all 21 rules reproducible;
-the suite has since grown to 55 tests across 22 rules after the phase-5
+exits non-zero on that fixture. Phase 2 closed with all 21 checks reproducible;
+the suite has since grown to 58 tests across 23 checks after the phase-5
 audit-hardening and group-chat-removal batches.
 
 Historical residual gap: several rules were string/regex matchers and four

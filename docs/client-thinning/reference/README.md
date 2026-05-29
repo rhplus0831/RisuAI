@@ -53,10 +53,10 @@ The Phase 4 batches, in order, and the doc that routes each into the code:
 
 Three independent boundaries gate the chat process (see [`../plan.md`](../plan.md)):
 
-- **Prompt assembly** — gated by `useServerPromptAssembly` (default **off**), so
-  the **browser assembles by default** (`assembleLocalSendChatPrompt`). With the
-  flag on, `resolveServerPromptAssembly` makes supported sends server-mandatory
-  and hard-fails unsupported content.
+- **Prompt assembly** — gated by `useServerPromptAssembly` (default **on**), so
+  `resolveServerPromptAssembly` makes supported Fastify sends server-mandatory by
+  default and hard-fails unsupported content. The browser assembles locally only
+  outside Fastify mode or when the flag is explicitly set `false`.
 - **Provider dispatch** — server-routed in Fastify mode (platform-gated, no
   flag); unsupported shapes hard-fail via `resolveServerCompletionRoute`
   (blocker A3, already correct). This is the **classifier precedent for A1**.

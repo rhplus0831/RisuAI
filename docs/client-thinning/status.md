@@ -50,7 +50,7 @@ Implemented / closed:
 - Bootstrap projection, command-event invalidation, `.risu` import/export/bundle,
   asset routes, backup/restore, and provider secret masking are closed.
 - The client-thinning audit is wired as `pnpm client-thinning:audit` and its
-  fixture reproducibility is complete (22 rules, 55 tests). The four known
+  fixture reproducibility is complete (23 checks, 58 tests). The four known
   defeated shallow rules were hardened on 2026-05-30, and the group-chat removal
   added the `A4R-group-chat-removed` invariant.
 

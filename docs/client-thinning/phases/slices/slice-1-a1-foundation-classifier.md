@@ -21,8 +21,10 @@ After this slice, in Fastify mode:
 - Any out-of-subset send returns `unsupported` and **hard-fails** with a
   user-facing reason — it does not fall through to local assembly.
 - The silent `unavailable` → local fall-through hole is gone.
-- `local` is reachable only when `!isFastifyServer` (dev/web/tests) or the
-  default-off `useServerPromptAssembly` master gate is off.
+- At this slice boundary, `local` was reachable only when `!isFastifyServer`
+  (dev/web/tests) or the then-default-off `useServerPromptAssembly` master gate
+  was off. The closeout flip later changed the default to `true`; the local arm
+  now survives only for non-Fastify mode or explicit opt-out/tests.
 
 This slice did **not** port any content class. It classified unsupported classes;
 slices 3a/3b/3c each later graduate one to `server`.
@@ -179,13 +181,12 @@ context.
   `serverPromptAssembly.ts` beside `serverCompletion.ts` (symmetry +
   co-located test). Alternative: fold into `serverBackedSendChat.ts`. The
   reference assumes the former.
-- **Do not delete `useServerPromptAssembly`.** Its JSDoc
-  (`database.svelte.ts:1354-1368`) says the flag is a default-off migration gate,
-  not a stable user setting and not deprecated. This slice replaced the *gate's
-  decision logic*; later slices landed the A1 content classes, but removing or
-  default-enabling the flag is still a separate closeout decision while local
-  assembly remains the default production path and unsupported provider/content
-  cases are explicit.
+- **Do not delete `useServerPromptAssembly`.** Its JSDoc now says the flag defaults
+  `true`, is not a stable user setting, and is not deprecated. This slice replaced
+  the *gate's decision logic*; later slices landed the A1 content classes, and
+  closeout decision #1 default-enabled the flag. Removing the flag entirely would
+  still be a separate decision because tests/specific cases use it to exercise the
+  local assembly path.
 
 ## Scope guard
 

@@ -3,8 +3,8 @@
 Date: 2026-05-30
 
 Batch: provider-resolver unification (decision #5) + `useServerPromptAssembly`
-default flip (decision #1) — the two pending-implementation closeout batches, landed
-together. Provider routing is now single-sourced in
+default flip (decision #1) — the two former closeout implementation
+batches, landed together. Provider routing is now single-sourced in
 [`../reference/provider-capability-table.md`](../reference/provider-capability-table.md)
 (`resolveProviderCapability`), consumed by both `serverCompletion.ts` (browser) and
 `chatDispatch.ts` (server `/chat`); the stale `reverse_proxy` + `reverseProxyOobaMode`
@@ -21,7 +21,7 @@ documented `unsupported` content classes hard-fail by default.
   `providerCapabilityRoute.test.ts` (ooba flip + preserved per-format messages +
   server-only unknown-id guard + ollama-cloud key gate); the ooba case was removed
   from `generation.chat.test.ts`'s unsupported list.
-- `pnpm client-thinning:audit` — Passed (23 rules now, incl. the new
+- `pnpm client-thinning:audit` — Passed (23 checks now, incl. the new
   `A4R-provider-capability shared routing table`).
 - `pnpm exec vitest run util/client-thinning-audit.test.ts` — 58 tests passed (+3 for
   the new rule: failing-server-fork, keeps-helpers bypass, passing).

@@ -42,19 +42,21 @@ A chat-process/runtime batch should prove:
 
 ## Known Gaps
 
-- Server prompt assembly is opt-in via `useServerPromptAssembly` (default off);
+- Server prompt assembly is on by default via `useServerPromptAssembly`;
   the classifier exists, and the server subset includes text sends, image-input
   multimodal/asset sends, non-interactive Lua edit/input hooks, and the image-gen
   instruction. Non-vision caption fallback, interactive Lua dialogs, and pluginV2
   stay explicit `unsupported`.
 - A2 is server-owned on the server-dispatch path; the local-assembly/completion
-  path still uses the browser post-generation derivation while the flag is off.
+  path still uses the browser post-generation derivation only when the flag is
+  explicitly off or outside Fastify mode.
   If server post-generation derivation throws, `/generate/chat` currently omits
   the post-generation frame and the browser does not run the skipped local
   derivation fallback.
 - Final-message persistence still depends on a browser-issued command (**B2**,
   acceptable). Assembly-time scriptstate persistence is route-owned.
-- `/generate/completion` and `/generate/chat` have separate provider resolver
-  implementations. Both hard-fail unsupported shapes; their exact supported sets
-  should be checked in source before adding provider claims.
-- Group chat is legacy and slated for client removal — not a coverage target.
+- `/generate/completion` and `/generate/chat` now share the pure
+  `resolveProviderCapability` routing decision. Their per-path request derivation
+  and reason prose still differ, so check source before adding provider claims.
+- Group chat is legacy; the dead UI branches are removed and residual cleanup is
+  not a coverage target.

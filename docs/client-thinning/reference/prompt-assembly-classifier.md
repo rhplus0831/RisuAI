@@ -99,9 +99,10 @@ if (assemblyRoute.type === 'server') { ... assembleServerBackedSendChat(...) ...
 
 `unsupported` is terminal and never falls through. `server` calls
 `assembleServerBackedSendChat` and handles `aborted | failed | preview |
-assembled`; `local` is limited to non-Fastify mode or the default-off master
-flag. The A1 negative proof targets the single `assembleLocalSendChatPrompt`
-branch and shows it is unreachable for the supported subset when the flag is on.
+assembled`; `local` is limited to non-Fastify mode or an explicit
+`useServerPromptAssembly: false` opt-out. The A1 negative proof targets the
+single `assembleLocalSendChatPrompt` branch and shows it is unreachable for the
+supported subset when the flag is on.
 
 ### Historical pre-slice-1 hole (closed)
 
@@ -225,10 +226,10 @@ mirroring `resolveServerCompletionRoute`. It replaced the boolean gate at
 `assembleLocalSendChatPrompt`. The silent `unavailable` escape in
 `serverBackedSendChat.ts` is deleted.
 
-Decision order in the implementation: `!isFastifyServer` → `local`; the
-experimental `useServerPromptAssembly` master-enable off → `local` (the one
-`local` verdict that survives in Fastify mode until a separate flag-removal
-closeout); then mode/user-message structural check, group check, provider
+Decision order in the implementation: `!isFastifyServer` → `local`; explicit
+`useServerPromptAssembly: false` → `local` (the one `local` verdict that survives
+in Fastify mode until a separate flag-removal closeout); then mode/user-message
+structural check, group check, provider
 routability (delegated to `resolveServerCompletionRoute`), and the content-signal
 check — each out-of-subset signal → `unsupported`; otherwise `server`. As of the
 2026-05-30 decision-#5 closeout the `/generate/chat` resolver in

@@ -55,11 +55,13 @@ even though it reuses the same VM.
 
 ## Why this matters
 
-The durable-generation subset (`docs/durable-generation/`) excludes Lua content, so
-the server Lua VM is the **single biggest lever on durable-generation coverage**.
-Without it, durable generation only ever covers unscripted / regex-scripted chats.
-This is pre-ship work: `useServerPromptAssembly` defaults **off**, so there is no
-user-facing urgency — favor a correct, well-bounded VM over speed.
+The durable-generation subset (`docs/durable-generation/`) now inherits
+non-interactive Lua support from `resolveServerPromptAssembly`, so the server Lua
+VM is the **single biggest lever that already widened durable-generation
+coverage**. Without it, durable generation would cover only unscripted /
+regex-scripted chats. `useServerPromptAssembly` now defaults **on**; favor a
+correct, well-bounded VM over widening any still-unsupported interactive or
+privileged host-function surface.
 
 ## The browser engine you are porting
 

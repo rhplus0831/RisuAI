@@ -35,9 +35,10 @@ The current Fastify docs split `sendChat` into stages:
 | Stage 1 | Server        | Validate ids/mode, check expected revision, persist user row.                     |
 | Stage 2 | Server        | Assemble prompt, variables, persona, description, lorebook, memory, triggers.     |
 | Stage 3 | Server        | Provider dispatch and token/message streaming.                                    |
-| Stage 4 | Mostly server | Final trimming, auto-continue, emotion rewrite, reroll metadata, output triggers. |
+| Stage 4 | Server + browser | Server owns durable output-trigger / `editoutput` derivation on the server-dispatch path; browser owns B1 effects, resend/auto-continue recursion, and UI metadata. |
 
-See `docs/archive/fastify/other/runtime-stages.md` for the longer version.
+See [`../client-thinning/runtime-stages.md`](../client-thinning/runtime-stages.md)
+for the current longer version.
 
 ## Identity Rules
 
@@ -55,6 +56,7 @@ reopens them:
 - Risu Account Sync.
 - Browser-side durable persistence as the primary runtime.
 - Native/mobile wrapper modes and service worker behavior.
-- SupaMemory, Hypa V2, and Hanurai memory engines.
+- SupaMemory, Hypa V2, and Hanurai as standalone maintained engines. Some legacy
+  names remain in fields/classes used by the maintained Hypa V3 path.
 
 Hypa V3 is the maintained memory engine.

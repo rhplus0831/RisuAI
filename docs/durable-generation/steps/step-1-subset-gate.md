@@ -53,11 +53,12 @@ resolveDurableGeneration(input):
   2. const assembly = resolveServerPromptAssembly(input)
      if assembly.type !== 'server'
        → non-durable(assembly.type === 'unsupported' ? assembly.reason : 'not server-assembled')
-     // This single delegation inherits ALL of: !isFastifyServer, flag off,
-     // non-text send, group char, non-server-routable provider, and the
-     // asset / image-gen / pluginV2 / interactive-Lua content classes.
+     // This single delegation inherits ALL of: !isFastifyServer, explicit
+     // flag-off opt-out, non-text send, group char, non-server-routable provider,
+     // and the remaining unsupported content classes.
      // assembly === 'server' excludes pluginV2 hooks and interactive Lua dialogs;
-     // non-interactive Lua is IN-subset (the server Lua VM landed, slice 3b).
+     // non-vision image caption fallback is also excluded. Image-input assets,
+     // image-gen instruction, and non-interactive Lua are IN-subset.
   3. → durable
      // Decision #2 (2026-05-30): output triggers and editoutput are NO LONGER
      // excluded. Slice 4 (A2) landed, so Step 3 runs runServerPostGeneration at
@@ -103,15 +104,17 @@ Unit tests on the pure function (mirror `serverPromptAssembly.test.ts`):
 - mode `continue` / `regenerate` / `preview` / `preview_prompt` → `non-durable`.
 - `!isFastifyServer` → `non-durable`.
 - `useServerPromptAssembly` off → `non-durable`.
-- each inherited assembly exclusion (asset, image-gen, Lua trigger, pluginV2 hook,
-  group char, non-routable provider, non-text send) → `non-durable`.
+- each inherited assembly exclusion (non-vision image caption fallback,
+  interactive Lua dialog, pluginV2 hook, group char, non-routable provider,
+  non-text send) → `non-durable`.
 - char with an `'output'` `triggerscript` (e.g. `v2SetVar`) → `durable` (decision #2:
   in-subset; Step 3 runs the post-gen pass and persists the derived state).
 - a **module** with an `'output'` trigger → `durable`.
 - `char.customscript` / `db.presetRegex` / module regex with `type: 'editoutput'`
   → `durable`.
 - **Positive (durable):** clean text `send`, single non-group char, server-routable
-  provider, flag on — with or without an output trigger / `editoutput`.
+  provider, flag on — with or without image-input asset content, the image-gen
+  instruction, non-interactive Lua, or output trigger / `editoutput`.
 - **Discriminating positive/negative:** a char with non-interactive Lua (server VM)
   → `durable`; a char with an *interactive* Lua dialog (`alertInput`) → `non-durable`
   (inherited from the assembly gate, not this gate).

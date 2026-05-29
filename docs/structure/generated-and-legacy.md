@@ -27,6 +27,11 @@ copy. Edit `public/` when changing a static source asset; rebuild to refresh
 surfaces. Do not reintroduce old Google Drive public workers without a new
 explicit roadmap.
 
+`tsconfig.json` still includes `public/sw.js`, but the service worker file is
+absent and guarded by `src/ts/browserLocalSurface.test.ts`. Treat the include as a
+stale compatibility include, not evidence that service-worker runtime behavior is
+active.
+
 ## Fastify-Only Runtime
 
 The project currently targets a Fastify-served web runtime. Historical mentions
@@ -61,7 +66,8 @@ These are removed or intentionally not ported:
 - Peer sync.
 - Google Drive sync.
 - Risu Account Sync.
-- SupaMemory, Hypa V2, Hanurai.
+- SupaMemory, Hypa V2, and Hanurai as standalone maintained engines. Some legacy
+  names remain in active Hypa V3 fields/classes; do not remove those by name alone.
 - Native/mobile wrapper runtime modes.
 - Browser local persistence as the primary supported runtime.
 

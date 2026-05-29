@@ -16,8 +16,8 @@ current snapshot in [`../status.md`](../status.md).
   parity (slices 3a/3b/3c) and A2 post-generation durable derivation (slice 4)
   are **landed**; A3 is a hard-fail support cap.
 - **Phase 5: ACTIVE closeout.** A-items are resolved, the known defeated audit
-  rules are hardened, and the group-chat UI-branch removal landed. Both
-  pending-implementation batches landed 2026-05-30 — the provider-resolver
+  rules are hardened, and the group-chat UI-branch removal landed. Both former
+  closeout implementation batches landed 2026-05-30 — the provider-resolver
   unification (#5, shared `resolveProviderCapability`) and the
   `useServerPromptAssembly` default flip (#1, now `true`). Remaining is optional
   cleanup (decision #6 stale group strings/comments) and deferred work
