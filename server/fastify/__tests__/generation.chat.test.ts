@@ -701,6 +701,171 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return db
   }
 
+  // ── Slice 3b sub-slice 4: submit-time input trigger + `editinput` ──────────
+  //
+  // The server now runs the chat-screen submit handler's input trigger
+  // (`runTrigger(char,'input')`, with `triggerlua` on the VM) and `editinput`
+  // transform before assembly, and owns the post-`editinput` transcript write.
+  // The browser sends the raw user text for a server-backed send. These tests
+  // live in the node-env server suite because wasmoon cannot init under the
+  // browser suite's jsdom (same reason as the editRequest golden proof above).
+
+  /** A char whose `triggerlua` defines the submit-time hook (`onInput` for the
+   * input trigger, `listenEdit('editInput', …)` for editinput). `type: 'input'`
+   * is cosmetic — a `triggerlua` first effect bypasses the mode filter. */
+  function dbWithSubmitLua(code: string, formatOrder?: string[]): unknown {
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
+      formatingOrder: string[]
+    }
+    if (formatOrder) db.formatingOrder = formatOrder
+    db.characters[0].triggerscript = [
+      { comment: '', type: 'input', conditions: [], effect: [{ type: 'triggerlua', code }] },
+    ]
+    return db
+  }
+
+  async function sendBase(assertion: string): Promise<ParsedEvent[]> {
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    return parseEvents(res.body)
+  }
+
+  async function bootstrapChat(
+    assertion: string,
+  ): Promise<{ message: Array<{ role: string; data: string }>; scriptstate?: Record<string, unknown> }> {
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(res.statusCode).toBe(200)
+    return res.json().database.characters[0].chats[0]
+  }
+
+  it('runs a Lua input trigger that rewrites the transcript + persists it (slice 3b-4)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    // `onInput` fires only during the submit-time input-trigger run (the start
+    // trigger leaves `triggerlua` a no-op). It appends a char row to the
+    // transcript (before the user message) and writes a chat var.
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithSubmitLua(`
+        function onInput(triggerId)
+          addChat(triggerId, 'char', 'INPUT-LUA-ROW')
+          setState(triggerId, 'inputseen', 1)
+        end
+      `),
+    )
+
+    const events = await sendBase(assertion)
+
+    // Assembled prompt: the input trigger's char row renders in the `chats` slot.
+    const prompt = events.find((e) => e.type === 'prompt')!
+    const messages = prompt.data.messages as Array<{ role: string; content: string }>
+    expect(messages.some((m) => m.content === 'INPUT-LUA-ROW')).toBe(true)
+
+    // Route owns the post-input-trigger transcript write: the persisted chat has
+    // the added char row followed by the user message.
+    const chat = await bootstrapChat(assertion)
+    expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([
+      { role: 'char', data: 'INPUT-LUA-ROW' },
+      { role: 'user', data: 'hi' },
+    ])
+    // The trigger's `setState` write rode the same chat-var delta + revision bump.
+    expect(chat.scriptstate).toEqual({ $__inputseen: '1' })
+    const info = events.find((e) => e.type === 'info')
+    expect(info?.data.revision).toBe(2)
+  })
+
+  it('runs a Lua editinput hook that rewrites the submitted user message (slice 3b-4)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    // `editInput` listeners transform the user text string. Render `lastChat` so
+    // the rewritten user row also shows up in the assembled prompt.
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithSubmitLua(
+        `
+        listenEdit('editInput', function(id, data, meta)
+          return data .. ' [EDITINPUT]'
+        end)
+      `,
+        ['main', 'description', 'chats', 'lastChat'],
+      ),
+    )
+
+    const events = await sendBase(assertion)
+
+    // Assembled prompt: the transformed user message renders (lastChat slot).
+    const prompt = events.find((e) => e.type === 'prompt')!
+    const messages = prompt.data.messages as Array<{ role: string; content: string }>
+    expect(messages.some((m) => m.content === 'hi [EDITINPUT]')).toBe(true)
+    expect(messages.some((m) => m.content === 'hi')).toBe(false)
+
+    // The message_patch carries the editinput replace_all and the persisted
+    // transcript reflects the post-editinput rewrite.
+    const patch = events.find((e) => e.type === 'message_patch')?.data.patch as {
+      messageMutations?: Array<{ type: string; source: string; messages?: Array<{ role: string; data: string }> }>
+    }
+    const editinputMutation = patch.messageMutations?.find((m) => m.source === 'editinput')
+    expect(editinputMutation?.type).toBe('replace_all')
+    expect(editinputMutation?.messages?.at(-1)).toMatchObject({ role: 'user', data: 'hi [EDITINPUT]' })
+
+    const chat = await bootstrapChat(assertion)
+    expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([
+      { role: 'user', data: 'hi [EDITINPUT]' },
+    ])
+  })
+
+  it('runs a regex editinput script that rewrites the submitted user message (slice 3b-4)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    // The regex `editinput` path (no Lua) is already at parity; the route now runs
+    // it over the submitted user text and persists the result.
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<(typeof fixtureDatabase.characters)[number] & { customscript?: unknown }>
+    }
+    db.characters[0].customscript = [{ in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false }]
+    await seedDatabase(harness.app, assertion, db)
+
+    await sendBase(assertion)
+
+    const chat = await bootstrapChat(assertion)
+    expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([
+      { role: 'user', data: 'HELLO' },
+    ])
+  })
+
+  it('leaves a plain send transcript to the browser (no route message write) (slice 3b-4)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    // No input trigger / editinput → `submitTranscriptChanged` is false, so the
+    // route writes no transcript (the browser persists the raw user row exactly
+    // as before). The seeded empty transcript is therefore unchanged server-side.
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const events = await sendBase(assertion)
+
+    // The browser-facing message_patch still carries the user-message append…
+    const patch = events.find((e) => e.type === 'message_patch')?.data.patch as {
+      messageMutations?: Array<{ source: string }>
+    }
+    expect(patch.messageMutations?.some((m) => m.source === 'user_message')).toBe(true)
+    expect(patch.messageMutations?.some((m) => m.source === 'editinput' || m.source === 'input_trigger')).toBe(
+      false,
+    )
+    // …but the route persisted nothing (no revision bump, transcript untouched).
+    const info = events.find((e) => e.type === 'info')
+    expect(info?.data.revision).toBeUndefined()
+    const chat = await bootstrapChat(assertion)
+    expect(chat.message).toEqual([])
+  })
+
   it('inlines request inlayAssets into the assembled prompt multimodals (slice 3a)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, dbWithHistoryMessage('look {{inlayeddata::abc}}'))

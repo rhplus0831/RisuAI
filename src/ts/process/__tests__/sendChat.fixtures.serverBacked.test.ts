@@ -904,16 +904,73 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  // Note: a route-backed parity test for a `triggerlua` editRequest char cannot
-  // run here. The route-backed harness boots the real Fastify server in-process,
-  // and the server Lua VM uses `wasmoon`, whose WASM init calls
-  // `createRequire(import.meta.url)` — which throws under this suite's jsdom
-  // environment (the URL is `http://localhost:3000/...`, not a file URL). That is
-  // the same reason `__fixtures__/mocks/scriptings.ts` exists. The server-side
-  // editRequest byte-parity-vs-golden proof therefore lives in the server suite
+  // Slice 3b sub-slice 4: the submit-time `editinput` transform now runs on the
+  // server (the route), not the browser. This route-backed integration test
+  // proves the full path end-to-end: the browser ships the *raw* user text, the
+  // real in-process server runs a regex `editinput` script over it, owns the
+  // post-transform transcript write, and the browser reconciles its projection
+  // from the route's `message_patch`. (A *Lua* editinput char can't run here for
+  // the same wasmoon-under-jsdom reason noted below; the Lua path is proven in
+  // the server suite.)
+  it('runs a regex editinput transform server-side and reconciles the projection (slice 3b-4)', async () => {
+    const harness = await createRouteBackedHarness()
+    try {
+      const loaded = await loadFixture('simple-send')
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture('simple-send')
+      // A regex editinput script the server (not the browser) applies to the
+      // submitted user text: "Hi there" → "Hi THERE".
+      DBState.db.characters[0].customscript = [
+        { comment: '', in: 'there', out: 'THERE', type: 'editinput', flag: '', ableFlag: false },
+      ]
+      await harness.seed(DBState.db)
+      vi.stubGlobal('fetch', harness.fetch)
+      harness.setDispatchText('reply')
+
+      clearCachedServerCommandRevision()
+      setServerProjectionWriteGuardEnabled(true)
+      const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+      expect(ok).toBe(true)
+
+      // The browser shipped the RAW user text; the server owns the editinput
+      // transform (no double application).
+      expect(harness.chatCalls).toHaveLength(1)
+      expect(harness.chatCalls[0].body).toMatchObject({ mode: 'send', userMessage: 'Hi there' })
+
+      // The reconciled projection (and the route-owned persisted transcript)
+      // carry the server-transformed user message.
+      const liveChat = DBState.db.characters[0].chats[0]
+      const userRow = liveChat.message.find((m) => m.role === 'user')
+      expect(userRow?.data).toBe('Hi THERE')
+
+      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      const persistedChat = bootstrap.json().database.characters[0].chats[0]
+      const persistedUser = (persistedChat.message as Array<{ role: string; data: string }>).find(
+        (m) => m.role === 'user',
+      )
+      expect(persistedUser?.data).toBe('Hi THERE')
+      expect(getServerCompletionCalls()).toEqual([])
+    } finally {
+      await drainRouteBackedCommands()
+      await harness.close()
+    }
+  })
+
+  // Note: a route-backed parity test for a `triggerlua` char (editRequest,
+  // editinput, or an input trigger) cannot run here. The route-backed harness
+  // boots the real Fastify server in-process, and the server Lua VM uses
+  // `wasmoon`, whose WASM init calls `createRequire(import.meta.url)` — which
+  // throws under this suite's jsdom environment (the URL is
+  // `http://localhost:3000/...`, not a file URL). That is the same reason
+  // `__fixtures__/mocks/scriptings.ts` exists. The server-side editRequest /
+  // editinput / input-trigger Lua proofs therefore live in the server suite
   // (`server/fastify/__tests__/generation.chat.test.ts`, node env), where wasmoon
-  // initializes. The classifier flip (browser → `server` for Lua) is proven in
-  // `request/tests/serverPromptAssembly.test.ts`.
+  // initializes. A second reason `editinput` Lua parity can't be a "server ==
+  // local golden" check anywhere: the local golden sweep drives `sendChat`
+  // directly, bypassing the chat-screen submit handler where the browser runs
+  // `editinput`, so the local golden never carries an editinput transform to
+  // compare against — only the server runs it. The classifier flip (browser →
+  // `server` for Lua) is proven in `request/tests/serverPromptAssembly.test.ts`.
 })
 
 describe('sendChat fixtures (/chat adapter replay)', () => {

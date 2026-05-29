@@ -227,6 +227,29 @@ describe('resolveServerPromptAssembly', () => {
       })
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
+
+    // Slice 3b sub-slice 4: a submit-time input-trigger / `editinput` Lua char
+    // (no interactive dialog API) routes `server` — the server now runs both the
+    // `onInput` trigger and the `editInput` hook before assembly. Same Lua-arm
+    // flip; pins that the editinput/input sub-class is `server` (not a hard fail)
+    // now that the submit-time seam exists.
+    it('routes an input-trigger / editinput Lua char to server (slice 3b-4)', () => {
+      const input = makeInput({
+        currentChar: makeChar({
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: "function onInput(id) addChat(id, 'char', 'x') end\nlistenEdit('editInput', function(id, data) return data end)",
+                },
+              ],
+            },
+          ],
+        } as never),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
   })
 
   describe('unsupported — hard-fail, never a silent local fallback', () => {

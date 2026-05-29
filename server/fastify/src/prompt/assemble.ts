@@ -52,9 +52,10 @@ import {
   type PromptMemoryFollowUpDiagnostics,
 } from './memoryFollowups.js'
 import { finalizeRequestBudget } from './budgetFinalize.js'
-import type { TriggerRunResult } from './triggers.js'
+import { runTrigger, type TriggerRunContext, type TriggerRunResult } from './triggers.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
-import { runLuaEditTrigger, type ServerLuaEditTriggerContext } from './luaRuntime.js'
+import { runLuaEditTrigger, runServerLua, type ServerLuaEditTriggerContext } from './luaRuntime.js'
+import { processScript } from './scripts.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { expandVariables, type ExpandContext } from './variables.js'
@@ -133,6 +134,8 @@ export type AssembleMutationSource =
   | 'run_var'
   | 'history_normalize'
   | 'start_trigger'
+  | 'input_trigger'
+  | 'editinput'
 
 export type ChatVarMutationValue = string | number | boolean | null
 
@@ -211,6 +214,22 @@ export interface AssembleResult {
   mutations?: AssembleMutationPayload
   /** Browser-visible state from before the server-owned mutations replay. */
   restoration?: AssembleRestorationPayload
+  /**
+   * Slice 3b sub-slice 4: the submit-time transcript (after the input trigger +
+   * `editinput` rewrite, before the run-var / history passes) the route persists
+   * when {@link submitTranscriptChanged} is set. The browser sends the *raw* user
+   * text for a server-backed send and defers the transform to the server, so this
+   * is the authoritative post-`editinput` transcript the route writes. Route-only
+   * (not on the SSE wire).
+   */
+  submitMessages?: Message[]
+  /**
+   * True when the submit-time input trigger rewrote the transcript or `editinput`
+   * transformed the user message — i.e. the route must persist {@link
+   * submitMessages}. Stays false for a plain send (no input trigger / editinput),
+   * so the route leaves message persistence to the browser exactly as before.
+   */
+  submitTranscriptChanged?: boolean
 }
 
 /**
@@ -299,6 +318,12 @@ export interface AssemblyState {
   initialMessages?: Message[]
   messageMutationCheckpoint?: Message[]
   initialScriptstate?: Record<string, string | number | boolean>
+  /** Slice 3b sub-slice 4: the submit-time input trigger rewrote the transcript. */
+  inputTriggerRewroteTranscript?: boolean
+  /** Slice 3b sub-slice 4: `editinput` transformed the submitted user message. */
+  editInputTransformed?: boolean
+  /** Slice 3b sub-slice 4: post-`editinput` submit transcript snapshot (pre run-var). */
+  submitMessages?: Message[]
   messageMutations?: AssembleMessageMutation[]
   additionalSystemPromptMutations?: AssembleAdditionalSystemPromptMutation[]
   memoryDatabase?: DatabaseSync | null
@@ -505,6 +530,144 @@ function appendUserMessageRow(state: AssemblyState): void {
   state.messageMutationCheckpoint = cloneMessages(messages)
 }
 
+/**
+ * Slice 3b sub-slice 4 — the submit-time **input trigger**, ported from the
+ * browser chat-screen submit handler (`DefaultChatScreen.svelte:232`,
+ * `runTrigger(char, 'input', { chat })`). It runs over the transcript **without
+ * the new user message** (the browser appends the user row only *after* the
+ * trigger), so when the loaded transcript already ends with the new user text
+ * (a fixture seeds it, or the browser persisted the raw row before the send) we
+ * exclude that last row for the trigger run and let {@link appendUserMessageRow}
+ * re-add it afterward.
+ *
+ * The trigger's `triggerlua` effects run on the server Lua VM via the injected
+ * `runLua` seam ({@link runServerLua}, mode `'input'` → the Lua `onInput`),
+ * `lowLevelAccess` inherited from the trigger. Var writes propagate through the
+ * trigger's `createTriggerVarEngine` onto the db chat scriptstate, so the route's
+ * chat-var delta picks them up exactly like a `'start'` trigger's.
+ *
+ * To preserve byte-parity for the overwhelming trigger-less case (every existing
+ * fixture), the rewritten transcript is adopted **only when the trigger actually
+ * changed it**; otherwise the loaded transcript is left untouched so
+ * `appendUserMessageRow`'s dedup path is unchanged.
+ */
+async function runInputTrigger(state: AssemblyState): Promise<void> {
+  if (state.input.mode !== 'send') return
+  const { currentChar } = state
+  const db = state.database
+
+  const rawUserMessage = state.input.userMessage
+  const messages = state.currentChat.message ?? []
+  const lastIndex = messages.length - 1
+  const lastMessage = messages[lastIndex]
+  const lastIsNewUser =
+    typeof rawUserMessage === 'string' &&
+    lastMessage?.role === 'user' &&
+    lastMessage.data === rawUserMessage &&
+    (lastMessage.name ?? null) === null
+  const priorMessages = lastIsNewUser ? messages.slice(0, lastIndex) : messages.slice()
+
+  const triggerCtx: TriggerRunContext = {
+    modules: getActiveModules(db, currentChar, state.currentChat),
+    model: db.aiModel,
+    database: db,
+    selectedCharID: state.selectedCharID,
+    chatPage: state.chatPage,
+    runLua: async ({ code, mode, lowLevelAccess, chat, varEngine }) => {
+      const result = await runServerLua(
+        { code, mode, lowLevelAccess },
+        {
+          chat,
+          database: db,
+          selectedCharID: state.selectedCharID,
+          chatPage: state.chatPage,
+          varEngine,
+          char: currentChar,
+          model: db.aiModel,
+        },
+      )
+      // The host fns mutate `chat` in place (its `.message` array is reassigned by
+      // cutChat/setFullChat etc.), so the same reference carries the edits back.
+      return { chat, stopSending: result.stopSending }
+    },
+  }
+
+  const result = await runTrigger(triggerCtx, currentChar, 'input', {
+    chat: { ...state.currentChat, message: priorMessages },
+  })
+  if (!result) return
+
+  // Var writes already propagated to the db chat scriptstate; fold the flag so
+  // the route persists the delta.
+  state.varChanged = !!state.varChanged || result.varChanged
+  syncWorkingScriptstate(state)
+
+  // Adopt the rewritten transcript only on a real change (parity-preserving for
+  // trigger-less chars). The user message — excluded above — is re-added by
+  // `appendUserMessageRow`, mirroring the browser's `cha.push(...)` after the
+  // trigger.
+  const rewritten = result.chat.message ?? []
+  if (!equalJson(rewritten, priorMessages)) {
+    state.currentChat = result.chat
+    state.inputTriggerRewroteTranscript = true
+    captureMessageReplacement(state, 'input_trigger')
+  }
+}
+
+/**
+ * Slice 3b sub-slice 4 — the submit-time **`editinput`** transform of the
+ * just-appended user message, ported from the browser's
+ * `processScript(char, messageInput, 'editinput')`
+ * (`DefaultChatScreen.svelte:240` → `scripts.ts::processScriptFull`). Mirrors
+ * `processScriptFull`'s order for the user text: the Lua `editInput` hook
+ * (`runLuaEditTrigger(char,'editinput',…)`) → CBS expansion (the
+ * `risuChatParser` at `scripts.ts:160`) → the regex `editinput` scripts
+ * ({@link processScript}). `chatID` is `-1` (submit-time; the SPA default).
+ *
+ * The transform applies in place to the last (user) row that
+ * `appendUserMessageRow` produced, whose `.data` is still the raw submitted text.
+ * Lua var writes during the hook fold into the chat-var delta the same way the
+ * `editRequest` hook's do. A no-op transform leaves the row (and the mutation
+ * stream) untouched.
+ */
+async function applyEditInput(state: AssemblyState): Promise<void> {
+  if (state.input.mode !== 'send') return
+  const rawUserMessage = state.input.userMessage
+  if (typeof rawUserMessage !== 'string') return
+
+  const messages = state.currentChat.message ?? []
+  const lastMessage = messages[messages.length - 1]
+  // Only the freshly-submitted user row (still carrying the raw text) is edited.
+  if (
+    lastMessage?.role !== 'user' ||
+    (lastMessage.name ?? null) !== null ||
+    lastMessage.data !== rawUserMessage
+  ) {
+    return
+  }
+
+  const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
+  let text = await runLuaEditTrigger(
+    state.currentChar,
+    'editinput',
+    rawUserMessage,
+    { index: -1 },
+    editCtx,
+  )
+  text = expandVariables(text, { ...state.ctx, chara: state.currentChar }).text
+  text = processScript(state.ctx, state.currentChar, text, 'editinput', {}, -1, state.currentChat)
+
+  if (varEngine.varChanged) {
+    state.varChanged = true
+    syncWorkingScriptstate(state)
+  }
+
+  if (text === rawUserMessage) return
+  lastMessage.data = text
+  state.editInputTransformed = true
+  captureMessageReplacement(state, 'editinput')
+}
+
 function prepareRegenerateTranscript(state: AssemblyState): void {
   if (state.input.mode !== 'regenerate') return
 
@@ -605,6 +768,26 @@ function buildRestorationPayload(state: AssemblyState): AssembleRestorationPaylo
     messages: cloneMessages(state.initialMessages ?? []),
     scriptstate: Object.keys(scriptstate).length > 0 ? scriptstate : undefined,
   }
+}
+
+/**
+ * Slice 3b sub-slice 4: snapshot the submit-time transcript right after the
+ * input trigger + `editinput` rewrite, before `applyCurrentChatRunVars` (the
+ * browser persists the post-submit transcript before assembly's run-var / history
+ * passes). The route persists this when {@link submitTranscriptChanged}.
+ */
+function captureSubmitTranscript(state: AssemblyState): void {
+  state.submitMessages = cloneMessages(state.currentChat.message ?? [])
+}
+
+/**
+ * Slice 3b sub-slice 4: the route owns the post-`editinput` transcript write only
+ * when a submit hook actually changed the transcript (an input-trigger rewrite or
+ * an `editinput` transform). A plain send leaves message persistence to the
+ * browser exactly as before — so trigger-less sends are byte-for-byte unchanged.
+ */
+function submitTranscriptChanged(state: AssemblyState): boolean {
+  return !!state.inputTriggerRewroteTranscript || !!state.editInputTransformed
 }
 
 /**
@@ -1159,7 +1342,14 @@ export async function assemblePrompt(
 ): Promise<AssembleResult> {
   const state = beginAssembly(input, deps)
   prepareRegenerateTranscript(state)
+  // Slice 3b sub-slice 4: the submit-time input trigger runs over the transcript
+  // before the user message is appended; `editinput` then rewrites the appended
+  // user row. Both mirror the browser chat-screen submit handler, which the
+  // server-backed path no longer runs (it sends the raw user text).
+  await runInputTrigger(state)
   appendUserMessageRow(state)
+  await applyEditInput(state)
+  captureSubmitTranscript(state)
   applyCurrentChatRunVars(state)
   fillStaticSlots(state)
   fillLorebookSlots(state)
@@ -1173,6 +1363,8 @@ export async function assemblePrompt(
       abortReason: state.abortReason ?? 'stopSending',
       mutations: buildMutationPayload(state),
       restoration: buildRestorationPayload(state),
+      submitMessages: state.submitMessages,
+      submitTranscriptChanged: submitTranscriptChanged(state),
     }
   }
 
@@ -1199,5 +1391,7 @@ export async function assemblePrompt(
     outputTokens: state.outputTokens,
     mutations: buildMutationPayload(state),
     restoration: buildRestorationPayload(state),
+    submitMessages: state.submitMessages,
+    submitTranscriptChanged: submitTranscriptChanged(state),
   }
 }

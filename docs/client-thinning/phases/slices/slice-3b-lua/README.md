@@ -1,13 +1,17 @@
 # Slice 3b — Lua server port (handover & sub-slice series)
 
 Date: 2026-05-29
-Status: **sub-slices 1 + 2 + 3 landed** — sub-slice 4 (editinput) remains.
+Status: **all four sub-slices landed.**
 The runtime (`server/fastify/src/prompt/luaRuntime.ts`) runs user Lua under the
 single-user self-host gate, the **`editRequest` hook is wired into the assembler**
-(`assemble.ts::renderAndBudget`), and the **`editprocess` hook is wired into the
+(`assemble.ts::renderAndBudget`), the **`editprocess` hook is wired into the
 history pass** (`assemble.ts::fillHistoryAndBias` → `history.ts` `editProcess`
-seam) as a faithful runtime no-op. The classifier Lua arm routes `server` for all
-Lua **except** scripts using an interactive dialog API
+seam) as a faithful runtime no-op, and the **submit-time input trigger +
+`editinput`** run in the assembler (`assemble.ts::runInputTrigger` /
+`applyEditInput`; `triggerlua` on the VM via `triggers.ts::runTrigger`'s `runLua`
+seam) with the route owning the post-`editinput` transcript write
+(`generationChat.ts::persistAssemblyMutations`). The classifier Lua arm routes
+`server` for all Lua **except** scripts using an interactive dialog API
 (`alertInput`/`alertSelect`/`alertConfirm`), which stay `unsupported`.
 
 This directory is the **slice series** the parent slice
@@ -21,7 +25,7 @@ The work is split into four sub-slices, **one review each**, in order:
 | 1 ✅ | **Server Lua VM** (the runtime) — **landed** (`prompt/luaRuntime.ts`) | everything below | [`sub-slice-1-server-lua-vm.md`](sub-slice-1-server-lua-vm.md) |
 | 2 ✅ | **`editRequest`** hook + classifier flip — **landed** (`assemble.ts::renderAndBudget`) | needs 1 | [`sub-slice-2-editrequest.md`](sub-slice-2-editrequest.md) |
 | 3 ✅ | **`editprocess`** hook (Lua = browser no-op) — **landed** (`assemble.ts::fillHistoryAndBias` → `history.ts`) | needs 1 | [`sub-slice-3-editprocess.md`](sub-slice-3-editprocess.md) |
-| 4 | **input-trigger / `editinput`** at submit | needs 1 | [`sub-slice-4-editinput.md`](sub-slice-4-editinput.md) |
+| 4 ✅ | **input-trigger / `editinput`** at submit — **landed** (`assemble.ts::runInputTrigger` / `applyEditInput`; route-owned transcript write) | needs 1 | [`sub-slice-4-editinput.md`](sub-slice-4-editinput.md) |
 
 Do **not** pull A2's `'output'` trigger / `editoutput` in here — that is
 [`../slice-4-a2-output-trigger-editoutput.md`](../slice-4-a2-output-trigger-editoutput.md),
@@ -173,26 +177,30 @@ Where each hook wires (exact seams; the editRequest seam *already exists*, unuse
   early-returns — so this is identity at parity; routed through the VM (not a hardcoded
   identity) so it stays faithful if the browser ever changes. No `varChanged` fold (the
   no-op never writes vars). The `scripts.ts` header note was corrected accordingly.
-- **`editinput`** — **no submit-time server seam exists**: it runs at *submit*,
-  before assembly (`DefaultChatScreen.svelte:229-244`). `/generate/chat` already
-  owns assembly-time scriptstate persistence, but it cannot yet rewrite the
-  transcript before assembly. Sub-slice 4 adds a pre-assembly server hook that runs
-  `runTrigger('input')` + `processScript('editinput')`. Do **not** conflate the two
-  B1 input-plumbing branches (slash text, file-inlay insertion,
-  `DefaultChatScreen.svelte:203-216`) — those stay browser.
+- **`editinput`** ✅ **wired (sub-slice 4)** — there was **no submit-time server
+  seam**: it runs at *submit*, before assembly (`DefaultChatScreen.svelte:229-244`).
+  Sub-slice 4 adds two pre-assembly steps in `assemble.ts`: `runInputTrigger` (runs
+  `runTrigger('input')` over the transcript *without* the new user message — it is
+  excluded and re-added — adopting a rewrite only on a real change) and
+  `applyEditInput` (`runLuaEditTrigger('editinput')` → CBS → `processScript`
+  `editinput` over the appended user row). The browser sends the **raw** user text
+  for a server-backed send and skips both transforms; the route **owns** the
+  post-`editinput` transcript write (`persistAssemblyMutations`, only when a hook
+  changed it). The two B1 input-plumbing branches (slash text, file-inlay insertion,
+  `DefaultChatScreen.svelte:203-216`) stay browser — unchanged.
 - **chat-var persistence** — Lua `setChatVar`/`setState` during an assembly-time hook
-  must be captured the same way the `'start'` trigger's are: the snapshot is
-  `initialScriptstate` (`assemble.ts:445`), the delta is `buildChatVarMutations`
-  (`:619`), persisted by the route via `persistAssemblyChatVars`
-  (`generationChat.ts:293`). Bind the VM's var host fns to the **same** engine the
-  assembler already mutates so the delta picks Lua's writes up for free.
-- **triggers** — the server `triggerlua` arm bypasses the mode filter and **falls
-  through as a no-op** in `runTrigger`. Sub-slice 2 left this **untouched**:
-  `editRequest` runs via the template seam (`renderFinalPrompt`), not `runTrigger`,
-  so the start-trigger run still selects a `triggerlua` trigger (`matchesTrigger`)
-  and no-ops it harmlessly (server parity tests cover a `type: 'request'` triggerlua
-  char). Replacing the `runTrigger` no-op with a VM call is sub-slice 4's concern
-  (the submit-time input trigger).
+  is captured the same way the `'start'` trigger's are: the snapshot is
+  `initialScriptstate`, the delta is `buildChatVarMutations`, persisted by the route
+  via `persistAssemblyMutations` (renamed from `persistAssemblyChatVars`, which now
+  also writes the submit transcript). The VM's var host fns bind to the **same**
+  engine the assembler mutates, so the delta picks Lua's writes up for free — this
+  holds for the input trigger (its own `createTriggerVarEngine`) and `editinput`
+  (the shared `buildLuaEditTriggerContext`) alike.
+- **triggers** ✅ **wired (sub-slice 4)** — `runTrigger` now has a `case 'triggerlua'`
+  arm that calls the VM via an injected `TriggerRunContext.runLua` seam. Only
+  `runInputTrigger` injects it (the submit-time input trigger), so the start-trigger
+  path still no-ops `triggerlua` (editRequest runs via the template seam, not
+  `runTrigger`) — preserving sub-slice 2's behavior.
 
 ## Classifier flips (per sub-slice)
 

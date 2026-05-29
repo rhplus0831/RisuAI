@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { Database, Message } from '../../../../src/ts/storage/database.svelte'
 import type { MultiModal } from '../../../../src/ts/process/index.svelte'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import type { AuthState } from '../auth.js'
@@ -281,21 +281,29 @@ function isPersistingMode(mode: AssembleInput['mode']): boolean {
 }
 
 /**
- * Phase 9 C-A1: persist the assembly-time chat-var delta the assembler
- * already computed (`mutations.chatVarMutations`) through the same JSON
- * command machinery the scriptstate command uses (`applyJsonCommandMutation`):
- * one revision bump, one `chat.scriptstate.updated` event, rollback on
- * failure. This retires the browser's command replay
- * (`serverBackedSendChat.ts`) — the route owns the write and returns the new
+ * Phase 9 C-A1 + slice 3b sub-slice 4: persist the assembly-time chat-var delta
+ * the assembler computed (`mutations.chatVarMutations`) and — when a submit-time
+ * input trigger / `editinput` rewrote the transcript — the post-`editinput`
+ * submit transcript (`submitMessages`), through the same JSON command machinery
+ * the scriptstate command uses (`applyJsonCommandMutation`): one revision bump,
+ * one event, rollback on failure. The route owns these writes and returns the new
  * revision over SSE so the browser can reconcile its cached command revision.
+ *
+ * The transcript is persisted **only** when `submitTranscriptChanged` is set, so a
+ * plain send (no input trigger / editinput) leaves the user-message write to the
+ * browser exactly as before — keeping trigger-less sends byte-for-byte unchanged.
+ * When both the transcript and chat vars change, they ride one command (one
+ * revision); the event is `messages.replaced` (the transcript write dominates).
  * Returns the bumped revision, or `undefined` when there is nothing to write.
  */
-function persistAssemblyChatVars(args: {
+function persistAssemblyMutations(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
   input: AssembleInput
   mutations: AssembleMutationPayload
+  submitMessages?: Message[]
+  submitTranscriptChanged?: boolean
 }): number | undefined {
   const patch: Record<string, string | number | boolean> = {}
   const deleteKeys: string[] = []
@@ -306,7 +314,10 @@ function persistAssemblyChatVars(args: {
       patch[mutation.key] = mutation.after
     }
   }
-  if (Object.keys(patch).length === 0 && deleteKeys.length === 0) return undefined
+  const hasVarWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
+  const persistMessages =
+    !!args.submitTranscriptChanged && Array.isArray(args.submitMessages)
+  if (!hasVarWrite && !persistMessages) return undefined
 
   const { revision: baseRevision } = getSchemaState(args.db)
   const result = applyJsonCommandMutation<{ chatId: string }>({
@@ -317,17 +328,27 @@ function persistAssemblyChatVars(args: {
     mutate(database) {
       const characters = normalizeAllCharacterChats(database)
       const { character, chat } = requireChatLocation(characters, args.input.chatId)
-      chat.scriptstate ??= {}
-      for (const key of deleteKeys) {
-        delete chat.scriptstate[key]
+      if (persistMessages) {
+        // Route-owned write of the submit transcript (server is authoritative for
+        // the input trigger + editinput rewrite; the browser sent the raw text).
+        ;(chat as { message: Message[] }).message = structuredClone(args.submitMessages!)
       }
-      Object.assign(chat.scriptstate, patch)
-      if (Object.keys(chat.scriptstate).length === 0) {
-        delete chat.scriptstate
+      if (hasVarWrite) {
+        chat.scriptstate ??= {}
+        for (const key of deleteKeys) {
+          delete chat.scriptstate[key]
+        }
+        Object.assign(chat.scriptstate, patch)
+        if (Object.keys(chat.scriptstate).length === 0) {
+          delete chat.scriptstate
+        }
       }
+      const eventTemplate = persistMessages
+        ? COMMAND_EVENT_CATALOG.messagesReplaced
+        : COMMAND_EVENT_CATALOG.chatScriptstateUpdated
       return {
         event: {
-          ...COMMAND_EVENT_CATALOG.chatScriptstateUpdated,
+          ...eventTemplate,
           id: args.input.chatId,
           parentId: character.chaId,
         },
@@ -378,14 +399,23 @@ async function streamAssembly(
       const result = await assemblePrompt(input, deps)
       const database = deps.getDatabase()
       const promptMs = Date.now() - startedAt
-      // C-A1: the route owns the assembly-time chat-var write for persisting
+      // C-A1 + slice 3b sub-slice 4: the route owns the assembly-time chat-var
+      // write and the post-`editinput` submit-transcript write for persisting
       // modes (preview / preview_prompt stay read-only). This runs for both the
       // success and the trigger/overflow `stopSending` branches because the
       // browser used to replay the delta in both — dropping the replay without
-      // persisting here would lose the var write on an aborted send.
+      // persisting here would lose the write on an aborted send.
       const persistedRevision =
         isPersistingMode(input.mode) && result.mutations
-          ? persistAssemblyChatVars({ db, dataDir, eventSink, input, mutations: result.mutations })
+          ? persistAssemblyMutations({
+              db,
+              dataDir,
+              eventSink,
+              input,
+              mutations: result.mutations,
+              submitMessages: result.submitMessages,
+              submitTranscriptChanged: result.submitTranscriptChanged,
+            })
           : undefined
       if (!result.stopSending && result.prompt) {
         const successfulResult: SuccessfulAssembleResult = {

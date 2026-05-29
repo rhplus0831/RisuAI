@@ -27,18 +27,20 @@ drift; symbol names are the stable handle.
 | Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyChatVars` |
 | Multimodal / inlay asset bytes | **AT PARITY** (slice 3a) — route binds a non-empty `AssetLookup`; inlay bytes ride the request `inlayAssets`, asset/icon bytes come from the store | `prompt/assetLookup.ts` (`buildAssetLookup`) + `generationChat.ts` (`resolveStoredAssetImage`); bound in `assemble.ts::beginAssembly`, passed at `assemble.ts:fillHistoryAndBias` |
 | **Lua `editRequest`** | **AT PARITY (slice 3b sub-slice 2)** — `renderAndBudget` supplies a VM-backed hook (`buildLuaEditRequest`) over `formated` + the prompt-info capture; var writes flow into the chat-var delta. Classifier routes Lua `→ server` except interactive-API scripts. | hook `assemble.ts::renderAndBudget`/`buildLuaEditRequest` → `prompt/luaRuntime.ts` (`runLuaEditTrigger`); seam `templates.ts:635`; classifier `serverPromptAssembly.ts::luaUsesInteractiveApi` |
-| **Lua `editprocess`** | **GAP (port-pending, slice 3b)** — **VM exists; hooks pending**: Lua arm is a browser no-op so the port is near-identity once wired | VM `prompt/luaRuntime.ts`; `scripts.ts:50-56` (deferred) |
+| **Lua `editprocess`** | **AT PARITY (slice 3b sub-slice 3)** — wired at the two history `processScript('editprocess')` sites as a faithful runtime no-op (the Lua arm is a browser no-op) | `assemble.ts::fillHistoryAndBias` → `history.ts` `editProcess` seam → `prompt/luaRuntime.ts` |
+| **Lua `editinput` + input trigger (`'input'`)** | **AT PARITY (slice 3b sub-slice 4)** — `assemble.ts::runInputTrigger` (`runTrigger('input')`, `triggerlua` on the VM) + `applyEditInput` (Lua `editInput` → CBS → regex) run at submit; the browser sends raw user text and the route owns the post-`editinput` transcript write | `assemble.ts::runInputTrigger`/`applyEditInput`; `triggers.ts::runTrigger` `runLua` seam; `generationChat.ts::persistAssemblyMutations` |
 | **pluginV2 `editRequest` / `editprocess` / replacers** | **PERMANENT `unsupported`** — no-port list; classifier hard-fails via `hasPluginV2EditSet`; protected by the `A4R-pluginv2` audit invariant | classifier `serverPromptAssembly.ts`; invariant `util/client-thinning-audit.ts` |
 | **Output triggers (`'output'`)** | **GAP** — declared, never invoked | `triggers.ts:103`; no `runTrigger(…,'output',…)` exists |
-| Assembly-time scriptstate persistence | **DONE (C-A1)** — route persists the delta via `applyJsonCommandMutation`, returns the bumped revision over SSE | `generationChat.ts` `persistAssemblyChatVars` |
-| Final-message persistence | **GAP by design** — still command-backed; browser POSTs `generation-result` (B2) | `index.svelte.ts:351` → `persistGenerationResultCommand` |
+| Assembly-time scriptstate persistence | **DONE (C-A1)** — route persists the delta via `applyJsonCommandMutation`, returns the bumped revision over SSE | `generationChat.ts` `persistAssemblyMutations` |
+| Submit-time transcript persistence | **DONE (slice 3b sub-slice 4)** — route owns the post-`editinput` user-message transcript write (combined with the chat-var delta), only when a submit hook changed it; plain sends stay browser-persisted | `generationChat.ts::persistAssemblyMutations` (`messages.replaced` arm) |
+| Final-message (generation result) persistence | **GAP by design** — still command-backed; browser POSTs `generation-result` (B2) | `index.svelte.ts:351` → `persistGenerationResultCommand` |
 
 The content rows that change prompt *bytes* are: (a) image/asset multimodal
 content — **now ported (slice 3a)**, (b) image-gen instruction (slice 3c, still
-GAP), (c) Lua `editRequest` — **now ported (slice 3b sub-slice 2)**; Lua
-`editprocess`/`editinput` execution seams remain (sub-slices 3/4) — pluginV2's
-equivalents are *permanent* `unsupported`, not a gap to close, and
-(d) `'output'` triggers (an A2 concern; see
+GAP), (c) Lua `editRequest` / `editprocess` / `editinput` + the submit-time input
+trigger — **all now ported (slice 3b sub-slices 2/3/4)**; pluginV2's equivalents
+are *permanent* `unsupported`, not a gap to close, and (d) `'output'` triggers (an
+A2 concern; see
 [`post-generation-and-persistence.md`](post-generation-and-persistence.md)).
 Everything else is at parity, so the supported text-send subset is already
 correct server-side — which is why A1's foundation batch can make it mandatory.
@@ -136,8 +138,9 @@ tests).
 > **Sub-slice 3b-1 landed the VM** (`prompt/luaRuntime.ts`: `runServerLua` +
 > `runLuaEditTrigger`) and **sub-slice 3b-2 wired the `editRequest` hook** into
 > `renderAndBudget` (`buildLuaEditRequest`) and flipped the classifier Lua arm to
-> `server` (except interactive-API scripts). What remains below is the
-> `editprocess`/`editinput` wiring (sub-slices 3/4).
+> `server` (except interactive-API scripts). **Sub-slices 3b-3 / 3b-4 then wired the
+> `editprocess` (history no-op) and submit-time `editinput` + input-trigger hooks**
+> — the whole Lua edit/trigger surface is now ported.
 
 The request-edit seam defaults to identity (`templates.ts:683`) **only when no
 hook is supplied**:

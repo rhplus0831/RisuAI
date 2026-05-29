@@ -91,9 +91,16 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * `switch` as no-ops): `command` (Phase 9 command APIs) and the
  * `lowLevelAccess`-gated `showAlert` / `sendAIprompt` / `runLLM` /
  * `checkSimilarity` / `extractRegex` / `runImgGen` arms, plus browser
- * plugin/Lua trigger code (`triggercode` / `triggerlua`). The latter
- * bypass the mode filter in the SPA (`triggers.ts:1343`) so they are
- * still *selected* here for parity, but no code runs for them.
+ * plugin trigger code (`triggercode`). These bypass the mode filter in
+ * the SPA (`triggers.ts:1343`) so they are still *selected* here for
+ * parity, but no code runs for them.
+ *
+ * Slice 3b sub-slice 4 graduates `triggerlua`: a `case 'triggerlua'` arm now
+ * runs the server Lua VM via the injected {@link TriggerRunContext.runLua}
+ * seam (the submit-time input trigger supplies it; the start-trigger path does
+ * not, so `triggerlua` no-ops there as before). It likewise bypasses the mode
+ * filter, so it is selected in every run mode but only executes when a runner
+ * is injected.
  */
 
 /** SPA `triggerMode` (`src/ts/process/triggers.ts:222`, unexported). */
@@ -104,6 +111,29 @@ export type TriggerMode =
   | 'input'
   | 'display'
   | 'request'
+
+/**
+ * Arguments handed to the {@link TriggerRunContext.runLua} VM seam for a
+ * `triggerlua` effect, mirroring the SPA's `runScripted(effect.code, {...})`
+ * call (`src/ts/process/triggers.ts:1696-1703`): the user Lua `code`, the run
+ * `mode` (`'manual'` resolves to the manual name), the trigger's
+ * `lowLevelAccess`, and the working `chat` + variable engine the host fns bind
+ * to so var/message writes thread through the same state.
+ */
+export interface TriggerLuaRunArgs {
+  code: string
+  mode: string
+  lowLevelAccess: boolean
+  chat: Chat
+  varEngine: TriggerVarEngine
+}
+
+/** Result of a {@link TriggerRunContext.runLua} call: the (in-place mutated)
+ * working chat and whether the script asked to stop the send. */
+export interface TriggerLuaRunResult {
+  chat: Chat
+  stopSending: boolean
+}
 
 /**
  * Svelte-free DI seam replacing the SPA's store reads
@@ -124,6 +154,15 @@ export interface TriggerRunContext {
   selectedCharID: number
   /** Index into the selected character's `chats`. */
   chatPage: number
+  /**
+   * Slice 3b sub-slice 4: VM runner for `triggerlua` effects. When provided
+   * (the submit-time input trigger, `assemble.ts::runInputTrigger`), a
+   * `triggerlua` effect runs the server Lua VM; when absent (the start-trigger
+   * path, which runs editRequest via the template seam instead), `triggerlua`
+   * stays the no-op fall-through it was before — see the `case 'triggerlua'`
+   * arm in {@link runTrigger}.
+   */
+  runLua?: (args: TriggerLuaRunArgs) => Promise<TriggerLuaRunResult>
 }
 
 /**
@@ -255,9 +294,10 @@ export function collectTriggers(
 
 /**
  * Trigger selection filter, ported from `triggers.ts:1343-1351`:
- *   - `triggercode` / `triggerlua` first effects bypass the filter
- *     (their execution stays browser-side, but they are still selected
- *     for parity).
+ *   - `triggercode` / `triggerlua` first effects bypass the filter (so they
+ *     run in every mode). `triggercode` execution stays browser-side (selected
+ *     for parity, no-op here); `triggerlua` runs via the VM seam when injected
+ *     (slice 3b sub-slice 4).
  *   - with a `manualName`, only triggers whose `comment` matches run.
  *   - otherwise the trigger's `type` must equal the run `mode`.
  */
@@ -814,6 +854,31 @@ export async function runTrigger(
           }
           break
         }
+        case 'triggerlua': {
+          // Slice 3b sub-slice 4: run the user Lua under the server VM via the
+          // injected seam, mirroring the SPA's `runScripted(effect.code, {...})`
+          // (`src/ts/process/triggers.ts:1695-1710`). The runner binds the host
+          // fns to `chat` + `engine`, so message/var writes thread through this
+          // run's state; it returns the (in-place mutated) chat + stopSending.
+          // When no runner is injected (the start-trigger path), this stays a
+          // no-op — preserving the pre-slice fall-through behavior.
+          if (ctx.runLua) {
+            const luaMode = mode === 'manual' ? (arg.manualName ?? 'manual') : mode
+            const r = await ctx.runLua({
+              code: (effect as { code: string }).code,
+              mode: luaMode,
+              lowLevelAccess: trigger.lowLevelAccess ?? false,
+              chat,
+              varEngine: engine,
+            })
+            chat = r.chat
+            engine.setChat(chat)
+            if (r.stopSending) {
+              stopSending = true
+            }
+          }
+          break
+        }
         default: {
           // 7-9d-ii safe data helpers (message readers, string /
           // array / dict / math, random, tokenize, regex, quick chat
@@ -821,8 +886,8 @@ export async function runTrigger(
           // false for arms still deferred (`command`; the
           // `lowLevelAccess`-gated alert/LLM/image/similarity/regex; the
           // persistent lorebook / character / persona / note arms;
-          // `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`; `triggercode` /
-          // `triggerlua`), which fall through as no-ops.
+          // `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`; `triggercode`),
+          // which fall through as no-ops.
           applyV2DataEffect(effect, {
             engine,
             expand,

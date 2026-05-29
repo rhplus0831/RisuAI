@@ -58,6 +58,7 @@
     downloadFile,
   } from 'src/ts/globalApi.svelte'
   import { runTrigger } from 'src/ts/process/triggers'
+  import { isFastifyServer } from 'src/ts/platform'
   import { v4 } from 'uuid'
   import { PreUnreroll, Prereroll } from 'src/ts/process/prereroll'
   import { processMultiCommand } from 'src/ts/process/command'
@@ -229,18 +230,33 @@
     } else {
       const char = DBState.db.characters[selectedChar]
       if (char.type === 'character') {
-        let triggerResult = await runTrigger(char, 'input', { chat: char.chats[char.chatPage] })
-        if (triggerResult) {
-          cha = triggerResult.chat.message
-          transcriptChanged = true
-        }
+        // Slice 3b sub-slice 4: when server prompt assembly owns the send, the
+        // server runs the submit-time input trigger + `editinput` over the raw
+        // user text and persists the rewritten transcript (`assemble.ts`
+        // runInputTrigger / applyEditInput). The browser sends the raw text and
+        // skips both here to avoid double-applying them. B1 input plumbing (the
+        // slash-command + file-inlay branches above) stays browser-owned. The
+        // local path (flag off / non-Fastify) keeps running them in the browser.
+        if (isFastifyServer && DBState.db.useServerPromptAssembly) {
+          cha.push({
+            role: 'user',
+            data: messageInput,
+            time: Date.now(),
+            name: null,
+          })
+        } else {
+          let triggerResult = await runTrigger(char, 'input', { chat: char.chats[char.chatPage] })
+          if (triggerResult) {
+            cha = triggerResult.chat.message
+          }
 
-        cha.push({
-          role: 'user',
-          data: await processScript(char, messageInput, 'editinput'),
-          time: Date.now(),
-          name: null,
-        })
+          cha.push({
+            role: 'user',
+            data: await processScript(char, messageInput, 'editinput'),
+            time: Date.now(),
+            name: null,
+          })
+        }
         transcriptChanged = true
       } else {
         cha.push({

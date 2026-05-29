@@ -53,10 +53,12 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *   - `runLuaEditTrigger` — `processScript` stays regex-only; the Lua
  *     edit hooks are wired alongside it by the callers. The `editRequest`
  *     hook lands at the final render (`assemble.ts` →
- *     `templates.ts::renderFinalPrompt`, slice 3b sub-slice 2) and the
+ *     `templates.ts::renderFinalPrompt`, slice 3b sub-slice 2), the
  *     `editprocess` hook at the two history call sites
  *     (`history.ts`, slice 3b sub-slice 3 — a browser no-op routed through
- *     the runtime). `editinput` is sub-slice 4.
+ *     the runtime), and the submit-time `editinput` hook in
+ *     `assemble.ts::applyEditInput` (slice 3b sub-slice 4), which calls this
+ *     `processScript` (mode `'editinput'`) after the Lua hook + CBS expansion.
  *   - `runTrigger('display', …)` (orthogonal: `editdisplay` mode only,
  *     blocked on Triggers 7-9)
  *   - `pluginV2[mode]` browser plugin V2 hooks
