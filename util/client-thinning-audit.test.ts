@@ -140,6 +140,30 @@ describe('client-thinning audit fixtures', () => {
     expect(result.stderr).toBe('')
   })
 
+  it('fails a fixture that hides the Fastify branch behind an inverted isFastifyServer guard', async () => {
+    const result = await runAuditFixture(
+      'asset-url-gate/failing-inverted-fastify-guard',
+      assetUrlGateCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
+    expect(result.stderr).toContain(
+      "getFileSrc in src/ts/globalApi.svelte.ts falls back to `?? loc` for unknown asset shapes",
+    )
+  })
+
+  it('fails a fixture whose serverAssetUrl gate widens to pass arbitrary loc through', async () => {
+    const result = await runAuditFixture(
+      'asset-url-gate/failing-widened-asset-url',
+      assetUrlGateCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
+    expect(result.stderr).toContain('serverAssetUrl must not pass an unvalidated loc through')
+  })
+
   it('fails a fixture with an unclassified saveAsset call', async () => {
     const result = await runAuditFixture(
       'saveasset-filename-classification/failing',
@@ -178,6 +202,44 @@ describe('client-thinning audit fixtures', () => {
   it('allows fan-out routed through a sequencer or an awaited dispatch chain', async () => {
     const result = await runAuditFixture(
       'composite-command-fanout/serialized-bypass',
+      compositeFanoutCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a svelte <script> fixture that races two dispatches on an await line', async () => {
+    const result = await runAuditFixture(
+      'composite-command-fanout/failing-svelte-race',
+      compositeFanoutCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${compositeFanoutCheck}]`)
+    expect(result.stderr).toContain(
+      'src/lib/SideBars/SideChatList.svelte function applyEdits dispatches 2 mutating commands (dispatchAppendMessage, dispatchUpdateMessage)',
+    )
+  })
+
+  it('fails a svelte fixture that races two dispatches inside a markup event handler', async () => {
+    const result = await runAuditFixture(
+      'composite-command-fanout/failing-svelte-markup-race',
+      compositeFanoutCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${compositeFanoutCheck}]`)
+    expect(result.stderr).toContain('src/lib/SideBars/SideChatList.svelte')
+    expect(result.stderr).toContain(
+      'dispatches 2 mutating commands (dispatchAppendMessage, dispatchUpdateMessage)',
+    )
+  })
+
+  it('allows svelte dispatches that sit in mutually-exclusive branches', async () => {
+    const result = await runAuditFixture(
+      'composite-command-fanout/svelte-branch-bypass',
       compositeFanoutCheck,
     )
 
@@ -278,6 +340,16 @@ describe('client-thinning audit fixtures', () => {
 
   it('fails a fixture that replays a conflict outside the central wrapper', async () => {
     const result = await runAuditFixture('conflict-replay/failing', conflictReplayCheck)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${conflictReplayCheck}]`)
+    expect(result.stderr).toContain(
+      "src/ts/chatCommands.ts function applyMessageEdit branches on result.status === 'conflict' and resends a mutating command.",
+    )
+  })
+
+  it('fails a fixture that replays a conflict with aliased status/baseRevision literals', async () => {
+    const result = await runAuditFixture('conflict-replay/failing-aliased-literals', conflictReplayCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${conflictReplayCheck}]`)
@@ -417,6 +489,19 @@ describe('client-thinning audit fixtures', () => {
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
     expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture whose new device-local method outside the old list skips the gate', async () => {
+    const result = await runAuditFixture(
+      'plugin-storage-gates/failing-ungated-new-method',
+      pluginStorageCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${pluginStorageCheck}]`)
+    expect(result.stderr).toContain(
+      'SafeLocalStorage.getAll must assert Plugin Compatibility Mode before touching device-local storage.',
+    )
   })
 
   it('fails a fixture that exposes useServerGeneration as a server settings command', async () => {

@@ -705,6 +705,28 @@ function checkStableIdCommandPaths(): void {
   }
 }
 
+// `scope` reaches a device-local storage sink (a browser storage global or a
+// declared localforage instance), by identifier or string-literal reference,
+// descending into nested closures.
+function referencesDeviceLocalSink(scope: Node, sinks: ReadonlySet<string>): boolean {
+  let found = false
+  scope.forEachDescendant((descendant, traversal) => {
+    if (Node.isIdentifier(descendant) && sinks.has(descendant.getText())) {
+      found = true
+      traversal.stop()
+      return
+    }
+    if (
+      (Node.isStringLiteral(descendant) || Node.isNoSubstitutionTemplateLiteral(descendant)) &&
+      sinks.has(descendant.getLiteralText())
+    ) {
+      found = true
+      traversal.stop()
+    }
+  })
+  return found
+}
+
 function checkPluginStorageGates(): void {
   const check = 'EC2 plugin storage gates'
   const safeClass = source('src/ts/plugins/pluginSafeClass.ts')
@@ -716,23 +738,48 @@ function checkPluginStorageGates(): void {
     safeClass,
   )
 
-  const guardedMethods = ['getItem', 'setItem', 'removeItem', 'keys', 'key', 'clear']
+  // Device-local storage sinks. The set is DERIVED, not a fixed per-method
+  // allowlist: the browser storage globals plus every localforage instance
+  // declared in the file. Any method / accessor / SafeIdbFactory property that
+  // reaches one of these must assert Plugin Compatibility Mode first, so a NEW
+  // device-local method cannot slip past a hardcoded method-name list.
+  const deviceLocalSinks = new Set<string>([
+    'localStorage',
+    'sessionStorage',
+    'indexedDB',
+    'caches',
+    'cookieStore',
+    'localforage',
+  ])
+  for (const declaration of safeClass.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const initializer = declaration.getInitializer()
+    if (!initializer || !Node.isCallExpression(initializer)) continue
+    const callee = initializer.getExpression()
+    if (Node.isPropertyAccessExpression(callee) && callee.getName() === 'createInstance') {
+      const nameNode = declaration.getNameNode()
+      if (Node.isIdentifier(nameNode)) deviceLocalSinks.add(nameNode.getText())
+    }
+  }
+
+  const requireGate = (label: string, scope: Node, sinkKind: string): void => {
+    if (!referencesDeviceLocalSink(scope, deviceLocalSinks)) return
+    if (scope.getText().includes('assertDeviceLocalPluginStorageEnabled()')) return
+    fail(check, `${label} must assert Plugin Compatibility Mode before touching ${sinkKind}.`, scope)
+  }
+
   for (const className of ['SafeLocalStorage', 'SafeLocalPluginStorage']) {
     const klass = safeClass.getClass(className)
     if (!klass) {
       fail(check, `Missing ${className}.`, undefined, safeClass)
       continue
     }
-    for (const methodName of guardedMethods) {
-      const method = klass.getMethod(methodName) ?? klass.getGetAccessor(methodName)
-      if (!method) continue
-      if (!method.getText().includes('assertDeviceLocalPluginStorageEnabled()')) {
-        fail(
-          check,
-          `${className}.${methodName} must assert Plugin Compatibility Mode before touching device-local storage.`,
-          method,
-        )
-      }
+    const members: { name: string; node: Node }[] = [
+      ...klass.getMethods().map((member) => ({ name: member.getName(), node: member as Node })),
+      ...klass.getGetAccessors().map((member) => ({ name: member.getName(), node: member as Node })),
+      ...klass.getSetAccessors().map((member) => ({ name: member.getName(), node: member as Node })),
+    ]
+    for (const member of members) {
+      requireGate(`${className}.${member.name}`, member.node, 'device-local storage')
     }
   }
 
@@ -744,13 +791,16 @@ function checkPluginStorageGates(): void {
     fail(check, 'Missing SafeIdbFactory.', undefined, safeClass)
   } else {
     for (const property of safeIdb.getProperties()) {
-      if (!Node.isPropertyAssignment(property)) continue
-      if (!property.getText().includes('assertDeviceLocalPluginStorageEnabled()')) {
-        fail(
-          check,
-          `SafeIdbFactory.${property.getName()} must assert Plugin Compatibility Mode before touching IndexedDB.`,
-          property,
-        )
+      if (Node.isPropertyAssignment(property)) {
+        const initializer = property.getInitializer()
+        if (
+          initializer &&
+          (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
+        ) {
+          requireGate(`SafeIdbFactory.${property.getName()}`, property, 'IndexedDB')
+        }
+      } else if (Node.isMethodDeclaration(property)) {
+        requireGate(`SafeIdbFactory.${property.getName()}`, property, 'IndexedDB')
       }
     }
   }
@@ -1394,12 +1444,115 @@ function checkAlpha4PassiveRefresh(): void {
   }
 }
 
+// ----- Shared AST helpers (used by A4R2, A4R7, and A4R-fanout) -----
+
+// Strip parentheses / `as` casts to reach the underlying expression.
+function unwrapExpression(node: Node): Node {
+  let current = node
+  while (Node.isParenthesizedExpression(current) || Node.isAsExpression(current)) {
+    const inner = current.getExpression()
+    if (!inner) break
+    current = inner
+  }
+  return current
+}
+
+// The simple callee name of a call expression: `foo()` -> `foo`,
+// `a.b.foo()` -> `foo`. Undefined for computed / non-call nodes.
+function callExpressionCalleeName(call: Node): string | undefined {
+  if (!Node.isCallExpression(call)) return undefined
+  const expression = call.getExpression()
+  if (Node.isIdentifier(expression)) return expression.getText()
+  if (Node.isPropertyAccessExpression(expression)) return expression.getName()
+  return undefined
+}
+
+function isFunctionLikeNode(node: Node): boolean {
+  return (
+    Node.isFunctionDeclaration(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isArrowFunction(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isConstructorDeclaration(node) ||
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node)
+  )
+}
+
+function enclosingFunctionLike(node: Node): Node | undefined {
+  let current = node.getParent()
+  while (current) {
+    if (isFunctionLikeNode(current)) return current
+    current = current.getParent()
+  }
+  return undefined
+}
+
+// A human-readable `kind name` for a function-like node, used in findings.
+function functionLikeDisplayName(fn: Node): { kind: string; name: string } {
+  if (Node.isFunctionDeclaration(fn)) {
+    return { kind: 'function', name: fn.getName() ?? '<anonymous>' }
+  }
+  if (Node.isMethodDeclaration(fn)) {
+    const klass = fn.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)
+    return { kind: 'method', name: `${klass?.getName() ?? 'Class'}.${fn.getName() ?? '<anonymous>'}` }
+  }
+  if (Node.isGetAccessorDeclaration(fn) || Node.isSetAccessorDeclaration(fn)) {
+    return { kind: 'accessor', name: fn.getName() }
+  }
+  const varDecl = fn.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  if (varDecl) {
+    const init = varDecl.getInitializer()
+    if (init && unwrapExpression(init) === fn) {
+      return { kind: 'arrow', name: varDecl.getName() }
+    }
+  }
+  const propAssignment = fn.getParentIfKind(SyntaxKind.PropertyAssignment)
+  if (propAssignment) return { kind: 'property', name: propAssignment.getName() }
+  return { kind: 'function', name: '<anonymous>' }
+}
+
+// The sibling statements following `statement` in its enclosing block / source.
+function statementsAfter(statement: Node): Node[] {
+  const parent = statement.getParent()
+  if (!parent) return []
+  if (!Node.isBlock(parent) && !Node.isSourceFile(parent) && !Node.isModuleBlock(parent)) return []
+  const statements = parent.getStatements()
+  const index = statements.indexOf(statement as never)
+  if (index === -1) return []
+  return statements.slice(index + 1)
+}
+
+// A statement that only diverts control (an early-return / throw guard),
+// possibly wrapped in a single-statement block.
+function isControlDivertingGuard(statement: Node | undefined): boolean {
+  if (!statement) return false
+  if (Node.isReturnStatement(statement) || Node.isThrowStatement(statement)) return true
+  if (Node.isBlock(statement)) {
+    const statements = statement.getStatements()
+    const last = statements[statements.length - 1]
+    return !!last && (Node.isReturnStatement(last) || Node.isThrowStatement(last))
+  }
+  return false
+}
+
 // ----- A4R2: Conflict replay forbidden outside the central wrapper -----
 //
 // Invariant: only `runServerCommand` in `src/ts/server/commands.ts` is allowed
 // to branch on a command result whose `status === 'conflict'`. Any other
 // function that observes that branch and then re-runs a mutating command is a
 // blind replay.
+//
+// This is an AST invariant, not a substring scan. The conflict status is
+// matched even when aliased to a local constant (`const C = 'conflict'`); the
+// conflict-handling region is located structurally (the matching arm of the
+// guarding `if` / ternary, or the statements after an early-return guard); and
+// the replay is any mutating command re-issued inside that region
+// (`runServerCommand` / `patchSettingsGroup` / `fetch`, a `dispatch*` helper,
+// or a recursive self-call). Aliasing the `'conflict'` / `'baseRevision'`
+// literals no longer evades it.
+
+const CONFLICT_STATUS_LITERAL = 'conflict'
 
 const ALLOWED_CONFLICT_HANDLERS = new Set<string>([
   // The central command wrapper IS the conflict surface; it is allowed to
@@ -1407,9 +1560,121 @@ const ALLOWED_CONFLICT_HANDLERS = new Set<string>([
   'runServerCommand',
 ])
 
-function isAllowedConflictFunction(file: string, name: string): boolean {
-  if (file === 'src/ts/server/commands.ts' && ALLOWED_CONFLICT_HANDLERS.has(name)) return true
-  return false
+// Mutating command callees whose re-invocation inside a conflict-handling
+// region counts as a blind replay. `dispatch*` helpers and recursive
+// self-calls are detected structurally in addition to these names.
+const CONFLICT_REPLAY_CALLEES = new Set<string>(['runServerCommand', 'patchSettingsGroup', 'fetch'])
+
+const EQUALITY_OPERATOR_KINDS = new Set<SyntaxKind>([
+  SyntaxKind.EqualsEqualsEqualsToken,
+  SyntaxKind.EqualsEqualsToken,
+  SyntaxKind.ExclamationEqualsEqualsToken,
+  SyntaxKind.ExclamationEqualsToken,
+])
+
+const INEQUALITY_OPERATOR_KINDS = new Set<SyntaxKind>([
+  SyntaxKind.ExclamationEqualsEqualsToken,
+  SyntaxKind.ExclamationEqualsToken,
+])
+
+function isAllowedConflictFunction(file: string, name: string | undefined): boolean {
+  if (!name) return false
+  return file === 'src/ts/server/commands.ts' && ALLOWED_CONFLICT_HANDLERS.has(name)
+}
+
+// `node` is the string literal `target` after stripping parens / `as` casts.
+function isDirectStringLiteral(node: Node, target: string): boolean {
+  const inner = unwrapExpression(node)
+  return (
+    (Node.isStringLiteral(inner) || Node.isNoSubstitutionTemplateLiteral(inner)) &&
+    inner.getLiteralText() === target
+  )
+}
+
+// File-level identifiers bound to the `target` string literal, e.g.
+// `const CONFLICT = 'conflict'`. Pure AST — no type environment required, so it
+// resolves aliases in the minimal fixture tsconfigs too.
+function collectStringLiteralAliases(file: SourceFile, target: string): Set<string> {
+  const aliases = new Set<string>()
+  for (const declaration of file.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const initializer = declaration.getInitializer()
+    if (initializer && isDirectStringLiteral(initializer, target)) {
+      const nameNode = declaration.getNameNode()
+      if (Node.isIdentifier(nameNode)) aliases.add(nameNode.getText())
+    }
+  }
+  return aliases
+}
+
+function valueIsConflictStatus(node: Node, aliases: ReadonlySet<string>): boolean {
+  const inner = unwrapExpression(node)
+  if (isDirectStringLiteral(inner, CONFLICT_STATUS_LITERAL)) return true
+  return Node.isIdentifier(inner) && aliases.has(inner.getText())
+}
+
+// The branch region(s) controlled by a condition sub-expression: the arm taken
+// when that sub-expression is `takeWhenTrue` (after accounting for `!`
+// negations on the path up to the controlling `if` / ternary). Returns the
+// matching branch, plus the statements after an early-return guard. Used both
+// for A4R2 (conflict-status comparison) and A4R7 (the `isFastifyServer` guard),
+// so the branch is located regardless of guard polarity.
+function guardedBranchRegions(conditionNode: Node, takeWhenTrue: boolean): Node[] {
+  let current = conditionNode
+  let negations = 0
+  for (;;) {
+    const parent = current.getParent()
+    if (!parent) return []
+    if (Node.isParenthesizedExpression(parent)) {
+      current = parent
+      continue
+    }
+    if (
+      Node.isPrefixUnaryExpression(parent) &&
+      parent.getOperatorToken() === SyntaxKind.ExclamationToken
+    ) {
+      negations++
+      current = parent
+      continue
+    }
+    if (Node.isBinaryExpression(parent)) {
+      // `&&` / `||` combinator — keep climbing toward the controlling guard.
+      current = parent
+      continue
+    }
+    const primaryArm = takeWhenTrue !== (negations % 2 === 1)
+    if (Node.isConditionalExpression(parent) && parent.getCondition() === current) {
+      return [primaryArm ? parent.getWhenTrue() : parent.getWhenFalse()]
+    }
+    if (Node.isIfStatement(parent) && parent.getExpression() === current) {
+      const thenStatement = parent.getThenStatement()
+      const elseStatement = parent.getElseStatement()
+      if (primaryArm) return thenStatement ? [thenStatement] : []
+      const regions: Node[] = []
+      if (elseStatement) regions.push(elseStatement)
+      if (isControlDivertingGuard(thenStatement)) regions.push(...statementsAfter(parent))
+      return regions
+    }
+    return []
+  }
+}
+
+function regionReissuesMutatingCommand(region: Node, enclosingName: string | undefined): boolean {
+  const isReplayCall = (node: Node): boolean => {
+    const name = callExpressionCalleeName(node)
+    if (!name) return false
+    if (CONFLICT_REPLAY_CALLEES.has(name)) return true
+    if (name.startsWith('dispatch')) return true
+    return !!enclosingName && name === enclosingName
+  }
+  if (Node.isCallExpression(region) && isReplayCall(region)) return true
+  let found = false
+  region.forEachDescendant((descendant, traversal) => {
+    if (Node.isCallExpression(descendant) && isReplayCall(descendant)) {
+      found = true
+      traversal.stop()
+    }
+  })
+  return found
 }
 
 function checkAlpha4ConflictRetry(): void {
@@ -1418,49 +1683,29 @@ function checkAlpha4ConflictRetry(): void {
     const rl = rel(file)
     if (!rl.startsWith('src/')) continue
     if (rl.endsWith('.test.ts')) continue
-    for (const fn of file.getFunctions()) {
-      const name = fn.getName()
-      if (!name) continue
-      if (isAllowedConflictFunction(rl, name)) continue
-      const body = fn.getBody()
-      if (!body) continue
-      const bodyText = body.getText()
-      // Look for the conflict observation pattern.
-      if (!bodyText.includes("'conflict'")) continue
-      // It observes the conflict status; is it then doing a follow-up command
-      // call with the same payload shape? Heuristic: the body also mentions
-      // baseRevision after the conflict observation.
-      const conflictIndex = bodyText.indexOf("'conflict'")
-      const afterConflict = bodyText.slice(conflictIndex)
+    const aliases = collectStringLiteralAliases(file, CONFLICT_STATUS_LITERAL)
+    const reported = new Set<Node>()
+    for (const binary of file.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+      const operator = binary.getOperatorToken().getKind()
+      if (!EQUALITY_OPERATOR_KINDS.has(operator)) continue
       if (
-        afterConflict.includes('baseRevision') &&
-        (afterConflict.match(/patchSettingsGroup\(|runServerCommand\(|fetch\(/) ?? []).length > 0
+        !valueIsConflictStatus(binary.getLeft(), aliases) &&
+        !valueIsConflictStatus(binary.getRight(), aliases)
       ) {
-        fail(
-          check,
-          `${rl} function ${name} branches on result.status === 'conflict' and resends a mutating command. Surface the conflict; do not replay.`,
-          fn,
-        )
+        continue
       }
-    }
-    // Also walk variable-declared arrow/function expressions at the module level.
-    for (const variable of file.getVariableDeclarations()) {
-      const init = variable.getInitializer()
-      if (!init || (!Node.isArrowFunction(init) && !Node.isFunctionExpression(init))) continue
-      const name = variable.getName()
+      const enclosing = enclosingFunctionLike(binary)
+      if (!enclosing || reported.has(enclosing)) continue
+      const { kind, name } = functionLikeDisplayName(enclosing)
       if (isAllowedConflictFunction(rl, name)) continue
-      const bodyText = init.getText()
-      if (!bodyText.includes("'conflict'")) continue
-      const conflictIndex = bodyText.indexOf("'conflict'")
-      const afterConflict = bodyText.slice(conflictIndex)
-      if (
-        afterConflict.includes('baseRevision') &&
-        (afterConflict.match(/patchSettingsGroup\(|runServerCommand\(|fetch\(/) ?? []).length > 0
-      ) {
+      const trueOnConflict = !INEQUALITY_OPERATOR_KINDS.has(operator)
+      const regions = guardedBranchRegions(binary, trueOnConflict)
+      if (regions.some((region) => regionReissuesMutatingCommand(region, name))) {
+        reported.add(enclosing)
         fail(
           check,
-          `${rl} arrow ${name} branches on 'conflict' and replays a mutating command. Surface conflicts; do not retry.`,
-          init,
+          `${rl} ${kind} ${name} branches on result.status === 'conflict' and resends a mutating command. Surface the conflict; do not replay.`,
+          binary,
         )
       }
     }
@@ -2005,34 +2250,181 @@ function checkAlpha4WildcardSecretIdentity(): void {
 // URL must, in its Fastify-mode branch, accept only documented shapes (raw
 // 64-char asset id, legacy `assets/<sha>.<ext>`, `data:`, `blob:`, absolute
 // `/api/v1/assets/...`). Unknown shapes must throw or return a documented
-// placeholder.
+// placeholder. The gate helper `serverAssetUrl` (and the
+// `serverAssetIdFromReference` it may delegate to) must itself restrict `loc`
+// to the documented anchored shapes and reject the rest with `null`.
+//
+// This is an AST invariant, not a branch-text heuristic:
+//   - The Fastify branch is located by guard polarity via `guardedBranchRegions`,
+//     so inverting `if (isFastifyServer)` into `if (!isFastifyServer) { ... }`
+//     no longer makes the finder latch the browser branch and pass.
+//   - The accepted shapes of `serverAssetUrl` are validated rather than
+//     assumed, so a refactor that widens them (e.g. an `http(s)://` passthrough)
+//     cannot slip past unnoticed.
 
 interface AssetUrlHelperRule {
   file: string
   fn: string
-  // Either the function MUST contain a throw on unknown shapes (helper is a
-  // bytes-reader), or the function MUST guard the unknown-shape fallback
-  // behind a known shape check (helper is a URL-getter).
+  // `throw`: a bytes-reader that must throw on unknown shapes.
+  // `shape-gate`: a URL-getter that must, in its Fastify branch, reject
+  // unknown shapes with ''/null/throw and never `?? loc`.
   mode: 'throw' | 'shape-gate'
-  // The gating expression the helper must evaluate before returning `loc`.
-  // Empty for `throw` mode.
-  shapeGates: readonly string[]
 }
 
 const ASSET_URL_HELPERS: readonly AssetUrlHelperRule[] = [
-  {
-    file: 'src/ts/server/assets.ts',
-    fn: 'readServerAssetBytes',
-    mode: 'throw',
-    shapeGates: [],
-  },
-  {
-    file: 'src/ts/globalApi.svelte.ts',
-    fn: 'getFileSrc',
-    mode: 'shape-gate',
-    shapeGates: ['isFastifyServer'],
-  },
+  { file: 'src/ts/server/assets.ts', fn: 'readServerAssetBytes', mode: 'throw' },
+  { file: 'src/ts/globalApi.svelte.ts', fn: 'getFileSrc', mode: 'shape-gate' },
 ]
+
+// A regex literal anchoring a 64-char hex asset id (the documented
+// server-asset shape), e.g. `/^[a-f0-9]{64}$/` or
+// `/^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i`.
+function hasAnchoredAssetIdRegex(scope: Node): boolean {
+  let found = false
+  scope.forEachDescendant((descendant, traversal) => {
+    if (descendant.getKind() !== SyntaxKind.RegularExpressionLiteral) return
+    const literal = descendant.getText()
+    if (literal.includes('^') && literal.includes('[a-f0-9]{64}')) {
+      found = true
+      traversal.stop()
+    }
+  })
+  return found
+}
+
+// `scope` applies a regex matcher (`.test` / `.exec` / `.match`) somewhere.
+function callsRegexMatcher(scope: Node): boolean {
+  let found = false
+  scope.forEachDescendant((descendant, traversal) => {
+    if (!Node.isCallExpression(descendant)) return
+    const expression = descendant.getExpression()
+    if (
+      Node.isPropertyAccessExpression(expression) &&
+      ['test', 'exec', 'match'].includes(expression.getName())
+    ) {
+      found = true
+      traversal.stop()
+    }
+  })
+  return found
+}
+
+// `fn` has a `return <name>` of the bare identifier (the raw param passthrough),
+// not descending into nested function scopes.
+function returnsBareIdentifier(fn: Node, name: string): boolean {
+  let found = false
+  fn.forEachDescendant((descendant, traversal) => {
+    if (descendant !== fn && isFunctionLikeNode(descendant)) {
+      traversal.skip()
+      return
+    }
+    if (!Node.isReturnStatement(descendant)) return
+    const expression = descendant.getExpression()
+    if (!expression) return
+    const inner = unwrapExpression(expression)
+    if (Node.isIdentifier(inner) && inner.getText() === name) {
+      found = true
+      traversal.stop()
+    }
+  })
+  return found
+}
+
+const REJECTS_UNKNOWN_SHAPE_PATTERNS: readonly RegExp[] = [
+  /\?\?\s*''/,
+  /\?\?\s*null\b/,
+  /return\s+''/,
+  /return\s+null\b/,
+  /:\s*''/,
+  /:\s*null\b/,
+  /throw\s/,
+]
+
+function rejectsUnknownShape(text: string): boolean {
+  return REJECTS_UNKNOWN_SHAPE_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+// Validate that `serverAssetUrl` (and any `serverAssetIdFromReference` gate it
+// delegates to) restrict `loc` to documented anchored shapes and reject the
+// rest with null/''. Without this a refactor could widen the accepted shapes
+// and every downstream asset gate would silently widen with it.
+function validateServerAssetUrlShapes(check: string): void {
+  const file = source('src/ts/server/assets.ts')
+  const fn = file.getFunction('serverAssetUrl')
+  if (!fn) {
+    fail(
+      check,
+      'Expected serverAssetUrl gate helper in src/ts/server/assets.ts.',
+      undefined,
+      'src/ts/server/assets.ts',
+    )
+    return
+  }
+  const param = fn.getParameters()[0]?.getName() ?? 'loc'
+  const body = fn.getBody()
+  if (!body) return
+  const bodyText = body.getText()
+
+  if (!rejectsUnknownShape(bodyText)) {
+    fail(
+      check,
+      `serverAssetUrl must reject unsupported asset references by returning null/'' (no documented unknown-shape default).`,
+      fn,
+    )
+  }
+
+  if (returnsBareIdentifier(fn, param) || new RegExp(`\\?\\?\\s*${param}\\b`).test(bodyText)) {
+    fail(
+      check,
+      `serverAssetUrl must not pass an unvalidated ${param} through; restrict to documented asset shapes.`,
+      fn,
+    )
+  }
+
+  const delegatesToIdGate = bodyText.includes('serverAssetIdFromReference')
+  const inlineRegexGate = hasAnchoredAssetIdRegex(fn) && callsRegexMatcher(fn)
+  if (!delegatesToIdGate && !inlineRegexGate) {
+    fail(
+      check,
+      `serverAssetUrl must gate ${param} through serverAssetIdFromReference or an anchored asset-id regex before producing a URL.`,
+      fn,
+    )
+  }
+
+  if (delegatesToIdGate) {
+    const idFn = file.getFunction('serverAssetIdFromReference')
+    if (!idFn) {
+      fail(
+        check,
+        'serverAssetUrl delegates to serverAssetIdFromReference, which is missing from src/ts/server/assets.ts.',
+        fn,
+      )
+    } else {
+      // The anchored regex may be a module-level const referenced by name, so
+      // look across the whole file for the literal but require the gate to
+      // actually apply a regex matcher and reject non-matches with null.
+      if (!hasAnchoredAssetIdRegex(file) || !callsRegexMatcher(idFn)) {
+        fail(
+          check,
+          'serverAssetIdFromReference must match loc against an anchored asset-id regex.',
+          idFn,
+        )
+      }
+      const idText = idFn.getBody()?.getText() ?? ''
+      if (
+        !/\?\?\s*null\b/.test(idText) &&
+        !/return\s+null\b/.test(idText) &&
+        !/:\s*null\b/.test(idText)
+      ) {
+        fail(
+          check,
+          'serverAssetIdFromReference must return null for non-matching asset references.',
+          idFn,
+        )
+      }
+    }
+  }
+}
 
 function checkAlpha4AssetUrlGate(): void {
   const check = 'A4R7 asset URL gate'
@@ -2065,54 +2457,50 @@ function checkAlpha4AssetUrlGate(): void {
           fn,
         )
       }
-    } else {
-      // shape-gate mode: in the Fastify branch the function must explicitly
-      // accept a finite set of shapes and reject unknowns. The rule asserts:
-      //   1. There is a Fastify-mode branch at all.
-      //   2. No `?? loc` fall-through inside that branch (the literal
-      //      "unknown shape → return raw loc" anti-pattern).
-      //   3. The branch documents the unknown-shape default by either
-      //      returning an empty string/null OR throwing.
-      let fastifyBranchText: string | undefined
-      body.forEachDescendant((descendant) => {
-        if (fastifyBranchText) return
-        if (!Node.isIfStatement(descendant)) return
-        const cond = descendant.getExpression()
-        const condText = cond.getText()
-        if (!condText.includes('isFastifyServer')) return
-        const thenBlock = descendant.getThenStatement()
-        fastifyBranchText = thenBlock.getText()
-      })
-      if (!fastifyBranchText) {
-        fail(
-          check,
-          `${rule.fn} in ${rule.file} must guard its asset URL handling on isFastifyServer.`,
-          fn,
-        )
-        continue
+      continue
+    }
+
+    // shape-gate mode: locate the Fastify branch by guard polarity so an
+    // inverted `if (!isFastifyServer)` cannot make us scrutinize the browser
+    // branch by mistake. The branch must reject unknown shapes (''/null/throw)
+    // and never fall through to `?? loc`.
+    const param = fn.getParameters()[0]?.getName() ?? 'loc'
+    let regions: Node[] = []
+    body.forEachDescendant((descendant, traversal) => {
+      if (regions.length) {
+        traversal.stop()
+        return
       }
-      if (/\?\?\s*loc\b/.test(fastifyBranchText)) {
-        fail(
-          check,
-          `${rule.fn} in ${rule.file} falls back to \`?? loc\` for unknown asset shapes; restrict to a documented set or return ''/throw.`,
-          fn,
-        )
-      }
-      const hasUnknownShapeGuard =
-        /\?\?\s*''/.test(fastifyBranchText) ||
-        /\?\?\s*null\b/.test(fastifyBranchText) ||
-        /return\s+''/.test(fastifyBranchText) ||
-        /return\s+null\b/.test(fastifyBranchText) ||
-        /throw\s/.test(fastifyBranchText)
-      if (!hasUnknownShapeGuard) {
-        fail(
-          check,
-          `${rule.fn} in ${rule.file} must explicitly reject unknown asset shapes by returning '' or throwing.`,
-          fn,
-        )
-      }
+      if (!Node.isIdentifier(descendant) || descendant.getText() !== 'isFastifyServer') return
+      const candidate = guardedBranchRegions(descendant, true)
+      if (candidate.length) regions = candidate
+    })
+    if (!regions.length) {
+      fail(
+        check,
+        `${rule.fn} in ${rule.file} must guard its asset URL handling on isFastifyServer.`,
+        fn,
+      )
+      continue
+    }
+    const fastifyBranchText = regions.map((region) => region.getText()).join('\n')
+    if (new RegExp(`\\?\\?\\s*${param}\\b`).test(fastifyBranchText)) {
+      fail(
+        check,
+        `${rule.fn} in ${rule.file} falls back to \`?? ${param}\` for unknown asset shapes; restrict to a documented set or return ''/throw.`,
+        fn,
+      )
+    }
+    if (!rejectsUnknownShape(fastifyBranchText)) {
+      fail(
+        check,
+        `${rule.fn} in ${rule.file} must explicitly reject unknown asset shapes by returning '' or throwing.`,
+        fn,
+      )
     }
   }
+
+  validateServerAssetUrlShapes(check)
 }
 
 // ----- A4R-fanout: ≥2 unawaited mutating dispatches in one scope -----
@@ -2248,9 +2636,61 @@ function callIsInsideSequencer(call: Node): boolean {
   return false
 }
 
-function reportFanout(check: string, file: string, scopeName: string, calls: readonly Node[]): void {
-  const firstCall = calls[0]
-  if (!firstCall) return
+// Two nodes whose lowest common ancestor branches them into alternative arms
+// (if/else, the two sides of a ternary) never both fire in one invocation, so
+// they do not race on the optimistic snapshot.
+function lowestCommonAncestor(a: Node, b: Node): Node | undefined {
+  const ancestorsOfA = new Set<Node>()
+  let cursor: Node | undefined = a
+  while (cursor) {
+    ancestorsOfA.add(cursor)
+    cursor = cursor.getParent()
+  }
+  cursor = b
+  while (cursor) {
+    if (ancestorsOfA.has(cursor)) return cursor
+    cursor = cursor.getParent()
+  }
+  return undefined
+}
+
+function childOnPathTo(ancestor: Node, descendant: Node): Node | undefined {
+  let cursor: Node | undefined = descendant
+  while (cursor && cursor.getParent() !== ancestor) {
+    cursor = cursor.getParent()
+  }
+  return cursor
+}
+
+function areMutuallyExclusive(a: Node, b: Node): boolean {
+  const ancestor = lowestCommonAncestor(a, b)
+  if (!ancestor) return false
+  const childA = childOnPathTo(ancestor, a)
+  const childB = childOnPathTo(ancestor, b)
+  if (!childA || !childB || childA === childB) return false
+  if (Node.isIfStatement(ancestor)) {
+    const arms = new Set<Node>()
+    const thenStatement = ancestor.getThenStatement()
+    const elseStatement = ancestor.getElseStatement()
+    if (thenStatement) arms.add(thenStatement)
+    if (elseStatement) arms.add(elseStatement)
+    return arms.has(childA) && arms.has(childB)
+  }
+  if (Node.isConditionalExpression(ancestor)) {
+    const arms = new Set<Node>([ancestor.getWhenTrue(), ancestor.getWhenFalse()])
+    return arms.has(childA) && arms.has(childB)
+  }
+  return false
+}
+
+function reportFanout(
+  check: string,
+  file: string,
+  scopeName: string,
+  calls: readonly Node[],
+  locationNode: Node | undefined,
+): void {
+  if (!calls.length) return
   const names = calls
     .map((node) => {
       if (!Node.isCallExpression(node)) return ''
@@ -2262,118 +2702,149 @@ function reportFanout(check: string, file: string, scopeName: string, calls: rea
   fail(
     check,
     `${file} ${scopeName} dispatches ${calls.length} mutating commands (${names}) without serialization. Route through runChatCommandSequence / runOptimisticCommandSequence, await each call, or use a composite server endpoint.`,
-    firstCall,
+    locationNode,
+    file,
   )
 }
+
+// Extract Svelte markup attribute expressions (`attr={ ... }`, including
+// `onclick={...}` event handlers) as raw TS expression text via balanced-brace
+// matching that respects string / template literals. Svelte logic blocks
+// (`{#each}` / `{:else}` / `{/if}` / `{@const}`) and text interpolations start
+// with `{`, not `={`, so they are not matched.
+function extractSvelteAttributeExpressions(markup: string): string[] {
+  const expressions: string[] = []
+  let i = 0
+  while (i < markup.length) {
+    const anchor = markup.indexOf('={', i)
+    if (anchor === -1) break
+    let depth = 0
+    let inString: string | null = null
+    let expression = ''
+    let j = anchor + 1 // the opening `{`
+    let closed = false
+    for (; j < markup.length; j++) {
+      const ch = markup[j]
+      const prev = j > 0 ? markup[j - 1] : ''
+      if (inString) {
+        expression += ch
+        if (ch === inString && prev !== '\\') inString = null
+        continue
+      }
+      if (ch === '{') {
+        depth++
+        if (depth > 1) expression += ch
+        continue
+      }
+      if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          closed = true
+          break
+        }
+        expression += ch
+        continue
+      }
+      if (ch === "'" || ch === '"' || ch === '`') {
+        inString = ch
+        expression += ch
+        continue
+      }
+      expression += ch
+    }
+    if (closed && expression.trim()) expressions.push(expression)
+    i = j + 1
+  }
+  return expressions
+}
+
+// Svelte files known to contain mutating dispatchers from earlier audits.
+const FANOUT_SVELTE_PATHS = ['src/lib/SideBars/SideChatList.svelte'] as const
 
 function checkAlpha4CompositeFanout(): void {
   const check = 'A4R-fanout composite command race'
   const dispatcherNames = findMutatingDispatcherNames()
 
-  // TypeScript / Svelte<script>-as-ts files we can parse with ts-morph.
-  for (const file of project.getSourceFiles()) {
-    const rl = rel(file)
-    if (!rl.startsWith('src/')) continue
-    if (rl.endsWith('.test.ts')) continue
-
-    const visitScope = (scopeNode: Node, scopeName: string): void => {
-      const calls = countDispatchesInScope(scopeNode, dispatcherNames)
-      const unserialized = calls.filter((call) => !callIsAwaited(call) && !callIsInsideSequencer(call))
-      if (unserialized.length >= 2) {
-        reportFanout(check, rl, scopeName, unserialized)
-      }
+  // A scope races iff it holds ≥2 unserialized dispatches that can both fire in
+  // one invocation. Dispatches in mutually-exclusive branches (if/else,
+  // ternary arms) are dropped — only one fires — so a legitimate
+  // branch-per-command shape is not a false positive.
+  const visitScope = (
+    rl: string,
+    scopeNode: Node,
+    scopeName: string,
+    useNodeLocation: boolean,
+  ): void => {
+    const calls = countDispatchesInScope(scopeNode, dispatcherNames)
+    const unserialized = calls.filter((call) => !callIsAwaited(call) && !callIsInsideSequencer(call))
+    const racing = unserialized.filter((call) =>
+      unserialized.some((other) => other !== call && !areMutuallyExclusive(call, other)),
+    )
+    if (racing.length >= 2) {
+      reportFanout(check, rl, scopeName, racing, useNodeLocation ? racing[0] : undefined)
     }
+  }
 
-    for (const fn of file.getFunctions()) {
+  const visitContainer = (rl: string, container: SourceFile, useNodeLocation: boolean): void => {
+    for (const fn of container.getFunctions()) {
       const name = fn.getName() ?? '<anonymous>'
       if (FANOUT_EXEMPT_DECLARATIONS.has(name)) continue
-      visitScope(fn, `function ${name}`)
+      visitScope(rl, fn, `function ${name}`, useNodeLocation)
     }
-    for (const variable of file.getVariableDeclarations()) {
+    for (const variable of container.getVariableDeclarations()) {
       const init = variable.getInitializer()
       if (!init) continue
       if (!Node.isArrowFunction(init) && !Node.isFunctionExpression(init)) continue
       const name = variable.getName()
       if (FANOUT_EXEMPT_DECLARATIONS.has(name)) continue
-      visitScope(init, `arrow ${name}`)
+      visitScope(rl, init, `arrow ${name}`, useNodeLocation)
     }
     // Class methods (e.g. MCP handlers, bridge classes).
-    for (const klass of file.getClasses()) {
+    for (const klass of container.getClasses()) {
       for (const method of klass.getMethods()) {
         const name = `${klass.getName() ?? 'Class'}.${method.getName()}`
         if (FANOUT_EXEMPT_DECLARATIONS.has(method.getName())) continue
-        visitScope(method, `method ${name}`)
+        visitScope(rl, method, `method ${name}`, useNodeLocation)
       }
     }
   }
 
-  // Svelte files cannot be parsed by ts-morph; do a tolerant text scan.
-  // The pattern catches consecutive dispatch* calls with no intervening await.
-  const svelteScan = (pattern: string, rl: string): void => {
-    const lines = pattern.split(/\r?\n/)
-    const dispatchLines: { lineNo: number; lineText: string }[] = []
-    const dispatcherRegex = new RegExp(`\\b(${[...dispatcherNames].join('|')})\\(`)
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      if (dispatcherRegex.test(line) && !/\bawait\b/.test(line)) {
-        dispatchLines.push({ lineNo: i + 1, lineText: line })
-      }
-    }
-    // Group by adjacency (within 5 lines of one another), but split groups
-    // when an `} else {`, `} else if`, or other branch boundary appears
-    // between two dispatch calls — those are alternate code paths, not a
-    // single fan-out scope.
-    const branchBoundary = /^\s*\}\s*else\b|^\s*\}\s*$/
-    let group: typeof dispatchLines = []
-    const groups: (typeof dispatchLines)[] = []
-    const pushGroup = (g: typeof dispatchLines): void => {
-      if (g.length >= 2) groups.push(g)
-    }
-    for (const entry of dispatchLines) {
-      if (group.length === 0) {
-        group.push(entry)
-        continue
-      }
-      const prev = group[group.length - 1]
-      // Check the intervening lines for a branch boundary.
-      let crossesBoundary = false
-      for (let i = prev.lineNo; i < entry.lineNo - 1; i++) {
-        if (branchBoundary.test(lines[i] ?? '')) {
-          crossesBoundary = true
-          break
-        }
-      }
-      if (!crossesBoundary && entry.lineNo - prev.lineNo <= 5) {
-        group.push(entry)
-      } else {
-        pushGroup(group)
-        group = [entry]
-      }
-    }
-    pushGroup(group)
-    for (const found of groups) {
-      // Check if any of these lines is part of a sequencer call.
-      const startLine = found[0].lineNo
-      const endLine = found[found.length - 1].lineNo
-      const surrounding = lines.slice(Math.max(0, startLine - 3), endLine + 2).join('\n')
-      if ([...ALLOWED_FANOUT_SEQUENCERS].some((seq) => surrounding.includes(`${seq}(`))) continue
-      fail(
-        check,
-        `${rl} dispatches ${found.length} mutating commands at lines ${found.map((f) => f.lineNo).join(', ')} without serialization. Route through runChatCommandSequence / runOptimisticCommandSequence.`,
-        undefined,
-        rl,
-      )
-    }
+  // TypeScript files from the shared project.
+  for (const file of project.getSourceFiles()) {
+    const rl = rel(file)
+    if (!rl.startsWith('src/')) continue
+    if (rl.endsWith('.test.ts')) continue
+    visitContainer(rl, file, true)
   }
 
-  // Svelte files we know contain mutating dispatchers from earlier audits.
-  const sveltePaths = [
-    'src/lib/SideBars/SideChatList.svelte',
-  ]
-  for (const rl of sveltePaths) {
+  // Svelte files: parse the <script> block(s) and the markup attribute handlers
+  // as TS via a throwaway in-memory project, then run the SAME AST scope
+  // analysis. This replaces the old line-text scan, which counted a line once
+  // (so two dispatches on one line under-counted) and skipped any line holding
+  // an `await` (so `const x = await y(); void dispatchA(); void dispatchB()`
+  // read as serialized). Findings report at file level because the synthetic
+  // sources do not carry the original line numbers.
+  const scriptBlockPattern = /<script\b[^>]*>([\s\S]*?)<\/script>/gi
+  for (const rl of FANOUT_SVELTE_PATHS) {
     const absolute = path.join(root, rl)
     if (!fs.existsSync(absolute)) continue
-    svelteScan(fs.readFileSync(absolute, 'utf-8'), rl)
+    const svelteText = fs.readFileSync(absolute, 'utf-8')
+    const svelteProject = new Project({ useInMemoryFileSystem: true })
+    const containers: SourceFile[] = []
+    let scriptIndex = 0
+    for (const match of svelteText.matchAll(scriptBlockPattern)) {
+      containers.push(svelteProject.createSourceFile(`script_${scriptIndex++}.ts`, match[1]))
+    }
+    const markup = svelteText.replace(scriptBlockPattern, '').replace(/<!--[\s\S]*?-->/g, '')
+    extractSvelteAttributeExpressions(markup).forEach((expression, index) => {
+      containers.push(
+        svelteProject.createSourceFile(
+          `handler_${index}.ts`,
+          `function __svelteHandler_${index}() {\n  const __expr = (${expression})\n  return __expr\n}`,
+        ),
+      )
+    })
+    for (const container of containers) visitContainer(rl, container, false)
   }
 }
 

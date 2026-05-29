@@ -1,63 +1,83 @@
 # Audit
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 Read this when changing `util/client-thinning-audit.ts`, adding invariant rules,
 or selecting audit work. This is the canonical audit shard; coverage pointers live
 in [`../coverage/audit.md`](../coverage/audit.md).
 
-## Current State: Reproducible, Not Uniformly Robust
+## Current State: Reproducible; The Four Defeated Rules Are Now AST Invariants
 
 `pnpm client-thinning:audit` runs `util/client-thinning-audit.ts` (ts-morph plus
 source-text checks). Fixture **reproducibility is complete**: all 21 rules have
-committed fixtures and tests in `util/client-thinning-audit.test.ts` (45 tests).
+committed fixtures and tests in `util/client-thinning-audit.test.ts` (52 tests).
 The harness is honest — it spawns the real audit binary against per-rule mini-repo
 fixtures with `CLIENT_THINNING_AUDIT_CHECK_IDS` scoping and asserts non-zero exit
 on the failing fixture (and zero on a bypass fixture where applicable). No rule is
 mocked or re-implemented.
 
-But reproducible is not robust. Several rules are genuine AST/call-graph
+Reproducible is not automatically robust. Many rules are genuine AST/call-graph
 invariants that survive a refactor (notably A4R3 transitive-mint, A4R1
 passive-refresh via `findReferencesAsNodes`, A4R4 resolver-normalize, A4R5
-parser-parity, A4R-bounded, A4R-saveasset). Others lean on `String.includes`
-needles / regex counts, and a sincere refactor that changes surface syntax can
-slip past them.
+parser-parity, A4R-bounded, A4R-saveasset). Some remaining rules still lean on
+`String.includes` needles / regex counts; those were **not** empirically defeated
+but are candidates for the same treatment if a defeat is found.
 
-## Empirically Defeated Rules (open work)
+## Empirically Defeated Rules — Hardened 2026-05-30
 
-Four rules were defeated by running sincere variants against the real audit binary
-(each printed "Client-thinning audit passed."):
+The four rules that had been defeated by running sincere variants against the real
+audit binary are now AST invariants with committed adversarial fixtures. Each
+adversarial fixture printed "Client-thinning audit passed." against the old
+needle rule and now fails against the hardened rule:
 
-- **A4R2 conflict-replay** (`audit.ts:~1408`) — aliasing the `'conflict'` /
-  `'baseRevision'` literals evades the substring heuristic while really replaying.
-- **A4R7 asset-URL-gate** (`audit.ts:~2055`) — inverting the `isFastifyServer`
-  guard makes the branch-finder latch the browser throw-block; `serverAssetUrl`'s
-  accepted shapes are never validated.
-- **A4R-fanout composite race** (`audit.ts:~2291`) — the `.svelte` path is
-  line-text only; two `void dispatch*()` on a line that also holds any `await`
-  read as serialized.
-- **EC2 plugin-storage-gates** (`audit.ts:~718`) — a new device-local method
-  outside the hardcoded 6-name `guardedMethods` list is unguarded.
+- **A4R2 conflict-replay** (`checkAlpha4ConflictRetry`) — now a comparison-anchored
+  invariant: a conflict-status comparison is matched even when the `'conflict'`
+  literal is aliased to a local const (`collectStringLiteralAliases`); the conflict
+  branch is located structurally (`guardedBranchRegions`); and any mutating command
+  re-issued in that branch (`runServerCommand` / `patchSettingsGroup` / `fetch`, a
+  `dispatch*` helper, or a recursive self-call) is the replay. It no longer depends
+  on the `'conflict'` / `'baseRevision'` substrings.
+  Fixture: `conflict-replay/failing-aliased-literals`.
+- **A4R7 asset-URL-gate** (`checkAlpha4AssetUrlGate`) — the Fastify branch is located
+  by guard polarity (`guardedBranchRegions`), so inverting `if (isFastifyServer)`
+  into `if (!isFastifyServer) { ... }` no longer latches the browser branch. And
+  `validateServerAssetUrlShapes` validates that `serverAssetUrl` /
+  `serverAssetIdFromReference` restrict `loc` to anchored asset-id shapes and reject
+  the rest with null (no raw `loc` passthrough). Fixtures:
+  `asset-url-gate/failing-inverted-fastify-guard`, `asset-url-gate/failing-widened-asset-url`.
+- **A4R-fanout composite race** (`checkAlpha4CompositeFanout`) — the `.svelte` path
+  parses the `<script>` block(s) AND the markup `={ ... }` event handlers as TS via
+  a throwaway in-memory ts-morph project, then runs the same AST scope analysis as
+  the `.ts` path. Dispatches in mutually-exclusive branches (if/else, ternary arms)
+  are dropped via `areMutuallyExclusive`, so legitimate branch-per-command shapes
+  (e.g. `SideChatList.svelte`'s `createStb` and `bindedPersona` handlers) are not
+  false positives. Fixtures: `composite-command-fanout/failing-svelte-race`,
+  `composite-command-fanout/failing-svelte-markup-race`,
+  `composite-command-fanout/svelte-branch-bypass`.
+- **EC2 plugin-storage-gates** (`checkPluginStorageGates`) — the hardcoded 6-name
+  `guardedMethods` list is gone. The rule derives the device-local storage sink set
+  (browser storage globals plus every `localforage.createInstance` instance declared
+  in the file) and requires every method / accessor / `SafeIdbFactory` property that
+  reaches a sink to assert the compatibility gate, so a NEW device-local method
+  cannot slip past a fixed name list. Fixture:
+  `plugin-storage-gates/failing-ungated-new-method`.
 
-These guard exactly the regression classes the audit exists to stop (blind
-conflict replay, ungated asset fetch, optimistic-snapshot races, ungated
-device-local storage).
+## Hardening Work Item — Done For The Four Defeated Rules
 
-## Hardening Work Item
+The four empirically-defeated rules above are converted and have adversarial
+fixtures. Remaining optional follow-up (no known defeat yet):
 
-Highest-value audit follow-up:
-
-- Convert the four needle-rules above to AST invariants (branch-on-conflict-then-
-  redispatch via call analysis; actually validate the shapes `serverAssetUrl` /
-  the asset gate accept; "any method touching device-local storage must assert").
-- Parse Svelte `<script>` blocks with the TS path instead of line text.
-- Add adversarial / negative fixtures (aliased conflict literal, inverted Fastify
-  guard, await-on-same-line svelte race, new ungated storage method) so the suite
-  proves robustness, not one-shot tripping.
+- The still-shallow string/regex rules can move to AST invariants if a sincere
+  defeat is demonstrated against the real binary (the bar for opening this work).
+- The Svelte AST path covers `<script>` blocks and `={ ... }` attribute handlers;
+  quoted attribute interpolations (`attr="{ ... }"`) are not extracted — add if a
+  dispatch site ever lands in one.
 
 ## Direction
 
-- A new audit rule ships its fixture + test in the same batch.
+- A new (or newly hardened) audit rule ships its fixture + test in the same batch.
+- An adversarial fixture must defeat the OLD rule and fail the NEW one — that is
+  the robustness bar, not one-shot tripping.
 - Several fixtures intentionally mirror audit tables (`MUTATING_ROUTE_RULES`,
   `ASSET_WALKER_OWNERS`) and must be updated when those surfaces change.
 - Keep one `pnpm client-thinning:audit` entry point even if internals split.

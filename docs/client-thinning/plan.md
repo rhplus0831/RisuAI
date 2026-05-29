@@ -140,9 +140,10 @@ persistence and a transient browser progress projection.
 
 1. Run `pnpm client-thinning:audit`. If red, fix or triage before runtime work.
 2. **Group-chat legacy removal** (separate from thinning).
-3. **Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
+3. ~~**Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
    (A4R2, A4R7, fanout-svelte path, EC2) to AST invariants; add adversarial
-   fixtures. See [`status/audit.md`](status/audit.md).
+   fixtures.~~ DONE 2026-05-30 — all four are AST invariants with adversarial
+   fixtures (52 audit tests). See [`status/audit.md`](status/audit.md).
 4. Keep **event patching deferred** until SSE reconnect/replay exists.
 5. Durable-generation work (job lifecycle, reconnect/read contract, route-direct
    result persistence) stays in its separate workstream.

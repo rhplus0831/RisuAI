@@ -1,6 +1,6 @@
 # Next Steps
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 Read this when choosing the next client-thinning batch. Full classification in
 [`../plan.md`](../plan.md); detailed triage in
@@ -25,9 +25,15 @@ A-blockers (A1/A2/A3) are now resolved.**
 
 1. **Group-chat legacy removal.** Separate from thinning — inventory and remove
    the client surface (see [`client-owned-unsupported.md`](client-owned-unsupported.md)).
-2. **Audit-rule hardening.** Convert A4R2, A4R7, the fanout `.svelte` path, and
-   EC2 from string/regex to AST invariants; add adversarial fixtures
-   ([`audit.md`](audit.md)).
+   A 2026-05-30 inventory found this is low-to-moderate risk but entangles the
+   active `Message.saying` attribution field across the prompt-assembly pipeline
+   (`formatHistoryMessage`, post-generation, lorebook, export), so scope it to the
+   documented target — dead `type === 'group'` UI branches and type compatibility —
+   and decide the load-time group filter / `saying` field separately.
+2. ~~**Audit-rule hardening.**~~ DONE 2026-05-30 — A4R2, A4R7, the fanout `.svelte`
+   path, and EC2 are now AST invariants with adversarial fixtures ([`audit.md`](audit.md)).
+   Remaining audit work is only the other still-shallow string/regex rules, and it
+   is gated on first demonstrating a sincere defeat against the real binary.
 3. Documentation-only reconciliation when code and docs drift without behavior
    change.
 
