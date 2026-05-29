@@ -57,6 +57,10 @@ function isServerOwnedMutation(req: FastifyRequest): boolean {
   if (path.startsWith('/api/v1/backups')) return true
   if (method === 'POST' && path === '/api/v1/generate/chat') return true
   if (method === 'POST' && path === '/api/v1/generate/preview-prompt') return true
+  // Durable generation cancel: authorized by the *current* active writer (writer
+  // handoff — a new writer can stop a prior, now-disconnected writer's generation).
+  // The reattach `GET …/:id/stream` is read-only (observe) and intentionally not gated.
+  if (method === 'DELETE' && /^\/api\/v1\/generate\/chat\/[^/]+$/.test(path)) return true
   if (method === 'POST' && path === '/api/v1/memory/jobs') return true
   if (method === 'DELETE' && path.startsWith('/api/v1/memory/jobs/')) return true
   return (

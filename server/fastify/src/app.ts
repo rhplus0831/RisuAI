@@ -32,6 +32,7 @@ import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES, loadPersisted } from './repository.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
+import { GenerationJobRegistry } from './generationJobs.js'
 import {
   createMemoryEventBus,
   emitMemoryEventSafely,
@@ -137,8 +138,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const authState = createAuthState(config.dataDir)
   const commandEventSink = opts.commandEvents ?? createCommandEventSink()
   const streamJobRegistry = new JobRegistry()
+  // Durable generation (Milestone 1): a dedicated, separately GC-ticked registry for
+  // detached chat generations + their transient chatId→jobId submission lock.
+  const generationJobRegistry = new GenerationJobRegistry()
   const gcTimer = setInterval(() => {
     streamJobRegistry.tickGc()
+    generationJobRegistry.tickGc()
   }, PROXY_STREAM_GC_INTERVAL_MS)
   gcTimer.unref()
 
@@ -148,12 +153,22 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     for (const job of streamJobRegistry.list()) {
       streamJobRegistry.deleteJob(job.id)
     }
+    for (const job of generationJobRegistry.registry.list()) {
+      generationJobRegistry.registry.deleteJob(job.id)
+    }
     db.close()
   })
 
   registerHealthRoutes(app, db)
   registerAuthRoutes(app, authState)
-  registerBootstrapRoutes(app, db, authState, config.dataDir, activeWriterState)
+  registerBootstrapRoutes(
+    app,
+    db,
+    authState,
+    config.dataDir,
+    activeWriterState,
+    generationJobRegistry,
+  )
   registerActiveWriterGuard(app, activeWriterState)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
@@ -171,6 +186,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     authState,
     config.dataDir,
     commandEventSink,
+    generationJobRegistry,
     opts.generationChat,
   )
   registerMemoryJobRoutes(app, db, authState, { onEvent: emitMemoryEvent })

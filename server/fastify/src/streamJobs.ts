@@ -46,6 +46,15 @@ export interface StreamJob {
   deadlineAt: number
   heartbeatSec: number
   timeoutMs: number
+  /**
+   * Durable-generation extensions (Milestone 1). Unused by the proxy stream job.
+   * `chatId` ties the job to its chat for the one-job-per-chat submission lock +
+   * the reload-resume `activeGenerationJobs` projection; `writerSessionId` is the
+   * active-writer identity captured at creation so the server-owned completion
+   * write finishes the authorized job after the client may have disconnected.
+   */
+  chatId?: string
+  writerSessionId?: string | null
 }
 
 const PRIVATE_BLOCKS = (() => {
@@ -162,9 +171,16 @@ export class JobRegistry {
     return job
   }
 
-  pushEvent(job: StreamJob, event: StreamJobEvent, now?: number): void {
+  /**
+   * Buffer (no client attached) or fan out an **already-serialized** frame
+   * string. Generalizes {@link pushEvent} so the durable-generation runner can
+   * buffer pre-formatted SSE frames (`event: …\ndata: …\n\n`) and replay them on
+   * reattach without re-encoding — preserving the locked `/generate/chat` event
+   * vocabulary and the browser's SSE parser unchanged. The proxy keeps the
+   * `pushEvent` (JSON.stringify) path.
+   */
+  pushRaw(job: StreamJob, text: string, now?: number): void {
     job.updatedAt = now ?? Date.now()
-    const text = JSON.stringify(event)
     if (job.clients.size === 0) {
       job.pendingEvents.push(text)
       job.pendingBytes += Buffer.byteLength(text)
@@ -181,6 +197,10 @@ export class JobRegistry {
     for (const client of job.clients) {
       if (client.open) client.send(text)
     }
+  }
+
+  pushEvent(job: StreamJob, event: StreamJobEvent, now?: number): void {
+    this.pushRaw(job, JSON.stringify(event), now)
   }
 
   attach(jobId: string, client: JobClient): StreamJob | null {

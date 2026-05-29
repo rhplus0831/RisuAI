@@ -22,6 +22,18 @@ export interface StageEvent {
   status: 'start' | 'end'
 }
 
+/**
+ * Durable generation (Milestone 1): the first frame on a durable send / reattach,
+ * carrying the `jobId` (unified with `generationId`) so a client that drops during
+ * assembly — before the `info` frame — still knows the id to reattach with. Additive
+ * to the locked contract; the non-durable path never emits it, and the browser's
+ * existing SSE parser ignores unknown events (a no-op for non-durable consumers).
+ */
+export interface JobAcceptedEvent {
+  type: 'job_accepted'
+  jobId: string
+}
+
 export interface PromptEvent {
   type: 'prompt'
   messages: Array<{ role: string; content: unknown }>
@@ -136,6 +148,7 @@ export interface DoneEvent {
 
 export type PromptChatEvent =
   | StageEvent
+  | JobAcceptedEvent
   | PromptEvent
   | InfoEvent
   | TokenEvent
@@ -145,7 +158,17 @@ export type PromptChatEvent =
   | ErrorEvent
   | DoneEvent
 
-export function writePromptChatEvent(reply: FastifyReply, event: PromptChatEvent): void {
+/**
+ * Serialize a chat event to its named-event SSE frame. Extracted from
+ * {@link writePromptChatEvent} so the durable-generation runner can buffer the
+ * identical frame string into the `JobRegistry` (`pushRaw`) for replay on
+ * reattach — the connected and durable paths emit byte-identical frames.
+ */
+export function formatPromptChatFrame(event: PromptChatEvent): string {
   const { type, ...rest } = event
-  reply.raw.write(`event: ${type}\ndata: ${JSON.stringify(rest)}\n\n`)
+  return `event: ${type}\ndata: ${JSON.stringify(rest)}\n\n`
+}
+
+export function writePromptChatEvent(reply: FastifyReply, event: PromptChatEvent): void {
+  reply.raw.write(formatPromptChatFrame(event))
 }

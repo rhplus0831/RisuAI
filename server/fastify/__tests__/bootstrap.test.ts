@@ -122,6 +122,8 @@ describe('Phase 2A bootstrap + import', () => {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       database: null,
       assetBaseUrl: '/api/v1/assets',
+      // Durable generation (Milestone 1): empty when no generation is in flight.
+      activeGenerationJobs: [],
     })
   })
 

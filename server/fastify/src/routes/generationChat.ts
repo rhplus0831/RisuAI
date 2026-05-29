@@ -10,6 +10,7 @@ import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import {
   EntityNotFoundError,
+  ValidationError,
   assetById,
   assetPath,
   isValidAssetId,
@@ -22,18 +23,30 @@ import {
   type AssembleInput,
   type AssembleMutationPayload,
   type AssembleResult,
+  type AssemblyState,
 } from '../prompt/assemble.js'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
+import {
+  createMessageRecord,
+  messageIdExists,
+  normalizeAllChatMessages,
+  requireChatMessages,
+  validateUniqueMessageIds,
+} from '../commands/messages.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { applyJsonCommandMutation } from '../commands/mutations.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import {
+  formatPromptChatFrame,
   type PostGenerationFrame,
   type PromptChatEvent,
   type PromptEvent,
   writePromptChatEvent,
 } from '../prompt/sseEvents.js'
+import { ACTIVE_WRITER_SESSION_HEADER } from '../activeWriter.js'
+import type { GenerationJobRegistry } from '../generationJobs.js'
+import type { JobClient, StreamJob } from '../streamJobs.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 
@@ -49,6 +62,7 @@ interface ChatRequestBody {
   expectedRevision?: unknown
   inlayAssets?: unknown
   clientCapabilities?: unknown
+  durable?: unknown
 }
 
 type SuccessfulAssembleResult = AssembleResult & {
@@ -119,6 +133,9 @@ function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: str
   }
   if (body.inlayAssets !== undefined && !Array.isArray(body.inlayAssets)) {
     return { ok: false, error: 'inlayAssets must be an array when provided' }
+  }
+  if (body.durable !== undefined && typeof body.durable !== 'boolean') {
+    return { ok: false, error: 'durable must be a boolean when provided' }
   }
   return { ok: true }
 }
@@ -610,12 +627,550 @@ async function streamAssembly(
   }
 }
 
+// ── Durable generation (Milestone 1): decoupled lifecycle + server-owned result ──
+//
+// For a `durable` send (browser `resolveDurableGeneration === 'durable'` →
+// `body.durable === true`, mode `send`), the generation runs as a detached
+// `JobRegistry` job whose lifecycle is **not** tied to the request connection:
+// dropping the connection detaches a viewer, the job keeps generating, buffers,
+// and is reattachable; at completion the server runs the A2 post-gen pass and
+// persists the derived assistant message + scriptstate delta itself (no browser
+// replay). See `docs/durable-generation/steps/step-2-lifecycle-decoupling.md`
+// and `step-3-server-owned-result-persistence.md`.
+
+/** The active-writer identity carried on the `/chat` request (captured at job creation). */
+function readWriterSessionHeader(req: FastifyRequest): string | null {
+  const raw = req.headers[ACTIVE_WRITER_SESSION_HEADER]
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+/** An SSE-backed `JobClient`: writes raw frame strings to the reply's raw socket. */
+function makeSseJobClient(reply: FastifyReply): JobClient {
+  return {
+    send(text) {
+      if (!reply.raw.writableEnded) reply.raw.write(text)
+    },
+    close() {
+      try {
+        if (!reply.raw.writableEnded) reply.raw.end()
+      } catch {
+        // ignore
+      }
+    },
+    get open() {
+      return !reply.raw.writableEnded
+    },
+  }
+}
+
+/**
+ * Attach a request connection as a **viewer** of a generation job over SSE: write
+ * the event-stream head, send the `job_accepted` frame (so a drop during assembly
+ * is reattachable), flush the job's buffered events, then stream live. A client
+ * disconnect **detaches** the viewer (does NOT abort the job — that is the core
+ * inversion). Used by both the initial `POST` and the reattach `GET`.
+ */
+function attachGenerationViewer(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  registry: GenerationJobRegistry,
+  job: StreamJob,
+): void {
+  reply.hijack()
+  reply.raw.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-store',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  })
+  const client = makeSseJobClient(reply)
+  client.send(formatPromptChatFrame({ type: 'job_accepted', jobId: job.id }))
+  registry.registry.attach(job.id, client)
+  req.raw.once('close', () => registry.registry.detach(job.id, client))
+}
+
+/** Build a `char` assistant message in the shape `dispatchPersistGenerationResult` persists. */
+function buildAssistantMessage(args: {
+  data: string
+  generationId: string
+  characterId: string
+  generationInfo: Record<string, unknown>
+  promptInfo?: Record<string, unknown>
+}): Message {
+  return {
+    role: 'char',
+    data: args.data,
+    chatId: args.generationId,
+    saying: args.characterId,
+    time: Date.now(),
+    generationInfo: args.generationInfo,
+    ...(args.promptInfo ? { promptInfo: args.promptInfo } : {}),
+  } as Message
+}
+
+/**
+ * The assistant row `runServerPostGeneration` appended to the assembler-state chat
+ * (carrying the post-gen-derived final text + generation metadata), deep-cloned so
+ * it can be written into the freshly-read current chat. Falls back to a constructed
+ * row if not found (defensive — a `send` always appends, keyed by `generationId`).
+ */
+function extractAssistantMessage(
+  state: AssemblyState,
+  generationId: string,
+  finalText: string,
+  generationInfo: Record<string, unknown>,
+  promptInfo?: Record<string, unknown>,
+): Message {
+  const row = (state.currentChat.message ?? []).find((message) => message.chatId === generationId)
+  if (row) return structuredClone(row) as Message
+  return buildAssistantMessage({
+    data: finalText,
+    generationId,
+    characterId: state.currentChar.chaId,
+    generationInfo,
+    promptInfo,
+  })
+}
+
+/**
+ * Step 3 (A2 / EC-D1 persistence half): write the durable generation result. In a
+ * single `applyJsonCommandMutation` (one revision bump, one event, rollback on
+ * failure) against the **freshly read current chat** (gotcha C — composes with any
+ * intervening edits): apply the post-gen scriptstate delta, then append/replace the
+ * assistant message. The message write is **idempotent on `generationId`** (gotcha B):
+ * an existing row with the same `chatId` is replaced in place, never appended twice.
+ * Matches the shape + `generation.persisted` event the browser command path
+ * (`dispatchPersistGenerationResult` → the `/generation-result` route) produces, so
+ * the result is byte-identical whether server- or (legacy) browser-written.
+ */
+function persistDurableGenerationResult(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  chatId: string
+  message: Message
+  chatVarMutations: AssembleMutationPayload['chatVarMutations']
+}): number {
+  const patch: Record<string, string | number | boolean> = {}
+  const deleteKeys: string[] = []
+  for (const mutation of args.chatVarMutations) {
+    if (mutation.after === null) {
+      deleteKeys.push(mutation.key)
+    } else {
+      patch[mutation.key] = mutation.after
+    }
+  }
+  const { revision: baseRevision } = getSchemaState(args.db)
+  const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+    db: args.db,
+    dataDir: args.dataDir,
+    baseRevision,
+    eventSink: args.eventSink,
+    mutate(database) {
+      const characters = normalizeAllChatMessages(database)
+      const { character, chat, messages } = requireChatMessages(characters, args.chatId)
+      if (Object.keys(patch).length > 0 || deleteKeys.length > 0) {
+        chat.scriptstate ??= {}
+        for (const key of deleteKeys) {
+          delete chat.scriptstate[key]
+        }
+        Object.assign(chat.scriptstate, patch)
+        if (Object.keys(chat.scriptstate).length === 0) {
+          delete chat.scriptstate
+        }
+      }
+      const record = createMessageRecord(structuredClone(args.message), 'generationResult.message')
+      const messageId = record.chatId
+      const existingIndex = messages.findIndex((message) => message.chatId === messageId)
+      const existing = existingIndex === -1 ? undefined : messages[existingIndex]
+      if (messageIdExists(characters, messageId, { excludeMessage: existing })) {
+        throw new ValidationError(`Duplicate message id: ${messageId}`)
+      }
+      if (existingIndex === -1) {
+        messages.push(record)
+      } else {
+        messages[existingIndex] = record
+      }
+      validateUniqueMessageIds(messages)
+      return {
+        event: {
+          ...COMMAND_EVENT_CATALOG.generationPersisted,
+          id: messageId,
+          parentId: args.chatId,
+        },
+        extra: { chatId: args.chatId, messageId },
+      }
+    },
+  })
+  return result.revision
+}
+
+/**
+ * Step 3: the durable-job post-generation pass. Runs the A2 server derivation
+ * (`runServerPostGeneration`: run-var pass + `'output'` trigger + `editoutput`),
+ * then persists the **derived** assistant message + post-gen scriptstate delta
+ * server-side and folds the bumped revision / final text / resend onto the `done`
+ * frame so the (possibly reattached) browser reconciles without persisting.
+ *
+ * Failure policy:
+ *  - **derivation throws** (gotcha F): the client may be gone, so "browser keeps its
+ *    copy" is unsafe — persist the **raw** provider text and emit a `warning`.
+ *  - **persist throws** (gotcha C — chat deleted / materially changed): record a job
+ *    `error` the reattaching client sees; do not force-write.
+ */
+async function buildDurablePostGeneration(args: {
+  emit: (event: PromptChatEvent) => void
+  state: AssemblyState
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  input: AssembleInput
+  completionText: string
+  generationId: string
+  generationInfo: Record<string, unknown>
+  promptInfo?: Record<string, unknown>
+}): Promise<PostGenerationFrame | undefined> {
+  let postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined
+  let message: Message
+  let chatVarMutations: AssembleMutationPayload['chatVarMutations'] = []
+  let warned = false
+  try {
+    postGen = await runServerPostGeneration(args.state, {
+      completionText: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    })
+    message = extractAssistantMessage(
+      args.state,
+      args.generationId,
+      postGen.finalText,
+      args.generationInfo,
+      args.promptInfo,
+    )
+    chatVarMutations = postGen.mutations.chatVarMutations
+  } catch {
+    warned = true
+    message = buildAssistantMessage({
+      data: args.completionText.trim(),
+      generationId: args.generationId,
+      characterId: args.input.characterId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    })
+  }
+
+  let revision: number
+  try {
+    revision = persistDurableGenerationResult({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      chatId: args.input.chatId,
+      message,
+      chatVarMutations,
+    })
+  } catch (err) {
+    args.emit({ type: 'error', error: errorMessage(err, 'failed to persist the generation result') })
+    return undefined
+  }
+
+  if (warned || !postGen) {
+    args.emit({
+      type: 'warning',
+      message: 'server post-generation derivation failed; persisted the raw provider text.',
+    })
+    return { revision }
+  }
+
+  const frame: PostGenerationFrame = { revision }
+  if (postGen.textChanged) frame.finalText = postGen.finalText
+  if (
+    postGen.mutations.chatVarMutations.length > 0 ||
+    postGen.mutations.messageMutations.length > 0
+  ) {
+    frame.messagePatch = postGen.mutations
+  }
+  if (postGen.resendChat) frame.resendChat = true
+  return frame
+}
+
+/**
+ * Step 2 gotcha B / E: on a **streaming** cancel persist the accumulated-so-far
+ * provider text **raw** (no post-gen pass over a truncated turn), idempotent on
+ * `generationId`. A non-streaming cancel (no accumulated text) persists nothing.
+ * A chat-changed failure during a cancel is swallowed (the job is aborted and there
+ * is no connected client to notify).
+ */
+function persistRawCancelledResult(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  input: AssembleInput
+  generationId: string
+  generationInfo: Record<string, unknown>
+  promptInfo?: Record<string, unknown>
+  text: string
+}): void {
+  try {
+    persistDurableGenerationResult({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      chatId: args.input.chatId,
+      message: buildAssistantMessage({
+        data: args.text.trim(),
+        generationId: args.generationId,
+        characterId: args.input.characterId,
+        generationInfo: args.generationInfo,
+        promptInfo: args.promptInfo,
+      }),
+      chatVarMutations: [],
+    })
+  } catch {
+    // Chat gone / changed during a cancel: nothing to do (job aborted, no client).
+  }
+}
+
+/**
+ * Step 2: the detached generation runner. Mirrors `streamAssembly`'s assemble →
+ * dispatch → done flow but (1) pushes the identical SSE frames into the job's
+ * `JobRegistry` buffer (`pushRaw`) instead of a request reply, (2) runs on the
+ * job's own `AbortController` (deadline / explicit cancel only — never the request
+ * connection), and (3) at completion runs the A2 pass + persists the result
+ * server-side (Step 3). Launched fire-and-forget (`void`); the request connection
+ * is just a viewer.
+ */
+async function runGenerationJob(args: {
+  registry: GenerationJobRegistry
+  job: StreamJob
+  db: DatabaseSync
+  input: AssembleInput
+  dataDir: string
+  eventSink: CommandEventSink
+  options: GenerationChatRouteOptions
+}): Promise<void> {
+  const { registry, job, db, input, dataDir, eventSink, options } = args
+  const emit = (event: PromptChatEvent): void =>
+    registry.registry.pushRaw(job, formatPromptChatFrame(event))
+  const signal = job.abortController.signal
+  const generationId = job.id
+  let terminalDoneEmitted = false
+  try {
+    emit({ type: 'stage', stage: 'validate', status: 'start' })
+    emit({ type: 'stage', stage: 'validate', status: 'end' })
+    emit({ type: 'stage', stage: 'prompt', status: 'start' })
+
+    try {
+      const startedAt = Date.now()
+      const deps = loadDatabaseDeps(dataDir, db)
+      const result = await assemblePrompt(input, deps)
+      const database = deps.getDatabase()
+      const promptMs = Date.now() - startedAt
+      const persistedRevision =
+        isPersistingMode(input.mode) && result.mutations
+          ? persistAssemblyMutations({
+              db,
+              dataDir,
+              eventSink,
+              input,
+              mutations: result.mutations,
+              submitMessages: result.submitMessages,
+              submitTranscriptChanged: result.submitTranscriptChanged,
+            })
+          : undefined
+      if (!result.stopSending && result.prompt) {
+        const successfulResult: SuccessfulAssembleResult = {
+          ...result,
+          stopSending: false,
+          prompt: result.prompt,
+        }
+        const shouldDispatch = shouldDispatchProvider(input, database, options)
+        const generationInfo =
+          shouldDispatch && database
+            ? createGenerationInfo(database, generationId, successfulResult, promptMs)
+            : undefined
+        emit({ type: 'prompt', ...result.prompt })
+        if (result.mutations) {
+          emit({ type: 'message_patch', patch: result.mutations })
+        }
+        emit({ type: 'stage', stage: 'prompt', status: 'end' })
+        emit({
+          type: 'info',
+          timings: { prompt: promptMs },
+          tokens: { prompt: result.inputTokens, total: result.inputTokens },
+          responseBudget: result.outputTokens,
+          generationId: shouldDispatch ? generationId : undefined,
+          generationInfo,
+          revision: persistedRevision,
+        })
+        if (shouldDispatch && database && generationInfo) {
+          const dispatchProvider =
+            options.dispatchProvider ??
+            ((context: ChatProviderDispatchContext) =>
+              dispatchChatProvider({
+                database: context.database,
+                formated: context.result.formated ?? context.result.prompt.formated ?? [],
+                outputTokens: context.result.outputTokens,
+                signal: context.signal,
+              }))
+          const providerStartedAt = Date.now()
+          let frames: AsyncIterable<CompletionStreamFrame> | null | undefined
+          try {
+            frames = await dispatchProvider({
+              input,
+              result: successfulResult,
+              database,
+              generationId,
+              generationInfo,
+              signal,
+            })
+          } catch (err) {
+            emit({
+              type: 'error',
+              error: errorMessage(err, 'provider dispatch failed'),
+              restoration: successfulResult.restoration,
+            })
+            emit({ type: 'done', generationId, generationInfo })
+            terminalDoneEmitted = true
+          }
+          if (frames) {
+            const transportResult = await emitProviderChunks(frames, emit, signal, {
+              doneMetadata: () => {
+                const stageTiming = generationInfo.stageTiming as
+                  | Record<string, unknown>
+                  | undefined
+                if (stageTiming) {
+                  stageTiming.stage3 = Date.now() - providerStartedAt
+                }
+                return { generationId, generationInfo }
+              },
+              sideEffects: (text) =>
+                database.ttsAutoSpeech
+                  ? [
+                      {
+                        type: 'side_effect',
+                        kind: 'tts',
+                        payload: { text, characterId: input.characterId },
+                      },
+                    ]
+                  : [],
+              errorRestoration: () => successfulResult.restoration,
+              postGeneration: (completionText) =>
+                successfulResult.state
+                  ? buildDurablePostGeneration({
+                      emit,
+                      state: successfulResult.state,
+                      db,
+                      dataDir,
+                      eventSink,
+                      input,
+                      completionText,
+                      generationId,
+                      generationInfo,
+                      promptInfo: successfulResult.prompt.promptInfo,
+                    })
+                  : Promise.resolve(undefined),
+            })
+            terminalDoneEmitted = transportResult.status !== 'aborted'
+            // Step 2 gotcha E: streaming cancel persists the accumulated-so-far text.
+            if (
+              transportResult.status === 'aborted' &&
+              transportResult.result.length > 0 &&
+              successfulResult.state
+            ) {
+              persistRawCancelledResult({
+                db,
+                dataDir,
+                eventSink,
+                input,
+                generationId,
+                generationInfo,
+                promptInfo: successfulResult.prompt.promptInfo,
+                text: transportResult.result,
+              })
+            }
+          }
+        }
+      } else {
+        if (result.mutations) {
+          emit({ type: 'message_patch', patch: result.mutations })
+        }
+        emit({
+          type: 'error',
+          error:
+            result.abortReason === 'overflow'
+              ? 'prompt exceeds the context budget'
+              : 'prompt assembly was stopped by a trigger',
+          restoration: result.restoration,
+        })
+      }
+    } catch (err) {
+      emit({
+        type: 'error',
+        error: err instanceof Error ? err.message : 'prompt assembly failed',
+      })
+    }
+
+    if (!terminalDoneEmitted && !signal.aborted) {
+      emit({ type: 'done' })
+    }
+  } finally {
+    // Clear the submission lock + mark done at completion/cancel (not at GC), so the
+    // chat accepts a new send immediately while the done job lingers for reattach.
+    if (job.chatId) registry.clearRunning(job.chatId, job.id)
+    registry.registry.markDone(job)
+  }
+}
+
+/**
+ * Step 2: accept a durable send. Enforce one-running-job-per-chat (the active-writer
+ * submission gate is already enforced by the global guard preHandler), create the
+ * job + claim the submission lock + capture the writer identity, attach this
+ * connection as the first viewer, then launch the detached runner.
+ */
+function startDurableGeneration(args: {
+  req: FastifyRequest
+  reply: FastifyReply
+  db: DatabaseSync
+  input: AssembleInput
+  dataDir: string
+  eventSink: CommandEventSink
+  options: GenerationChatRouteOptions
+  generationJobs: GenerationJobRegistry
+}): void {
+  const { req, reply, input, generationJobs } = args
+  if (generationJobs.hasRunningJob(input.chatId)) {
+    reply.code(409).send({
+      error: 'generation_in_progress',
+      reason: 'A generation is already running for this chat.',
+    })
+    return
+  }
+  const job = generationJobs.registry.create({ timeoutMs: undefined, heartbeatSec: undefined })
+  job.chatId = input.chatId
+  job.writerSessionId = readWriterSessionHeader(req)
+  generationJobs.register(input.chatId, job.id)
+  attachGenerationViewer(req, reply, generationJobs, job)
+  void runGenerationJob({
+    registry: generationJobs,
+    job,
+    db: args.db,
+    input,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    options: args.options,
+  })
+}
+
 export function registerGenerationChatRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
+  generationJobs: GenerationJobRegistry,
   options: GenerationChatRouteOptions = {},
 ): void {
   app.post('/api/v1/generate/chat', async (req, reply) => {
@@ -627,7 +1182,51 @@ export function registerGenerationChatRoutes(
       return badRequest(reply, validation.error)
     }
 
-    await streamAssembly(req, reply, db, toAssembleInput(body), dataDir, eventSink, options)
+    const input = toAssembleInput(body)
+    // Durable path: a `send` the browser classified durable. The active-writer
+    // submission gate ran in the global preHandler; here we only add the
+    // one-job-per-chat rule and hand off to the detached runner.
+    if (body.durable === true && input.mode === 'send') {
+      startDurableGeneration({ req, reply, db, input, dataDir, eventSink, options, generationJobs })
+      return
+    }
+
+    await streamAssembly(req, reply, db, input, dataDir, eventSink, options)
+  })
+
+  // Step 2: reattach to a running (or done-within-grace) durable generation over
+  // SSE — observe is open to any authenticated client (no writer lease). A returning
+  // client discovers the id from bootstrap `activeGenerationJobs` (reload-resume) or
+  // the `job_accepted` / `info` frame. 404 if the job is unknown / GC'd (a completed
+  // job is read from `db.json` via the normal projection refresh, EC-D2).
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/generate/chat/:id/stream',
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      const job = generationJobs.registry.get(req.params.id)
+      if (!job) {
+        reply.code(404).send({ error: 'Job not found' })
+        return
+      }
+      attachGenerationViewer(req, reply, generationJobs, job)
+    },
+  )
+
+  // Step 2 gotcha B: explicit cancel. Authorized by the **current** active writer
+  // (the global guard preHandler enforces it — including writer handoff, so a new
+  // writer can cancel a prior, now-disconnected writer's job). Aborts the provider
+  // dispatch; the runner persists the streaming-so-far text (gotcha E) and clears
+  // the submission lock. A bare disconnect does NOT cancel (it only detaches).
+  app.delete<{ Params: { id: string } }>('/api/v1/generate/chat/:id', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const job = generationJobs.registry.get(req.params.id)
+    if (!job) {
+      reply.code(404).send({ error: 'Job not found' })
+      return
+    }
+    job.abortController.abort()
+    if (job.chatId) generationJobs.clearRunning(job.chatId, job.id)
+    return { success: true }
   })
 
   // 7-11h: one-shot JSON preview. Unlike `/chat` this never opens an SSE

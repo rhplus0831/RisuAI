@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { ActiveWriterState } from '../activeWriter.js'
 import { registerActiveWriterSession } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
+import type { GenerationJobRegistry } from '../generationJobs.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import { loadPersisted } from '../repository.js'
@@ -16,6 +17,7 @@ export function registerBootstrapRoutes(
   authState: AuthState,
   dataDir: string,
   activeWriterState?: ActiveWriterState,
+  generationJobs?: GenerationJobRegistry,
 ): void {
   app.get('/api/v1/bootstrap', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -29,6 +31,10 @@ export function registerBootstrapRoutes(
       schemaVersion: version,
       database: maskProviderSecrets(persisted.database),
       assetBaseUrl: ASSET_BASE_URL,
+      // Durable generation (Milestone 1): the transient running generations, so a
+      // returning client — even after a full reload — discovers + reattaches to an
+      // in-flight generation. Server-memory only; empty when none are running.
+      activeGenerationJobs: generationJobs?.activeJobs() ?? [],
     }
   })
 }
