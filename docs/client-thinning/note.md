@@ -8,36 +8,33 @@ behavior being changed.
 
 ## Latest Change
 
-Direction was corrected on 2026-05-29: these docs were rewritten from scratch
-around the **chat-process ownership blocker classification** (see
-[`plan.md`](plan.md)). Two concrete changes landed alongside the rewrite:
+The newest code change is `2883e8a2` (`feat: land server Lua VM runtime (slice
+3b sub-slice 1)`). It added `server/fastify/src/prompt/luaRuntime.ts` and
+`server/fastify/__tests__/luaRuntime.test.ts`. Scope is runtime only: the
+classifier still routes Lua sends `unsupported` because `editRequest`,
+`editprocess`, and input-trigger/`editinput` are not wired into server assembly.
 
-- `useServerGeneration` (a dead/legacy flag) was removed (commit `refactor:
-  remove dead useServerGeneration flag and annotate runtime gates`). The two
-  remaining gates — `isFastifyServer` and `useServerPromptAssembly` — were kept
-  and annotated in-code as NOT deprecated.
-- **Group chat** was reclassified from "unsupported under server assembly" to
-  **fully legacy**: no-port AND to be removed from the client. The code removal is
-  a separate task — see
-  [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
+Already landed before that: `resolveServerPromptAssembly` (text subset
+server-mandatory when the flag is on), C-A1 route-owned assembly-time
+scriptstate persistence, multimodal/asset inlining for image-input models, and
+pluginV2 permanent unsupported.
 
 ## Latest Verification
 
-- Command: `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts src/ts/process/request/tests/serverCompletion.test.ts`
-- Result: Passed (163 tests).
-- Command: `pnpm client-thinning:audit`
-- Result: Passed (`Client-thinning audit passed.`).
+See [`coverage/latest-verification.md`](coverage/latest-verification.md) for the
+current recorded commands and results.
 
 ## Current State
 
 - Default Fastify chat flow: browser assembles the prompt
   (`useServerPromptAssembly` off), server makes the LLM call (platform-gated),
-  browser orchestrates post-gen, persistence via browser-issued commands. The
-  generation routes are stateless w.r.t. the chat blob.
+  browser orchestrates post-gen, and final-message persistence still uses a
+  browser-issued command. When server prompt assembly is enabled,
+  `/generate/chat` now persists assembly-time scriptstate itself.
 - Closed: command boundary, bootstrap projection + command-event invalidation,
   `.risu` import/export/bundle, asset routes + reference validation, backup/
   restore, provider secret masking, supported-provider server dispatch.
-- Audit reproducibility is complete (20 rules, 41 tests), but ~12/20 rules are
+- Audit reproducibility is complete (21 rules, 45 tests), but several rules are
   shallow and four were empirically defeated by sincere refactors. See
   [`status/audit.md`](status/audit.md).
 
@@ -46,10 +43,9 @@ around the **chat-process ownership blocker classification** (see
 Follow the work order in [`plan.md`](plan.md):
 
 1. Run the audit; fix/triage if red.
-2. A1 foundation: `resolveServerPromptAssembly` classifier + make the supported
-   text-send subset server-mandatory.
-3. C-A1: move assembly-time scriptstate persistence into `/generate/chat`.
-4. Port A1 content classes one at a time.
+2. Lua sub-slice 3b-2: wire VM-backed `editRequest`.
+3. Lua sub-slices 3b-3/3b-4: `editprocess`, then input-trigger/`editinput`.
+4. Slice 3c: image-gen view instruction.
 5. A2: server output-trigger + `editoutput`.
 6. Group-chat legacy removal.
 7. Audit-rule hardening (A4R2, A4R7, fanout-svelte, EC2).

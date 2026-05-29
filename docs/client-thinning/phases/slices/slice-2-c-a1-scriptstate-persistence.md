@@ -9,6 +9,7 @@ Date: 2026-05-29
 | **Depends on** | nothing — independent of slice 1; the plan's smallest real batch |
 | **Reference** | [`../../reference/post-generation-and-persistence.md`](../../reference/post-generation-and-persistence.md) |
 | **Goal** | Move the **assembly-time** scriptstate delta persistence into `/generate/chat` and retire the browser's command replay. The server already computes the delta; this stops the round-trip where the browser POSTs it back. |
+| **Status** | **DONE** in commit `654db21a`. |
 
 ## Outcome
 
@@ -32,7 +33,10 @@ conflate them.
 - [ ] You can articulate **the two scriptstate deltas** (assembly-time vs post-gen)
       and that this slice touches only the first.
 
-## Step-by-step
+## Historical Step-by-step
+
+The checklist below records the pre-C-A1 route shape and implementation path.
+Current behavior is summarized in the Outcome and checked items.
 
 ### Orient
 
@@ -46,9 +50,9 @@ conflate them.
    projection **and** re-POSTs it as a scriptstate command
    (`serverBackedSendChat.ts:118`) → server re-applies it to the chat it just
    mutated.
-3. Confirm the route is stateless today: its only repository import is read-only
-   (`generationChat.ts:8`, `loadPersisted`); no write/`bumpRevision` exists in the
-   file. This slice adds the **first** write path to it.
+3. Confirm the pre-C-A1 route was stateless: its only repository import was
+   read-only (`generationChat.ts:8`, `loadPersisted`); no write/`bumpRevision`
+   existed in the file. This slice added the **first** write path to it.
 4. Read how the command route persists the same delta —
    `applyJsonCommandMutation` (`server/fastify/src/commands/mutations.ts`): it
    checks revision, writes JSON, bumps revision once, emits one event, rolls back
@@ -96,7 +100,7 @@ conflate them.
 
 ### Prove
 
-11. **Flip the statelessness assertion.** `generation.chat.test.ts:436-474`
+11. **Flip the pre-C-A1 statelessness assertion.** `generation.chat.test.ts:436-474`
     currently asserts that a `setvar` start trigger emits
     `chatVarMutations: [{ key:'$score', before:null, after:'9' }]` yet bootstrap
     afterwards shows `revision: 1` / `scriptstate: undefined`. Change it to expect
@@ -116,7 +120,7 @@ conflate them.
 ### Land
 
 15. Run the [shared verification](README.md#shared-verification-run-before-and-after-every-slice).
-16. Update docs: flip the "Chat-blob persistence … GAP by design — stateless"
+16. Update docs: flip the old "Chat-blob persistence … GAP by design — stateless"
     framing in [`../../reference/server-assembler-parity.md`](../../reference/server-assembler-parity.md)
     and the C-A1 rows in
     [`../../reference/post-generation-and-persistence.md`](../../reference/post-generation-and-persistence.md)
@@ -146,7 +150,7 @@ classifier (slice 1).
 - [x] The browser no longer re-POSTs the delta; projection apply stays; revision
       reconciles. (`applyServerMessagePatches` trimmed; `reconcileServerCommandRevision`
       → `setCachedServerCommandRevision` in `request/serverChat.ts`.)
-- [x] `generation.chat.test.ts` statelessness assertion is flipped to expect
+- [x] `generation.chat.test.ts` persistence assertion is flipped to expect
       persistence; preview stays read-only.
 - [x] Zero outbound `…/scriptstate` POSTs for an assembly-time var write; a
       non-active-writer `/chat` 423s before persisting.

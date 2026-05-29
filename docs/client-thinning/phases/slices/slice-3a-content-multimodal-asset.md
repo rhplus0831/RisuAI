@@ -9,6 +9,7 @@ Date: 2026-05-29
 | **Depends on** | **slice 1** (the classifier exists to flip) |
 | **Reference** | [`../../reference/server-assembler-parity.md`](../../reference/server-assembler-parity.md) §`history.ts` + [`../../reference/local-assembler-content-classes.md`](../../reference/local-assembler-content-classes.md) classes 1–2 |
 | **Goal** | Port image/asset inlining to the server assembler (populate the `AssetLookup` seam, retire the hardcoded `NO_ASSETS`) so asset-bearing sends become server-mandatory instead of `unsupported`. |
+| **Status** | **DONE** in commit `7fd9e01d`. |
 
 ## Outcome
 
@@ -18,16 +19,18 @@ Date: 2026-05-29
 - The classifier's **multimodal/asset** detector (slice 1, step 7) flips from
   `→ unsupported` to `→ server`. Asset sends now assemble on the server with
   byte-parity to the browser; they never fall back to local.
-- The **non-vision caption** sub-case (class 2) is handled explicitly: either
-  `unsupported` or a documented captionless behavior difference — never silent.
+- The **non-vision caption** sub-case (class 2) hard-fails as `unsupported`.
 
-## Preconditions
+## Historical Preconditions
 
 - [ ] Slice 1 landed: `resolveServerPromptAssembly` exists and currently routes
       asset content to `unsupported`.
 - [ ] `pnpm api:test` and the serverBacked sweep are green.
 
-## Step-by-step
+## Historical Step-by-step
+
+The checklist below records the pre-3a route shape and implementation path.
+Current behavior is summarized in the Outcome and checked items.
 
 ### Orient
 
@@ -135,9 +138,9 @@ keep routing `unsupported`. Do not touch persistence (slice 2/4).
 
 ## When this slice is done
 
-- [ ] A non-empty `AssetLookup` is bound in the route and passed to
+- [x] A non-empty `AssetLookup` is bound in the route and passed to
       `buildHistoryWindow`; `NO_ASSETS` is no longer the live path for real sends.
-- [ ] The client populates `inlayAssets` with the inlay bytes the server lacks.
-- [ ] The classifier routes asset sends to `server`; the non-vision caption case
+- [x] The client populates `inlayAssets` with the inlay bytes the server lacks.
+- [x] The classifier routes asset sends to `server`; the non-vision caption case
       has an explicit, documented disposition.
-- [ ] A byte-parity asset fixture is green; the parity matrix row is flipped.
+- [x] A byte-parity asset fixture is green; the parity matrix row is flipped.

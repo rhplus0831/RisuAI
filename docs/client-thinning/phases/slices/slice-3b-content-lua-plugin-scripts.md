@@ -52,15 +52,14 @@ Tracking which sub-class has landed (this slice is a series — see the scope gu
 | Sub-class | Disposition | State |
 | --- | --- | --- |
 | pluginV2 `editRequest`/`editprocess`/replacers (5) | **permanent `unsupported`** | **DONE** — classifier split into its own `hasPluginV2EditSet` arm (distinct user-facing reason), recorded in the parity matrix / content-classes / unsupported docs, and pinned by the **`A4R-pluginv2 no server-side plugin execution`** audit invariant (`util/client-thinning-audit.ts`, fixtures under `util/client-thinning-audit-fixtures/pluginv2-server-execution/`). |
-| Lua `editRequest` (4) | port (server VM) | **pending** — blocked on the server Lua VM. |
-| Lua `editprocess` (5) | port (browser no-op) | **pending** — blocked on the server Lua VM. |
-| Lua input-trigger / `editinput` (6) | port (VM + submit hook) | **pending** — blocked on the server Lua VM. |
+| Lua `editRequest` (4) | port (server VM) | **pending** — VM runtime landed; hook wiring pending. |
+| Lua `editprocess` (5) | port (browser no-op) | **pending** — VM runtime landed; hook wiring/proof pending. |
+| Lua input-trigger / `editinput` (6) | port (VM + submit hook) | **pending** — VM runtime landed; new submit seam pending. |
 
-The Lua sub-classes share one gating dependency (the server `wasmoon` VM) whose
-**security architecture is scaled to the deployment model** — a decision the slice
-defers to the operator (see "The honest framing first"). Until the VM lands, the
-Lua arm (`sendHasLuaContent`) keeps routing `unsupported`, so there is **no silent
-local fallback** for any Lua/plugin/trigger send today.
+The Lua sub-classes share the landed server `wasmoon` VM runtime. What remains is
+hook wiring and proof. Until each hook lands, the Lua arm (`sendHasLuaContent`)
+keeps routing `unsupported`, so there is **no silent local fallback** for any
+Lua/plugin/trigger send today.
 
 **The Lua port is drafted as its own sub-slice series for the next agent** (the
 operator chose the **single-user self-host** security model on 2026-05-29):
@@ -113,11 +112,9 @@ sub-slices (VM → `editRequest` → `editprocess` → `editinput`). Start there
 
 ### Implement — port path (only the sub-classes you chose to port)
 
-3. **Stand up the server scripting runtime.** This is the gating dependency for
-   classes 4 and 6. Decide `wasmoon` vs Pyodide-worker; provide the same globals
-   the browser engine exposes (`callListenMain`, `listenEdit`, the
-   `triggerscript`/module-trigger iteration). This is large enough that, once it
-   exists, **classes 4 and 6 should be separate review batches** under it.
+3. **Use the landed server scripting runtime.** `server/fastify/src/prompt/luaRuntime.ts`
+   provides the VM and pure host-function surface. Do not re-open the runtime in a
+   hook slice unless the hook proof exposes a runtime parity bug.
 4. **`editRequest` (class 4):** wire the real hook into the request-edit seam that
    currently defaults to identity — `templates.ts:683` (`editRequest = rows => rows`),
    applied at `:725-730`; `renderAndBudget` calls `renderFinalPrompt` without an
@@ -180,8 +177,9 @@ image-gen (3c).
 
 - [~] Per sub-class, a recorded decision: ported (with parity proof) or permanent
       `unsupported` (with a doc entry + an audit invariant). **pluginV2 done**
-      (permanent `unsupported` + doc entries + `A4R-pluginv2` invariant); the three
-      Lua sub-classes are decided (port) but **not yet landed** — blocked on the VM.
+      (permanent `unsupported` + doc entries + `A4R-pluginv2` invariant); the VM
+      runtime is landed; the three Lua hooks are decided (port) but **not yet
+      wired**.
 - [ ] For ported sub-classes: server runs the hook, the classifier routes them
       `server`, and a parity fixture is green. *(No Lua sub-class ported yet.)*
 - [x] No silent local fallback for any Lua/plugin/trigger send — every such send

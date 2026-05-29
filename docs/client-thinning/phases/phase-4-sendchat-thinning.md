@@ -13,7 +13,9 @@ the browser may keep effects, transient UI, orchestration, and command issuance.
 Today's default Fastify flow: the browser assembles the prompt
 (`useServerPromptAssembly` defaults false), the server makes the LLM call
 (unsupported providers hard-fail via `resolveServerCompletionRoute`), and the
-browser orchestrates post-gen with persistence via browser-issued commands.
+browser orchestrates post-gen. When server prompt assembly is enabled, the
+classifier makes supported sends server-mandatory and `/generate/chat` now
+persists assembly-time scriptstate itself.
 
 The code-level detail for each batch below — exact entry points and signatures,
 the server/browser parity matrix, the persistence round-trip, and the proof
@@ -34,23 +36,19 @@ change, and what to prove, in order) for carrying out one batch. Mapping: item 1
 explains the **graduation model** that links them (slice 1 makes every content
 class `unsupported`; 3a/3b/3c each flip one to `server`).
 
-1. **A1 foundation — prompt-assembly classifier.** Build
-   `resolveServerPromptAssembly` (`server | local | unsupported`, mirroring
-   `resolveServerCompletionRoute`) and replace the `useServerPromptAssembly`
-   runtime gate. Make the supported text-send subset server-mandatory (single
-   non-group character, server-routable provider, no asset/image-gen/Lua/plugin
-   content). Proof: `assembleLocalSendChatPrompt` is unreachable for the subset.
-2. **C-A1 — server-side scriptstate persistence.** Move assembly-time chat-var
-   persistence into `/generate/chat`; retire the command replay. No parity
-   blocker; the smallest real post-gen batch.
-3. **A1 content classes, one batch each** — multimodal/asset inlining, then
-   Lua `editRequest` + Lua/plugin-V2 + input-trigger/`editinput` scripts, then
-   the image-gen instruction. Each graduates its send shape from `unsupported`
-   to server-mandatory — never a silent local fallback.
+1. **DONE: A1 foundation — prompt-assembly classifier.**
+   `resolveServerPromptAssembly` is landed; the supported subset is
+   server-mandatory when the flag is on.
+2. **DONE: C-A1 — server-side scriptstate persistence.** `/generate/chat`
+   persists assembly-time chat-var deltas and returns the bumped revision.
+3. **A1 content classes, one batch each.** DONE: multimodal/asset inlining on
+   image-input models; pluginV2 permanent unsupported; Lua VM runtime. OPEN:
+   Lua hook wiring and image-gen instruction. Each class graduates from
+   `unsupported` to server-mandatory only after parity proof.
 4. **A2 — server output-trigger + `editoutput`.** The server has no `'output'`
    trigger invocation (only `'start'` is wired) and runs no `editoutput`
    processing. Needs server output-script execution; sequence after A1's
-   Lua/plugin parity.
+   Lua parity.
 
 Group chat is **legacy** and removed elsewhere — do not add a server group model
 here. See [`../status/sendchat-thinning.md`](../status/sendchat-thinning.md) for

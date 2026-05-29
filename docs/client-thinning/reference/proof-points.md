@@ -11,8 +11,8 @@ stable handle. All paths from the repo root.
 
 | File | Pins | Relevance |
 | --- | --- | --- |
-| `server/fastify/__tests__/generation.chat.test.ts` | `/generate/chat` SSE taxonomy, assembler parity, `message_patch` shape, route **statelessness**, unsupported-provider matrix | A1 parity, C-A1 (the assertion to flip), classifier precedent |
-| `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts` | server-backed dual-mode sweep; route-backed `/chat` assembly vs local golden snapshots | A1 bridge; **the C-A1 proof extends this** |
+| `server/fastify/__tests__/generation.chat.test.ts` | `/generate/chat` SSE taxonomy, assembler parity, `message_patch` shape, C-A1 scriptstate persistence, unsupported-provider matrix | A1 parity, C-A1, classifier precedent |
+| `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts` | server-backed dual-mode sweep; route-backed `/chat` assembly vs local golden snapshots | A1 bridge; C-A1 zero-scriptstate-command proof |
 | `src/ts/process/__tests__/sendChat.serverPreview.test.ts` | preview/preview_prompt/regenerate/send via `/chat` with the flag on; the gate off-switch | A1 foundation |
 | `src/ts/process/request/tests/serverChat.test.ts` | `requestServerChat`/`requestServerChatGeneration` SSE consumption | A1 bridge |
 | `src/ts/process/request/tests/serverCompletion.test.ts` | `resolveServerCompletionRoute` three-way verdict + routability matrix | **the pattern the A1 classifier tests copy** |
@@ -28,10 +28,10 @@ stable handle. All paths from the repo root.
   (`:378-387`); `formated` projects 1:1 onto `messages` (`:396-398`); `message_patch`
   shape `toMatchObject({ chatId, characterId, messageMutations, chatVarMutations })`
   (`:401-406`).
-- **Statelessness (the C-A1 flip):** `:436-474` — a `setvar` start trigger emits
-  `chatVarMutations: [{ key:'$score', before:null, after:'9' }]` and
-  `varChanged: true`, yet bootstrap afterwards is `revision: 1` /
-  `scriptstate: undefined`. Preview is read-only too (`:548-579`).
+- **C-A1 persistence:** a `setvar` start trigger emits
+  `chatVarMutations: [{ key:'$score', before:null, after:'9' }]`; `/generate/chat`
+  persists it, returns a bumped revision, and bootstrap afterwards shows
+  `scriptstate: { $score: '9' }`. Preview remains read-only.
 - **Classifier precedent:** the unsupported-provider `it.each` matrix (`:728-819`)
   — NovelAI/NovelList/Ooba/plugin/WebLLM/unknown-OpenAI-compat each emit `error`
   ("unsupported /chat provider … must use local dispatch") with no token frames.
@@ -50,10 +50,9 @@ stable handle. All paths from the repo root.
   (`:430-440`), and stubs the provider via `dispatchProvider`. Sets
   `useServerPromptAssembly = true` (`:508`). Covers
   `['simple-send','continue','regenerate','preview','preview-prompt']` (`:165-171`).
-  **Porting A1 content classes = expanding this list** to the lorebook/persona/
-  author-note/template fixtures already green in the local sweep; **C-A1 = adding a
-  "zero outbound `/chats/:id/scriptstate` POSTs" assertion** here (the harness
-  already records command calls).
+  Porting A1 content classes expands this list to prove server == local golden.
+  C-A1 is already covered by the zero outbound `/chats/:id/scriptstate` POST
+  assertion and revision reconciliation.
 - **C** `'/chat adapter replay'` (`:741`): hypav3 patch + side-effect replay,
   rollback on dispatch failure, single server-sent TTS.
 
@@ -63,8 +62,8 @@ stable handle. All paths from the repo root.
 `makeTarg`-table routability matrix (~60 cases). The three-way verdict is pinned
 at `:162-202` (`previewBody` → `unsupported`; NovelAI → `unsupported`; `local`
 indirectly via `getServerCompletionProvider` null when `!isFastifyServer`). The
-new `resolveServerPromptAssembly` tests should mirror this layout. `rg` confirms
-`resolveServerPromptAssembly` does not yet exist.
+landed `resolveServerPromptAssembly` tests mirror this layout in
+`src/ts/process/request/tests/serverPromptAssembly.test.ts`.
 
 ## Test infrastructure
 
@@ -113,7 +112,7 @@ an assembly-time var write, and a non-active-writer `/chat` does not persist.
 
 ## Audit (`util/client-thinning-audit.ts`)
 
-20 checks registered in `auditChecks` (`:2643-2664`), selectable by id via
+21 checks registered in `auditChecks`, selectable by id via
 `CLIENT_THINNING_AUDIT_CHECK_IDS` (`:2606`).
 
 - **EC1 provider ownership — `checkProviderOwnership`** (`:1234`, registered
@@ -121,8 +120,11 @@ an assembly-time var write, and a non-active-writer `/chat` does not persist.
   `serverCompletion.ts` — `"if (!isFastifyServer) return { type: 'local' }"`,
   the two "not supported in Fastify server mode" strings (`:1238-1242`) — plus
   google.ts gates and forbids `useServerGeneration` in the client settings map.
-  **A new `resolveServerPromptAssembly` would get analogous needles here (or a
-  sibling check).**
+  `resolveServerPromptAssembly` has analogous needles so the Fastify flag-on path
+  cannot silently regain local fallback.
+- **A4R-pluginv2 no server-side plugin execution**: keeps pluginV2 edit/replacer
+  hooks permanent unsupported by forbidding server prompt code from importing or
+  executing the browser plugin runtime.
 - **EC5 active-writer guard** (`:518`, registered `:2644`): classifies
   `/generate/chat` and `/generate/preview-prompt` as `active-writer`
   (`:387-400`) and requires the client `serverChat.ts` helper to carry the writer
@@ -146,11 +148,11 @@ AST invariants):
 
 - Entry point: `package.json` → `"client-thinning:audit": "tsx util/client-thinning-audit.ts"`.
   Exits 1 on any finding.
-- Regression tests: `util/client-thinning-audit.test.ts` — **41 `it`s** over the
-  20 rules, each spawning the real audit with a per-rule `CLIENT_THINNING_AUDIT_CHECK_IDS`
+- Regression tests: `util/client-thinning-audit.test.ts` — **45 `it`s** over the
+  21 rules, each spawning the real audit with a per-rule `CLIENT_THINNING_AUDIT_CHECK_IDS`
   against a fixture. Fixtures in `util/client-thinning-audit-fixtures/<rule>/{failing*, *-bypass}/`
   (a failing fixture exits non-zero, a bypass fixture exits 0); some rules have two
-  failing fixtures, hence 41 > 20.
+  failing fixtures, hence 45 > 21.
 
 ## Verification commands
 
@@ -163,14 +165,14 @@ AST invariants):
 "api:test": "vitest run --config server/fastify/vitest.config.ts"
 ```
 
-- `pnpm client-thinning:audit` — the 20-rule audit (start here; if red, fix/triage
+- `pnpm client-thinning:audit` — the 21-rule audit (start here; if red, fix/triage
   before runtime work).
 - `pnpm api:test` — server suite (incl. `generation.chat.test.ts`).
 - `pnpm test` — full client suite (incl. `src/ts/process/...`).
 - `pnpm smoke:fastify-browser` — build + Playwright smoke (long).
 - Focused (the form the docs use):
   - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.test.ts src/ts/process/request/tests/serverCompletion.test.ts` (the "163 tests" = 38 local fixtures + 125 classifier cases).
-  - `pnpm exec vitest run util/client-thinning-audit.test.ts` (41 tests).
+  - `pnpm exec vitest run util/client-thinning-audit.test.ts` (45 tests).
   - `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts src/ts/process/request/tests/serverChat.test.ts`.
   - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts`.
 

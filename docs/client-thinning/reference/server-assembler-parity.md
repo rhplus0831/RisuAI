@@ -67,11 +67,12 @@ slice functions in order: `beginAssembly` → `prepareRegenerateTranscript` →
 
 - **Input** `AssembleInput` (`assemble.ts:147-158`): `chatId`, `characterId`,
   optional `presetId`/`loadoutId`, `mode`, `regenerateMessageId`, `userMessage`,
-  `resetMessages`, `expectedRevision`, `inlayAssets?: unknown[]`. **`assemble.ts`
-  never reads `state.input.inlayAssets`** — it is accepted and dropped.
+  `resetMessages`, `expectedRevision`, `inlayAssets?: unknown[]`. `beginAssembly`
+  consumes `inlayAssets` by building `state.assetLookup`; `fillHistoryAndBias`
+  passes that lookup into `buildHistoryWindow`.
 - **Dependency seam** `AssembleDeps` (`assemble.ts:129-134`): `loadDatabase()`,
   optional `loadMemoryDatabase()`, `loadPromptMemoryQueryVectors()`,
-  `enqueuePromptMemoryFollowUpJob`.
+  `enqueuePromptMemoryFollowUpJob`, and `resolveStoredAssetImage`.
 - **Output** `AssembleResult` (`assemble.ts:226-245`): on success `prompt`
   (the `prompt` SSE payload), `formated`, `biases`, `inputTokens`,
   `outputTokens`, `mutations` (`AssembleMutationPayload`), `restoration`. On
@@ -213,7 +214,7 @@ the completion text post-generation.
 C-A1 is pinned by `server/fastify/__tests__/generation.chat.test.ts` — a `setvar`
 start trigger emits `chatVarMutations` in the patch **and** bootstrap afterwards
 shows the bumped `revision: 2` with the written `scriptstate: { $score: '9' }`
-(the flipped statelessness assertion), while `mode: 'preview'` stays
+(the C-A1 persistence assertion), while `mode: 'preview'` stays
 `revision: 1` / `scriptstate: undefined`, and a non-active-writer `/chat` 423s
 before persisting.
 

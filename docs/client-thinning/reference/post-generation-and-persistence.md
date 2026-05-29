@@ -13,15 +13,15 @@ the stable handle. All paths from the repo root.
 There are **two** scriptstate deltas, often conflated:
 
 - **Assembly-time** scriptstate (the `'start'` trigger + run-var pass). The server
-  *already computes* this (`assemble.ts::buildChatVarMutations`) and emits it as a
-  `message_patch`; the browser replays it as a command. **No parity blocker** —
-  this is the **C-A1** target (move the persist into the route, stop replaying).
+  computes this (`assemble.ts::buildChatVarMutations`), emits it as a
+  `message_patch`, persists it in `/generate/chat` for persisting modes, and
+  returns the bumped revision over SSE. **C-A1 is done.**
 - **Post-generation** scriptstate (the `'output'` trigger + `editoutput`, derived
   from the just-generated assistant text). The server has **no path** for this —
   this is the **A2** blocker (needs server post-gen script/trigger execution).
 
-C-A1 is small and unblocked; A2 needs the server scripting machinery and should
-sequence after A1's Lua/plugin parity.
+A2 needs the server scripting machinery and should sequence after A1's Lua hook
+parity.
 
 ## Stage taxonomy (there is no `runStage1/2/3`)
 
@@ -236,11 +236,11 @@ returns 423 before any mutation).
   POSTs for an assembly-time var write, that the route persisted (bootstrap shows
   the written scriptstate + bumped revision), and that the cached command
   revision reconciled (the follow-up `generation-result` POST carries the bumped
-  `baseRevision`). `generation.chat.test.ts` flips the statelessness assertion to
-  expect persistence, keeps preview read-only, and proves a non-active-writer
+  `baseRevision`). `generation.chat.test.ts` expects persistence, keeps preview
+  read-only, and proves a non-active-writer
   `/chat` 423s before persisting.
 - **A2:** a server `'output'` trigger pass + `editoutput` execution that derive
   the post-gen scriptstate/message delta and surface it (patch or persisted),
-  with the browser branch removed; sequence after A1 Lua/plugin parity.
+  with the browser branch removed; sequence after A1 Lua hook parity.
 
 See [`proof-points.md`](proof-points.md) for the test files and harness mechanics.

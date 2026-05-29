@@ -9,6 +9,7 @@ Date: 2026-05-29
 | **Depends on** | nothing; this is first |
 | **Reference** | [`../../reference/prompt-assembly-classifier.md`](../../reference/prompt-assembly-classifier.md) |
 | **Goal** | Build `resolveServerPromptAssembly` (`server`/`local`/`unsupported`) and replace the `useServerPromptAssembly` boolean gate so the pure-text-send subset is server-mandatory and out-of-subset sends hard-fail — never silently assemble locally. |
+| **Status** | **DONE** in commit `4e8c4f37`. |
 
 ## Outcome
 
@@ -20,13 +21,16 @@ After this slice, in Fastify mode:
 - Any out-of-subset send returns `unsupported` and **hard-fails** with a
   user-facing reason — it does not fall through to local assembly.
 - The silent `unavailable` → local fall-through hole is gone.
-- `local` is reachable **only** when `!isFastifyServer` (dev/web/tests),
-  exactly mirroring `resolveServerCompletionRoute`.
+- `local` is reachable only when `!isFastifyServer` (dev/web/tests) or the
+  default-off `useServerPromptAssembly` master gate is off.
 
-This slice does **not** port any content class. It makes every content class
-route to `unsupported`; slices 3a/3b/3c each later flip one to `server`.
+This slice did **not** port any content class. It classified unsupported classes;
+slices 3a/3b/3c each later graduate one to `server`.
 
-## Preconditions
+## Historical Preconditions
+
+The checklist below records the pre-land state and is retained for maintenance
+context.
 
 - [ ] `pnpm client-thinning:audit` is green (or its findings are triaged).
 - [ ] The route-backed and preview sweeps are green:
@@ -34,7 +38,7 @@ route to `unsupported`; slices 3a/3b/3c each later flip one to `server`.
 - [ ] `rg resolveServerPromptAssembly src/` returns nothing (confirm it really
       doesn't exist yet).
 
-## Step-by-step
+## Historical Step-by-step
 
 ### Orient (read, do not edit)
 
@@ -191,10 +195,11 @@ longer reach local.
 
 ## When this slice is done
 
-- [ ] `resolveServerPromptAssembly` exists, is pure, returns `local` only when
-      `!isFastifyServer`, and is unit-tested like `serverCompletion`.
-- [ ] The `index.svelte.ts:162` boolean gate is replaced; `unsupported` hard-fails;
+- [x] `resolveServerPromptAssembly` exists, is pure, returns `local` only when
+      `!isFastifyServer` or the master flag is off, and is unit-tested like
+      `serverCompletion`.
+- [x] The `index.svelte.ts` boolean gate is replaced; `unsupported` hard-fails;
       the `unavailable` status is deleted.
-- [ ] A negative test shows the local assembler is not entered for the subset; the
+- [x] A negative test shows the local assembler is not entered for the subset; the
       audit pins the classifier's presence.
-- [ ] All prior sweeps are still green with no snapshot drift.
+- [x] All prior sweeps are still green with no snapshot drift.

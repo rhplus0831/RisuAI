@@ -9,17 +9,17 @@ in [`../coverage/audit.md`](../coverage/audit.md).
 ## Current State: Reproducible, Not Uniformly Robust
 
 `pnpm client-thinning:audit` runs `util/client-thinning-audit.ts` (ts-morph plus
-source-text checks). Fixture **reproducibility is complete**: all 20 rules have
-committed fixtures and tests in `util/client-thinning-audit.test.ts` (41 tests).
+source-text checks). Fixture **reproducibility is complete**: all 21 rules have
+committed fixtures and tests in `util/client-thinning-audit.test.ts` (45 tests).
 The harness is honest — it spawns the real audit binary against per-rule mini-repo
 fixtures with `CLIENT_THINNING_AUDIT_CHECK_IDS` scoping and asserts non-zero exit
 on the failing fixture (and zero on a bypass fixture where applicable). No rule is
 mocked or re-implemented.
 
-But reproducible is not robust. Roughly 8 of 20 rules are genuine AST/call-graph
+But reproducible is not robust. Several rules are genuine AST/call-graph
 invariants that survive a refactor (notably A4R3 transitive-mint, A4R1
 passive-refresh via `findReferencesAsNodes`, A4R4 resolver-normalize, A4R5
-parser-parity, A4R-bounded, A4R-saveasset). The other ~12 lean on `String.includes`
+parser-parity, A4R-bounded, A4R-saveasset). Others lean on `String.includes`
 needles / regex counts, and a sincere refactor that changes surface syntax can
 slip past them.
 

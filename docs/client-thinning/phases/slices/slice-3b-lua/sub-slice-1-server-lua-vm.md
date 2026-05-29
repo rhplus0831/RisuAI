@@ -1,6 +1,6 @@
 # Sub-slice 3b-1: Server Lua VM (the runtime)
 
-Date: 2026-05-29 (handover; not started)
+Date: 2026-05-29 (landed)
 
 | | |
 | --- | --- |
@@ -9,6 +9,7 @@ Date: 2026-05-29 (handover; not started)
 | **Depends on** | slice 1 (classifier), slice 3b pluginV2 split (landed) |
 | **Security model** | **single-user self-host** (operator decision; see [README §Security](README.md#security-design-single-user-self-host)) |
 | **Goal** | Stand up a server-side `wasmoon` Lua runtime that mirrors `runScripted` + `runLuaEditTrigger`, with the self-host security gate and the host-fn surface. **No assembler hooks, no classifier flip** — runtime + tests only. |
+| **Status** | **DONE** in commit `2883e8a2`; hooks remain in sub-slices 2/3/4. |
 
 ## Scope guard
 
@@ -31,7 +32,10 @@ arm stays `unsupported` after this lands. The runtime is provable on its own
   `request()` rejects private/loopback/metadata IPs + over-limit calls; a runaway
   script is interrupted; interactive APIs fail explicitly.
 
-## Step-by-step
+## Historical Step-by-step
+
+The checklist below records how the landed runtime was built. It is retained for
+maintenance context; do not treat it as not-started work.
 
 ### Decide (before code)
 

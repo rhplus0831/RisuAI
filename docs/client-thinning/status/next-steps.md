@@ -17,20 +17,18 @@ Read this when choosing the next client-thinning batch. Full classification in
 
 ## Prioritized Work Order
 
-1. **A1 foundation — prompt-assembly classifier.** Build
-   `resolveServerPromptAssembly` (`server | local | unsupported`, mirroring
-   `resolveServerCompletionRoute`) and replace the `useServerPromptAssembly`
-   runtime gate. Make the supported text-send subset server-mandatory (single
-   non-group character, server-routable provider, no asset/image-gen/Lua/plugin
-   content). Proof: `assembleLocalSendChatPrompt` is unreachable for the subset.
-2. **C-A1 — server-side scriptstate persistence.** Move assembly-time chat-var
-   persistence into `/generate/chat`; retire the command replay. No parity
-   blocker; smallest real post-gen batch.
-3. **A1 content classes, one batch each** — multimodal/asset inlining, then
-   Lua/plugin-V2 + input scripts, then image-gen instruction. Each graduates its
-   send shape from `unsupported` to server-mandatory.
+Completed context: slice 1 (`resolveServerPromptAssembly`), slice 2 (C-A1),
+slice 3a (multimodal/asset on image-input models), pluginV2 permanent
+unsupported, and slice 3b-1 (server Lua VM runtime) have landed.
+
+1. **Lua sub-slice 3b-2 — `editRequest`.** Wire the landed VM into the server
+   `renderFinalPrompt` editRequest seam and flip only the proven classifier arm.
+2. **Lua sub-slices 3b-3/3b-4.** Wire/prove Lua `editprocess`, then add the
+   submit-time input-trigger/`editinput` server hook.
+3. **Slice 3c — image-gen view instruction.** Port the static prompt instruction
+   branch and graduate that detector.
 4. **A2 — server output-trigger + `editoutput`.** Needs server output-script
-   execution; sequence after A1's Lua/plugin parity.
+   execution; sequence after A1's Lua hook parity.
 5. **Group-chat legacy removal.** Separate from thinning — inventory and remove
    the client surface (see [`client-owned-unsupported.md`](client-owned-unsupported.md)).
 6. **Audit-rule hardening.** Convert A4R2, A4R7, the fanout `.svelte` path, and
@@ -46,7 +44,8 @@ Read this when choosing the next client-thinning batch. Full classification in
 - Do not add browser provider fallback in Fastify mode.
 - Do not add a server group-chat model; group chat is legacy.
 - Do not reopen native/mobile wrappers, service workers, peer/Drive/Account sync,
-  or removed memory engines; do not add server-side plugin code execution.
+  or legacy memory/sync surfaces outside this plan; do not add server-side plugin
+  code execution.
 
 ## Closed Areas
 

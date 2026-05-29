@@ -21,8 +21,9 @@ In the browser it runs in the chat-screen submit handler
   plus regex scripts.
 
 These mutate the transcript **before** the message is appended/persisted and before
-assembly. `/generate/chat` is currently stateless re the chat blob, so this needs a
-pre-assembly server hook.
+assembly. `/generate/chat` already persists assembly-time scriptstate, but it has
+no submit-time hook that can rewrite the transcript before assembly; this slice
+adds that seam.
 
 ## Do not conflate (stays browser, B1)
 

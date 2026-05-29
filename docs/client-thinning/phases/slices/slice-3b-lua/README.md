@@ -160,9 +160,10 @@ Where each hook wires (exact seams; the editRequest seam *already exists*, unuse
   (`scripts.ts:315`, applied `history.ts:292-300,452-457`). The `scripts.ts:50-56`
   header already documents the Lua deferral. Lua `editprocess` is a browser no-op, so
   sub-slice 3 is near-identity (prove parity, flip nothing structural).
-- **`editinput`** — **no server seam exists**: it runs at *submit*, before assembly
-  (`DefaultChatScreen.svelte:229-244`), and `/generate/chat` is currently stateless
-  re the chat blob. Sub-slice 4 adds a pre-assembly server hook that runs
+- **`editinput`** — **no submit-time server seam exists**: it runs at *submit*,
+  before assembly (`DefaultChatScreen.svelte:229-244`). `/generate/chat` already
+  owns assembly-time scriptstate persistence, but it cannot yet rewrite the
+  transcript before assembly. Sub-slice 4 adds a pre-assembly server hook that runs
   `runTrigger('input')` + `processScript('editinput')`. Do **not** conflate the two
   B1 input-plumbing branches (slash text, file-inlay insertion,
   `DefaultChatScreen.svelte:203-216`) — those stay browser.

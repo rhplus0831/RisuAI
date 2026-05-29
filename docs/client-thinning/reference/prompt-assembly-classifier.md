@@ -2,12 +2,12 @@
 
 Date: 2026-05-29
 
-Backs Phase 4 work-order item **1** — build `resolveServerPromptAssembly`
-(`server | local | unsupported`, mirroring `resolveServerCompletionRoute`) and
-replace the `useServerPromptAssembly` runtime gate so the supported text-send
-subset is server-mandatory. See [`../phases/phase-4-sendchat-thinning.md`](../phases/phase-4-sendchat-thinning.md)
-for the work order and [`../status/sendchat-thinning.md`](../status/sendchat-thinning.md)
-for the A/B triage. This doc is the deep code routing for that batch.
+Backs Phase 4 work-order item **1**. This slice has landed:
+`resolveServerPromptAssembly` now returns `server | local | unsupported`,
+mirrors the `resolveServerCompletionRoute` shape, and makes the supported subset
+server-mandatory when Fastify mode and `useServerPromptAssembly` are both on. See
+[`../status/sendchat-thinning.md`](../status/sendchat-thinning.md) for the live
+A/B triage.
 
 Line numbers are anchors that may drift; the symbol names next to them are the
 stable handle. All paths are from the repo root.
@@ -88,23 +88,24 @@ export async function sendChat(
 ): Promise<boolean>
 ```
 
-The server-vs-local gate is a single boolean (`index.svelte.ts:162`):
+The gate is a classifier verdict (`index.svelte.ts:166-217`):
 
 ```ts
-if (isFastifyServer && DBState.db.useServerPromptAssembly) {
+const assemblyRoute = resolveServerPromptAssembly({ currentChar, currentChat, ... })
+if (assemblyRoute.type === 'unsupported') { throwError(assemblyRoute.reason); return false }
+if (assemblyRoute.type === 'server') { ... assembleServerBackedSendChat(...) ... }
+// assemblyRoute.type === 'local' falls through to the local assembler.
 ```
 
-Inside, it calls `assembleServerBackedSendChat` and switches on
-`serverAssembly.status` (`index.svelte.ts:177-199`), handling only
-`aborted | failed | preview | assembled`. Local assembly is the fall-through
-(`index.svelte.ts:202-217`), guarded by `if (!assembledByServer)` — the **only**
-call to `assembleLocalSendChatPrompt`. The A1 negative proof ("the local
-assembler is unreachable for the supported subset") targets this branch.
+`unsupported` is terminal and never falls through. `server` calls
+`assembleServerBackedSendChat` and handles `aborted | failed | preview |
+assembled`; `local` is limited to non-Fastify mode or the default-off master
+flag. The A1 negative proof targets the single `assembleLocalSendChatPrompt`
+branch and shows it is unreachable for the supported subset when the flag is on.
 
-### The silent fall-through hole (must be closed)
+### Historical pre-slice-1 hole (closed)
 
-`assembleServerBackedSendChat` has a soft escape
-(`src/ts/process/serverBackedSendChat.ts:139-143`):
+Before slice 1, `assembleServerBackedSendChat` had a soft escape:
 
 ```ts
 const mode = serverChatMode(args)
@@ -114,23 +115,11 @@ const canUseServerAssembly = mode !== 'send' || typeof userMessage === 'string'
 if (!canUseServerAssembly) return { status: 'unavailable' }
 ```
 
-**`sendChat`'s status switch has no `case 'unavailable'`.** When assembly returns
-`unavailable`, none of the branches fire, `assembledByServer` stays `false`, and
-execution falls through to local assembly at `index.svelte.ts:202` — a *silent*
-local fallback even with the flag on. The status `'unavailable'` is declared at
-`serverBackedSendChat.ts:46` and returned at `:143`; it appears nowhere in
-`index.svelte.ts`. An implementer replacing the gate must remove this
-fall-through, not merely the `unavailable` return.
-
-Worse: **no content signal (asset/image/Lua/plugin) is inspected on the
-server-backed path at all.** `assembleServerBackedSendChat` looks only at `mode`
-and whether the last user message is a string. So with the flag on, a send
-carrying image/asset/Lua/plugin content is *silently mis-assembled by the server*
-(bytes/instructions dropped) rather than classified `unsupported`. Closing this
-is the core of the A1 classifier. See
-[`server-assembler-parity.md`](server-assembler-parity.md) (what the server
-drops) and [`local-assembler-content-classes.md`](local-assembler-content-classes.md)
-(where to detect each signal).
+`sendChat` did not handle `'unavailable'`, so that status silently fell through
+to local assembly. The landed classifier moved the structural and content checks
+before the server call and deleted this status. Do not reintroduce an
+`unavailable` or "try server then fall back local" path in Fastify mode with the
+flag on.
 
 ## Send modes
 
@@ -185,12 +174,12 @@ export interface ServerChatInput {
 }
 ```
 
-The body is built at `serverBackedSendChat.ts:147-157`: it always sets
+The body is built by `assembleServerBackedSendChat`: it always sets
 `chatId`/`characterId`/`mode`, conditionally `userMessage` (string only) and
-`regenerateMessageId`. **`presetId`, `loadoutId`, `resetMessages`,
-`expectedRevision`, and `inlayAssets` are declared but never populated by the
-client today** — do not assume `inlayAssets` plumbing exists (it is also unused
-server-side; see [`server-assembler-parity.md`](server-assembler-parity.md)).
+`regenerateMessageId`, and as of slice 3a populates `inlayAssets` for referenced
+browser-local inlay bytes. `presetId`, `loadoutId`, `resetMessages`, and
+`expectedRevision` remain optional request fields but are not part of the current
+client path.
 
 POST mechanics (`serverChat.ts:111-120`): `content-type: application/json`,
 `risu-auth` from `getNodeServerProxyAuth()`, plus `activeWriterSessionHeader()`.
@@ -214,11 +203,11 @@ Every production read of `useServerPromptAssembly`:
 
 | Site | Role |
 | --- | --- |
-| `src/ts/process/index.svelte.ts:162` | the send gate (the one the classifier replaces) |
+| `src/ts/process/request/serverPromptAssembly.ts` | master enable read before routing `server`/`unsupported` |
 | `src/ts/storage/database.svelte.ts:779,1368` | default + type |
 | `src/lib/Others/HypaV3Modal.svelte:44` | gates a HypaV3 server-memory UI affordance |
 | `src/ts/server/commands.ts:319,355` | classified as a `'runtime'`-class projectable setting |
-| `server/fastify/src/routes/generationChat.ts:200` | server mirror gate: whether `/chat` also dispatches the provider |
+| `server/fastify/src/routes/generationChat.ts` | server mirror gate: whether `/chat` also dispatches the provider |
 | `server/fastify/src/routes/commands.ts:410,789` | command-route allow-list / runtime-key registry |
 
 ## The target — `resolveServerPromptAssembly`
@@ -250,28 +239,23 @@ today:
 
 | Condition | Detected at | Gate today |
 | --- | --- | --- |
-| Fastify mode + flag on | `index.svelte.ts:162` | the entire current gate |
-| Mode `send` with a string user message (or a non-`send` mode) | `serverBackedSendChat.ts:140-143` | yes, but as a silent `unavailable` |
-| Single, non-group character | groups filtered at `database.svelte.ts:110`; `isGroupChat` hardcoded `false` at `dispatch/dispatchRequest.ts:106`; server has no group branch | **no explicit check** — relies on the upstream filter |
-| Server-routable provider | `resolveServerCompletionRoute` (above); server mirror gate `generationChat.ts:191-202` | yes (separate, existing classifier) |
-| No asset / image-gen / Lua / plugin content | content lives in `currentChat.message[].multimodals`/`.data`, `currentChar.newGenData`/`viewScreen`, plugin/Lua registration | **none inspected** — this is the hole |
+| Fastify mode + flag on | `serverPromptAssembly.ts:207-208` | yes |
+| Mode `send` with a string user message (or a non-`send` mode) | `serverPromptAssembly.ts:210-220` | yes, hard-fails unsupported |
+| Single, non-group character | `serverPromptAssembly.ts:222-230`; groups also filtered at `database.svelte.ts:110` | yes |
+| Server-routable provider | `resolveServerCompletionRoute` inside `serverPromptAssembly.ts:232-241` | yes |
+| No unsupported content | `sendHasUnsupportedContent` (`serverPromptAssembly.ts:128-155`) | yes; slice 3a graduated image-input multimodal/asset to `server` |
 
-Only the provider half (`resolveServerCompletionRoute`) and the
-mode/string-user-message half exist. The character-group and content-class
-detectors are net-new; see the two assembler docs for exactly which fields and
-runtimes signal each content class.
+The current remaining unsupported content signals are non-vision image caption,
+image-gen instruction, Lua hooks, and pluginV2. PluginV2 is permanent
+unsupported; Lua and image-gen are pending content slices.
 
-### Proof obligation for this batch
+### Proof landed for this batch
 
-- A classifier unit test mirroring `serverCompletion.test.ts`'s
-  per-case table + three-way verdict.
-- A negative test that `assembleLocalSendChatPrompt` is unreachable for the
-  supported subset in Fastify mode (i.e. the `index.svelte.ts:202` branch is not
-  taken), and that out-of-subset shapes return `unsupported`, not `local`.
-- Keep the existing route-backed sweep green
-  (`sendChat.fixtures.serverBacked.test.ts` Describe B,
-  `sendChat.serverPreview.test.ts`).
-- Add the classifier's presence to the audit alongside EC1
-  (`util/client-thinning-audit.ts:1234`).
+- `src/ts/process/request/tests/serverPromptAssembly.test.ts` covers the
+  three-way verdict and content signals.
+- `src/ts/process/__tests__/sendChat.serverPreview.test.ts` proves an
+  out-of-subset Lua send hard-fails without local or `/chat`.
+- `util/client-thinning-audit.ts` pins the classifier presence and Fastify
+  server-mandatory guard.
 
 See [`proof-points.md`](proof-points.md) for the exact test files and harness.

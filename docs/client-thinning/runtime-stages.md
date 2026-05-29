@@ -44,14 +44,15 @@ Three boundaries, gated differently (see [`plan.md`](plan.md)):
   unsupported shapes fail explicitly. Closed for supported providers (A3 is a
   support cap, not a leak).
 - **Prompt assembly** — gated by `useServerPromptAssembly` (default off), so the
-  browser still assembles by default. Blocker **A1**: server lacks content parity
-  (multimodal/asset bytes, image-gen instruction, Lua `editRequest`, Lua/plugin-V2
-  + input scripts). Needs a `resolveServerPromptAssembly` classifier.
-- **Post-generation + persistence** — client-orchestrated; durable writes flow
-  through commands; the generation routes are stateless w.r.t. the chat blob.
-  Blocker **A2**: the output trigger (no server `'output'` invocation) and
-  `editoutput` derive durable state with no server path. B1/B2 branches stay in
-  the browser.
+  browser still assembles by default. With the flag on,
+  `resolveServerPromptAssembly` makes the supported subset server-mandatory and
+  hard-fails unsupported content. Remaining **A1** gaps are image-gen instruction
+  and Lua hook wiring; multimodal/asset inlining on image-input models is ported.
+- **Post-generation + persistence** — client-orchestrated after the server
+  stream. C-A1 is done: `/generate/chat` persists assembly-time scriptstate.
+  Blocker **A2** remains: the output trigger (no server `'output'` invocation)
+  and `editoutput` derive durable state with no server path. B1/B2 branches stay
+  in the browser.
 - **HypaV3 memory** — server-side persistence and jobs; progress UI is a
   transient browser projection.
 
@@ -64,5 +65,5 @@ it) and is slated for client removal — see
 
 Assert projection invariants structurally; keep findings from becoming one-off
 fixes; record verification after runtime changes. Audit fixture reproducibility is
-done (20 rules, 41 tests), but rule robustness is open — four rules were
+done (21 rules, 45 tests), but rule robustness is open — four rules were
 empirically defeated by sincere refactors. See [`status/audit.md`](status/audit.md).

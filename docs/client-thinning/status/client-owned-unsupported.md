@@ -27,11 +27,11 @@ own durable state:
 
 - **Auto-continue / resend recursion** — control flow; each iteration's durable
   writes go server-side, so the loop is just re-issuing `sendChat`.
-- **Persistence via command replay** — `dispatchPersistGenerationResult` /
-  `dispatchPatchChatScriptstate`. Requesting a validated, guarded, revision-checked
-  write is a thin pattern. Optional later win: route-direct persistence closes a
-  small durability window (crash between generation and replay) and saves a
-  round-trip.
+- **Final-message persistence via command** — `dispatchPersistGenerationResult`.
+  Requesting a validated, guarded, revision-checked write is a thin pattern.
+  Optional later win: route-direct final-result persistence closes a small
+  durability window (crash between generation and command) and saves a round-trip.
+  Assembly-time scriptstate replay is gone; `/generate/chat` owns that write.
 - **Stage-timing metadata** — browser-measured wall-clock telemetry, persisted via
   command.
 
@@ -45,8 +45,9 @@ tightening, not correctness fixes.
   task; code surface and rationale are in
   [`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
 - The historical no-port list (native/mobile, Tauri/Hono/Express, service workers,
-  peer/Drive/Account sync, SupaMemory/Hypa V2/Hanurai, server-side plugin
-  execution, per-event surgical patching without an event contract).
+  peer/Drive/Account sync, legacy memory/sync surfaces outside this thinning
+  plan, server-side plugin execution, per-event surgical patching without an
+  event contract).
 
 ## Unsupported (Fail Explicitly)
 

@@ -17,20 +17,30 @@ Implemented / closed:
   write guard freezes `DBState.db` outside trusted projection writes.
 - Provider dispatch is server-routed in Fastify mode for supported shapes;
   unsupported shapes fail explicitly (no browser fallback).
+- `resolveServerPromptAssembly` is landed. With `useServerPromptAssembly` on,
+  the supported subset is server-mandatory instead of falling through to local.
+- Multimodal/asset prompt inlining is server-side at parity for image-input
+  models; non-vision image caption fallback hard-fails as unsupported.
+- Assembly-time scriptstate persistence (C-A1) is server-owned by
+  `/generate/chat`; the browser applies the patch as projection and reconciles
+  the returned revision instead of re-POSTing that delta.
+- The server Lua VM runtime is landed, but prompt-assembly hooks are not wired.
 - Bootstrap projection, command-event invalidation, `.risu` import/export/bundle,
   asset routes, backup/restore, and provider secret masking are closed.
 - The client-thinning audit is wired as `pnpm client-thinning:audit` and its
-  fixture reproducibility is complete (20 rules, 41 tests).
+  fixture reproducibility is complete (21 rules, 45 tests).
 
 Active blocker set (see [`plan.md`](plan.md) for the full classification):
 
-- **A1** prompt-assembly content parity (multimodal, Lua `editRequest`,
-  Lua/plugin-V2 + input scripts) — server produces a different prompt; needs a
-  `resolveServerPromptAssembly` classifier; `useServerPromptAssembly` defaults
-  off, so local assembly is still the production path.
+- **A1** prompt-assembly content parity — remaining gaps are image-gen view
+  instruction and Lua `editRequest`/`editprocess`/input-trigger/`editinput`
+  wiring. PluginV2 edit/replacer hooks are permanent unsupported; non-vision
+  image caption fallback is explicit unsupported. `useServerPromptAssembly`
+  still defaults off, so local assembly remains the default production path.
 - **A2** post-generation durable derivation — the **output trigger** (no server
   `'output'` invocation) and **`editoutput`** — needs server script execution.
-- **A3** provider coverage — already hard-fails for unsupported shapes.
+- **A3** provider coverage — closed for current scope; unsupported shapes
+  already hard-fail.
 
 Fine in the browser (not blockers): **B1** permanent client-owned effects, and
 **B2** orchestration/command-replay that the browser may keep. See
@@ -41,7 +51,7 @@ client, not merely unsupported. Event patching stays deferred. Flags:
 `useServerGeneration` removed (2026-05-29); `isFastifyServer` and
 `useServerPromptAssembly` kept and annotated in-code, not deprecated.
 
-Caveat on the audit: reproducible but not uniformly robust — ~12/20 rules are
+Caveat on the audit: reproducible but not uniformly robust — roughly a dozen rules are
 string/regex matchers and four were empirically defeated by sincere refactors.
 Audit-rule hardening is a tracked work item. See [`status/audit.md`](status/audit.md).
 

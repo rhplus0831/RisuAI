@@ -22,7 +22,7 @@ requests a write** — it never becomes the authority.
 | Stage | Default owner | Notes |
 | --- | --- | --- |
 | Pre-send input | Browser | UID/input plumbing; rows persist via commands (B1). |
-| Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier (`request/serverPromptAssembly.ts`); **slice 3a graduated multimodal/asset** (image-input models → `server`). Remaining `unsupported`: non-vision caption (class 2), image-gen (3c), Lua/plugin (3b). |
+| Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier (`request/serverPromptAssembly.ts`); **slice 3a graduated multimodal/asset** (image-input models → `server`). Remaining `unsupported`: non-vision caption (class 2), image-gen (3c), Lua hooks (3b); pluginV2 is permanent unsupported. |
 | Provider dispatch | **Server** (`/generate/completion`) | `resolveServerCompletionRoute`; `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
 | Token streaming → rows | Browser | Writes the projection. |
 | Post-generation | **Browser** | `editoutput`, inlay-screen, output trigger, auto-continue, IGP (blocker **A2** for the durable ones). |
@@ -37,7 +37,7 @@ requests a write** — it never becomes the authority.
 The server `/generate/chat` assembler (`server/fastify/src/prompt/`) is at parity
 for run-vars, CBS/variable expansion, regex scripts, templates, token budget,
 lorebook + depth prompts, start triggers, HypaV3 selection, and **multimodal /
-asset inlining (slice 3a)**. It is NOT at parity for:
+asset inlining (slice 3a)**. Remaining explicit content rows:
 
 - **Multimodal / asset inlining** — **DONE (slice 3a).** `beginAssembly` binds a
   non-empty `AssetLookup` (`prompt/assetLookup.ts`): inlay bytes from the request
@@ -49,8 +49,9 @@ asset inlining (slice 3a)**. It is NOT at parity for:
   ported (slice 3c).
 - **Lua `editRequest`** — server runs identity (`templates.ts`: `editRequest =
   rows => rows`).
-- **Lua + plugin-V2 `editprocess` script hooks**, and the input-trigger /
-  `editinput` scripts at submit — server does regex scripts only.
+- **Lua `editprocess` hooks** and input-trigger / `editinput` scripts at submit —
+  server does regex scripts only, although the VM runtime exists.
+- **pluginV2 edit/replacer hooks** — permanent unsupported, not a port target.
 
 These are *correctness* differences in the assembled prompt. Assembly is
 all-or-nothing per send, so they cannot silently stay browser-side. Resolution:
@@ -63,8 +64,8 @@ fallback.
 replaced the boolean gate at `index.svelte.ts`: in Fastify mode with
 `useServerPromptAssembly` on, the supported pure-text-send subset routes `server`
 (local assembler unreachable for it), and **every** content class above
-(asset/image-gen/Lua/plugin), a non-user-message send, a group character, and a
-non-server-routable provider route `unsupported` and hard-fail. The soft
+(image-gen/Lua/pluginV2/non-vision caption), a non-user-message send, a group
+character, and a non-server-routable provider route `unsupported` and hard-fail. The soft
 `unavailable` escape (the silent non-string-`send` → local fall-through) is
 deleted. `local` is reached only when `!isFastifyServer` or the flag is off.
 
@@ -87,7 +88,7 @@ flag is the END of the sub-family, after the last content class graduates.
   output-script execution.
 
 Both depend on server prompt/script execution parity (shares machinery with A1's
-Lua/plugin gap). Sequence after A1.
+Lua hook gap). Sequence after A1.
 
 ### A3 — Provider coverage
 
@@ -120,7 +121,7 @@ revision (`reconcileServerCommandRevision`) instead of re-POSTing the delta. The
 scriptstate command route stays for slash/plugin/manual writes; preview /
 preview_prompt stay read-only. Proven by zero outbound `…/scriptstate` POSTs in
 `sendChat.fixtures.serverBacked.test.ts` Describe B (plus persistence + revision
-reconciliation), and the flipped statelessness / 423 assertions in
+reconciliation), and the C-A1 persistence / 423 assertions in
 `generation.chat.test.ts`.
 
 ## Non-Targets

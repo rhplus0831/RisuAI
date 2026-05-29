@@ -34,28 +34,31 @@ The chat process is not one toggle. Three independent boundaries gate it:
    `/api/v1/generate/completion`. Unsupported providers fail hard; `local` only
    when `!isFastifyServer`.
 3. **Post-generation + persistence** — always client-orchestrated; durable writes
-   flow through command routes the browser triggers. The generation routes are
-   stateless w.r.t. the chat blob.
+   mostly flow through command routes the browser triggers. Exception: server
+   prompt assembly now persists the assembly-time scriptstate delta inside
+   `/generate/chat`.
 
 So today's default Fastify flow is: **browser assembles the prompt, server makes
-the LLM call, browser orchestrates post-gen, persistence via browser-issued
-commands.** Flag history: `useServerGeneration` was a dead flag, removed
-2026-05-29; `isFastifyServer` and `useServerPromptAssembly` are kept and
-annotated in-code (not deprecated).
+the LLM call, browser orchestrates post-gen, final-message persistence via a
+browser-issued command.** With server prompt assembly enabled, `/generate/chat`
+also persists assembly-time scriptstate. Flag history: `useServerGeneration` was
+a dead flag, removed 2026-05-29; `isFastifyServer` and
+`useServerPromptAssembly` are kept and annotated in-code (not deprecated).
 
 ## The Blocker Classification (the work breakdown)
 
 ### A. Hard blockers — must move server-side or be explicitly classified unsupported
 
-- **A1. Prompt-assembly content parity.** The server produces a *different
-  prompt* than the browser for: multimodal/asset inlining (server `NO_ASSETS`,
-  `inlayAssets` accepted-but-unused), Lua `editRequest` (server runs identity),
-  and Lua/plugin-V2 script hooks (`editprocess`, plus input-trigger/`editinput`
-  scripts at submit; server does regex scripts only). Assembly is all-or-nothing
-  per send, so these cannot silently stay browser-side — port them or classify
-  the send as server-unsupported. Foundational gap: there is no
-  `resolveServerPromptAssembly` classifier (mirror `resolveServerCompletionRoute`)
-  and `useServerPromptAssembly` defaults off.
+- **A1. Prompt-assembly content parity.** The classifier exists and, when
+  `useServerPromptAssembly` is on, routes the supported text-send subset to the
+  server and hard-fails out-of-subset sends instead of silently falling back.
+  Multimodal/asset inlining is now at parity for image-input models. Remaining
+  gaps are: non-vision image caption fallback (explicit unsupported), image-gen
+  view instruction (slice 3c), and Lua hook wiring (`editRequest`,
+  `editprocess`, input-trigger/`editinput`). The server Lua VM runtime exists,
+  but these hooks are not wired. PluginV2 edit/replacer hooks are permanent
+  unsupported because server-side plugin code execution is no-port. The flag
+  still defaults off, so browser assembly is the default production path.
 - **A2. Post-generation durable derivation with no server path.** The **output
   trigger** (the server has no `'output'` trigger invocation at all — only
   `'start'` is wired) and **`editoutput` script processing** derive durable
@@ -74,10 +77,11 @@ annotated in-code (not deprecated).
   trim, abort), plugin runtime execution, rendering/UI state.
 - **B2. Acceptable, browser orchestrates/requests (optimizable later, not a
   correctness problem).** Auto-continue/resend recursion (control flow that
-  re-issues `sendChat`), result/scriptstate persistence via command replay
-  (`dispatchPersistGenerationResult`/`dispatchPatchChatScriptstate`), and
-  stage-timing metadata. Optional later wins: route-direct persistence closes a
-  small durability window and saves a round-trip.
+  re-issues `sendChat`), final-message persistence via
+  `dispatchPersistGenerationResult`, and stage-timing metadata. Assembly-time
+  scriptstate replay is no longer in this bucket: C-A1 moved it into
+  `/generate/chat`. Optional later wins: route-direct final-result persistence
+  closes a small durability window and saves a round-trip.
 
 ### Legacy / removed — no-port AND remove from the client
 
@@ -86,9 +90,11 @@ annotated in-code (not deprecated).
   [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md) for the
   removal item and code surface.
 - The historical no-port list: native/mobile wrappers, Tauri/Hono/Express,
-  service workers, peer sync, Google Drive sync, Risu Account Sync, SupaMemory/
-  Hypa V2/Hanurai and removed memory engines, server-side plugin code execution,
-  and per-event surgical projection patching without a separate event contract.
+  service workers, peer sync, Google Drive sync, Risu Account Sync, legacy memory
+  engines/sync surfaces outside this thinning plan, server-side plugin code
+  execution, and per-event surgical projection patching without a separate event
+  contract. Any live compatibility/migration surface needs a dedicated removal or
+  migration task; do not port it as part of client thinning.
 
 ## Closed / Stable Areas
 
@@ -130,20 +136,17 @@ persistence and a transient browser progress projection.
 ## Near-Term Order
 
 1. Run `pnpm client-thinning:audit`. If red, fix or triage before runtime work.
-2. **A1 foundation:** build `resolveServerPromptAssembly` (server/local/unsupported)
-   and make the supported text-send subset server-mandatory (single character,
-   server-routable provider, no asset/image-gen/Lua/plugin content). This makes
-   "the local fallback is gone" provable for that subset.
-3. **C-A1 (post-gen, smallest, no parity blockers):** move assembly-time
-   scriptstate persistence into `/generate/chat`; retire the command replay.
-4. Port A1 content classes one batch at a time (multimodal, then Lua/plugin
-   hooks), each graduating from `unsupported` to server-mandatory.
-5. **A2:** server output-trigger + `editoutput` (needs server script execution).
-6. **Group-chat legacy removal** (separate from thinning).
-7. **Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
+2. Continue **A1 content graduation** one batch at a time:
+   - Lua sub-slice 2: wire VM-backed `editRequest`.
+   - Lua sub-slice 3: wire/prove `editprocess`.
+   - Lua sub-slice 4: add submit-time input-trigger/`editinput`.
+   - Slice 3c: port the image-gen view instruction.
+3. **A2:** server output-trigger + `editoutput` (needs server script execution).
+4. **Group-chat legacy removal** (separate from thinning).
+5. **Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
    (A4R2, A4R7, fanout-svelte path, EC2) to AST invariants; add adversarial
    fixtures. See [`status/audit.md`](status/audit.md).
-8. Keep **event patching deferred** until SSE reconnect/replay exists.
+6. Keep **event patching deferred** until SSE reconnect/replay exists.
 
 Each batch names one browser branch, the server contract that replaces it, and
 the proof the local fallback is gone — and does not mix classes in one review.

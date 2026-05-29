@@ -40,17 +40,18 @@ to local at any point — a class is either `server` (ported) or `unsupported`
 (hard fail), never `local` (in Fastify mode).
 
 ```
-slice 1   text-send → server ; {asset, imagegen, lua/plugin} → unsupported
-slice 3a  + asset    → server   (port AssetLookup; flip the asset detector)
-slice 3c  + imagegen → server   (port newGenData instruction; flip that detector)
-slice 3b  pluginV2 → unsupported (permanent, landed); Lua → server (committed port, sub-series)
+slice 1   DONE: text-send → server when flag on; unsupported content hard-fails
+slice 2   DONE: assembly-time scriptstate persists in /generate/chat
+slice 3a  DONE: image-input multimodal/asset → server; non-vision caption → unsupported
+slice 3b  DONE: pluginV2 permanent unsupported; Lua VM runtime landed
+slice 3b  OPEN: Lua editRequest → editprocess → editinput wiring
+slice 3c  OPEN: image-gen instruction → server
 ```
 
-Slice 3b split in two: **pluginV2** is permanent `unsupported` (landed 2026-05-29 —
+Slice 3b split in two: **pluginV2** is permanent `unsupported` (landed 2026-05-29,
 classifier split + the `A4R-pluginv2` audit invariant), and **Lua** is a committed
-server port drafted as its own sub-slice series under
-[`slice-3b-lua/`](slice-3b-lua/README.md) (VM → `editRequest` → `editprocess` →
-`editinput`; security model = single-user self-host).
+server port under [`slice-3b-lua/`](slice-3b-lua/README.md). Its VM runtime is
+landed; `editRequest`, `editprocess`, and `editinput` remain.
 
 C-A1 (slice 2) and A2 (slice 4) are the post-generation persistence/derivation
 half and sit alongside this line: slice 2 moves an already-computed delta into
@@ -61,17 +62,15 @@ the route; slice 4 adds a server path for a delta that has none.
 ```
 slice 1 (foundation) ──┬─→ slice 3a (asset)        ─┐
                        ├─→ slice 3c (image-gen)     ─┤
-                       └─→ slice 3b (lua/plugin) ───┴─→ slice 4 (A2)
-slice 2 (C-A1) ── independent of slice 1; smallest; can land first ──→
+                       └─→ slice 3b (Lua hooks) ─────┴─→ slice 4 (A2)
+slice 2 (C-A1) ── landed ───────────────────────────────────────────→
 ```
 
-- **Slice 1 is the gate** for every A1 content slice (3a/3b/3c) — they "flip a
-  detector" that only exists once the classifier does.
-- **Slice 2 (C-A1)** has no parity blocker and does not depend on slice 1 — the
-  plan recommends it right after the foundation as the smallest real batch.
-- **3a and 3c** are independent of each other. **3b** is the largest (it needs a
-  server scripting VM) and is the natural predecessor of **slice 4**, whose
-  durable derivations reuse the same trigger/script machinery.
+- **Slice 1 is the landed gate** for every A1 content slice (3a/3b/3c).
+- **Slice 2 (C-A1)** is landed and remains separate from A2 durable post-gen work.
+- **3a is landed; 3c remains independent. 3b's VM is landed, but hook wiring is
+  still the natural predecessor of slice 4**, whose durable derivations reuse
+  the same trigger/script machinery.
 
 ## Shared definition of done
 
@@ -87,7 +86,7 @@ done" section names the batch-specific additions.
 ## Shared verification (run before and after every slice)
 
 ```
-pnpm client-thinning:audit                                  # 20-rule audit; fix/triage red before runtime work
+pnpm client-thinning:audit                                  # 21-rule audit; fix/triage red before runtime work
 pnpm api:test                                               # server suite (incl. generation.chat.test.ts)
 pnpm test                                                   # full client suite (incl. src/ts/process/...)
 ```
@@ -100,8 +99,6 @@ with only the latest command + result.
 
 ## The rule (inherited from the phase doc)
 
-One blocker item per batch. Name the browser branch, the server contract that
-replaces it, and the proof the local fallback is gone. Do not mix A1 content
-classes, A2, and group-chat removal in one review. Group chat is **legacy**
-(client removal, separate task) — do not add a server group model. Update the
-status/coverage shards and the parity matrix after the code and proof land.
+Inherit the phase batching rule: one blocker item per batch, no group-chat
+removal mixed with thinning, and update the status/coverage/parity shards after
+the code and proof land.

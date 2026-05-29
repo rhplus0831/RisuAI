@@ -45,32 +45,29 @@ Three boundaries (see [`status/sendchat-thinning.md`](status/sendchat-thinning.m
   supported → `/api/v1/generate/completion`; unsupported → hard fail. This is the
   precedent to mirror for prompt assembly.
 - **Prompt assembly (browser by default):**
-  `src/ts/process/index.svelte.ts::sendChat` gates on
-  `isFastifyServer && DBState.db.useServerPromptAssembly` (default false →
-  `assembleLocalSendChatPrompt`). The server path is
-  `src/ts/process/request/serverChat.ts` → `/api/v1/generate/chat` →
-  `server/fastify/src/prompt/assemble.ts`. **Blocker A1:** no
-  `resolveServerPromptAssembly` classifier exists; server lacks content parity
-  (multimodal `prompt/history.ts` `NO_ASSETS` + unused `inlayAssets`, image-gen
-  instruction, Lua `editRequest` identity, Lua/plugin-V2 + input scripts).
+  `src/ts/process/request/serverPromptAssembly.ts::resolveServerPromptAssembly`
+  decides `local | server | unsupported`. `local` is reached when
+  `!isFastifyServer` or the default-off `useServerPromptAssembly` gate is off.
+  With the flag on, the text-send subset and image-input multimodal/asset sends
+  route to `/api/v1/generate/chat`; unsupported content hard-fails. Remaining
+  A1 gaps are image-gen instruction and Lua hook wiring. PluginV2 is permanent
+  unsupported; non-vision image caption fallback is explicit unsupported.
 - **Post-generation + persistence (browser):**
   `src/ts/process/postGeneration/{orchestrateResponse,runStage4}.ts`. **Blocker
   A2:** the output trigger has no server path
   (`server/fastify/src/prompt/triggers.ts` wires only `'start'`), and `editoutput`
-  is browser-only. `server/fastify/src/routes/generationChat.ts` is stateless re
-  the chat blob — it emits a `message_patch` the browser replays as commands
-  (`src/ts/process/serverBackedSendChat.ts` →
-  `dispatchPatchChatScriptstate`/`dispatchPersistGenerationResult`). The **C-A1**
-  batch moves assembly-time scriptstate persistence into the route.
+  is browser-only. C-A1 is done: `/generate/chat` persists assembly-time
+  scriptstate and returns the bumped revision. Final-message persistence still
+  uses `dispatchPersistGenerationResult`.
 - **HypaV3 memory:** server-side persistence/jobs under
   `server/fastify/src/routes/memory*.ts`; progress UI is a transient browser
   projection.
 
-**Legacy — group chat:** the `chatProcessIndex` recursion in `sendChat`, the
-`isGroupChat` flag (`src/ts/process/request/request.ts` type;
-`src/ts/process/dispatch/dispatchRequest.ts` hardcoded `false`), and group
-character/message-type handling (`src/ts/util.ts`). Slated for client removal as a
-separate task — see [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
+**Legacy — group chat:** Fastify data loading filters group characters and
+dispatch hardcodes `isGroupChat: false`; `chatProcessIndex` is reentrancy/
+preset-chain state, not the group surface. Remaining UI/type compatibility is
+slated for client removal as a separate task — see
+[`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
 
 ## Runtime Gates
 
@@ -90,7 +87,7 @@ separate task — see [`unsupported-and-client-owned.md`](unsupported-and-client
 | Active writer | `activeWriter.ts`, `src/ts/server/activeWriterSession.ts` | `activeWriter.test.ts` |
 | Events / refresh | `routes/events.ts`, `src/ts/server/events.ts` | `events.test.ts` |
 | Provider routing | `serverCompletion.ts`, `routes/generation.ts` | `serverCompletion.test.ts` |
-| Prompt assembly (A1) | `serverChat.ts`, `routes/generationChat.ts`, `prompt/` | `generation.chat.test.ts`, serverBacked fixtures |
+| Prompt assembly (A1) | `serverPromptAssembly.ts`, `serverChat.ts`, `routes/generationChat.ts`, `prompt/` | `serverPromptAssembly.test.ts`, `generation.chat.test.ts`, serverBacked fixtures |
 | Chat-process thinning | `index.svelte.ts`, `serverBackedSendChat.ts`, `postGeneration/` | serverBacked/serverPreview fixtures, projection-guard tests |
 | Audit invariants | `util/client-thinning-audit.ts` | `pnpm client-thinning:audit`; audit fixture tests |
 

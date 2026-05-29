@@ -8,9 +8,9 @@ the rule inventory and direction. This file records the proof state.
 ## Reproducibility: COMPLETE
 
 - The audit runs via `pnpm client-thinning:audit` over a bounded source set.
-- All 20 audit rules have committed pre-fix fixtures (plus bypass fixtures where
+- All 21 audit rules have committed pre-fix fixtures (plus bypass fixtures where
   a rule has a narrow allowed shape) wired into the harness.
-- The harness is `util/client-thinning-audit.test.ts` (41 tests): it runs
+- The harness is `util/client-thinning-audit.test.ts` (45 tests): it runs
   `util/client-thinning-audit.ts` against fixture roots under
   `util/client-thinning-audit-fixtures/<rule-slug>/` with
   `CLIENT_THINNING_AUDIT_CHECK_IDS` selecting the rule, asserting exit code and
@@ -19,7 +19,7 @@ the rule inventory and direction. This file records the proof state.
 
 ## Caveat: Rules Not Uniformly Robust (OPEN)
 
-Reproducibility is done, but ~12 of the 20 rules are string/regex matchers.
+Reproducibility is done, but several rules are string/regex matchers.
 Four were empirically defeated by sincere refactors:
 
 - `A4R2 conflict replay outside central wrapper`

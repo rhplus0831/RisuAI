@@ -43,8 +43,9 @@ A chat-process batch (one blocker item) should prove:
 ## Known Gaps
 
 - Server prompt assembly is opt-in via `useServerPromptAssembly` (default off);
-  no classifier yet (**A1**).
+  the classifier exists, but Lua hooks and image-gen instruction still route
+  unsupported (**A1**).
 - The output trigger and `editoutput` have no server path (**A2**).
-- Persistence still depends on browser command replay in some paths (**B2**,
-  acceptable).
+- Final-message persistence still depends on a browser-issued command (**B2**,
+  acceptable). Assembly-time scriptstate persistence is route-owned.
 - Group chat is legacy and slated for client removal — not a coverage target.

@@ -33,8 +33,9 @@ make the browser own durable state. They are no-port by nature:
 
 Acceptable-but-optimizable browser responsibilities (B2) — kept for now, see
 [`status/client-owned-unsupported.md`](status/client-owned-unsupported.md):
-auto-continue/resend recursion, result/scriptstate persistence via command
-replay, and stage-timing metadata.
+auto-continue/resend recursion, final-message persistence via command, and
+stage-timing metadata. Assembly-time scriptstate persistence is no longer a B2
+browser replay; `/generate/chat` owns it.
 
 ## Legacy — Remove From The Client (No-Port)
 
@@ -47,19 +48,18 @@ Do not port these to the server, and do not keep them usable in the browser.
     process. Keeping it as a browser-only path would preserve a durable-state
     path the server cannot own.
   - **Removal item (separate from thinning; a code change, not done yet):**
-    inventory and remove the group surface — the `chatProcessIndex` group-member
-    recursion in `sendChat` (`src/ts/process/index.svelte.ts`, recursion calls
-    around the post-generation tail), the `isGroupChat` flag (type in
-    `src/ts/process/request/request.ts`, hardcoded `false` in
-    `src/ts/process/dispatch/dispatchRequest.ts`), group character/message-type
-    handling (`src/ts/util.ts` group/groupEnd/divider rows), and any UI entry
-    points for creating/selecting group chats. A dedicated task must map the full
-    surface before removal.
+    inventory and remove the remaining UI/type compatibility surface. Current
+    Fastify data loading filters group characters, and request dispatch hardcodes
+    `isGroupChat: false`; `chatProcessIndex` is reentrancy/preset-chain state, not
+    the group surface. Treat dead group UI branches and type compatibility as the
+    removal target.
 - Native/mobile wrapper runtime modes; browser local persistence as the primary
   runtime; Tauri, Hono, Express, service-worker persistence, or alternative
   servers.
 - Peer sync, Google Drive sync, Risu Account Sync.
-- SupaMemory, Hypa V2, Hanurai, and removed browser-local memory engines.
+- Legacy memory engines/sync surfaces outside this thinning plan. Some
+  compatibility or migration hooks may still exist; inventory them in a dedicated
+  removal/migration task rather than porting them here.
 - Server-side plugin code execution.
 - Per-event surgical projection patching without a separate event contract (the
   current command events are invalidation signals; see
@@ -102,12 +102,12 @@ documented here.
   server-side execution path — a plugin-runtime import, a `pluginV2` reference, or
   an `eval`/`new Function` sandbox in `server/fastify/src/prompt/**` — from being
   silently added by a later refactor.
-- **Lua scripts (slice 3b, _port-pending_)** — a `triggerlua` effect on the
-  character or an enabled module routes `unsupported` **until the server Lua VM
-  lands**. Unlike pluginV2 this is a committed server port (Lua is the primary
-  bot-extension mechanism); the classifier's Lua arm (`sendHasLuaContent`) flips to
-  `server` per sub-class (`editRequest` / `editprocess` / `editinput`) as each
-  lands.
+- **Lua scripts (slice 3b, _hook-pending_)** — a `triggerlua` effect on the
+  character or an enabled module routes `unsupported` today. The server Lua VM
+  runtime has landed, but `editRequest`, `editprocess`, and input-trigger /
+  `editinput` are not wired into server assembly yet. Unlike pluginV2 this is a
+  committed server port; the classifier's Lua arm (`sendHasLuaContent`) flips to
+  `server` per sub-class as each hook lands.
 - Image-gen view instruction (slice 3c) still routes `unsupported` until its slice
   lands.
 
