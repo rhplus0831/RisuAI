@@ -31,7 +31,12 @@ End state:
 The chat process is not one toggle. Three independent boundaries gate it:
 
 1. **Prompt assembly** — gated by the user flag `useServerPromptAssembly`
-   (default **false**), so the DEFAULT is local/browser assembly.
+   (default **false** in code today), so the current DEFAULT is local/browser
+   assembly. Decided 2026-05-30 to flip the default to **true** (server assembly
+   becomes the default supported path; tests may set `false`) — pending its own
+   implementation batch + test sweep; see
+   [`phases/phase-5-closeout.md`](phases/phase-5-closeout.md#closeout-decisions-2026-05-30)
+   decision #1.
 2. **Provider dispatch (LLM call + credentials)** — gated by the platform marker
    `isFastifyServer`, with NO user flag. In the default flag-off flow the browser
    assembles locally and dispatches through `/api/v1/generate/completion`; with
@@ -73,8 +78,9 @@ provider stream, and server-derived post-gen mutations. Flag history:
   `runTrigger(..., 'output', ...)`, and `editoutput` after dispatch; the derived
   scriptstate delta is persisted by the slice-2 writer and the final text /
   resend signal ride `done.postGeneration` when the pass succeeds. A thrown
-  server post-generation pass is currently best-effort-swallowed by
-  `/generate/chat`; no browser fallback derivation runs on that server path.
+  server post-generation pass is best-effort-swallowed by `/generate/chat`; no
+  browser fallback derivation runs on that server path. Decided 2026-05-30 to keep
+  this best-effort (TODO at `buildPostGenerationFrame`); see decision #2.
 - **A3. Provider coverage.** Unsupported provider shapes cannot be server-routed.
   Already handled correctly: the completion resolver returns `unsupported` and
   hard-fails (no browser fallback), and `/generate/chat` has its own provider
@@ -87,7 +93,10 @@ provider stream, and server-derived post-gen mutations. Flag history:
   their resolver gates pass). Current explicit `/chat` unsupported examples
   include NovelAI/NovelList, plugin providers, WebLLM, Ooba OpenAI-compatible
   chat/reverse-proxy shapes, and unknown OpenAI-compatible models. A support cap,
-  not a thinness leak.
+  not a thinness leak. The two resolvers' supported sets are not identical today
+  (known divergence: `reverse_proxy` + `reverseProxyOobaMode` — the completion path
+  accepts it, `/chat` rejects it); decided 2026-05-30 to **unify them onto a single
+  shared provider-capability table** (decision #5, pending implementation).
 
 ### B. Fine to leave in the browser
 
@@ -172,9 +181,20 @@ persistence and a transient browser progress projection.
    (A4R2, A4R7, fanout-svelte path, EC2) to AST invariants; add adversarial
    fixtures.~~ DONE 2026-05-30 — all four are AST invariants with adversarial
    fixtures (55 audit tests across 22 rules). See [`status/audit.md`](status/audit.md).
-4. Keep **event patching deferred** until SSE reconnect/replay exists.
-5. Durable-generation work (job lifecycle, reconnect/read contract, route-direct
-   result persistence) stays in its separate workstream.
+4. **Provider resolver unification (decision #5).** Collapse
+   `resolveServerCompletionRoute` and the `chatDispatch.ts` resolver onto one shared
+   provider-capability table. Prerequisite for #5 below.
+5. **`useServerPromptAssembly` default flip (decision #1).** Default the flag to
+   `true` with a test sweep; do #4 first.
+6. **Event patching** — decided to keep the invalidation model for now (decision
+   #8); revisit only if it blocks other work, and only after SSE reconnect/replay
+   exists.
+7. Durable-generation work (job lifecycle, reconnect/read contract, route-direct
+   result persistence — now incl. the handed-off decision #7) stays in its separate
+   workstream.
+
+The closeout decision resolutions (2026-05-30) are recorded in
+[`phases/phase-5-closeout.md`](phases/phase-5-closeout.md#closeout-decisions-2026-05-30).
 
 For closeout batches, keep one concern per review and record the proof that the
 source and docs still agree.

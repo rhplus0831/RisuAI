@@ -2,7 +2,22 @@
 
 Date: 2026-05-30
 
-Batch: group-chat legacy removal (dead `type === 'group'` UI branches + type
+Batch: closeout-decision reflection (2026-05-30). Recorded the eight resolved
+closeout decisions in the docs (canonical record:
+[`../phases/phase-5-closeout.md`](../phases/phase-5-closeout.md#closeout-decisions-2026-05-30))
+and added the decision-#2 best-effort TODO at `generationChat.ts`
+(`buildPostGenerationFrame` catch). No behavior change.
+
+- `pnpm client-thinning:audit` — Passed (also re-parses `generationChat.ts`, so the
+  comment-only edit is syntactically clean).
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts`
+  — 51 tests passed (confirms the touched server route still compiles/passes).
+- Not rerun: `pnpm check` / `pnpm test` (docs + one code comment; no client runtime
+  change since the prior batch).
+
+---
+
+Prior batch: group-chat legacy removal (dead `type === 'group'` UI branches + type
 compatibility) plus its proof invariant.
 
 - `pnpm client-thinning:audit` — Passed. Printed `Client-thinning audit passed.`

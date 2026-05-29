@@ -28,6 +28,10 @@ deferred event-patching contract.
   applier would drift permanently on the first blip. Do not ship a surgical
   applier before that gap is closed. See
   [`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
+  **Decided 2026-05-30 (decision #8):** keep the invalidation model for now — as
+  long as the debounced full-projection refetch is not blocking or interfering with
+  other work, leave it; revisit only if it becomes a constraint. See
+  [`../phases/phase-5-closeout.md`](../phases/phase-5-closeout.md#closeout-decisions-2026-05-30).
 - Some historical local-mode normalization still lives near projection code in
   `database.svelte.ts`; proximity is not permission to mutate projected state.
 

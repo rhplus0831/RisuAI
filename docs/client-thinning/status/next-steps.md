@@ -36,41 +36,51 @@ A-blockers (A1/A2/A3) are now resolved.**
    path, and EC2 are now AST invariants with adversarial fixtures ([`audit.md`](audit.md)).
    Remaining audit work is only the other still-shallow string/regex rules, and it
    is gated on first demonstrating a sincere defeat against the real binary.
-3. Documentation-only reconciliation when code and docs drift without behavior
+3. **Provider resolver unification (decision #5).** Pending-implementation batch:
+   collapse `resolveServerCompletionRoute` and the `chatDispatch.ts` resolver onto
+   one shared provider-capability table. Prerequisite for #4. Proof: both paths
+   classify the same provider set identically (incl. the `reverse_proxy` + Ooba
+   case), with tests.
+4. **`useServerPromptAssembly` default flip (decision #1).** Pending-implementation
+   batch: default the flag to `true`, sweep the suites that assume the off-default
+   (set `false` where they exercise local assembly), and accept that the documented
+   `unsupported` content classes hard-fail by default afterward. Do #3 first.
+5. Documentation-only reconciliation when code and docs drift without behavior
    change.
 
-## Tasks That Need A Clearer Scope Before Implementation
+## Closeout Decisions — Resolved 2026-05-30
 
-- **Group-chat residual scope (UI branches already removed).** `Message.saying` is
-  still used for speaker attribution in prompt history, lorebook, export, and
-  post-generation paths; removing it was not part of the group-chat UI cleanup and
-  needs a replacement attribution model first. The load-time group filter is kept
-  by design. Stale group references in unrelated surfaces (`removeFromGroup` lang
-  key across the language files, the `cbs.ts` `{{char}}` description, the
-  `risuai.d.ts` "and group chats" comment) are optional docs-only follow-up, kept
-  out of the UI-branch batch. Proof for the landed removal is `A4R-group-chat-removed`.
-- **Historical no-port list.** Treat it as "do not port or reopen." Do not turn
-  the whole list into a closeout blocker. If a live Fastify compatibility surface
-  is found, create a named removal/migration task with files and proof.
-- **Event patching closeout.** "Explicitly still deferred" means the docs and
-  tests continue to show command events as invalidation-only, with no surgical
-  patch applier, no reconnect, and no `Last-Event-ID` replay contract. Shipping
-  event patching first requires that reconnect/replay contract and tests.
-- **Route-direct final-message persistence.** This is B2 optimization and part of
-  the separate durable-generation direction, not client-thinning closeout by
-  itself. Acceptance criteria need a route-owned assistant-message write, revision
-  behavior, reconnect/read semantics if tied to durable generation, and proof that
-  the browser command path no longer double-writes.
-- **Provider resolver parity.** `/generate/completion` and `/generate/chat` both
-  hard-fail unsupported providers, but their supported sets are not identical
-  today. If this becomes runtime work, decide whether `resolveServerPromptAssembly`
-  should mirror the `/chat` resolver exactly or whether `/chat` remains the final
-  hard-fail authority after assembly.
-- **A2 derivation failure policy.** `buildPostGenerationFrame` currently swallows
-  `runServerPostGeneration` failures and returns no post-generation frame, while
-  the browser has skipped local durable derivation. Decide whether that remains
-  acceptable best-effort behavior, should hard-fail and restore the generation, or
-  needs a retry/fallback contract.
+These were the open closeout decisions; the owner resolved them on 2026-05-30. The
+canonical record (with rationale and pending-implementation status) is
+[`../phases/phase-5-closeout.md`](../phases/phase-5-closeout.md#closeout-decisions-2026-05-30).
+Summary:
+
+- **Prompt-assembly default (#1).** Decided: flip `useServerPromptAssembly` to
+  default `true` (tests may set `false`). Pending its own batch + test sweep; code
+  default stays `false` until then.
+- **A2 derivation failure policy (#2).** Decided: keep best-effort — a thrown
+  `runServerPostGeneration` is swallowed (no frame, no browser fallback). TODO added
+  at `generationChat.ts` (`buildPostGenerationFrame` catch).
+- **`Message.saying` (#3).** Decided: keep; removal stays gated on a replacement
+  attribution model.
+- **Load-time group filter (#4).** Decided: keep as-is (enforced by
+  `A4R-group-chat-removed` P1).
+- **Provider resolver parity (#5).** Decided: unify onto a single shared
+  provider-capability table (eliminates the `reverse_proxy` + Ooba divergence).
+  Pending its own batch; prerequisite for #1.
+- **Stale group strings/comments (#6).** Decided: defer to the final cleanup pass
+  (`removeFromGroup` lang key, `cbs.ts` / `risuai.d.ts` comments).
+- **Route-direct final-message persistence (#7).** Decided: handed to the
+  durable-generation workstream; out of client-thinning closeout scope.
+- **Event patching (#8).** Decided: keep the invalidation model for now; revisit
+  (with the reconnect/`Last-Event-ID` replay precondition) only if it blocks other
+  work.
+
+Standing guidance (not a decision):
+
+- **Historical no-port list.** Treat it as "do not port or reopen." Do not turn the
+  whole list into a closeout blocker. If a live Fastify compatibility surface is
+  found, create a named removal/migration task with files and proof.
 
 ## Blocked / No-Port
 

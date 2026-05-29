@@ -19,6 +19,9 @@ Implemented / closed:
   unsupported shapes fail explicitly (no browser fallback).
 - `resolveServerPromptAssembly` is landed. With `useServerPromptAssembly` on,
   the supported subset is server-mandatory instead of falling through to local.
+  Decided 2026-05-30 to flip the flag's default to `true` (pending its own batch +
+  test sweep); see [`phases/phase-5-closeout.md`](phases/phase-5-closeout.md#closeout-decisions-2026-05-30)
+  decision #1.
 - Multimodal/asset prompt inlining is server-side at parity for image-input
   models; non-vision image caption fallback hard-fails as unsupported.
 - Image-gen / emotion view instruction assembly is server-side at parity
@@ -34,8 +37,9 @@ Implemented / closed:
   run-var pass, `runTrigger(..., 'output', ...)`, and `editoutput`; the route
   persists the derived scriptstate delta and returns final text / resend /
   revision on `done.postGeneration` when derivation succeeds. Derivation errors
-  are currently swallowed by `/generate/chat`; the browser does not run a local
-  derivation fallback on that path.
+  are swallowed by `/generate/chat`; the browser does not run a local derivation
+  fallback on that path. Decided 2026-05-30 to keep this best-effort (TODO at
+  `buildPostGenerationFrame`); see decision #2.
 - Bootstrap projection, command-event invalidation, `.risu` import/export/bundle,
   asset routes, backup/restore, and provider secret masking are closed.
 - The client-thinning audit is wired as `pnpm client-thinning:audit` and its
@@ -47,8 +51,10 @@ Resolved A-items (see [`plan.md`](plan.md) for the full classification):
 
 - **A1** prompt-assembly content parity — closed for current scope. PluginV2
   edit/replacer hooks, interactive Lua dialog APIs, and non-vision image caption
-  fallback remain explicit `unsupported`. `useServerPromptAssembly` still
-  defaults off, so local assembly remains the default production path.
+  fallback remain explicit `unsupported`. `useServerPromptAssembly` still defaults
+  off in code, so local assembly remains today's default production path; decided
+  2026-05-30 to flip it to default-on (pending batch — once flipped those
+  `unsupported` classes hard-fail by default). See decision #1.
 - **A2** post-generation durable derivation — closed on the server-dispatch path
   by slice 4. Browser derivation remains only on the local-assembly/completion
   path while the prompt-assembly flag is off.

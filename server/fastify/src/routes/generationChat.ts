@@ -412,6 +412,13 @@ async function buildPostGenerationFrame(args: {
     if (postGen.resendChat) frame.resendChat = true
     return Object.keys(frame).length > 0 ? frame : undefined
   } catch {
+    // TODO: For now, this is handled on a best-effort basis. A thrown server
+    // post-generation pass (run-var / 'output' trigger / editoutput) is
+    // swallowed: no `done.postGeneration` frame is emitted and the browser runs
+    // no fallback derivation, so a healthy completion still terminates cleanly.
+    // Decided 2026-05-30 to keep this best-effort; revisit only if a stricter
+    // hard-fail/restore or retry contract is needed. See
+    // docs/client-thinning/phases/phase-5-closeout.md (decision A2).
     return undefined
   }
 }

@@ -56,14 +56,15 @@ Do not port these to the server, and do not keep them usable in the browser.
     loading filters group characters, request dispatch hardcodes
     `isGroupChat: false`, and server prompt assembly explicitly rejects a group
     character; `chatProcessIndex` is reentrancy/preset-chain state, not the group
-    surface. Out-of-scope group references still present in unrelated surfaces — the
-    dead `removeFromGroup` lang key, the `cbs.ts` `{{char}}` description, and the
-    `risuai.d.ts` "and group chats" comment — are optional docs-only follow-up, not
-    part of the UI-branch removal.
-  - **Scope decision before editing:** keep `Message.saying` unless a separate
-    speaker-attribution replacement is designed. It is still active for
-    single-character transcript attribution and prompt/export/lorebook paths, so
-    it is not synonymous with group-chat UI.
+    surface. Group references still present in unrelated surfaces — the dead
+    `removeFromGroup` lang key, the `cbs.ts` `{{char}}` description, and the
+    `risuai.d.ts` "and group chats" comment — are **decided 2026-05-30 (decision
+    #6) to be removed in the final cleanup pass**, not as a standalone task now.
+  - **`Message.saying` — decided 2026-05-30 (decision #3): keep, do not force
+    removal.** It is still active for single-character transcript attribution and
+    prompt/export/lorebook paths, so it is not synonymous with group-chat UI;
+    removal stays gated on a designed speaker-attribution replacement. The
+    **load-time group filter is likewise decided kept as-is (decision #4)**.
   - **Proof (landed):** the `A4R-group-chat-removed` audit invariant
     (`util/client-thinning-audit.ts`) holds all four together — negative: neither
     `GridCatalog.svelte` nor `ChatList.svelte` compares a character `type` to
@@ -100,6 +101,15 @@ needs one named route contract, request shape, credential boundary, response
 extraction rule, warning/error behavior, and tests. As of 2026-05-30, `/chat`
 still explicitly rejects NovelAI/NovelList, plugin providers, WebLLM, Ooba
 OpenAI-compatible chat/reverse-proxy shapes, and unknown OpenAI-compatible models.
+
+The two resolvers' supported sets are not identical today — the known divergence is
+`reverse_proxy` + `reverseProxyOobaMode`, which `resolveServerCompletionRoute`
+accepts (routes to `openai` with `oobaSystemHoist`) but `chatDispatch.ts` rejects.
+**Decided 2026-05-30 (decision #5): unify both resolvers onto a single shared
+provider-capability table** (pending implementation; prerequisite for the
+`useServerPromptAssembly` default flip, since the flag-on classifier routes via the
+completion resolver then dispatches via `/chat`). See
+[`phases/phase-5-closeout.md`](phases/phase-5-closeout.md#closeout-decisions-2026-05-30).
 
 ## Unsupported Prompt-Assembly Content (Fail Explicitly)
 
