@@ -119,6 +119,29 @@ function reconcileServerCommandRevision(info: ServerChatInfo): void {
   }
 }
 
+/**
+ * Durable generation (Milestone 1): explicitly cancel a running durable job. A bare
+ * disconnect only detaches the viewer — the job keeps generating — so the stop
+ * button must `DELETE /generate/chat/:id` to actually abort it (Step 2 gotcha B).
+ * Authorized by the current active writer (the guard handles writer handoff).
+ * Best-effort: if the cancel fails the job still finishes and persists.
+ */
+export async function cancelServerChatGeneration(generationId: string): Promise<void> {
+  if (!generationId) return
+  const auth = await getNodeServerProxyAuth()
+  try {
+    await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(generationId)}`, {
+      method: 'DELETE',
+      headers: {
+        'risu-auth': auth,
+        ...activeWriterSessionHeader(),
+      },
+    })
+  } catch {
+    // best-effort cancel
+  }
+}
+
 async function openChatResponse(
   input: ServerChatInput,
   signal: AbortSignal | null,

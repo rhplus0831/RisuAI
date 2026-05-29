@@ -9,7 +9,12 @@ vi.mock('../../../server/activeWriterSession', () => ({
   handleActiveWriterStaleResponse: vi.fn((response: Response) => response.status === 423),
 }))
 
-import { requestServerChat, requestServerChatGeneration, type ServerChatInput } from '../serverChat'
+import {
+  cancelServerChatGeneration,
+  requestServerChat,
+  requestServerChatGeneration,
+  type ServerChatInput,
+} from '../serverChat'
 import { handleActiveWriterStaleResponse } from '../../../server/activeWriterSession'
 import type { ServerChatMessagePatch } from '../serverChatEvents'
 import {
@@ -390,5 +395,37 @@ describe('requestServerChat', () => {
       messagePatches: [patch],
       restoration,
     })
+  })
+})
+
+describe('cancelServerChatGeneration', () => {
+  it('DELETEs the durable job by generationId with auth + writer-session headers', async () => {
+    const calls: Array<{ url: string; method?: string; headers: Record<string, string> }> = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method,
+        headers: (init?.headers ?? {}) as Record<string, string>,
+      })
+      return new Response(JSON.stringify({ success: true }), { status: 200 })
+    })
+
+    await cancelServerChatGeneration('gen-123')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('/api/v1/generate/chat/gen-123')
+    expect(calls[0].method).toBe('DELETE')
+    expect(calls[0].headers['risu-auth']).toBe('test-auth-token')
+    expect(calls[0].headers['risu-writer-session']).toBe('writer-session-1')
+  })
+
+  it('is a no-op for an empty generationId and swallows fetch failures', async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('network down')
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    await expect(cancelServerChatGeneration('')).resolves.toBeUndefined()
+    expect(fetchSpy).not.toHaveBeenCalled()
+    await expect(cancelServerChatGeneration('gen-x')).resolves.toBeUndefined()
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 })

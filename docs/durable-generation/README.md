@@ -1,9 +1,51 @@
-# Durable / Client-Independent Generation (DRAFT)
+# Durable / Client-Independent Generation
+
+Date: 2026-05-29 (draft) · 2026-05-30 (Milestone 1 implemented)
+Status: **Milestone 1 implemented.** Steps 1–3 landed; see the implementation note below.
+
+## Implementation status (2026-05-30)
+
+Milestone 1 (survive client disconnect, in-memory) is implemented:
+
+- **Step 1 — subset gate.** `resolveDurableGeneration`
+  (`src/ts/process/request/durableGeneration.ts`) — a two-arm `durable | non-durable`
+  classifier over `resolveServerPromptAssembly` + the `send`-mode restriction. Pure +
+  unit-tested.
+- **Step 2 — lifecycle decoupling.** A durable send (`body.durable`) runs as a detached
+  `GenerationJobRegistry` job (`server/fastify/src/generationJobs.ts`): the request
+  connection is a viewer (`drop = detach`, not abort); `JobRegistry.pushRaw` buffers the
+  locked SSE frames; `job_accepted` is the first frame; `GET /generate/chat/:id/stream`
+  reattaches; `DELETE /generate/chat/:id` cancels (current active writer); bootstrap
+  exposes `activeGenerationJobs`; one-job-per-chat (409). The runner ends live viewer
+  connections at completion (the request lifecycle finishes without waiting on the client).
+- **Step 3 — server-owned persistence.** At completion the job runs
+  `runServerPostGeneration` and persists the derived assistant message + post-gen
+  scriptstate delta itself via one `applyJsonCommandMutation` (`generation.persisted`,
+  idempotent on `generationId`), folding the revision onto `done.postGeneration`. Failure
+  policy: derivation throw → persist raw + `warning`; persist throw (chat gone) → job
+  `error`.
+- **Browser wiring.** `index.svelte.ts` computes `resolveDurableGeneration`, sends
+  `durable:true`, suppresses its generation-result persist (EC-D4), and translates the
+  stop button into a `DELETE` cancel (`cancelServerChatGeneration`).
+
+**EC-D1, EC-D2, EC-D4 are end-to-end** (server persists despite disconnect; a returning
+client reads the result via the normal projection/bootstrap refresh; zero browser persist
+POSTs). **EC-D3 server half is done** (the reattach `GET` endpoint + the bootstrap
+`activeGenerationJobs` projection, both tested). **Remaining follow-up:** the browser-side
+*live* auto-reattach UX — detecting a mid-generation disconnect / a fresh reload and
+re-driving the orchestrator off `GET …/:id/stream` discovered via
+`activeGenerationJobs`. The durability guarantee does not depend on it (the result is
+persisted server-side and surfaces on the next projection refresh); it is a live-display
+nicety.
+
+Original draft below (retained for the decision record).
+
+---
 
 Date: 2026-05-29
-Status: **DRAFT — planning in advance.** Not an active workstream. The client-thinning
-agent is not pointed at this folder; links are one-directional (this → client-thinning),
-so following client-thinning's docs never pulls an agent into this draft.
+Status (draft): **DRAFT — planning in advance.** Not an active workstream. The
+client-thinning agent is not pointed at this folder; links are one-directional (this →
+client-thinning), so following client-thinning's docs never pulls an agent into this draft.
 
 **Scope decided 2026-05-29:** Milestone 1 = **survive client disconnect only.**
 Surviving a server *restart* mid-generation is a deferred Milestone 2 — that is the only
