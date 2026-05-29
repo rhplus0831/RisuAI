@@ -28,11 +28,15 @@ Server:
 - `server/fastify/src/routes/commands.ts`
 - `server/fastify/src/routes/generationChat.ts`
 - `server/fastify/src/prompt/assemble.ts`
+- `server/fastify/src/prompt/luaRuntime.ts`
+- `server/fastify/src/prompt/triggers.ts`
+- `server/fastify/src/prompt/history.ts`
 
 Browser:
 
 - `src/ts/process/index.svelte.ts`
 - `src/ts/process/request/serverCompletion.ts`
+- `src/ts/process/request/serverPromptAssembly.ts`
 - `src/ts/storage/database.svelte.ts`
 
 ## Routers

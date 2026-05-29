@@ -22,9 +22,10 @@ Date: 2026-05-29
 - A non-active-writer `/chat` still does not persist (the route is already behind
   the active-writer guard — this slice must not weaken that).
 
-This is **only** the assembly-time delta (`'start'` trigger + run-var pass). The
-post-gen delta (`'output'` trigger + `editoutput`) is A2 / slice 4 — do not
-conflate them.
+This slice was **only** the assembly-time chat-var delta (`'start'` trigger +
+run-var pass). Slice 3b later added submit-time input-trigger/`editinput`
+mutations to the same route persistence helper. The post-gen delta (`'output'`
+trigger + `editoutput`) is A2 / slice 4 — do not conflate them.
 
 ## Preconditions
 
@@ -146,7 +147,7 @@ classifier (slice 1).
 
 - [x] The route persists chat-var mutations through `applyJsonCommandMutation`,
       bumps revision once, emits one event, returns the new revision.
-      (`persistAssemblyChatVars` in `generationChat.ts`; revision on the `info` frame.)
+      (`persistAssemblyMutations` in `generationChat.ts`; revision on the `info` frame.)
 - [x] The browser no longer re-POSTs the delta; projection apply stays; revision
       reconciles. (`applyServerMessagePatches` trimmed; `reconcileServerCommandRevision`
       → `setCachedServerCommandRevision` in `request/serverChat.ts`.)

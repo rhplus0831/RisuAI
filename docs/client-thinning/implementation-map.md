@@ -49,16 +49,17 @@ Three boundaries (see [`status/sendchat-thinning.md`](status/sendchat-thinning.m
   decides `local | server | unsupported`. `local` is reached when
   `!isFastifyServer` or the default-off `useServerPromptAssembly` gate is off.
   With the flag on, the text-send subset and image-input multimodal/asset sends
-  route to `/api/v1/generate/chat`; unsupported content hard-fails. Remaining
-  A1 gaps are image-gen instruction and Lua hook wiring. PluginV2 is permanent
-  unsupported; non-vision image caption fallback is explicit unsupported.
+  route to `/api/v1/generate/chat`; non-interactive Lua edit/input hooks run
+  server-side; unsupported content hard-fails. The remaining A1 port target is
+  the image-gen instruction. PluginV2, interactive Lua dialogs, and non-vision
+  image caption fallback are explicit unsupported.
 - **Post-generation + persistence (browser):**
   `src/ts/process/postGeneration/{orchestrateResponse,runStage4}.ts`. **Blocker
-  A2:** the output trigger has no server path
-  (`server/fastify/src/prompt/triggers.ts` wires only `'start'`), and `editoutput`
-  is browser-only. C-A1 is done: `/generate/chat` persists assembly-time
-  scriptstate and returns the bumped revision. Final-message persistence still
-  uses `dispatchPersistGenerationResult`.
+  A2:** the server trigger engine is used for `'start'` and submit-time
+  `'input'`, but there is no post-generation server `runTrigger(..., 'output')`
+  pass, and `editoutput` is browser-only. C-A1 is done: `/generate/chat`
+  persists assembly-time scriptstate and returns the bumped revision.
+  Final-message persistence still uses `dispatchPersistGenerationResult`.
 - **HypaV3 memory:** server-side persistence/jobs under
   `server/fastify/src/routes/memory*.ts`; progress UI is a transient browser
   projection.

@@ -9,19 +9,12 @@ shard adds the chat-process specifics.
 
 ## B1 — Permanent Client-Owned (keep)
 
-The server cannot do these; keeping them in the browser does not make the browser
-own durable state:
-
-- Rendering, UI/selection/navigation/transient interaction state.
-- Notification (Web/OS API) — server may signal "notify".
-- TTS playback — server emits the `tts` side-effect, browser plays.
-- Automatic image-generation call + inlay-screen rendering (only a persisted
-  asset reference must be command-backed).
-- Emotion selection → transient `CharEmotion` store (not `DBState.db`).
-- HypaV3 progress UI (transient projection of a server job).
-- Input plumbing (slash text, file-inlay insertion, say-nothing rows, reroll
-  trim, abort). The script parts of input handling belong to blocker A1.
-- Plugin runtime execution.
+The full keep list lives in
+[`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md). The
+chat-specific split to remember: slash text, file-inlay insertion, say-nothing
+rows, reroll trim, abort, B1 effects, and plugin runtime execution stay browser;
+server prompt assembly now owns non-interactive submit-time input-trigger /
+`editinput`; interactive Lua dialogs stay explicit `unsupported`.
 
 ## B2 — Acceptable, Browser Orchestrates Or Requests (optimizable, not a bug)
 

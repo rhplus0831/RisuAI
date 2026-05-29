@@ -24,7 +24,7 @@ drift; symbol names are the stable handle.
 | Lorebook activation + depth prompts | **AT PARITY** | `prompt/lorebook.ts`; wired `assemble.ts:670-707,823-825` |
 | Start triggers (`'start'`) | **AT PARITY** | `prompt/triggers.ts:876-892` (`runStartTrigger`); wired `history.ts:470` |
 | HypaV3 / prompt-memory selection | **AT PARITY** (server-owned) | `assemble.ts:870-916` |
-| Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyChatVars` |
+| Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyMutations` |
 | Multimodal / inlay asset bytes | **AT PARITY** (slice 3a) — route binds a non-empty `AssetLookup`; inlay bytes ride the request `inlayAssets`, asset/icon bytes come from the store | `prompt/assetLookup.ts` (`buildAssetLookup`) + `generationChat.ts` (`resolveStoredAssetImage`); bound in `assemble.ts::beginAssembly`, passed at `assemble.ts:fillHistoryAndBias` |
 | **Lua `editRequest`** | **AT PARITY (slice 3b sub-slice 2)** — `renderAndBudget` supplies a VM-backed hook (`buildLuaEditRequest`) over `formated` + the prompt-info capture; var writes flow into the chat-var delta. Classifier routes Lua `→ server` except interactive-API scripts. | hook `assemble.ts::renderAndBudget`/`buildLuaEditRequest` → `prompt/luaRuntime.ts` (`runLuaEditTrigger`); seam `templates.ts:635`; classifier `serverPromptAssembly.ts::luaUsesInteractiveApi` |
 | **Lua `editprocess`** | **AT PARITY (slice 3b sub-slice 3)** — wired at the two history `processScript('editprocess')` sites as a faithful runtime no-op (the Lua arm is a browser no-op) | `assemble.ts::fillHistoryAndBias` → `history.ts` `editProcess` seam → `prompt/luaRuntime.ts` |
@@ -63,11 +63,11 @@ sub-classes can flip independently and guarded by the `A4R-pluginv2` audit invar
 
 ## `prompt/assemble.ts` — the facade
 
-Root entry `assemblePrompt(input, deps)` (`assemble.ts:1096-1143`) chains the
-slice functions in order: `beginAssembly` → `prepareRegenerateTranscript` →
-`appendUserMessageRow` → `applyCurrentChatRunVars` → `fillStaticSlots` →
-`fillLorebookSlots` → `fillHistoryAndBias` → `fillMemoryAndPostHistory` →
-`renderAndBudget`.
+Root entry `assemblePrompt(input, deps)` chains the slice functions in order:
+`beginAssembly` → `prepareRegenerateTranscript` → `runInputTrigger` →
+`appendUserMessageRow` → `applyEditInput` → `captureSubmitTranscript` →
+`applyCurrentChatRunVars` → `fillStaticSlots` → `fillLorebookSlots` →
+`fillHistoryAndBias` → `fillMemoryAndPostHistory` → `renderAndBudget`.
 
 - **Input** `AssembleInput` (`assemble.ts:147-158`): `chatId`, `characterId`,
   optional `presetId`/`loadoutId`, `mode`, `regenerateMessageId`, `userMessage`,
@@ -98,13 +98,14 @@ if (result.mutations) { emit({ type: 'message_patch', patch: result.mutations })
 
 So chat-var mutations are *computed* server-side during assembly, emitted as a
 patch for the browser's projection, **and (C-A1, done) persisted by the route
-itself** through `persistAssemblyChatVars` → `applyJsonCommandMutation` for
+itself** through `persistAssemblyMutations` → `applyJsonCommandMutation` for
 persisting modes; the route returns the bumped revision on the `info` frame and
 the browser no longer replays the delta as a command. **Crucially, this delta
-reflects the assembly-time `'start'` trigger + run-var pass only — it never
-includes the post-gen `'output'` trigger** (which has no server path). C-A1
-moved the persistence into the route; porting the output trigger is A2. They are
-distinct — see [`post-generation-and-persistence.md`](post-generation-and-persistence.md).
+reflects assembly-time work (`'start'`, run-var, and now submit-time input
+scripts), never the post-gen `'output'` trigger** (which has no server path).
+C-A1 moved the persistence into the route; porting the output trigger is A2.
+They are distinct — see
+[`post-generation-and-persistence.md`](post-generation-and-persistence.md).
 
 ## `prompt/history.ts` — the multimodal / asset seam (now fed, slice 3a)
 
@@ -133,7 +134,7 @@ just starved of data while `buildHistoryWindow` defaulted to the empty
 `NO_ASSETS` survives only as the fallback when no resolver is bound (prompt-leaf
 tests).
 
-## `prompt/templates.ts` — the Lua `editRequest` gap
+## Lua Edit Hooks
 
 > **Sub-slice 3b-1 landed the VM** (`prompt/luaRuntime.ts`: `runServerLua` +
 > `runLuaEditTrigger`) and **sub-slice 3b-2 wired the `editRequest` hook** into
@@ -154,32 +155,31 @@ Type at `templates.ts:635`; applied at `:725-730` (over `formated`, and over
 VM-backed `editRequest` via `buildLuaEditRequest`, so the identity applies only for
 the no-`triggerlua` case (where the hook is a no-op anyway).
 
-Server scripts are **regex-only**. `processScript` (`scripts.ts:315-356`) walks
-`db.presetRegex` + `char.customscript` + active-module regex; it is the only
-script transform, applied in the history walk (`history.ts:292-300,452-457`).
-The `scripts.ts` header (`:50-56`) explicitly defers `runLuaEditTrigger` and
-`pluginV2[mode]`. A faithful port needs the **Lua** hooks (a) inside the
-`editprocess` history pass next to `processScript`, and (b) at the `editRequest`
-seam (`templates.ts:726`). The **pluginV2** equivalents are *not* ported — they
-are permanent `unsupported` (no-port list), and the `A4R-pluginv2` audit invariant
-forbids reintroducing a server-side plugin execution path in this dir.
+Regex scripts remain in `processScript` (`scripts.ts:315-356`), while Lua edit
+hooks run through VM-backed seams: `editRequest` at the template seam,
+`editprocess` in the history pass, and submit-time input-trigger/`editinput` in
+`assemble.ts`. The **pluginV2** equivalents are *not* ported — they are permanent
+`unsupported` (no-port list), and the `A4R-pluginv2` audit invariant forbids
+reintroducing a server-side plugin execution path in this dir.
 
 ## `prompt/triggers.ts` — the trigger gap (A2)
 
 `TriggerMode` declares six modes (`triggers.ts:99-107`):
-`'start' | 'manual' | 'output' | 'input' | 'display' | 'request'`. But only
-`'start'` and `'manual'` are ever *invoked*:
+`'start' | 'manual' | 'output' | 'input' | 'display' | 'request'`. Server-side
+assembly now invokes `'start'` and submit-time `'input'`; recursion arms can force
+`'manual'`. No post-generation `'output'` pass exists yet.
 
 - `runStartTrigger` (`triggers.ts:876-892`) ends with
   `runTrigger(runCtx, char, 'start', { chat })`; its sole consumer is
   `buildHistoryWindow` (`history.ts:470`) — i.e. **assembly time**, not post-gen.
+- `assemble.ts::runInputTrigger` calls `runTrigger(..., 'input', ...)` before the
+  user message is appended; `triggerlua` effects run through the injected VM seam.
 - the two recursion arms force `'manual'` (`triggers.ts:538,766`).
 
 **No `runTrigger(…, 'output', …)` invocation exists anywhere on the server.**
-`'output'` lives only in the type union. Output-trigger handling is the A2 gap;
-the runner already accepts the `'output'` mode value and the `setvar`/`v2SetVar`
-arms are durable via the `TriggerVarEngine` — what's missing is *calling* it on
-the completion text post-generation.
+The runner accepts the `'output'` mode value and the `setvar`/`v2SetVar` arms are
+durable via the `TriggerVarEngine`; what's missing is *calling* it on the
+completion text post-generation.
 
 ## `routes/generationChat.ts` — the route (`/generate/chat`)
 
@@ -196,19 +196,18 @@ the completion text post-generation.
   (`:258-295`): `stage(validate)` ×2 → `stage(prompt start)` → `prompt` →
   `message_patch` (if mutations) → `stage(prompt end)` → `info` → optional
   provider `token`/`side_effect`/`done`. **The `info` frame now carries the
-  bumped `revision`** when the route persisted an assembly-time chat-var delta
-  (C-A1); it is omitted otherwise. The one-shot JSON sibling
+  bumped `revision`** when the route persisted an assembly mutation (chat-var
+  delta and/or submit transcript); it is omitted otherwise. The one-shot JSON sibling
   `POST /api/v1/generate/preview-prompt` (`:402-425`) returns `result.prompt`
   as plain JSON (404 on `EntityNotFoundError`) and stays read-only.
-- **Writes only the assembly-time scriptstate delta (C-A1).** It still imports
-  `loadPersisted` read-only for assembly, but now also persists the chat-var
-  delta through `persistAssemblyChatVars` → `applyJsonCommandMutation` (the same
-  JSON-command machinery the scriptstate command uses: one revision bump, one
-  `chat.scriptstate.updated` event, rollback on failure) for persisting modes
-  only — preview / preview_prompt stay read-only. The assembler itself still
-  operates on a `structuredClone` of the chat (`resolveScope`,
-  `assemble.ts:393`); the persistence reloads the store inside the mutation
-  transaction. No message/final-result persistence happens here — that stays
+- **Writes assembly mutations.** It still imports `loadPersisted` read-only for
+  assembly, but now persists the chat-var delta and, when submit-time
+  input-trigger/`editinput` changed the transcript, the post-`editinput`
+  transcript through `persistAssemblyMutations` → `applyJsonCommandMutation` (one
+  revision bump, one event, rollback on failure) for persisting modes only —
+  preview / preview_prompt stay read-only. The assembler itself still operates
+  on a `structuredClone` of the chat (`resolveScope`); the persistence reloads
+  the store inside the mutation transaction. Final-result persistence stays
   command-backed (B2).
 - **Binds the asset seam (slice 3a)** — `loadDatabaseDeps` supplies
   `resolveStoredAssetImage(reference)` (reads `data/assets/` via `assetById` /
@@ -243,13 +242,13 @@ before persisting.
 | `promptScope.ts` | Module-level singleton holding active DB/char/chat; scriptstate dirty flag. |
 | `promptVariablesBoot.ts` | One-time CBS/variable parser boot. |
 | `providerTransport.ts` | Maps provider frames to SSE `token`/`done`/`side_effect`. |
-| `scripts.ts` | Regex-script processor (`processScript`); Lua/pluginV2 deferred. |
+| `scripts.ts` | Regex-script processor (`processScript`); Lua calls it through the ported edit hooks, pluginV2 deferred forever. |
 | `sseEvents.ts` | SSE event taxonomy + `writePromptChatEvent` (defines `message_patch`, etc.). |
 | `staticSections.ts` | `buildDescription`/`buildPersona`/`buildAuthorNote`/`buildCotInstruction`. |
 | `tokenizerConfig.ts` | Shared tokenizer config from `db.aiModel`. |
 | `tokens.ts` | Minimal server tokenizer. |
 | `triggerDataEffects.ts` | V2 trigger "safe data helper" leaf arms. |
 | `triggerVars.ts` | Trigger variable engine (`getVar`/`setVar`, chat-var persistence into the snapshot). |
-| `triggers.ts` | Trigger model + runner; only `'start'`/`'manual'` invoked. |
-| `templates.ts` | Template normalize + render; home of the identity `editRequest` gap. |
+| `triggers.ts` | Trigger model + runner; `'start'`, submit-time `'input'`, and manual recursion are invoked; no post-gen `'output'` pass yet. |
+| `templates.ts` | Template normalize + render; `editRequest` seam supplied by the Lua VM hook when relevant. |
 | `variables.ts` | Server `risuChatParser` entry (`expandVariables`). |

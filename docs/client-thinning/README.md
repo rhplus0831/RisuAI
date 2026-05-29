@@ -22,9 +22,10 @@ remaining batch is one item from this classification:
 - **A. Hard blockers** — must move server-side or be explicitly classified
   unsupported (never a silent browser fallback). A1 now has its classifier,
   the text-send subset, and multimodal/asset inlining on vision models; the
-  remaining A1 work is Lua hook wiring and the image-gen instruction. A2
-  post-generation durable derivation remains open. A3 provider coverage hard-
-  fails unsupported shapes.
+  Lua edit/input hooks are ported, with interactive Lua still explicitly
+  unsupported. The remaining A1 port target is the image-gen instruction. A2
+  post-generation durable derivation remains open. A3 provider coverage
+  hard-fails unsupported shapes.
 - **B. Fine in the browser** — the browser triggers, plays, orchestrates, or
   *requests* a write, but never owns durable state. B1 permanent client-owned,
   B2 acceptable-but-optimizable.
@@ -51,8 +52,7 @@ command-issuance. See [`plan.md`](plan.md) for the full breakdown.
 8. [`coverage.md`](coverage.md) — test/audit coverage router.
 9. [`architecture.md`](architecture.md) — module ownership and complexity.
 10. [`phases/`](phases/README.md) — phase sequencing (0–3 done; 4 active; 5 closeout).
-    Phase 4 slices 1, 2, and 3a are done; 3b has the Lua VM runtime landed
-    with hooks pending.
+    Phase 4 slices 1, 2, 3a, and 3b are done; 3c and A2 remain.
 11. [`reference/`](reference/README.md) — deep, code-grounded routing for the
     active Phase 4 batches (classifier, parity matrix, persistence round-trip,
     proof points).

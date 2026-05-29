@@ -43,8 +43,9 @@ A chat-process batch (one blocker item) should prove:
 ## Known Gaps
 
 - Server prompt assembly is opt-in via `useServerPromptAssembly` (default off);
-  the classifier exists, but Lua hooks and image-gen instruction still route
-  unsupported (**A1**).
+  the classifier exists, but image-gen instruction still routes unsupported
+  (**A1**). Non-interactive Lua edit/input hooks are landed; interactive Lua
+  dialogs stay explicit `unsupported`.
 - The output trigger and `editoutput` have no server path (**A2**).
 - Final-message persistence still depends on a browser-issued command (**B2**,
   acceptable). Assembly-time scriptstate persistence is route-owned.

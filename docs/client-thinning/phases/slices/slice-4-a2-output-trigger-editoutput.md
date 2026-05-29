@@ -6,7 +6,7 @@ Date: 2026-05-29
 | --- | --- |
 | **Work-order item** | 4 (A2) |
 | **Blocker** | A2 (post-generation durable derivation; **no server path** today) |
-| **Depends on** | **slice 3b** (server scripting parity) for the Lua/plugin arms; sequence last |
+| **Depends on** | **slice 3b** (landed server Lua support) for Lua output/editoutput work; pluginV2 remains permanent unsupported |
 | **Reference** | [`../../reference/post-generation-and-persistence.md`](../../reference/post-generation-and-persistence.md) §A2 |
 | **Goal** | Give the server a post-generation pass that runs the `'output'` trigger and `editoutput` over the just-generated assistant text, deriving the durable scriptstate/message delta server-side, and remove the browser's authority over it. |
 
@@ -35,13 +35,14 @@ matters"):
 
 ## Preconditions
 
-- [ ] **Slice 3b** landed (or its non-Lua subset): the server can run the
+- [x] **Slice 3b** landed: the server can run the
       trigger/script machinery the `'output'` arms need. The reusable pieces
       already exist — `runTrigger` accepts `'output'` (`triggers.ts:103`), the
       `setvar`/`v2SetVar` arms are durable (`prompt/triggers.ts:155-164`), and
       `processScript(…, 'editoutput', …)` is implemented (`scripts.ts:63,319`) but
-      never *called*. Lua/pluginV2 output hooks need the slice-3b VM.
-- [ ] **Slice 2 / C-A1** landed (recommended): reuse its route persistence path
+      never *called*. Lua output/editoutput can use the landed VM; pluginV2
+      output/editoutput stays permanent unsupported.
+- [x] **Slice 2 / C-A1** landed (recommended): reuse its route persistence path
       for the post-gen delta instead of building a second writer.
 
 ## Step-by-step
@@ -62,12 +63,13 @@ matters"):
    per chunk (`streamResponse.ts:107-117`) and non-streaming
    (`nonStreamResponse.ts:68-82`, written back `:92-120`). It mutates the **final
    saved response text** (`result2.data`) and may set `emoChanged`.
-4. Confirm the server gap: server runs `processScript` only with `'editprocess'`
-   (`prompt/history.ts:292,452`); `'editoutput'` exists in `ScriptMode`
-   (`scripts.ts:63`) but is never invoked; **no `runTrigger(…, 'output', …)`
-   exists anywhere server-side** (`triggers.ts` wires only `'start'`/`'manual'`).
-   The provider-dispatch path (`generationChat.ts`, `prompt/chatDispatch.ts`,
-   `prompt/providerTransport.ts`) has no `runTrigger` and no `editoutput`.
+4. Confirm the server gap: server now uses the trigger runner for `'start'` and
+   submit-time `'input'`, but not after generation. `'editoutput'` exists in
+   `ScriptMode` (`scripts.ts:63`) but is never invoked; **no
+   `runTrigger(…, 'output', …)` exists anywhere server-side**. The
+   provider-dispatch path (`generationChat.ts`, `prompt/chatDispatch.ts`,
+   `prompt/providerTransport.ts`) has no post-generation `runTrigger` and no
+   `editoutput`.
 
 ### Implement — server post-gen pass
 
@@ -137,10 +139,11 @@ matters"):
   but within the server request lifecycle so the derived delta can be persisted
   behind the active-writer guard. Co-locate with the dispatch reuse in
   `generationChat.ts`/`chatDispatch.ts`.
-- **Non-Lua subset first.** The `setvar`/`v2SetVar` output-trigger arms and the
-  regex `editoutput` can land **without** the slice-3b VM (they reuse ported
-  machinery). The Lua/pluginV2 output hooks need the VM — split them out if 3b's
-  VM isn't in yet.
+- **What is missing.** The gap is not the generic trigger runner: it already
+  supports the modes used by assembly-time hooks. The missing piece is the
+  post-generation route invocation/persistence for `runTrigger('output')` and
+  `processScript(..., 'editoutput')`. Lua can use the landed VM; pluginV2 remains
+  no-port.
 
 ## Scope guard
 

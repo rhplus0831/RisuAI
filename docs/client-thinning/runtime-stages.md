@@ -46,8 +46,9 @@ Three boundaries, gated differently (see [`plan.md`](plan.md)):
 - **Prompt assembly** — gated by `useServerPromptAssembly` (default off), so the
   browser still assembles by default. With the flag on,
   `resolveServerPromptAssembly` makes the supported subset server-mandatory and
-  hard-fails unsupported content. Remaining **A1** gaps are image-gen instruction
-  and Lua hook wiring; multimodal/asset inlining on image-input models is ported.
+  hard-fails unsupported content. The remaining **A1** port target is the
+  image-gen instruction; multimodal/asset inlining and non-interactive Lua
+  edit/input hooks are ported.
 - **Post-generation + persistence** — client-orchestrated after the server
   stream. C-A1 is done: `/generate/chat` persists assembly-time scriptstate.
   Blocker **A2** remains: the output trigger (no server `'output'` invocation)

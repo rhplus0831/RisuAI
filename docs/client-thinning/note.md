@@ -8,11 +8,12 @@ behavior being changed.
 
 ## Latest Change
 
-The newest code change is `2883e8a2` (`feat: land server Lua VM runtime (slice
-3b sub-slice 1)`). It added `server/fastify/src/prompt/luaRuntime.ts` and
-`server/fastify/__tests__/luaRuntime.test.ts`. Scope is runtime only: the
-classifier still routes Lua sends `unsupported` because `editRequest`,
-`editprocess`, and input-trigger/`editinput` are not wired into server assembly.
+The newest code change is `0e724222` (`feat: wire server Lua input-trigger +
+editinput at submit (slice 3b sub-slice 4)`). It completed the Lua server-port
+series: the VM runs `editRequest`, `editprocess`, the submit-time input trigger,
+and `editinput`; `/generate/chat` owns the post-`editinput` transcript write
+when a submit hook changes it. Interactive Lua dialog APIs remain
+`unsupported`.
 
 Already landed before that: `resolveServerPromptAssembly` (text subset
 server-mandatory when the flag is on), C-A1 route-owned assembly-time
@@ -43,13 +44,11 @@ current recorded commands and results.
 Follow the work order in [`plan.md`](plan.md):
 
 1. Run the audit; fix/triage if red.
-2. Lua sub-slice 3b-2: wire VM-backed `editRequest`.
-3. Lua sub-slices 3b-3/3b-4: `editprocess`, then input-trigger/`editinput`.
-4. Slice 3c: image-gen view instruction.
-5. A2: server output-trigger + `editoutput`.
-6. Group-chat legacy removal.
-7. Audit-rule hardening (A4R2, A4R7, fanout-svelte, EC2).
-8. Event patching stays deferred.
+2. Slice 3c: image-gen view instruction.
+3. A2: server output-trigger + `editoutput`.
+4. Group-chat legacy removal.
+5. Audit-rule hardening (A4R2, A4R7, fanout-svelte, EC2).
+6. Event patching stays deferred.
 
 ## Batching Policy
 

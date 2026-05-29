@@ -24,11 +24,11 @@ runs it at `renderFinalPrompt.ts:384` via `runLuaEditTrigger(char,'editRequest',
    sub-slice-1 runtime, threading the assembly's char + var-engine context. Apply it
    over `formated` **and** the `promptInfo` capture (the browser does both).
 2. Ensure Lua `setChatVar`/`setState` writes during the hook land in the scriptstate
-   delta (`buildChatVarMutations` / `persistAssemblyChatVars`) — see
+   delta (`buildChatVarMutations` / `persistAssemblyMutations`) — see
    [README §Integration](README.md#integration-points-in-the-server-assembler). Add a
    test that an `editRequest` that calls `setState` bumps the persisted revision.
-3. **Flip the classifier.** The Lua arm (`sendHasLuaContent`,
-   `serverPromptAssembly.ts`) cannot tell statically which mode a script hooks
+3. **Flip the classifier.** The old Lua arm (`sendHasLuaContent`,
+   `serverPromptAssembly.ts`) could not tell statically which mode a script hooks
    (handlers register at runtime). Decide the flip granularity:
    - simplest defensible cut: flip the Lua arm to `server` **except** when the Lua
      source references an interactive API (`alertInput`/`alertSelect`/`alertConfirm`)
@@ -74,12 +74,11 @@ the node-env server suite. A note records this in the serverBacked file.
 
 - The classifier cannot tell statically which mode a script hooks, so the flip is
   the whole Lua arm → `server` *minus* the interactive-API arm (the "simplest
-  defensible cut" above). A non-interactive Lua char that only hooks
-  `editprocess`/`editinput` therefore routes `server` ahead of those execution
-  seams (sub-slices 3/4). This is acceptable pre-ship: `useServerPromptAssembly`
-  defaults off and there are no users. Tighten in 3/4.
-- `triggers.ts` is untouched. `editRequest` runs via the template seam
+  defensible cut" above). At the time, a non-interactive Lua char that only
+  hooked `editprocess`/`editinput` could route `server` ahead of those execution
+  seams; sub-slices 3/4 have now landed and resolved that caveat.
+- `triggers.ts` was untouched in sub-slice 2. `editRequest` runs via the template seam
   (`renderFinalPrompt`), not `runTrigger`; the start-trigger run still selects a
   `triggerlua` trigger (`matchesTrigger`) but no-ops it in the effect switch — the
   server parity tests cover a `type: 'request'` triggerlua char and confirm no
-  interference.
+  interference. Sub-slice 4 later added the input-trigger `triggerlua` VM seam.

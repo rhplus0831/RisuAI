@@ -8,14 +8,14 @@ Date: 2026-05-29
 | **Blocker** | A1 (content parity) — classes 4, 5, 6, 7 |
 | **Depends on** | **slice 1** (classifier); the largest A1 content batch |
 | **Reference** | [`../../reference/server-assembler-parity.md`](../../reference/server-assembler-parity.md) §`templates.ts`/§`triggers.ts` + [`../../reference/local-assembler-content-classes.md`](../../reference/local-assembler-content-classes.md) classes 4–7 |
-| **Goal** | **Lua → server port (committed):** bring server prompt assembly to parity for Lua `editRequest`, Lua `editprocess`, and the input-trigger/`editinput` scripts. **plugin-V2 → permanent `unsupported`** (deprecated by Plugin V3; not ported). The server runs **regex scripts only** today. |
+| **Goal** | **Lua → server port (committed and landed):** server prompt assembly runs Lua `editRequest`, Lua `editprocess`, and submit-time input-trigger/`editinput` at parity for non-interactive Lua. **plugin-V2 → permanent `unsupported`** (deprecated by Plugin V3; not ported). |
 
-## The honest framing first
+## Current Framing
 
-The server assembler is **regex-only** today. Lua `editRequest` runs identity
-(`templates.ts:683`), Lua `editprocess` is a no-op, and pluginV2 hooks are unported.
-Slice 1 already classifies all of these `unsupported`, so the *correctness* hole is
-closed (no silent mis-assembly).
+Slice 3b is landed. The server assembler runs regex scripts plus non-interactive
+Lua `editRequest`, Lua `editprocess` no-op parity, and submit-time
+input-trigger/`editinput`. Interactive-dialog Lua remains `unsupported`; pluginV2
+remains permanent `unsupported` and pinned by the `A4R-pluginv2` audit invariant.
 
 **Decision (2026-05-29): the Lua arms are a committed server port; pluginV2 is
 permanent `unsupported`.** Lua is the primary bot-extension mechanism and is widely
@@ -25,9 +25,9 @@ pluginV2 is being phased out in favor of Plugin V3, and "server-side plugin code
 execution" is on the no-port list (`../../plan.md`), so its `unsupported` status is
 intentional and kept.
 
-Porting Lua means **standing up a server-side WASM Lua VM** (`wasmoon`, the same
-engine the browser uses) — **its own sub-project**, not a one-sitting change. Three
-things shape it:
+Porting Lua meant **standing up a server-side WASM Lua VM** (`wasmoon`, the same
+engine the browser uses) — **its own sub-project**, not a one-sitting change.
+Three things shaped it:
 
 - **Scope it as a slice series**, not one batch: the VM first, then `editRequest`,
   `editinput`, `editprocess`, and (in slice 4) the Lua `'output'` arms — one review
@@ -41,9 +41,8 @@ things shape it:
   shared/hosted deployment needs a much higher bar. Design the egress allow/deny +
   execution limits before wiring `request()` / `LLM()`.
 - **Not all Lua is server-portable.** Interactive APIs (`alertInput` / `alertSelect`
-  / `alertConfirm`) need the client, so a finer classifier arm (Lua-using-interactive-
-  APIs → still client/unsupported, or a client round-trip) may be required even after
-  the VM lands.
+  / `alertConfirm`) need the client; the landed classifier keeps those scripts
+  `unsupported`.
 
 ## Status (2026-05-29)
 
@@ -53,27 +52,25 @@ Tracking which sub-class has landed (this slice is a series — see the scope gu
 | --- | --- | --- |
 | pluginV2 `editRequest`/`editprocess`/replacers (5) | **permanent `unsupported`** | **DONE** — classifier split into its own `hasPluginV2EditSet` arm (distinct user-facing reason), recorded in the parity matrix / content-classes / unsupported docs, and pinned by the **`A4R-pluginv2 no server-side plugin execution`** audit invariant (`util/client-thinning-audit.ts`, fixtures under `util/client-thinning-audit-fixtures/pluginv2-server-execution/`). |
 | Lua `editRequest` (4) | port (server VM) | **landed** (sub-slice 3b-2) — hook wired in `renderAndBudget`; classifier routes `server`. |
-| Lua `editprocess` (5) | port (browser no-op) | **pending** — VM runtime landed; hook wiring/proof pending (sub-slice 3). |
-| Lua input-trigger / `editinput` (6) | port (VM + submit hook) | **pending** — VM runtime landed; new submit seam pending (sub-slice 4). |
+| Lua `editprocess` (5) | port (browser no-op) | **landed** (sub-slice 3b-3) — hook wired through the history `editProcess` seam as a runtime no-op at parity. |
+| Lua input-trigger / `editinput` (6) | port (VM + submit hook) | **landed** (sub-slice 3b-4) — submit-time input trigger and `editinput` run server-side; route owns changed transcript persistence. |
 
-The Lua sub-classes share the landed server `wasmoon` VM runtime. The `editRequest`
-hook is wired (sub-slice 2); `editprocess`/`editinput` wiring remains. The Lua arm
-(`luaUsesInteractiveApi`) now routes `server` for all Lua **except** interactive-API
+The Lua sub-classes share the landed server `wasmoon` VM runtime. The Lua arm
+(`luaUsesInteractiveApi`) routes `server` for all Lua **except** interactive-API
 scripts (which stay `unsupported`); there is still **no silent local fallback** for
 any Lua/plugin/trigger send.
 
-**The Lua port is drafted as its own sub-slice series for the next agent** (the
-operator chose the **single-user self-host** security model on 2026-05-29):
-[`slice-3b-lua/`](slice-3b-lua/README.md) — a handover README + four ordered
-sub-slices (VM → `editRequest` → `editprocess` → `editinput`). Start there.
+The landed Lua sub-slice series lives under
+[`slice-3b-lua/`](slice-3b-lua/README.md): VM → `editRequest` → `editprocess` →
+input-trigger/`editinput`.
 
 ## Outcome — Lua (the committed port)
 
 - A server Lua VM runs the Lua `editRequest` hook, the Lua `editprocess` hook, and
   the submit-time input-trigger/`editinput` Lua scripts, at parity with the browser.
-- The classifier's **Lua** detector arm (slice 1, step 7) flips from `→ unsupported`
-  to `→ server` — per sub-class, as each lands. A finer Lua-interactive-API arm may
-  stay `unsupported` (see the framing above).
+- The classifier's **Lua** detector arm is now `luaUsesInteractiveApi`: all
+  non-interactive Lua routes `server`, while interactive dialog APIs stay
+  `unsupported`.
 
 ## Outcome — pluginV2 (kept `unsupported`)
 
@@ -81,18 +78,22 @@ sub-slices (VM → `editRequest` → `editprocess` → `editinput`). Start there
   [`../../unsupported-and-client-owned.md`](../../unsupported-and-client-owned.md):
   "server-side plugin code execution" is on the no-port list
   ([`../../plan.md`](../../plan.md)), and pluginV2 is superseded by Plugin V3. The
-  classifier already enforces it; no port. Add an audit invariant that no pluginV2
-  execution path exists server-side.
+  classifier already enforces it; no port. The `A4R-pluginv2` audit invariant
+  forbids a server-side pluginV2 execution path.
 
-## Preconditions
+## Historical Preconditions
 
-- [ ] Slice 1 landed; Lua/plugin sends currently route `unsupported`.
-- [ ] You have read [`../../plan.md`](../../plan.md) §"Legacy / removed" — the
+- [x] Slice 1 landed; Lua/plugin sends initially routed `unsupported`.
+- [x] You have read [`../../plan.md`](../../plan.md) §"Legacy / removed" — the
       no-port list explicitly includes server-side plugin code execution.
 
-## Step-by-step
+## Historical Step-by-step
 
-### Decide (do this before any code)
+The checklist below records the implementation plan that produced the landed
+slice. It is retained for maintenance context; do not treat it as not-started
+work.
+
+### Historical decision
 
 1. Read both reference docs' Lua/plugin sections in full
    ([server side](../../reference/server-assembler-parity.md) §`templates.ts`,
@@ -107,9 +108,8 @@ sub-slices (VM → `editRequest` → `editprocess` → `editinput`). Start there
    | pluginV2 `editprocess`/`editRequest` (5) | JS `EditFunction`s in the browser plugin runtime | **permanent unsupported** (no-port list; deprecated by V3) |
    | input-trigger / `editinput` at submit (6) | `runTrigger('input')` + `processScript('editinput')` (`DefaultChatScreen.svelte:232,240`) | **port** (needs the VM + a submit-time server hook) |
 
-   pluginV2 stays `unsupported`, so the **Lua/plugin detector stays** (a pluginV2 send
-   still hard-fails); the Lua arms flip to `server` per sub-class as each lands. A
-   Lua-using-interactive-API arm may also stay `unsupported`.
+   pluginV2 stays `unsupported`, so the pluginV2 detector remains a hard fail;
+   the Lua arms now route `server` except the interactive-API arm.
 
 ### Implement — port path (only the sub-classes you chose to port)
 
@@ -117,7 +117,7 @@ sub-slices (VM → `editRequest` → `editprocess` → `editinput`). Start there
    provides the VM and pure host-function surface. Do not re-open the runtime in a
    hook slice unless the hook proof exposes a runtime parity bug.
 4. **`editRequest` (class 4):** wire the real hook into the request-edit seam that
-   currently defaults to identity — `templates.ts:683` (`editRequest = rows => rows`),
+   previously defaulted to identity — `templates.ts:683` (`editRequest = rows => rows`),
    applied at `:725-730`; `renderAndBudget` calls `renderFinalPrompt` without an
    `editRequest` key (`assemble.ts:1058-1068`). Supply the VM-backed `editRequest`
    so it runs over `formated` (and `promptInfo`). Remember the **two-stage** note
@@ -176,12 +176,10 @@ image-gen (3c).
 
 ## When this slice is done
 
-- [~] Per sub-class, a recorded decision: ported (with parity proof) or permanent
-      `unsupported` (with a doc entry + an audit invariant). **pluginV2 done**
-      (permanent `unsupported` + doc entries + `A4R-pluginv2` invariant); the VM
-      runtime is landed; the three Lua hooks are decided (port) but **not yet
-      wired**.
-- [ ] For ported sub-classes: server runs the hook, the classifier routes them
-      `server`, and a parity fixture is green. *(No Lua sub-class ported yet.)*
-- [x] No silent local fallback for any Lua/plugin/trigger send — every such send
-      hard-fails through `resolveServerPromptAssembly` (Lua arm + pluginV2 arm).
+- [x] Per sub-class, a recorded decision: Lua ported with parity proof; pluginV2
+      permanent `unsupported` with doc entries + `A4R-pluginv2` invariant.
+- [x] For ported Lua sub-classes: server runs the hook, the classifier routes
+      non-interactive Lua `server`, and parity proof is green.
+- [x] No silent local fallback for any Lua/plugin/trigger send — non-interactive
+      Lua routes `server`; interactive Lua and pluginV2 hard-fail through
+      `resolveServerPromptAssembly`.

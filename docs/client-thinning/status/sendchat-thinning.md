@@ -22,7 +22,7 @@ requests a write** — it never becomes the authority.
 | Stage | Default owner | Notes |
 | --- | --- | --- |
 | Pre-send input | Browser | UID/input plumbing; rows persist via commands (B1). |
-| Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier (`request/serverPromptAssembly.ts`); **slice 3a graduated multimodal/asset** (image-input models → `server`). Remaining `unsupported`: non-vision caption (class 2), image-gen (3c), Lua hooks (3b); pluginV2 is permanent unsupported. |
+| Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models + non-interactive Lua edit/input hooks** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier; slice 3a graduated multimodal/asset; slice 3b graduated Lua `editRequest`, `editprocess`, input-trigger, and `editinput`. Remaining `unsupported`: non-vision caption (class 2), image-gen (3c), interactive Lua dialogs, and permanent pluginV2. |
 | Provider dispatch | **Server** (`/generate/completion`) | `resolveServerCompletionRoute`; `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
 | Token streaming → rows | Browser | Writes the projection. |
 | Post-generation | **Browser** | `editoutput`, inlay-screen, output trigger, auto-continue, IGP (blocker **A2** for the durable ones). |
@@ -37,7 +37,7 @@ requests a write** — it never becomes the authority.
 The server `/generate/chat` assembler (`server/fastify/src/prompt/`) is at parity
 for run-vars, CBS/variable expansion, regex scripts, templates, token budget,
 lorebook + depth prompts, start triggers, HypaV3 selection, and **multimodal /
-asset inlining (slice 3a)**. Remaining explicit content rows:
+asset inlining (slice 3a)**. Current content rows:
 
 - **Multimodal / asset inlining** — **DONE (slice 3a).** `beginAssembly` binds a
   non-empty `AssetLookup` (`prompt/assetLookup.ts`): inlay bytes from the request
@@ -47,10 +47,9 @@ asset inlining (slice 3a)**. Remaining explicit content rows:
   routes `unsupported` (slice 3a class 2). No server path.
 - **Image-gen instruction** (`buildInlayViewInstruction` / `newGenData`) — not
   ported (slice 3c).
-- **Lua `editRequest`** — server runs identity (`templates.ts`: `editRequest =
-  rows => rows`).
-- **Lua `editprocess` hooks** and input-trigger / `editinput` scripts at submit —
-  server does regex scripts only, although the VM runtime exists.
+- **Lua `editRequest`, `editprocess`, input-trigger, and `editinput`** — **DONE
+  (slice 3b).** Non-interactive `triggerlua` routes `server`; interactive dialog
+  APIs (`alertInput`/`alertSelect`/`alertConfirm`) route `unsupported`.
 - **pluginV2 edit/replacer hooks** — permanent unsupported, not a port target.
 
 These are *correctness* differences in the assembled prompt. Assembly is
@@ -62,17 +61,18 @@ fallback.
 (`src/ts/process/request/serverPromptAssembly.ts`) mirrors
 `resolveServerCompletionRoute` and returns `local | server | unsupported`. It
 replaced the boolean gate at `index.svelte.ts`: in Fastify mode with
-`useServerPromptAssembly` on, the supported pure-text-send subset routes `server`
-(local assembler unreachable for it), and **every** content class above
-(image-gen/Lua/pluginV2/non-vision caption), a non-user-message send, a group
+`useServerPromptAssembly` on, the supported subset routes `server` (local
+assembler unreachable for it), and each unported/unsupported class (image-gen,
+interactive Lua, pluginV2, non-vision caption), a non-user-message send, a group
 character, and a non-server-routable provider route `unsupported` and hard-fail. The soft
 `unavailable` escape (the silent non-string-`send` → local fall-through) is
 deleted. `local` is reached only when `!isFastifyServer` or the flag is off.
 
-**Remaining A1 work — content graduation (slices 3b/3c):** each later content
+**Remaining A1 work — content graduation (slice 3c):** each later content
 slice ports one class to the server assembler and flips its detector in the
-classifier from `→ unsupported` to `→ server`. **Slice 3a is done** (multimodal /
-asset → `server` for image-input models; non-vision caption stays `unsupported`).
+classifier from `→ unsupported` to `→ server`. **Slices 3a and 3b are done**
+(multimodal/asset → `server` for image-input models; Lua edit/input hooks →
+`server` except interactive dialogs). Non-vision caption stays `unsupported`.
 Each detector is isolated behind its own named predicate. The classifier still
 reads `useServerPromptAssembly` as the experimental master enable; removing that
 flag is the END of the sub-family, after the last content class graduates.
@@ -80,15 +80,16 @@ flag is the END of the sub-family, after the last content class graduates.
 ### A2 — Post-generation durable derivation (no server path)
 
 - **Output trigger** — `runTrigger(char, 'output', …)` mutates scriptstate and
-  messages after generation. The server has **no `'output'` invocation at all**:
-  `server/fastify/src/prompt/triggers.ts` declares the mode but only wires
-  `runStartTrigger` (`'start'`). Needs a server output-trigger pass.
+  messages after generation. The server trigger engine is already used for
+  `'start'` and submit-time `'input'`, but `/generate/chat` has **no
+  post-generation `'output'` invocation**. Needs a server output-trigger pass.
 - **`editoutput` script processing** — mutates the final response text
   (`postGeneration/streamResponse.ts`, `nonStreamResponse.ts`). Needs server-side
   output-script execution.
 
-Both depend on server prompt/script execution parity (shares machinery with A1's
-Lua hook gap). Sequence after A1.
+Both depend on server post-generation script execution and reuse the Lua/trigger
+machinery that A1 now has for assembly-time hooks. Sequence after A1's remaining
+image-gen instruction slice.
 
 ### A3 — Provider coverage
 
@@ -113,7 +114,7 @@ not a thinness leak. No batch needed beyond keeping the hard-fail explicit.
 
 Assembly-time scriptstate persistence now lives in `/generate/chat`. The server
 already computed the delta (`assemble.ts::buildChatVarMutations`) and emits it as a
-`message_patch`; the route persists it via `persistAssemblyChatVars` →
+`message_patch`; the route persists it via `persistAssemblyMutations` →
 `applyJsonCommandMutation` (one revision bump, one event, rollback on failure) for
 persisting modes and returns the bumped revision on the `info` frame. The browser
 keeps `applyServerMessagePatch` (projection-only) and reconciles its cached command

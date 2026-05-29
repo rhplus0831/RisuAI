@@ -7,13 +7,14 @@ The active gaps, framed by the blocker classification in [`../plan.md`](../plan.
 ## Open (Hard Blockers)
 
 - **A1 prompt-assembly content parity** — classifier, text-send server-mandatory
-  routing, C-A1, and multimodal/asset inlining on image-input models are landed.
-  Remaining gaps: image-gen instruction and Lua hook wiring (`editRequest`,
-  `editprocess`, input-trigger/`editinput`). Non-vision image caption fallback
+  routing, C-A1, multimodal/asset inlining on image-input models, and
+  non-interactive Lua edit/input hooks are landed. Remaining gap: image-gen
+  instruction. Non-vision image caption fallback, interactive Lua dialog APIs,
   and pluginV2 edit/replacer hooks are explicit `unsupported`. The flag still
   defaults off, so local assembly remains the default production path.
-- **A2 post-generation durable derivation** — the output trigger has no server
-  path at all (`prompt/triggers.ts` wires only `'start'`), and `editoutput` script
+- **A2 post-generation durable derivation** — the server trigger engine is used
+  for `'start'` and submit-time `'input'`, but `/generate/chat` has no
+  post-generation `runTrigger(..., 'output')` pass, and `editoutput` script
   processing is browser-only.
 - **Durable/resumable generation** — still separate and not achieved: `/chat`
   aborts on disconnect and final-result persistence remains browser-command

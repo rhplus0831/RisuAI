@@ -246,15 +246,17 @@ today:
 | No unsupported content | `sendHasUnsupportedContent` (`serverPromptAssembly.ts:128-155`) | yes; slice 3a graduated image-input multimodal/asset to `server` |
 
 The current remaining unsupported content signals are non-vision image caption,
-image-gen instruction, Lua hooks, and pluginV2. PluginV2 is permanent
-unsupported; Lua and image-gen are pending content slices.
+image-gen instruction, interactive Lua dialog APIs, and pluginV2. PluginV2 and
+interactive Lua dialogs are explicit unsupported cases; image-gen is the
+remaining A1 port target.
 
 ### Proof landed for this batch
 
 - `src/ts/process/request/tests/serverPromptAssembly.test.ts` covers the
   three-way verdict and content signals.
 - `src/ts/process/__tests__/sendChat.serverPreview.test.ts` proves an
-  out-of-subset Lua send hard-fails without local or `/chat`.
+  out-of-subset interactive-Lua send hard-fails without local or `/chat`, while
+  non-interactive Lua routes to `/chat`.
 - `util/client-thinning-audit.ts` pins the classifier presence and Fastify
   server-mandatory guard.
 

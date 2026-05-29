@@ -20,7 +20,5 @@ Projection guard:
 
 ## Note
 
-Command events are invalidation events; the browser refreshes the projection
-rather than applying surgical patches. **Event patching is deferred** until the
-SSE reconnect/replay gap is closed (today a stream error only logs — no
-reconnect, no Last-Event-ID replay).
+Command events are invalidation events; event patching remains deferred. The
+rationale lives in [`../status/server-projection.md`](../status/server-projection.md).

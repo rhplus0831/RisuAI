@@ -26,8 +26,9 @@ make the browser own durable state. They are no-port by nature:
 - **HypaV3 progress UI** — a transient projection of a server job's progress.
 - **Input plumbing** — slash-command text, file-inlay insertion, say-nothing
   rows, reroll trimming, abort wiring. The resulting message rows persist via
-  commands. (The *script* parts of input handling — input triggers, `editinput`
-  scripts — belong to blocker A1, not here.)
+  commands. Non-interactive submit-time input-trigger/`editinput` now belongs to
+  the server prompt-assembly path; interactive Lua dialogs stay explicit
+  `unsupported`.
 - **Plugin runtime execution** — server commands own plugin records and storage,
   not arbitrary plugin code execution.
 
@@ -102,12 +103,11 @@ documented here.
   server-side execution path — a plugin-runtime import, a `pluginV2` reference, or
   an `eval`/`new Function` sandbox in `server/fastify/src/prompt/**` — from being
   silently added by a later refactor.
-- **Lua scripts (slice 3b, _editRequest ported; editprocess/editinput pending_)** —
-  a `triggerlua` effect on the character or an enabled module now routes `server`
-  (the VM runs the `editRequest` hook, sub-slice 2) **except** scripts using an
-  interactive dialog API (`alertInput`/`alertSelect`/`alertConfirm`), which stay
-  `unsupported`. The `editprocess`/`editinput` execution seams are wired in
-  sub-slices 3/4. Unlike pluginV2 this is a committed server port; the classifier's
+- **Lua scripts (slice 3b, _ported except interactive dialogs_)** — a
+  `triggerlua` effect on the character or an enabled module routes `server` for
+  the ported Lua `editRequest`, `editprocess`, input-trigger, and `editinput`
+  path. Scripts using an interactive dialog API
+  (`alertInput`/`alertSelect`/`alertConfirm`) stay `unsupported`; the classifier's
   Lua arm is `luaUsesInteractiveApi` (the only surviving Lua `unsupported` case).
 - Image-gen view instruction (slice 3c) still routes `unsupported` until its slice
   lands.

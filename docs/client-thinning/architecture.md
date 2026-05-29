@@ -13,10 +13,10 @@ Approximate `wc -l` from the tree. Routing data, not design targets.
 | `util/client-thinning-audit.ts`                | ~2806 | Invariant audit; reproducible, several shallow rules (hardening open).     |
 | `src/ts/server/commands.ts`                    | ~2256 | Browser command transport; `canUseServerCommands()` = `isFastifyServer`.   |
 | `server/fastify/src/prompt/assemble.ts`        | ~1167 | Server prompt assembly facade; A1 parity wiring lives here.                |
-| `server/fastify/src/prompt/luaRuntime.ts`      | ~1091 | Server Lua VM runtime; hooks pending.                                      |
+| `server/fastify/src/prompt/luaRuntime.ts`      | ~1091 | Server Lua VM runtime used by the ported Lua edit/input hooks.             |
 | `server/fastify/src/prompt/chatDispatch.ts`    | ~1045 | Server provider dispatch for the chat route.                               |
 | `server/fastify/src/repository.ts`             |  ~477 | Durable data dir ownership; closed/stable.                                 |
-| `server/fastify/src/routes/generationChat.ts`  |  ~552 | `/generate/chat`; provider stream + C-A1 scriptstate persistence.          |
+| `server/fastify/src/routes/generationChat.ts`  |  ~552 | `/generate/chat`; provider stream, assembly mutations, submit transcript persistence. |
 | `src/ts/process/index.svelte.ts`               |  ~380 | `sendChat`: the three boundaries + post-generation orchestration.          |
 | `src/ts/process/request/serverPromptAssembly.ts` | ~249 | Prompt-assembly classifier.                                                |
 | `src/ts/process/request/serverCompletion.ts`   |     — | `resolveServerCompletionRoute` (the classifier precedent for A1).          |

@@ -9,14 +9,14 @@ Date: 2026-05-29 (landed)
 | **Depends on** | slice 1 (classifier), slice 3b pluginV2 split (landed) |
 | **Security model** | **single-user self-host** (operator decision; see [README §Security](README.md#security-design-single-user-self-host)) |
 | **Goal** | Stand up a server-side `wasmoon` Lua runtime that mirrors `runScripted` + `runLuaEditTrigger`, with the self-host security gate and the host-fn surface. **No assembler hooks, no classifier flip** — runtime + tests only. |
-| **Status** | **DONE** in commit `2883e8a2`; hooks remain in sub-slices 2/3/4. |
+| **Status** | **DONE** in commit `2883e8a2`; later sub-slices 2/3/4 are also landed. |
 
 ## Scope guard
 
-This sub-slice lands **only the runtime**. Do not wire `editRequest`/`editprocess`/
-`editinput` (those are sub-slices 2/3/4) and do not flip the classifier — the Lua
-arm stays `unsupported` after this lands. The runtime is provable on its own
-(unit tests that run Lua and assert host-fn behavior + security limits).
+This sub-slice landed **only the runtime**. At this boundary it did not wire
+`editRequest`/`editprocess`/`editinput` or flip the classifier; later sub-slices
+did. The runtime is provable on its own (unit tests that run Lua and assert
+host-fn behavior + security limits).
 
 ## Outcome
 
@@ -105,10 +105,11 @@ maintenance context; do not treat it as not-started work.
 
 ### Land
 
-15. Update the parity matrix row note in
+15. At the time, update the parity matrix row note in
     [`../../../reference/server-assembler-parity.md`](../../../reference/server-assembler-parity.md)
-    to "VM exists; hooks pending" and tick sub-slice 1 in [README](README.md). Write a
-    memory entry (mirror `phase4-slice3b-pluginv2-permanent-unsupported-landed`).
+    to the VM-only status and tick sub-slice 1 in [README](README.md). Later
+    sub-slices replaced that note with the current hook status. Write a memory
+    entry (mirror `phase4-slice3b-pluginv2-permanent-unsupported-landed`).
 
 ## When this sub-slice is done
 
@@ -122,7 +123,9 @@ maintenance context; do not treat it as not-started work.
       to the validated IP; rate limit 30/min — operator-loosened from the browser's ~5.)
 - [x] A runaway script is interrupted (exec limit) and tested. (wasmoon `functionTimeout`
       for dispatch + `runStringWithTimeout` for top-level code; both proven by tests.)
-- [x] **No** assembler hook wired and the classifier Lua arm still routes `unsupported`.
+- [x] At the sub-slice-1 boundary, **no** assembler hook was wired and the
+      classifier Lua arm still routed `unsupported`; later sub-slices wired the
+      hooks and flipped non-interactive Lua to `server`.
 
 **Landed 2026-05-29.** Tests: `server/fastify/__tests__/luaRuntime.test.ts` (17). Shared
 verification green (`client-thinning:audit`, `api:test` 1294, `test` 876, `check` 0/0).

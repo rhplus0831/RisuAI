@@ -42,13 +42,14 @@ class `unsupported`; 3a/3b/3c each flip one to `server`).
 2. **DONE: C-A1 — server-side scriptstate persistence.** `/generate/chat`
    persists assembly-time chat-var deltas and returns the bumped revision.
 3. **A1 content classes, one batch each.** DONE: multimodal/asset inlining on
-   image-input models; pluginV2 permanent unsupported; Lua VM runtime. OPEN:
-   Lua hook wiring and image-gen instruction. Each class graduates from
-   `unsupported` to server-mandatory only after parity proof.
-4. **A2 — server output-trigger + `editoutput`.** The server has no `'output'`
-   trigger invocation (only `'start'` is wired) and runs no `editoutput`
-   processing. Needs server output-script execution; sequence after A1's
-   Lua parity.
+   image-input models; pluginV2 permanent unsupported; Lua `editRequest`,
+   `editprocess`, input-trigger, and `editinput` for non-interactive Lua. OPEN:
+   image-gen instruction. Each class graduates from `unsupported` to
+   server-mandatory only after parity proof.
+4. **A2 — server output-trigger + `editoutput`.** The server trigger engine is
+   used for `'start'` and submit-time `'input'`, but `/generate/chat` has no
+   post-generation `'output'` pass and runs no `editoutput` processing. Needs
+   server output-script execution; sequence after A1's image-gen slice.
 
 Group chat is **legacy** and removed elsewhere — do not add a server group model
 here. See [`../status/sendchat-thinning.md`](../status/sendchat-thinning.md) for

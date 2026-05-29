@@ -10,18 +10,19 @@ the stable handle. All paths from the repo root.
 
 ## The one distinction that matters
 
-There are **two** scriptstate deltas, often conflated:
+There are **two** scriptstate delta families, often conflated:
 
-- **Assembly-time** scriptstate (the `'start'` trigger + run-var pass). The server
-  computes this (`assemble.ts::buildChatVarMutations`), emits it as a
-  `message_patch`, persists it in `/generate/chat` for persisting modes, and
-  returns the bumped revision over SSE. **C-A1 is done.**
+- **Assembly/submission-time** scriptstate (the `'start'` trigger, run-var pass,
+  and submit-time input hooks). The server computes this
+  (`assemble.ts::buildChatVarMutations`), emits it as a `message_patch`, persists
+  it in `/generate/chat` for persisting modes, and returns the bumped revision
+  over SSE. **C-A1 is done.**
 - **Post-generation** scriptstate (the `'output'` trigger + `editoutput`, derived
   from the just-generated assistant text). The server has **no path** for this —
   this is the **A2** blocker (needs server post-gen script/trigger execution).
 
-A2 needs the server scripting machinery and should sequence after A1's Lua hook
-parity.
+A2 needs a server post-generation invocation/persistence path. The Lua machinery
+from A1 is now available; pluginV2 remains permanent unsupported.
 
 ## Stage taxonomy (there is no `runStage1/2/3`)
 
@@ -111,23 +112,22 @@ the output trigger as A2.
 
 ### Server cross-check
 
-The server runs `processScript` only with `'editprocess'`
-(`prompt/history.ts:292,452`); `'editoutput'` exists in `ScriptMode`
-(`prompt/scripts.ts:63`) but is never invoked. The provider-dispatch path
+The server runs `processScript` for assembly-time `editprocess` and submit-time
+`editinput`, but not for post-generation `editoutput`. The provider-dispatch path
 (`routes/generationChat.ts`, `prompt/chatDispatch.ts`, `prompt/providerTransport.ts`)
-has no `runTrigger` call and no `editoutput`. **Reusable machinery for A2:** the
-ported `runTrigger` already accepts the `'output'` mode value and has durable
-`setvar`/`v2SetVar` arms returning `varChanged` (`prompt/triggers.ts:155-164`);
-`processScript(…, 'editoutput', …)` is fully implemented and only needs to be
-*called* on the completion text; the `message_patch` contract is the natural
-carrier for any post-gen delta. (Lua/pluginV2 hooks remain unported — see
-[`server-assembler-parity.md`](server-assembler-parity.md).)
+has no post-generation `runTrigger('output')` call and no `editoutput`. **Reusable
+machinery for A2:** the ported `runTrigger` already accepts the `'output'` mode
+value and has durable `setvar`/`v2SetVar` arms returning `varChanged`
+(`prompt/triggers.ts:155-164`); `processScript(…, 'editoutput', …)` is fully
+implemented and only needs to be *called* on the completion text; the
+`message_patch` contract is the natural carrier for any post-gen delta. Lua can
+use the landed VM; pluginV2 remains permanent unsupported.
 
 ## Master post-gen table
 
 | Effect | Owner (browser) | Durable? | Server path? | Class |
 | --- | --- | --- | --- | --- |
-| `editoutput` on response text | `streamResponse.ts:107-112`, `nonStreamResponse.ts:68-82` | **Yes** (saved `.data`) | No (server runs `'editprocess'` only) | **A2** |
+| `editoutput` on response text | `streamResponse.ts:107-112`, `nonStreamResponse.ts:68-82` | **Yes** (saved `.data`) | No post-gen invocation (server runs assembly-time `editprocess` / submit-time `editinput`) | **A2** |
 | Pre-trigger run-var pass | `outputTrigger.ts:23-27` → `chatVar.svelte.ts:31-40` | **Yes** (`scriptstate`) | Partial (server run-var at assembly, not post-gen) | **A2** |
 | `runTrigger('output', …)` | `outputTrigger.ts:29` | **Yes** (`scriptstate`+`message`) | No (`'output'` never invoked) | **A2** |
 | Inlay-screen text write | `orchestrateResponse.ts:129-142` | Yes (rides on `.data`) | No | A2-adjacent |
@@ -135,13 +135,13 @@ carrier for any post-gen delta. (Lua/pluginV2 hooks remain unported — see
 | Desktop notification | `runStage4.ts:77-79` | No | No (browser API) | **B1** |
 | Emotion + imggen | `runStage4.ts:81-114` | No | Partial | **B1** |
 | Stage timing / `generationInfo` | `stage4Finalize.ts:23-41` | Yes (metadata) | Server builds `generationInfo` | B2-adjacent |
-| **Assembly-delta persistence** | route `persistAssemblyChatVars` (replaced `serverBackedSendChat.ts` replay) | Yes | **Yes** — route persists + returns the bumped revision over SSE | **C-A1 — DONE** |
+| **Assembly-delta persistence** | route `persistAssemblyMutations` (replaced `serverBackedSendChat.ts` replay) | Yes | **Yes** — route persists + returns the bumped revision over SSE | **C-A1 — DONE** |
 | **Persist generation result (final message)** | `index.svelte.ts:351` → `POST …/generation-result` | Yes | Route exists; route doesn't auto-persist | **B2** |
 
 ## C-A1 — the persistence bridge
 
 > **Status (2026-05-29): LANDED.** `/generate/chat` now persists the
-> assembly-time chat-var delta itself (`persistAssemblyChatVars` →
+> assembly-time chat-var delta itself (`persistAssemblyMutations` →
 > `applyJsonCommandMutation`) and returns the bumped revision on the `info`
 > frame; the browser dropped the `dispatchPatchChatScriptstate` re-POST and
 > reconciles its cached command revision instead. The subsections below keep the
@@ -195,7 +195,7 @@ rollback.
 
 **After C-A1 (current):** steps 1–3 unchanged. The route then persists
 `result.mutations.chatVarMutations` itself for persisting modes — it has the diff
-and reuses the JSON-command machinery via `persistAssemblyChatVars` →
+and reuses the JSON-command machinery via `persistAssemblyMutations` →
 `applyJsonCommandMutation` (one revision bump, one `chat.scriptstate.updated`
 event, rollback on failure) — and returns the new revision on the `info` frame.
 The browser keeps `applyServerMessagePatch` (projection-only) and reconciles its

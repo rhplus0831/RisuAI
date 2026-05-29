@@ -29,7 +29,7 @@ The Phase 4 batches, in order, and the doc that routes each into the code:
 | --- | --- | --- |
 | 1 | **A1 foundation** — `resolveServerPromptAssembly` landed; supported subset is server-mandatory when the flag is on | [`prompt-assembly-classifier.md`](prompt-assembly-classifier.md) |
 | 2 | **C-A1** — assembly-time scriptstate persistence lives in `/generate/chat` | [`post-generation-and-persistence.md`](post-generation-and-persistence.md) |
-| 3 | **A1 content classes** (multimodal/asset done; Lua hooks and image-gen remain; pluginV2 permanent unsupported) | [`server-assembler-parity.md`](server-assembler-parity.md) (server gaps) + [`local-assembler-content-classes.md`](local-assembler-content-classes.md) (browser branches) |
+| 3 | **A1 content classes** (multimodal/asset and non-interactive Lua hooks done; image-gen remains; pluginV2 permanent unsupported) | [`server-assembler-parity.md`](server-assembler-parity.md) (server gaps) + [`local-assembler-content-classes.md`](local-assembler-content-classes.md) (browser branches) |
 | 4 | **A2** — server output-trigger + `editoutput` | [`post-generation-and-persistence.md`](post-generation-and-persistence.md) |
 | — | Proof for every batch (tests, fixtures, audit, verification commands) | [`proof-points.md`](proof-points.md) |
 
@@ -39,8 +39,8 @@ The Phase 4 batches, in order, and the doc that routes each into the code:
    A1 classifier, runtime gates, supported-subset definition, and the historical
    silent-fallback hole it closed.
 2. [`server-assembler-parity.md`](server-assembler-parity.md) — what the server
-   `/generate/chat` assembler does (AT PARITY), remaining gaps (Lua hooks,
-   image-gen, `'output'`), the route contract, and the full `prompt/` file map.
+   `/generate/chat` assembler does (AT PARITY), remaining gaps (image-gen,
+   `'output'`), the route contract, and the full `prompt/` file map.
 3. [`local-assembler-content-classes.md`](local-assembler-content-classes.md) —
    the eight browser content branches (with the B1-vs-A1 split) that must be
    ported or classified `unsupported`.
@@ -69,10 +69,10 @@ Two facts that recur across these docs and are easy to get wrong:
 - The pre-slice-1 gate had a silent local fallback and did not inspect content
   signals. The landed classifier closed both; do not reintroduce an
   `unavailable`/local escape in Fastify mode with the flag on.
-- There are **two scriptstate deltas**: the assembly-time delta (start trigger +
-  run-var), now persisted by `/generate/chat`, and the post-gen delta (output
-  trigger + `editoutput`) which has **no server path** (**A2**). Do not conflate
-  them.
+- There are **two scriptstate delta families**: assembly/submission-time
+  mutations (start trigger, run-var, and submit-time input hooks), now persisted
+  by `/generate/chat`, and the post-gen delta (output trigger + `editoutput`)
+  which has **no server path** (**A2**). Do not conflate them.
 
 ## Scope discipline
 

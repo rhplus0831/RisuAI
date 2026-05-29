@@ -62,7 +62,7 @@ that are **not** A1 and must not be pulled in here:
    changes what gets persisted as the user message. Ensure the route's persistence
    (active-writer, scriptstate delta) reflects the post-`editinput` transcript, not
    the raw input. This is the subtle part — coordinate with the C-A1 persistence
-   (`generationChat.ts::persistAssemblyChatVars`) and B2 message persistence.
+   (`generationChat.ts::persistAssemblyMutations`) and B2 message persistence.
 4. Classifier: covered by sub-slice 2's Lua-arm flip, but confirm an `editinput`-only
    Lua char routes `server` (and interactive-API ones stay `unsupported`).
 

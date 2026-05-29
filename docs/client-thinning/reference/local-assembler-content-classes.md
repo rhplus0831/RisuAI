@@ -22,9 +22,9 @@ the stable handle.
 | 1 | Multimodal / asset inlining | `promptAssembly/formatHistoryMessage.ts:73-193` | prompt rows (`multimodals`+content) | A1 — **ported (slice 3a)**: server binds `AssetLookup`; image-input models → `server` |
 | 2 | Non-vision image-caption fallback | `transformers.ts:111`; call `formatHistoryMessage.ts:111-114` | prompt row content | A1 — **`unsupported` (slice 3a class 2)**: browser-only ML, no server path |
 | 3 | Image-gen instruction | `promptAssembly/buildStaticPromptSections.ts:47`; call `sendChatPromptAssembly.ts:114` | prompt rows (`postEverything`) | A1 — port (static char config) |
-| 4 | Lua `editRequest` | `promptAssembly/renderFinalPrompt.ts:384`; engine `scriptings.ts:1415,1117-1126` | request rows | A1 — needs server scripting VM |
-| 5 | Lua + pluginV2 `editprocess` | `formatHistoryMessage.ts:44-52`; pluginV2 `scripts.ts:151-158` | prompt row content | A1 — Lua: **port** (server VM; browser no-op); pluginV2: **permanent unsupported** (no-port) |
-| 6 | Input-trigger / `editinput` at submit | `DefaultChatScreen.svelte:232,240` | chat transcript | A1 — needs server scripting VM |
+| 4 | Lua `editRequest` | `promptAssembly/renderFinalPrompt.ts:384`; engine `scriptings.ts:1415,1117-1126` | request rows | A1 — **ported (slice 3b sub-slice 2)** for non-interactive Lua |
+| 5 | Lua + pluginV2 `editprocess` | `formatHistoryMessage.ts:44-52`; pluginV2 `scripts.ts:151-158` | prompt row content | A1 — Lua **ported** as browser no-op parity (slice 3b sub-slice 3); pluginV2 **permanent unsupported** |
+| 6 | Input-trigger / `editinput` at submit | `DefaultChatScreen.svelte:232,240` | chat transcript | A1 — **ported (slice 3b sub-slice 4)** for non-interactive Lua/regex; interactive Lua dialogs unsupported |
 | 7 | Script pipeline (machinery) | `scripts.ts:121` (`processScriptFull`) | text/rows | A1 — the runtime classes 4-6 share |
 | 8 | Group-ness / character selection | `index.svelte.ts:54`; filter `database.svelte.ts:110` | control flow | subset gate (single non-group char) |
 
@@ -120,9 +120,9 @@ character's `triggerscript` (+ `getModuleTriggers()`) and, for
 (`:1380-1409`). The Pyodide path mirrors at `:1163-1172`. The VM is `wasmoon`'s
 `LuaFactory`/`LuaEngine` (`makeLuaFactory`, `:1191`).
 
-**Needs:** a browser-side `wasmoon` Lua VM (or Pyodide worker) running arbitrary
-user code, plus `triggerscript`/module triggers. The server runs identity (see
-[`server-assembler-parity.md`](server-assembler-parity.md) §`templates.ts`).
+**Server port (done, slice 3b sub-slice 2):** the server `wasmoon` VM runs
+non-interactive Lua `editRequest` through `assemble.ts::buildLuaEditRequest`;
+scripts using interactive dialog APIs stay `unsupported`. Pyodide is not ported.
 
 > **Two-stage request edits.** Beyond assembly-time `editRequest`, the *dispatch*
 > layer (`src/ts/process/request/request.ts`) also edits request rows:
@@ -149,17 +149,16 @@ Script-type constants: `ScriptMode = 'editinput'|'editoutput'|'editprocess'|'edi
 (`plugins.svelte.ts:540-557`). **Needs:** registered JS `EditFunction`s from V2
 plugins (browser plugin runtime). **Mutates:** per-message prompt content.
 
-**Disposition (slice 3b).** The two arms split: **Lua `editprocess`** is a browser
-no-op (`scriptings.ts:1431-1432` early-returns), so its server port is near-identity
-once the Lua VM lands — *port-pending*. **pluginV2 `editprocess`** (and the other
-pluginV2 edit/replacer hooks) is **permanent `unsupported`** — server-side plugin
-code execution is on the no-port list and pluginV2 is superseded by Plugin V3. The
-classifier reports the two via separate predicates (`luaUsesInteractiveApi` vs
-`hasPluginV2EditSet`) so the Lua arm flips to `server` without disturbing the
-permanent pluginV2 hard fail; as of slice 3b sub-slice 2 the Lua arm routes
-`server` for all Lua **except** interactive-API scripts (`alertInput`/`alertSelect`/
-`alertConfirm`), which stay `unsupported`. The `A4R-pluginv2` audit invariant
-(`util/client-thinning-audit.ts`) forbids a server-side plugin execution path.
+**Disposition (slice 3b).** The two arms split: **Lua `editprocess`** is a
+browser no-op (`scriptings.ts:1431-1432` early-returns), and the server now routes
+it through the VM-backed history seam at parity. **pluginV2 `editprocess`** (and
+the other pluginV2 edit/replacer hooks) is **permanent `unsupported`** —
+server-side plugin code execution is on the no-port list and pluginV2 is
+superseded by Plugin V3. The classifier reports the two via separate predicates
+(`luaUsesInteractiveApi` vs `hasPluginV2EditSet`) so non-interactive Lua routes
+`server` while pluginV2 remains a permanent hard fail. The `A4R-pluginv2` audit
+invariant (`util/client-thinning-audit.ts`) forbids a server-side plugin
+execution path.
 
 ## 6. Input-trigger / `editinput` scripts at submit
 
@@ -172,7 +171,9 @@ In the chat-screen submit handler (`src/lib/ChatScreens/DefaultChatScreen.svelte
   `scriptings.ts:1422-1423`), plus pluginV2 `editinput` and regex scripts.
 
 These mutate the chat transcript *before* the message is appended/persisted and
-before assembly begins. **Needs:** the full scripting machinery at submit time.
+before assembly begins. **Server port (done, slice 3b sub-slice 4):**
+`assemble.ts::runInputTrigger` and `applyEditInput` run this path server-side;
+`generationChat.ts::persistAssemblyMutations` owns the changed transcript write.
 
 **Not A1 — B1 (browser-owned input plumbing), same handler, earlier:**
 - Slash-command text (`DefaultChatScreen.svelte:203-209`) → `processMultiCommand`.
@@ -195,9 +196,9 @@ Dispatch order in one call:
 6. Dynamic-asset similarity matching — `HypaProcesser` (`:379-423`; skipped for
    `editinput`/`editprocess`).
 
-This is the machinery classes 4-6 need server-side: the CBS parser (at parity),
-the regex engine (at parity), but **the Lua/Pyodide VM and pluginV2 sets are not
-ported** (the GAP).
+This is the machinery classes 4-6 need server-side: the CBS parser, regex engine,
+and non-interactive Lua VM are now at parity. Pyodide and pluginV2 sets are not
+ported; pluginV2 remains permanent `unsupported`.
 
 ## 8. Group-ness & character selection
 

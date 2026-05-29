@@ -43,15 +43,14 @@ to local at any point — a class is either `server` (ported) or `unsupported`
 slice 1   DONE: text-send → server when flag on; unsupported content hard-fails
 slice 2   DONE: assembly-time scriptstate persists in /generate/chat
 slice 3a  DONE: image-input multimodal/asset → server; non-vision caption → unsupported
-slice 3b  DONE: pluginV2 permanent unsupported; Lua VM runtime landed
-slice 3b  OPEN: Lua editRequest → editprocess → editinput wiring
+slice 3b  DONE: pluginV2 permanent unsupported; Lua edit/input hooks → server
 slice 3c  OPEN: image-gen instruction → server
 ```
 
 Slice 3b split in two: **pluginV2** is permanent `unsupported` (landed 2026-05-29,
 classifier split + the `A4R-pluginv2` audit invariant), and **Lua** is a committed
-server port under [`slice-3b-lua/`](slice-3b-lua/README.md). Its VM runtime is
-landed; `editRequest`, `editprocess`, and `editinput` remain.
+server port under [`slice-3b-lua/`](slice-3b-lua/README.md). All four Lua
+sub-slices have landed; only interactive Lua dialog APIs remain `unsupported`.
 
 C-A1 (slice 2) and A2 (slice 4) are the post-generation persistence/derivation
 half and sit alongside this line: slice 2 moves an already-computed delta into
@@ -62,15 +61,14 @@ the route; slice 4 adds a server path for a delta that has none.
 ```
 slice 1 (foundation) ──┬─→ slice 3a (asset)        ─┐
                        ├─→ slice 3c (image-gen)     ─┤
-                       └─→ slice 3b (Lua hooks) ─────┴─→ slice 4 (A2)
+                       └─→ slice 3b (Lua port) ───────┴─→ slice 4 (A2)
 slice 2 (C-A1) ── landed ───────────────────────────────────────────→
 ```
 
 - **Slice 1 is the landed gate** for every A1 content slice (3a/3b/3c).
 - **Slice 2 (C-A1)** is landed and remains separate from A2 durable post-gen work.
-- **3a is landed; 3c remains independent. 3b's VM is landed, but hook wiring is
-  still the natural predecessor of slice 4**, whose durable derivations reuse
-  the same trigger/script machinery.
+- **3a and 3b are landed; 3c remains independent.** Slice 4's durable
+  derivations reuse the same trigger/script machinery, but run after generation.
 
 ## Shared definition of done
 

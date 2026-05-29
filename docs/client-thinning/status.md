@@ -24,7 +24,9 @@ Implemented / closed:
 - Assembly-time scriptstate persistence (C-A1) is server-owned by
   `/generate/chat`; the browser applies the patch as projection and reconciles
   the returned revision instead of re-POSTing that delta.
-- The server Lua VM runtime is landed, but prompt-assembly hooks are not wired.
+- The server Lua VM and prompt-assembly hooks are landed: `editRequest`,
+  `editprocess`, input-trigger, and `editinput` run server-side for
+  non-interactive Lua; interactive Lua dialog APIs stay `unsupported`.
 - Bootstrap projection, command-event invalidation, `.risu` import/export/bundle,
   asset routes, backup/restore, and provider secret masking are closed.
 - The client-thinning audit is wired as `pnpm client-thinning:audit` and its
@@ -32,11 +34,11 @@ Implemented / closed:
 
 Active blocker set (see [`plan.md`](plan.md) for the full classification):
 
-- **A1** prompt-assembly content parity — remaining gaps are image-gen view
-  instruction and Lua `editRequest`/`editprocess`/input-trigger/`editinput`
-  wiring. PluginV2 edit/replacer hooks are permanent unsupported; non-vision
-  image caption fallback is explicit unsupported. `useServerPromptAssembly`
-  still defaults off, so local assembly remains the default production path.
+- **A1** prompt-assembly content parity — the remaining port target is the
+  image-gen view instruction. PluginV2 edit/replacer hooks, interactive Lua
+  dialog APIs, and non-vision image caption fallback are explicit
+  `unsupported`. `useServerPromptAssembly` still defaults off, so local
+  assembly remains the default production path.
 - **A2** post-generation durable derivation — the **output trigger** (no server
   `'output'` invocation) and **`editoutput`** — needs server script execution.
 - **A3** provider coverage — closed for current scope; unsupported shapes

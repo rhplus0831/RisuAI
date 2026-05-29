@@ -52,17 +52,18 @@ a dead flag, removed 2026-05-29; `isFastifyServer` and
 - **A1. Prompt-assembly content parity.** The classifier exists and, when
   `useServerPromptAssembly` is on, routes the supported text-send subset to the
   server and hard-fails out-of-subset sends instead of silently falling back.
-  Multimodal/asset inlining is now at parity for image-input models. Remaining
-  gaps are: non-vision image caption fallback (explicit unsupported), image-gen
-  view instruction (slice 3c), and Lua hook wiring (`editRequest`,
-  `editprocess`, input-trigger/`editinput`). The server Lua VM runtime exists,
-  but these hooks are not wired. PluginV2 edit/replacer hooks are permanent
-  unsupported because server-side plugin code execution is no-port. The flag
-  still defaults off, so browser assembly is the default production path.
+  Multimodal/asset inlining is at parity for image-input models, and the Lua
+  `editRequest`, `editprocess`, input-trigger, and `editinput` hooks are ported
+  for non-interactive Lua. Remaining content is explicit: image-gen view
+  instruction still needs slice 3c; non-vision image caption fallback,
+  interactive Lua dialog APIs, and pluginV2 edit/replacer hooks are
+  `unsupported`. The flag still defaults off, so browser assembly is the
+  default production path.
 - **A2. Post-generation durable derivation with no server path.** The **output
-  trigger** (the server has no `'output'` trigger invocation at all — only
-  `'start'` is wired) and **`editoutput` script processing** derive durable
-  scriptstate/message mutations. Requires server-side script/trigger execution.
+  trigger** (the server has no post-generation `'output'` invocation, though
+  `'start'` and submit-time `'input'` are wired) and **`editoutput` script
+  processing** derive durable scriptstate/message mutations. Requires
+  server-side script/trigger execution.
 - **A3. Provider coverage.** Unsupported providers (NovelAI, Ooba, Plugin,
   WebLLM, non-vanilla OpenAI-compat) cannot be server-routed. Already handled
   correctly: `resolveServerCompletionRoute` returns `unsupported` and hard-fails
@@ -137,9 +138,6 @@ persistence and a transient browser progress projection.
 
 1. Run `pnpm client-thinning:audit`. If red, fix or triage before runtime work.
 2. Continue **A1 content graduation** one batch at a time:
-   - Lua sub-slice 2: wire VM-backed `editRequest`.
-   - Lua sub-slice 3: wire/prove `editprocess`.
-   - Lua sub-slice 4: add submit-time input-trigger/`editinput`.
    - Slice 3c: port the image-gen view instruction.
 3. **A2:** server output-trigger + `editoutput` (needs server script execution).
 4. **Group-chat legacy removal** (separate from thinning).

@@ -37,11 +37,11 @@ even though it reuses the same VM.
    recorded in memory `scripting-server-support-policy` and
    [`../../../unsupported-and-client-owned.md`](../../../unsupported-and-client-owned.md).
    pluginV2's permanent-unsupported half is **already landed** (2026-05-29): the
-   classifier was split into a Lua arm (`sendHasLuaContent`, port-pending) and a
-   pluginV2 arm (`hasPluginV2EditSet`, permanent), and the
+   classifier now keeps only `luaUsesInteractiveApi` as the Lua unsupported arm
+   and has a separate pluginV2 arm (`hasPluginV2EditSet`, permanent), and the
    `A4R-pluginv2 no server-side plugin execution` audit invariant
    (`util/client-thinning-audit.ts`) forbids a server-side plugin execution path.
-   **Your job is only the Lua arm.**
+   This series handled only the Lua arm.
 2. **Security model = single-user self-host** (the operator's choice, 2026-05-29).
    "Your own code on your own box": WASM sandbox (wasmoon is already WASM-isolated)
    **+ a bounded egress guard for `request()` + execution/loop limits**. This is a
@@ -211,10 +211,9 @@ the whole Lua arm → `server` *minus* the interactive-API arm. The predicate is
 `luaUsesInteractiveApi` (replacing the old `sendHasLuaContent` "any Lua →
 `unsupported`"): it source-scans `triggerlua` effects for
 `alertInput`/`alertSelect`/`alertConfirm` and keeps only those `unsupported`; all
-other Lua routes `server`. Consequence — a non-interactive Lua char that only hooks
-`editprocess`/`editinput` routes `server` ahead of those execution seams (sub-slices
-3/4); acceptable pre-ship (flag default-off, no users), tighten in 3/4. Classifier
-table tests updated in `request/tests/serverPromptAssembly.test.ts`.
+other Lua routes `server`. The earlier caveat that `editprocess`/`editinput` could
+route `server` ahead of their seams was resolved by sub-slices 3/4. Classifier
+table tests live in `request/tests/serverPromptAssembly.test.ts`.
 
 ## Shared proof shape (every sub-slice)
 
