@@ -74,6 +74,25 @@ reverse-proxy-Ooba, non-vanilla OpenAI-compat, etc.) fail explicitly through
 route contract, request shape, credential boundary, response extraction rule,
 warning/error behavior, and tests.
 
+## Unsupported Prompt-Assembly Content (Fail Explicitly)
+
+Content classes the server `/generate/chat` assembler cannot reproduce hard-fail
+through `resolveServerPromptAssembly` rather than assemble a silently-wrong
+prompt. As content slices land, each class either graduates to `server` or is
+documented here.
+
+- **Non-vision image caption (slice 3a, class 2)** — when the model lacks
+  `LLMFlags.hasImageInput`, the local assembler replaces an image with a
+  `runImageEmbedding` text caption (`transformers.ts`, a browser-only
+  WASM/WebGPU ML pipeline). There is no server equivalent, so any image / asset /
+  inlay content on a non-vision model routes `unsupported`. The
+  captionless-prompt alternative (assemble without the caption as a documented
+  behavior difference) was **rejected** — a silently captionless prompt is a
+  worse failure mode than an explicit one. Image-input models assemble the
+  multimodal bytes server-side at byte-parity (slice 3a, class 1).
+- Image-gen view instruction (slice 3c) and Lua / plugin-V2 scripts (slice 3b)
+  still route `unsupported` until their slices land.
+
 ## Deferred / Separate
 
 - Manual legacy local-client verification is separate from Fastify projection

@@ -1,12 +1,20 @@
+import fs from 'node:fs'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { MultiModal } from '../../../../src/ts/process/index.svelte'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
-import { EntityNotFoundError, loadPersisted } from '../repository.js'
+import {
+  EntityNotFoundError,
+  assetById,
+  assetPath,
+  isValidAssetId,
+  loadPersisted,
+} from '../repository.js'
 import {
   assemblePrompt,
   type AssembleDeps,
@@ -181,6 +189,38 @@ interface RouteAssembleDeps extends AssembleDeps {
   getDatabase(): Database | null
 }
 
+const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
+
+/**
+ * Slice 3a: resolve an asset reference to its sha256 store id. Accepts either a
+ * bare id or the `assets/<id>.<ext>` path form, mirroring the browser's
+ * `serverAssetIdFromReference` (`src/ts/server/assets.ts`) and the risuSave
+ * reference collector (`risuSave/assetReferences.ts`).
+ */
+function assetIdFromReference(reference: string): string | null {
+  if (isValidAssetId(reference)) return reference
+  return LOCAL_ASSET_PATH_RE.exec(reference)?.[1] ?? null
+}
+
+/**
+ * Slice 3a: read an `{{asset_prompt::}}` / char-icon reference from the on-disk
+ * assets store and re-wrap it as a `data:image/png;base64,` URI. Hardcoding the
+ * png mime keeps byte-parity with the browser's `readImage(asset[1])` path
+ * (`formatHistoryMessage.ts:161-176`), which does the same regardless of the
+ * stored content-type. Returns `undefined` for an unresolvable reference so the
+ * marker is stripped without bytes (the pre-3a behavior for missing assets).
+ */
+function resolveStoredAssetImage(dataDir: string, reference: string): MultiModal | undefined {
+  const id = assetIdFromReference(reference)
+  if (!id) return undefined
+  const entry = assetById(dataDir, id)
+  if (!entry) return undefined
+  const file = assetPath(dataDir, entry)
+  if (!fs.existsSync(file)) return undefined
+  const bytes = fs.readFileSync(file)
+  return { type: 'image', base64: `data:image/png;base64,${bytes.toString('base64')}` }
+}
+
 function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps {
   let database: Database | null = null
   return {
@@ -191,6 +231,7 @@ function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps 
     loadMemoryDatabase: () => db,
     loadPromptMemoryQueryVectors: () => [],
     getDatabase: () => database,
+    resolveStoredAssetImage: (reference) => resolveStoredAssetImage(dataDir, reference),
   }
 }
 

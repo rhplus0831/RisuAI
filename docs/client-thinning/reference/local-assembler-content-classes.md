@@ -19,8 +19,8 @@ the stable handle.
 
 | # | Class | Key location | Mutates | Disposition |
 | --- | --- | --- | --- | --- |
-| 1 | Multimodal / asset inlining | `promptAssembly/formatHistoryMessage.ts:73-193` | prompt rows (`multimodals`+content) | A1 — port (bind `AssetLookup`) or `unsupported` |
-| 2 | Non-vision image-caption fallback | `transformers.ts:111`; call `formatHistoryMessage.ts:111-114` | prompt row content | A1 — browser-only ML; likely `unsupported` |
+| 1 | Multimodal / asset inlining | `promptAssembly/formatHistoryMessage.ts:73-193` | prompt rows (`multimodals`+content) | A1 — **ported (slice 3a)**: server binds `AssetLookup`; image-input models → `server` |
+| 2 | Non-vision image-caption fallback | `transformers.ts:111`; call `formatHistoryMessage.ts:111-114` | prompt row content | A1 — **`unsupported` (slice 3a class 2)**: browser-only ML, no server path |
 | 3 | Image-gen instruction | `promptAssembly/buildStaticPromptSections.ts:47`; call `sendChatPromptAssembly.ts:114` | prompt rows (`postEverything`) | A1 — port (static char config) |
 | 4 | Lua `editRequest` | `promptAssembly/renderFinalPrompt.ts:384`; engine `scriptings.ts:1415,1117-1126` | request rows | A1 — needs server scripting VM |
 | 5 | Lua + pluginV2 `editprocess` | `formatHistoryMessage.ts:44-52`; pluginV2 `scripts.ts:151-158` | prompt row content | A1 — needs server scripting VM |
@@ -55,12 +55,15 @@ All inlining is in the per-message converter `formatHistoryMessage`
 **Needs:** localForage `inlayStorage` (IndexedDB), `additionalAssets`, module
 assets, `currentChar.image`, `readImage`/`blobToBase64`, and
 `getModelInfo(DBState.db.aiModel).flags` (`:94`) to pick vision vs caption.
-**Server port:** populate an `AssetLookup` (see
-[`server-assembler-parity.md`](server-assembler-parity.md) §`history.ts`) from
-the request `inlayAssets` + the assets store; today `inlayAssets` is never even
-populated by the client (`serverChat.ts` `ServerChatInput.inlayAssets` unused).
-The marker token is `{{inlay::}}`/`{{inlayed::}}`/`{{inlayeddata::}}`; the runtime
-field is `multimodals`, not the unused `inlayAssets` request field.
+**Server port (done, slice 3a):** `beginAssembly` builds a non-empty
+`AssetLookup` (`prompt/assetLookup.ts`) from the request `inlayAssets` + the
+store resolver (see [`server-assembler-parity.md`](server-assembler-parity.md)
+§`history.ts`). The client now *populates* `inlayAssets`:
+`serverBackedSendChat.ts::collectServerInlayAssets` resolves each inlay id via
+the same `getInlayAsset` path and ships the bytes (the server has no copy of
+localForage). Asset/icon bytes come from the server store, so the client need
+not send those. **Vision split:** image-input models route `server`; class 2
+below (no `LLMFlags.hasImageInput`) routes `unsupported`.
 
 ## 2. Non-vision image-caption fallback — `runImageEmbedding`
 
@@ -71,9 +74,12 @@ Definition `transformers.ts:111` (`runImageEmbedding(dataurl)`): runs the
 Invoked in the else-branch when the model lacks `LLMFlags.hasImageInput`
 (`formatHistoryMessage.ts:111-114`), appending `[<caption>]` to the message body.
 
-**Needs:** a browser WASM/WebGPU ML pipeline. No server equivalent exists — this
-is the strongest candidate to classify `unsupported` server-side (or accept a
-captionless prompt as a documented behavior difference).
+**Needs:** a browser WASM/WebGPU ML pipeline. No server equivalent exists.
+**Disposition (slice 3a):** `unsupported`. `resolveServerPromptAssembly` routes
+any image/asset/inlay content on a model without `LLMFlags.hasImageInput` to
+`unsupported` (hard fail) rather than emit a silently captionless prompt. The
+captionless-difference alternative was rejected. See
+[`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
 
 ## 3. Image-gen instruction — `buildInlayViewInstruction` / `newGenData`
 

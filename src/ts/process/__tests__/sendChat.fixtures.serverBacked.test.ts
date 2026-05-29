@@ -813,6 +813,96 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       await harness.close()
     }
   })
+
+  it('assembles inlay multimodal bytes server-side with byte-parity to the local golden (slice 3a)', async () => {
+    const harness = await createRouteBackedHarness()
+    try {
+      const loaded = await loadFixture('multimodal-image')
+      cleanups.push(loaded.cleanup)
+
+      // The multimodal-image fixture's vision model omits url/key because the
+      // local sweep dispatches through the provider fake; add them so the send
+      // is server-routable, then mirror prepareRouteBackedFixture's prompt setup
+      // (this fixture is not in the parametrized ROUTE_BACKED_CHAT_FIXTURES set).
+      const custom = (DBState.db.customModels as Array<Record<string, unknown>>)[0]
+      custom.url = 'https://vision.example.com/v1/chat/completions'
+      custom.key = 'sk-vision-fixture'
+      const char = DBState.db.characters[0]
+      char.chats[char.chatPage ?? 0].id = 'chat-route-backed'
+      ;(DBState.db as typeof DBState.db & { currentChar: number }).currentChar = 0
+      DBState.db.mainPrompt = defaultMainPrompt
+      DBState.db.formatingOrder = [
+        'main',
+        'description',
+        'personaPrompt',
+        'chats',
+        'lastChat',
+        'jailbreak',
+        'lorebook',
+        'globalNote',
+        'authorNote',
+      ]
+      DBState.db.promptSettings = {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        ...(DBState.db.promptSettings ?? {}),
+      }
+      DBState.db.useServerPromptAssembly = true
+      // The fixture ships `promptTemplate: null`, which the risusave import
+      // coerces to `[]` — and the server then treats an empty array as an
+      // (empty) active template, assembling zero rows. That null-coercion is a
+      // pre-existing concern unrelated to slice 3a's multimodal scope; clear it
+      // to `undefined` so the format-order path runs and a real prompt (with the
+      // inlay row) assembles.
+      ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
+
+      await harness.seed(DBState.db)
+      vi.stubGlobal('fetch', harness.fetch)
+      harness.setDispatchText('I see a small image.')
+
+      clearCachedServerCommandRevision()
+      setServerProjectionWriteGuardEnabled(true)
+      const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+      expect(ok).toBe(true)
+
+      // The browser resolved the inlay bytes the server lacks (localForage) and
+      // shipped them on the request so the server `getInlay` could return them.
+      expect(harness.chatCalls).toHaveLength(1)
+      expect(harness.chatCalls[0].body.inlayAssets).toEqual([
+        {
+          id: 'test-image',
+          type: 'image',
+          base64: expect.stringContaining('data:image/png;base64,'),
+          width: 1,
+          height: 1,
+        },
+      ])
+
+      // Byte-parity: the server-assembled formated user row carries the exact
+      // inlay MultiModal the local golden's provider call does.
+      expect(harness.dispatchCalls).toHaveLength(1)
+      const formated = harness.dispatchCalls[0].formated as Array<Record<string, unknown>>
+      const userRow = formated.find(
+        (row) =>
+          row.role === 'user' &&
+          typeof row.content === 'string' &&
+          (row.content as string).includes('Look at this'),
+      )
+      const golden = await loadExpected('multimodal-image')
+      const goldenUserRow = (
+        golden.providerCalls[0].formated as Array<Record<string, unknown>>
+      ).find((row) => row.role === 'user')
+      expect(userRow?.multimodals).toEqual(goldenUserRow?.multimodals)
+      // The browser never fell back to a local provider/completion dispatch.
+      expect(getServerCompletionCalls()).toEqual([])
+    } finally {
+      await drainRouteBackedCommands()
+      await harness.close()
+    }
+  })
 })
 
 describe('sendChat fixtures (/chat adapter replay)', () => {

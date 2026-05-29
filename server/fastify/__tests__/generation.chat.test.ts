@@ -479,6 +479,101 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
+  // The marker rides on a *history* user message (the `chats` slot); the
+  // appended `userMessage` would land in the unrendered `lastChat` slot given
+  // this fixture's `['main','description','chats']` order.
+  function dbWithHistoryMessage(data: string, extraChar: Record<string, unknown> = {}): unknown {
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<Record<string, unknown>>
+    }
+    Object.assign(db.characters[0], extraChar)
+    ;(db.characters[0].chats as Array<{ message: unknown[] }>)[0].message = [
+      { role: 'user', data, chatId: 'msg-marker' },
+    ]
+    return db
+  }
+
+  it('inlines request inlayAssets into the assembled prompt multimodals (slice 3a)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, dbWithHistoryMessage('look {{inlayeddata::abc}}'))
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...basePayload,
+        inlayAssets: [
+          { id: 'abc', type: 'image', base64: 'data:image/png;base64,AAAA', width: 2, height: 3 },
+        ],
+      },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
+    const formated = prompt.data.formated as Array<{
+      role: string
+      content: unknown
+      multimodals?: unknown
+    }>
+    const userRow = formated.find(
+      (row) =>
+        row.role === 'user' && typeof row.content === 'string' && row.content.includes('look'),
+    )
+    // `processInlays` resolved the id from the request payload and pushed bytes…
+    expect(userRow?.multimodals).toEqual([
+      { type: 'image', base64: 'data:image/png;base64,AAAA', width: 2, height: 3 },
+    ])
+    // …and stripped the marker from the row text.
+    expect(userRow?.content).not.toContain('{{inlayeddata::abc}}')
+  })
+
+  it('inlines a stored {{asset_prompt::}} asset into the prompt multimodals (slice 3a)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const assetBytes = Buffer.from('fixture-asset-bytes')
+    const upload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'risu-auth': assertion, 'content-type': 'image/png' },
+      payload: assetBytes,
+    })
+    expect(upload.statusCode).toBe(201)
+    const assetId = upload.json().assetId as string
+
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithHistoryMessage('show {{asset_prompt::hero}}', {
+        additionalAssets: [['hero', assetId, '']],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
+    const formated = prompt.data.formated as Array<{
+      role: string
+      content: unknown
+      multimodals?: unknown
+    }>
+    const userRow = formated.find(
+      (row) =>
+        row.role === 'user' && typeof row.content === 'string' && row.content.includes('show'),
+    )
+    // `processAssetPrompts` mapped the name → reference → store bytes, re-wrapped
+    // as a png data URI (byte-parity with the browser's readImage path).
+    expect(userRow?.multimodals).toEqual([
+      { type: 'image', base64: `data:image/png;base64,${assetBytes.toString('base64')}` },
+    ])
+    expect(userRow?.content).not.toContain('{{asset_prompt::hero}}')
+  })
+
   it('emits stop-trigger mutations and restoration before the terminal error', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {

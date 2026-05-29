@@ -12,6 +12,7 @@ import {
   ensureMessageId,
 } from '../chatCommands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { getInlayAsset } from './files/inlays'
 import { applyServerHypaV3Progress } from './request/serverMemory'
 import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
 import {
@@ -114,6 +115,59 @@ function applyServerMessagePatches(args: {
   return DBState.db.characters[selectedChar].chats[selectedChat]
 }
 
+/** One inlay asset shipped on the `/generate/chat` request `inlayAssets`. */
+interface ServerInlayAssetPayload {
+  id: string
+  type: 'image' | 'video' | 'audio' | 'signature'
+  base64: string
+  width?: number
+  height?: number
+}
+
+const INLAY_MARKER_RE = /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g
+
+/**
+ * Slice 3a: inlay bytes (`{{inlay/inlayed/inlayeddata::id}}`) live only in the
+ * browser's localForage `inlayStorage`; the server has no copy. Resolve every
+ * inlay id referenced by the chat (the same `getInlayAsset` path the local
+ * assembler uses, `formatHistoryMessage.ts:102`) and ship the bytes so the
+ * server `getInlay` can return them.
+ *
+ * Id-collection mirrors `formatHistoryMessage.ts:73-91`: `char`-role messages
+ * surface only `inlayeddata` ids (the SPA quirk where `inlay`/`inlayed` tags are
+ * stripped from a bot turn without surfacing their assets); every other role
+ * surfaces all three tag types.
+ */
+async function collectServerInlayAssets(chat: Chat): Promise<ServerInlayAssetPayload[]> {
+  const ids = new Set<string>()
+  for (const message of chat.message ?? []) {
+    if (typeof message.data !== 'string') continue
+    for (const match of message.data.matchAll(INLAY_MARKER_RE)) {
+      if (message.role === 'char' && match[1] !== 'inlayeddata') continue
+      ids.add(match[2])
+    }
+  }
+
+  const assets: ServerInlayAssetPayload[] = []
+  for (const id of ids) {
+    const inlay = await getInlayAsset(id)
+    if (!inlay) continue
+    if (
+      inlay.type !== 'image' &&
+      inlay.type !== 'video' &&
+      inlay.type !== 'audio' &&
+      inlay.type !== 'signature'
+    ) {
+      continue
+    }
+    const payload: ServerInlayAssetPayload = { id, type: inlay.type, base64: inlay.data }
+    if (typeof inlay.width === 'number') payload.width = inlay.width
+    if (typeof inlay.height === 'number') payload.height = inlay.height
+    assets.push(payload)
+  }
+  return assets
+}
+
 export async function assembleServerBackedSendChat(args: {
   selectedChar: number
   selectedChat: number
@@ -148,6 +202,13 @@ export async function assembleServerBackedSendChat(args: {
   }
   if (mode === 'regenerate') {
     input.regenerateMessageId = args.regenerateMessageId
+  }
+  // Slice 3a: ship inlay bytes the server lacks so its assembler can inline
+  // image/asset multimodals instead of dropping them. Asset-store bytes
+  // (`{{asset_prompt::}}`) are resolved server-side and need no client payload.
+  const inlayAssets = await collectServerInlayAssets(args.currentChat)
+  if (inlayAssets.length > 0) {
+    input.inlayAssets = inlayAssets
   }
 
   const wantsServerDispatch = !args.preview && !args.previewPrompt

@@ -31,7 +31,8 @@ import {
   type LorebookActivationReport,
 } from './lorebook.js'
 import { preflightTemplateTokens } from './preflight.js'
-import { applyDepthPrompts, buildHistoryWindow, NO_ASSETS } from './history.js'
+import { applyDepthPrompts, buildHistoryWindow, NO_ASSETS, type AssetLookup } from './history.js'
+import { buildAssetLookup, type ResolveStoredAssetImage } from './assetLookup.js'
 import { buildMemoryWindow } from './memory.js'
 import {
   assemblePromptMemoryRows,
@@ -116,8 +117,9 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
  * Deferred to later 7-11 slices: the route wiring + SSE emission
  * (7-11g), the preview shortcut (7-11h), and the `info` / `message_patch`
  * telemetry (7-11i). Provider dispatch (`dispatchRequest`) is Phase
- * 7-12 / 6 territory; `buildInlayViewInstruction` (image-gen) and inlay
- * asset lookup (`NO_ASSETS`) stay deferred.
+ * 7-12 / 6 territory; `buildInlayViewInstruction` (image-gen) stays
+ * deferred (slice 3c). Inlay / asset bytes are resolved via the bound
+ * `assetLookup` as of slice 3a.
  */
 
 /**
@@ -131,6 +133,14 @@ export interface AssembleDeps {
   loadMemoryDatabase?(): DatabaseSync | null
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  /**
+   * Slice 3a: resolve a stored-asset reference (sha256 id or `assets/<id>.<ext>`
+   * path) to image bytes for `{{asset_prompt::}}` / the char icon. The route
+   * binds this to the on-disk assets store; absent, asset prompts drop their
+   * bytes (the pre-3a behavior). Inlay bytes ride the request `inlayAssets`, not
+   * this resolver.
+   */
+  resolveStoredAssetImage?: ResolveStoredAssetImage
 }
 
 export interface PromptMemoryChunkPlanningDiagnostics {
@@ -341,6 +351,12 @@ export interface AssemblyState {
   memoryDatabase?: DatabaseSync | null
   promptMemoryQueryVectors?: MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  /**
+   * Slice 3a: the non-empty asset lookup the history walk resolves inlay /
+   * asset bytes through. Built in `beginAssembly` from the request `inlayAssets`
+   * + the route's store resolver; falls back to `NO_ASSETS` when unset.
+   */
+  assetLookup?: AssetLookup
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -432,6 +448,13 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     memoryDatabase: deps.loadMemoryDatabase?.() ?? null,
     promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
     enqueuePromptMemoryFollowUpJob: deps.enqueuePromptMemoryFollowUpJob,
+    assetLookup: buildAssetLookup({
+      database,
+      currentChar,
+      currentChat,
+      inlayAssets: input.inlayAssets,
+      resolveStoredAssetImage: deps.resolveStoredAssetImage,
+    }),
   }
 }
 
@@ -722,7 +745,8 @@ export function fillLorebookSlots(state: AssemblyState): void {
  * Boundary: the history rows are only *captured* on `state.historyMessages`
  * here. The 7-11e memory window is what pushes them into
  * `unformated.chats` (`buildMemoryWindow`, `index.svelte.ts:243-263`).
- * Inlay/multimodal asset lookup stays browser-side for now (`NO_ASSETS`).
+ * Inlay/asset bytes are resolved through `state.assetLookup` (slice 3a, built in
+ * `beginAssembly`); it falls back to `NO_ASSETS` only when no resolver is bound.
  */
 export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   const { ctx, currentChar, usingPromptTemplate } = state
@@ -733,7 +757,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
     currentChar,
     state.currentChat,
     usingPromptTemplate,
-    NO_ASSETS,
+    state.assetLookup ?? NO_ASSETS,
     state.report,
   )
 

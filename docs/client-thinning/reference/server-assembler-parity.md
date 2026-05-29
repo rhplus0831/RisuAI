@@ -25,7 +25,7 @@ drift; symbol names are the stable handle.
 | Start triggers (`'start'`) | **AT PARITY** | `prompt/triggers.ts:876-892` (`runStartTrigger`); wired `history.ts:470` |
 | HypaV3 / prompt-memory selection | **AT PARITY** (server-owned) | `assemble.ts:870-916` |
 | Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyChatVars` |
-| **Multimodal / inlay asset bytes** | **GAP** — bound to `NO_ASSETS` | `history.ts:118` + `assemble.ts:736` |
+| Multimodal / inlay asset bytes | **AT PARITY** (slice 3a) — route binds a non-empty `AssetLookup`; inlay bytes ride the request `inlayAssets`, asset/icon bytes come from the store | `prompt/assetLookup.ts` (`buildAssetLookup`) + `generationChat.ts` (`resolveStoredAssetImage`); bound in `assemble.ts::beginAssembly`, passed at `assemble.ts:fillHistoryAndBias` |
 | **Lua / pluginV2 `editRequest`** | **GAP** — identity default | `templates.ts:683`; never supplied |
 | **Lua / pluginV2 `editprocess` hooks** | **GAP** — regex only | `scripts.ts:50-56` (deferred) |
 | **Output triggers (`'output'`)** | **GAP** — declared, never invoked | `triggers.ts:103`; no `runTrigger(…,'output',…)` exists |
@@ -33,19 +33,23 @@ drift; symbol names are the stable handle.
 | Final-message persistence | **GAP by design** — still command-backed; browser POSTs `generation-result` (B2) | `index.svelte.ts:351` → `persistGenerationResultCommand` |
 
 The content rows that change prompt *bytes* are: (a) image/asset multimodal
-content, (b) Lua/pluginV2 `editRequest`/`editprocess`, and (c) `'output'`
-triggers (an A2 concern; see [`post-generation-and-persistence.md`](post-generation-and-persistence.md)).
+content — **now ported (slice 3a)**, (b) image-gen instruction (slice 3c, still
+GAP), (c) Lua/pluginV2 `editRequest`/`editprocess` (slice 3b, still GAP), and
+(d) `'output'` triggers (an A2 concern; see
+[`post-generation-and-persistence.md`](post-generation-and-persistence.md)).
 Everything else is at parity, so the supported text-send subset is already
 correct server-side — which is why A1's foundation batch can make it mandatory.
 
-**As of slice 1, the three A1 GAP rows are *classified* `unsupported`, not
-silently mis-assembled.** `resolveServerPromptAssembly`
-(`src/ts/process/request/serverPromptAssembly.ts`) detects each content class via
-its own named predicate (multimodal/asset markers + `message[].multimodals`;
-`triggerlua` triggers + non-empty pluginV2 edit sets; `currentChar.inlayViewScreen`)
-and routes any send carrying one to `unsupported` (hard fail) instead of letting
-the server drop its bytes/instructions. Each later content slice (3a/3b/3c) ports
-one row to parity and flips its detector to `→ server`.
+**Slice 1 *classified* every content class `unsupported` (hard fail), not
+silently mis-assembled; each later slice graduates one.** `resolveServerPromptAssembly`
+(`src/ts/process/request/serverPromptAssembly.ts`) detects each class via its own
+named predicate (multimodal/asset markers + `message[].multimodals`; `triggerlua`
+triggers + non-empty pluginV2 edit sets; `currentChar.inlayViewScreen`). **As of
+slice 3a the multimodal/asset class routes `→ server`** for image-input models;
+the only surviving `unsupported` multimodal sub-case is **class 2** (image/asset
+content on a model *without* `LLMFlags.hasImageInput`, whose browser-only
+`runImageEmbedding` caption has no server equivalent). The image-gen (3c) and
+Lua/plugin (3b) predicates still route `→ unsupported`.
 
 ## `prompt/assemble.ts` — the facade
 
@@ -91,32 +95,32 @@ includes the post-gen `'output'` trigger** (which has no server path). C-A1
 moved the persistence into the route; porting the output trigger is A2. They are
 distinct — see [`post-generation-and-persistence.md`](post-generation-and-persistence.md).
 
-## `prompt/history.ts` — the multimodal / asset gap
+## `prompt/history.ts` — the multimodal / asset seam (now fed, slice 3a)
 
-`NO_ASSETS` (`history.ts:118`) is an empty `AssetLookup`:
-
-```ts
-export const NO_ASSETS: AssetLookup = {}
-```
-
-It is the default `assetLookup` param of `buildHistoryWindow` (`history.ts:392`).
 The `AssetLookup` seam (`history.ts:109-116`) has three optional resolvers —
-`getInlay(id)`, `getAsset(name)`, `getCharIcon()` — designed so the route layer
-*could* resolve inlay ids / asset names to `MultiModal` bytes from the request
-`inlayAssets` + the assets store. Because every method is undefined under
-`NO_ASSETS`:
+`getInlay(id)`, `getAsset(name)`, `getCharIcon()`. `processInlays`
+(`history.ts:218-247`) strips `{{inlay…}}` tags and pushes `getInlay?.(id)`;
+`processAssetPrompts` (`history.ts:249-269`) strips `{{asset_prompt::…}}` and
+pushes `getAsset?`/`getCharIcon?`. These shapes were always correct — they were
+just starved of data while `buildHistoryWindow` defaulted to the empty
+`NO_ASSETS` (`history.ts:118`).
 
-- `processInlays` (`history.ts:218-247`) strips `{{inlay…}}` tags but
-  `lookup.getInlay?.(id)` returns `undefined`, pushing nothing to `multimodals`.
-- `processAssetPrompts` (`history.ts:249-269`) strips `{{asset_prompt::…}}` but
-  `lookup.getAsset?`/`getCharIcon?` return `undefined`.
+**Slice 3a feeds the seam.** `beginAssembly` builds a non-empty `AssetLookup`
+(`prompt/assetLookup.ts::buildAssetLookup`) and stores it on
+`state.assetLookup`; `fillHistoryAndBias` passes it as the 5th arg to
+`buildHistoryWindow` instead of `NO_ASSETS`. The byte-source split:
 
-Net: **image/asset prompts lose their bytes.** The only caller passes `NO_ASSETS`
-hardcoded (`assemble.ts:731-738`), and a repo-wide search finds no construction
-of a non-empty `AssetLookup` anywhere — `generationChat.ts` never builds or binds
-one. Porting class 1 (multimodal inlining) means populating an `AssetLookup` from
-`inlayAssets` + the assets store and passing it as the 5th arg to
-`buildHistoryWindow`.
+- **Inlay bytes** (`{{inlay/inlayed/inlayeddata::id}}`) live only in the
+  browser's localForage; `getInlay(id)` resolves them from the request
+  `inlayAssets` payload (finally populated by `serverBackedSendChat.ts`).
+- **Asset bytes** (`{{asset_prompt::name}}` + the `icon` fallback) live in the
+  server assets store; `getAsset`/`getCharIcon` resolve a char/module asset
+  reference (or `currentChar.image`) through the route's
+  `resolveStoredAssetImage`, re-wrapped as a `data:image/png;base64,` URI
+  (matching the browser's `readImage(asset[1])` path).
+
+`NO_ASSETS` survives only as the fallback when no resolver is bound (prompt-leaf
+tests).
 
 ## `prompt/templates.ts` — the Lua `editRequest` gap
 
@@ -162,8 +166,9 @@ the completion text post-generation.
 - **Request body** `ChatRequestBody` (`generationChat.ts:25-37`), all fields
   `unknown`, validated in `validate` (`:73-109`). `inlayAssets` is validated as
   "an array when provided" (`:105-107`) and mapped into the input at
-  `toAssembleInput` (`:163`) — then dropped by the assembler (see above). So
-  **`inlayAssets` is accepted but unused** end to end.
+  `toAssembleInput` (`:163`). **As of slice 3a it is read end to end**:
+  `beginAssembly` parses it into the `AssetLookup`'s `getInlay` (the client now
+  populates it in `serverBackedSendChat.ts`).
 - **Calls the assembler** via `assemblePrompt(input, deps)` (`:265`), with
   `deps` from `loadDatabaseDeps(dataDir, db)` (`:264`) whose `loadDatabase` is
   `loadPersisted(dataDir).database` — a read-only file read.
@@ -185,8 +190,11 @@ the completion text post-generation.
   `assemble.ts:393`); the persistence reloads the store inside the mutation
   transaction. No message/final-result persistence happens here — that stays
   command-backed (B2).
-- **Does not bind the asset seam** — no `AssetLookup`/`getInlay`/`getAsset`/
-  `NO_ASSETS` reference; `RouteAssembleDeps` adds only `getDatabase()`.
+- **Binds the asset seam (slice 3a)** — `loadDatabaseDeps` supplies
+  `resolveStoredAssetImage(reference)` (reads `data/assets/` via `assetById` /
+  `assetPath`, re-wraps as a png data URI); `beginAssembly` folds it plus the
+  request `inlayAssets` into `state.assetLookup`. `RouteAssembleDeps` still also
+  carries `getDatabase()`.
 
 C-A1 is pinned by `server/fastify/__tests__/generation.chat.test.ts` — a `setvar`
 start trigger emits `chatVarMutations` in the patch **and** bootstrap afterwards
@@ -203,7 +211,8 @@ before persisting.
 | `budgetFinalize.ts` | Final request-budget pass (`finalizeRequestBudget`): re-tokenize, trim removable rows, clamp response budget. |
 | `cbsAdapter.ts` | Server-side `CBSRegisterArg` factory (DI for CBS callbacks; replaces SPA stores). |
 | `chatDispatch.ts` | Provider dispatch for server generation (`dispatchChatProvider`, `getServerGenerationModelString`). |
-| `history.ts` | History-window builder; home of the `AssetLookup`/`NO_ASSETS` gap. |
+| `assetLookup.ts` | Builds the per-send `AssetLookup` (slice 3a): `getInlay` from request `inlayAssets`, `getAsset`/`getCharIcon` from the store resolver. |
+| `history.ts` | History-window builder; the `AssetLookup` seam (`getInlay`/`getAsset`/`getCharIcon`) it feeds inlay/asset bytes through. |
 | `lorebook.ts` | Lorebook activation, decorators, `buildLorebookContext`, depth prompts. |
 | `memory.ts` | Non-Hypa memory window (`buildMemoryWindow`). |
 | `memoryAdapter.ts` | Prompt-memory selection adapter (HypaV3 retrieval). |

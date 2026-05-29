@@ -22,7 +22,7 @@ requests a write** — it never becomes the authority.
 | Stage | Default owner | Notes |
 | --- | --- | --- |
 | Pre-send input | Browser | UID/input plumbing; rows persist via commands (B1). |
-| Prompt assembly | **Server-mandatory for the text-send subset** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier (`request/serverPromptAssembly.ts`): in Fastify mode + `useServerPromptAssembly`, the pure-text subset routes `server`, every content class routes `unsupported` (hard fail). Blocker **A1** content classes (3a/3b/3c) graduate the rest. |
+| Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier (`request/serverPromptAssembly.ts`); **slice 3a graduated multimodal/asset** (image-input models → `server`). Remaining `unsupported`: non-vision caption (class 2), image-gen (3c), Lua/plugin (3b). |
 | Provider dispatch | **Server** (`/generate/completion`) | `resolveServerCompletionRoute`; `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
 | Token streaming → rows | Browser | Writes the projection. |
 | Post-generation | **Browser** | `editoutput`, inlay-screen, output trigger, auto-continue, IGP (blocker **A2** for the durable ones). |
@@ -36,15 +36,17 @@ requests a write** — it never becomes the authority.
 
 The server `/generate/chat` assembler (`server/fastify/src/prompt/`) is at parity
 for run-vars, CBS/variable expansion, regex scripts, templates, token budget,
-lorebook + depth prompts, start triggers, and HypaV3 selection. It is NOT at
-parity for:
+lorebook + depth prompts, start triggers, HypaV3 selection, and **multimodal /
+asset inlining (slice 3a)**. It is NOT at parity for:
 
-- **Multimodal / asset inlining** — `prompt/history.ts` hardcodes `NO_ASSETS` and
-  the route never binds the `AssetLookup` seam; the request's `inlayAssets` field
-  is accepted but unused. Image/asset prompts lose their bytes.
-- **Non-vision image-caption fallback** — browser-only (`runImageEmbedding`).
+- **Multimodal / asset inlining** — **DONE (slice 3a).** `beginAssembly` binds a
+  non-empty `AssetLookup` (`prompt/assetLookup.ts`): inlay bytes from the request
+  `inlayAssets` (now populated by `serverBackedSendChat.ts`), asset/icon bytes
+  from the store (`resolveStoredAssetImage`). Vision models → `server`.
+- **Non-vision image-caption fallback** — browser-only (`runImageEmbedding`);
+  routes `unsupported` (slice 3a class 2). No server path.
 - **Image-gen instruction** (`buildInlayViewInstruction` / `newGenData`) — not
-  ported.
+  ported (slice 3c).
 - **Lua `editRequest`** — server runs identity (`templates.ts`: `editRequest =
   rows => rows`).
 - **Lua + plugin-V2 `editprocess` script hooks**, and the input-trigger /
@@ -66,12 +68,13 @@ non-server-routable provider route `unsupported` and hard-fail. The soft
 `unavailable` escape (the silent non-string-`send` → local fall-through) is
 deleted. `local` is reached only when `!isFastifyServer` or the flag is off.
 
-**Remaining A1 work — content graduation (slices 3a/3b/3c):** each later content
+**Remaining A1 work — content graduation (slices 3b/3c):** each later content
 slice ports one class to the server assembler and flips its detector in the
-classifier from `→ unsupported` to `→ server`. Each detector is already isolated
-behind its own named predicate. Until then the classifier reads
-`useServerPromptAssembly` as the experimental master enable; removing that flag is
-the END of the sub-family, after the last content class graduates.
+classifier from `→ unsupported` to `→ server`. **Slice 3a is done** (multimodal /
+asset → `server` for image-input models; non-vision caption stays `unsupported`).
+Each detector is isolated behind its own named predicate. The classifier still
+reads `useServerPromptAssembly` as the experimental master enable; removing that
+flag is the END of the sub-family, after the last content class graduates.
 
 ### A2 — Post-generation durable derivation (no server path)
 

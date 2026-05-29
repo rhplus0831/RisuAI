@@ -35,6 +35,7 @@ import {
   type Chat,
   type Database,
 } from '../../../storage/database.svelte'
+import { LLMFlags } from '../../../model/modellist'
 import { pluginV2 } from '../../../plugins/plugins.svelte'
 import {
   resolveServerPromptAssembly,
@@ -147,6 +148,40 @@ describe('resolveServerPromptAssembly', () => {
         type: 'server',
       })
     })
+
+    // Slice 3a: with an image-input model the server assembler resolves inlay /
+    // asset / runtime-multimodal bytes, so class 1 routes to `server` instead of
+    // `unsupported`. echo_model lacks image input, so the vision flag is forced on
+    // via customFlags while keeping the server-routable Echo format.
+    function seedVisionDb(): void {
+      seedDb({ enableCustomFlags: true, customFlags: [LLMFlags.hasImageInput] })
+    }
+
+    it('routes an inlay-marker send to server on an image-input model (slice 3a)', () => {
+      seedVisionDb()
+      const input = makeInput({
+        currentChat: makeChat([{ role: 'user', data: 'see {{inlayed::img1}}' }]),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
+
+    it('routes an asset_prompt send to server on an image-input model (slice 3a)', () => {
+      seedVisionDb()
+      const input = makeInput({
+        currentChat: makeChat([{ role: 'user', data: 'show {{asset_prompt::icon}}' }]),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
+
+    it('routes a runtime-multimodals send to server on an image-input model (slice 3a)', () => {
+      seedVisionDb()
+      const input = makeInput({
+        currentChat: makeChat([
+          { role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] },
+        ]),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
   })
 
   describe('unsupported — hard-fail, never a silent local fallback', () => {
@@ -173,21 +208,26 @@ describe('resolveServerPromptAssembly', () => {
 
     // One case per content class. Each later content slice flips exactly one of
     // these from `unsupported` to `server`.
-    it('rejects an inlay marker in a message — multimodal/asset (slice 3a)', () => {
+    //
+    // Slice 3a class 2 (non-vision caption): the seeded echo_model lacks image
+    // input, so image/asset/inlay content still hard-fails — the browser's
+    // runImageEmbedding caption fallback has no server equivalent. The reason
+    // text differs from the (now-ported) class-1 vision path above.
+    it('rejects an inlay marker on a model without image input — caption case (slice 3a class 2)', () => {
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'see {{inlayed::img1}}' }]),
       })
-      expectUnsupported(resolveServerPromptAssembly(input))
+      expect(expectUnsupported(resolveServerPromptAssembly(input))).toMatch(/image input/i)
     })
 
-    it('rejects an asset_prompt marker in a message — multimodal/asset (slice 3a)', () => {
+    it('rejects an asset_prompt marker on a model without image input (slice 3a class 2)', () => {
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'show {{asset_prompt::icon}}' }]),
       })
       expectUnsupported(resolveServerPromptAssembly(input))
     })
 
-    it('rejects a runtime multimodals array on a message — multimodal/asset (slice 3a)', () => {
+    it('rejects a runtime multimodals array on a model without image input (slice 3a class 2)', () => {
       const input = makeInput({
         currentChat: makeChat([
           { role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] },

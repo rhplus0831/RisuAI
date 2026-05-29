@@ -1,7 +1,7 @@
 import { isFastifyServer } from '../../platform'
 import { getDatabase } from '../../storage/database.svelte'
 import type { character, Chat, triggerscript } from '../../storage/database.svelte'
-import { getModelInfo } from '../../model/modellist'
+import { getModelInfo, LLMFlags } from '../../model/modellist'
 import { getModuleTriggers } from '../modules'
 import { pluginV2 } from '../../plugins/plugins.svelte'
 import { resolveServerCompletionRoute } from './serverCompletion'
@@ -39,15 +39,18 @@ function deriveMode(input: ServerPromptAssemblyInput): ServerPromptAssemblyMode 
 }
 
 // Inlay / asset markers the local converter resolves into image/asset bytes
-// (`formatHistoryMessage.ts:76,85,154`). Detected here as a *presence* signal
-// only — slice 3a removes this class once the server can resolve the bytes.
+// (`formatHistoryMessage.ts:76,85,154`). As of slice 3a the server assembler
+// resolves these (inlay bytes ride the request `inlayAssets`; asset bytes come
+// from the server store), so their mere presence no longer forces `unsupported`
+// — only the non-vision caption sub-case (class 2) below does.
 const INLAY_MARKER = /\{\{(?:inlay|inlayed|inlayeddata)::/i
 const ASSET_MARKER = /\{\{asset_?prompt::/i
 
 /**
  * Multimodal / asset content (local-assembler class 1): any message carrying a
  * runtime `multimodals` array (set by scripting at `scriptings.ts:563,938`) or an
- * inlay/asset marker in its `.data`. Removed by slice 3a.
+ * inlay/asset marker in its `.data`. Ported to the server by slice 3a; still
+ * used to detect the class-2 caption sub-case.
  */
 function sendHasMultimodalOrAsset(currentChat: Chat): boolean {
   for (const message of currentChat.message ?? []) {
@@ -59,6 +62,11 @@ function sendHasMultimodalOrAsset(currentChat: Chat): boolean {
     }
   }
   return false
+}
+
+/** Whether the active model accepts inline image input (`getModelInfo().flags`). */
+function modelAcceptsImageInput(): boolean {
+  return getModelInfo(getDatabase().aiModel).flags.includes(LLMFlags.hasImageInput)
 }
 
 /**
@@ -109,8 +117,14 @@ function sendHasScriptContent(currentChar: character): boolean {
  * drop it. Each later content slice (3a/3b/3c) deletes exactly one branch here.
  */
 function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | null {
-  if (sendHasMultimodalOrAsset(input.currentChat)) {
-    return 'Image, asset, or inlay content in this chat is not yet supported by server prompt assembly. Disable server prompt assembly to send it.'
+  // Class 2 (non-vision caption): when the model lacks image input the local
+  // assembler replaces an image with a `runImageEmbedding` caption
+  // (`formatHistoryMessage.ts:111-114`) — a browser-only ML pipeline with no
+  // server equivalent. Rather than emit a silently captionless prompt, any
+  // image/asset/inlay content on a non-vision model is `unsupported`. (Class 1,
+  // the vision path, is now server-assembled; see `sendHasMultimodalOrAsset`.)
+  if (sendHasMultimodalOrAsset(input.currentChat) && !modelAcceptsImageInput()) {
+    return 'This model has no image input, so image/asset content would need the browser caption fallback, which server prompt assembly cannot reproduce. Disable server prompt assembly to send it.'
   }
   if (charHasImageGenInstruction(input.currentChar)) {
     return 'Image-generation view instructions are not yet supported by server prompt assembly. Disable server prompt assembly to send.'
@@ -158,7 +172,9 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
  *   3. single, non-group character.
  *   4. server-routable provider (reuse `resolveServerCompletionRoute`).
- *   5. no asset / image-gen / Lua / plugin content.
+ *   5. no image-gen / Lua / plugin content, and no non-vision caption case
+ *      (image/asset/inlay content on a model without image input — class 2).
+ *      Vision-model image/asset/inlay content is server-assembled (slice 3a).
  *   6. otherwise → `server`.
  *
  * From step 2 on (Fastify mode, flag on) the verdict is always `server` or
