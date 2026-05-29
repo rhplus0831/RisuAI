@@ -2623,6 +2623,113 @@ function checkAlpha4SaveAssetClassification(): void {
   }
 }
 
+// ----- A4R-pluginv2: no server-side plugin (V2) execution path -----
+//
+// Invariant (slice 3b): pluginV2 edit/replacer hooks are *permanent*
+// `unsupported` for server prompt assembly. Server-side plugin code execution is
+// on the no-port list (docs/client-thinning/plan.md) and pluginV2 is superseded
+// by Plugin V3, so — unlike the Lua arm, which slice 3b graduates to `server` —
+// this never flips. Two halves, both AST-derived so the deferral *comments* in
+// the assembler (which name `pluginV2[mode]`) never trip the rule:
+//
+//   negative — no file in the server assembler (server/fastify/src/prompt/**)
+//     may import the browser plugin runtime, reference the `pluginV2` registry,
+//     or open a JS eval sandbox (`eval` / `new Function`) that plugin code could
+//     be fed into. This is the "can't silently port it into an unsafe sandbox"
+//     guard the slice asks for.
+//   positive — the client classifier (serverPromptAssembly.ts) must still import
+//     the `pluginV2` registry and inspect at least one edit set, so the hard-fail
+//     gate cannot be silently deleted (which would let a pluginV2 send fall
+//     through to server assembly).
+function checkPluginV2NoServerExecution(): void {
+  const check = 'A4R-pluginv2 no server-side plugin execution'
+  const promptDir = 'server/fastify/src/prompt'
+  const absDir = path.join(root, promptDir)
+  const pluginRuntimeSpecifier = /\/plugins\/(?:plugins|apiV3)|plugins\.svelte/
+
+  // Negative half. The assembler dir is absent in fixtures that exercise only
+  // the positive (classifier) half; a missing dir means there is no server
+  // execution path to guard, so skip rather than fail.
+  if (fs.existsSync(absDir)) {
+    for (const entry of fs.readdirSync(absDir)) {
+      if (!entry.endsWith('.ts')) continue
+      const relPath = `${promptDir}/${entry}`
+      const abs = path.join(root, relPath)
+      const sf = project.getSourceFile(abs) ?? project.addSourceFileAtPathIfExists(abs)
+      if (!sf) continue
+
+      for (const imp of sf.getImportDeclarations()) {
+        const spec = imp.getModuleSpecifierValue()
+        if (pluginRuntimeSpecifier.test(spec)) {
+          fail(
+            check,
+            `Server assembler ${relPath} imports the browser plugin runtime (${spec}); server-side plugin (V2) execution is on the no-port list.`,
+            imp,
+          )
+        }
+      }
+
+      for (const id of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+        if (id.getText() === 'pluginV2') {
+          fail(
+            check,
+            `Server assembler ${relPath} references the pluginV2 registry; server-side plugin (V2) execution is unsupported (no-port list).`,
+            id,
+          )
+        }
+      }
+
+      for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+        if (call.getExpression().getText() === 'eval') {
+          fail(
+            check,
+            `Server assembler ${relPath} calls eval(); server-side plugin (V2) execution must not be introduced via a JS eval sandbox.`,
+            call,
+          )
+        }
+      }
+      for (const expr of sf.getDescendantsOfKind(SyntaxKind.NewExpression)) {
+        if (expr.getExpression().getText() === 'Function') {
+          fail(
+            check,
+            `Server assembler ${relPath} constructs new Function(); server-side plugin (V2) execution must not be introduced via a JS eval sandbox.`,
+            expr,
+          )
+        }
+      }
+    }
+  }
+
+  // Positive half: the classifier must still detect pluginV2 and hard-fail it.
+  const classifier = source('src/ts/process/request/serverPromptAssembly.ts')
+  const importsPluginV2 = classifier
+    .getImportDeclarations()
+    .some((imp) => imp.getNamedImports().some((named) => named.getName() === 'pluginV2'))
+  if (!importsPluginV2) {
+    fail(
+      check,
+      'serverPromptAssembly classifier no longer imports the pluginV2 registry; the permanent-unsupported plugin gate may be gone.',
+      undefined,
+      classifier,
+    )
+  }
+  const inspectsEditSet = classifier
+    .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+    .some((access) =>
+      /^pluginV2\.(?:editinput|editoutput|editprocess|editdisplay|replacerbeforeRequest|replacerafterRequest)\b/.test(
+        access.getText(),
+      ),
+    )
+  if (!inspectsEditSet) {
+    fail(
+      check,
+      'serverPromptAssembly classifier no longer inspects any pluginV2 edit set; pluginV2 sends could route to server assembly instead of hard-failing.',
+      undefined,
+      classifier,
+    )
+  }
+}
+
 function selectedChecks(checks: AuditCheck[]): AuditCheck[] {
   const selected = process.env.CLIENT_THINNING_AUDIT_CHECK_IDS
   if (!selected) return checks
@@ -2682,6 +2789,7 @@ const auditChecks: AuditCheck[] = [
   { id: 'A4R-backup data dir inventory', run: checkAlpha4BackupInventory },
   { id: 'A4R-bounded process-lifetime accumulators', run: checkAlpha4BoundedAccumulators },
   { id: 'A4R-saveasset filename classification', run: checkAlpha4SaveAssetClassification },
+  { id: 'A4R-pluginv2 no server-side plugin execution', run: checkPluginV2NoServerExecution },
 ]
 
 runChecks(selectedChecks(auditChecks))

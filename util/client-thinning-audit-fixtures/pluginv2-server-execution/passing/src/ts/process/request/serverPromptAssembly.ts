@@ -1,0 +1,26 @@
+// A4R-pluginv2 fixture (passing): the classifier keeps the permanent pluginV2
+// gate (registry import + edit-set inspection + hard fail) and the server
+// assembler has no plugin execution path.
+import { pluginV2 } from '../../../plugins/plugins.svelte'
+
+declare const isFastifyServer: boolean
+type Route = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason: string }
+
+function hasPluginV2EditSet(): boolean {
+  return (
+    pluginV2.editinput.size > 0 ||
+    pluginV2.editoutput.size > 0 ||
+    pluginV2.editprocess.size > 0 ||
+    pluginV2.editdisplay.size > 0 ||
+    pluginV2.replacerbeforeRequest.size > 0 ||
+    pluginV2.replacerafterRequest.size > 0
+  )
+}
+
+export function resolveServerPromptAssembly(): Route {
+  if (!isFastifyServer) return { type: 'local' }
+  if (hasPluginV2EditSet()) {
+    return { type: 'unsupported', reason: 'Plugin (V2) scripts are not supported.' }
+  }
+  return { type: 'server' }
+}

@@ -241,18 +241,38 @@ describe('resolveServerPromptAssembly', () => {
       expectUnsupported(resolveServerPromptAssembly(input))
     })
 
-    it('rejects a character carrying a Lua trigger (slice 3b)', () => {
+    // Slice 3b splits the old combined Lua/plugin detector into two arms with
+    // distinct dispositions and distinct reasons: the Lua arm is port-pending
+    // (flips to `server` as the server Lua VM lands per sub-class); the pluginV2
+    // arm is a permanent hard fail (server-side plugin code execution is on the
+    // no-port list and pluginV2 is superseded by Plugin V3).
+    it('rejects a character carrying a Lua trigger with the port-pending reason (slice 3b)', () => {
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [{ effect: [{ type: 'triggerlua', code: '' }] }],
         } as never),
       })
-      expectUnsupported(resolveServerPromptAssembly(input))
+      const reason = expectUnsupported(resolveServerPromptAssembly(input))
+      expect(reason).toMatch(/lua/i)
+      expect(reason).toMatch(/not yet/i)
     })
 
-    it('rejects a non-empty pluginV2 edit set (slice 3b)', () => {
+    it('rejects a non-empty pluginV2 edit set with the plugin (permanent) reason (slice 3b)', () => {
       pluginV2.editprocess.add((() => {}) as never)
-      expectUnsupported(resolveServerPromptAssembly(makeInput()))
+      const reason = expectUnsupported(resolveServerPromptAssembly(makeInput()))
+      expect(reason).toMatch(/plugin/i)
+      // The permanent plugin arm is not the port-pending Lua arm.
+      expect(reason).not.toMatch(/lua/i)
+    })
+
+    it('reports the Lua arm first when a char has both a Lua trigger and a pluginV2 set (slice 3b)', () => {
+      pluginV2.editprocess.add((() => {}) as never)
+      const input = makeInput({
+        currentChar: makeChar({
+          triggerscript: [{ effect: [{ type: 'triggerlua', code: '' }] }],
+        } as never),
+      })
+      expect(expectUnsupported(resolveServerPromptAssembly(input))).toMatch(/lua/i)
     })
   })
 })

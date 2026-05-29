@@ -43,8 +43,14 @@ to local at any point — a class is either `server` (ported) or `unsupported`
 slice 1   text-send → server ; {asset, imagegen, lua/plugin} → unsupported
 slice 3a  + asset    → server   (port AssetLookup; flip the asset detector)
 slice 3c  + imagegen → server   (port newGenData instruction; flip that detector)
-slice 3b  + lua/plugin → server  (stand up server script VM; flip that detector) — or stay unsupported by decision
+slice 3b  pluginV2 → unsupported (permanent, landed); Lua → server (committed port, sub-series)
 ```
+
+Slice 3b split in two: **pluginV2** is permanent `unsupported` (landed 2026-05-29 —
+classifier split + the `A4R-pluginv2` audit invariant), and **Lua** is a committed
+server port drafted as its own sub-slice series under
+[`slice-3b-lua/`](slice-3b-lua/README.md) (VM → `editRequest` → `editprocess` →
+`editinput`; security model = single-user self-host).
 
 C-A1 (slice 2) and A2 (slice 4) are the post-generation persistence/derivation
 half and sit alongside this line: slice 2 moves an already-computed delta into

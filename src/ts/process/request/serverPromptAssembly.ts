@@ -86,6 +86,15 @@ function hasLuaTrigger(triggers: triggerscript[] | undefined): boolean {
   return triggers.some((trigger) => trigger?.effect?.[0]?.type === 'triggerlua')
 }
 
+/**
+ * pluginV2 edit hooks (local-assembler class 5, plugin arm): any registered
+ * pluginV2 edit/replacer function. **Permanent `unsupported`** — server-side
+ * plugin code execution is on the no-port list (`docs/client-thinning/plan.md`)
+ * and pluginV2 is superseded by Plugin V3. This detector never flips to `server`;
+ * the `A4R-pluginv2 no server-side plugin execution` audit invariant
+ * (`util/client-thinning-audit.ts`) keeps a server-side execution path from being
+ * silently added.
+ */
 function hasPluginV2EditSet(): boolean {
   return (
     pluginV2.editinput.size > 0 ||
@@ -98,16 +107,16 @@ function hasPluginV2EditSet(): boolean {
 }
 
 /**
- * Lua / pluginV2 script content (local-assembler classes 4-6): a `triggerlua`
- * effect on the character or any enabled module, or any registered pluginV2 edit
- * hook. The server runs identity for these (no Lua VM, no plugin runtime).
- * Removed by slice 3b.
+ * Lua script content (local-assembler classes 4-6): a `triggerlua` effect on the
+ * character or any enabled module. The server runs identity for these today (no
+ * Lua VM). **Port-pending** — slice 3b stands up a server Lua VM and flips this
+ * detector to `server` per sub-class (`editRequest`/`editprocess`/`editinput`) as
+ * each lands; until then a Lua trigger hard-fails rather than silently run
+ * identity. Kept separate from `hasPluginV2EditSet` so the Lua arm can graduate
+ * without disturbing the permanent pluginV2 hard-fail.
  */
-function sendHasScriptContent(currentChar: character): boolean {
-  if (hasLuaTrigger(currentChar.triggerscript)) return true
-  if (hasLuaTrigger(getModuleTriggers())) return true
-  if (hasPluginV2EditSet()) return true
-  return false
+function sendHasLuaContent(currentChar: character): boolean {
+  return hasLuaTrigger(currentChar.triggerscript) || hasLuaTrigger(getModuleTriggers())
 }
 
 /**
@@ -129,8 +138,18 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   if (charHasImageGenInstruction(input.currentChar)) {
     return 'Image-generation view instructions are not yet supported by server prompt assembly. Disable server prompt assembly to send.'
   }
-  if (sendHasScriptContent(input.currentChar)) {
-    return 'Lua or plugin scripts on this character are not yet supported by server prompt assembly. Disable server prompt assembly to send.'
+  // Lua scripts (classes 4-6): port-pending. Needs a server Lua VM (slice 3b);
+  // until each hook lands, a `triggerlua` effect hard-fails rather than run the
+  // server's identity transform and silently drop the script's edits.
+  if (sendHasLuaContent(input.currentChar)) {
+    return 'Lua scripts on this character are not yet supported by server prompt assembly. Disable server prompt assembly to send.'
+  }
+  // pluginV2 (class 5, plugin arm): permanent `unsupported` (no-port list;
+  // deprecated by Plugin V3). Reported separately from the Lua arm above so the
+  // Lua sub-classes can flip to `server` independently while this stays a hard
+  // fail forever — see `hasPluginV2EditSet`.
+  if (hasPluginV2EditSet()) {
+    return 'Plugin (V2) scripts run only in the browser plugin runtime and are not supported by server prompt assembly. Disable server prompt assembly to send.'
   }
   return null
 }
@@ -172,9 +191,11 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
  *   3. single, non-group character.
  *   4. server-routable provider (reuse `resolveServerCompletionRoute`).
- *   5. no image-gen / Lua / plugin content, and no non-vision caption case
+ *   5. no image-gen / Lua / pluginV2 content, and no non-vision caption case
  *      (image/asset/inlay content on a model without image input — class 2).
- *      Vision-model image/asset/inlay content is server-assembled (slice 3a).
+ *      Vision-model image/asset/inlay content is server-assembled (slice 3a). The
+ *      Lua arm is port-pending (slice 3b flips it per sub-class); the pluginV2
+ *      arm is a permanent hard fail (no-port list).
  *   6. otherwise → `server`.
  *
  * From step 2 on (Fastify mode, flag on) the verdict is always `server` or

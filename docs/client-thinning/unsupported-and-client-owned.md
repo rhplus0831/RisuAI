@@ -90,8 +90,26 @@ documented here.
   behavior difference) was **rejected** — a silently captionless prompt is a
   worse failure mode than an explicit one. Image-input models assemble the
   multimodal bytes server-side at byte-parity (slice 3a, class 1).
-- Image-gen view instruction (slice 3c) and Lua / plugin-V2 scripts (slice 3b)
-  still route `unsupported` until their slices land.
+- **Plugin (V2) scripts (slice 3b, _permanent_)** — any registered pluginV2 edit /
+  replacer hook (`editinput`/`editoutput`/`editprocess`/`editdisplay`/
+  `replacerbeforeRequest`/`replacerafterRequest`) routes `unsupported` and **never
+  graduates**. Server-side plugin code execution is on the no-port list (see
+  "Legacy / removed" below and [`plan.md`](plan.md)) and pluginV2 is superseded by
+  Plugin V3. The `serverPromptAssembly` classifier detects it via its own
+  `hasPluginV2EditSet` predicate (separate from the Lua arm so the Lua sub-classes
+  can flip without disturbing this), and the **`A4R-pluginv2 no server-side plugin
+  execution`** audit invariant (`util/client-thinning-audit.ts`) keeps a
+  server-side execution path — a plugin-runtime import, a `pluginV2` reference, or
+  an `eval`/`new Function` sandbox in `server/fastify/src/prompt/**` — from being
+  silently added by a later refactor.
+- **Lua scripts (slice 3b, _port-pending_)** — a `triggerlua` effect on the
+  character or an enabled module routes `unsupported` **until the server Lua VM
+  lands**. Unlike pluginV2 this is a committed server port (Lua is the primary
+  bot-extension mechanism); the classifier's Lua arm (`sendHasLuaContent`) flips to
+  `server` per sub-class (`editRequest` / `editprocess` / `editinput`) as each
+  lands.
+- Image-gen view instruction (slice 3c) still routes `unsupported` until its slice
+  lands.
 
 ## Deferred / Separate
 

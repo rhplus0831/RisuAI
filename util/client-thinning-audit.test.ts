@@ -64,6 +64,7 @@ describe('client-thinning audit fixtures', () => {
   const moduleReferenceCheck = 'AEC5 module reference semantics'
   const assetPersistenceCheck = 'AEC6 asset persistence semantics'
   const importExportShapeCheck = 'AEC2 import/export current shape'
+  const pluginV2ServerExecutionCheck = 'A4R-pluginv2 no server-side plugin execution'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
     const result = await runAuditFixture(
@@ -448,6 +449,41 @@ describe('client-thinning audit fixtures', () => {
     const result = await runAuditFixture(
       'provider-ownership/server-routed-bypass',
       providerOwnershipCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture that ports the pluginV2 editprocess hook into the server assembler', async () => {
+    const result = await runAuditFixture(
+      'pluginv2-server-execution/failing-server-execution',
+      pluginV2ServerExecutionCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${pluginV2ServerExecutionCheck}]`)
+    expect(result.stderr).toContain('imports the browser plugin runtime')
+    expect(result.stderr).toContain('references the pluginV2 registry')
+  })
+
+  it('fails a fixture whose classifier dropped the permanent pluginV2 gate', async () => {
+    const result = await runAuditFixture(
+      'pluginv2-server-execution/gate-removed-bypass',
+      pluginV2ServerExecutionCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${pluginV2ServerExecutionCheck}]`)
+    expect(result.stderr).toContain('no longer imports the pluginV2 registry')
+    expect(result.stderr).toContain('no longer inspects any pluginV2 edit set')
+  })
+
+  it('allows a regex-only assembler whose deferral comment merely names pluginV2', async () => {
+    const result = await runAuditFixture(
+      'pluginv2-server-execution/passing',
+      pluginV2ServerExecutionCheck,
     )
 
     expect(result.exitCode).toBe(0)

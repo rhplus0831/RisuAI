@@ -23,7 +23,7 @@ the stable handle.
 | 2 | Non-vision image-caption fallback | `transformers.ts:111`; call `formatHistoryMessage.ts:111-114` | prompt row content | A1 — **`unsupported` (slice 3a class 2)**: browser-only ML, no server path |
 | 3 | Image-gen instruction | `promptAssembly/buildStaticPromptSections.ts:47`; call `sendChatPromptAssembly.ts:114` | prompt rows (`postEverything`) | A1 — port (static char config) |
 | 4 | Lua `editRequest` | `promptAssembly/renderFinalPrompt.ts:384`; engine `scriptings.ts:1415,1117-1126` | request rows | A1 — needs server scripting VM |
-| 5 | Lua + pluginV2 `editprocess` | `formatHistoryMessage.ts:44-52`; pluginV2 `scripts.ts:151-158` | prompt row content | A1 — needs server scripting VM |
+| 5 | Lua + pluginV2 `editprocess` | `formatHistoryMessage.ts:44-52`; pluginV2 `scripts.ts:151-158` | prompt row content | A1 — Lua: **port** (server VM; browser no-op); pluginV2: **permanent unsupported** (no-port) |
 | 6 | Input-trigger / `editinput` at submit | `DefaultChatScreen.svelte:232,240` | chat transcript | A1 — needs server scripting VM |
 | 7 | Script pipeline (machinery) | `scripts.ts:121` (`processScriptFull`) | text/rows | A1 — the runtime classes 4-6 share |
 | 8 | Group-ness / character selection | `index.svelte.ts:54`; filter `database.svelte.ts:110` | control flow | subset gate (single non-group char) |
@@ -148,6 +148,16 @@ Script-type constants: `ScriptMode = 'editinput'|'editoutput'|'editprocess'|'edi
 (`scriptings.ts:1117-1120`); trigger modes (`triggers.ts:47`); pluginV2 registry
 (`plugins.svelte.ts:540-557`). **Needs:** registered JS `EditFunction`s from V2
 plugins (browser plugin runtime). **Mutates:** per-message prompt content.
+
+**Disposition (slice 3b).** The two arms split: **Lua `editprocess`** is a browser
+no-op (`scriptings.ts:1431-1432` early-returns), so its server port is near-identity
+once the Lua VM lands — *port-pending*. **pluginV2 `editprocess`** (and the other
+pluginV2 edit/replacer hooks) is **permanent `unsupported`** — server-side plugin
+code execution is on the no-port list and pluginV2 is superseded by Plugin V3. The
+classifier reports the two via separate predicates (`sendHasLuaContent` vs
+`hasPluginV2EditSet`) so the Lua arm can flip to `server` without disturbing the
+permanent pluginV2 hard fail; the `A4R-pluginv2` audit invariant
+(`util/client-thinning-audit.ts`) forbids a server-side plugin execution path.
 
 ## 6. Input-trigger / `editinput` scripts at submit
 

@@ -26,15 +26,17 @@ drift; symbol names are the stable handle.
 | HypaV3 / prompt-memory selection | **AT PARITY** (server-owned) | `assemble.ts:870-916` |
 | Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyChatVars` |
 | Multimodal / inlay asset bytes | **AT PARITY** (slice 3a) — route binds a non-empty `AssetLookup`; inlay bytes ride the request `inlayAssets`, asset/icon bytes come from the store | `prompt/assetLookup.ts` (`buildAssetLookup`) + `generationChat.ts` (`resolveStoredAssetImage`); bound in `assemble.ts::beginAssembly`, passed at `assemble.ts:fillHistoryAndBias` |
-| **Lua / pluginV2 `editRequest`** | **GAP** — identity default | `templates.ts:683`; never supplied |
-| **Lua / pluginV2 `editprocess` hooks** | **GAP** — regex only | `scripts.ts:50-56` (deferred) |
+| **Lua `editRequest`** | **GAP (port-pending, slice 3b)** — identity default; needs the server Lua VM | `templates.ts:683`; never supplied |
+| **Lua `editprocess`** | **GAP (port-pending, slice 3b)** — regex only; Lua arm is a browser no-op so the port is near-identity | `scripts.ts:50-56` (deferred) |
+| **pluginV2 `editRequest` / `editprocess` / replacers** | **PERMANENT `unsupported`** — no-port list; classifier hard-fails via `hasPluginV2EditSet`; protected by the `A4R-pluginv2` audit invariant | classifier `serverPromptAssembly.ts`; invariant `util/client-thinning-audit.ts` |
 | **Output triggers (`'output'`)** | **GAP** — declared, never invoked | `triggers.ts:103`; no `runTrigger(…,'output',…)` exists |
 | Assembly-time scriptstate persistence | **DONE (C-A1)** — route persists the delta via `applyJsonCommandMutation`, returns the bumped revision over SSE | `generationChat.ts` `persistAssemblyChatVars` |
 | Final-message persistence | **GAP by design** — still command-backed; browser POSTs `generation-result` (B2) | `index.svelte.ts:351` → `persistGenerationResultCommand` |
 
 The content rows that change prompt *bytes* are: (a) image/asset multimodal
 content — **now ported (slice 3a)**, (b) image-gen instruction (slice 3c, still
-GAP), (c) Lua/pluginV2 `editRequest`/`editprocess` (slice 3b, still GAP), and
+GAP), (c) Lua `editRequest`/`editprocess` (slice 3b, port-pending GAP — pluginV2's
+equivalents are *permanent* `unsupported`, not a gap to close), and
 (d) `'output'` triggers (an A2 concern; see
 [`post-generation-and-persistence.md`](post-generation-and-persistence.md)).
 Everything else is at parity, so the supported text-send subset is already
@@ -44,12 +46,16 @@ correct server-side — which is why A1's foundation batch can make it mandatory
 silently mis-assembled; each later slice graduates one.** `resolveServerPromptAssembly`
 (`src/ts/process/request/serverPromptAssembly.ts`) detects each class via its own
 named predicate (multimodal/asset markers + `message[].multimodals`; `triggerlua`
-triggers + non-empty pluginV2 edit sets; `currentChar.inlayViewScreen`). **As of
+triggers via `sendHasLuaContent`; non-empty pluginV2 edit sets via
+`hasPluginV2EditSet`; `currentChar.inlayViewScreen`). **As of
 slice 3a the multimodal/asset class routes `→ server`** for image-input models;
 the only surviving `unsupported` multimodal sub-case is **class 2** (image/asset
 content on a model *without* `LLMFlags.hasImageInput`, whose browser-only
-`runImageEmbedding` caption has no server equivalent). The image-gen (3c) and
-Lua/plugin (3b) predicates still route `→ unsupported`.
+`runImageEmbedding` caption has no server equivalent). The image-gen (3c) predicate
+and the Lua arm (3b, port-pending) still route `→ unsupported`; **the pluginV2 arm
+(3b) is a *permanent* `→ unsupported`** (no-port list), split into its own
+predicate (slice 3b) so the Lua sub-classes can flip independently and guarded by
+the `A4R-pluginv2` audit invariant.
 
 ## `prompt/assemble.ts` — the facade
 
@@ -140,9 +146,11 @@ Server scripts are **regex-only**. `processScript` (`scripts.ts:315-356`) walks
 `db.presetRegex` + `char.customscript` + active-module regex; it is the only
 script transform, applied in the history walk (`history.ts:292-300,452-457`).
 The `scripts.ts` header (`:50-56`) explicitly defers `runLuaEditTrigger` and
-`pluginV2[mode]`. A faithful port needs Lua/pluginV2 hooks (a) inside the
+`pluginV2[mode]`. A faithful port needs the **Lua** hooks (a) inside the
 `editprocess` history pass next to `processScript`, and (b) at the `editRequest`
-seam (`templates.ts:726`).
+seam (`templates.ts:726`). The **pluginV2** equivalents are *not* ported — they
+are permanent `unsupported` (no-port list), and the `A4R-pluginv2` audit invariant
+forbids reintroducing a server-side plugin execution path in this dir.
 
 ## `prompt/triggers.ts` — the trigger gap (A2)
 

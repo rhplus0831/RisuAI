@@ -45,6 +45,28 @@ things shape it:
   APIs → still client/unsupported, or a client round-trip) may be required even after
   the VM lands.
 
+## Status (2026-05-29)
+
+Tracking which sub-class has landed (this slice is a series — see the scope guard):
+
+| Sub-class | Disposition | State |
+| --- | --- | --- |
+| pluginV2 `editRequest`/`editprocess`/replacers (5) | **permanent `unsupported`** | **DONE** — classifier split into its own `hasPluginV2EditSet` arm (distinct user-facing reason), recorded in the parity matrix / content-classes / unsupported docs, and pinned by the **`A4R-pluginv2 no server-side plugin execution`** audit invariant (`util/client-thinning-audit.ts`, fixtures under `util/client-thinning-audit-fixtures/pluginv2-server-execution/`). |
+| Lua `editRequest` (4) | port (server VM) | **pending** — blocked on the server Lua VM. |
+| Lua `editprocess` (5) | port (browser no-op) | **pending** — blocked on the server Lua VM. |
+| Lua input-trigger / `editinput` (6) | port (VM + submit hook) | **pending** — blocked on the server Lua VM. |
+
+The Lua sub-classes share one gating dependency (the server `wasmoon` VM) whose
+**security architecture is scaled to the deployment model** — a decision the slice
+defers to the operator (see "The honest framing first"). Until the VM lands, the
+Lua arm (`sendHasLuaContent`) keeps routing `unsupported`, so there is **no silent
+local fallback** for any Lua/plugin/trigger send today.
+
+**The Lua port is drafted as its own sub-slice series for the next agent** (the
+operator chose the **single-user self-host** security model on 2026-05-29):
+[`slice-3b-lua/`](slice-3b-lua/README.md) — a handover README + four ordered
+sub-slices (VM → `editRequest` → `editprocess` → `editinput`). Start there.
+
 ## Outcome — Lua (the committed port)
 
 - A server Lua VM runs the Lua `editRequest` hook, the Lua `editprocess` hook, and
@@ -156,8 +178,11 @@ image-gen (3c).
 
 ## When this slice is done
 
-- [ ] Per sub-class, a recorded decision: ported (with parity proof) or permanent
-      `unsupported` (with a doc entry + an audit invariant).
+- [~] Per sub-class, a recorded decision: ported (with parity proof) or permanent
+      `unsupported` (with a doc entry + an audit invariant). **pluginV2 done**
+      (permanent `unsupported` + doc entries + `A4R-pluginv2` invariant); the three
+      Lua sub-classes are decided (port) but **not yet landed** — blocked on the VM.
 - [ ] For ported sub-classes: server runs the hook, the classifier routes them
-      `server`, and a parity fixture is green.
-- [ ] No silent local fallback for any Lua/plugin/trigger send.
+      `server`, and a parity fixture is green. *(No Lua sub-class ported yet.)*
+- [x] No silent local fallback for any Lua/plugin/trigger send — every such send
+      hard-fails through `resolveServerPromptAssembly` (Lua arm + pluginV2 arm).
