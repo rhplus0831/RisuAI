@@ -21,6 +21,7 @@ import {
   buildAuthorNote,
   buildCotInstruction,
   buildDescription,
+  buildInlayViewInstruction,
   buildPersona,
 } from './staticSections.js'
 import { buildPlainPromptSections } from './plainSections.js'
@@ -796,10 +797,12 @@ function submitTranscriptChanged(state: AssemblyState): boolean {
  *   - plain sections (`main` / `jailbreak` / `globalNote`) only on the
  *     non-utility, non-template path,
  *   - `authorNote`, the chain-of-thought into `postEverything`,
- *     `description`, and `personaPrompt` always.
+ *     `description`, `personaPrompt`, and (slice 3c) the image-gen / emotion
+ *     view instruction into `postEverything` always.
  *
- * Sync — every leaf is sync. `buildInlayViewInstruction` (`:204`) is not part
- * of this server path.
+ * Sync — every leaf is sync. `buildInlayViewInstruction` mirrors the SPA's
+ * push at `sendChatPromptAssembly.ts:114` (after the chain-of-thought row, so
+ * `postEverything` stays ordered `[cot, inlayView, …promptend]`).
  */
 export function fillStaticSlots(state: AssemblyState): void {
   const { ctx, currentChar, currentChat, unformated, promptTemplate, usingPromptTemplate } = state
@@ -815,6 +818,7 @@ export function fillStaticSlots(state: AssemblyState): void {
   unformated.postEverything.push(...buildCotInstruction(ctx, usingPromptTemplate))
   unformated.description.push(...buildDescription(ctx, currentChar))
   unformated.personaPrompt.push(...buildPersona(ctx))
+  unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
 }
 
 /**

@@ -947,6 +947,104 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(userRow?.content).not.toContain('{{asset_prompt::hero}}')
   })
 
+  // Slice 3c: the image-gen / emotion view instruction. `buildInlayViewInstruction`
+  // appends a static `system` row drawn from `newGenData` when `inlayViewScreen`
+  // is set; it rides postEverything. No request field is needed — the config is
+  // already on the loaded character.
+  function dbWithInlayView(
+    view: 'emotion' | 'imggen',
+    extra: Record<string, unknown>,
+  ): unknown {
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<Record<string, unknown>>
+    }
+    Object.assign(db.characters[0], { inlayViewScreen: true, viewScreen: view, ...extra })
+    return db
+  }
+
+  it('emits the emotion view instruction with {{slot}} → emotionImages (slice 3c)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithInlayView('emotion', {
+        newGenData: {
+          prompt: '',
+          negative: '',
+          instructions: '',
+          emotionInstructions: 'Pick an emotion from: {{slot}}',
+        },
+        emotionImages: [
+          ['happy', 'h.png'],
+          ['sad', 's.png'],
+        ],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
+    const messages = prompt.data.messages as Array<{ role: string; content: string }>
+    // The `{{slot}}` token was replaced by the comma-joined emotionImages names,
+    // and the row rides as a system row (postEverything).
+    expect(messages).toContainEqual({ role: 'system', content: 'Pick an emotion from: happy, sad' })
+  })
+
+  it('emits the imggen view instruction verbatim (slice 3c)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithInlayView('imggen', {
+        newGenData: {
+          prompt: '',
+          negative: '',
+          instructions: 'Generate an image of the current scene.',
+          emotionInstructions: '',
+        },
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
+    const messages = prompt.data.messages as Array<{ role: string; content: string }>
+    expect(messages).toContainEqual({
+      role: 'system',
+      content: 'Generate an image of the current scene.',
+    })
+  })
+
+  // Slice 3c: with `inlayViewScreen` unset (the default), no instruction row is
+  // appended — the static section is a no-op, matching the browser gate.
+  it('omits the view instruction when inlayViewScreen is unset (slice 3c)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
+    const messages = prompt.data.messages as Array<{ role: string; content: string }>
+    expect(messages.some((m) => m.content.includes('emotion') || m.content.includes('Generate an image'))).toBe(
+      false,
+    )
+  })
+
   it('emits stop-trigger mutations and restoration before the terminal error', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {

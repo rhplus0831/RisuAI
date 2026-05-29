@@ -69,15 +69,6 @@ function modelAcceptsImageInput(): boolean {
   return getModelInfo(getDatabase().aiModel).flags.includes(LLMFlags.hasImageInput)
 }
 
-/**
- * Image-gen instruction (local-assembler class 3): `buildInlayViewInstruction`
- * is gated on `currentChar.inlayViewScreen` (`buildStaticPromptSections.ts:48`).
- * Removed by slice 3c.
- */
-function charHasImageGenInstruction(currentChar: character): boolean {
-  return Boolean(currentChar.inlayViewScreen)
-}
-
 // Interactive Lua dialog APIs. A `triggerlua` script that calls one of these
 // mid-assembly needs a browser dialog the server cannot drive (the server VM
 // throws an InteractiveApiError, `luaRuntime.ts`). Handlers register at runtime
@@ -157,9 +148,11 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   if (sendHasMultimodalOrAsset(input.currentChat) && !modelAcceptsImageInput()) {
     return 'This model has no image input, so image/asset content would need the browser caption fallback, which server prompt assembly cannot reproduce. Disable server prompt assembly to send it.'
   }
-  if (charHasImageGenInstruction(input.currentChar)) {
-    return 'Image-generation view instructions are not yet supported by server prompt assembly. Disable server prompt assembly to send.'
-  }
+  // Image-gen / emotion view instruction (class 3): now server-assembled (slice
+  // 3c). `buildInlayViewInstruction` (`prompt/staticSections.ts`) appends the same
+  // static `newGenData` / `viewScreen` `system` row the browser does, so a char
+  // with `inlayViewScreen` set no longer hard-fails here. The post-gen image
+  // generation / inlay-screen rendering stays a browser effect (B1).
   // Lua scripts (classes 4-6): the server Lua VM (slice 3b) runs the editRequest
   // hook at parity, so a `triggerlua` char routes `server`. The exception is a
   // script that references an interactive dialog API — it needs a browser dialog
@@ -215,12 +208,13 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
  *   3. single, non-group character.
  *   4. server-routable provider (reuse `resolveServerCompletionRoute`).
- *   5. no image-gen / interactive-Lua / pluginV2 content, and no non-vision
- *      caption case (image/asset/inlay content on a model without image input —
- *      class 2). Vision-model image/asset/inlay content is server-assembled
- *      (slice 3a). Lua now routes `server` — the VM runs the editRequest hook
- *      (slice 3b) — except scripts using an interactive dialog API, which stay
- *      `unsupported`; the pluginV2 arm is a permanent hard fail (no-port list).
+ *   5. no interactive-Lua / pluginV2 content, and no non-vision caption case
+ *      (image/asset/inlay content on a model without image input — class 2).
+ *      Vision-model image/asset/inlay content is server-assembled (slice 3a) and
+ *      the image-gen / emotion view instruction is server-assembled (slice 3c).
+ *      Lua now routes `server` — the VM runs the editRequest hook (slice 3b) —
+ *      except scripts using an interactive dialog API, which stay `unsupported`;
+ *      the pluginV2 arm is a permanent hard fail (no-port list).
  *   6. otherwise → `server`.
  *
  * From step 2 on (Fastify mode, flag on) the verdict is always `server` or

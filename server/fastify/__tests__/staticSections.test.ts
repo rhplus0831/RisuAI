@@ -8,6 +8,7 @@ import {
   buildAuthorNote,
   buildCotInstruction,
   buildDescription,
+  buildInlayViewInstruction,
   buildPersona,
 } from '../src/prompt/staticSections.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
@@ -218,5 +219,87 @@ describe('Phase 7-3 buildCotInstruction', () => {
     expect(buildCotInstruction(ctxFor(db), true)).toEqual([
       { role: 'system', content: COT_TEXT },
     ])
+  })
+})
+
+// Slice 3c: byte-parity with the SPA's buildInlayViewInstruction
+// (`src/ts/process/promptAssembly/buildStaticPromptSections.ts`). These mirror
+// the browser unit cases in `buildStaticPromptSections.test.ts` exactly — no
+// variable expansion, only the manual `{{slot}}` → emotionImages substitution.
+describe('Slice 3c buildInlayViewInstruction', () => {
+  it('returns [] when inlayViewScreen is false', () => {
+    const char = makeCharacter({
+      inlayViewScreen: false,
+      viewScreen: 'emotion',
+      newGenData: {
+        prompt: '',
+        negative: '',
+        instructions: '',
+        emotionInstructions: 'Pick from: {{slot}}',
+      },
+      emotionImages: [['happy', 'h.png']],
+    } as unknown as Partial<character>)
+    expect(buildInlayViewInstruction(char)).toEqual([])
+  })
+
+  it('emits the emotion instruction with {{slot}} replaced by the joined emotion names', () => {
+    const char = makeCharacter({
+      inlayViewScreen: true,
+      viewScreen: 'emotion',
+      newGenData: {
+        prompt: '',
+        negative: '',
+        instructions: '',
+        emotionInstructions: 'Pick from: {{slot}}',
+      },
+      emotionImages: [
+        ['happy', 'h.png'],
+        ['sad', 's.png'],
+      ],
+    } as unknown as Partial<character>)
+    expect(buildInlayViewInstruction(char)).toEqual([
+      { role: 'system', content: 'Pick from: happy, sad' },
+    ])
+  })
+
+  it('emits the emotion instruction with an empty {{slot}} when emotionImages is empty', () => {
+    const char = makeCharacter({
+      inlayViewScreen: true,
+      viewScreen: 'emotion',
+      newGenData: {
+        prompt: '',
+        negative: '',
+        instructions: '',
+        emotionInstructions: 'Pick from: {{slot}}',
+      },
+      emotionImages: [],
+    } as unknown as Partial<character>)
+    expect(buildInlayViewInstruction(char)).toEqual([
+      { role: 'system', content: 'Pick from: ' },
+    ])
+  })
+
+  it('emits the imggen instruction verbatim', () => {
+    const char = makeCharacter({
+      inlayViewScreen: true,
+      viewScreen: 'imggen',
+      newGenData: {
+        prompt: '',
+        negative: '',
+        instructions: 'Draw the scene.',
+        emotionInstructions: '',
+      },
+    } as unknown as Partial<character>)
+    expect(buildInlayViewInstruction(char)).toEqual([
+      { role: 'system', content: 'Draw the scene.' },
+    ])
+  })
+
+  it('returns [] when inlayViewScreen is on but viewScreen is none', () => {
+    const char = makeCharacter({
+      inlayViewScreen: true,
+      viewScreen: 'none',
+    } as unknown as Partial<character>)
+    expect(buildInlayViewInstruction(char)).toEqual([])
   })
 })

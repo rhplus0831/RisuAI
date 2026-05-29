@@ -26,6 +26,7 @@ drift; symbol names are the stable handle.
 | HypaV3 / prompt-memory selection | **AT PARITY** (server-owned) | `assemble.ts:870-916` |
 | Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyMutations` |
 | Multimodal / inlay asset bytes | **AT PARITY** (slice 3a) — route binds a non-empty `AssetLookup`; inlay bytes ride the request `inlayAssets`, asset/icon bytes come from the store | `prompt/assetLookup.ts` (`buildAssetLookup`) + `generationChat.ts` (`resolveStoredAssetImage`); bound in `assemble.ts::beginAssembly`, passed at `assemble.ts:fillHistoryAndBias` |
+| Image-gen / emotion view instruction | **AT PARITY** (slice 3c) — `fillStaticSlots` appends the static `newGenData`/`viewScreen` `system` row to `postEverything` (incl. `{{slot}}` → `emotionImages`); char with `inlayViewScreen` routes `server`. Post-gen image gen / inlay rendering stays B1. | `prompt/staticSections.ts` (`buildInlayViewInstruction`); wired `assemble.ts::fillStaticSlots`; classifier flip `serverPromptAssembly.ts` |
 | **Lua `editRequest`** | **AT PARITY (slice 3b sub-slice 2)** — `renderAndBudget` supplies a VM-backed hook (`buildLuaEditRequest`) over `formated` + the prompt-info capture; var writes flow into the chat-var delta. Classifier routes Lua `→ server` except interactive-API scripts. | hook `assemble.ts::renderAndBudget`/`buildLuaEditRequest` → `prompt/luaRuntime.ts` (`runLuaEditTrigger`); seam `templates.ts:635`; classifier `serverPromptAssembly.ts::luaUsesInteractiveApi` |
 | **Lua `editprocess`** | **AT PARITY (slice 3b sub-slice 3)** — wired at the two history `processScript('editprocess')` sites as a faithful runtime no-op (the Lua arm is a browser no-op) | `assemble.ts::fillHistoryAndBias` → `history.ts` `editProcess` seam → `prompt/luaRuntime.ts` |
 | **Lua `editinput` + input trigger (`'input'`)** | **AT PARITY (slice 3b sub-slice 4)** — `assemble.ts::runInputTrigger` (`runTrigger('input')`, `triggerlua` on the VM) + `applyEditInput` (Lua `editInput` → CBS → regex) run at submit; the browser sends raw user text and the route owns the post-`editinput` transcript write | `assemble.ts::runInputTrigger`/`applyEditInput`; `triggers.ts::runTrigger` `runLua` seam; `generationChat.ts::persistAssemblyMutations` |
@@ -36,11 +37,11 @@ drift; symbol names are the stable handle.
 | Final-message (generation result) persistence | **GAP by design** — still command-backed; browser POSTs `generation-result` (B2) | `index.svelte.ts:351` → `persistGenerationResultCommand` |
 
 The content rows that change prompt *bytes* are: (a) image/asset multimodal
-content — **now ported (slice 3a)**, (b) image-gen instruction (slice 3c, still
-GAP), (c) Lua `editRequest` / `editprocess` / `editinput` + the submit-time input
-trigger — **all now ported (slice 3b sub-slices 2/3/4)**; pluginV2's equivalents
-are *permanent* `unsupported`, not a gap to close, and (d) `'output'` triggers (an
-A2 concern; see
+content — **now ported (slice 3a)**, (b) image-gen instruction — **now ported
+(slice 3c)**, (c) Lua `editRequest` / `editprocess` / `editinput` + the submit-time
+input trigger — **all now ported (slice 3b sub-slices 2/3/4)**; pluginV2's
+equivalents are *permanent* `unsupported`, not a gap to close, and (d) `'output'`
+triggers (an A2 concern; see
 [`post-generation-and-persistence.md`](post-generation-and-persistence.md)).
 Everything else is at parity, so the supported text-send subset is already
 correct server-side — which is why A1's foundation batch can make it mandatory.
@@ -50,16 +51,19 @@ silently mis-assembled; each later slice graduates one.** `resolveServerPromptAs
 (`src/ts/process/request/serverPromptAssembly.ts`) detects each class via its own
 named predicate (multimodal/asset markers + `message[].multimodals`; interactive
 `triggerlua` source via `luaUsesInteractiveApi`; non-empty pluginV2 edit sets via
-`hasPluginV2EditSet`; `currentChar.inlayViewScreen`). **As of
+`hasPluginV2EditSet`). **As of
 slice 3a the multimodal/asset class routes `→ server`** for image-input models;
 the only surviving `unsupported` multimodal sub-case is **class 2** (image/asset
 content on a model *without* `LLMFlags.hasImageInput`, whose browser-only
 `runImageEmbedding` caption has no server equivalent). **As of slice 3b sub-slice 2
 Lua routes `→ server`** (the VM runs the editRequest hook), *except* scripts using
-an interactive dialog API, which stay `unsupported`. The image-gen (3c) predicate
-still routes `→ unsupported`; **the pluginV2 arm (3b) is a *permanent* `→
-unsupported`** (no-port list), split into its own predicate (slice 3b) so the Lua
-sub-classes can flip independently and guarded by the `A4R-pluginv2` audit invariant.
+an interactive dialog API, which stay `unsupported`. **As of slice 3c the image-gen
+instruction routes `→ server`** (the static `newGenData`/`viewScreen` row is
+assembled by `buildInlayViewInstruction`; the `charHasImageGenInstruction`
+predicate is deleted, so `inlayViewScreen` no longer forces a hard fail). **The
+pluginV2 arm (3b) is a *permanent* `→ unsupported`** (no-port list), split into its
+own predicate (slice 3b) so the Lua sub-classes can flip independently and guarded
+by the `A4R-pluginv2` audit invariant.
 
 ## `prompt/assemble.ts` — the facade
 
@@ -244,7 +248,7 @@ before persisting.
 | `providerTransport.ts` | Maps provider frames to SSE `token`/`done`/`side_effect`. |
 | `scripts.ts` | Regex-script processor (`processScript`); Lua calls it through the ported edit hooks, pluginV2 deferred forever. |
 | `sseEvents.ts` | SSE event taxonomy + `writePromptChatEvent` (defines `message_patch`, etc.). |
-| `staticSections.ts` | `buildDescription`/`buildPersona`/`buildAuthorNote`/`buildCotInstruction`. |
+| `staticSections.ts` | `buildDescription`/`buildPersona`/`buildAuthorNote`/`buildCotInstruction`/`buildInlayViewInstruction` (image-gen, slice 3c). |
 | `tokenizerConfig.ts` | Shared tokenizer config from `db.aiModel`. |
 | `tokens.ts` | Minimal server tokenizer. |
 | `triggerDataEffects.ts` | V2 trigger "safe data helper" leaf arms. |

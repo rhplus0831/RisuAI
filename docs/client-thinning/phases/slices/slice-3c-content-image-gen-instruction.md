@@ -21,8 +21,18 @@ Date: 2026-05-29
 
 ## Preconditions
 
-- [ ] Slice 1 landed; image-gen-instruction sends currently route `unsupported`.
-- [ ] `pnpm api:test` + serverBacked sweep green.
+- [x] Slice 1 landed; image-gen-instruction sends currently route `unsupported`.
+- [x] `pnpm api:test` + serverBacked sweep green.
+
+> **Status: DONE (2026-05-30).** `buildInlayViewInstruction` is ported into
+> `server/fastify/src/prompt/staticSections.ts` and wired into
+> `assemble.ts::fillStaticSlots` (appended to `postEverything` after the
+> chain-of-thought row); the classifier's `charHasImageGenInstruction` predicate
+> is deleted so `inlayViewScreen` routes `server`. Parity is proven by the
+> `image-gen-emotion` / `image-gen-imggen` fixtures (local golden + serverBacked
+> byte-parity in `sendChat.fixtures.serverBacked.test.ts` Describe B), the server
+> `staticSections.test.ts` unit cases, the `generation.chat.test.ts` row
+> assertions, and the flipped classifier case.
 
 ## Step-by-step
 
@@ -89,7 +99,7 @@ browser-side. Do not port multimodal bytes (3a) or scripts (3b) here.
 
 ## When this slice is done
 
-- [ ] The server assembler appends the `newGenData`/`viewScreen` instruction row
+- [x] The server assembler appends the `newGenData`/`viewScreen` instruction row
       with byte-parity to the browser (incl. `{{slot}}` substitution).
-- [ ] The classifier routes image-gen-instruction sends to `server`.
-- [ ] A parity fixture is green; the B1 image generation/rendering is untouched.
+- [x] The classifier routes image-gen-instruction sends to `server`.
+- [x] A parity fixture is green; the B1 image generation/rendering is untouched.

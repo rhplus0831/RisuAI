@@ -250,6 +250,16 @@ describe('resolveServerPromptAssembly', () => {
       })
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
+
+    // Slice 3c: the image-gen / emotion view instruction is now server-assembled
+    // (`buildInlayViewInstruction` ported into the server static-section pass), so
+    // a char with `inlayViewScreen` set routes `server` instead of the pre-slice
+    // hard fail. The post-gen image generation / inlay rendering stays a browser
+    // effect (B1) — only the instruction text moved.
+    it('routes a char with an image-gen view instruction to server (slice 3c)', () => {
+      const input = makeInput({ currentChar: makeChar({ inlayViewScreen: true } as never) })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
   })
 
   describe('unsupported — hard-fail, never a silent local fallback', () => {
@@ -301,11 +311,6 @@ describe('resolveServerPromptAssembly', () => {
           { role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] },
         ]),
       })
-      expectUnsupported(resolveServerPromptAssembly(input))
-    })
-
-    it('rejects a character with an image-gen view instruction (slice 3c)', () => {
-      const input = makeInput({ currentChar: makeChar({ inlayViewScreen: true } as never) })
       expectUnsupported(resolveServerPromptAssembly(input))
     })
 

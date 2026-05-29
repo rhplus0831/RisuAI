@@ -1,6 +1,6 @@
 # Chat-Process Ownership (sendChat)
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 The detailed blocker triage for "the server owns the chat process." Read this for
 any batch touching chat submission, prompt assembly, server chat SSE, provider
@@ -22,7 +22,7 @@ requests a write** — it never becomes the authority.
 | Stage | Default owner | Notes |
 | --- | --- | --- |
 | Pre-send input | Browser | UID/input plumbing; rows persist via commands (B1). |
-| Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models + non-interactive Lua edit/input hooks** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier; slice 3a graduated multimodal/asset; slice 3b graduated Lua `editRequest`, `editprocess`, input-trigger, and `editinput`. Remaining `unsupported`: non-vision caption (class 2), image-gen (3c), interactive Lua dialogs, and permanent pluginV2. |
+| Prompt assembly | **Server-mandatory for the text-send subset + multimodal/asset on vision models + non-interactive Lua edit/input hooks + image-gen instruction** (`resolveServerPromptAssembly`); Browser (`assembleLocalSendChatPrompt`) only when `!isFastifyServer` or the flag is off | Slice 1 landed the classifier; slice 3a graduated multimodal/asset; slice 3b graduated Lua `editRequest`, `editprocess`, input-trigger, and `editinput`; slice 3c graduated the image-gen instruction. Remaining `unsupported`: non-vision caption (class 2), interactive Lua dialogs, and permanent pluginV2. |
 | Provider dispatch | **Server** (`/generate/completion`) | `resolveServerCompletionRoute`; `local` only if `!isFastifyServer`; unsupported → hard fail (**A3**). |
 | Token streaming → rows | Browser | Writes the projection. |
 | Post-generation | **Browser** | `editoutput`, inlay-screen, output trigger, auto-continue, IGP (blocker **A2** for the durable ones). |
@@ -36,8 +36,9 @@ requests a write** — it never becomes the authority.
 
 The server `/generate/chat` assembler (`server/fastify/src/prompt/`) is at parity
 for run-vars, CBS/variable expansion, regex scripts, templates, token budget,
-lorebook + depth prompts, start triggers, HypaV3 selection, and **multimodal /
-asset inlining (slice 3a)**. Current content rows:
+lorebook + depth prompts, start triggers, HypaV3 selection, **multimodal /
+asset inlining (slice 3a)**, and the **image-gen instruction (slice 3c)**. Current
+content rows:
 
 - **Multimodal / asset inlining** — **DONE (slice 3a).** `beginAssembly` binds a
   non-empty `AssetLookup` (`prompt/assetLookup.ts`): inlay bytes from the request
@@ -45,8 +46,11 @@ asset inlining (slice 3a)**. Current content rows:
   from the store (`resolveStoredAssetImage`). Vision models → `server`.
 - **Non-vision image-caption fallback** — browser-only (`runImageEmbedding`);
   routes `unsupported` (slice 3a class 2). No server path.
-- **Image-gen instruction** (`buildInlayViewInstruction` / `newGenData`) — not
-  ported (slice 3c).
+- **Image-gen instruction** (`buildInlayViewInstruction` / `newGenData`) — **DONE
+  (slice 3c).** `fillStaticSlots` appends the same static `newGenData` /
+  `viewScreen` `system` row to `postEverything` (incl. `{{slot}}` → `emotionImages`
+  substitution). Routes `server`. The post-gen image generation / inlay rendering
+  stays a browser effect (B1).
 - **Lua `editRequest`, `editprocess`, input-trigger, and `editinput`** — **DONE
   (slice 3b).** Non-interactive `triggerlua` routes `server`; interactive dialog
   APIs (`alertInput`/`alertSelect`/`alertConfirm`) route `unsupported`.
@@ -62,20 +66,21 @@ fallback.
 `resolveServerCompletionRoute` and returns `local | server | unsupported`. It
 replaced the boolean gate at `index.svelte.ts`: in Fastify mode with
 `useServerPromptAssembly` on, the supported subset routes `server` (local
-assembler unreachable for it), and each unported/unsupported class (image-gen,
-interactive Lua, pluginV2, non-vision caption), a non-user-message send, a group
+assembler unreachable for it), and each unported/unsupported class (interactive
+Lua, pluginV2, non-vision caption), a non-user-message send, a group
 character, and a non-server-routable provider route `unsupported` and hard-fail. The soft
 `unavailable` escape (the silent non-string-`send` → local fall-through) is
 deleted. `local` is reached only when `!isFastifyServer` or the flag is off.
 
-**Remaining A1 work — content graduation (slice 3c):** each later content
-slice ports one class to the server assembler and flips its detector in the
-classifier from `→ unsupported` to `→ server`. **Slices 3a and 3b are done**
-(multimodal/asset → `server` for image-input models; Lua edit/input hooks →
-`server` except interactive dialogs). Non-vision caption stays `unsupported`.
-Each detector is isolated behind its own named predicate. The classifier still
-reads `useServerPromptAssembly` as the experimental master enable; removing that
-flag is the END of the sub-family, after the last content class graduates.
+**A1 content graduation — complete:** each content slice ports one class to the
+server assembler and flips its detector in the classifier from `→ unsupported` to
+`→ server`. **Slices 3a, 3b, and 3c are done** (multimodal/asset → `server` for
+image-input models; Lua edit/input hooks → `server` except interactive dialogs;
+image-gen instruction → `server`). Non-vision caption stays `unsupported` (no
+server caption pipeline). Each detector is isolated behind its own named
+predicate. The classifier still reads `useServerPromptAssembly` as the
+experimental master enable; removing that flag is the END of the sub-family, now
+that the last content class has graduated.
 
 ### A2 — Post-generation durable derivation (no server path)
 
@@ -88,8 +93,8 @@ flag is the END of the sub-family, after the last content class graduates.
   output-script execution.
 
 Both depend on server post-generation script execution and reuse the Lua/trigger
-machinery that A1 now has for assembly-time hooks. Sequence after A1's remaining
-image-gen instruction slice.
+machinery that A1 now has for assembly-time hooks. A1 content graduation is
+complete (slices 3a/3b/3c), so A2 (slice 4) is the next batch.
 
 ### A3 — Provider coverage
 

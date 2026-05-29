@@ -904,6 +904,99 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
+  // Slice 3c: the image-gen / emotion view instruction (`buildInlayViewInstruction`)
+  // now assembles server-side. These fixtures set `inlayViewScreen` (one `emotion`,
+  // one `imggen`); the assertion pins that the server-assembled `system` instruction
+  // row is byte-identical to the local golden, including the `{{slot}}` →
+  // `emotionImages` substitution. The post-gen image generation / inlay rendering
+  // stays a browser effect (B1) and is untouched here.
+  const IMAGE_GEN_PARITY = [
+    {
+      name: 'image-gen-emotion',
+      marker: 'Pick an emotion from:',
+      expected: 'Pick an emotion from: happy, sad',
+    },
+    {
+      name: 'image-gen-imggen',
+      marker: 'Generate an image of the current scene.',
+      expected: 'Generate an image of the current scene.',
+    },
+  ] as const
+
+  it.each(IMAGE_GEN_PARITY)(
+    'assembles the $name view instruction row server-side with byte-parity to the local golden (slice 3c)',
+    async ({ name, marker, expected }) => {
+      const harness = await createRouteBackedHarness()
+      try {
+        const loaded = await loadFixture(name)
+        cleanups.push(loaded.cleanup)
+
+        // Mirror prepareRouteBackedFixture's prompt setup (these fixtures are not
+        // in the parametrized ROUTE_BACKED_CHAT_FIXTURES set). The
+        // `promptTemplate: null` → `[]` import coercion is cleared to `undefined`
+        // so the format-order path runs (same workaround as the slice 3a test).
+        const char = DBState.db.characters[0]
+        char.chats[char.chatPage ?? 0].id = 'chat-route-backed'
+        ;(DBState.db as typeof DBState.db & { currentChar: number }).currentChar = 0
+        DBState.db.mainPrompt = defaultMainPrompt
+        DBState.db.formatingOrder = [
+          'main',
+          'description',
+          'personaPrompt',
+          'chats',
+          'lastChat',
+          'jailbreak',
+          'lorebook',
+          'globalNote',
+          'authorNote',
+        ]
+        DBState.db.promptSettings = {
+          assistantPrefill: '',
+          postEndInnerFormat: '',
+          sendChatAsSystem: false,
+          sendName: false,
+          utilOverride: false,
+          ...(DBState.db.promptSettings ?? {}),
+        }
+        DBState.db.useServerPromptAssembly = true
+        ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
+
+        await harness.seed(DBState.db)
+        vi.stubGlobal('fetch', harness.fetch)
+        harness.setDispatchText('Hello there!')
+
+        clearCachedServerCommandRevision()
+        setServerProjectionWriteGuardEnabled(true)
+        const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+        expect(ok).toBe(true)
+
+        // The send routed server-side (classifier flip: image-gen → server), and
+        // the assembled prompt carries the instruction row.
+        expect(harness.dispatchCalls).toHaveLength(1)
+        const serverFormated = harness.dispatchCalls[0].formated as Array<Record<string, unknown>>
+        const serverRow = serverFormated.find(
+          (row) => typeof row.content === 'string' && (row.content as string).includes(marker),
+        )
+
+        const golden = await loadExpected(name)
+        const goldenFormated = golden.providerCalls[0].formated as Array<Record<string, unknown>>
+        const goldenRow = goldenFormated.find(
+          (row) => typeof row.content === 'string' && (row.content as string).includes(marker),
+        )
+
+        // The golden proves the local assembler substituted `{{slot}}`; the server
+        // row proves the port reproduces it byte-for-byte.
+        expect(goldenRow).toEqual({ role: 'system', content: expected })
+        expect(serverRow).toEqual(goldenRow)
+        // No local provider/completion fallback — the prompt was server-assembled.
+        expect(getServerCompletionCalls()).toEqual([])
+      } finally {
+        await drainRouteBackedCommands()
+        await harness.close()
+      }
+    },
+  )
+
   // Slice 3b sub-slice 4: the submit-time `editinput` transform now runs on the
   // server (the route), not the browser. This route-backed integration test
   // proves the full path end-to-end: the browser ships the *raw* user text, the

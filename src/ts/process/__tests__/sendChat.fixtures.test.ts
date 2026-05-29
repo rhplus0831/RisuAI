@@ -150,6 +150,8 @@ const FIXTURES = [
   'lorebook-constant',
   'lorebook-recursive',
   'multimodal-image',
+  'image-gen-emotion',
+  'image-gen-imggen',
   'hypav3-memory',
   'editrequest-trigger',
   'editoutput-trigger',

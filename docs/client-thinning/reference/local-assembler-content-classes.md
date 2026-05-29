@@ -21,7 +21,7 @@ the stable handle.
 | --- | --- | --- | --- | --- |
 | 1 | Multimodal / asset inlining | `promptAssembly/formatHistoryMessage.ts:73-193` | prompt rows (`multimodals`+content) | A1 — **ported (slice 3a)**: server binds `AssetLookup`; image-input models → `server` |
 | 2 | Non-vision image-caption fallback | `transformers.ts:111`; call `formatHistoryMessage.ts:111-114` | prompt row content | A1 — **`unsupported` (slice 3a class 2)**: browser-only ML, no server path |
-| 3 | Image-gen instruction | `promptAssembly/buildStaticPromptSections.ts:47`; call `sendChatPromptAssembly.ts:114` | prompt rows (`postEverything`) | A1 — port (static char config) |
+| 3 | Image-gen instruction | `promptAssembly/buildStaticPromptSections.ts:47`; call `sendChatPromptAssembly.ts:114` | prompt rows (`postEverything`) | A1 — **ported (slice 3c)**: server appends the `newGenData`/`viewScreen` system row; char with `inlayViewScreen` → `server` |
 | 4 | Lua `editRequest` | `promptAssembly/renderFinalPrompt.ts:384`; engine `scriptings.ts:1415,1117-1126` | request rows | A1 — **ported (slice 3b sub-slice 2)** for non-interactive Lua |
 | 5 | Lua + pluginV2 `editprocess` | `formatHistoryMessage.ts:44-52`; pluginV2 `scripts.ts:151-158` | prompt row content | A1 — Lua **ported** as browser no-op parity (slice 3b sub-slice 3); pluginV2 **permanent unsupported** |
 | 6 | Input-trigger / `editinput` at submit | `DefaultChatScreen.svelte:232,240` | chat transcript | A1 — **ported (slice 3b sub-slice 4)** for non-interactive Lua/regex; interactive Lua dialogs unsupported |
@@ -93,10 +93,19 @@ instruction strings:
 - `viewScreen === 'imggen'` → `newGenData.instructions`.
 
 Gated by `currentChar.inlayViewScreen`. **Needs:** static character fields only
-(`inlayViewScreen`, `viewScreen`, `newGenData.*`, `emotionImages`) — portable to
-the server in principle; the actual image generation / inlay rendering is a
-separate post-gen browser effect (`src/ts/process/inlayScreen.ts`, B1).
+(`inlayViewScreen`, `viewScreen`, `newGenData.*`, `emotionImages`).
 **Mutates:** adds a `system` row to the prompt.
+
+**Server port (done, slice 3c):** `prompt/staticSections.ts::buildInlayViewInstruction`
+reproduces the logic byte-for-byte (no variable expansion — the SPA builder does
+not run `risuChatParser`, only the manual `{{slot}}` → `emotionImages` swap), and
+`assemble.ts::fillStaticSlots` appends it to `postEverything` after the
+chain-of-thought row, mirroring the SPA push at `sendChatPromptAssembly.ts:114`.
+The character config is already on the server's loaded `Database`, so no new
+request field is needed. `resolveServerPromptAssembly` routes a char with
+`inlayViewScreen` set to `server`. **The actual image generation / inlay-screen
+rendering stays a post-gen browser effect** (`src/ts/process/inlayScreen.ts`,
+`runStage4.ts`, B1) — only the instruction text moved.
 
 ## 4. Lua `editRequest`
 

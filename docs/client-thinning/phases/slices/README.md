@@ -44,7 +44,7 @@ slice 1   DONE: text-send → server when flag on; unsupported content hard-fail
 slice 2   DONE: assembly-time scriptstate persists in /generate/chat
 slice 3a  DONE: image-input multimodal/asset → server; non-vision caption → unsupported
 slice 3b  DONE: pluginV2 permanent unsupported; Lua edit/input hooks → server
-slice 3c  OPEN: image-gen instruction → server
+slice 3c  DONE: image-gen instruction → server
 ```
 
 Slice 3b split in two: **pluginV2** is permanent `unsupported` (landed 2026-05-29,
@@ -67,8 +67,9 @@ slice 2 (C-A1) ── landed ─────────────────
 
 - **Slice 1 is the landed gate** for every A1 content slice (3a/3b/3c).
 - **Slice 2 (C-A1)** is landed and remains separate from A2 durable post-gen work.
-- **3a and 3b are landed; 3c remains independent.** Slice 4's durable
-  derivations reuse the same trigger/script machinery, but run after generation.
+- **3a, 3b, and 3c are landed — A1 content graduation is complete.** Slice 4's
+  durable derivations reuse the same trigger/script machinery, but run after
+  generation.
 
 ## Shared definition of done
 
