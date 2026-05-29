@@ -3,13 +3,17 @@
 Date: 2026-05-29
 Status: **DRAFT spec** — to implement under the durable-generation workstream
 (`../README.md`). Milestone 1 = survive client disconnect only.
+**Revised 2026-05-30 (decision #2):** the A2 post-gen path is in-subset, so the two
+post-gen exclusions (output trigger, `editoutput`) are **removed** — slice 4 landed,
+and Step 3 persists the derived result. The gate is now a thin wrapper over
+`resolveServerPromptAssembly` + the `send`-mode check.
 
 | | |
 | --- | --- |
 | **Workstream / milestone / step** | Durable generation · Milestone 1 (disconnect-only) · Step 1 |
 | **Depends on** | client-thinning **slice 1** (`resolveServerPromptAssembly`, landed) |
 | **Reference** | `../README.md` ("Supported subset", "Coverage ceiling"); `src/ts/process/request/serverPromptAssembly.ts`; `serverCompletion.ts`; client-thinning `slice-4` (A2) |
-| **Goal** | A pure classifier that decides whether a send is **durable-generation-eligible** — server-assembled *and* free of post-generation derivation the server cannot yet persist. No behavior change yet; Step 2 consumes the verdict to route the job path. |
+| **Goal** | A pure classifier that decides whether a send is **durable-generation-eligible** — i.e. server-assembled (the A2 post-gen path is in-subset per decision #2; Step 3 persists the derived result). No behavior change yet; Step 2 consumes the verdict to route the job path. |
 
 ## Why a NEW two-arm verdict (do not copy the 3-arm precedent)
 
@@ -51,41 +55,38 @@ resolveDurableGeneration(input):
        → non-durable(assembly.type === 'unsupported' ? assembly.reason : 'not server-assembled')
      // This single delegation inherits ALL of: !isFastifyServer, flag off,
      // non-text send, group char, non-server-routable provider, and the
-     // asset / image-gen / Lua / pluginV2 content classes. In particular,
-     // assembly === 'server' GUARANTEES no Lua and no pluginV2 hooks.
-  3. no post-gen OUTPUT TRIGGER:
-       if (currentChar.triggerscript ?? []).some(t => t.type === 'output')
-          || getModuleTriggers().some(t => t.type === 'output')
-       → non-durable('an output trigger derives post-gen state the server cannot yet persist (A2 / slice 4)')
-  4. no post-gen EDITOUTPUT regex script:
-       if [char.customscript, db.presetRegex, getModuleRegexScripts()].flat()
-            .some(s => s.type === 'editoutput')
-       → non-durable('an editoutput script derives post-gen text the server cannot yet apply (A2 / slice 4)')
-  5. → durable
+     // asset / image-gen / pluginV2 / interactive-Lua content classes.
+     // assembly === 'server' excludes pluginV2 hooks and interactive Lua dialogs;
+     // non-interactive Lua is IN-subset (the server Lua VM landed, slice 3b).
+  3. → durable
+     // Decision #2 (2026-05-30): output triggers and editoutput are NO LONGER
+     // excluded. Slice 4 (A2) landed, so Step 3 runs runServerPostGeneration at
+     // completion and persists the derived final text + scriptstate delta
+     // server-side. There is no remaining post-gen surface this gate must screen.
 ```
 
-Grounding: `triggerscript.type` is the trigger mode (`triggers.ts:47`), matched by
-`runTrigger` via `mode !== trigger.type` (`triggers.ts:1366`). `customscript.type`
-is the `ScriptMode` (`scripts.ts:29`). Steps 3–4 catch only the **non-Lua / regex**
-post-gen surface — the Lua/pluginV2 output hooks are already excluded at step 2.
+Grounding: `assembly === 'server'` already encodes the content gating
+(`resolveServerPromptAssembly`). The gate adds only the `send`-mode restriction;
+output-trigger / `editoutput` detection is no longer needed here because the durable
+job derives and persists those at completion (Step 3).
 
 ## Composition: the subset grows as other slices land
 
-This gate adds exactly **two** exclusions (steps 3–4) on top of the assembly subset.
-Everything else is inherited, so durable coverage widens automatically as the
-assembly subset widens. When each exclusion is removed:
+This gate adds exactly **one** restriction (mode = `send`) on top of the assembly
+subset; all content gating is inherited from `resolveServerPromptAssembly`, so durable
+coverage widens automatically as the assembly subset widens. Status of each class:
 
-| Exclusion | Owner | Removed when |
+| Class | Owner | Status |
 | --- | --- | --- |
-| asset / multimodal / image-gen | assembly gate | slices 3a / 3c |
-| Lua content | assembly gate | slice 3b + server Lua VM |
-| pluginV2 content | assembly gate | **never** (permanent unsupported) |
-| **output trigger (non-Lua)** | this gate, step 3 | **slice 4** (server post-gen pass) |
-| **editoutput regex** | this gate, step 4 | **slice 4** (server post-gen pass) |
-| mode ≠ `send` | this gate, step 1 | durable-gen follow-up (continue / regenerate) |
+| asset / multimodal / image-gen | assembly gate | landed (slices 3a / 3c) — in-subset for vision models |
+| Lua content (non-interactive) | assembly gate | landed (slice 3b + server Lua VM) — in-subset |
+| pluginV2 content; interactive-Lua dialogs | assembly gate | **never** (permanent unsupported) |
+| output trigger / `editoutput` post-gen | (was this gate) | **removed 2026-05-30 (decision #2)** — slice 4 landed; Step 3 persists the derived result |
+| mode ≠ `send` | this gate | open — durable-gen follow-up (continue / regenerate) |
 
-**Do not let steps 3–4 become permanent.** When client-thinning slice 4 lands the
-server `'output'` trigger + `editoutput` pass, delete those two exclusions here.
+The two post-gen exclusions are **gone (decision #2)**: slice 4 landed the server
+`'output'` trigger + `editoutput` pass, so the durable job derives and persists those
+at completion (Step 3) rather than excluding them.
 
 ## Wiring (Step 1 is behavior-neutral)
 
@@ -104,31 +105,29 @@ Unit tests on the pure function (mirror `serverPromptAssembly.test.ts`):
 - `useServerPromptAssembly` off → `non-durable`.
 - each inherited assembly exclusion (asset, image-gen, Lua trigger, pluginV2 hook,
   group char, non-routable provider, non-text send) → `non-durable`.
-- char with an `'output'` `triggerscript` whose effect is **non-Lua** (e.g.
-  `v2SetVar`) → `non-durable` (proves step 3 catches what the assembly gate doesn't).
-- a **module** with an `'output'` trigger → `non-durable`.
+- char with an `'output'` `triggerscript` (e.g. `v2SetVar`) → `durable` (decision #2:
+  in-subset; Step 3 runs the post-gen pass and persists the derived state).
+- a **module** with an `'output'` trigger → `durable`.
 - `char.customscript` / `db.presetRegex` / module regex with `type: 'editoutput'`
-  → `non-durable`.
-- **Positive (durable):** clean text `send`, single non-group char,
-  server-routable provider, flag on, no output trigger, no editoutput.
-- **Discriminating positive:** a char with a `'start'` trigger and an `'editprocess'`
-  / `'editinput'` regex (assembly-time, server-parity) but no output-trigger/editoutput
-  → `durable` (assembly-time scripts must NOT block durability).
+  → `durable`.
+- **Positive (durable):** clean text `send`, single non-group char, server-routable
+  provider, flag on — with or without an output trigger / `editoutput`.
+- **Discriminating positive/negative:** a char with non-interactive Lua (server VM)
+  → `durable`; a char with an *interactive* Lua dialog (`alertInput`) → `non-durable`
+  (inherited from the assembly gate, not this gate).
 
 ## Scope guard
 
 - Build the classifier + tests only. **No job path** (Step 2), **no transport**
   (WS-vs-SSE is a Step 2 decision), **no `sendChat` wiring**.
-- Do not touch the assembly classifier's arms (those graduate via slices 3a/3b/3c).
-- Do not remove the output-trigger / editoutput exclusions (slice 4's job).
+- Do not touch the assembly classifier's arms (content gating lives there).
 - `send` mode only.
 
 ## When this step is done
 
 - [ ] `resolveDurableGeneration` exists as a pure function returning
-      `durable | non-durable(reason)`, delegating to `resolveServerPromptAssembly`.
-- [ ] The two post-gen exclusions (output trigger, editoutput regex) are grounded
-      in `triggerscript.type === 'output'` and `customscript.type === 'editoutput'`.
-- [ ] The negative + discriminating-positive tests above are green.
+      `durable | non-durable(reason)`, delegating to `resolveServerPromptAssembly`
+      plus the `send`-mode restriction (no separate post-gen exclusion — decision #2).
+- [ ] The negative + discriminating tests above are green (incl. output-trigger /
+      `editoutput` sends now resolving `durable`).
 - [ ] It is **unwired** (no behavior change); Step 2 will consume it.
-- [ ] A code comment ties steps 3–4 to slice 4 so they're removed when A2 lands.

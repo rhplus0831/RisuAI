@@ -9,6 +9,31 @@ so following client-thinning's docs never pulls an agent into this draft.
 Surviving a server *restart* mid-generation is a deferred Milestone 2 — that is the only
 part that needs disk-persisted jobs.
 
+## Decisions (2026-05-30)
+
+Owner decisions refining this draft:
+
+1. **Sequencing — activate after the pending client-thinning batches.** Order:
+   provider-resolver unification (client-thinning closeout decision #5) →
+   `useServerPromptAssembly` default-on (closeout decision #1) → durable-generation
+   M1. Rationale: "the client only sends a request" needs server assembly as the
+   *default* path (#1), and the unified resolver (#5) removes the
+   completion-vs-`/chat` divergence the durable job dispatches through.
+2. **M1 coverage INCLUDES the A2 post-gen path.** The subset is widened to include
+   output triggers and `editoutput` (the draft previously excluded them). This is now
+   feasible because client-thinning **slice 4 (A2) landed**: the durable job runs the
+   server post-gen pass (`runServerPostGeneration`) at completion and persists the
+   *derived* final text + scriptstate delta. Consequence: Step 1 drops its two
+   post-gen exclusions, and Step 3 now **depends on** slice 4 (landed) and runs the
+   A2 pass server-side (it is no longer the "sidesteps A2" narrow case).
+3. **M1 stays disconnect-only (in-memory).** Surviving a server *restart* remains
+   Milestone 2. Rationale: a single-user self-host server, and a chat generation is
+   not a long-running job — the in-memory job window is short, so restart-survival is
+   low-value for now.
+
+Deferred (see [`../deferred.md`](../deferred.md)): locating the `/chat` writer/423
+gate — a code-location lookup, not a design decision.
+
 ## Goal
 
 The client only *sends a request*. From there the server owns the generation:
@@ -73,13 +98,17 @@ restriction of this (below) and likewise never silently downgrades.
 
 ## Supported subset (the drift fence)
 
-Durable generation applies only to sends where:
+Durable generation applies to sends where:
 
 - `resolveServerPromptAssembly(...) === 'server'` (server-assembled, server-routable
-  provider, single non-group character, no asset / image-gen / Lua / plugin content), **and**
-- **no post-gen A2 derivation** — no `runTrigger('output')` (this includes CBS/regex
-  output triggers, which the *assembly* classifier does **not** screen) and no
-  `editoutput`.
+  provider, single non-group character, no asset / image-gen / pluginV2 content; Lua
+  non-interactive content is in-subset now that the server Lua VM landed).
+
+Post-gen A2 derivation (`runTrigger('output')` incl. CBS/regex output triggers, and
+`editoutput`) is **in-subset as of decision #2 (2026-05-30)** — the durable job runs
+the server post-gen pass at completion and persists the derived result (see Step 3).
+The draft's earlier "no post-gen derivation" exclusion is removed because slice 4 (A2)
+landed.
 
 Out-of-subset sends keep today's connection-scoped flow, unchanged.
 
@@ -109,17 +138,19 @@ stay client-bound even with the VM.
 **Milestone 1 — survive client disconnect (in-memory).**
 
 - **Step 1 — pin the subset gate:** a `resolveDurableGeneration`-style classifier on
-  top of `resolveServerPromptAssembly` + the post-gen exclusion above. Spec:
+  top of `resolveServerPromptAssembly` (per decision #2, no separate post-gen
+  exclusion — output triggers / `editoutput` are in-subset). Spec:
   [`steps/step-1-subset-gate.md`](steps/step-1-subset-gate.md).
 - **Step 2 — decouple the lifecycle:** route `/generate/chat`'s provider stream through
   a generation `JobRegistry` instead of `req.raw.on('close') → abort`, for the subset.
   Return a jobId; let the client attach/reattach over SSE. (EC-D3 + the *lifecycle*
   half of EC-D1; full persistence is Step 3.) Spec:
   [`steps/step-2-lifecycle-decoupling.md`](steps/step-2-lifecycle-decoupling.md).
-- **Step 3 — server-owned result persistence:** extend C-A1's route persistence from
-  assembly-time scriptstate to the assistant result. (The *persistence* half of EC-D1,
-  plus EC-D2, EC-D4.) Unblocked without slice 4 because the subset excludes the A2
-  post-gen surface. Spec:
+- **Step 3 — server-owned result persistence:** at job completion, run the A2 server
+  post-gen pass (`runServerPostGeneration`, slice 4, landed) and extend C-A1's route
+  persistence from assembly-time scriptstate to the *derived* assistant result +
+  post-gen scriptstate delta. (The *persistence* half of EC-D1, plus EC-D2, EC-D4.)
+  Now depends on slice 4 (per decision #2). Spec:
   [`steps/step-3-server-owned-result-persistence.md`](steps/step-3-server-owned-result-persistence.md).
 
 **Milestone 2 — survive server restart (deferred).** Disk-persist job state/result;
@@ -156,10 +187,12 @@ of scope until Milestone 1 lands.
 
 ## Still open — locate before implementing
 
-- **`/chat` writer/423 gate location:** the submission gate must hook into wherever
-  `/chat` enforces the active writer today — the grep found no `activeWriter`
-  enforcement in `generationChat.ts` / `mutations.ts`, so find it first. A code-location
-  lookup, not a design decision.
+- **`/chat` writer/423 gate location** — **deferred 2026-05-30** to
+  [`../deferred.md`](../deferred.md). The submission gate must hook into wherever
+  `/chat` enforces the active writer today (the grep found no `activeWriter`
+  enforcement in `generationChat.ts` / `mutations.ts`). A code-location lookup, not a
+  design decision; only needed once Step 2 starts, which is sequenced after the
+  pending client-thinning batches (decision #1).
 
 ---
 
