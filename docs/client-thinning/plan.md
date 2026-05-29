@@ -98,6 +98,35 @@ invalidation, `.risu` import/export/bundle routes, asset-byte routes and
 reference validation baseline, backup/restore coverage, provider secret masking,
 and Fastify provider dispatch for supported provider shapes.
 
+## Out Of Scope Here: Durable-Generation Goal (Separate Workstream)
+
+The owner's broader goal — the client only *sends a request*; the server keeps
+processing if the client disconnects (does not treat it as failed) and persists the
+result so a returning client can read the completed chat — is a **separate
+workstream**, not part of this plan. Client-thinning moves *authority over the
+correctness of state* server-side; it does not make the server own the *generation
+lifecycle*. **Completing every blocker here (A1/A2/B) does not by itself reach that
+goal** — and a closeout must not be read as reaching it. Today
+`server/fastify/src/routes/generationChat.ts` aborts the provider call on client
+disconnect (`req.raw.on('close')`) and the result is persisted by a browser command
+replay; both are the opposite of durable generation.
+
+Do **not** implement durable-generation work inside the Phase 4 slices. Its pieces
+are partially ordered relative to this plan:
+
+- **Lifecycle decoupling** (run generation as a `generationId`-keyed task that
+  survives disconnect) is independent of A1/A2 — prototypable on its own.
+- **Server-owned result persistence** is *gated on A2*: persisting the result
+  server-side while the browser still derives `editoutput`/output-trigger mutations
+  causes split-brain. Slice 2 (C-A1) moves *assembly-time* scriptstate persistence
+  server-side — a prerequisite, not this goal.
+- **A `generationId` job/read + reconnect contract** (status + accumulated output +
+  `Last-Event-ID` replay or a read endpoint) replaces today's deferred SSE-reconnect
+  gap.
+
+Reference architecture: HypaV3 memory already runs as a server-side job with server
+persistence and a transient browser progress projection.
+
 ## Near-Term Order
 
 1. Run `pnpm client-thinning:audit`. If red, fix or triage before runtime work.

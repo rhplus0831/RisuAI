@@ -123,6 +123,10 @@ write, and that a non-active-writer `/chat` does not persist.
 - Do not port browser UI/display ownership.
 - Do not widen provider support while removing prompt/post-gen branches.
 - Do not combine A1 content classes, A2, and group-chat removal in one batch.
+- **Durable/resumable generation** (survive client disconnect, server-owned result
+  persistence, reconnect/replay) is a separate future workstream, **not** part of
+  these slices. C-A1 / slice 2 moves persistence server-side as a *prerequisite*,
+  not this goal. See [`../plan.md`](../plan.md) "Out Of Scope Here".
 
 ## Proof Leads
 
