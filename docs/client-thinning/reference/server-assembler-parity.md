@@ -26,8 +26,8 @@ drift; symbol names are the stable handle.
 | HypaV3 / prompt-memory selection | **AT PARITY** (server-owned) | `assemble.ts:870-916` |
 | Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyChatVars` |
 | Multimodal / inlay asset bytes | **AT PARITY** (slice 3a) — route binds a non-empty `AssetLookup`; inlay bytes ride the request `inlayAssets`, asset/icon bytes come from the store | `prompt/assetLookup.ts` (`buildAssetLookup`) + `generationChat.ts` (`resolveStoredAssetImage`); bound in `assemble.ts::beginAssembly`, passed at `assemble.ts:fillHistoryAndBias` |
-| **Lua `editRequest`** | **GAP (port-pending, slice 3b)** — identity default; needs the server Lua VM | `templates.ts:683`; never supplied |
-| **Lua `editprocess`** | **GAP (port-pending, slice 3b)** — regex only; Lua arm is a browser no-op so the port is near-identity | `scripts.ts:50-56` (deferred) |
+| **Lua `editRequest`** | **GAP (port-pending, slice 3b)** — **VM exists; hooks pending**: the server Lua VM landed (sub-slice 3b-1) but is not wired into `renderFinalPrompt` yet, so the default is still identity and the classifier Lua arm still routes `unsupported` | VM `prompt/luaRuntime.ts` (`runServerLua`/`runLuaEditTrigger`); seam `templates.ts:683` still never supplied |
+| **Lua `editprocess`** | **GAP (port-pending, slice 3b)** — **VM exists; hooks pending**: Lua arm is a browser no-op so the port is near-identity once wired | VM `prompt/luaRuntime.ts`; `scripts.ts:50-56` (deferred) |
 | **pluginV2 `editRequest` / `editprocess` / replacers** | **PERMANENT `unsupported`** — no-port list; classifier hard-fails via `hasPluginV2EditSet`; protected by the `A4R-pluginv2` audit invariant | classifier `serverPromptAssembly.ts`; invariant `util/client-thinning-audit.ts` |
 | **Output triggers (`'output'`)** | **GAP** — declared, never invoked | `triggers.ts:103`; no `runTrigger(…,'output',…)` exists |
 | Assembly-time scriptstate persistence | **DONE (C-A1)** — route persists the delta via `applyJsonCommandMutation`, returns the bumped revision over SSE | `generationChat.ts` `persistAssemblyChatVars` |
@@ -129,6 +129,12 @@ just starved of data while `buildHistoryWindow` defaulted to the empty
 tests).
 
 ## `prompt/templates.ts` — the Lua `editRequest` gap
+
+> **Sub-slice 3b-1 landed the VM** (`prompt/luaRuntime.ts`: `runServerLua` +
+> `runLuaEditTrigger`, under the single-user self-host security gate). What
+> remains below is the *wiring*: supplying a VM-backed `editRequest` to
+> `renderFinalPrompt` (sub-slice 2) and the `editprocess`/`editinput` hooks
+> (sub-slices 3/4). The classifier Lua arm still routes `unsupported` until then.
 
 The request-edit seam defaults to identity (`templates.ts:683`):
 

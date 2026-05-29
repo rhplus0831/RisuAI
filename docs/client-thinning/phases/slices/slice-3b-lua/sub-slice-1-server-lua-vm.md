@@ -108,9 +108,17 @@ arm stays `unsupported` after this lands. The runtime is provable on its own
 
 ## When this sub-slice is done
 
-- [ ] A server Lua runtime runs arbitrary user Lua under the self-host security gate.
-- [ ] Pure host fns at browser parity; privileged ones gated; browser/interactive ones
-      fail explicitly.
-- [ ] `request()` SSRF + rate/url/https limits enforced and tested.
-- [ ] A runaway script is interrupted (exec limit) and tested.
-- [ ] **No** assembler hook wired and the classifier Lua arm still routes `unsupported`.
+- [x] A server Lua runtime runs arbitrary user Lua under the self-host security gate.
+      (`server/fastify/src/prompt/luaRuntime.ts`: `runServerLua` + `runLuaEditTrigger`.)
+- [x] Pure host fns at browser parity; privileged ones gated; browser/interactive ones
+      fail explicitly. (Full host-fn surface declared per the disposition table;
+      `alertInput`/`Select`/`Confirm` throw + flag `interactiveInvoked`.)
+- [x] `request()` SSRF + rate/url/https limits enforced and tested.
+      (`validateEgressUrl` + `isBlockedAddress` + `serverLuaRequest`, connection pinned
+      to the validated IP; rate limit 30/min — operator-loosened from the browser's ~5.)
+- [x] A runaway script is interrupted (exec limit) and tested. (wasmoon `functionTimeout`
+      for dispatch + `runStringWithTimeout` for top-level code; both proven by tests.)
+- [x] **No** assembler hook wired and the classifier Lua arm still routes `unsupported`.
+
+**Landed 2026-05-29.** Tests: `server/fastify/__tests__/luaRuntime.test.ts` (17). Shared
+verification green (`client-thinning:audit`, `api:test` 1294, `test` 876, `check` 0/0).

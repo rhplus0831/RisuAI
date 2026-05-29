@@ -1,7 +1,10 @@
 # Slice 3b — Lua server port (handover & sub-slice series)
 
 Date: 2026-05-29
-Status: **not started** — this is a handover for the next agent.
+Status: **sub-slice 1 landed (the VM)** — sub-slices 2/3/4 (the hooks + classifier
+flip) remain. The runtime (`server/fastify/src/prompt/luaRuntime.ts`) runs arbitrary
+user Lua under the single-user self-host gate, but is **not wired into the assembler**
+and the classifier Lua arm still routes `unsupported`.
 
 This directory is the **slice series** the parent slice
 ([`../slice-3b-content-lua-plugin-scripts.md`](../slice-3b-content-lua-plugin-scripts.md))
@@ -11,7 +14,7 @@ The work is split into four sub-slices, **one review each**, in order:
 
 | # | Sub-slice | Gates | File |
 | --- | --- | --- | --- |
-| 1 | **Server Lua VM** (the runtime) | everything below | [`sub-slice-1-server-lua-vm.md`](sub-slice-1-server-lua-vm.md) |
+| 1 ✅ | **Server Lua VM** (the runtime) — **landed** (`prompt/luaRuntime.ts`) | everything below | [`sub-slice-1-server-lua-vm.md`](sub-slice-1-server-lua-vm.md) |
 | 2 | **`editRequest`** hook + classifier flip | needs 1 | [`sub-slice-2-editrequest.md`](sub-slice-2-editrequest.md) |
 | 3 | **`editprocess`** hook (Lua = browser no-op) | needs 1 | [`sub-slice-3-editprocess.md`](sub-slice-3-editprocess.md) |
 | 4 | **input-trigger / `editinput`** at submit | needs 1 | [`sub-slice-4-editinput.md`](sub-slice-4-editinput.md) |
@@ -202,16 +205,24 @@ per ported hook:
 - **Security tests** (sub-slice 1): `request()` rejects private/loopback/metadata
   IPs and over-limit calls; the exec-limit interrupts a runaway script.
 
-## Open questions for the next agent
+## Open questions — RESOLVED in sub-slice 1
 
-1. **Exec-limit mechanism** — does the installed wasmoon expose `lua_sethook` (option
-   1) or must you fall back to worker isolation (option 2)? Resolve in sub-slice 1.
-2. **`json.lua` delivery** — bundle a copy into the server, or read `public/lua/json.lua`
-   from disk at boot? Pick one and make it deterministic in tests.
-3. **Per-mode engine reuse vs per-send** — the browser keeps one `LuaEngine` per mode
-   behind a Mutex and recreates it when `code` changes. On the server, decide whether
-   to reuse across sends (faster, but shared global state across chats) or create per
-   send (isolated, slower). Single-user self-host tolerates either; prefer isolation.
-4. **OpenAIChat shape round-trip** — confirm the server `formated` rows serialize to
-   the same `{role, content, …}` JSON the browser's `callListenMain` expects, and
-   back (multimodal fields, `name`, etc.).
+1. **Exec-limit mechanism — ✅ wasmoon's built-in `lua_sethook` count hook (option 1).**
+   wasmoon 1.16.0 installs an instruction-count hook (every 1000 ops) that throws when
+   wall-clock passes a deadline, surfaced as `createEngine({ functionTimeout })` (bounds
+   every JS→Lua call — the dispatch) and `thread.run(argCount, { timeout })` (bounds a
+   loaded chunk). `luaRuntime.ts` uses **both**: `functionTimeout` for dispatch +
+   `runStringWithTimeout` for the top-level user code, so a top-level `while true do end`
+   is bounded too. No worker-thread fallback needed. (The timeout surfaces as a generic
+   `Error` whose message contains "timeout" — the `LuaTimeoutError` class is lost across
+   the Lua→JS boundary — so it is detected by message.)
+2. **`json.lua` delivery — ✅ read `public/lua/json.lua` from disk at boot**, path
+   resolved relative to `import.meta.url` (deterministic under `pnpm api:test`). Mounted
+   once into a module-singleton `LuaFactory`.
+3. **Engine lifetime — ✅ per-call isolation.** Singleton factory (wasm + json.lua), fresh
+   `createEngine` per `runServerLua` call, closed in `finally`; access-control sets are
+   per-call closures. No cross-chat global leakage.
+4. **OpenAIChat round-trip — ✅ confirmed** byte-faithful for the text-send subset (the
+   `editRequest` unit test edits a row's `.content` and asserts it round-trips). Multimodal
+   `name`/`multimodals` field round-trip is re-confirmed when sub-slice 2 wires the real
+   `renderFinalPrompt` editRequest seam.
