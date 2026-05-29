@@ -63,17 +63,19 @@ reconciliations on the browser side.
 
 ## Key design decisions / gotchas
 
-**A. Deferred-writer identity (the genuinely new problem).** C-A1's assembly-time
-write is synchronous *during* the request (`generationChat.ts:381`), so the client's
-authorization is present. The **result** write happens at completion — possibly
-**after the client disconnected**. So **Step 2 (design step 3) captures** the writer
-authorization on the job at creation (client present + authenticated + holding the
-active-writer lease); **Step 3 persists under it** at completion. Decide: keep the active-writer lease alive
-for the job's lifetime, or treat the result write as a **server-owned completion of a
-write the client already authorized at creation** (a documented bypass of the
-live-writer check). NOTE: the grep found no `activeWriter` enforcement inside
-`generationChat.ts`/`mutations.ts` — confirm where the `/chat` writer/423 gate lives
-before choosing.
+**A. Deferred-writer identity — DECIDED: server-owned completion of an authorized write.**
+C-A1's assembly-time write is synchronous *during* the request (`generationChat.ts:381`),
+so the client's authorization is present. The **result** write happens at completion —
+possibly **after the client disconnected**. Resolution: authorization happens at
+**submission** (Step 2's gate requires the active writer to start a persisting send);
+the completion write is the server **finishing that already-authorized job**, taking a
+**narrow, audited bypass** of the live active-writer check (it is *not* a new client
+write). Conflict-prevention is preserved by the submission gate + **one-job-per-chat**
+(Step 2), and the write still composes with any intervening edits via gotcha C ("read
+the current chat at completion"). Step 2 captures the authorization on the job at
+creation; Step 3 persists under it. **Still to locate before implementing:** where
+`/chat` enforces the writer/423 gate today (the grep found none in
+`generationChat.ts`/`mutations.ts`) — the submission gate hooks in there.
 
 **B. Idempotency on `generationId`.** With Step 2 reattach, a client may also still be
 connected at completion. The server persist must be **idempotent**: keyed by

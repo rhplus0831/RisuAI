@@ -59,7 +59,8 @@ behavior is sufficient.
 
 Today the result is persisted by the **browser** replaying commands
 (`persistServerBackedGenerationResult` → `dispatchPersistGenerationResult`). Slice 2
-(C-A1, in flight) moves *assembly-time* scriptstate persistence into `/generate/chat`.
+(C-A1, **landed** — `654db21a`) moves *assembly-time* scriptstate persistence into
+`/generate/chat`.
 Durable generation extends that same move to the **result** (the assistant message), so
 it persists without the browser — the bridge to "read the completed chat later" with no
 new disk job store in Milestone 1.
@@ -134,17 +135,31 @@ of scope until Milestone 1 lands.
   tokens.
 - **EC-D4** — no browser command-replay is required for the result to persist.
 
-## Open design questions (smaller now scope is fixed)
+## Resolved in the step specs
 
-- **Reattach transport:** WebSocket (as the proxy job uses) vs SSE + `Last-Event-ID`.
-  `/generate/chat` is SSE today; the `JobRegistry` client is WS. Decide in Step 2.
-- **Registry wiring:** one shared `JobRegistry` for generation vs a dedicated one; where
-  it's instantiated and GC-ticked (mirror the proxy wiring in `app.ts`).
-- **Retention/GC** window for completed generation jobs (proxy uses 30s grace) and caps
-  (proxy: 64 active jobs).
-- **Active-writer/revision:** a detached generation still issuing the result write must
-  hold a valid writer identity after the client is gone.
-- **Modes:** start with `send`; add `continue` / `regenerate` after.
+- **Reattach transport:** SSE + `jobId` reattach (Step 2) — keeps the existing event
+  vocabulary and client parser; no WebSocket.
+- **Registry wiring:** a dedicated generation `JobRegistry` + a transient
+  `chatId → jobId` index, instantiated + GC-ticked in `app.ts` (Step 2).
+- **Retention / GC:** reuse the proxy defaults — 30s done-grace, 64 active-job cap; the
+  chat's submission lock clears at completion/cancel, not at GC (Step 2).
+- **Modes:** `send` only for Milestone 1; `continue` / `regenerate` deferred.
+- **Writer model:** authorize at **submission** (active writer required for persisting
+  sends; preview exempt); **one running job per chat**; the result write is a
+  server-owned completion of that authorized job (Step 2 §writer/job model, Step 3
+  gotcha A).
+- **Cancel policy:** generation runs until the user explicitly cancels (`DELETE`);
+  cancel is authorized by the *current* active writer (handles writer handoff) (Step 2).
+- **Resume after reload:** the transient `chatId → jobId` index is surfaced via the
+  projection, so a returning client (even after a full reload) discovers + reattaches;
+  observing is open, starting/cancelling need the writer lease (Step 2).
+
+## Still open — locate before implementing
+
+- **`/chat` writer/423 gate location:** the submission gate must hook into wherever
+  `/chat` enforces the active writer today — the grep found no `activeWriter`
+  enforcement in `generationChat.ts` / `mutations.ts`, so find it first. A code-location
+  lookup, not a design decision.
 
 ---
 
