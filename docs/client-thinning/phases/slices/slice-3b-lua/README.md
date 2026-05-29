@@ -1,11 +1,13 @@
 # Slice 3b — Lua server port (handover & sub-slice series)
 
 Date: 2026-05-29
-Status: **sub-slices 1 + 2 landed** — sub-slices 3/4 (editprocess + editinput) remain.
+Status: **sub-slices 1 + 2 + 3 landed** — sub-slice 4 (editinput) remains.
 The runtime (`server/fastify/src/prompt/luaRuntime.ts`) runs user Lua under the
-single-user self-host gate, and the **`editRequest` hook is now wired into the
-assembler** (`assemble.ts::renderAndBudget`). The classifier Lua arm routes `server`
-for all Lua **except** scripts using an interactive dialog API
+single-user self-host gate, the **`editRequest` hook is wired into the assembler**
+(`assemble.ts::renderAndBudget`), and the **`editprocess` hook is wired into the
+history pass** (`assemble.ts::fillHistoryAndBias` → `history.ts` `editProcess`
+seam) as a faithful runtime no-op. The classifier Lua arm routes `server` for all
+Lua **except** scripts using an interactive dialog API
 (`alertInput`/`alertSelect`/`alertConfirm`), which stay `unsupported`.
 
 This directory is the **slice series** the parent slice
@@ -18,7 +20,7 @@ The work is split into four sub-slices, **one review each**, in order:
 | --- | --- | --- | --- |
 | 1 ✅ | **Server Lua VM** (the runtime) — **landed** (`prompt/luaRuntime.ts`) | everything below | [`sub-slice-1-server-lua-vm.md`](sub-slice-1-server-lua-vm.md) |
 | 2 ✅ | **`editRequest`** hook + classifier flip — **landed** (`assemble.ts::renderAndBudget`) | needs 1 | [`sub-slice-2-editrequest.md`](sub-slice-2-editrequest.md) |
-| 3 | **`editprocess`** hook (Lua = browser no-op) | needs 1 | [`sub-slice-3-editprocess.md`](sub-slice-3-editprocess.md) |
+| 3 ✅ | **`editprocess`** hook (Lua = browser no-op) — **landed** (`assemble.ts::fillHistoryAndBias` → `history.ts`) | needs 1 | [`sub-slice-3-editprocess.md`](sub-slice-3-editprocess.md) |
 | 4 | **input-trigger / `editinput`** at submit | needs 1 | [`sub-slice-4-editinput.md`](sub-slice-4-editinput.md) |
 
 Do **not** pull A2's `'output'` trigger / `editoutput` in here — that is
@@ -161,10 +163,16 @@ Where each hook wires (exact seams; the editRequest seam *already exists*, unuse
   note (`local-assembler-content-classes.md` §4): the dispatch layer also edits rows
   — but on the server, dispatch is the assembler, so only the assembly-time
   `editRequest` applies here.
-- **`editprocess`** — runs in the history pass next to `processScript`
-  (`scripts.ts:315`, applied `history.ts:292-300,452-457`). The `scripts.ts:50-56`
-  header already documents the Lua deferral. Lua `editprocess` is a browser no-op, so
-  sub-slice 3 is near-identity (prove parity, flip nothing structural).
+- **`editprocess`** ✅ **wired (sub-slice 3)** — runs in the history pass next to
+  `processScript` (`scripts.ts:315`, applied at the two `history.ts` call sites). The
+  injectable `editProcess` seam (`history.ts`, default identity) runs between the
+  `expandVariables` pre-pass and the regex processor, mirroring `processScriptFull`'s
+  leading `runLuaEditTrigger`. `assemble.ts::fillHistoryAndBias` supplies a VM-backed
+  `runLuaEditTrigger(char, 'editprocess', …)` hook (via the shared
+  `buildLuaEditTriggerContext`). Lua `editprocess` is a browser no-op — the runtime
+  early-returns — so this is identity at parity; routed through the VM (not a hardcoded
+  identity) so it stays faithful if the browser ever changes. No `varChanged` fold (the
+  no-op never writes vars). The `scripts.ts` header note was corrected accordingly.
 - **`editinput`** — **no submit-time server seam exists**: it runs at *submit*,
   before assembly (`DefaultChatScreen.svelte:229-244`). `/generate/chat` already
   owns assembly-time scriptstate persistence, but it cannot yet rewrite the

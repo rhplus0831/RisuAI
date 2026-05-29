@@ -104,6 +104,18 @@ import { runStartTrigger, type TriggerRunResult } from './triggers.js'
  * `additonalSysPrompt` and persists the db). This makes the history
  * walk feature-complete (closes 7-5d). `buildHistoryWindow` is now
  * `async` because `runStartTrigger` is.
+ *
+ * Slice 3b sub-slice 3 (Lua `editprocess`): each first-message /
+ * per-message body additionally flows through the injectable
+ * `editProcess` seam between the `expandVariables` pre-pass and
+ * `processScript`, mirroring the leading
+ * `runLuaEditTrigger(char, 'editprocess', data, …)` inside the SPA's
+ * `processScriptFull` (`scripts.ts:130`). Lua `editprocess` is a browser
+ * no-op — `runLuaEditTrigger` early-returns for it (`scriptings.ts:1431`,
+ * mirrored in `luaRuntime.ts`) — so the default seam is identity; the
+ * assembler (`assemble.ts::fillHistoryAndBias`) supplies the VM-backed
+ * hook so the no-op stays faithful through the runtime if the browser's
+ * behavior ever changes.
  */
 
 export interface AssetLookup {
@@ -116,6 +128,22 @@ export interface AssetLookup {
 }
 
 export const NO_ASSETS: AssetLookup = {}
+
+/**
+ * The `editprocess` history-edit seam (slice 3b sub-slice 3). Runs over each
+ * first-message / per-message body between the `expandVariables` pre-pass and the
+ * regex `processScript`, mirroring the leading
+ * `runLuaEditTrigger(char, 'editprocess', data, { index })` inside the SPA's
+ * `processScriptFull` (`scripts.ts:130`). `index` is the per-row index the SPA
+ * threads as `{ index: chatID }` meta (`-1` for the first message). Lua
+ * `editprocess` is a browser no-op, so the default is identity; `assemble.ts`
+ * supplies the VM-backed hook so the no-op routes through the runtime.
+ */
+export type EditProcessHook = (content: string, index: number) => string | Promise<string>
+
+/** Identity `editProcess` seam — the Lua `editprocess` browser no-op. */
+const IDENTITY_EDIT_PROCESS: EditProcessHook = (content) => content
+
 const INLAY_RE = /\{\{(inlay|inlayed|inlayeddata)::(.+?)\}\}/g
 const ASSET_PROMPT_RE = /\{\{asset_?prompt::(.+?)\}\}/gimsu
 
@@ -268,7 +296,7 @@ function processAssetPrompts(
   return { text: formatted, multimodals }
 }
 
-function formatHistoryMessage(
+async function formatHistoryMessage(
   ctx: ExpandContext,
   currentChar: character,
   currentChat: Chat,
@@ -278,7 +306,8 @@ function formatHistoryMessage(
   usingPromptTemplate: boolean,
   assetLookup: AssetLookup,
   moduleAssets: [string, string, string][],
-): OpenAIChat {
+  editProcess: EditProcessHook,
+): Promise<OpenAIChat> {
   const db = ctx.database
   const sendName = !!db.promptSettings?.sendName
   const maxThoughtDepth = db.promptSettings?.maxThoughtTagDepth ?? -1
@@ -289,10 +318,16 @@ function formatHistoryMessage(
     role: msg.role,
   }).text
 
+  // Lua `editprocess` hook (slice 3b sub-slice 3): runs through the runtime
+  // before the regex `processScript`, mirroring `processScriptFull`'s leading
+  // `runLuaEditTrigger`. A browser no-op, so identity unless the assembler
+  // supplies the VM-backed hook.
+  const luaProcessed = await editProcess(preExpanded, index)
+
   let formatted = processScript(
     ctx,
     currentChar,
-    preExpanded,
+    luaProcessed,
     'editprocess',
     { chatRole: msg.role },
     index,
@@ -391,6 +426,7 @@ export async function buildHistoryWindow(
   usingPromptTemplate: boolean = false,
   assetLookup: AssetLookup = NO_ASSETS,
   report?: LorebookActivationReport,
+  editProcess: EditProcessHook = IDENTITY_EDIT_PROCESS,
 ): Promise<HistoryWindowResult> {
   const db = ctx.database
   const messages: OpenAIChat[] = []
@@ -449,10 +485,14 @@ export async function buildHistoryWindow(
       ...ctx,
       chara: currentChar,
     }).text
+    // Lua `editprocess` no-op hook (slice 3b sub-slice 3). The SPA threads the
+    // first message through `processScript` with the default `chatID = -1`, so
+    // the leading `runLuaEditTrigger` sees `{ index: -1 }`.
+    const luaProcessed = await editProcess(preExpanded, -1)
     let content = processScript(
       ctx,
       currentChar,
-      preExpanded,
+      luaProcessed,
       'editprocess',
     )
     const firstMessage: OpenAIChat = { role: 'assistant', content }
@@ -487,7 +527,7 @@ export async function buildHistoryWindow(
   }
 
   for (let i = 0; i < ms.length; i++) {
-    const formatted = formatHistoryMessage(
+    const formatted = await formatHistoryMessage(
       ctx,
       currentChar,
       currentChat,
@@ -497,6 +537,7 @@ export async function buildHistoryWindow(
       usingPromptTemplate,
       assetLookup,
       moduleAssets,
+      editProcess,
     )
     messages.push(formatted)
     addedTokens += tokenizeChat(formatted, encoding, options)

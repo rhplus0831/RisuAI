@@ -50,7 +50,13 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  * Deferred to 7-6e:
  *   - script-cache (`generateScriptCacheKey` / `getScriptCache` /
  *     `cacheScript`)
- *   - `runLuaEditTrigger` (browser-only)
+ *   - `runLuaEditTrigger` — `processScript` stays regex-only; the Lua
+ *     edit hooks are wired alongside it by the callers. The `editRequest`
+ *     hook lands at the final render (`assemble.ts` →
+ *     `templates.ts::renderFinalPrompt`, slice 3b sub-slice 2) and the
+ *     `editprocess` hook at the two history call sites
+ *     (`history.ts`, slice 3b sub-slice 3 — a browser no-op routed through
+ *     the runtime). `editinput` is sub-slice 4.
  *   - `runTrigger('display', …)` (orthogonal: `editdisplay` mode only,
  *     blocked on Triggers 7-9)
  *   - `pluginV2[mode]` browser plugin V2 hooks

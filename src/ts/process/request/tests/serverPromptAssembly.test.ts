@@ -203,6 +203,30 @@ describe('resolveServerPromptAssembly', () => {
       })
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
+
+    // Slice 3b sub-slice 3: an editprocess-only Lua char (no editRequest handler,
+    // no interactive dialog API) routes `server` — the editprocess hook is wired
+    // through the runtime as a browser no-op. The classifier cannot tell which
+    // edit mode a script hooks, so this is the same Lua-arm flip from sub-slice 2;
+    // the test pins that the editprocess sub-class stays `server` (not a hard
+    // fail) now that the seam exists.
+    it('routes an editprocess-only Lua trigger char to server (slice 3b)', () => {
+      const input = makeInput({
+        currentChar: makeChar({
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: 'function editprocess(id) return getChatMain(id, 0) end',
+                },
+              ],
+            },
+          ],
+        } as never),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
   })
 
   describe('unsupported — hard-fail, never a silent local fallback', () => {

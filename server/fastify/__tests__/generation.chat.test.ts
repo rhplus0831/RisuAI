@@ -625,6 +625,68 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(serverMarker).toEqual(goldenMarker)
   })
 
+  // Slice 3b sub-slice 3: the server wires Lua `editprocess` through the runtime
+  // at the two history call sites (first message + per-message bodies). Lua
+  // `editprocess` is a browser no-op — `runLuaEditTrigger` early-returns for it
+  // before booting the engine or dispatching — so a `triggerlua` char must
+  // assemble its history identically to the same char without it. The Lua here
+  // defines an `editprocess` global that *would* rewrite any body it processed if
+  // the hook ever dispatched, so the marker's absence proves the no-op is wired
+  // through the VM (not skipped) and faithful.
+  it('runs Lua editprocess through the runtime as a no-op at parity (slice 3b)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const editProcessLua = `
+      function editprocess(id)
+        return 'EDITPROCESS-MUTATED'
+      end
+    `
+
+    const collect = async (): Promise<Array<{ role: string; content: unknown }>> => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+      const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
+      return prompt.data.messages as Array<{ role: string; content: unknown }>
+    }
+
+    // Baseline: a history body ('PROC-BODY') + the fixture first message
+    // ('Greetings.'), no Lua. Re-seeding before the second send resets the
+    // transcript (the first send appended `userMessage`), so both assemble from
+    // the same starting point.
+    await seedDatabase(harness.app, assertion, dbWithHistoryMessage('PROC-BODY'))
+    const baseline = await collect()
+
+    // Same char + the editprocess-defining triggerlua.
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithHistoryMessage('PROC-BODY', {
+        triggerscript: [
+          {
+            comment: '',
+            type: 'request',
+            conditions: [],
+            effect: [{ type: 'triggerlua', code: editProcessLua }],
+          },
+        ],
+      }),
+    )
+    const withLua = await collect()
+
+    // Byte-identical assembled rows: the editprocess no-op rewrote nothing.
+    expect(withLua).toEqual(baseline)
+    // Both the per-message body and the first message survive verbatim…
+    expect(withLua.some((m) => m.content === 'PROC-BODY')).toBe(true)
+    expect(withLua.some((m) => m.content === 'Greetings.')).toBe(true)
+    // …and the would-be editprocess rewrite never surfaced anywhere.
+    expect(withLua.every((m) => !String(m.content).includes('EDITPROCESS-MUTATED'))).toBe(true)
+  })
+
   // The marker rides on a *history* user message (the `chats` slot); the
   // appended `userMessage` would land in the unrendered `lastChat` slot given
   // this fixture's `['main','description','chats']` order.

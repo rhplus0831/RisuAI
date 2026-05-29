@@ -31,7 +31,13 @@ import {
   type LorebookActivationReport,
 } from './lorebook.js'
 import { preflightTemplateTokens } from './preflight.js'
-import { applyDepthPrompts, buildHistoryWindow, NO_ASSETS, type AssetLookup } from './history.js'
+import {
+  applyDepthPrompts,
+  buildHistoryWindow,
+  NO_ASSETS,
+  type AssetLookup,
+  type EditProcessHook,
+} from './history.js'
 import { buildAssetLookup, type ResolveStoredAssetImage } from './assetLookup.js'
 import { buildMemoryWindow } from './memory.js'
 import {
@@ -699,6 +705,19 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   const { ctx, currentChar, usingPromptTemplate } = state
   const db = state.database
 
+  // Lua `editprocess` hook (slice 3b sub-slice 3): wire each first-message /
+  // per-message body through the runtime, mirroring the SPA's leading
+  // `runLuaEditTrigger(char, 'editprocess', …)` in `processScriptFull`. Lua
+  // `editprocess` is a browser no-op — `runLuaEditTrigger` early-returns for it
+  // before booting any engine or touching the var engine — so this is identity at
+  // parity; routing it through the runtime (not a hardcoded identity) keeps the
+  // server faithful if the browser's behavior ever changes. No `varChanged` fold
+  // is needed (unlike `buildLuaEditRequest`) precisely because the no-op never
+  // writes vars.
+  const { editCtx } = buildLuaEditTriggerContext(state)
+  const editProcess: EditProcessHook = (content, index) =>
+    runLuaEditTrigger(state.currentChar, 'editprocess', content, { index }, editCtx)
+
   const history = await buildHistoryWindow(
     ctx,
     currentChar,
@@ -706,6 +725,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
     usingPromptTemplate,
     state.assetLookup ?? NO_ASSETS,
     state.report,
+    editProcess,
   )
 
   // The start trigger may have mutated the chat and chat-vars even when
@@ -1002,26 +1022,18 @@ function resolvePromptMemoryEmbeddingModel(database: Database): string {
 }
 
 /**
- * Slice 3b sub-slice 2 — build the VM-backed Lua `editRequest` hook the final
- * render applies over `formated` and the prompt-info capture, mirroring the
- * browser's `renderFinalPrompt.ts:384`
- * `runLuaEditTrigger(char, 'editRequest', formated)`.
- *
- * The hook's var engine is a `createTriggerVarEngine` bound to the working chat
- * and the persisted db chat coordinates, so Lua `setChatVar`/`setState` writes
- * during the hook flow into the same `chat.scriptstate` the route's chat-var
- * delta reads (`buildChatVarMutations` → `persistAssemblyChatVars`) — picked up
- * for free, exactly like a `'start'` trigger's writes. The returned engine lets
- * the caller fold the hook's `varChanged` into the assembly state.
- *
- * Supplied unconditionally for byte-parity with the browser (which always calls
- * `runLuaEditTrigger`); when the character + active modules declare no
- * `triggerlua` effect the hook is a no-op and no Lua engine boots
- * (`runLuaEditTrigger` only executes `triggerlua` effects). Privileged host fns
- * stay gated off — edit-hook triggers run `lowLevelAccess: false`.
+ * Shared construction of the VM-backed edit-trigger context the `editRequest`
+ * (render) and `editprocess` (history) hooks both run against. The var engine is
+ * bound to the working chat + persisted db coordinates so any Lua
+ * `setChatVar`/`setState` during a hook flows into the same `chat.scriptstate`
+ * the route's chat-var delta reads (`buildChatVarMutations` →
+ * `persistAssemblyChatVars`) — picked up for free, exactly like a `'start'`
+ * trigger's writes. The caller reads `varEngine.varChanged` to fold the hook's
+ * writes into the assembly state. Privileged host fns stay gated off — edit-hook
+ * triggers run `lowLevelAccess: false`.
  */
-function buildLuaEditRequest(state: AssemblyState): {
-  editRequest: (rows: OpenAIChat[]) => Promise<OpenAIChat[]>
+function buildLuaEditTriggerContext(state: AssemblyState): {
+  editCtx: ServerLuaEditTriggerContext
   varEngine: TriggerVarEngine
 } {
   const db = state.database
@@ -1043,6 +1055,27 @@ function buildLuaEditRequest(state: AssemblyState): {
     model: db.aiModel,
     moduleTriggers: getModuleTriggers(getActiveModules(db, state.currentChar, state.currentChat)),
   }
+  return { editCtx, varEngine }
+}
+
+/**
+ * Slice 3b sub-slice 2 — build the VM-backed Lua `editRequest` hook the final
+ * render applies over `formated` and the prompt-info capture, mirroring the
+ * browser's `renderFinalPrompt.ts:384`
+ * `runLuaEditTrigger(char, 'editRequest', formated)`.
+ *
+ * Supplied unconditionally for byte-parity with the browser (which always calls
+ * `runLuaEditTrigger`); when the character + active modules declare no
+ * `triggerlua` effect the hook is a no-op and no Lua engine boots
+ * (`runLuaEditTrigger` only executes `triggerlua` effects). The returned engine
+ * (see {@link buildLuaEditTriggerContext}) lets the caller fold the hook's
+ * `varChanged` into the assembly state.
+ */
+function buildLuaEditRequest(state: AssemblyState): {
+  editRequest: (rows: OpenAIChat[]) => Promise<OpenAIChat[]>
+  varEngine: TriggerVarEngine
+} {
+  const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
   return {
     editRequest: (rows) =>
       runLuaEditTrigger(state.currentChar, 'editRequest', rows, undefined, editCtx),
