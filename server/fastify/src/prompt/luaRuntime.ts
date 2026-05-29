@@ -19,17 +19,12 @@ import { expandVariables } from './variables.js'
 import { tokenize, encodingForModel } from './tokens.js'
 
 /**
- * Sub-slice 3b-1: the server-side Lua runtime.
+ * Server-side Lua runtime under the single-user self-host security model.
  *
  * Ports `src/ts/process/scriptings.ts` (`runScripted` + `runLuaEditTrigger`) to the
- * Fastify server under the **single-user self-host** security model. This file is
- * the runtime ONLY: no assembler hook is wired and the classifier Lua arm
- * (`serverPromptAssembly.ts::sendHasLuaContent`) still routes `unsupported`. The
- * editRequest/editprocess/editinput hooks and the classifier flip land in
- * sub-slices 2/3/4 (`docs/client-thinning/phases/slices/slice-3b-lua/`).
+ * Fastify server while keeping per-call engine state isolated.
  *
- * Decisions resolved before coding (the slice's "Decide" step + README open
- * questions):
+ * Runtime notes:
  *
  * 1. **Exec limit = wasmoon's built-in `lua_sethook` count hook (README option 1).**
  *    wasmoon 1.16.0 installs an instruction-count hook (every 1000 ops) that throws
@@ -50,8 +45,7 @@ import { tokenize, encodingForModel } from './tokens.js'
  *    (`safeIds`/`lowLevelIds`/`editDisplayIds`) are per-call closures rather than the
  *    browser's module-level sets.
  * 4. **`OpenAIChat` round-trip** is byte-faithful for the text-send subset (proven by
- *    the editRequest unit test). Multimodal-field round-trip is confirmed when
- *    sub-slice 2 wires the real editRequest seam.
+ *    the editRequest unit test).
  */
 
 // ── Limits (the self-host bar) ──────────────────────────────────────────────
@@ -318,7 +312,12 @@ export async function serverLuaRequest(
 
   const verdict = await validateEgressUrl(url, deps)
   if (!verdict.ok) {
-    return JSON.stringify({ status: verdict.status, data: verdict.data })
+    // Narrow explicitly: this file is also type-checked under the root tsconfig
+    // (the browser suite imports the server app), whose `strictNullChecks: false`
+    // does not narrow `!verdict.ok` on a discriminated union; the server's strict
+    // config narrows it fine. The Extract keeps both paths valid.
+    const failure = verdict as Extract<EgressVerdict, { ok: false }>
+    return JSON.stringify({ status: failure.status, data: failure.data })
   }
   try {
     const fetchImpl = deps.fetchImpl ?? pinnedHttpsFetch
@@ -759,7 +758,7 @@ function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
   declare('getPersonaName', (_id: string) => state.ctx.database.username ?? '')
   declare('getPersonaDescription', (_id: string) => {
     // Browser parses the persona prompt against the current char; server persona
-    // assembly lives elsewhere. Deferred to a later slice (return empty).
+    // assembly lives elsewhere, so this runtime returns an empty string.
     return ''
   })
   declare('getAuthorsNote', (_id: string) => state.ctx.chat?.note ?? '')
@@ -775,7 +774,7 @@ function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
     return true
   })
 
-  // ── Lore books: pure write (upsert) + deferred reads ──
+  // ── Lore books: pure write (upsert) + empty reads ──
   declare(
     'upsertLocalLoreBook',
     (
@@ -815,8 +814,8 @@ function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
       } as never)
     },
   )
-  // getLoreBooks/loadLoreBooks read activation state the runtime does not own yet;
-  // return empty so callers degrade rather than crash. Wire in a later slice.
+  // getLoreBooks/loadLoreBooks read activation state the runtime does not own;
+  // return empty so callers degrade rather than crash.
   declare('getLoreBooksMain', (_id: string, _search: string) => JSON.stringify([]))
   declare('loadLoreBooksMain', async (id: string) => {
     if (!canLowLevel(id)) return
@@ -1017,7 +1016,7 @@ export async function runServerLua(
   }
 }
 
-// ── runLuaEditTrigger (assembler-facing entry; not wired this sub-slice) ─────
+// ── runLuaEditTrigger ───────────────────────────────────────────────────────
 
 /** Context for {@link runLuaEditTrigger}: the runtime context (minus `char`, which
  * is the first positional arg) plus the active modules' resolved triggers. */
@@ -1033,10 +1032,6 @@ export interface ServerLuaEditTriggerContext extends Omit<ServerLuaRuntimeContex
  * `triggerlua` effect on the character + active modules with `lowLevelAccess:
  * false` (browser parity, `:1452`), threading the transformed `data` forward.
  * Errors fall back to the original `content`.
- *
- * **Not wired into the assembler this sub-slice** — the classifier Lua arm still
- * routes `unsupported`. Sub-slice 2 supplies a VM-backed `editRequest` to
- * `renderFinalPrompt` and flips the classifier.
  */
 export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   char: character | simpleCharacterArgument,

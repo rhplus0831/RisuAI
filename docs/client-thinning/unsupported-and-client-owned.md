@@ -102,12 +102,13 @@ documented here.
   server-side execution path — a plugin-runtime import, a `pluginV2` reference, or
   an `eval`/`new Function` sandbox in `server/fastify/src/prompt/**` — from being
   silently added by a later refactor.
-- **Lua scripts (slice 3b, _hook-pending_)** — a `triggerlua` effect on the
-  character or an enabled module routes `unsupported` today. The server Lua VM
-  runtime has landed, but `editRequest`, `editprocess`, and input-trigger /
-  `editinput` are not wired into server assembly yet. Unlike pluginV2 this is a
-  committed server port; the classifier's Lua arm (`sendHasLuaContent`) flips to
-  `server` per sub-class as each hook lands.
+- **Lua scripts (slice 3b, _editRequest ported; editprocess/editinput pending_)** —
+  a `triggerlua` effect on the character or an enabled module now routes `server`
+  (the VM runs the `editRequest` hook, sub-slice 2) **except** scripts using an
+  interactive dialog API (`alertInput`/`alertSelect`/`alertConfirm`), which stay
+  `unsupported`. The `editprocess`/`editinput` execution seams are wired in
+  sub-slices 3/4. Unlike pluginV2 this is a committed server port; the classifier's
+  Lua arm is `luaUsesInteractiveApi` (the only surviving Lua `unsupported` case).
 - Image-gen view instruction (slice 3c) still routes `unsupported` until its slice
   lands.
 

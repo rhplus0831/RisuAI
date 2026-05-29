@@ -903,6 +903,17 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       await harness.close()
     }
   })
+
+  // Note: a route-backed parity test for a `triggerlua` editRequest char cannot
+  // run here. The route-backed harness boots the real Fastify server in-process,
+  // and the server Lua VM uses `wasmoon`, whose WASM init calls
+  // `createRequire(import.meta.url)` — which throws under this suite's jsdom
+  // environment (the URL is `http://localhost:3000/...`, not a file URL). That is
+  // the same reason `__fixtures__/mocks/scriptings.ts` exists. The server-side
+  // editRequest byte-parity-vs-golden proof therefore lives in the server suite
+  // (`server/fastify/__tests__/generation.chat.test.ts`, node env), where wasmoon
+  // initializes. The classifier flip (browser → `server` for Lua) is proven in
+  // `request/tests/serverPromptAssembly.test.ts`.
 })
 
 describe('sendChat fixtures (/chat adapter replay)', () => {

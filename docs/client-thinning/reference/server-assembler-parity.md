@@ -26,7 +26,7 @@ drift; symbol names are the stable handle.
 | HypaV3 / prompt-memory selection | **AT PARITY** (server-owned) | `assemble.ts:870-916` |
 | Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyChatVars` |
 | Multimodal / inlay asset bytes | **AT PARITY** (slice 3a) — route binds a non-empty `AssetLookup`; inlay bytes ride the request `inlayAssets`, asset/icon bytes come from the store | `prompt/assetLookup.ts` (`buildAssetLookup`) + `generationChat.ts` (`resolveStoredAssetImage`); bound in `assemble.ts::beginAssembly`, passed at `assemble.ts:fillHistoryAndBias` |
-| **Lua `editRequest`** | **GAP (port-pending, slice 3b)** — **VM exists; hooks pending**: the server Lua VM landed (sub-slice 3b-1) but is not wired into `renderFinalPrompt` yet, so the default is still identity and the classifier Lua arm still routes `unsupported` | VM `prompt/luaRuntime.ts` (`runServerLua`/`runLuaEditTrigger`); seam `templates.ts:683` still never supplied |
+| **Lua `editRequest`** | **AT PARITY (slice 3b sub-slice 2)** — `renderAndBudget` supplies a VM-backed hook (`buildLuaEditRequest`) over `formated` + the prompt-info capture; var writes flow into the chat-var delta. Classifier routes Lua `→ server` except interactive-API scripts. | hook `assemble.ts::renderAndBudget`/`buildLuaEditRequest` → `prompt/luaRuntime.ts` (`runLuaEditTrigger`); seam `templates.ts:635`; classifier `serverPromptAssembly.ts::luaUsesInteractiveApi` |
 | **Lua `editprocess`** | **GAP (port-pending, slice 3b)** — **VM exists; hooks pending**: Lua arm is a browser no-op so the port is near-identity once wired | VM `prompt/luaRuntime.ts`; `scripts.ts:50-56` (deferred) |
 | **pluginV2 `editRequest` / `editprocess` / replacers** | **PERMANENT `unsupported`** — no-port list; classifier hard-fails via `hasPluginV2EditSet`; protected by the `A4R-pluginv2` audit invariant | classifier `serverPromptAssembly.ts`; invariant `util/client-thinning-audit.ts` |
 | **Output triggers (`'output'`)** | **GAP** — declared, never invoked | `triggers.ts:103`; no `runTrigger(…,'output',…)` exists |
@@ -35,8 +35,9 @@ drift; symbol names are the stable handle.
 
 The content rows that change prompt *bytes* are: (a) image/asset multimodal
 content — **now ported (slice 3a)**, (b) image-gen instruction (slice 3c, still
-GAP), (c) Lua `editRequest`/`editprocess` (slice 3b, port-pending GAP — pluginV2's
-equivalents are *permanent* `unsupported`, not a gap to close), and
+GAP), (c) Lua `editRequest` — **now ported (slice 3b sub-slice 2)**; Lua
+`editprocess`/`editinput` execution seams remain (sub-slices 3/4) — pluginV2's
+equivalents are *permanent* `unsupported`, not a gap to close, and
 (d) `'output'` triggers (an A2 concern; see
 [`post-generation-and-persistence.md`](post-generation-and-persistence.md)).
 Everything else is at parity, so the supported text-send subset is already
@@ -45,17 +46,18 @@ correct server-side — which is why A1's foundation batch can make it mandatory
 **Slice 1 *classified* every content class `unsupported` (hard fail), not
 silently mis-assembled; each later slice graduates one.** `resolveServerPromptAssembly`
 (`src/ts/process/request/serverPromptAssembly.ts`) detects each class via its own
-named predicate (multimodal/asset markers + `message[].multimodals`; `triggerlua`
-triggers via `sendHasLuaContent`; non-empty pluginV2 edit sets via
+named predicate (multimodal/asset markers + `message[].multimodals`; interactive
+`triggerlua` source via `luaUsesInteractiveApi`; non-empty pluginV2 edit sets via
 `hasPluginV2EditSet`; `currentChar.inlayViewScreen`). **As of
 slice 3a the multimodal/asset class routes `→ server`** for image-input models;
 the only surviving `unsupported` multimodal sub-case is **class 2** (image/asset
 content on a model *without* `LLMFlags.hasImageInput`, whose browser-only
-`runImageEmbedding` caption has no server equivalent). The image-gen (3c) predicate
-and the Lua arm (3b, port-pending) still route `→ unsupported`; **the pluginV2 arm
-(3b) is a *permanent* `→ unsupported`** (no-port list), split into its own
-predicate (slice 3b) so the Lua sub-classes can flip independently and guarded by
-the `A4R-pluginv2` audit invariant.
+`runImageEmbedding` caption has no server equivalent). **As of slice 3b sub-slice 2
+Lua routes `→ server`** (the VM runs the editRequest hook), *except* scripts using
+an interactive dialog API, which stay `unsupported`. The image-gen (3c) predicate
+still routes `→ unsupported`; **the pluginV2 arm (3b) is a *permanent* `→
+unsupported`** (no-port list), split into its own predicate (slice 3b) so the Lua
+sub-classes can flip independently and guarded by the `A4R-pluginv2` audit invariant.
 
 ## `prompt/assemble.ts` — the facade
 
@@ -132,22 +134,22 @@ tests).
 ## `prompt/templates.ts` — the Lua `editRequest` gap
 
 > **Sub-slice 3b-1 landed the VM** (`prompt/luaRuntime.ts`: `runServerLua` +
-> `runLuaEditTrigger`, under the single-user self-host security gate). What
-> remains below is the *wiring*: supplying a VM-backed `editRequest` to
-> `renderFinalPrompt` (sub-slice 2) and the `editprocess`/`editinput` hooks
-> (sub-slices 3/4). The classifier Lua arm still routes `unsupported` until then.
+> `runLuaEditTrigger`) and **sub-slice 3b-2 wired the `editRequest` hook** into
+> `renderAndBudget` (`buildLuaEditRequest`) and flipped the classifier Lua arm to
+> `server` (except interactive-API scripts). What remains below is the
+> `editprocess`/`editinput` wiring (sub-slices 3/4).
 
-The request-edit seam defaults to identity (`templates.ts:683`):
+The request-edit seam defaults to identity (`templates.ts:683`) **only when no
+hook is supplied**:
 
 ```ts
 editRequest = (rows) => rows,
 ```
 
 Type at `templates.ts:635`; applied at `:725-730` (over `formated`, and over
-`promptInfo` when present). `renderAndBudget` calls `renderFinalPrompt` without an
-`editRequest` key (`assemble.ts:1058-1068`), so the identity always applies. The
-doc-comment (`templates.ts:629-633`) states the real one is deferred ("Browser
-Lua execution stays deferred").
+`promptInfo` when present). As of sub-slice 2, `renderAndBudget` **does** supply a
+VM-backed `editRequest` via `buildLuaEditRequest`, so the identity applies only for
+the no-`triggerlua` case (where the hook is a no-op anyway).
 
 Server scripts are **regex-only**. `processScript` (`scripts.ts:315-356`) walks
 `db.presetRegex` + `char.customscript` + active-module regex; it is the only

@@ -182,6 +182,27 @@ describe('resolveServerPromptAssembly', () => {
       })
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
+
+    // Slice 3b sub-slice 2: the server Lua VM runs the editRequest hook, so a
+    // (non-interactive) `triggerlua` char now routes `server` instead of the
+    // pre-slice port-pending hard fail.
+    it('routes a non-interactive Lua trigger char to server (slice 3b)', () => {
+      const input = makeInput({
+        currentChar: makeChar({
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: "listenEdit('editRequest', function(id, data) return data end)",
+                },
+              ],
+            },
+          ],
+        } as never),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
   })
 
   describe('unsupported — hard-fail, never a silent local fallback', () => {
@@ -242,37 +263,82 @@ describe('resolveServerPromptAssembly', () => {
     })
 
     // Slice 3b splits the old combined Lua/plugin detector into two arms with
-    // distinct dispositions and distinct reasons: the Lua arm is port-pending
-    // (flips to `server` as the server Lua VM lands per sub-class); the pluginV2
-    // arm is a permanent hard fail (server-side plugin code execution is on the
-    // no-port list and pluginV2 is superseded by Plugin V3).
-    it('rejects a character carrying a Lua trigger with the port-pending reason (slice 3b)', () => {
+    // distinct dispositions and distinct reasons. Sub-slice 2 flips the Lua arm to
+    // `server` (the VM runs the editRequest hook) — see the `server` describe
+    // above — EXCEPT scripts using an interactive dialog API, which stay
+    // `unsupported` (no server browser dialog). The pluginV2 arm is a permanent
+    // hard fail (server-side plugin code execution is on the no-port list and
+    // pluginV2 is superseded by Plugin V3).
+    it('rejects a Lua trigger that uses an interactive dialog API (slice 3b)', () => {
       const input = makeInput({
         currentChar: makeChar({
-          triggerscript: [{ effect: [{ type: 'triggerlua', code: '' }] }],
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: "listenEdit('editRequest', function(id, data) alertInput(id, 'pick') return data end)",
+                },
+              ],
+            },
+          ],
         } as never),
       })
       const reason = expectUnsupported(resolveServerPromptAssembly(input))
       expect(reason).toMatch(/lua/i)
-      expect(reason).toMatch(/not yet/i)
+      expect(reason).toMatch(/interactive|alertInput/i)
     })
 
     it('rejects a non-empty pluginV2 edit set with the plugin (permanent) reason (slice 3b)', () => {
       pluginV2.editprocess.add((() => {}) as never)
       const reason = expectUnsupported(resolveServerPromptAssembly(makeInput()))
       expect(reason).toMatch(/plugin/i)
-      // The permanent plugin arm is not the port-pending Lua arm.
+      // The permanent plugin arm is not the (interactive) Lua arm.
       expect(reason).not.toMatch(/lua/i)
     })
 
-    it('reports the Lua arm first when a char has both a Lua trigger and a pluginV2 set (slice 3b)', () => {
+    it('a non-interactive Lua trigger no longer blocks a pluginV2 set — plugin reason surfaces (slice 3b)', () => {
       pluginV2.editprocess.add((() => {}) as never)
       const input = makeInput({
         currentChar: makeChar({
-          triggerscript: [{ effect: [{ type: 'triggerlua', code: '' }] }],
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: "listenEdit('editRequest', function(id, data) return data end)",
+                },
+              ],
+            },
+          ],
         } as never),
       })
-      expect(expectUnsupported(resolveServerPromptAssembly(input))).toMatch(/lua/i)
+      // The Lua arm passes (non-interactive → server-capable), so the permanent
+      // pluginV2 hard fail is what reports.
+      const reason = expectUnsupported(resolveServerPromptAssembly(input))
+      expect(reason).toMatch(/plugin/i)
+    })
+
+    it('reports the interactive-Lua arm before pluginV2 when a char has both (slice 3b)', () => {
+      pluginV2.editprocess.add((() => {}) as never)
+      const input = makeInput({
+        currentChar: makeChar({
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: "listenEdit('editRequest', function(id, data) alertSelect(id, 'x') return data end)",
+                },
+              ],
+            },
+          ],
+        } as never),
+      })
+      // Interactive Lua is checked before pluginV2, so its reason wins. Only the
+      // interactive-Lua reason mentions "interactive"; the plugin reason does not.
+      const reason = expectUnsupported(resolveServerPromptAssembly(input))
+      expect(reason).toMatch(/interactive/i)
     })
   })
 })

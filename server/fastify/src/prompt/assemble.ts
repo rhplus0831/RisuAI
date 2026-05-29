@@ -47,6 +47,10 @@ import {
 } from './memoryFollowups.js'
 import { finalizeRequestBudget } from './budgetFinalize.js'
 import type { TriggerRunResult } from './triggers.js'
+import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
+import { runLuaEditTrigger, type ServerLuaEditTriggerContext } from './luaRuntime.js'
+import { getActiveModules, getModuleTriggers } from './modules.js'
+import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
 import type { MemorySelectionInput } from '../memorySelectionService.js'
@@ -62,71 +66,21 @@ import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 /**
- * Phase 7 Tier 3 root assembly entry point.
+ * Root prompt assembly entry point.
  *
- * 7-11a — state/context loader + assembler contract:
- *   - resolve the persisted `Database` (and selected character / chat)
- *     through an explicit `AssembleDeps` seam, never a storage global,
- *   - build the empty `UnformatedPromptSlots` and the `ExpandContext`
- *     that every downstream slot builder reuses,
- *   - run the two pure template helpers (`normalizeTemplate`,
- *     `buildFormatOrder`),
- *   - return the `AssemblyState` that later 7-11 slices extend
- *     (`beginAssembly`).
- *
- * 7-11b — static/plain slot fill (`fillStaticSlots`): wire the landed
- * leaves into `state.unformated`, mirroring `index.svelte.ts:192-204` —
- * plain sections (`main` / `jailbreak` / `globalNote`) on the
- * non-utility, non-template path, then `authorNote`, the
- * chain-of-thought into `postEverything`, `description`, and
- * `personaPrompt`.
- *
- * 7-11c — lorebook placement + token preflight (`fillLorebookSlots`):
- * `activateLorebook`, distribute the activated entries via
- * `buildLorebookContext` (`lorebook` / `description` / `postEverything`),
- * build the `positionParser` + `depthPrompts`, and run
- * `preflightTemplateTokens`, recording `report` / `positionParser` /
- * `depthPrompts` / `currentTokens` / `memoryCardUsed` / `hasCachePoint`
- * on the state.
- *
- * 7-11d — history window + bias rows (`fillHistoryAndBias`): run the
- * async `buildHistoryWindow` with the 7-11c `report`, thread the
- * start-trigger mutations (`currentChat` / `triggerResult` /
- * `varChanged`), honor `stopSending`, fold `addedTokens` into
- * `currentTokens`, capture `historyMessages`, and collect the
- * unescaped + variable-expanded `biases`. Mirrors
- * `index.svelte.ts:227-273`. The history rows are only captured here —
- * the 7-11e memory window is what fills `unformated.chats`.
- *
- * 7-11e — memory bridge + post-history slot mutations
- * (`fillMemoryAndPostHistory`): run the non-Hypa `buildMemoryWindow`
- * (`memory.ts`) over `historyMessages` to fill `unformated.chats` (+
- * `lastChat` promotion) and `state.memories`, honor `stopSending`, then
- * splice the lorebook depth prompts (`applyDepthPrompts`) and place the
- * start trigger's `additonalSysPrompt` rows. Mirrors
- * `index.svelte.ts:243-304`. Hypa V3 summary creation stays Phase 8.
- *
- * 7-11f — final render + budgeted prompt payload (`renderAndBudget` +
- * `assemblePrompt`): `renderFinalPrompt` flattens the slots, then
- * `finalizeRequestBudget` trims `removable` rows under `db.maxContext`
- * and clamps the response budget. `assemblePrompt` chains 7-11a–f and
- * returns the `AssembleResult` (the `prompt` SSE payload + the dispatch
- * metadata), or `{ stopSending: true }` on a trigger/overflow abort.
- * Mirrors `index.svelte.ts:306-345`.
- *
- * Deferred to later 7-11 slices: the route wiring + SSE emission
- * (7-11g), the preview shortcut (7-11h), and the `info` / `message_patch`
- * telemetry (7-11i). Provider dispatch (`dispatchRequest`) is Phase
- * 7-12 / 6 territory; `buildInlayViewInstruction` (image-gen) stays
- * deferred (slice 3c). Inlay / asset bytes are resolved via the bound
- * `assetLookup` as of slice 3a.
+ * The assembler resolves the persisted database, selected character, and chat;
+ * builds the template slots and expansion context; fills static/plain sections;
+ * activates lorebooks; runs token preflight; builds history and bias rows;
+ * bridges history through memory; applies depth prompts and start-trigger
+ * system prompts; renders the final prompt; and performs the final budget trim.
+ * It returns either a dispatch-ready `AssembleResult` or a structured
+ * `stopSending` result for trigger/budget aborts.
  */
 
 /**
- * The explicit dependency surface the assembler loads state through.
- * The route binds `loadDatabase` to `loadPersisted(dataDir).database`
- * (7-11g); tests inject a fixture. Keeping it a seam means the route
- * never imports storage globals into the assembler.
+ * The explicit dependency surface the assembler loads state through. Routes
+ * bind this to persisted storage; tests inject fixtures. Keeping it a seam
+ * means the assembler never imports storage globals.
  */
 export interface AssembleDeps {
   loadDatabase(): Database | null
@@ -227,11 +181,10 @@ export interface AssembleRestorationPayload {
 }
 
 /**
- * The full assembler output (7-11f). `prompt` is the `prompt` SSE event
- * payload the route emits (7-11g); the remaining fields carry the data
- * dispatch (Phase 7-12 / 6) needs but the `prompt` event does not. On an
- * abort (`stopSending`) the mutation contract still rides along so the
- * route can persist chat-var writes made before the abort.
+ * The full assembler output. `prompt` is the `prompt` SSE event payload; the
+ * remaining fields carry dispatch-only data. On an abort (`stopSending`) the
+ * mutation contract still rides along so the route can persist chat-var writes
+ * made before the abort.
  */
 export interface AssembleResult {
   /** A start trigger or the budget overflow aborted the send. */
@@ -242,7 +195,7 @@ export interface AssembleResult {
   prompt?: Omit<PromptEvent, 'type'>
   /** The budgeted flat prompt (full `OpenAIChat` rows) for dispatch. */
   formated?: OpenAIChat[]
-  /** Logit-bias rows for dispatch (7-12). */
+  /** Logit-bias rows for dispatch. */
   biases?: [string, number][]
   /** Final input token count from `finalizeRequestBudget`. */
   inputTokens?: number
@@ -255,10 +208,7 @@ export interface AssembleResult {
 }
 
 /**
- * The internal assembler state threaded through the 7-11 slices. 7-11a
- * fills the scope (database / character / chat / indices), the
- * `ExpandContext`, the empty slots, and the normalized template +
- * format order; later slices fill `unformated` and add render output.
+ * The internal assembler state threaded through the assembly steps.
  */
 export interface AssemblyState {
   input: AssembleInput
@@ -277,15 +227,15 @@ export interface AssemblyState {
   formatOrder: FormatOrderKey[]
   /** `input.mode === 'continue'`; drives the `[Continue the last response]` marker. */
   isContinue: boolean
-  /** Recorded identity only; applying a non-active preset/loadout is deferred. */
+  /** Recorded identity only; applying a non-active preset/loadout happens elsewhere. */
   presetId?: string
   loadoutId?: string
-  // --- 7-11c: lorebook placement + token preflight (set by `fillLorebookSlots`) ---
+  // --- Lorebook placement + token preflight (set by `fillLorebookSlots`) ---
   /** The lorebook activation report (entries that fired + why). */
   report?: LorebookActivationReport
   /** `{{position::}}` resolver shared by the template / render walkers. */
   positionParser?: (text: string, loc: string) => string
-  /** Depth-positioned lore the history splicer consumes (7-11e). */
+  /** Depth-positioned lore the history splicer consumes. */
   depthPrompts?: LoreEntryActive[]
   /** Running token estimate: `maxResponse + 50 + preflight.addedTokens`. */
   currentTokens?: number
@@ -293,37 +243,34 @@ export interface AssemblyState {
   memoryCardUsed?: boolean
   /** From `preflightTemplateTokens`: the template contains a `cache` card. */
   hasCachePoint?: boolean
-  // --- 7-11d: history window + bias rows (set by `fillHistoryAndBias`) ---
+  // --- History window + bias rows (set by `fillHistoryAndBias`) ---
   /**
-   * The flattened history rows from `buildHistoryWindow`. Captured here
-   * only; the 7-11e memory window is what pushes them into
-   * `unformated.chats` (SPA `index.svelte.ts:243-263`).
+   * The flattened history rows from `buildHistoryWindow`. Captured here only;
+   * the memory window pushes them into `unformated.chats`.
    */
   historyMessages?: OpenAIChat[]
   /**
-   * The start-trigger result threaded out of the history walk. 7-11e
-   * merges `triggerResult.additonalSysPrompt` into the slots
-   * (`index.svelte.ts:285-304`); `null` when no triggers ran.
+   * The start-trigger result threaded out of the history walk. Later assembly
+   * merges `triggerResult.additonalSysPrompt` into the slots; `null` when no
+   * triggers ran.
    */
   triggerResult?: TriggerRunResult | null
   /**
-   * The start trigger asked to abort the send. The assemble root aborts
-   * later (7-11f); mirrors the SPA's `history.stopSending` early return
-   * (`index.svelte.ts:236-238`).
+   * The start trigger asked to abort the send. Mirrors the SPA's
+   * `history.stopSending` early return (`index.svelte.ts:236-238`).
    */
   stopSending?: boolean
   /**
-   * A run-var expansion or start-trigger `setvar` mutated chat state; the
-   * route persists the database when true (7-12d-i).
+   * A run-var expansion or start-trigger `setvar` mutated chat state; the route
+   * persists the database when true.
    */
   varChanged?: boolean
   /** Bias rows: `db.bias ∪ char.bias`, unescaped + variable-expanded. */
   biases?: [string, number][]
-  // --- 7-11e: memory bridge (set by `fillMemoryAndPostHistory`) ---
+  // --- Memory bridge (set by `fillMemoryAndPostHistory`) ---
   /**
-   * Memory-card rows split out of the history by the memory window. Fed
-   * to `renderFinalPrompt` (7-11f). Empty until Phase 8 wires Hypa V3,
-   * since no current server history row carries a memory memo.
+   * Memory-card rows split out of the history by the memory window and fed to
+   * `renderFinalPrompt`.
    */
   memories?: OpenAIChat[]
   promptMemoryChunkPlanningDiagnostics?: PromptMemoryChunkPlanningDiagnostics
@@ -342,7 +289,7 @@ export interface AssemblyState {
   outputTokens?: number
   /** Set to `'overflow'` when the budget recheck cannot fit the pinned rows. */
   abortReason?: 'stopSending' | 'overflow'
-  // --- 7-12d-i: typed mutation handoff (set while assembling) ---
+  // --- Typed mutation handoff (set while assembling) ---
   initialMessages?: Message[]
   messageMutationCheckpoint?: Message[]
   initialScriptstate?: Record<string, string | number | boolean>
@@ -352,9 +299,9 @@ export interface AssemblyState {
   promptMemoryQueryVectors?: MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
   /**
-   * Slice 3a: the non-empty asset lookup the history walk resolves inlay /
-   * asset bytes through. Built in `beginAssembly` from the request `inlayAssets`
-   * + the route's store resolver; falls back to `NO_ASSETS` when unset.
+   * The non-empty asset lookup the history walk resolves inlay / asset bytes
+   * through. Built in `beginAssembly` from the request `inlayAssets` + the
+   * route's store resolver; falls back to `NO_ASSETS` when unset.
    */
   assetLookup?: AssetLookup
 }
@@ -655,15 +602,15 @@ function buildRestorationPayload(state: AssemblyState): AssembleRestorationPaylo
 }
 
 /**
- * 7-11b — fill the static/plain slots on the `AssemblyState`, mutating
+ * Fill the static/plain slots on the `AssemblyState`, mutating
  * `state.unformated` in place. Mirrors `index.svelte.ts:192-204`:
  *   - plain sections (`main` / `jailbreak` / `globalNote`) only on the
  *     non-utility, non-template path,
  *   - `authorNote`, the chain-of-thought into `postEverything`,
  *     `description`, and `personaPrompt` always.
  *
- * Sync — every leaf is sync. `buildInlayViewInstruction` (`:204`) stays
- * deferred (image-gen / `newGenData`).
+ * Sync — every leaf is sync. `buildInlayViewInstruction` (`:204`) is not part
+ * of this server path.
  */
 export function fillStaticSlots(state: AssemblyState): void {
   const { ctx, currentChar, currentChat, unformated, promptTemplate, usingPromptTemplate } = state
@@ -730,7 +677,7 @@ export function fillLorebookSlots(state: AssemblyState): void {
 }
 
 /**
- * 7-11d — run the async history window and collect the bias rows,
+ * Run the async history window and collect the bias rows,
  * mutating `state` in place. Mirrors `index.svelte.ts:227-241` (history)
  * and `:265-273` (bias). Runs after `fillLorebookSlots` so `state.report`
  * feeds the depth-prompt token preflight inside `buildHistoryWindow`.
@@ -742,11 +689,11 @@ export function fillLorebookSlots(state: AssemblyState): void {
  * (matching the SPA's `return false` at `:236-238`): the history rows are
  * incomplete, so they are not captured and the bias rows are skipped.
  *
- * Boundary: the history rows are only *captured* on `state.historyMessages`
- * here. The 7-11e memory window is what pushes them into
- * `unformated.chats` (`buildMemoryWindow`, `index.svelte.ts:243-263`).
- * Inlay/asset bytes are resolved through `state.assetLookup` (slice 3a, built in
- * `beginAssembly`); it falls back to `NO_ASSETS` only when no resolver is bound.
+ * Boundary: the history rows are only captured on `state.historyMessages` here.
+ * The memory window pushes them into `unformated.chats`
+ * (`buildMemoryWindow`, `index.svelte.ts:243-263`). Inlay/asset bytes resolve
+ * through `state.assetLookup`, falling back to `NO_ASSETS` only when no resolver
+ * is bound.
  */
 export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   const { ctx, currentChar, usingPromptTemplate } = state
@@ -794,20 +741,19 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
 }
 
 /**
- * 7-11e — bridge the captured history into `unformated.chats` through the
+ * Bridge the captured history into `unformated.chats` through the
  * non-Hypa memory window, then apply the post-history slot mutations.
  * Mirrors `index.svelte.ts:243-304`:
  *   - `buildMemoryWindow` (memory.ts) trims the oldest rows under
  *     `db.maxContext`, promotes the trailing chat to `lastChat` (no
  *     template), splits memory cards into `state.memories`, and marks the
  *     rest `removable`; `stopSending` short-circuits the rest;
- *   - `applyDepthPrompts` (history.ts, 7-7e) splices the lorebook depth
- *     prompts into `unformated.chats` (`:275-283`);
+ *   - `applyDepthPrompts` splices the lorebook depth prompts into
+ *     `unformated.chats` (`:275-283`);
  *   - the start trigger's `additonalSysPrompt` is placed into
  *     `postEverything` / `lastChat` (`:285-304`).
  *
- * Sync — the non-Hypa window and every post-history mutation are sync.
- * Phase 8 makes this async when Hypa V3 summary creation lands. Runs
+ * Sync — the non-Hypa window and every post-history mutation are sync. Runs
  * after `fillHistoryAndBias`, so a prior `stopSending` short-circuits.
  */
 export function fillMemoryAndPostHistory(state: AssemblyState): void {
@@ -1056,15 +1002,65 @@ function resolvePromptMemoryEmbeddingModel(database: Database): string {
 }
 
 /**
+ * Slice 3b sub-slice 2 — build the VM-backed Lua `editRequest` hook the final
+ * render applies over `formated` and the prompt-info capture, mirroring the
+ * browser's `renderFinalPrompt.ts:384`
+ * `runLuaEditTrigger(char, 'editRequest', formated)`.
+ *
+ * The hook's var engine is a `createTriggerVarEngine` bound to the working chat
+ * and the persisted db chat coordinates, so Lua `setChatVar`/`setState` writes
+ * during the hook flow into the same `chat.scriptstate` the route's chat-var
+ * delta reads (`buildChatVarMutations` → `persistAssemblyChatVars`) — picked up
+ * for free, exactly like a `'start'` trigger's writes. The returned engine lets
+ * the caller fold the hook's `varChanged` into the assembly state.
+ *
+ * Supplied unconditionally for byte-parity with the browser (which always calls
+ * `runLuaEditTrigger`); when the character + active modules declare no
+ * `triggerlua` effect the hook is a no-op and no Lua engine boots
+ * (`runLuaEditTrigger` only executes `triggerlua` effects). Privileged host fns
+ * stay gated off — edit-hook triggers run `lowLevelAccess: false`.
+ */
+function buildLuaEditRequest(state: AssemblyState): {
+  editRequest: (rows: OpenAIChat[]) => Promise<OpenAIChat[]>
+  varEngine: TriggerVarEngine
+} {
+  const db = state.database
+  const varEngine = createTriggerVarEngine({
+    chat: state.currentChat,
+    database: db,
+    selectedCharID: state.selectedCharID,
+    chatPage: state.chatPage,
+    defaultVariables: parseKeyValue(state.currentChar.defaultVariables ?? '').concat(
+      parseKeyValue(db.templateDefaultVariables ?? ''),
+    ),
+  })
+  const editCtx: ServerLuaEditTriggerContext = {
+    chat: state.currentChat,
+    database: db,
+    selectedCharID: state.selectedCharID,
+    chatPage: state.chatPage,
+    varEngine,
+    model: db.aiModel,
+    moduleTriggers: getModuleTriggers(getActiveModules(db, state.currentChar, state.currentChat)),
+  }
+  return {
+    editRequest: (rows) =>
+      runLuaEditTrigger(state.currentChar, 'editRequest', rows, undefined, editCtx),
+    varEngine,
+  }
+}
+
+/**
  * 7-11f — render the now-complete slots into the flat prompt and run the
  * budget recheck, mutating `state` in place. Mirrors
  * `index.svelte.ts:306-345`:
  *   - `renderFinalPrompt` over `state.formatOrder` (which already has
  *     `postEverything` appended by `buildFormatOrder`, so it is **not**
  *     re-pushed here), `state.memories`, and `state.positionParser`,
- *     with the `isContinue` marker; `editRequest` keeps its identity
- *     default (the 7-9e request-state transform / browser Lua stay a
- *     dispatch-time concern);
+ *     with the `isContinue` marker, and the VM-backed Lua `editRequest`
+ *     hook ({@link buildLuaEditRequest}) over both `formated` and the
+ *     prompt-info capture (slice 3b sub-slice 2; mirrors the browser's
+ *     `renderFinalPrompt.ts:384` `runLuaEditTrigger`);
  *   - `finalizeRequestBudget` re-tokenizes the rendered rows, trims
  *     `removable` rows under `db.maxContext`, and clamps the response
  *     budget. On overflow the send aborts (`stopSending` +
@@ -1079,6 +1075,7 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   const { ctx, currentChar, unformated } = state
   const db = state.database
 
+  const lua = buildLuaEditRequest(state)
   const render = await renderFinalPrompt({
     ctx,
     currentChar,
@@ -1089,8 +1086,16 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
     memories: state.memories,
     positionParser: state.positionParser,
     isContinue: state.isContinue,
+    editRequest: lua.editRequest,
   })
   state.promptText = render.promptText
+  // A Lua `editRequest` hook may have written chat vars; fold its writes into
+  // the assembly state so the route persists them (the var engine already wrote
+  // through to the db chat scriptstate the delta reads).
+  if (lua.varEngine.varChanged) {
+    state.varChanged = true
+    syncWorkingScriptstate(state)
+  }
 
   const budget = finalizeRequestBudget({
     db,
@@ -1111,11 +1116,9 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
 }
 
 /**
- * Phase 7 Tier 3 root: assemble the full prompt payload. Chains the
- * 7-11a–f steps and returns the `AssembleResult`. Bad request IDs throw
- * `EntityNotFoundError` (from `beginAssembly`); a start trigger or a
- * budget overflow returns `{ stopSending: true }` rather than throwing.
- * The route wiring + SSE emission is 7-11g.
+ * Assemble the full prompt payload. Bad request IDs throw `EntityNotFoundError`;
+ * a start trigger or budget overflow returns `{ stopSending: true }` rather
+ * than throwing.
  */
 export async function assemblePrompt(
   input: AssembleInput,

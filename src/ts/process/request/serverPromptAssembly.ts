@@ -78,12 +78,26 @@ function charHasImageGenInstruction(currentChar: character): boolean {
   return Boolean(currentChar.inlayViewScreen)
 }
 
-function hasLuaTrigger(triggers: triggerscript[] | undefined): boolean {
+// Interactive Lua dialog APIs. A `triggerlua` script that calls one of these
+// mid-assembly needs a browser dialog the server cannot drive (the server VM
+// throws an InteractiveApiError, `luaRuntime.ts`). Handlers register at runtime
+// via `listenEdit`, so the mode a script hooks is not statically knowable — but a
+// script that never names these tokens cannot invoke them, so a source scan is a
+// sound conservative gate (false positives keep a send in the browser; never a
+// silent server drop).
+const INTERACTIVE_LUA_API_RE = /\b(?:alertInput|alertSelect|alertConfirm)\b/
+
+/** Whether any `triggerlua` effect's source references an interactive dialog API. */
+function triggersUseInteractiveLua(triggers: triggerscript[] | undefined): boolean {
   if (!Array.isArray(triggers)) return false
-  // The Lua edit engine fires only for `effect[0].type === 'triggerlua'`
-  // (`scriptings.ts:1449`). CBS/regex triggers are at server parity, so only the
-  // Lua arm is the gap.
-  return triggers.some((trigger) => trigger?.effect?.[0]?.type === 'triggerlua')
+  return triggers.some((trigger) => {
+    const effect = trigger?.effect?.[0]
+    return (
+      effect?.type === 'triggerlua' &&
+      typeof (effect as { code?: unknown }).code === 'string' &&
+      INTERACTIVE_LUA_API_RE.test((effect as { code: string }).code)
+    )
+  })
 }
 
 /**
@@ -108,15 +122,23 @@ function hasPluginV2EditSet(): boolean {
 
 /**
  * Lua script content (local-assembler classes 4-6): a `triggerlua` effect on the
- * character or any enabled module. The server runs identity for these today (no
- * Lua VM). **Port-pending** — slice 3b stands up a server Lua VM and flips this
- * detector to `server` per sub-class (`editRequest`/`editprocess`/`editinput`) as
- * each lands; until then a Lua trigger hard-fails rather than silently run
- * identity. Kept separate from `hasPluginV2EditSet` so the Lua arm can graduate
- * without disturbing the permanent pluginV2 hard-fail.
+ * character or any enabled module. **Server-supported as of slice 3b** — the
+ * server Lua VM runs the `editRequest` hook (sub-slice 2) at parity, so a
+ * `triggerlua` char routes `server` instead of hard-failing. The one exception is
+ * a script that references an interactive dialog API (`alertInput`/`alertSelect`/
+ * `alertConfirm`): those need a browser the server lacks, so this predicate keeps
+ * them `unsupported`. The `editprocess`/`editinput` execution seams graduate in
+ * sub-slices 3/4; until then a non-interactive Lua char routes `server` even if it
+ * only hooks those (acceptable pre-ship — `useServerPromptAssembly` defaults off
+ * and there are no users; see `docs/client-thinning/phases/slices/slice-3b-lua/`).
+ * Kept separate from `hasPluginV2EditSet` so the permanent pluginV2 hard-fail is
+ * undisturbed.
  */
-function sendHasLuaContent(currentChar: character): boolean {
-  return hasLuaTrigger(currentChar.triggerscript) || hasLuaTrigger(getModuleTriggers())
+function luaUsesInteractiveApi(currentChar: character): boolean {
+  return (
+    triggersUseInteractiveLua(currentChar.triggerscript) ||
+    triggersUseInteractiveLua(getModuleTriggers())
+  )
 }
 
 /**
@@ -138,11 +160,13 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   if (charHasImageGenInstruction(input.currentChar)) {
     return 'Image-generation view instructions are not yet supported by server prompt assembly. Disable server prompt assembly to send.'
   }
-  // Lua scripts (classes 4-6): port-pending. Needs a server Lua VM (slice 3b);
-  // until each hook lands, a `triggerlua` effect hard-fails rather than run the
-  // server's identity transform and silently drop the script's edits.
-  if (sendHasLuaContent(input.currentChar)) {
-    return 'Lua scripts on this character are not yet supported by server prompt assembly. Disable server prompt assembly to send.'
+  // Lua scripts (classes 4-6): the server Lua VM (slice 3b) runs the editRequest
+  // hook at parity, so a `triggerlua` char routes `server`. The exception is a
+  // script that references an interactive dialog API — it needs a browser dialog
+  // the server cannot drive, so it stays `unsupported` rather than surfacing as a
+  // runtime generation error.
+  if (luaUsesInteractiveApi(input.currentChar)) {
+    return 'Lua scripts using interactive dialogs (alertInput / alertSelect / alertConfirm) require the browser and are not supported by server prompt assembly. Disable server prompt assembly to send.'
   }
   // pluginV2 (class 5, plugin arm): permanent `unsupported` (no-port list;
   // deprecated by Plugin V3). Reported separately from the Lua arm above so the
@@ -191,11 +215,12 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
  *   3. single, non-group character.
  *   4. server-routable provider (reuse `resolveServerCompletionRoute`).
- *   5. no image-gen / Lua / pluginV2 content, and no non-vision caption case
- *      (image/asset/inlay content on a model without image input — class 2).
- *      Vision-model image/asset/inlay content is server-assembled (slice 3a). The
- *      Lua arm is port-pending (slice 3b flips it per sub-class); the pluginV2
- *      arm is a permanent hard fail (no-port list).
+ *   5. no image-gen / interactive-Lua / pluginV2 content, and no non-vision
+ *      caption case (image/asset/inlay content on a model without image input —
+ *      class 2). Vision-model image/asset/inlay content is server-assembled
+ *      (slice 3a). Lua now routes `server` — the VM runs the editRequest hook
+ *      (slice 3b) — except scripts using an interactive dialog API, which stay
+ *      `unsupported`; the pluginV2 arm is a permanent hard fail (no-port list).
  *   6. otherwise → `server`.
  *
  * From step 2 on (Fastify mode, flag on) the verdict is always `server` or

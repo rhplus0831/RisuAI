@@ -154,9 +154,11 @@ no-op (`scriptings.ts:1431-1432` early-returns), so its server port is near-iden
 once the Lua VM lands — *port-pending*. **pluginV2 `editprocess`** (and the other
 pluginV2 edit/replacer hooks) is **permanent `unsupported`** — server-side plugin
 code execution is on the no-port list and pluginV2 is superseded by Plugin V3. The
-classifier reports the two via separate predicates (`sendHasLuaContent` vs
-`hasPluginV2EditSet`) so the Lua arm can flip to `server` without disturbing the
-permanent pluginV2 hard fail; the `A4R-pluginv2` audit invariant
+classifier reports the two via separate predicates (`luaUsesInteractiveApi` vs
+`hasPluginV2EditSet`) so the Lua arm flips to `server` without disturbing the
+permanent pluginV2 hard fail; as of slice 3b sub-slice 2 the Lua arm routes
+`server` for all Lua **except** interactive-API scripts (`alertInput`/`alertSelect`/
+`alertConfirm`), which stay `unsupported`. The `A4R-pluginv2` audit invariant
 (`util/client-thinning-audit.ts`) forbids a server-side plugin execution path.
 
 ## 6. Input-trigger / `editinput` scripts at submit

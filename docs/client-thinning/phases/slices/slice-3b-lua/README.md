@@ -1,10 +1,12 @@
 # Slice 3b — Lua server port (handover & sub-slice series)
 
 Date: 2026-05-29
-Status: **sub-slice 1 landed (the VM)** — sub-slices 2/3/4 (the hooks + classifier
-flip) remain. The runtime (`server/fastify/src/prompt/luaRuntime.ts`) runs arbitrary
-user Lua under the single-user self-host gate, but is **not wired into the assembler**
-and the classifier Lua arm still routes `unsupported`.
+Status: **sub-slices 1 + 2 landed** — sub-slices 3/4 (editprocess + editinput) remain.
+The runtime (`server/fastify/src/prompt/luaRuntime.ts`) runs user Lua under the
+single-user self-host gate, and the **`editRequest` hook is now wired into the
+assembler** (`assemble.ts::renderAndBudget`). The classifier Lua arm routes `server`
+for all Lua **except** scripts using an interactive dialog API
+(`alertInput`/`alertSelect`/`alertConfirm`), which stay `unsupported`.
 
 This directory is the **slice series** the parent slice
 ([`../slice-3b-content-lua-plugin-scripts.md`](../slice-3b-content-lua-plugin-scripts.md))
@@ -15,7 +17,7 @@ The work is split into four sub-slices, **one review each**, in order:
 | # | Sub-slice | Gates | File |
 | --- | --- | --- | --- |
 | 1 ✅ | **Server Lua VM** (the runtime) — **landed** (`prompt/luaRuntime.ts`) | everything below | [`sub-slice-1-server-lua-vm.md`](sub-slice-1-server-lua-vm.md) |
-| 2 | **`editRequest`** hook + classifier flip | needs 1 | [`sub-slice-2-editrequest.md`](sub-slice-2-editrequest.md) |
+| 2 ✅ | **`editRequest`** hook + classifier flip — **landed** (`assemble.ts::renderAndBudget`) | needs 1 | [`sub-slice-2-editrequest.md`](sub-slice-2-editrequest.md) |
 | 3 | **`editprocess`** hook (Lua = browser no-op) | needs 1 | [`sub-slice-3-editprocess.md`](sub-slice-3-editprocess.md) |
 | 4 | **input-trigger / `editinput`** at submit | needs 1 | [`sub-slice-4-editinput.md`](sub-slice-4-editinput.md) |
 
@@ -148,14 +150,17 @@ The gate to design **before wiring `request()`/`LLM()`** (the parent slice says 
 
 Where each hook wires (exact seams; the editRequest seam *already exists*, unused):
 
-- **`editRequest`** — the injectable seam is already typed at
+- **`editRequest`** ✅ **wired (sub-slice 2)** — the injectable seam is typed at
   **`templates.ts:635`** (`editRequest?: (rows: OpenAIChat[]) => OpenAIChat[] | Promise<…>`),
-  applied at `:725-730` (over `formated` and the `promptInfo` capture). It is just
-  never supplied: `renderAndBudget` calls `renderFinalPrompt` **without** an
-  `editRequest` key at **`assemble.ts:1082`**. Sub-slice 2 supplies a VM-backed one.
-  Mind the **two-stage** note (`local-assembler-content-classes.md` §4): the dispatch
-  layer also edits rows — but on the server, dispatch is the assembler, so only the
-  assembly-time `editRequest` applies here.
+  applied at `:725-730` (over `formated` and the `promptInfo` capture).
+  `renderAndBudget` now supplies a VM-backed one via `buildLuaEditRequest`
+  (`assemble.ts`): `(rows) => runLuaEditTrigger(currentChar, 'editRequest', rows,
+  undefined, ctx)`, threading a `createTriggerVarEngine` (bound to the db chat
+  scriptstate) + the active `moduleTriggers`. Supplied unconditionally for parity;
+  no Lua engine boots when there is no `triggerlua` effect. Mind the **two-stage**
+  note (`local-assembler-content-classes.md` §4): the dispatch layer also edits rows
+  — but on the server, dispatch is the assembler, so only the assembly-time
+  `editRequest` applies here.
 - **`editprocess`** — runs in the history pass next to `processScript`
   (`scripts.ts:315`, applied `history.ts:292-300,452-457`). The `scripts.ts:50-56`
   header already documents the Lua deferral. Lua `editprocess` is a browser no-op, so
@@ -173,22 +178,27 @@ Where each hook wires (exact seams; the editRequest seam *already exists*, unuse
   (`:619`), persisted by the route via `persistAssemblyChatVars`
   (`generationChat.ts:293`). Bind the VM's var host fns to the **same** engine the
   assembler already mutates so the delta picks Lua's writes up for free.
-- **triggers** — the server `triggerlua` arm currently bypasses the mode filter and
-  **falls through as a no-op** (`triggers.ts:264-280,817-834`). Replace those no-ops
-  with VM calls when sub-slice 2/4 land; until then they stay no-ops.
+- **triggers** — the server `triggerlua` arm bypasses the mode filter and **falls
+  through as a no-op** in `runTrigger`. Sub-slice 2 left this **untouched**:
+  `editRequest` runs via the template seam (`renderFinalPrompt`), not `runTrigger`,
+  so the start-trigger run still selects a `triggerlua` trigger (`matchesTrigger`)
+  and no-ops it harmlessly (server parity tests cover a `type: 'request'` triggerlua
+  char). Replacing the `runTrigger` no-op with a VM call is sub-slice 4's concern
+  (the submit-time input trigger).
 
 ## Classifier flips (per sub-slice)
 
-The Lua detector is `sendHasLuaContent` in
-`src/ts/process/request/serverPromptAssembly.ts` (currently `→ unsupported`). It
-detects `triggerlua` presence but **cannot tell statically which edit mode a script
-hooks** (handlers register at runtime via `listenEdit`). So a faithful flip means:
-once the VM runs a script, it must support whatever that script registers (or fail
-explicitly). Practical consequence — you likely flip the whole Lua arm to `server`
-when the VM + the common hooks (editRequest/editprocess/editinput) are all live,
-*minus* the interactive-API arm which stays `unsupported`. Plan the flip in
-sub-slice 2 (editRequest is the dominant case) and tighten in 3/4. Update the
-classifier table tests (`request/tests/serverPromptAssembly.test.ts`) with each flip.
+**Landed in sub-slice 2.** The Lua arm in
+`src/ts/process/request/serverPromptAssembly.ts` cannot tell statically which edit
+mode a script hooks (handlers register at runtime via `listenEdit`), so the flip is
+the whole Lua arm → `server` *minus* the interactive-API arm. The predicate is now
+`luaUsesInteractiveApi` (replacing the old `sendHasLuaContent` "any Lua →
+`unsupported`"): it source-scans `triggerlua` effects for
+`alertInput`/`alertSelect`/`alertConfirm` and keeps only those `unsupported`; all
+other Lua routes `server`. Consequence — a non-interactive Lua char that only hooks
+`editprocess`/`editinput` routes `server` ahead of those execution seams (sub-slices
+3/4); acceptable pre-ship (flag default-off, no users), tighten in 3/4. Classifier
+table tests updated in `request/tests/serverPromptAssembly.test.ts`.
 
 ## Shared proof shape (every sub-slice)
 

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -463,9 +464,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(patch?.varChanged).toBe(true)
     expect(patch?.chatVarMutations).toEqual([{ key: '$score', before: null, after: '9' }])
 
-    // C-A1: the route persists the assembly-time delta itself (no browser
-    // command replay) and returns the bumped revision on the info frame so the
-    // browser can reconcile its cached command revision.
+    // The route persists the assembly-time delta itself and returns the bumped
+    // revision on the info frame so the browser can reconcile its cached command
+    // revision.
     const info = events.find((e) => e.type === 'info')
     expect(info?.data.revision).toBe(2)
 
@@ -477,6 +478,151 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(2)
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
+  })
+
+  // Slice 3b sub-slice 2: the server Lua VM runs the `editRequest` hook during
+  // assembly (mirrors the browser's `renderFinalPrompt.ts:384`
+  // `runLuaEditTrigger(char,'editRequest',formated)`), so a `triggerlua` char's
+  // edits show up in the server-assembled prompt — not the pre-slice identity.
+  function dbWithEditRequestLua(code: string): unknown {
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
+    }
+    db.characters[0].triggerscript = [
+      { comment: '', type: 'request', conditions: [], effect: [{ type: 'triggerlua', code }] },
+    ]
+    return db
+  }
+
+  it('runs a Lua editRequest hook that rewrites the assembled prompt rows (slice 3b)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    // Suffix every rendered row. The regex-only baseline leaves 'MAIN' untouched
+    // (see the plain-fixture send above); the Lua hook makes it 'MAIN [LUA]'.
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithEditRequestLua(`
+        listenEdit('editRequest', function(id, data, meta)
+          for i = 1, #data do
+            data[i].content = data[i].content .. ' [LUA]'
+          end
+          return data
+        end)
+      `),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const prompt = events.find((e) => e.type === 'prompt')!
+    const messages = prompt.data.messages as Array<{ role: string; content: string }>
+    expect(messages.length).toBeGreaterThan(0)
+    // The 'MAIN' row was rewritten in place (not duplicated), proving the hook
+    // ran over the final server-assembled rows.
+    expect(messages.some((m) => m.content === 'MAIN [LUA]')).toBe(true)
+    expect(messages.some((m) => m.content === 'MAIN')).toBe(false)
+    expect(messages.every((m) => typeof m.content === 'string' && m.content.endsWith(' [LUA]'))).toBe(
+      true,
+    )
+  })
+
+  it('persists a Lua editRequest setChatVar write via the assembly chat-var delta (slice 3b)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    // The hook's var engine is bound to the same db chat scriptstate the route
+    // persists, so a `setChatVar`/`setState` during the hook lands in the
+    // assembly chat-var delta and bumps the revision (no extra browser re-POST).
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithEditRequestLua(`
+        listenEdit('editRequest', function(id, data, meta)
+          setState(id, 'turns', 3)
+          return data
+        end)
+      `),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const patch = events.find((e) => e.type === 'message_patch')?.data.patch as
+      | { chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }>; varChanged?: boolean }
+      | undefined
+    // `setState(id,'turns',3)` writes the JSON-encoded value under the `__`-prefixed
+    // key; the var engine stores it at `$__turns` in scriptstate.
+    expect(patch?.varChanged).toBe(true)
+    expect(patch?.chatVarMutations).toEqual([{ key: '$__turns', before: null, after: '3' }])
+
+    const info = events.find((e) => e.type === 'info')
+    expect(info?.data.revision).toBe(2)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $__turns: '3' })
+  })
+
+  // Byte-parity vs the local golden. The browser fixture sweep
+  // (`src/ts/process/__fixtures__`) computes its `editrequest-trigger` golden with
+  // a *mocked* `runLuaEditTrigger` that appends a fixed marker row whenever a char
+  // has a triggerscript. Here the real server Lua VM runs Lua that appends the
+  // same row — so the server reproduces the golden marker byte-for-byte. (This
+  // lives in the node-env server suite because wasmoon cannot initialize under the
+  // browser suite's jsdom environment; see the note in
+  // `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.)
+  it('reproduces the local golden editRequest marker row byte-for-byte (slice 3b)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithEditRequestLua(`
+        listenEdit('editRequest', function(id, data, meta)
+          data[#data + 1] = { role = 'system', content = '[edit-request marker]', memo = 'edit-request-marker' }
+          return data
+        end)
+      `),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const prompt = events.find((e) => e.type === 'prompt')!
+    const formated = prompt.data.formated as Array<Record<string, unknown>>
+    const serverMarker = formated.find((row) => row.content === '[edit-request marker]')
+
+    // Load the committed local golden and pull its editRequest marker row.
+    const goldenPath = fileURLToPath(
+      new URL(
+        '../../../src/ts/process/__fixtures__/expected/editrequest-trigger.json',
+        import.meta.url,
+      ),
+    )
+    const golden = JSON.parse(readFileSync(goldenPath, 'utf8')) as {
+      providerCalls: Array<{ formated: Array<Record<string, unknown>> }>
+    }
+    const goldenMarker = golden.providerCalls[0].formated.find(
+      (row) => row.content === '[edit-request marker]',
+    )
+    expect(goldenMarker).toBeDefined()
+    expect(serverMarker).toEqual(goldenMarker)
   })
 
   // The marker rides on a *history* user message (the `chats` slot); the
@@ -704,8 +850,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(claim.statusCode).toBe(200)
     expect(claim.json().revision).toBe(1)
 
-    // A stale session's send is rejected by the active-writer guard (a
-    // preHandler) before assembly runs, so the C-A1 write never happens.
+    // A stale session's send is rejected by the active-writer guard before
+    // assembly runs, so no chat-var write is persisted.
     const res = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/generate/chat',
@@ -1118,7 +1264,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(Array.isArray(body.messages)).toBe(true)
     expect(body.messages.length).toBeGreaterThan(0)
     expect(body.promptInfo).toBeDefined()
-    // 7-12b: full rows + biases ride on the JSON payload too.
+    // Full rows + biases ride on the JSON payload too.
     expect(Array.isArray(body.formated)).toBe(true)
     expect(body.formated.length).toBe(body.messages.length)
     expect(Array.isArray(body.biases)).toBe(true)

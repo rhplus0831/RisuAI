@@ -1,12 +1,13 @@
 # Sub-slice 3b-2: Lua `editRequest` hook + classifier flip
 
-Date: 2026-05-29 (handover; not started)
+Date: 2026-05-29 (landed)
 
 | | |
 | --- | --- |
 | **Series** | [Lua server port](README.md), sub-slice **2 of 4** |
 | **Depends on** | **sub-slice 1** (the VM) |
 | **Goal** | Wire the VM-backed Lua `editRequest` hook into the assembler's request-edit seam and flip the classifier's Lua arm to `server` for the editRequest case. The dominant Lua case. |
+| **Status** | **DONE.** Hook wired in `assemble.ts::renderAndBudget` (via `buildLuaEditRequest`); classifier Lua arm flipped to `server` except interactive-API scripts (`serverPromptAssembly.ts::luaUsesInteractiveApi`). |
 
 ## The seam already exists (unused)
 
@@ -39,18 +40,46 @@ runs it at `renderFinalPrompt.ts:384` via `runLuaEditTrigger(char,'editRequest',
    (`triggers.ts:264-280,817-834`) — but `editRequest` runs via the template seam,
    not `runTrigger`, so this may be untouched here. Confirm.
 
-## Prove
+## Prove (as landed)
 
-- `generation.chat.test.ts`: a char whose Lua `editRequest` appends/rewrites a row →
-  the server-assembled prompt reflects it (vs regex-only baseline).
-- `sendChat.fixtures.serverBacked.test.ts` Describe B: server == local golden for a
-  `triggerscript` editRequest char.
-- Classifier: `triggerlua` → `server`; interactive-API Lua → `unsupported`.
-- Shared verification.
+- `generation.chat.test.ts` (server suite, node env):
+  - a char whose Lua `editRequest` rewrites every row → the server-assembled prompt
+    reflects it (`'MAIN' → 'MAIN [LUA]'`, in-place, vs the regex-only baseline);
+  - an `editRequest` that calls `setState` → the chat-var delta carries `$__turns`
+    and the route bumps the revision (persisted via the same scriptstate write);
+  - **byte-parity vs the local golden**: the real server VM reproduces the
+    `editrequest-trigger` golden's marker row (`expected/editrequest-trigger.json`)
+    exactly.
+- Classifier (`request/tests/serverPromptAssembly.test.ts`): a non-interactive
+  `triggerlua` char → `server`; an `alertInput`/`alertSelect` char → `unsupported`;
+  a non-interactive Lua char no longer shadows a pluginV2 hard-fail.
+- Shared verification green: `client-thinning:audit`, `api:test`, `test`, `check`.
+
+**Why the golden-parity proof is in the server suite, not
+`sendChat.fixtures.serverBacked.test.ts`:** the route-backed harness boots the real
+Fastify server *in-process*, and the server Lua VM uses `wasmoon`, whose WASM init
+calls `createRequire(import.meta.url)` — which throws under that browser suite's
+jsdom environment (`http://localhost:3000/...` is not a file URL; this is the same
+reason `__fixtures__/mocks/scriptings.ts` exists). So the real VM can only run in
+the node-env server suite. A note records this in the serverBacked file.
 
 ## When done
 
-- [ ] Server runs the Lua `editRequest` hook at byte parity with the browser.
-- [ ] Classifier routes editRequest Lua → `server`; interactive-API Lua → `unsupported`.
-- [ ] Lua var writes during the hook persist via the scriptstate delta.
-- [ ] Parity fixture green.
+- [x] Server runs the Lua `editRequest` hook at byte parity with the browser.
+- [x] Classifier routes editRequest Lua → `server`; interactive-API Lua → `unsupported`.
+- [x] Lua var writes during the hook persist via the scriptstate delta.
+- [x] Parity proof green (in the server suite — see the note above).
+
+## Notes on the landed cut
+
+- The classifier cannot tell statically which mode a script hooks, so the flip is
+  the whole Lua arm → `server` *minus* the interactive-API arm (the "simplest
+  defensible cut" above). A non-interactive Lua char that only hooks
+  `editprocess`/`editinput` therefore routes `server` ahead of those execution
+  seams (sub-slices 3/4). This is acceptable pre-ship: `useServerPromptAssembly`
+  defaults off and there are no users. Tighten in 3/4.
+- `triggers.ts` is untouched. `editRequest` runs via the template seam
+  (`renderFinalPrompt`), not `runTrigger`; the start-trigger run still selects a
+  `triggerlua` trigger (`matchesTrigger`) but no-ops it in the effect switch — the
+  server parity tests cover a `type: 'request'` triggerlua char and confirm no
+  interference.

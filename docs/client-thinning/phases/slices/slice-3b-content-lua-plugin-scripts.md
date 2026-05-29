@@ -52,14 +52,15 @@ Tracking which sub-class has landed (this slice is a series — see the scope gu
 | Sub-class | Disposition | State |
 | --- | --- | --- |
 | pluginV2 `editRequest`/`editprocess`/replacers (5) | **permanent `unsupported`** | **DONE** — classifier split into its own `hasPluginV2EditSet` arm (distinct user-facing reason), recorded in the parity matrix / content-classes / unsupported docs, and pinned by the **`A4R-pluginv2 no server-side plugin execution`** audit invariant (`util/client-thinning-audit.ts`, fixtures under `util/client-thinning-audit-fixtures/pluginv2-server-execution/`). |
-| Lua `editRequest` (4) | port (server VM) | **pending** — VM runtime landed; hook wiring pending. |
-| Lua `editprocess` (5) | port (browser no-op) | **pending** — VM runtime landed; hook wiring/proof pending. |
-| Lua input-trigger / `editinput` (6) | port (VM + submit hook) | **pending** — VM runtime landed; new submit seam pending. |
+| Lua `editRequest` (4) | port (server VM) | **landed** (sub-slice 3b-2) — hook wired in `renderAndBudget`; classifier routes `server`. |
+| Lua `editprocess` (5) | port (browser no-op) | **pending** — VM runtime landed; hook wiring/proof pending (sub-slice 3). |
+| Lua input-trigger / `editinput` (6) | port (VM + submit hook) | **pending** — VM runtime landed; new submit seam pending (sub-slice 4). |
 
-The Lua sub-classes share the landed server `wasmoon` VM runtime. What remains is
-hook wiring and proof. Until each hook lands, the Lua arm (`sendHasLuaContent`)
-keeps routing `unsupported`, so there is **no silent local fallback** for any
-Lua/plugin/trigger send today.
+The Lua sub-classes share the landed server `wasmoon` VM runtime. The `editRequest`
+hook is wired (sub-slice 2); `editprocess`/`editinput` wiring remains. The Lua arm
+(`luaUsesInteractiveApi`) now routes `server` for all Lua **except** interactive-API
+scripts (which stay `unsupported`); there is still **no silent local fallback** for
+any Lua/plugin/trigger send.
 
 **The Lua port is drafted as its own sub-slice series for the next agent** (the
 operator chose the **single-user self-host** security model on 2026-05-29):

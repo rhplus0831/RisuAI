@@ -315,18 +315,26 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()[0]).toMatchObject({ mode: 'send', userMessage: 'ping' })
   })
 
-  it('hard-fails an out-of-subset send (Lua trigger) as unsupported, never reaching local or /chat', async () => {
+  it('hard-fails an out-of-subset send (interactive Lua) as unsupported, never reaching local or /chat', async () => {
     await seedEcho()
     localAssemblerState.throwIfEntered = true
-    // A triggerlua effect is a content class the server assembler cannot yet
-    // reproduce, so the classifier must return `unsupported` (hard fail) rather
-    // than silently assembling on the server or falling back to local.
+    // Slice 3b sub-slice 2 flipped non-interactive Lua to `server` (the VM runs
+    // the editRequest hook). A script using an interactive dialog API
+    // (alertInput/alertSelect/alertConfirm) still has no server equivalent, so the
+    // classifier must return `unsupported` (hard fail) rather than assembling on
+    // the server or falling back to local.
     DBState.db.characters[0].triggerscript = [
       {
         comment: '',
         type: 'start',
+        conditions: [],
         lowLevelAccess: false,
-        effect: [{ type: 'triggerlua', code: '' }],
+        effect: [
+          {
+            type: 'triggerlua',
+            code: "listenEdit('editRequest', function(id, data) alertInput(id, 'pick') return data end)",
+          },
+        ],
       },
     ] as never
     vi.stubGlobal('fetch', serverChatFetch)
@@ -334,5 +342,44 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(false)
     expect(getServerChatCalls()).toHaveLength(0)
+  })
+
+  it('routes a non-interactive Lua trigger to /chat (slice 3b: the VM runs editRequest server-side)', async () => {
+    await seedEcho()
+    // Armed: a non-interactive Lua char is now in-subset (server-mandatory), so the
+    // local assembler must never be entered.
+    localAssemblerState.throwIfEntered = true
+    DBState.db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'request',
+        conditions: [],
+        lowLevelAccess: false,
+        effect: [
+          {
+            type: 'triggerlua',
+            code: "listenEdit('editRequest', function(id, data) return data end)",
+          },
+        ],
+      },
+    ] as never
+    setServerChatPrompt(
+      [{ role: 'user', content: 'server-only prompt' }],
+      { promptText: 'SERVER PROMPT', inputTokens: 11, outputTokens: 22 },
+      { formated: [{ role: 'user', content: 'server-only prompt' }] },
+    )
+    setServerChatDispatchResult('fixture echo reply', {
+      model: 'echo_model',
+      generationId: 'uuid-0',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const ok = await chatModule.sendChat(-1)
+    expect(ok).toBe(true)
+    expect(getServerChatCalls()[0]).toMatchObject({ mode: 'send', userMessage: 'ping' })
   })
 })
