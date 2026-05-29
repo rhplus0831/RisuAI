@@ -8,35 +8,59 @@ Date: 2026-05-29
 | **Blocker** | A1 (content parity) — classes 4, 5, 6, 7 |
 | **Depends on** | **slice 1** (classifier); the largest A1 content batch |
 | **Reference** | [`../../reference/server-assembler-parity.md`](../../reference/server-assembler-parity.md) §`templates.ts`/§`triggers.ts` + [`../../reference/local-assembler-content-classes.md`](../../reference/local-assembler-content-classes.md) classes 4–7 |
-| **Goal** | Bring server prompt assembly to parity for Lua `editRequest`, Lua/plugin-V2 `editprocess`, and the input-trigger/`editinput` scripts — or keep them explicitly `unsupported`. The server runs **regex scripts only** today. |
+| **Goal** | **Lua → server port (committed):** bring server prompt assembly to parity for Lua `editRequest`, Lua `editprocess`, and the input-trigger/`editinput` scripts. **plugin-V2 → permanent `unsupported`** (deprecated by Plugin V3; not ported). The server runs **regex scripts only** today. |
 
 ## The honest framing first
 
-The server assembler is **regex-only**. Lua `editRequest` runs identity
-(`templates.ts:683`), Lua `editprocess` is a no-op, and pluginV2 hooks are
-unported. Reaching parity means **standing up a server-side scripting VM**
-(`wasmoon` Lua or a Pyodide worker) that runs arbitrary user code — a large
-sub-project, not a one-sitting change. Slice 1 already classifies all of these
-`unsupported`, so the *correctness* hole is already closed (no silent
-mis-assembly). This slice is therefore a **decision gate**, then either a port or
-a documented permanent `unsupported`.
+The server assembler is **regex-only** today. Lua `editRequest` runs identity
+(`templates.ts:683`), Lua `editprocess` is a no-op, and pluginV2 hooks are unported.
+Slice 1 already classifies all of these `unsupported`, so the *correctness* hole is
+closed (no silent mis-assembly).
 
-## Outcome (port path)
+**Decision (2026-05-29): the Lua arms are a committed server port; pluginV2 is
+permanent `unsupported`.** Lua is the primary bot-extension mechanism and is widely
+used, so leaving it permanently server-unsupported would cap server assembly — and
+durable generation (`docs/durable-generation/`) — to unscripted/regex-only chats.
+pluginV2 is being phased out in favor of Plugin V3, and "server-side plugin code
+execution" is on the no-port list (`../../plan.md`), so its `unsupported` status is
+intentional and kept.
 
-- A server scripting runtime runs the Lua/Python `editRequest` hook, the
-  Lua/pluginV2 `editprocess` hooks, and the submit-time input-trigger/`editinput`
-  scripts, with parity to the browser.
-- The classifier's **Lua/plugin/trigger** detector (slice 1, step 7) flips from
-  `→ unsupported` to `→ server`.
+Porting Lua means **standing up a server-side WASM Lua VM** (`wasmoon`, the same
+engine the browser uses) — **its own sub-project**, not a one-sitting change. Three
+things shape it:
 
-## Outcome (keep-unsupported path)
+- **Scope it as a slice series**, not one batch: the VM first, then `editRequest`,
+  `editinput`, `editprocess`, and (in slice 4) the Lua `'output'` arms — one review
+  each.
+- **Security is the real gate, scaled to deployment model.** `wasmoon` is
+  WASM-sandboxed (no FS/process escape, same as the browser); the new risk is the
+  *host functions* exposed to it running with server privileges — especially
+  `request()` (server-side HTTP → SSRF egress from the server's network position)
+  and event-loop blocking (infinite loops / `sleep`). A single-user self-hosted
+  Fastify deployment is "your own code on your own box" + an egress/DoS bound; a
+  shared/hosted deployment needs a much higher bar. Design the egress allow/deny +
+  execution limits before wiring `request()` / `LLM()`.
+- **Not all Lua is server-portable.** Interactive APIs (`alertInput` / `alertSelect`
+  / `alertConfirm`) need the client, so a finer classifier arm (Lua-using-interactive-
+  APIs → still client/unsupported, or a client round-trip) may be required even after
+  the VM lands.
 
-- The disposition is recorded as **permanent** `unsupported` in
-  [`../../unsupported-and-client-owned.md`](../../unsupported-and-client-owned.md)
-  with the rationale (no server code-execution sandbox). The classifier already
-  enforces it; no further code. Note: "server-side plugin code execution" is on
-  the historical **no-port list** in [`../../plan.md`](../../plan.md) — so the
-  pluginV2 half in particular leans toward this path.
+## Outcome — Lua (the committed port)
+
+- A server Lua VM runs the Lua `editRequest` hook, the Lua `editprocess` hook, and
+  the submit-time input-trigger/`editinput` Lua scripts, at parity with the browser.
+- The classifier's **Lua** detector arm (slice 1, step 7) flips from `→ unsupported`
+  to `→ server` — per sub-class, as each lands. A finer Lua-interactive-API arm may
+  stay `unsupported` (see the framing above).
+
+## Outcome — pluginV2 (kept `unsupported`)
+
+- The pluginV2 disposition is recorded as **permanent** `unsupported` in
+  [`../../unsupported-and-client-owned.md`](../../unsupported-and-client-owned.md):
+  "server-side plugin code execution" is on the no-port list
+  ([`../../plan.md`](../../plan.md)), and pluginV2 is superseded by Plugin V3. The
+  classifier already enforces it; no port. Add an audit invariant that no pluginV2
+  execution path exists server-side.
 
 ## Preconditions
 
@@ -54,16 +78,16 @@ a documented permanent `unsupported`.
    classes 4–7).
 2. **Make the gate decision per sub-class** — they are not all the same:
 
-   | Sub-class | Browser engine | Realistic disposition |
+   | Sub-class | Browser engine | Decided disposition |
    | --- | --- | --- |
-   | Lua/Python `editRequest` (4) | `runLuaEditTrigger` → `wasmoon`/Pyodide (`scriptings.ts:1415`) | port needs a server Lua/Pyodide VM |
-   | Lua `editprocess` (5) | no-op in browser (`scriptings.ts:1431-1432`) | trivial — already effectively identity |
-   | pluginV2 `editprocess`/`editRequest` (5) | JS `EditFunction`s in the browser plugin runtime | leans **permanent unsupported** (no-port list) |
-   | input-trigger / `editinput` at submit (6) | `runTrigger('input')` + `processScript('editinput')` (`DefaultChatScreen.svelte:232,240`) | port needs the VM + a submit-time server hook |
+   | Lua `editRequest` (4) | `runLuaEditTrigger` → `wasmoon` (`scriptings.ts:1415`) | **port** (needs the server Lua VM) |
+   | Lua `editprocess` (5) | no-op in browser (`scriptings.ts:1431-1432`) | **port** — trivial (already effectively identity) |
+   | pluginV2 `editprocess`/`editRequest` (5) | JS `EditFunction`s in the browser plugin runtime | **permanent unsupported** (no-port list; deprecated by V3) |
+   | input-trigger / `editinput` at submit (6) | `runTrigger('input')` + `processScript('editinput')` (`DefaultChatScreen.svelte:232,240`) | **port** (needs the VM + a submit-time server hook) |
 
-   If any sub-class is permanent `unsupported`, the **whole Lua/plugin detector
-   stays** (a send with that sub-class still hard-fails) — but you can still port
-   the others to shrink the `unsupported` surface.
+   pluginV2 stays `unsupported`, so the **Lua/plugin detector stays** (a pluginV2 send
+   still hard-fails); the Lua arms flip to `server` per sub-class as each lands. A
+   Lua-using-interactive-API arm may also stay `unsupported`.
 
 ### Implement — port path (only the sub-classes you chose to port)
 
