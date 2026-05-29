@@ -28,7 +28,7 @@ requests a write** — it never becomes the authority.
 | Post-generation | **Browser** | `editoutput`, inlay-screen, output trigger, auto-continue, IGP (blocker **A2** for the durable ones). |
 | Stage-4 closeout | **Browser** | Notification, emotion, image-gen, TTS, stage metadata (B1/B2). |
 | HypaV3 memory | **Server** | Persistence + jobs server-side; progress UI is browser (B1). |
-| Durable persistence | **Command-backed** | Browser issues commands; generation routes are stateless re the chat blob (B2). |
+| Durable persistence | **Mixed** | Assembly-time scriptstate delta is now persisted by `/generate/chat` itself (**C-A1, done**); final-message persistence is still command-backed (B2). |
 
 ## A. Hard Blockers
 
@@ -100,21 +100,25 @@ not a thinness leak. No batch needed beyond keeping the hard-fail explicit.
   selection → transient `CharEmotion`, HypaV3 progress UI, input plumbing, plugin
   runtime.
 - **B2 (acceptable, optimizable):** auto-continue/resend recursion (control flow
-  that re-issues `sendChat`); result/scriptstate persistence via command replay
-  (`dispatchPersistGenerationResult`, `dispatchPatchChatScriptstate`); stage-timing
-  metadata. Optional later win: route-direct persistence closes a small durability
-  window (browser crash between generation and replay) and saves a round-trip.
+  that re-issues `sendChat`); final-message persistence via command replay
+  (`dispatchPersistGenerationResult`); stage-timing metadata. The assembly-time
+  scriptstate replay (`dispatchPatchChatScriptstate`) is **no longer** part of the
+  generation hot path — C-A1 moved it server-side (see below).
 
-### C-A1 — the smallest post-gen batch (no parity blocker)
+### C-A1 — the smallest post-gen batch (no parity blocker) — DONE
 
-Move assembly-time scriptstate persistence into `/generate/chat`. The server
-already computes the delta (`assemble.ts::buildChatVarMutations`) and emits it as a
-`message_patch`; the browser replays it via `dispatchPatchChatScriptstate`. The
-write logic already exists server-side. The change: route persists + returns the
-new revision; the browser stops replaying and reconciles to that revision. Does
-not depend on A1. Proof: extend the server-preview/serverBacked sendChat fixtures
-to assert zero outbound `patchChatScriptstate` POSTs for an assembly-time var
-write, and that a non-active-writer `/chat` does not persist.
+Assembly-time scriptstate persistence now lives in `/generate/chat`. The server
+already computed the delta (`assemble.ts::buildChatVarMutations`) and emits it as a
+`message_patch`; the route persists it via `persistAssemblyChatVars` →
+`applyJsonCommandMutation` (one revision bump, one event, rollback on failure) for
+persisting modes and returns the bumped revision on the `info` frame. The browser
+keeps `applyServerMessagePatch` (projection-only) and reconciles its cached command
+revision (`reconcileServerCommandRevision`) instead of re-POSTing the delta. The
+scriptstate command route stays for slash/plugin/manual writes; preview /
+preview_prompt stay read-only. Proven by zero outbound `…/scriptstate` POSTs in
+`sendChat.fixtures.serverBacked.test.ts` Describe B (plus persistence + revision
+reconciliation), and the flipped statelessness / 423 assertions in
+`generation.chat.test.ts`.
 
 ## Non-Targets
 

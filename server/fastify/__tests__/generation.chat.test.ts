@@ -433,7 +433,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(typeof (info.data.timings as Record<string, number>).prompt).toBe('number')
   })
 
-  it('emits varChanged chat variables for command-backed send-mode persistence', async () => {
+  it('persists the assembly-time chat-var delta in send mode and bumps the revision (C-A1)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
@@ -463,14 +463,20 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(patch?.varChanged).toBe(true)
     expect(patch?.chatVarMutations).toEqual([{ key: '$score', before: null, after: '9' }])
 
+    // C-A1: the route persists the assembly-time delta itself (no browser
+    // command replay) and returns the bumped revision on the info frame so the
+    // browser can reconcile its cached command revision.
+    const info = events.find((e) => e.type === 'info')
+    expect(info?.data.revision).toBe(2)
+
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+    expect(bootstrap.json().revision).toBe(2)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
   it('emits stop-trigger mutations and restoration before the terminal error', async () => {
@@ -575,6 +581,50 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+  })
+
+  it('does not persist when a non-active writer sends /chat (423 before the C-A1 write)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
+    }
+    db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [{ type: 'setvar', operator: '=', var: 'score', value: '9' }],
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    // A first browser session claims the active-writer role via bootstrap.
+    const claim = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+    })
+    expect(claim.statusCode).toBe(200)
+    expect(claim.json().revision).toBe(1)
+
+    // A stale session's send is rejected by the active-writer guard (a
+    // preHandler) before assembly runs, so the C-A1 write never happens.
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-b' },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(423)
+    expect(res.json()).toMatchObject({ error: 'active_writer_stale' })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+    })
     expect(bootstrap.json().revision).toBe(1)
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
   })

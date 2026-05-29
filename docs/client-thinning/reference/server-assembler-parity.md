@@ -24,12 +24,13 @@ drift; symbol names are the stable handle.
 | Lorebook activation + depth prompts | **AT PARITY** | `prompt/lorebook.ts`; wired `assemble.ts:670-707,823-825` |
 | Start triggers (`'start'`) | **AT PARITY** | `prompt/triggers.ts:876-892` (`runStartTrigger`); wired `history.ts:470` |
 | HypaV3 / prompt-memory selection | **AT PARITY** (server-owned) | `assemble.ts:870-916` |
-| Chat-var mutations surfaced as patch | **AT PARITY** (as a *patch*, not persisted) | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283` |
+| Assembly-time chat-var mutations | **AT PARITY + persisted (C-A1 done)** — emitted as a patch *and* persisted by the route | `assemble.ts:596-607` (`buildChatVarMutations`), emitted `generationChat.ts:281-283`, persisted `persistAssemblyChatVars` |
 | **Multimodal / inlay asset bytes** | **GAP** — bound to `NO_ASSETS` | `history.ts:118` + `assemble.ts:736` |
 | **Lua / pluginV2 `editRequest`** | **GAP** — identity default | `templates.ts:683`; never supplied |
 | **Lua / pluginV2 `editprocess` hooks** | **GAP** — regex only | `scripts.ts:50-56` (deferred) |
 | **Output triggers (`'output'`)** | **GAP** — declared, never invoked | `triggers.ts:103`; no `runTrigger(…,'output',…)` exists |
-| Chat-blob persistence (messages/scriptstate) | **GAP by design** — stateless; emits patch, browser replays | route imports only `loadPersisted` (read-only) |
+| Assembly-time scriptstate persistence | **DONE (C-A1)** — route persists the delta via `applyJsonCommandMutation`, returns the bumped revision over SSE | `generationChat.ts` `persistAssemblyChatVars` |
+| Final-message persistence | **GAP by design** — still command-backed; browser POSTs `generation-result` (B2) | `index.svelte.ts:351` → `persistGenerationResultCommand` |
 
 The content rows that change prompt *bytes* are: (a) image/asset multimodal
 content, (b) Lua/pluginV2 `editRequest`/`editprocess`, and (c) `'output'`
@@ -80,13 +81,15 @@ route then emits it as a `message_patch` (`generationChat.ts:281-283`):
 if (result.mutations) { emit({ type: 'message_patch', patch: result.mutations }) }
 ```
 
-So chat-var mutations are *computed* server-side during assembly but *surfaced as
-a patch for the browser to replay*, never persisted by this route. **Crucially,
-this delta reflects the assembly-time `'start'` trigger + run-var pass only — it
-never includes the post-gen `'output'` trigger** (which has no server path).
-Moving the persistence into the route is the C-A1 batch; porting the output
-trigger is A2. They are distinct — see
-[`post-generation-and-persistence.md`](post-generation-and-persistence.md).
+So chat-var mutations are *computed* server-side during assembly, emitted as a
+patch for the browser's projection, **and (C-A1, done) persisted by the route
+itself** through `persistAssemblyChatVars` → `applyJsonCommandMutation` for
+persisting modes; the route returns the bumped revision on the `info` frame and
+the browser no longer replays the delta as a command. **Crucially, this delta
+reflects the assembly-time `'start'` trigger + run-var pass only — it never
+includes the post-gen `'output'` trigger** (which has no server path). C-A1
+moved the persistence into the route; porting the output trigger is A2. They are
+distinct — see [`post-generation-and-persistence.md`](post-generation-and-persistence.md).
 
 ## `prompt/history.ts` — the multimodal / asset gap
 
@@ -167,23 +170,30 @@ the completion text post-generation.
 - **Returns SSE** (`text/event-stream`, `:251-255`). Success frame order
   (`:258-295`): `stage(validate)` ×2 → `stage(prompt start)` → `prompt` →
   `message_patch` (if mutations) → `stage(prompt end)` → `info` → optional
-  provider `token`/`side_effect`/`done`. **No revision is returned.** The
-  one-shot JSON sibling `POST /api/v1/generate/preview-prompt` (`:402-425`)
-  returns `result.prompt` as plain JSON (404 on `EntityNotFoundError`).
-- **Stateless w.r.t. the chat blob — confirmed.** Its only repository import is
-  read-only (`import { EntityNotFoundError, loadPersisted } from '../repository.js'`,
-  `:8`); no `applyImport`/`writePersisted`/`bumpRevision`/`fs.` writes exist in
-  the file. The assembler operates on a `structuredClone` of the chat
-  (`resolveScope`, `assemble.ts:393`), so even in-memory edits never touch the
-  store. The route's doc-comment (`:236-238`) states chat-var writes are
-  persisted by the scriptstate command after the browser replays the patch.
+  provider `token`/`side_effect`/`done`. **The `info` frame now carries the
+  bumped `revision`** when the route persisted an assembly-time chat-var delta
+  (C-A1); it is omitted otherwise. The one-shot JSON sibling
+  `POST /api/v1/generate/preview-prompt` (`:402-425`) returns `result.prompt`
+  as plain JSON (404 on `EntityNotFoundError`) and stays read-only.
+- **Writes only the assembly-time scriptstate delta (C-A1).** It still imports
+  `loadPersisted` read-only for assembly, but now also persists the chat-var
+  delta through `persistAssemblyChatVars` → `applyJsonCommandMutation` (the same
+  JSON-command machinery the scriptstate command uses: one revision bump, one
+  `chat.scriptstate.updated` event, rollback on failure) for persisting modes
+  only — preview / preview_prompt stay read-only. The assembler itself still
+  operates on a `structuredClone` of the chat (`resolveScope`,
+  `assemble.ts:393`); the persistence reloads the store inside the mutation
+  transaction. No message/final-result persistence happens here — that stays
+  command-backed (B2).
 - **Does not bind the asset seam** — no `AssetLookup`/`getInlay`/`getAsset`/
-  `NO_ASSETS` reference; `RouteAssembleDeps` (`:174-176`) adds only `getDatabase()`.
+  `NO_ASSETS` reference; `RouteAssembleDeps` adds only `getDatabase()`.
 
-The statelessness is pinned by `server/fastify/__tests__/generation.chat.test.ts:436-474`
-(a `setvar` start trigger emits `chatVarMutations` in the patch, yet bootstrap
-afterwards shows `revision: 1` and `scriptstate: undefined`) — this is the exact
-assertion the C-A1 batch flips.
+C-A1 is pinned by `server/fastify/__tests__/generation.chat.test.ts` — a `setvar`
+start trigger emits `chatVarMutations` in the patch **and** bootstrap afterwards
+shows the bumped `revision: 2` with the written `scriptstate: { $score: '9' }`
+(the flipped statelessness assertion), while `mode: 'preview'` stays
+`revision: 1` / `scriptstate: undefined`, and a non-active-writer `/chat` 423s
+before persisting.
 
 ## Full `prompt/` file map
 

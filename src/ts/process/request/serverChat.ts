@@ -16,6 +16,7 @@
 
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
 import type { MessageGenerationInfo } from '../../storage/database.svelte'
+import { setCachedServerCommandRevision } from '../../server/commands'
 import {
   activeWriterSessionHeader,
   handleActiveWriterStaleResponse,
@@ -98,6 +99,19 @@ function parseData(data: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * C-A1: when `/generate/chat` persisted the assembly-time chat-var delta it
+ * returns the bumped revision on the `info` frame. Sync the command layer's
+ * cached revision to it so the next browser command POSTs the right
+ * `baseRevision` instead of a stale one (which would 409). Absent when the
+ * route persisted nothing, in which case this is a no-op.
+ */
+function reconcileServerCommandRevision(info: ServerChatInfo): void {
+  if (typeof info.revision === 'number') {
+    setCachedServerCommandRevision(info.revision)
+  }
+}
+
 async function openChatResponse(
   input: ServerChatInput,
   signal: AbortSignal | null,
@@ -175,6 +189,7 @@ export async function requestServerChat(
         break
       case 'info':
         info = data as unknown as ServerChatInfo
+        reconcileServerCommandRevision(info)
         break
       case 'message_patch':
         if (data.patch && typeof data.patch === 'object') {
@@ -323,6 +338,7 @@ export async function requestServerChatGeneration(
                 break
               case 'info':
                 info = data as unknown as ServerChatInfo
+                reconcileServerCommandRevision(info)
                 maybeResolveReady()
                 break
               case 'message_patch':

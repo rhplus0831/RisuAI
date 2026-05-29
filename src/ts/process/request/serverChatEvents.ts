@@ -46,6 +46,13 @@ export interface InfoEvent {
   responseBudget?: number
   generationId?: string
   generationInfo?: Record<string, unknown>
+  /**
+   * The chat revision after the route persisted the assembly-time chat-var
+   * delta (Phase 9 C-A1). Present only when a persisting mode actually wrote
+   * `chatVarMutations`; the browser reconciles its cached command revision to
+   * it (`setCachedServerCommandRevision`) so the next command does not conflict.
+   */
+  revision?: number
 }
 
 export interface TokenEvent {

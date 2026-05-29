@@ -143,7 +143,11 @@ import type {
   ChatProviderDispatchContext,
   GenerationChatRouteOptions,
 } from '../../../../server/fastify/src/routes/generationChat'
-import { clearCachedServerCommandRevision } from '../../server/commands'
+import {
+  clearCachedServerCommandRevision,
+  getServerCommandBaseRevision,
+  setCachedServerCommandRevision,
+} from '../../server/commands'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -354,6 +358,14 @@ interface RouteBackedChatCall {
   body: Record<string, unknown>
 }
 
+// C-A1: records the browser's `/api/v1/commands/*` POSTs so a test can assert
+// the assembly-time scriptstate write is no longer replayed as a command.
+interface RouteBackedCommandCall {
+  url: string
+  method: string
+  body: Record<string, unknown>
+}
+
 interface RouteBackedDispatchCall {
   inputMode: string
   formated: unknown
@@ -364,6 +376,7 @@ interface RouteBackedHarness {
   app: FastifyInstance
   dataDir: string
   chatCalls: RouteBackedChatCall[]
+  commandCalls: RouteBackedCommandCall[]
   dispatchCalls: RouteBackedDispatchCall[]
   setDispatchText(text: string): void
   seed(database: unknown): Promise<void>
@@ -383,6 +396,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
   const dataDir = mkdtempSync(resolve(tmpdir(), 'risu-fastify-route-fixtures-'))
   let dispatchText = 'route-backed reply'
   const chatCalls: RouteBackedChatCall[] = []
+  const commandCalls: RouteBackedCommandCall[] = []
   const dispatchCalls: RouteBackedDispatchCall[] = []
   const generationChat: GenerationChatRouteOptions = {
     dispatchProvider(context: ChatProviderDispatchContext) {
@@ -428,6 +442,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
       })
     }
     if (url.startsWith('/api/v1/commands/')) {
+      commandCalls.push({ url, method, body: (payload ?? {}) as Record<string, unknown> })
       return new Response(
         JSON.stringify({
           revision: 2,
@@ -459,6 +474,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
     app,
     dataDir,
     chatCalls,
+    commandCalls,
     dispatchCalls,
     setDispatchText(text: string) {
       dispatchText = text
@@ -731,6 +747,67 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         expect(harness.dispatchCalls[0].generationInfo.model).toBe('gpt-4o')
         expect(getServerCompletionCalls()).toEqual([])
       }
+    } finally {
+      await drainRouteBackedCommands()
+      await harness.close()
+    }
+  })
+
+  it('persists an assembly-time chat-var write server-side with zero scriptstate re-POSTs (C-A1)', async () => {
+    const harness = await createRouteBackedHarness()
+    try {
+      const loaded = await loadFixture('simple-send')
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture('simple-send')
+      // A start trigger sets `$score` during assembly. Before C-A1 the browser
+      // replayed this delta as a `PATCH …/scriptstate` command; now the route
+      // persists it directly, so no scriptstate command should go out.
+      DBState.db.characters[0].triggerscript = [
+        {
+          comment: '',
+          type: 'start',
+          conditions: [],
+          effect: [{ type: 'setvar', operator: '=', var: 'score', value: '9' }],
+        },
+      ]
+      await harness.seed(DBState.db)
+      vi.stubGlobal('fetch', harness.fetch)
+      harness.setDispatchText('route-backed reply')
+
+      // Simulate a browser that already cached the pre-persist revision (1).
+      // The only way its cache reaches the bumped revision is the SSE reconcile,
+      // so a later command POSTing baseRevision 2 proves the reconcile happened.
+      clearCachedServerCommandRevision()
+      setCachedServerCommandRevision(1)
+
+      setServerProjectionWriteGuardEnabled(true)
+      const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+      await drainRouteBackedCommands()
+
+      expect(ok).toBe(true)
+
+      // C-A1 core: the browser issues zero outbound scriptstate commands.
+      const scriptstatePosts = harness.commandCalls.filter((call) =>
+        call.url.includes('/scriptstate'),
+      )
+      expect(scriptstatePosts).toEqual([])
+
+      // The route persisted the delta itself: bootstrap shows the written
+      // scriptstate and a bumped revision (seed = 1 → persist = 2).
+      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      expect(bootstrap.statusCode).toBe(200)
+      const persistedChat = bootstrap.json().database.characters[0].chats[0]
+      expect(persistedChat.scriptstate).toEqual({ $score: '9' })
+      expect(bootstrap.json().revision).toBe(2)
+
+      // Revision reconciliation: the next browser command (the generation-result
+      // persist) uses the route-returned revision, not the stale cached 1.
+      const generationResultPost = harness.commandCalls.find((call) =>
+        call.url.includes('/generation-result'),
+      )
+      expect(generationResultPost).toBeDefined()
+      expect(generationResultPost?.body.baseRevision).toBe(2)
+      expect(await getServerCommandBaseRevision()).toBe(2)
     } finally {
       await drainRouteBackedCommands()
       await harness.close()

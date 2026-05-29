@@ -8,7 +8,6 @@ import type {
 } from '../storage/database.svelte'
 import {
   currentChatStateSnapshot,
-  dispatchPatchChatScriptstate,
   dispatchPersistGenerationResult,
   ensureMessageId,
 } from '../chatCommands'
@@ -93,6 +92,13 @@ function serverChatMode(args: {
   return 'send'
 }
 
+// C-A1: apply the server's `message_patch` to the local projection only. The
+// assembly-time chat-var delta is now persisted by `/generate/chat` itself, so
+// the browser no longer replays it as a `PATCH …/scriptstate` command — that
+// re-POST (and the snapshot/rollback bookkeeping that supported it) is gone.
+// `applyServerMessagePatch` still writes `chatVarMutations` into the live chat
+// so the local view reflects the write without a refresh; the revision the
+// route returns over SSE keeps the cached command revision in sync.
 function applyServerMessagePatches(args: {
   patches: ServerChatMessagePatch[]
   selectedChar: number
@@ -100,22 +106,9 @@ function applyServerMessagePatches(args: {
 }): Chat {
   const { patches, selectedChar, selectedChat } = args
   for (const patch of patches) {
-    const previous = patch.chatVarMutations.length > 0 ? currentChatStateSnapshot() : undefined
     withTrustedServerProjectionWrite(() => {
       const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
       applyServerMessagePatch(liveChat, patch)
-      if (previous && liveChat.id) {
-        const scriptstatePatch: Record<string, string | number | boolean> = {}
-        const deleteKeys: string[] = []
-        for (const mutation of patch.chatVarMutations) {
-          if (mutation.after === null) {
-            deleteKeys.push(mutation.key)
-          } else {
-            scriptstatePatch[mutation.key] = mutation.after
-          }
-        }
-        dispatchPatchChatScriptstate(liveChat.id, scriptstatePatch, deleteKeys, previous)
-      }
     })
   }
   return DBState.db.characters[selectedChar].chats[selectedChat]

@@ -4,14 +4,19 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import type { AuthState } from '../auth.js'
+import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { EntityNotFoundError, loadPersisted } from '../repository.js'
 import {
   assemblePrompt,
   type AssembleDeps,
   type AssembleInput,
+  type AssembleMutationPayload,
   type AssembleResult,
 } from '../prompt/assemble.js'
+import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
+import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
+import { applyJsonCommandMutation } from '../commands/mutations.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import {
@@ -169,7 +174,8 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
  * route owns the storage import so `assemble.ts` stays
  * storage-global-free. The loaded database reference is kept for provider
  * dispatch and mutation event payloads; durable chat-var persistence is now
- * owned by the Phase 9 scriptstate command.
+ * performed by the route itself (Phase 9 C-A1, `persistAssemblyChatVars`)
+ * through the same JSON-command machinery the scriptstate command uses.
  */
 interface RouteAssembleDeps extends AssembleDeps {
   getDatabase(): Database | null
@@ -228,14 +234,79 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+/** Modes that persist their assembly delta; preview / preview_prompt stay read-only. */
+function isPersistingMode(mode: AssembleInput['mode']): boolean {
+  return mode === 'send' || mode === 'continue' || mode === 'regenerate'
+}
+
+/**
+ * Phase 9 C-A1: persist the assembly-time chat-var delta the assembler
+ * already computed (`mutations.chatVarMutations`) through the same JSON
+ * command machinery the scriptstate command uses (`applyJsonCommandMutation`):
+ * one revision bump, one `chat.scriptstate.updated` event, rollback on
+ * failure. This retires the browser's command replay
+ * (`serverBackedSendChat.ts`) — the route owns the write and returns the new
+ * revision over SSE so the browser can reconcile its cached command revision.
+ * Returns the bumped revision, or `undefined` when there is nothing to write.
+ */
+function persistAssemblyChatVars(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  input: AssembleInput
+  mutations: AssembleMutationPayload
+}): number | undefined {
+  const patch: Record<string, string | number | boolean> = {}
+  const deleteKeys: string[] = []
+  for (const mutation of args.mutations.chatVarMutations) {
+    if (mutation.after === null) {
+      deleteKeys.push(mutation.key)
+    } else {
+      patch[mutation.key] = mutation.after
+    }
+  }
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0) return undefined
+
+  const { revision: baseRevision } = getSchemaState(args.db)
+  const result = applyJsonCommandMutation<{ chatId: string }>({
+    db: args.db,
+    dataDir: args.dataDir,
+    baseRevision,
+    eventSink: args.eventSink,
+    mutate(database) {
+      const characters = normalizeAllCharacterChats(database)
+      const { character, chat } = requireChatLocation(characters, args.input.chatId)
+      chat.scriptstate ??= {}
+      for (const key of deleteKeys) {
+        delete chat.scriptstate[key]
+      }
+      Object.assign(chat.scriptstate, patch)
+      if (Object.keys(chat.scriptstate).length === 0) {
+        delete chat.scriptstate
+      }
+      return {
+        event: {
+          ...COMMAND_EVENT_CATALOG.chatScriptstateUpdated,
+          id: args.input.chatId,
+          parentId: character.chaId,
+        },
+        extra: { chatId: args.input.chatId },
+      }
+    },
+  })
+  return result.revision
+}
+
 /**
  * Phase 7-11g: stream the assembled prompt. The SSE head is written
  * up front, so every assembly failure (bad IDs, missing database, a
  * trigger/overflow `stopSending`) is a terminal `error` event rather
  * than an HTTP status — body validation already returned 400 before we
  * committed to streaming. Provider dispatch lands with later 7-12d
- * slices. Phase 9 persists chat-var writes through the scriptstate command
- * after the browser replays the streamed mutation payload.
+ * slices. Phase 9 C-A1 persists the assembly-time chat-var delta itself
+ * (`persistAssemblyChatVars`) and returns the bumped revision on the `info`
+ * frame; the browser keeps the `message_patch` for its projection but no
+ * longer replays the delta as a command.
  */
 async function streamAssembly(
   req: FastifyRequest,
@@ -243,6 +314,7 @@ async function streamAssembly(
   db: DatabaseSync,
   input: AssembleInput,
   dataDir: string,
+  eventSink: CommandEventSink,
   options: GenerationChatRouteOptions = {},
 ): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
@@ -265,6 +337,15 @@ async function streamAssembly(
       const result = await assemblePrompt(input, deps)
       const database = deps.getDatabase()
       const promptMs = Date.now() - startedAt
+      // C-A1: the route owns the assembly-time chat-var write for persisting
+      // modes (preview / preview_prompt stay read-only). This runs for both the
+      // success and the trigger/overflow `stopSending` branches because the
+      // browser used to replay the delta in both — dropping the replay without
+      // persisting here would lose the var write on an aborted send.
+      const persistedRevision =
+        isPersistingMode(input.mode) && result.mutations
+          ? persistAssemblyChatVars({ db, dataDir, eventSink, input, mutations: result.mutations })
+          : undefined
       if (!result.stopSending && result.prompt) {
         const successfulResult: SuccessfulAssembleResult = {
           ...result,
@@ -292,6 +373,9 @@ async function streamAssembly(
           responseBudget: result.outputTokens,
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
+          // C-A1: present only when a chat-var write actually persisted, so the
+          // browser reconciles its cached command revision; omitted otherwise.
+          revision: persistedRevision,
         })
         if (shouldDispatch && database && generationInfo) {
           const dispatchProvider =
@@ -383,6 +467,7 @@ export function registerGenerationChatRoutes(
   db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
+  eventSink: CommandEventSink,
   options: GenerationChatRouteOptions = {},
 ): void {
   app.post('/api/v1/generate/chat', async (req, reply) => {
@@ -394,7 +479,7 @@ export function registerGenerationChatRoutes(
       return badRequest(reply, validation.error)
     }
 
-    await streamAssembly(req, reply, db, toAssembleInput(body), dataDir, options)
+    await streamAssembly(req, reply, db, toAssembleInput(body), dataDir, eventSink, options)
   })
 
   // 7-11h: one-shot JSON preview. Unlike `/chat` this never opens an SSE

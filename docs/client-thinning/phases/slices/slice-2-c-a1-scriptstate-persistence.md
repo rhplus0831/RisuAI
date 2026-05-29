@@ -140,11 +140,14 @@ classifier (slice 1).
 
 ## When this slice is done
 
-- [ ] The route persists chat-var mutations through `applyJsonCommandMutation`,
+- [x] The route persists chat-var mutations through `applyJsonCommandMutation`,
       bumps revision once, emits one event, returns the new revision.
-- [ ] The browser no longer re-POSTs the delta; projection apply stays; revision
-      reconciles.
-- [ ] `generation.chat.test.ts` statelessness assertion is flipped to expect
+      (`persistAssemblyChatVars` in `generationChat.ts`; revision on the `info` frame.)
+- [x] The browser no longer re-POSTs the delta; projection apply stays; revision
+      reconciles. (`applyServerMessagePatches` trimmed; `reconcileServerCommandRevision`
+      → `setCachedServerCommandRevision` in `request/serverChat.ts`.)
+- [x] `generation.chat.test.ts` statelessness assertion is flipped to expect
       persistence; preview stays read-only.
-- [ ] Zero outbound `…/scriptstate` POSTs for an assembly-time var write; a
+- [x] Zero outbound `…/scriptstate` POSTs for an assembly-time var write; a
       non-active-writer `/chat` 423s before persisting.
+      (`sendChat.fixtures.serverBacked.test.ts` Describe B + `generation.chat.test.ts`.)

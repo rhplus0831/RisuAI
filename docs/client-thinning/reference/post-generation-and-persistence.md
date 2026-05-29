@@ -135,26 +135,34 @@ carrier for any post-gen delta. (Lua/pluginV2 hooks remain unported — see
 | Desktop notification | `runStage4.ts:77-79` | No | No (browser API) | **B1** |
 | Emotion + imggen | `runStage4.ts:81-114` | No | Partial | **B1** |
 | Stage timing / `generationInfo` | `stage4Finalize.ts:23-41` | Yes (metadata) | Server builds `generationInfo` | B2-adjacent |
-| **Scriptstate command replay (assembly delta)** | `serverBackedSendChat.ts:118` → `PATCH …/scriptstate` | Yes | **Yes** (server computes + emits patch) | **B2 — the C-A1 target** |
+| **Assembly-delta persistence** | route `persistAssemblyChatVars` (replaced `serverBackedSendChat.ts` replay) | Yes | **Yes** — route persists + returns the bumped revision over SSE | **C-A1 — DONE** |
 | **Persist generation result (final message)** | `index.svelte.ts:351` → `POST …/generation-result` | Yes | Route exists; route doesn't auto-persist | **B2** |
 
 ## C-A1 — the persistence bridge
 
-### How the browser replays the patch
+> **Status (2026-05-29): LANDED.** `/generate/chat` now persists the
+> assembly-time chat-var delta itself (`persistAssemblyChatVars` →
+> `applyJsonCommandMutation`) and returns the bumped revision on the `info`
+> frame; the browser dropped the `dispatchPatchChatScriptstate` re-POST and
+> reconciles its cached command revision instead. The subsections below keep the
+> pre-C-A1 round-trip for context; the *current* behavior is in **What C-A1
+> changed**.
 
-`applyServerMessagePatches` (`serverBackedSendChat.ts:97-123`): for each patch
-with chat-var mutations it snapshots state, applies the patch to the live chat,
-then re-emits a scriptstate command (`serverBackedSendChat.ts:118`):
+### How the browser used to replay the patch (pre-C-A1)
+
+`applyServerMessagePatches` (`serverBackedSendChat.ts`): for each patch with
+chat-var mutations it snapshotted state, applied the patch to the live chat,
+then re-emitted a scriptstate command:
 
 ```ts
 dispatchPatchChatScriptstate(liveChat.id, scriptstatePatch, deleteKeys, previous)
 ```
 
-This runs **at assembly time** (called at `:166-170` / `:188-192`), because the
-server computes the var delta while building the prompt. The final message is
-persisted separately by `persistServerBackedGenerationResult`
-(`serverBackedSendChat.ts:284-300`, dispatch at `:294`), invoked by the
-coordinator at `index.svelte.ts:351` after `runStage4`.
+This ran **at assembly time**, because the server computes the var delta while
+building the prompt. C-A1 removed this re-POST; `applyServerMessagePatch` (the
+projection-only write) stays. The final message is still persisted separately by
+`persistServerBackedGenerationResult` (`serverBackedSendChat.ts`), invoked by the
+coordinator at `index.svelte.ts:351` after `runStage4` (B2, unchanged).
 
 ### The two dispatch helpers (browser → command routes)
 
@@ -173,32 +181,35 @@ Both go through `runChatCommand`/`runMessageCommand` (`chatCommands.ts:85-98`),
 gated by `canUseServerCommands()`, optimistic with a `restoreChatState(previous)`
 rollback.
 
-### The exact current round-trip
+### The round-trip, before vs after C-A1
+
+**Before (the round-trip C-A1 removed):**
 
 1. Server mutates its own clone's `chat.scriptstate` during assembly (start
    trigger + run-var).
 2. `buildChatVarMutations` (`assemble.ts:596-607`) diffs it → `chatVarMutations`.
 3. Route emits `message_patch` (`generationChat.ts:281-283`).
-4. Browser ingests it (`request/serverChat.ts:179-181` / `:328-330`), applies it
-   to the projection (`applyServerMessagePatch`,
-   `request/serverMessagePatch.ts:45-53`), **and POSTs the same delta back** as a
-   scriptstate command (`serverBackedSendChat.ts:118`).
-5. Server re-applies it to the very chat it just mutated
-   (`commands.ts:2866-2911`: `Object.assign(chat.scriptstate, patch)`).
+4. Browser ingested it, applied it to the projection (`applyServerMessagePatch`),
+   **and POSTed the same delta back** as a scriptstate command.
+5. Server re-applied it to the very chat it just mutated.
 
-**What C-A1 changes:** the `/generate/chat` route persists
-`result.mutations.chatVarMutations` itself (it has the diff and the JSON-command
-machinery via `applyJsonCommandMutation`) and returns the new revision; the
-browser drops the `dispatchPatchChatScriptstate` re-POST at
-`serverBackedSendChat.ts:118` (keeping `applyServerMessagePatch`, which is
-projection-only). The scriptstate command route stays for slash/plugin/manual
-writes but leaves the generation hot path.
+**After C-A1 (current):** steps 1–3 unchanged. The route then persists
+`result.mutations.chatVarMutations` itself for persisting modes — it has the diff
+and reuses the JSON-command machinery via `persistAssemblyChatVars` →
+`applyJsonCommandMutation` (one revision bump, one `chat.scriptstate.updated`
+event, rollback on failure) — and returns the new revision on the `info` frame.
+The browser keeps `applyServerMessagePatch` (projection-only) and reconciles its
+cached command revision (`reconcileServerCommandRevision` →
+`setCachedServerCommandRevision`); the round-trip's steps 4–5 are gone. The
+scriptstate command route stays for slash/plugin/manual writes but leaves the
+generation hot path. Preview / preview_prompt stay read-only.
 
-**Statelessness invariant this flips:** `generation.chat.test.ts:436-474` (and
-`:572-579` for preview) — today a `setvar` start trigger emits
-`chatVarMutations: [{ key: '$score', before: null, after: '9' }]` yet bootstrap
-afterwards shows `revision: 1` and `scriptstate: undefined`. After C-A1 the route
-persists, so bootstrap would show the bumped revision and the written scriptstate.
+**Statelessness invariant this flipped:** `generation.chat.test.ts` — a `setvar`
+start trigger emits `chatVarMutations: [{ key: '$score', before: null, after: '9' }]`
+and bootstrap afterwards now shows `revision: 2` with the written
+`scriptstate: { $score: '9' }` (the persistence assertion), while `mode: 'preview'`
+stays `revision: 1` / `scriptstate: undefined`, and a non-active-writer `/chat`
+423s before persisting.
 
 ## Active-writer gating (relevant to C-A1's proof)
 
@@ -220,11 +231,14 @@ returns 423 before any mutation).
 
 ## Proof obligations
 
-- **C-A1:** zero outbound `PATCH …/scriptstate` POSTs for an assembly-time var
-  write (extend `sendChat.fixtures.serverBacked.test.ts` Describe B — the
-  route-backed harness already proxies `/api/v1/commands/*`); the route persists
-  and returns the bumped revision; a non-active-writer `/chat` does not persist;
-  flip the `generation.chat.test.ts:436-474` assertion to expect persistence.
+- **C-A1 (satisfied):** `sendChat.fixtures.serverBacked.test.ts` Describe B now
+  records `/api/v1/commands/*` calls and asserts **zero** `PATCH …/scriptstate`
+  POSTs for an assembly-time var write, that the route persisted (bootstrap shows
+  the written scriptstate + bumped revision), and that the cached command
+  revision reconciled (the follow-up `generation-result` POST carries the bumped
+  `baseRevision`). `generation.chat.test.ts` flips the statelessness assertion to
+  expect persistence, keeps preview read-only, and proves a non-active-writer
+  `/chat` 423s before persisting.
 - **A2:** a server `'output'` trigger pass + `editoutput` execution that derive
   the post-gen scriptstate/message delta and surface it (patch or persisted),
   with the browser branch removed; sequence after A1 Lua/plugin parity.

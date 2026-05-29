@@ -50,6 +50,14 @@ export interface InfoEvent {
    * folded into `tokens.completion`.
    */
   responseBudget?: number
+  /**
+   * The chat revision after the route persisted the assembly-time chat-var
+   * delta (Phase 9 C-A1). Present only when a persisting mode actually wrote
+   * `chatVarMutations`; the browser reconciles its cached command revision to
+   * it so the next command does not revision-conflict. Omitted (and so absent
+   * from the JSON frame) when nothing was persisted.
+   */
+  revision?: number
 }
 
 export interface TokenEvent {

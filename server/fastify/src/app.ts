@@ -165,7 +165,14 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerHubRoutes(app, authState, config.hubUrl)
   registerLegacyStorageRoutes(app, authState, config.dataDir)
   registerGenerationRoutes(app, authState)
-  registerGenerationChatRoutes(app, db, authState, config.dataDir, opts.generationChat)
+  registerGenerationChatRoutes(
+    app,
+    db,
+    authState,
+    config.dataDir,
+    commandEventSink,
+    opts.generationChat,
+  )
   registerMemoryJobRoutes(app, db, authState, { onEvent: emitMemoryEvent })
   registerMemoryReadRoutes(app, db, authState)
   bootPromptVariables()
