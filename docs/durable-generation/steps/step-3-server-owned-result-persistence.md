@@ -2,7 +2,8 @@
 
 Date: 2026-05-29
 Status: **DRAFT spec** — durable-generation workstream (`../README.md`), Milestone 1
-(disconnect-only). Closes the milestone.
+(disconnect-only). Closes the milestone. **Lands together with Step 2** (decision A —
+no interim browser-persist).
 
 | | |
 | --- | --- |
@@ -38,6 +39,11 @@ general path).
 Only the **durable write of the result** moves. The browser keeps rendering streamed
 tokens live and keeps all B1/B2 effects.
 
+**Two server writes per durable send:** C-A1 persists the assembly-time scriptstate
+*during the request* (revision bump #1 — persists even if the client drops before
+completion); this step persists the result *at completion* (bump #2). Two bumps, two
+reconciliations on the browser side.
+
 ## Design
 
 1. **Persist at completion, in the job.** In Step 2's `runGenerationJob`, after the
@@ -60,9 +66,9 @@ tokens live and keeps all B1/B2 effects.
 **A. Deferred-writer identity (the genuinely new problem).** C-A1's assembly-time
 write is synchronous *during* the request (`generationChat.ts:381`), so the client's
 authorization is present. The **result** write happens at completion — possibly
-**after the client disconnected**. So the job must **capture the writer authorization
-at creation** (when the client was present + authenticated + held the active-writer
-lease) and persist under it at completion. Decide: keep the active-writer lease alive
+**after the client disconnected**. So **Step 2 (design step 3) captures** the writer
+authorization on the job at creation (client present + authenticated + holding the
+active-writer lease); **Step 3 persists under it** at completion. Decide: keep the active-writer lease alive
 for the job's lifetime, or treat the result write as a **server-owned completion of a
 write the client already authorized at creation** (a documented bypass of the
 live-writer check). NOTE: the grep found no `activeWriter` enforcement inside
@@ -88,6 +94,11 @@ revision + emits the event, a returning client sees the completed chat through t
 reload). The Step 2 reattach SSE handles the *still-running* case; normal projection
 handles the *completed* case. So "check the completed chat later" falls out of the
 existing machinery.
+
+**E. Three terminal cases for the persist path.** Completion → persist the full
+accumulated text. **Streaming** cancel → persist the accumulated-so-far text (Step 2
+gotcha B). **Non-streaming** cancel → no write. All are idempotent on `generationId`
+(gotcha B).
 
 ## EC closure
 
