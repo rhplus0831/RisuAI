@@ -16,4 +16,5 @@ are done; phase 4 is the active chat-process ownership work; phase 5 is closeout
   — DONE. Closed the command/projection invariant families.
 - [`phase-4-sendchat-thinning.md`](phase-4-sendchat-thinning.md) — ACTIVE. Server
   ownership of the chat process, driven by the blocker classification (A1, A2).
+  Its Work Order is expanded into step-by-step [`slices/`](slices/README.md).
 - [`phase-5-closeout.md`](phase-5-closeout.md) — closeout criteria.

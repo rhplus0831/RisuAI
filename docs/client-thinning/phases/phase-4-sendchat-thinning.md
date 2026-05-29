@@ -22,6 +22,18 @@ per work-order item.
 
 ## Work Order
 
+Each item is expanded into a step-by-step **slice** under
+[`slices/`](slices/README.md) — the ordered procedure (what to read, what to
+change, and what to prove, in order) for carrying out one batch. Mapping: item 1 →
+[`slice-1`](slices/slice-1-a1-foundation-classifier.md); item 2 →
+[`slice-2`](slices/slice-2-c-a1-scriptstate-persistence.md); item 3 →
+[`slice-3a`](slices/slice-3a-content-multimodal-asset.md) /
+[`3b`](slices/slice-3b-content-lua-plugin-scripts.md) /
+[`3c`](slices/slice-3c-content-image-gen-instruction.md); item 4 →
+[`slice-4`](slices/slice-4-a2-output-trigger-editoutput.md). The slices' README
+explains the **graduation model** that links them (slice 1 makes every content
+class `unsupported`; 3a/3b/3c each flip one to `server`).
+
 1. **A1 foundation — prompt-assembly classifier.** Build
    `resolveServerPromptAssembly` (`server | local | unsupported`, mirroring
    `resolveServerCompletionRoute`) and replace the `useServerPromptAssembly`
