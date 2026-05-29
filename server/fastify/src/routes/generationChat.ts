@@ -1121,6 +1121,17 @@ async function runGenerationJob(args: {
     // chat accepts a new send immediately while the done job lingers for reattach.
     if (job.chatId) registry.clearRunning(job.chatId, job.id)
     registry.registry.markDone(job)
+    // End the live viewer connections now that the terminal frame is delivered — the
+    // viewer has everything, so the request lifecycle completes without waiting for the
+    // client to hang up. A client that dropped *before* completion left no viewer here,
+    // so its tail stays buffered for a reattach within the 30s grace.
+    for (const client of [...job.clients]) {
+      try {
+        client.close()
+      } catch {
+        // ignore
+      }
+    }
   }
 }
 

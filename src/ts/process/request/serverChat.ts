@@ -46,6 +46,13 @@ export interface ServerChatInput {
   resetMessages?: boolean
   expectedRevision?: number
   inlayAssets?: unknown[]
+  /**
+   * Durable generation (Milestone 1): when set, the server runs this `send` as a
+   * detached, reconnectable job and persists the result itself — so the browser
+   * suppresses its own generation-result persist (gotcha F). Computed by
+   * `resolveDurableGeneration`; only ever true for a server-assembled `send`.
+   */
+  durable?: boolean
 }
 
 /** The assembled prompt payload, parsed from the `prompt` SSE event. */

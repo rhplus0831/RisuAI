@@ -8,6 +8,7 @@ import { runStage4 } from './postGeneration/runStage4'
 import { dispatchRequest } from './dispatch/dispatchRequest'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import { resolveServerPromptAssembly } from './request/serverPromptAssembly'
+import { resolveDurableGeneration } from './request/durableGeneration'
 import {
   applyServerBackedTerminal,
   assembleServerBackedSendChat,
@@ -150,6 +151,10 @@ export async function sendChat(
     let outputTokens = DBState.db.maxResponse
     let assembledByServer = false
     let serverDispatch: ServerBackedDispatch | undefined
+    // Durable generation (Milestone 1): when the send is durable-eligible, the server
+    // runs it as a detached job and persists the result itself, so the browser drops
+    // its own generation-result persist (gotcha F).
+    let serverDurable = false
 
     // Server-side prompt assembly with browser-side patch replay. Send-like
     // calls consume the `/chat` provider stream; preview modes only read the
@@ -176,6 +181,18 @@ export async function sendChat(
       return false
     }
     if (assemblyRoute.type === 'server') {
+      // Durable subset (Milestone 1): a server-assembled `send` survives disconnect +
+      // is persisted server-side. A restriction of `resolveServerPromptAssembly`, so it
+      // is only ever `durable` when this branch already routed `server`.
+      serverDurable =
+        resolveDurableGeneration({
+          currentChar,
+          currentChat,
+          preview: arg.preview,
+          previewPrompt: arg.previewPrompt,
+          continue: arg.continue,
+          regenerateMessageId: arg.regenerateMessageId,
+        }).type === 'durable'
       const serverAssembly = await assembleServerBackedSendChat({
         selectedChar,
         selectedChat,
@@ -189,6 +206,7 @@ export async function sendChat(
         previewPrompt: arg.previewPrompt,
         continue: arg.continue,
         regenerateMessageId: arg.regenerateMessageId,
+        durable: serverDurable,
       })
       if (serverAssembly.status === 'aborted') {
         return false
@@ -374,7 +392,11 @@ export async function sendChat(
         signal: abortSignal,
       })
     }
-    if (serverDispatch) {
+    if (serverDispatch && !serverDurable) {
+      // Non-durable server dispatch: the browser persists the result (B2). On the
+      // durable path the server already persisted it at job completion (Step 3), so
+      // the browser reconciles the terminal-frame revision instead (EC-D4: zero
+      // generation-result POSTs).
       persistServerBackedGenerationResult({
         currentChat,
         generationId,

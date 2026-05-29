@@ -799,22 +799,26 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       )
       expect(scriptstatePosts).toEqual([])
 
-      // The route persisted the delta itself: bootstrap shows the written
-      // scriptstate and a bumped revision (seed = 1 → persist = 2).
+      // The route persisted the assembly-time delta itself: bootstrap shows the
+      // written scriptstate. simple-send is durable, so the job also persists the
+      // result message at completion — assembly write = rev 2, result write = rev 3.
       const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
       expect(bootstrap.statusCode).toBe(200)
       const persistedChat = bootstrap.json().database.characters[0].chats[0]
       expect(persistedChat.scriptstate).toEqual({ $score: '9' })
-      expect(bootstrap.json().revision).toBe(2)
+      expect(bootstrap.json().revision).toBe(3)
+      const persistedAssistant = [...persistedChat.message]
+        .reverse()
+        .find((m: { role: string }) => m.role === 'char')
+      expect(persistedAssistant?.data).toBe('route-backed reply')
 
-      // Revision reconciliation: the next browser command (the generation-result
-      // persist) uses the route-returned revision, not the stale cached 1.
-      const generationResultPost = harness.commandCalls.find((call) =>
+      // EC-D4 (durable): the server owns the result persist, so the browser issues
+      // zero generation-result POSTs and reconciles the terminal-frame revision (3).
+      const generationResultPosts = harness.commandCalls.filter((call) =>
         call.url.includes('/generation-result'),
       )
-      expect(generationResultPost).toBeDefined()
-      expect(generationResultPost?.body.baseRevision).toBe(2)
-      expect(await getServerCommandBaseRevision()).toBe(2)
+      expect(generationResultPosts).toEqual([])
+      expect(await getServerCommandBaseRevision()).toBe(3)
     } finally {
       await drainRouteBackedCommands()
       await harness.close()
@@ -866,22 +870,24 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // terminal post-gen patch (not a browser `applyOutputTrigger`).
       expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $mood: 'happy' })
 
-      // Durable: the route persisted the post-gen write + bumped the revision
-      // (seed = 1 → post-gen persist = 2).
+      // Durable: the job persisted the post-gen scriptstate delta + the result
+      // message in one bump at completion (seed = 1 → persist = 2).
       const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
       expect(bootstrap.statusCode).toBe(200)
-      expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toMatchObject({
-        $mood: 'happy',
-      })
+      const persistedChat = bootstrap.json().database.characters[0].chats[0]
+      expect(persistedChat.scriptstate).toMatchObject({ $mood: 'happy' })
       expect(bootstrap.json().revision).toBe(2)
+      const persistedAssistant = [...persistedChat.message]
+        .reverse()
+        .find((m: { role: string }) => m.role === 'char')
+      expect(persistedAssistant?.data).toBe('route-backed reply')
 
-      // Revision reconciliation: the generation-result persist (B2) POSTs the
-      // post-gen revision the `done` frame surfaced, not the stale cached 1.
-      const generationResultPost = harness.commandCalls.find((call) =>
+      // EC-D4 (durable): zero generation-result POSTs — the server persisted the
+      // result; the browser reconciled the post-gen revision the `done` frame carried.
+      const generationResultPosts = harness.commandCalls.filter((call) =>
         call.url.includes('/generation-result'),
       )
-      expect(generationResultPost).toBeDefined()
-      expect(generationResultPost?.body.baseRevision).toBe(2)
+      expect(generationResultPosts).toEqual([])
       expect(getServerCompletionCalls()).toEqual([])
     } finally {
       await drainRouteBackedCommands()
@@ -910,18 +916,23 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       await drainRouteBackedCommands()
       expect(ok).toBe(true)
 
-      // The browser wrote the server-owned editoutput final text onto the assistant
-      // message (it skipped `editoutput` itself on this path) and shipped it to B2.
+      // The browser wrote the server-owned editoutput final text onto its projection
+      // assistant message (it skipped `editoutput` itself on this path).
       const liveChat = DBState.db.characters[0].chats[0]
       const assistant = [...liveChat.message].reverse().find((m) => m.role === 'char')
       expect(assistant?.data).toBe('route-backed REPLY')
-      const generationResultPost = harness.commandCalls.find((call) =>
+
+      // EC-D4 (durable): the server persisted the editoutput'd text; the browser
+      // issues zero generation-result POSTs.
+      const generationResultPosts = harness.commandCalls.filter((call) =>
         call.url.includes('/generation-result'),
       )
-      expect(
-        (generationResultPost?.body.generationResult as { message?: { data?: string } } | undefined)
-          ?.message?.data,
-      ).toBe('route-backed REPLY')
+      expect(generationResultPosts).toEqual([])
+      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      const persistedAssistant = [...bootstrap.json().database.characters[0].chats[0].message]
+        .reverse()
+        .find((m: { role: string }) => m.role === 'char')
+      expect(persistedAssistant?.data).toBe('route-backed REPLY')
       expect(getServerCompletionCalls()).toEqual([])
     } finally {
       await drainRouteBackedCommands()

@@ -182,6 +182,12 @@ export async function assembleServerBackedSendChat(args: {
   previewPrompt?: boolean
   continue?: boolean
   regenerateMessageId?: string
+  /**
+   * Durable generation (Milestone 1): `resolveDurableGeneration === 'durable'` for
+   * this send. The server runs it as a detached job and persists the result, so the
+   * coordinator suppresses the browser's generation-result persist (gotcha F).
+   */
+  durable?: boolean
 }): Promise<ServerBackedAssemblyResult> {
   // `resolveServerPromptAssembly` (the gate's classifier) has already verified
   // the structural precondition — for `mode === 'send'` the last message is a
@@ -203,6 +209,12 @@ export async function assembleServerBackedSendChat(args: {
   }
   if (mode === 'regenerate') {
     input.regenerateMessageId = args.regenerateMessageId
+  }
+  // Durable generation: only a `send` is durable-eligible (Milestone 1). The server
+  // owns the result persistence for this job, so the browser will skip its own
+  // generation-result write.
+  if (args.durable && mode === 'send') {
+    input.durable = true
   }
   // Slice 3a: ship inlay bytes the server lacks so its assembler can inline
   // image/asset multimodals instead of dropping them. Asset-store bytes
