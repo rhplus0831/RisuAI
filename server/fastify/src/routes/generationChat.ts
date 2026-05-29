@@ -688,6 +688,15 @@ function attachGenerationViewer(
   client.send(formatPromptChatFrame({ type: 'job_accepted', jobId: job.id }))
   registry.registry.attach(job.id, client)
   req.raw.once('close', () => registry.registry.detach(job.id, client))
+  // Reattach to an already-completed (in-grace) job: `attach` just flushed the
+  // buffered terminal frame, and the runner's finally already ran (it cannot close
+  // this late viewer), so close + detach here. Otherwise the socket and the job
+  // would dangle until the client hangs up (the job is `done` with one client, which
+  // neither GC branch collects).
+  if (job.done) {
+    client.close()
+    registry.registry.detach(job.id, client)
+  }
 }
 
 /** Build a `char` assistant message in the shape `dispatchPersistGenerationResult` persists. */
@@ -1057,39 +1066,50 @@ async function runGenerationJob(args: {
                     ]
                   : [],
               errorRestoration: () => successfulResult.restoration,
-              postGeneration: (completionText) =>
-                successfulResult.state
-                  ? buildDurablePostGeneration({
-                      emit,
-                      state: successfulResult.state,
-                      db,
-                      dataDir,
-                      eventSink,
-                      input,
-                      completionText,
-                      generationId,
-                      generationInfo,
-                      promptInfo: successfulResult.prompt.promptInfo,
-                    })
-                  : Promise.resolve(undefined),
+              postGeneration: (completionText) => {
+                if (!successfulResult.state) return Promise.resolve(undefined)
+                // Stamp stage3 BEFORE the persist so the server-written message's
+                // generationInfo carries it (the persist runs ahead of doneMetadata,
+                // which would otherwise set it only on the wire `done` frame).
+                const stageTiming = generationInfo.stageTiming as
+                  | Record<string, unknown>
+                  | undefined
+                if (stageTiming) stageTiming.stage3 = Date.now() - providerStartedAt
+                return buildDurablePostGeneration({
+                  emit,
+                  state: successfulResult.state,
+                  db,
+                  dataDir,
+                  eventSink,
+                  input,
+                  completionText,
+                  generationId,
+                  generationInfo,
+                  promptInfo: successfulResult.prompt.promptInfo,
+                })
+              },
             })
             terminalDoneEmitted = transportResult.status !== 'aborted'
-            // Step 2 gotcha E: streaming cancel persists the accumulated-so-far text.
-            if (
-              transportResult.status === 'aborted' &&
-              transportResult.result.length > 0 &&
-              successfulResult.state
-            ) {
-              persistRawCancelledResult({
-                db,
-                dataDir,
-                eventSink,
-                input,
-                generationId,
-                generationInfo,
-                promptInfo: successfulResult.prompt.promptInfo,
-                text: transportResult.result,
-              })
+            if (transportResult.status === 'aborted') {
+              // Step 2 gotcha E: a streaming cancel persists the accumulated-so-far text.
+              if (transportResult.result.length > 0 && successfulResult.state) {
+                persistRawCancelledResult({
+                  db,
+                  dataDir,
+                  eventSink,
+                  input,
+                  generationId,
+                  generationInfo,
+                  promptInfo: successfulResult.prompt.promptInfo,
+                  text: transportResult.result,
+                })
+              }
+              // Emit a terminal frame so a *reattached* observer's stream ends cleanly
+              // (the canceller already aborted its own reader). `emitProviderChunks`
+              // emits nothing on abort, so without this a viewer sees the stream cut
+              // with no done/error and reports a spurious "stream ended" error.
+              emit({ type: 'done', result: transportResult.result, generationId, generationInfo })
+              terminalDoneEmitted = true
             }
           }
         }
@@ -1235,8 +1255,11 @@ export function registerGenerationChatRoutes(
       reply.code(404).send({ error: 'Job not found' })
       return
     }
+    // Abort only — the runner's finally persists the streaming-so-far text and THEN
+    // clears the submission lock. Clearing it here (synchronously, before the
+    // async cancel-persist lands) would let an overlapping send for the same chat
+    // start and race the cancel write.
     job.abortController.abort()
-    if (job.chatId) generationJobs.clearRunning(job.chatId, job.id)
     return { success: true }
   })
 

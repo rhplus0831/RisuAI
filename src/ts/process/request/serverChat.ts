@@ -314,6 +314,16 @@ export async function requestServerChatGeneration(
   let terminalResolved = false
   let tokenResult = ''
   let streamKey = 'server-chat'
+  // Durable generation: the jobId (= generationId) arrives on the first `job_accepted`
+  // frame, before assembly. Capturing it here lets an abort at ANY point — including
+  // mid-assembly, before `ready` resolves — translate into a server-side DELETE-cancel
+  // (a bare disconnect only detaches the durable job; it keeps running otherwise).
+  let durableJobId = ''
+  const cancelDurableOnAbort = (): void => {
+    if (input.durable === true && durableJobId.length > 0) {
+      void cancelServerChatGeneration(durableJobId)
+    }
+  }
 
   let resolveReady: (value: ServerChatGenerationResult) => void = () => {}
   const ready = new Promise<ServerChatGenerationResult>((resolve) => {
@@ -362,6 +372,9 @@ export async function requestServerChatGeneration(
             const data = parseData(frame.data)
             if (!data) continue
             switch (frame.event) {
+              case 'job_accepted':
+                if (typeof data.jobId === 'string') durableJobId = data.jobId
+                break
               case 'prompt':
                 prompt = data as unknown as ServerChatPrompt
                 maybeResolveReady()
@@ -438,6 +451,7 @@ export async function requestServerChatGeneration(
             }
           }
           if (signal?.aborted) {
+            cancelDurableOnAbort()
             resolveReadyOnce({ status: 'aborted' })
             resolveTerminalOnce({ status: 'error', error: 'Aborted' })
           } else {
@@ -447,6 +461,7 @@ export async function requestServerChatGeneration(
           controller.close()
         } catch (err) {
           if (signal?.aborted) {
+            cancelDurableOnAbort()
             resolveReadyOnce({ status: 'aborted' })
             resolveTerminalOnce({ status: 'error', error: 'Aborted' })
           } else {

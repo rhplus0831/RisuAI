@@ -49,9 +49,12 @@ export interface StreamJob {
   /**
    * Durable-generation extensions (Milestone 1). Unused by the proxy stream job.
    * `chatId` ties the job to its chat for the one-job-per-chat submission lock +
-   * the reload-resume `activeGenerationJobs` projection; `writerSessionId` is the
-   * active-writer identity captured at creation so the server-owned completion
-   * write finishes the authorized job after the client may have disconnected.
+   * the reload-resume `activeGenerationJobs` projection. `writerSessionId` records
+   * the active-writer identity present at submission, for diagnostics (and a future
+   * Milestone-2 restart-durability hook). The M1 completion write does NOT re-check
+   * it — it is a server-owned direct mutation finishing an already-authorized job;
+   * write-conflict prevention is the submission gate + one-job-per-chat, not a
+   * per-job lease re-check (see step-3 gotcha A).
    */
   chatId?: string
   writerSessionId?: string | null

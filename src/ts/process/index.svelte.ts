@@ -9,7 +9,6 @@ import { dispatchRequest } from './dispatch/dispatchRequest'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import { resolveServerPromptAssembly } from './request/serverPromptAssembly'
 import { resolveDurableGeneration } from './request/durableGeneration'
-import { cancelServerChatGeneration } from './request/serverChat'
 import {
   applyServerBackedTerminal,
   assembleServerBackedSendChat,
@@ -129,10 +128,6 @@ export async function sendChat(
     doingChat.set(true)
     iOwnDoingChat = true
   }
-
-  // Detaches the durable abort→DELETE-cancel listener; declared out here so the
-  // outer `finally` can run it as a safety net on any exit path.
-  let removeDurableAbortCancel: (() => void) | undefined
 
   try {
     const setProcessStage = (stage: number) => chatProcessStage.set(stage)
@@ -277,17 +272,10 @@ export async function sendChat(
       generationId = serverDispatch.generationId
       generationInfo = serverDispatch.generationInfo
       serverTerminal = serverDispatch.terminal
-      // Durable: a bare disconnect (the stop button aborts the fetch) only detaches
-      // the viewer — the job keeps running. Translate an explicit abort into a
-      // server-side cancel (Step 2 gotcha B); cleared once the terminal resolves.
-      if (serverDurable) {
-        const jobId = generationId
-        const onAbort = (): void => {
-          void cancelServerChatGeneration(jobId)
-        }
-        abortSignal.addEventListener('abort', onAbort, { once: true })
-        removeDurableAbortCancel = () => abortSignal.removeEventListener('abort', onAbort)
-      }
+      // Durable cancel-on-abort is owned by the SSE consumer
+      // (`requestServerChatGeneration`): it captures the jobId from `job_accepted`
+      // and issues the DELETE on any abort — including mid-assembly — so it is not
+      // wired here (a bare disconnect only detaches; an explicit stop cancels).
     } else {
       const dispatch = await dispatchRequest({
         formated,
@@ -384,10 +372,6 @@ export async function sendChat(
       if (terminalResult.resendChat) {
         resendChat = true
       }
-      // The durable job reached its terminal frame server-side; a later abort would
-      // only race a completed job, so stop translating it into a DELETE-cancel.
-      removeDurableAbortCancel?.()
-      removeDurableAbortCancel = undefined
     }
 
     const stage4 = await runStage4({
@@ -425,9 +409,6 @@ export async function sendChat(
     }
     return true
   } finally {
-    // Safety net: drop the durable abort→DELETE listener on any exit path that
-    // didn't reach the post-terminal cleanup (e.g. an auto-continue handoff).
-    removeDurableAbortCancel?.()
     if (iOwnDoingChat) {
       doingChat.set(false)
     }

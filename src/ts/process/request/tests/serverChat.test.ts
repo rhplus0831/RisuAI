@@ -429,3 +429,51 @@ describe('cancelServerChatGeneration', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('requestServerChatGeneration durable cancel-on-abort', () => {
+  // A streaming SSE response that emits `job_accepted` (carrying the jobId) + a stage
+  // frame, then hangs until the request is aborted — modelling a durable job that is
+  // still running when the user hits stop mid-assembly. DELETEs are captured.
+  function stubDurableStreamFetch(jobId: string): { deletes: string[] } {
+    const deletes: string[] = []
+    const enc = new TextEncoder()
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        deletes.push(url)
+        return new Response(JSON.stringify({ success: true }), { status: 200 })
+      }
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode(`event: job_accepted\ndata: ${JSON.stringify({ jobId })}\n\n`))
+          controller.enqueue(enc.encode('event: stage\ndata: {"stage":"prompt","status":"start"}\n\n'))
+          // Intentionally never closes — the abort must end the stream.
+        },
+      })
+      return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    })
+    return { deletes }
+  }
+
+  it('DELETEs the durable jobId (captured from job_accepted) when aborted mid-stream', async () => {
+    const { deletes } = stubDurableStreamFetch('job-xyz')
+    const controller = new AbortController()
+    const pending = requestServerChatGeneration({ ...baseInput, durable: true }, controller.signal)
+    await new Promise((r) => setTimeout(r, 15))
+    controller.abort()
+    const res = await pending
+    expect(res.status).toBe('aborted')
+    await new Promise((r) => setTimeout(r, 5))
+    expect(deletes).toContain('/api/v1/generate/chat/job-xyz')
+  })
+
+  it('does NOT cancel on abort for a non-durable send', async () => {
+    const { deletes } = stubDurableStreamFetch('job-xyz')
+    const controller = new AbortController()
+    const pending = requestServerChatGeneration({ ...baseInput, durable: false }, controller.signal)
+    await new Promise((r) => setTimeout(r, 15))
+    controller.abort()
+    await pending
+    await new Promise((r) => setTimeout(r, 5))
+    expect(deletes).toEqual([])
+  })
+})

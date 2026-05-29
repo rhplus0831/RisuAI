@@ -356,6 +356,73 @@ describe('Durable generation (Milestone 1)', () => {
     reController.abort()
   })
 
+  // Cluster A regression: reattaching to an already-completed (in-grace) job must
+  // CLOSE the connection server-side — not dangle the socket + the uncollectable job
+  // until the client hangs up. Reading the reattach stream to its end must return
+  // (the server closes it) rather than hang to the test timeout.
+  it('closes the connection itself when reattaching to an already-completed job (no leak)', async () => {
+    providerImpl = () => {
+      async function* g(): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'final text' }
+        yield { kind: 'done', finishReason: 'stop' }
+      }
+      return g()
+    }
+
+    const controllerA = newController()
+    const resA = await postDurable({}, { signal: controllerA.signal })
+    let jobId = ''
+    await readSse(resA, (ev) => {
+      if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
+      return ev.type === 'done'
+    })
+    controllerA.abort()
+    await waitForAssistantMessage()
+
+    // Reattach to the done (in-grace) job and read until the STREAM ENDS. The server
+    // must close it on its own; if it leaks, readSse hangs to the test timeout.
+    const reController = newController()
+    const re = await fetch(
+      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
+      { signal: reController.signal },
+    )
+    const reEvents = await readSse(re, () => false)
+    expect(reEvents.some((e) => e.type === 'job_accepted')).toBe(true)
+    reController.abort()
+  }, 8000)
+
+  // Cluster B regression: an explicit cancel must push a terminal frame so a
+  // reattached observer's stream ends cleanly (not a spurious "stream ended" cut).
+  it('emits a terminal done to a reattached observer when the job is cancelled', async () => {
+    const gated = makeGatedProvider({ before: 'partial' }) // never released
+    providerImpl = gated.dispatchProvider
+
+    const controllerA = newController()
+    const resA = await postDurable({}, { signal: controllerA.signal })
+    let jobId = ''
+    await readSse(resA, (ev) => {
+      if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
+      return ev.type === 'token'
+    })
+
+    const obsController = newController()
+    const obs = await fetch(
+      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
+      { signal: obsController.signal },
+    )
+    const obsEventsPromise = readSse(obs, (ev) => ev.type === 'done')
+
+    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+    })
+    expect(del.status).toBe(200)
+
+    const obsEvents = await obsEventsPromise
+    expect(obsEvents.at(-1)?.type).toBe('done')
+    controllerA.abort()
+    obsController.abort()
+  }, 8000)
+
   it('rejects a second durable send while a generation is running for the chat (409)', async () => {
     const gated = makeGatedProvider({ before: 'one' })
     providerImpl = gated.dispatchProvider
