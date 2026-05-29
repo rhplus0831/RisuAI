@@ -231,6 +231,29 @@ describe('getServerCompletionProvider', () => {
     expect(r).toBe('openai')
   })
 
+  it('routes reverse_proxy + reverseProxyOobaMode to "openai" (decision #5 parity with /chat)', () => {
+    // The browser completion path already accepted the ooba reverse proxy; the
+    // shared capability table keeps that decision (the ooba flag never gates
+    // routing — the openai adapter applies oobaSystemHoist). The server /chat
+    // path now agrees instead of hard-failing; see the server
+    // providerCapabilityRoute.test.ts for the matching assertion.
+    seedDb({
+      forceReplaceUrl: 'https://proxy.example.com/v1',
+      proxyKey: 'sk-proxy',
+      reverseProxyOobaMode: true,
+    } as unknown as Partial<Database>)
+    const r = getServerCompletionProvider(
+      makeTarg({
+        aiModel: 'reverse_proxy',
+        modelInfo: {
+          id: 'reverse_proxy',
+          format: LLMFormat.OpenAICompatible,
+        } as unknown as RequestDataArgumentExtended['modelInfo'],
+      }),
+    )
+    expect(r).toBe('openai')
+  })
+
   it('refuses reverse_proxy when db.forceReplaceUrl is empty', () => {
     seedDb({
       forceReplaceUrl: '',

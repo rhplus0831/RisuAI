@@ -1,0 +1,119 @@
+import { describe, expect, it } from 'vitest'
+import { LLMFormat } from '../../../src/ts/model/types'
+import type { Database } from '../../../src/ts/storage/database.svelte'
+import { resolveChatProviderRoute } from '../src/prompt/chatDispatch.js'
+
+// Proves the server /chat dispatcher wires the shared capability table
+// (closeout decision #5): the routing decision matches the browser completion
+// path (see src/ts/process/request/tests/{providerCapability,serverCompletion}.test.ts),
+// the unknown-id guard stays server-only, and the reverse_proxy + ooba case now
+// dispatches instead of hard-failing.
+
+function db(overrides: Partial<Database> = {}): Database {
+  return { aiModel: 'echo_model', ...overrides } as unknown as Database
+}
+
+describe('resolveChatProviderRoute — routable', () => {
+  it('routes echo and anthropic', () => {
+    expect(resolveChatProviderRoute(db({ aiModel: 'echo_model' }))).toEqual({
+      routable: true,
+      provider: 'echo',
+    })
+    expect(resolveChatProviderRoute(db({ aiModel: 'claude-3-5-sonnet-20241022' }))).toEqual({
+      routable: true,
+      provider: 'anthropic',
+    })
+  })
+
+  it('routes a configured reverse_proxy under OpenAICompatible', () => {
+    expect(
+      resolveChatProviderRoute(
+        db({
+          aiModel: 'reverse_proxy',
+          customAPIFormat: LLMFormat.OpenAICompatible,
+          forceReplaceUrl: 'https://proxy.example.com/v1',
+          proxyKey: 'sk-proxy',
+        } as Partial<Database>),
+      ),
+    ).toEqual({ routable: true, provider: 'openai' })
+  })
+
+  it('routes reverse_proxy + reverseProxyOobaMode to openai (decision #5 — the flip)', () => {
+    // Previously this hard-failed with "Ooba OpenAI-compatible reverse proxy must
+    // use local dispatch". The shared table no longer gates on the ooba flag and
+    // the openai adapter applies oobaSystemHoist itself, so it now dispatches —
+    // matching the browser completion path.
+    expect(
+      resolveChatProviderRoute(
+        db({
+          aiModel: 'reverse_proxy',
+          customProxyRequestModel: 'ooba-model',
+          customAPIFormat: LLMFormat.OpenAICompatible,
+          reverseProxyOobaMode: true,
+          forceReplaceUrl: 'https://proxy.example.com/v1',
+          proxyKey: 'sk-proxy',
+        } as Partial<Database>),
+      ),
+    ).toEqual({ routable: true, provider: 'openai' })
+  })
+
+  it('routes ollama-cloud by ollamaRequestFormat (with an API key)', () => {
+    expect(
+      resolveChatProviderRoute(
+        db({
+          aiModel: 'ollama-cloud',
+          ollamaApiKey: 'k',
+          ollamaRequestFormat: LLMFormat.OpenAICompatible,
+        } as Partial<Database>),
+      ),
+    ).toEqual({ routable: true, provider: 'openai' })
+    expect(
+      resolveChatProviderRoute(
+        db({
+          aiModel: 'ollama-cloud',
+          ollamaApiKey: 'k',
+          ollamaRequestFormat: LLMFormat.Anthropic,
+        } as Partial<Database>),
+      ),
+    ).toEqual({ routable: true, provider: 'anthropic' })
+  })
+})
+
+describe('resolveChatProviderRoute — unsupported (specific messages preserved)', () => {
+  it.each([
+    ['novelai', 'unsupported /chat provider: NovelAI text generation must use local dispatch'],
+    ['novellist', 'unsupported /chat provider: NovelList must use local dispatch'],
+    ['custom', 'unsupported /chat provider: plugin providers must use local dispatch'],
+    [
+      'pluginmodel:::provider-a',
+      'unsupported /chat provider: plugin providers must use local dispatch',
+    ],
+    [
+      'hf:::Xenova/opt-350m',
+      'unsupported /chat provider: local WebLLM models must use local dispatch',
+    ],
+  ])('classifies %s as unsupported with its specific reason', (aiModel, reason) => {
+    expect(resolveChatProviderRoute(db({ aiModel }))).toEqual({ routable: false, reason })
+  })
+
+  it('keeps the server-only unknown-OpenAI-compatible-id guard', () => {
+    const route = resolveChatProviderRoute(db({ aiModel: 'unregistered-local-model' }))
+    expect(route.routable).toBe(false)
+    expect(route).toEqual({
+      routable: false,
+      reason:
+        'unsupported /chat provider: unknown OpenAI-compatible model "unregistered-local-model" cannot be dispatched by the server',
+    })
+  })
+
+  it('classifies ollama-cloud without an API key as unsupported (matches the browser gate)', () => {
+    expect(
+      resolveChatProviderRoute(
+        db({
+          aiModel: 'ollama-cloud',
+          ollamaRequestFormat: LLMFormat.OpenAICompatible,
+        } as Partial<Database>),
+      ).routable,
+    ).toBe(false)
+  })
+})

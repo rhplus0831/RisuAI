@@ -603,6 +603,13 @@ describe('sendChat fixtures (server-backed)', () => {
     const loaded = await loadFixture(name)
     cleanups.push(loaded.cleanup)
 
+    // This sweep exercises LOCAL prompt assembly + server *completion* dispatch
+    // (it asserts a POST to /generate/completion below and compares to the local
+    // golden). Server prompt assembly now defaults on (decision-#5 closeout), so
+    // opt out explicitly to keep covering the flag-off completion-dispatch path;
+    // the /chat route-backed (server prompt assembly) path is the next describe.
+    DBState.db.useServerPromptAssembly = false
+
     // Wire the upstream jsonl's reply text into the per-provider setter so the
     // fetch stub returns the same text the local sweep sees. Without this, the
     // stub falls back to its DEFAULT_*_RESULT, which diverges from the snapshot.

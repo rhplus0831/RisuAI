@@ -22,7 +22,10 @@ Completed context: slice 1 (`resolveServerPromptAssembly`), slice 2 (C-A1),
 slice 3a (multimodal/asset on image-input models), pluginV2 permanent
 unsupported, all slice 3b Lua sub-slices, slice 3c (image-gen view instruction),
 and **slice 4 (A2 — server output-trigger + `editoutput`)** have landed. **All
-A-blockers (A1/A2/A3) are now resolved.**
+A-blockers (A1/A2/A3) are now resolved.** Both pending-implementation closeout
+batches also landed 2026-05-30: the **provider-resolver unification (#5)** (shared
+`resolveProviderCapability` table) and the **`useServerPromptAssembly` default flip
+(#1)** (now defaults `true`).
 
 1. ~~**Group-chat legacy removal.**~~ UI-branch removal DONE 2026-05-30. The dead
    `type === 'group'` branches in `GridCatalog.svelte` / `ChatList.svelte` and the
@@ -36,17 +39,20 @@ A-blockers (A1/A2/A3) are now resolved.**
    path, and EC2 are now AST invariants with adversarial fixtures ([`audit.md`](audit.md)).
    Remaining audit work is only the other still-shallow string/regex rules, and it
    is gated on first demonstrating a sincere defeat against the real binary.
-3. **Provider resolver unification (decision #5).** Pending-implementation batch:
-   collapse `resolveServerCompletionRoute` and the `chatDispatch.ts` resolver onto
-   one shared provider-capability table. Prerequisite for #4. Proof: both paths
-   classify the same provider set identically (incl. the `reverse_proxy` + Ooba
-   case), with tests.
-4. **`useServerPromptAssembly` default flip (decision #1).** Pending-implementation
-   batch: default the flag to `true`, sweep the suites that assume the off-default
-   (set `false` where they exercise local assembly), and accept that the documented
-   `unsupported` content classes hard-fail by default afterward. Do #3 first.
+3. ~~**Provider resolver unification (decision #5).**~~ DONE 2026-05-30. Collapsed
+   `resolveServerCompletionRoute` and the `chatDispatch.ts` resolver onto one shared
+   pure `resolveProviderCapability` table; the `reverse_proxy` + Ooba divergence is
+   resolved (both accept). Guarded by the `A4R-provider-capability` invariant; spec at
+   [`../reference/provider-capability-table.md`](../reference/provider-capability-table.md).
+4. ~~**`useServerPromptAssembly` default flip (decision #1).**~~ DONE 2026-05-30. The
+   flag defaults `true`; the documented `unsupported` content classes hard-fail by
+   default. The only suite touched by the sweep was the browser server-backed
+   *completion*-dispatch fixtures (now opt the flag `false` explicitly, as that path
+   uses local assembly + server completion).
 5. Documentation-only reconciliation when code and docs drift without behavior
-   change.
+   change. (With #3/#4 landed, the remaining closeout items are decision #6 stale
+   group strings/comments — optional cleanup — and the deferred event-patching /
+   shallow-audit-rule work, both gated on a precondition; see the deferred section.)
 
 ## Closeout Decisions — Resolved 2026-05-30
 

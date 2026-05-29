@@ -190,13 +190,16 @@ POST mechanics (`serverChat.ts:111-120`): `content-type: application/json`,
   `!!(globalThis).__FASTIFY__`. True only when the Fastify server injected the
   marker while serving the SPA; `false` under `pnpm dev` and in tests. Annotated
   in-code (`platform.ts:16-23`) as the live routing gate — **not deprecated**.
-- **`useServerPromptAssembly`** (`src/ts/storage/database.svelte.ts`): default
-  `false` at `database.svelte.ts:779` (`data.useServerPromptAssembly ??= false`);
-  type + JSDoc at `:1354-1368`. The JSDoc calls it an "EXPERIMENTAL /
-  INCOMPLETE-MIGRATION GATE — not a stable user setting and NOT deprecated."
-  A1 content parity is landed, but the flag remains default-off while local
-  assembly is still the default production path and the remaining unsupported
-  cases / provider-resolver differences are explicit.
+- **`useServerPromptAssembly`** (`src/ts/storage/database.svelte.ts`): **default
+  `true`** as of the 2026-05-30 decision-#1 closeout
+  (`data.useServerPromptAssembly ??= true`); type + JSDoc at `:1354-1368`. The JSDoc
+  calls it an "EXPERIMENTAL / INCOMPLETE-MIGRATION GATE — not a stable user setting
+  and NOT deprecated." Server prompt assembly is now the supported default path; the
+  documented `unsupported` content classes hard-fail by default, and tests / cases
+  exercising local assembly set the flag `false` explicitly. The provider-resolver
+  difference it once flagged is closed: the routing decision is single-sourced in
+  `resolveProviderCapability` (see
+  [`provider-capability-table.md`](provider-capability-table.md)).
 - **`useServerGeneration`**: removed 2026-05-29 (was dead).
 
 Every production read of `useServerPromptAssembly`:
@@ -227,12 +230,15 @@ experimental `useServerPromptAssembly` master-enable off → `local` (the one
 `local` verdict that survives in Fastify mode until a separate flag-removal
 closeout); then mode/user-message structural check, group check, provider
 routability (delegated to `resolveServerCompletionRoute`), and the content-signal
-check — each out-of-subset signal → `unsupported`; otherwise `server`. Note the
-route itself also runs the `/generate/chat` provider resolver in
-`prompt/chatDispatch.ts`, so `/chat` can still hard-fail a provider shape that the
-completion resolver supports; there is still no browser fallback. The content
-detector keeps one named predicate per class so future changes can flip exactly
-one class.
+check — each out-of-subset signal → `unsupported`; otherwise `server`. As of the
+2026-05-30 decision-#5 closeout the `/generate/chat` resolver in
+`prompt/chatDispatch.ts` and `resolveServerCompletionRoute` share one
+`resolveProviderCapability` table, so they no longer drift on the routing decision
+(see [`provider-capability-table.md`](provider-capability-table.md)). `/chat` can
+still reject a model the completion path accepts only via the documented
+server-stricter derivation seam (an unknown OpenAI-compatible id `resolveModelInfo`
+cannot dispatch); there is still no browser fallback. The content detector keeps one
+named predicate per class so future changes can flip exactly one class.
 
 ### The supported subset (returns `server`)
 

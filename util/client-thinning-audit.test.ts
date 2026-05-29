@@ -66,12 +66,10 @@ describe('client-thinning audit fixtures', () => {
   const importExportShapeCheck = 'AEC2 import/export current shape'
   const pluginV2ServerExecutionCheck = 'A4R-pluginv2 no server-side plugin execution'
   const groupChatRemovedCheck = 'A4R-group-chat-removed legacy group chat removed from client'
+  const providerCapabilityCheck = 'A4R-provider-capability shared routing table'
 
   it('fails a fixture with a data dir child omitted from backup and restore', async () => {
-    const result = await runAuditFixture(
-      'backup-data-dir-inventory/failing',
-      backupInventoryCheck,
-    )
+    const result = await runAuditFixture('backup-data-dir-inventory/failing', backupInventoryCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${backupInventoryCheck}]`)
@@ -129,7 +127,7 @@ describe('client-thinning audit fixtures', () => {
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
     expect(result.stderr).toContain(
-      "getFileSrc in src/ts/globalApi.svelte.ts falls back to `?? loc` for unknown asset shapes",
+      'getFileSrc in src/ts/globalApi.svelte.ts falls back to `?? loc` for unknown asset shapes',
     )
   })
 
@@ -150,7 +148,7 @@ describe('client-thinning audit fixtures', () => {
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
     expect(result.stderr).toContain(
-      "getFileSrc in src/ts/globalApi.svelte.ts falls back to `?? loc` for unknown asset shapes",
+      'getFileSrc in src/ts/globalApi.svelte.ts falls back to `?? loc` for unknown asset shapes',
     )
   })
 
@@ -188,10 +186,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that fans out two mutating dispatches in one scope', async () => {
-    const result = await runAuditFixture(
-      'composite-command-fanout/failing',
-      compositeFanoutCheck,
-    )
+    const result = await runAuditFixture('composite-command-fanout/failing', compositeFanoutCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${compositeFanoutCheck}]`)
@@ -295,7 +290,10 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture with a wildcard object-array secret missing a row identity key', async () => {
-    const result = await runAuditFixture('wildcard-secret-row-identity/failing', wildcardSecretCheck)
+    const result = await runAuditFixture(
+      'wildcard-secret-row-identity/failing',
+      wildcardSecretCheck,
+    )
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${wildcardSecretCheck}]`)
@@ -350,7 +348,10 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that replays a conflict with aliased status/baseRevision literals', async () => {
-    const result = await runAuditFixture('conflict-replay/failing-aliased-literals', conflictReplayCheck)
+    const result = await runAuditFixture(
+      'conflict-replay/failing-aliased-literals',
+      conflictReplayCheck,
+    )
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${conflictReplayCheck}]`)
@@ -421,7 +422,10 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows a walker whose fields all map to an owned validator with its needles', async () => {
-    const result = await runAuditFixture('asset-walker-validator-drift/owned-bypass', assetWalkerCheck)
+    const result = await runAuditFixture(
+      'asset-walker-validator-drift/owned-bypass',
+      assetWalkerCheck,
+    )
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -674,7 +678,10 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that reintroduces a group-chat branch in the catalog and chat-list UI', async () => {
-    const result = await runAuditFixture('group-chat-removed/failing-ui-branch', groupChatRemovedCheck)
+    const result = await runAuditFixture(
+      'group-chat-removed/failing-ui-branch',
+      groupChatRemovedCheck,
+    )
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${groupChatRemovedCheck}]`)
@@ -699,6 +706,40 @@ describe('client-thinning audit fixtures', () => {
 
   it('allows a client with the group-chat UI removed and the defense layers intact', async () => {
     const result = await runAuditFixture('group-chat-removed/passing', groupChatRemovedCheck)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('fails a fixture where the /chat dispatcher re-forks the provider-routing decision', async () => {
+    const result = await runAuditFixture(
+      'provider-capability-shared/failing-server-fork',
+      providerCapabilityCheck,
+    )
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain(`[${providerCapabilityCheck}]`)
+    expect(result.stderr).toContain('no longer imports resolveProviderCapability')
+    expect(result.stderr).toContain('re-declares unsupportedChatProviderReason()')
+  })
+
+  it('allows a /chat dispatcher that consumes the shared table and keeps unrelated helpers', async () => {
+    const result = await runAuditFixture(
+      'provider-capability-shared/keeps-helpers-bypass',
+      providerCapabilityCheck,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Client-thinning audit passed.')
+    expect(result.stderr).toBe('')
+  })
+
+  it('allows both resolvers consuming the shared provider-capability table', async () => {
+    const result = await runAuditFixture(
+      'provider-capability-shared/passing',
+      providerCapabilityCheck,
+    )
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')

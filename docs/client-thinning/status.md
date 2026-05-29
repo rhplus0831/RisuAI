@@ -16,11 +16,18 @@ Implemented / closed:
 - The active-writer guard protects server-owned mutation routes; the projection
   write guard freezes `DBState.db` outside trusted projection writes.
 - Provider dispatch is server-routed in Fastify mode for supported shapes;
-  unsupported shapes fail explicitly (no browser fallback).
-- `resolveServerPromptAssembly` is landed. With `useServerPromptAssembly` on,
-  the supported subset is server-mandatory instead of falling through to local.
-  Decided 2026-05-30 to flip the flag's default to `true` (pending its own batch +
-  test sweep); see [`phases/phase-5-closeout.md`](phases/phase-5-closeout.md#closeout-decisions-2026-05-30)
+  unsupported shapes fail explicitly (no browser fallback). The provider-routing
+  **decision** is single-sourced (2026-05-30, decision #5) in the shared pure
+  `resolveProviderCapability` table (`src/ts/process/request/providerCapability.ts`),
+  consumed by both the browser completion classifier and the server `/chat`
+  dispatcher, so they cannot drift; the stale `reverse_proxy` + `reverseProxyOobaMode`
+  `/chat` rejection is gone. See
+  [`reference/provider-capability-table.md`](reference/provider-capability-table.md).
+- `resolveServerPromptAssembly` is landed and `useServerPromptAssembly` now
+  **defaults `true`** (2026-05-30, decision #1): server prompt assembly is the
+  supported default and the documented `unsupported` classes hard-fail by default.
+  Tests exercising local assembly set the flag `false` explicitly; see
+  [`phases/phase-5-closeout.md`](phases/phase-5-closeout.md#closeout-decisions-2026-05-30)
   decision #1.
 - Multimodal/asset prompt inlining is server-side at parity for image-input
   models; non-vision image caption fallback hard-fails as unsupported.
@@ -51,10 +58,9 @@ Resolved A-items (see [`plan.md`](plan.md) for the full classification):
 
 - **A1** prompt-assembly content parity — closed for current scope. PluginV2
   edit/replacer hooks, interactive Lua dialog APIs, and non-vision image caption
-  fallback remain explicit `unsupported`. `useServerPromptAssembly` still defaults
-  off in code, so local assembly remains today's default production path; decided
-  2026-05-30 to flip it to default-on (pending batch — once flipped those
-  `unsupported` classes hard-fail by default). See decision #1.
+  fallback remain explicit `unsupported`. `useServerPromptAssembly` now **defaults
+  `true`** (2026-05-30, decision #1), so server prompt assembly is the default
+  production path and those `unsupported` classes hard-fail by default. See decision #1.
 - **A2** post-generation durable derivation — closed on the server-dispatch path
   by slice 4. Browser derivation remains only on the local-assembly/completion
   path while the prompt-assembly flag is off.

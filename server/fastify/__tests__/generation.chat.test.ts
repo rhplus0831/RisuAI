@@ -526,9 +526,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     // ran over the final server-assembled rows.
     expect(messages.some((m) => m.content === 'MAIN [LUA]')).toBe(true)
     expect(messages.some((m) => m.content === 'MAIN')).toBe(false)
-    expect(messages.every((m) => typeof m.content === 'string' && m.content.endsWith(' [LUA]'))).toBe(
-      true,
-    )
+    expect(
+      messages.every((m) => typeof m.content === 'string' && m.content.endsWith(' [LUA]')),
+    ).toBe(true)
   })
 
   it('persists a Lua editRequest setChatVar write via the assembly chat-var delta (slice 3b)', async () => {
@@ -556,7 +556,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     const events = parseEvents(res.body)
     const patch = events.find((e) => e.type === 'message_patch')?.data.patch as
-      | { chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }>; varChanged?: boolean }
+      | {
+          chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }>
+          varChanged?: boolean
+        }
       | undefined
     // `setState(id,'turns',3)` writes the JSON-encoded value under the `__`-prefixed
     // key; the var engine stores it at `$__turns` in scriptstate.
@@ -738,7 +741,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
   async function bootstrapChat(
     assertion: string,
-  ): Promise<{ message: Array<{ role: string; data: string }>; scriptstate?: Record<string, unknown> }> {
+  ): Promise<{
+    message: Array<{ role: string; data: string }>
+    scriptstate?: Record<string, unknown>
+  }> {
     const res = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
@@ -812,11 +818,18 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     // The message_patch carries the editinput replace_all and the persisted
     // transcript reflects the post-editinput rewrite.
     const patch = events.find((e) => e.type === 'message_patch')?.data.patch as {
-      messageMutations?: Array<{ type: string; source: string; messages?: Array<{ role: string; data: string }> }>
+      messageMutations?: Array<{
+        type: string
+        source: string
+        messages?: Array<{ role: string; data: string }>
+      }>
     }
     const editinputMutation = patch.messageMutations?.find((m) => m.source === 'editinput')
     expect(editinputMutation?.type).toBe('replace_all')
-    expect(editinputMutation?.messages?.at(-1)).toMatchObject({ role: 'user', data: 'hi [EDITINPUT]' })
+    expect(editinputMutation?.messages?.at(-1)).toMatchObject({
+      role: 'user',
+      data: 'hi [EDITINPUT]',
+    })
 
     const chat = await bootstrapChat(assertion)
     expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([
@@ -831,7 +844,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { customscript?: unknown }>
     }
-    db.characters[0].customscript = [{ in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false }]
+    db.characters[0].customscript = [
+      { in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false },
+    ]
     await seedDatabase(harness.app, assertion, db)
 
     await sendBase(assertion)
@@ -856,9 +871,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       messageMutations?: Array<{ source: string }>
     }
     expect(patch.messageMutations?.some((m) => m.source === 'user_message')).toBe(true)
-    expect(patch.messageMutations?.some((m) => m.source === 'editinput' || m.source === 'input_trigger')).toBe(
-      false,
-    )
+    expect(
+      patch.messageMutations?.some((m) => m.source === 'editinput' || m.source === 'input_trigger'),
+    ).toBe(false)
     // …but the route persisted nothing (no revision bump, transcript untouched).
     const info = events.find((e) => e.type === 'info')
     expect(info?.data.revision).toBeUndefined()
@@ -951,10 +966,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   // appends a static `system` row drawn from `newGenData` when `inlayViewScreen`
   // is set; it rides postEverything. No request field is needed — the config is
   // already on the loaded character.
-  function dbWithInlayView(
-    view: 'emotion' | 'imggen',
-    extra: Record<string, unknown>,
-  ): unknown {
+  function dbWithInlayView(view: 'emotion' | 'imggen', extra: Record<string, unknown>): unknown {
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<Record<string, unknown>>
     }
@@ -1040,9 +1052,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
     const messages = prompt.data.messages as Array<{ role: string; content: string }>
-    expect(messages.some((m) => m.content.includes('emotion') || m.content.includes('Generate an image'))).toBe(
-      false,
-    )
+    expect(
+      messages.some(
+        (m) => m.content.includes('emotion') || m.content.includes('Generate an image'),
+      ),
+    ).toBe(false)
   })
 
   it('emits stop-trigger mutations and restoration before the terminal error', async () => {
@@ -1547,19 +1561,6 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       label: 'NovelList',
       database: { aiModel: 'novellist' },
       error: 'unsupported /chat provider: NovelList must use local dispatch',
-    },
-    {
-      label: 'Ooba OpenAI-compatible reverse proxy',
-      database: {
-        aiModel: 'reverse_proxy',
-        customProxyRequestModel: 'ooba-model',
-        customAPIFormat: LLMFormat.OpenAICompatible,
-        reverseProxyOobaMode: true,
-        forceReplaceUrl: 'https://proxy.example.com/v1',
-        proxyKey: 'sk-proxy',
-      },
-      error:
-        'unsupported /chat provider: Ooba OpenAI-compatible reverse proxy must use local dispatch',
     },
     {
       label: 'plugin legacy',

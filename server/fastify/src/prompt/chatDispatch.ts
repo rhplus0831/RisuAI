@@ -31,6 +31,12 @@ import {
 } from '../generation/bedrock.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
 import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
+import {
+  resolveProviderCapability,
+  type CustomModelEntryLike,
+  type ProviderCapabilityInput,
+  type ProviderUnsupportedReason,
+} from '../../../../src/ts/process/request/providerCapability'
 
 interface ChatDispatchArgs {
   database: Database
@@ -413,62 +419,92 @@ function reformatMessages(db: Database, rows: OpenAIChat[], flags: number[]): Op
   return formated
 }
 
-function resolveProvider(db: Database, info: ModelInfoLite): string | null {
-  if (info.unsupportedReason) return null
-  if (info.format === LLMFormat.Echo) return 'echo'
-  if (info.format === LLMFormat.NanoGPT) return 'nanogpt'
-  if (
-    info.format === LLMFormat.Anthropic ||
-    info.format === LLMFormat.AnthropicLegacy ||
-    info.format === LLMFormat.NanoGPTMessages
-  ) {
-    return 'anthropic'
-  }
-  if (info.format === LLMFormat.Mistral) return 'mistral'
-  if (info.format === LLMFormat.Cohere) return 'cohere'
-  if (info.format === LLMFormat.GoogleCloud || info.format === LLMFormat.VertexAIGemini) {
-    return 'gemini'
-  }
-  if (info.format === LLMFormat.OpenAILegacyInstruct || info.format === LLMFormat.NanoGPTLegacy) {
-    return 'openai-legacy-instruct'
-  }
-  if (info.format === LLMFormat.OpenAIResponseAPI || info.format === LLMFormat.NanoGPTResponses) {
-    return 'openai-responses'
-  }
-  if (info.format === LLMFormat.Kobold) return 'kobold'
-  if (info.format === LLMFormat.OobaLegacy) return 'ooba-legacy'
-  if (info.format === LLMFormat.Ollama) return 'ollama'
-  if (info.format === LLMFormat.AWSBedrockClaude) return 'bedrock'
-  if (info.format === LLMFormat.Horde) return 'horde'
-  if (info.format !== LLMFormat.OpenAICompatible) return null
-
+/**
+ * Build the shared capability table's input from the server-resolved
+ * `ModelInfoLite` + the route `db`. `ollama-cloud`'s format is pre-remapped to
+ * `db.ollamaRequestFormat` by `resolveModelInfo` for dispatch, but the table
+ * classifies it the way the browser does — through the Ollama arm, which also
+ * gates on `db.ollamaApiKey` — so feed `LLMFormat.Ollama` here; the dispatch
+ * arms still read the remapped `info.format`.
+ */
+function buildChatCapabilityInput(db: Database, info: ModelInfoLite): ProviderCapabilityInput {
   const aiModel = asString(db.aiModel) ?? ''
-  if (aiModel === 'openrouter') return 'openrouter'
-  return 'openai'
+  return {
+    format: aiModel === 'ollama-cloud' ? LLMFormat.Ollama : info.format,
+    aiModel,
+    endpoint: info.endpoint,
+    keyIdentifier: info.keyIdentifier,
+    internalID: info.internalID,
+    config: {
+      forceReplaceUrl: asString(db.forceReplaceUrl),
+      proxyKey: asString(db.proxyKey),
+      oaiCompApiKeys: db.OaiCompAPIKeys,
+      customModels: db.customModels as CustomModelEntryLike[] | undefined,
+      googleProjectId: db.google?.projectId,
+      vertexRegion: db.vertexRegion,
+      vertexClientEmail: db.vertexClientEmail,
+      vertexPrivateKey: db.vertexPrivateKey,
+      claudeAPIKey: db.claudeAPIKey,
+      instructChatTemplate: asString(db.instructChatTemplate),
+      jinjaTemplate: asString(db.JinjaTemplate),
+      ollamaApiKey: asString(db.ollamaApiKey),
+      ollamaRequestFormat: asNumber(db.ollamaRequestFormat) as LLMFormatValue | undefined,
+      ollamaURL: asString(db.ollamaURL),
+    },
+  }
 }
 
-function unsupportedChatProviderReason(db: Database, info: ModelInfoLite): string | null {
-  if (info.unsupportedReason) return info.unsupportedReason
-
-  const aiModel = asString(db.aiModel) ?? ''
-  if (aiModel === 'reverse_proxy' && db.reverseProxyOobaMode === true) {
-    return 'unsupported /chat provider: Ooba OpenAI-compatible reverse proxy must use local dispatch'
-  }
-
-  switch (info.format) {
-    case LLMFormat.NovelAI:
+/**
+ * Map the shared capability table's unsupported category to the specific /chat
+ * error message clients/tests rely on. The routing decision is shared with the
+ * browser completion path; only the prose differs (see
+ * `docs/client-thinning/reference/provider-capability-table.md`).
+ */
+function chatProviderUnsupportedReason(
+  reason: ProviderUnsupportedReason,
+  info: ModelInfoLite,
+): string {
+  switch (reason) {
+    case 'novelai':
       return 'unsupported /chat provider: NovelAI text generation must use local dispatch'
-    case LLMFormat.NovelList:
+    case 'novellist':
       return 'unsupported /chat provider: NovelList must use local dispatch'
-    case LLMFormat.Ooba:
+    case 'ooba':
       return 'unsupported /chat provider: Ooba OpenAI-compatible chat must use local dispatch'
-    case LLMFormat.Plugin:
+    case 'plugin':
       return 'unsupported /chat provider: plugin providers must use local dispatch'
-    case LLMFormat.WebLLM:
+    case 'webllm':
       return 'unsupported /chat provider: local WebLLM models must use local dispatch'
+    case 'config-incomplete':
+      return `unsupported /chat provider: ${info.id} configuration is incomplete for server dispatch`
+    case 'format-not-server-routable':
     default:
-      return null
+      return `unsupported /chat provider: ${info.format}`
   }
+}
+
+export type ChatProviderRoute =
+  | { routable: true; provider: string }
+  | { routable: false; reason: string }
+
+/**
+ * The /chat counterpart to `resolveServerCompletionRoute`. The unknown-id guard
+ * stays in `resolveModelInfo` (the server has no endpoint for an unrecognized
+ * OpenAI-compatible id); then the shared `resolveProviderCapability` table owns
+ * the routing decision, so /chat cannot drift from the browser completion path.
+ * The stale `reverse_proxy` + `reverseProxyOobaMode` rejection is gone — the
+ * openai adapter applies `oobaSystemHoist` itself.
+ */
+export function resolveChatProviderRoute(
+  db: Database,
+  info: ModelInfoLite = resolveModelInfo(db),
+): ChatProviderRoute {
+  if (info.unsupportedReason) {
+    return { routable: false, reason: info.unsupportedReason }
+  }
+  const verdict = resolveProviderCapability(buildChatCapabilityInput(db, info))
+  if (verdict.routable) return { routable: true, provider: verdict.provider }
+  return { routable: false, reason: chatProviderUnsupportedReason(verdict.reason, info) }
 }
 
 function resolveBedrockWireModel(internalId: string): string {
@@ -644,14 +680,11 @@ export async function dispatchChatProvider(
 ): Promise<AsyncIterable<CompletionStreamFrame>> {
   const { database: db, outputTokens, signal } = args
   const info = resolveModelInfo(db)
-  const unsupportedReason = unsupportedChatProviderReason(db, info)
-  if (unsupportedReason) {
-    throw new Error(unsupportedReason)
+  const route = resolveChatProviderRoute(db, info)
+  if (!route.routable) {
+    throw new Error(route.reason)
   }
-  const provider = resolveProvider(db, info)
-  if (provider === null) {
-    throw new Error(`unsupported /chat provider: ${info.format}`)
-  }
+  const provider = route.provider
 
   const model = resolveProviderModel(db, info, provider)
   const messages = reformatMessages(db, args.formated, info.flags)

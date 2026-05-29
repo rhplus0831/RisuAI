@@ -764,7 +764,11 @@ function checkPluginStorageGates(): void {
   const requireGate = (label: string, scope: Node, sinkKind: string): void => {
     if (!referencesDeviceLocalSink(scope, deviceLocalSinks)) return
     if (scope.getText().includes('assertDeviceLocalPluginStorageEnabled()')) return
-    fail(check, `${label} must assert Plugin Compatibility Mode before touching ${sinkKind}.`, scope)
+    fail(
+      check,
+      `${label} must assert Plugin Compatibility Mode before touching ${sinkKind}.`,
+      scope,
+    )
   }
 
   for (const className of ['SafeLocalStorage', 'SafeLocalPluginStorage']) {
@@ -775,8 +779,12 @@ function checkPluginStorageGates(): void {
     }
     const members: { name: string; node: Node }[] = [
       ...klass.getMethods().map((member) => ({ name: member.getName(), node: member as Node })),
-      ...klass.getGetAccessors().map((member) => ({ name: member.getName(), node: member as Node })),
-      ...klass.getSetAccessors().map((member) => ({ name: member.getName(), node: member as Node })),
+      ...klass
+        .getGetAccessors()
+        .map((member) => ({ name: member.getName(), node: member as Node })),
+      ...klass
+        .getSetAccessors()
+        .map((member) => ({ name: member.getName(), node: member as Node })),
     ]
     for (const member of members) {
       requireGate(`${className}.${member.name}`, member.node, 'device-local storage')
@@ -1495,7 +1503,10 @@ function functionLikeDisplayName(fn: Node): { kind: string; name: string } {
   }
   if (Node.isMethodDeclaration(fn)) {
     const klass = fn.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)
-    return { kind: 'method', name: `${klass?.getName() ?? 'Class'}.${fn.getName() ?? '<anonymous>'}` }
+    return {
+      kind: 'method',
+      name: `${klass?.getName() ?? 'Class'}.${fn.getName() ?? '<anonymous>'}`,
+    }
   }
   if (Node.isGetAccessorDeclaration(fn) || Node.isSetAccessorDeclaration(fn)) {
     return { kind: 'accessor', name: fn.getName() }
@@ -1757,11 +1768,7 @@ const NORMALIZE_HELPER_ARG_ALLOWLIST: ReadonlyMap<string, ReadonlySet<string>> =
   ['ensureChatMessages', new Set(['chat'])],
 ])
 
-const DEFAULT_NORMALIZE_HELPER_ARGS: ReadonlySet<string> = new Set([
-  'target',
-  'database',
-  'data',
-])
+const DEFAULT_NORMALIZE_HELPER_ARGS: ReadonlySet<string> = new Set(['target', 'database', 'data'])
 
 function normalizeHelperAllowedArgs(name: string): ReadonlySet<string> {
   return NORMALIZE_HELPER_ARG_ALLOWLIST.get(name) ?? DEFAULT_NORMALIZE_HELPER_ARGS
@@ -1847,11 +1854,7 @@ function checkAlpha4TransitiveCommandIdMinting(): void {
     // classification for a route handler).
     const directMint = findUuidMintCall(handler)
     if (directMint) {
-      fail(
-        check,
-        `${method} ${route} mints durable ids directly in the route handler.`,
-        directMint,
-      )
+      fail(check, `${method} ${route} mints durable ids directly in the route handler.`, directMint)
       return
     }
 
@@ -2040,7 +2043,10 @@ function getRegexInitializer(sourceFile: SourceFile, name: string): string | und
   return undefined
 }
 
-function findRegexLiteralByText(scope: Node, predicate: (literal: string) => boolean): string | undefined {
+function findRegexLiteralByText(
+  scope: Node,
+  predicate: (literal: string) => boolean,
+): string | undefined {
   let match: string | undefined
   scope.forEachDescendant((descendant) => {
     if (match) return
@@ -2231,9 +2237,7 @@ function checkAlpha4WildcardSecretIdentity(): void {
     )
     return
   }
-  for (const needle of [
-    'MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED',
-  ]) {
+  for (const needle of ['MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED']) {
     if (!resolveBody.includes(needle)) {
       fail(
         check,
@@ -2776,7 +2780,9 @@ function checkAlpha4CompositeFanout(): void {
     useNodeLocation: boolean,
   ): void => {
     const calls = countDispatchesInScope(scopeNode, dispatcherNames)
-    const unserialized = calls.filter((call) => !callIsAwaited(call) && !callIsInsideSequencer(call))
+    const unserialized = calls.filter(
+      (call) => !callIsAwaited(call) && !callIsInsideSequencer(call),
+    )
     const racing = unserialized.filter((call) =>
       unserialized.some((other) => other !== call && !areMutuallyExclusive(call, other)),
     )
@@ -3353,13 +3359,16 @@ function loadOptionalSource(rl: string): SourceFile | undefined {
 function comparisonGuardsUnsupportedReturn(comparison: Node): boolean {
   const ifStatement = comparison.getFirstAncestorByKind(SyntaxKind.IfStatement)
   if (!ifStatement) return false
-  for (const ret of ifStatement.getThenStatement().getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
+  for (const ret of ifStatement
+    .getThenStatement()
+    .getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
     const expr = ret.getExpression()
     if (!expr || !Node.isObjectLiteralExpression(expr)) continue
     const typeProp = expr.getProperty('type')
     if (typeProp && Node.isPropertyAssignment(typeProp)) {
       const init = typeProp.getInitializer()
-      if (init && Node.isStringLiteral(init) && init.getLiteralValue() === 'unsupported') return true
+      if (init && Node.isStringLiteral(init) && init.getLiteralValue() === 'unsupported')
+        return true
     }
   }
   return false
@@ -3393,7 +3402,10 @@ function checkGroupChatRemoved(): void {
   // Positive half P1: the load-time filter that strips group characters on load.
   const dbFile = loadOptionalSource('src/ts/storage/database.svelte.ts')
   if (!dbFile) {
-    fail(check, 'expected src/ts/storage/database.svelte.ts to exist for the load-time group filter.')
+    fail(
+      check,
+      'expected src/ts/storage/database.svelte.ts to exist for the load-time group filter.',
+    )
   } else {
     const setDatabase = dbFile.getFunction('setDatabase')
     if (!setDatabase) {
@@ -3416,7 +3428,10 @@ function checkGroupChatRemoved(): void {
   // Positive half P2: server prompt assembly still hard-fails a group character.
   const assembly = loadOptionalSource('src/ts/process/request/serverPromptAssembly.ts')
   if (!assembly) {
-    fail(check, 'expected src/ts/process/request/serverPromptAssembly.ts to exist for the group hard-fail.')
+    fail(
+      check,
+      'expected src/ts/process/request/serverPromptAssembly.ts to exist for the group hard-fail.',
+    )
   } else {
     const comparison = findCharTypeGroupComparison(assembly)
     if (!comparison) {
@@ -3438,7 +3453,10 @@ function checkGroupChatRemoved(): void {
   // Positive half P3: the request boundary keeps isGroupChat hardcoded false.
   const dispatch = loadOptionalSource('src/ts/process/dispatch/dispatchRequest.ts')
   if (!dispatch) {
-    fail(check, 'expected src/ts/process/dispatch/dispatchRequest.ts to exist for the isGroupChat hardcode.')
+    fail(
+      check,
+      'expected src/ts/process/dispatch/dispatchRequest.ts to exist for the isGroupChat hardcode.',
+    )
   } else if (!hasIsGroupChatFalse(dispatch)) {
     fail(
       check,
@@ -3487,6 +3505,92 @@ function runChecks(checks: AuditCheck[]): void {
   }
 }
 
+// ----- A4R-provider-capability: one shared provider-routing table -----
+//
+// Invariant (closeout decision #5): the server provider-routing decision — which
+// provider dispatches a model, or that it is unsupported — is single-sourced in
+// `resolveProviderCapability` (`src/ts/process/request/providerCapability.ts`).
+// Both the browser completion classifier (serverCompletion.ts) and the server
+// /chat dispatcher (chatDispatch.ts) must consume it, so the two cannot drift
+// (the bug this closed: /chat rejected a reverse_proxy + ooba shape the
+// completion path accepted). AST-derived, two halves:
+//
+//   positive — each consumer that exists must import `resolveProviderCapability`
+//     from a `providerCapability` module and actually call it. Dropping either
+//     means that path re-forked its own routing decision.
+//   negative — the /chat dispatcher must not re-declare the removed capability
+//     fork (`resolveProvider` / `unsupportedChatProviderReason`); the decision
+//     comes from the shared table, not a local function. (resolveProviderModel /
+//     resolveModelInfo and the other dispatch helpers are unrelated — only those
+//     two removed deciders are forbidden, by exact name.)
+function checkProviderCapabilityShared(): void {
+  const check = 'A4R-provider-capability shared routing table'
+  const providerCapabilitySpecifier = /(?:^|\/)providerCapability$/
+  const consumers = [
+    {
+      relPath: 'src/ts/process/request/serverCompletion.ts',
+      label: 'browser completion classifier',
+    },
+    { relPath: 'server/fastify/src/prompt/chatDispatch.ts', label: 'server /chat dispatcher' },
+  ]
+
+  for (const { relPath, label } of consumers) {
+    const abs = path.join(root, relPath)
+    // A fixture may exercise only one consumer; a missing file means there is no
+    // routing path here to check, so skip rather than fail.
+    if (!fs.existsSync(abs)) continue
+    const sf = project.getSourceFile(abs) ?? project.addSourceFileAtPathIfExists(abs)
+    if (!sf) continue
+
+    const importsTable = sf
+      .getImportDeclarations()
+      .some(
+        (imp) =>
+          providerCapabilitySpecifier.test(imp.getModuleSpecifierValue()) &&
+          imp.getNamedImports().some((named) => named.getName() === 'resolveProviderCapability'),
+      )
+    if (!importsTable) {
+      fail(
+        check,
+        `${label} (${relPath}) no longer imports resolveProviderCapability from the shared providerCapability table; the provider-routing decision must not re-fork.`,
+        undefined,
+        sf,
+      )
+      continue
+    }
+
+    const callsTable = sf
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .some((call) => call.getExpression().getText() === 'resolveProviderCapability')
+    if (!callsTable) {
+      fail(
+        check,
+        `${label} (${relPath}) imports but never calls resolveProviderCapability; the shared table must own the routing decision.`,
+        undefined,
+        sf,
+      )
+    }
+  }
+
+  // Negative half: the /chat dispatcher must not resurrect its own capability fork.
+  const chatAbs = path.join(root, 'server/fastify/src/prompt/chatDispatch.ts')
+  if (fs.existsSync(chatAbs)) {
+    const chat = project.getSourceFile(chatAbs) ?? project.addSourceFileAtPathIfExists(chatAbs)
+    if (chat) {
+      for (const fn of chat.getFunctions()) {
+        const name = fn.getName()
+        if (name === 'resolveProvider' || name === 'unsupportedChatProviderReason') {
+          fail(
+            check,
+            `server /chat dispatcher re-declares ${name}(); the provider-routing decision must come from the shared resolveProviderCapability table, not a local fork.`,
+            fn,
+          )
+        }
+      }
+    }
+  }
+}
+
 const auditChecks: AuditCheck[] = [
   { id: 'EC5 active-writer guard', run: checkActiveWriterGuard },
   { id: 'EC4 stable command ids', run: checkStableIdCommandPaths },
@@ -3509,7 +3613,11 @@ const auditChecks: AuditCheck[] = [
   { id: 'A4R-bounded process-lifetime accumulators', run: checkAlpha4BoundedAccumulators },
   { id: 'A4R-saveasset filename classification', run: checkAlpha4SaveAssetClassification },
   { id: 'A4R-pluginv2 no server-side plugin execution', run: checkPluginV2NoServerExecution },
-  { id: 'A4R-group-chat-removed legacy group chat removed from client', run: checkGroupChatRemoved },
+  {
+    id: 'A4R-group-chat-removed legacy group chat removed from client',
+    run: checkGroupChatRemoved,
+  },
+  { id: 'A4R-provider-capability shared routing table', run: checkProviderCapabilityShared },
 ]
 
 runChecks(selectedChecks(auditChecks))

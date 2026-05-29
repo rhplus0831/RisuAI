@@ -774,9 +774,11 @@ export function setDatabase(data: Database) {
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
   // Incomplete-migration gate (see the `useServerPromptAssembly` JSDoc on the
-  // Database type). Default off — local prompt assembly stays the production path;
-  // do not flip this default until server `/chat` assembly is at parity. Not deprecated.
-  data.useServerPromptAssembly ??= false
+  // Database type). Default ON as of the decision-#5 closeout: server `/chat`
+  // prompt assembly is the supported default path; the documented `unsupported`
+  // content classes hard-fail rather than silently falling back to local. Tests /
+  // cases exercising the local assembler set this `false` explicitly. Not deprecated.
+  data.useServerPromptAssembly ??= true
   if (!isFastifyServer) {
     //this is intended to forcely reduce the size of the database in web
     data.promptInfoInsideChat = false
@@ -1357,13 +1359,13 @@ export interface Database {
    * setting controls prompt assembly only.
    *
    * EXPERIMENTAL / INCOMPLETE-MIGRATION GATE — not a stable user setting and NOT
-   * deprecated. Defaults to `false`, so local prompt assembly
-   * (`assembleLocalSendChatPrompt`) is still the production path. A1 parity is
-   * landed for the supported subset; remaining explicit hard-fails are non-vision
-   * image caption fallback, interactive Lua dialogs, plugin-V2 script hooks, and
-   * group-chat legacy. Do NOT default-enable or delete this flag until the local
-   * fallback/default path is retired as a deliberate closeout decision. See
-   * docs/client-thinning/.
+   * deprecated. Defaults to `true` as of the decision-#5 closeout: server prompt
+   * assembly is the supported default path, and its provider-routing decision is
+   * shared with the completion path via `resolveProviderCapability`. The documented
+   * `unsupported` content classes (non-vision image caption fallback, interactive
+   * Lua dialogs, plugin-V2 script hooks, group-chat legacy) hard-fail by default
+   * instead of silently falling back to local assembly. Tests / specific cases set
+   * this `false` to exercise `assembleLocalSendChatPrompt`. See docs/client-thinning/.
    */
   useServerPromptAssembly?: boolean
   createFolderOnBranch?: boolean

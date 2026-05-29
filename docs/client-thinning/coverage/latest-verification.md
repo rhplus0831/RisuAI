@@ -2,18 +2,41 @@
 
 Date: 2026-05-30
 
-Batch: closeout-decision reflection (2026-05-30). Recorded the eight resolved
+Batch: provider-resolver unification (decision #5) + `useServerPromptAssembly`
+default flip (decision #1) — the two pending-implementation closeout batches, landed
+together. Provider routing is now single-sourced in
+[`../reference/provider-capability-table.md`](../reference/provider-capability-table.md)
+(`resolveProviderCapability`), consumed by both `serverCompletion.ts` (browser) and
+`chatDispatch.ts` (server `/chat`); the stale `reverse_proxy` + `reverseProxyOobaMode`
+`/chat` rejection is gone (the openai adapter applies `oobaSystemHoist`). The flag now
+defaults `true`, so server prompt assembly is the supported default path and the
+documented `unsupported` content classes hard-fail by default.
+
+- `pnpm test` (client) — 83 files, 952 passed, 4 skipped. Incl. the new pure-table
+  matrix `providerCapability.test.ts`, the browser `reverse_proxy` + ooba parity case
+  in `serverCompletion.test.ts`, and the flag-off opt-out added to the server-backed
+  *completion*-dispatch sweep in `sendChat.fixtures.serverBacked.test.ts` (the one
+  describe that exercised local assembly under the old default-off).
+- `pnpm api:test` (server) — 73 files, 1324 passed. Incl. the new
+  `providerCapabilityRoute.test.ts` (ooba flip + preserved per-format messages +
+  server-only unknown-id guard + ollama-cloud key gate); the ooba case was removed
+  from `generation.chat.test.ts`'s unsupported list.
+- `pnpm client-thinning:audit` — Passed (23 rules now, incl. the new
+  `A4R-provider-capability shared routing table`).
+- `pnpm exec vitest run util/client-thinning-audit.test.ts` — 58 tests passed (+3 for
+  the new rule: failing-server-fork, keeps-helpers bypass, passing).
+
+---
+
+Prior batch: closeout-decision reflection (2026-05-30). Recorded the eight resolved
 closeout decisions in the docs (canonical record:
 [`../phases/phase-5-closeout.md`](../phases/phase-5-closeout.md#closeout-decisions-2026-05-30))
 and added the decision-#2 best-effort TODO at `generationChat.ts`
 (`buildPostGenerationFrame` catch). No behavior change.
 
-- `pnpm client-thinning:audit` — Passed (also re-parses `generationChat.ts`, so the
-  comment-only edit is syntactically clean).
+- `pnpm client-thinning:audit` — Passed.
 - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts`
-  — 51 tests passed (confirms the touched server route still compiles/passes).
-- Not rerun: `pnpm check` / `pnpm test` (docs + one code comment; no client runtime
-  change since the prior batch).
+  — 51 tests passed.
 
 ---
 

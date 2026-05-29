@@ -223,11 +223,15 @@ text and persists the derived delta through the slice-2 writer.
   `assetPath`, re-wraps as a png data URI); `beginAssembly` folds it plus the
   request `inlayAssets` into `state.assetLookup`. `RouteAssembleDeps` still also
   carries `getDatabase()`.
-- **Provider dispatch support is resolver-defined.** `/generate/chat` uses
-  `prompt/chatDispatch.ts`, not the client completion resolver directly. It
-  supports the providers `resolveProvider` can map and hard-fails unsupported
-  shapes through `unsupportedChatProviderReason`; do not treat a prose provider
-  list as canonical.
+- **Provider dispatch support is resolver-defined.** `/generate/chat`
+  (`prompt/chatDispatch.ts`) derives `ModelInfoLite` via `resolveModelInfo`, then
+  the routing decision is owned by the shared `resolveProviderCapability` table
+  (decision #5) via `resolveChatProviderRoute` — the same table the browser
+  completion classifier consumes, so the two cannot drift. Unsupported shapes
+  hard-fail (the per-format reason prose stays in `chatProviderUnsupportedReason`;
+  the unknown-OpenAI-compatible-id guard stays in `resolveModelInfo`). Do not treat
+  a prose provider list as canonical; see
+  [`provider-capability-table.md`](provider-capability-table.md).
 
 C-A1 is pinned by `server/fastify/__tests__/generation.chat.test.ts` — a `setvar`
 start trigger emits `chatVarMutations` in the patch **and** bootstrap afterwards

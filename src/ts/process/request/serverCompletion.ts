@@ -7,6 +7,13 @@ import { parseSseEvent } from './sseParse'
 import { unstringlizeChat } from '../stringlize'
 import type { OpenAIChat } from '../index.svelte'
 import type { RequestDataArgumentExtended, requestDataResponse } from './request'
+import {
+  resolveProviderCapability,
+  type CustomModelEntryLike,
+  type ProviderCapabilityInput,
+} from './providerCapability'
+
+export { formatToServerProvider } from './providerCapability'
 
 const COMPLETION_ENDPOINT = '/api/v1/generate/completion'
 
@@ -14,96 +21,6 @@ export type ServerCompletionRoute =
   | { type: 'local' }
   | { type: 'server'; provider: string }
   | { type: 'unsupported'; reason: string }
-
-export function formatToServerProvider(format: LLMFormat): string | null {
-  switch (format) {
-    case LLMFormat.Echo:
-      return 'echo'
-    case LLMFormat.OpenAICompatible:
-      return 'openai'
-    case LLMFormat.NanoGPT:
-      return 'nanogpt'
-    case LLMFormat.Anthropic:
-    case LLMFormat.AnthropicLegacy:
-    case LLMFormat.NanoGPTMessages:
-      return 'anthropic'
-    case LLMFormat.Mistral:
-      return 'mistral'
-    case LLMFormat.Cohere:
-      return 'cohere'
-    case LLMFormat.GoogleCloud:
-    case LLMFormat.VertexAIGemini:
-      return 'gemini'
-    case LLMFormat.OpenAILegacyInstruct:
-    case LLMFormat.NanoGPTLegacy:
-      return 'openai-legacy-instruct'
-    case LLMFormat.OpenAIResponseAPI:
-    case LLMFormat.NanoGPTResponses:
-      return 'openai-responses'
-    case LLMFormat.Ollama:
-      // Both the native /api/chat path (LLMFormat.Ollama on a self-hosted
-      // box) and the ollama.com cloud variants land here. The gate inside
-      // resolveOllamaProvider() picks the upstream dispatcher: native gets
-      // its own 'ollama' provider, cloud routes to openai / openai-responses
-      // / anthropic per db.ollamaRequestFormat.
-      return 'ollama'
-    case LLMFormat.AWSBedrockClaude:
-      return 'bedrock'
-    case LLMFormat.Horde:
-      return 'horde'
-    case LLMFormat.Kobold:
-      return 'kobold'
-    case LLMFormat.OobaLegacy:
-      return 'ooba-legacy'
-    default:
-      return null
-  }
-}
-
-/**
- * `LLMFormat.OpenAICompatible` covers vanilla OpenAI plus several derivatives
- * that share the wire shape. Vanilla goes to `provider: 'openai'`;
- * `aiModel === 'openrouter'` routes to `'openrouter'`; models that look up
- * their key under `db.OaiCompAPIKeys[modelInfo.keyIdentifier]` (DeepSeek,
- * DeepInfra) ride the openai dispatcher with the lookup key + a baseUrl
- * derived from `modelInfo.endpoint`. `xcustom:::<id>` rides the openai
- * dispatcher with per-entry URL + key from `db.customModels` plus an
- * `additionalParams` overlay parsed from the entry's `params` field.
- * reverse_proxy stays on local dispatch until its slice lands.
- */
-function selectOpenAIVariant(targ: RequestDataArgumentExtended): string | null {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'openrouter') return 'openrouter'
-  if (aiModel === 'reverse_proxy') {
-    const db = getDatabase()
-    // `db.customAPIFormat` mutates `modelInfo.format` upstream in request.ts.
-    // Only OAI-compat reverse_proxy routes through this slice; Anthropic /
-    // Mistral / etc. variants get their own slices.
-    if (targ.modelInfo?.format !== LLMFormat.OpenAICompatible) return null
-    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return null
-    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return null
-    return 'openai'
-  }
-  if (aiModel.startsWith('xcustom:::')) {
-    const entry = findXcustomEntry(aiModel)
-    if (entry === null) return null
-    if (entry.format !== LLMFormat.OpenAICompatible) return null
-    return 'openai'
-  }
-  if (targ.modelInfo?.keyIdentifier) {
-    const db = getDatabase()
-    const key = db.OaiCompAPIKeys?.[targ.modelInfo.keyIdentifier]
-    if (typeof key !== 'string' || key.length === 0) return null
-    if (typeof targ.modelInfo.endpoint !== 'string' || targ.modelInfo.endpoint.length === 0) {
-      return null
-    }
-    return 'openai'
-  }
-  // A hardcoded endpoint without a keyIdentifier means a self-hosted /
-  // reverse-proxy deployment whose auth path is not yet defined; stay local.
-  if (targ.modelInfo?.endpoint) return null
-  return 'openai'
-}
 
 /**
  * OpenAI Legacy Instruct counterpart to `resolveReverseProxyUrl`:
@@ -283,107 +200,6 @@ function deriveOpenAIBaseUrl(endpoint: string): string {
   return trimmed
 }
 
-function isVanillaAnthropic(targ: RequestDataArgumentExtended): boolean {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') {
-    // reverse_proxy with db.customAPIFormat === Anthropic rides the anthropic
-    // dispatcher with proxyKey + forceReplaceUrl + db.additionalParams.
-    // request.ts mutates modelInfo.format to db.customAPIFormat before the
-    // adapter runs, so by the time isVanillaAnthropic is called, format is
-    // already Anthropic. Validate the supporting db fields here.
-    const db = getDatabase()
-    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
-    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
-    return true
-  }
-  if (aiModel.startsWith('xcustom:::')) {
-    // xcustom with format === Anthropic also rides the anthropic dispatcher.
-    const entry = findXcustomEntry(aiModel)
-    if (entry === null) return false
-    if (entry.format !== LLMFormat.Anthropic) return false
-    return true
-  }
-  if (targ.modelInfo?.endpoint) return false
-  return true
-}
-
-/**
- * Mistral wire is OpenAI-compat-shaped (POST `/chat/completions`, Bearer
- * auth), so reverse_proxy + xcustom Mistral ride the existing mistral
- * dispatcher with the same URL autofill helper used by the OAI-compat slice.
- * `request.ts` mutates `targ.modelInfo.format = db.customAPIFormat` before
- * the adapter runs, so reverse_proxy with `customAPIFormat = Mistral` shows
- * up to the gate with `format === LLMFormat.Mistral`. Hardcoded-endpoint
- * models keep their local dispatch path.
- */
-function isVanillaMistral(targ: RequestDataArgumentExtended): boolean {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') {
-    const db = getDatabase()
-    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
-    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
-    return true
-  }
-  if (aiModel.startsWith('xcustom:::')) {
-    const entry = findXcustomEntry(aiModel)
-    if (entry === null) return false
-    if (entry.format !== LLMFormat.Mistral) return false
-    return true
-  }
-  if (targ.modelInfo?.endpoint) return false
-  return true
-}
-
-/**
- * Cohere has its own wire shape (`POST /chat` with `message` + `chat_history`).
- * reverse_proxy + xcustom Cohere ride the existing cohere dispatcher with a
- * Cohere-specific URL autofill helper. `request.ts` mutates
- * `targ.modelInfo.format = db.customAPIFormat` before the adapter runs, so
- * reverse_proxy with `customAPIFormat = Cohere` shows up to the gate with
- * `format === LLMFormat.Cohere`. Hardcoded-endpoint models keep their local
- * dispatch path.
- */
-function isVanillaCohere(targ: RequestDataArgumentExtended): boolean {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') {
-    const db = getDatabase()
-    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
-    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
-    return true
-  }
-  if (aiModel.startsWith('xcustom:::')) {
-    const entry = findXcustomEntry(aiModel)
-    if (entry === null) return false
-    if (entry.format !== LLMFormat.Cohere) return false
-    return true
-  }
-  if (targ.modelInfo?.endpoint) return false
-  return true
-}
-
-/**
- * Server-routable Gemini gates: vanilla Google AI Studio
- * (LLMFormat.GoogleCloud) needs `db.google.accessToken`; Vertex AI
- * (LLMFormat.VertexAIGemini) needs the project ID + region +
- * service-account credentials. Reverse-proxy / xcustom Gemini variants
- * stay on local dispatch (each would need its own slice).
- */
-function isVanillaGemini(targ: RequestDataArgumentExtended): boolean {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
-  if (targ.modelInfo?.endpoint) return false
-  if (targ.modelInfo?.format === LLMFormat.VertexAIGemini) {
-    const db = getDatabase()
-    if (typeof db.google?.projectId !== 'string' || db.google.projectId.length === 0) return false
-    if (typeof db.vertexRegion !== 'string' || db.vertexRegion.length === 0) return false
-    if (typeof db.vertexClientEmail !== 'string' || db.vertexClientEmail.length === 0) return false
-    if (typeof db.vertexPrivateKey !== 'string' || db.vertexPrivateKey.length === 0) return false
-    return true
-  }
-  return true
-}
-
 interface BedrockCredentialParts {
   accessKeyId: string
   secretAccessKey: string
@@ -434,107 +250,57 @@ function resolveBedrockWireModel(internalId: string): string {
   return (useGlobal ? 'global.' : 'us.') + internalId
 }
 
-function isVanillaBedrock(targ: RequestDataArgumentExtended): boolean {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
-  const db = getDatabase()
-  if (parseBedrockCredentials(db.claudeAPIKey ?? '') === null) return false
-  if (typeof targ.modelInfo?.internalID !== 'string' || targ.modelInfo.internalID.length === 0) {
-    return false
-  }
-  return true
-}
-
-function isVanillaHorde(targ: RequestDataArgumentExtended): boolean {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (!aiModel.startsWith('horde:::')) return false
-  const realModel = aiModel.slice('horde:::'.length)
-  if (realModel.length === 0) return false
-  const db = getDatabase()
-  // The local Horde path flattens via applyChatTemplate (Jinja-driven by
-  // db.instructChatTemplate). The server-routed slice mirrors that by
-  // pre-flattening on the client; if the user hasn't picked a template
-  // we'd otherwise throw in buildProviderOptions, so refuse here.
-  if (typeof db.instructChatTemplate !== 'string' || db.instructChatTemplate.length === 0) {
-    return false
-  }
-  if (db.instructChatTemplate === 'jinja') {
-    if (typeof db.JinjaTemplate !== 'string' || db.JinjaTemplate.length === 0) return false
-  }
-  return true
-}
-
-/**
- * OpenAI Responses' wire path is `/v1/responses`. reverse_proxy + xcustom
- * under `LLMFormat.OpenAIResponseAPI` ride the existing dispatcher with a
- * dedicated `resolveReverseProxyResponsesUrl` autofill helper. `request.ts`
- * mutates `targ.modelInfo.format = db.customAPIFormat` before the adapter
- * runs, so reverse_proxy with `customAPIFormat = OpenAIResponseAPI` shows
- * up here with `format === LLMFormat.OpenAIResponseAPI`. Azure-style
- * `modelInfo.endpoint` overrides keep the vanilla dispatch path.
- */
-function isVanillaResponses(targ: RequestDataArgumentExtended): boolean {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') {
-    const db = getDatabase()
-    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
-    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
-    return true
-  }
-  if (aiModel.startsWith('xcustom:::')) {
-    const entry = findXcustomEntry(aiModel)
-    if (entry === null) return false
-    if (entry.format !== LLMFormat.OpenAIResponseAPI) return false
-    return true
-  }
-  // OpenAI Responses keeps `modelInfo.endpoint` for Azure-style hosts. We
-  // accept the endpoint as a baseUrl override when present; the dispatcher
-  // re-derives `/responses` from it. Refuse only when the endpoint is
-  // explicitly the chat-completions URL (handled by the openai variant path).
-  return true
-}
-
-/**
- * OpenAI Legacy Instruct uses `POST /v1/completions` (the flat-prompt
- * shape, no `/chat`). reverse_proxy + xcustom under
- * `LLMFormat.OpenAILegacyInstruct` ride the existing dispatcher with a
- * dedicated `resolveReverseProxyLegacyInstructUrl` autofill helper.
- * `request.ts` mutates `targ.modelInfo.format = db.customAPIFormat`
- * before the adapter runs, so reverse_proxy with
- * `customAPIFormat = OpenAILegacyInstruct` shows up to the gate with
- * `format === LLMFormat.OpenAILegacyInstruct`. NanoGPTLegacy carries a
- * fixed-format model id, so its baked-in `modelInfo.endpoint` is
- * accepted; vanilla LegacyInstruct with an endpoint override stays
- * deferred (no clear local equivalent).
- */
-function isVanillaLegacyInstruct(targ: RequestDataArgumentExtended): boolean {
-  const aiModel = targ.aiModel ?? targ.modelInfo?.id ?? ''
-  if (aiModel === 'reverse_proxy') {
-    const db = getDatabase()
-    if (typeof db.forceReplaceUrl !== 'string' || db.forceReplaceUrl.length === 0) return false
-    if (typeof db.proxyKey !== 'string' || db.proxyKey.length === 0) return false
-    return true
-  }
-  if (aiModel.startsWith('xcustom:::')) {
-    const entry = findXcustomEntry(aiModel)
-    if (entry === null) return false
-    if (entry.format !== LLMFormat.OpenAILegacyInstruct) return false
-    return true
-  }
-  // NanoGPTLegacy carries a fixed-format model id; it's still server-routable.
-  // OpenAILegacyInstruct with a modelInfo.endpoint override is deferred.
-  if (targ.modelInfo?.endpoint && targ.modelInfo?.format !== LLMFormat.NanoGPTLegacy) {
-    return false
-  }
-  return true
-}
-
 function unsupportedServerGenerationReason(targ: RequestDataArgumentExtended): string {
   const model = targ.aiModel ?? targ.modelInfo?.id ?? 'the selected model'
   return `Generation for ${model} is not supported in Fastify server mode. Select a server-routed provider or change this model before retrying.`
 }
 
+/**
+ * Build the `ProviderCapabilityInput` the shared table reads from a completion
+ * target's `modelInfo` + the active database. The reverse_proxy `format`
+ * mutation has already been applied to `modelInfo.format` by the caller
+ * (`request.ts` for the live path, `buildCompletionTarg` for prompt assembly).
+ */
+function buildCapabilityInput(
+  targ: RequestDataArgumentExtended,
+  modelInfo: NonNullable<RequestDataArgumentExtended['modelInfo']>,
+): ProviderCapabilityInput {
+  const db = getDatabase()
+  return {
+    format: modelInfo.format,
+    aiModel: targ.aiModel ?? modelInfo.id ?? '',
+    endpoint: typeof modelInfo.endpoint === 'string' ? modelInfo.endpoint : undefined,
+    keyIdentifier:
+      typeof modelInfo.keyIdentifier === 'string' ? modelInfo.keyIdentifier : undefined,
+    internalID: typeof modelInfo.internalID === 'string' ? modelInfo.internalID : undefined,
+    config: {
+      forceReplaceUrl: db.forceReplaceUrl,
+      proxyKey: db.proxyKey,
+      oaiCompApiKeys: db.OaiCompAPIKeys,
+      customModels: db.customModels as CustomModelEntryLike[] | undefined,
+      googleProjectId: db.google?.projectId,
+      vertexRegion: db.vertexRegion,
+      vertexClientEmail: db.vertexClientEmail,
+      vertexPrivateKey: db.vertexPrivateKey,
+      claudeAPIKey: db.claudeAPIKey,
+      instructChatTemplate: db.instructChatTemplate,
+      jinjaTemplate: db.JinjaTemplate,
+      ollamaApiKey: db.ollamaApiKey,
+      ollamaRequestFormat: db.ollamaRequestFormat as LLMFormat | undefined,
+      ollamaURL: db.ollamaURL,
+    },
+  }
+}
+
+/**
+ * Decide whether a completion send routes to the server, hard-fails, or (only
+ * in non-Fastify dev/test) stays local. The provider routing decision itself is
+ * owned by the shared `resolveProviderCapability` table (closeout decision #5),
+ * so it cannot drift from the server `/chat` dispatcher. This function supplies
+ * only the Fastify / preview-body / no-`modelInfo` arms and maps the verdict
+ * onto `ServerCompletionRoute`, surfacing the generic
+ * `unsupportedServerGenerationReason` for every unsupported category.
+ */
 export function resolveServerCompletionRoute(
   targ: RequestDataArgumentExtended,
 ): ServerCompletionRoute {
@@ -546,59 +312,23 @@ export function resolveServerCompletionRoute(
         'Provider preview bodies are not supported in Fastify server mode because browser-side provider dispatch is disabled.',
     }
   }
-  if (!targ.modelInfo) {
+  const modelInfo = targ.modelInfo
+  if (!modelInfo) {
     return {
       type: 'unsupported',
       reason: unsupportedServerGenerationReason(targ),
     }
   }
-  const provider = formatToServerProvider(targ.modelInfo.format)
-  if (provider === null)
-    return { type: 'unsupported', reason: unsupportedServerGenerationReason(targ) }
-  let routedProvider: string | null = provider
-  if (provider === 'openai') routedProvider = selectOpenAIVariant(targ)
-  if (provider === 'anthropic' && !isVanillaAnthropic(targ)) routedProvider = null
-  if (provider === 'mistral' && !isVanillaMistral(targ)) routedProvider = null
-  if (provider === 'cohere' && !isVanillaCohere(targ)) routedProvider = null
-  if (provider === 'gemini' && !isVanillaGemini(targ)) routedProvider = null
-  if (provider === 'openai-legacy-instruct' && !isVanillaLegacyInstruct(targ)) routedProvider = null
-  if (provider === 'openai-responses' && !isVanillaResponses(targ)) routedProvider = null
-  if (provider === 'bedrock' && !isVanillaBedrock(targ)) routedProvider = null
-  if (provider === 'horde' && !isVanillaHorde(targ)) routedProvider = null
-  if (provider === 'ollama') {
-    // Translate the routing decision the local code makes for ollama-cloud.
-    routedProvider = resolveOllamaProvider(targ)
-  }
-  if (routedProvider === null) {
+  const verdict = resolveProviderCapability(buildCapabilityInput(targ, modelInfo))
+  if (!verdict.routable) {
     return { type: 'unsupported', reason: unsupportedServerGenerationReason(targ) }
   }
-  return { type: 'server', provider: routedProvider }
+  return { type: 'server', provider: verdict.provider }
 }
 
 export function getServerCompletionProvider(targ: RequestDataArgumentExtended): string | null {
   const route = resolveServerCompletionRoute(targ)
   return route.type === 'server' ? route.provider : null
-}
-
-/**
- * Local code routes `aiModel === 'ollama-cloud'` to different upstream
- * dispatchers based on `db.ollamaRequestFormat`. Mirror that. The native
- * `/api/chat` shape (non-cloud) goes to the dedicated `'ollama'` provider
- * when `db.ollamaURL` is set; otherwise we have no host to talk to and fall
- * through to local dispatch.
- */
-function resolveOllamaProvider(targ: RequestDataArgumentExtended): string | null {
-  const db = getDatabase()
-  if (targ.aiModel === 'ollama-cloud') {
-    if (typeof db.ollamaApiKey !== 'string' || db.ollamaApiKey.length === 0) return null
-    const fmt = db.ollamaRequestFormat
-    if (fmt === LLMFormat.OpenAICompatible) return 'openai'
-    if (fmt === LLMFormat.OpenAIResponseAPI) return 'openai-responses'
-    if (fmt === LLMFormat.Anthropic) return 'anthropic'
-    return null
-  }
-  if (typeof db.ollamaURL !== 'string' || db.ollamaURL.length === 0) return null
-  return 'ollama'
 }
 
 /**
