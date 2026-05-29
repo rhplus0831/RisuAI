@@ -108,12 +108,18 @@ stay client-bound even with the VM.
 **Milestone 1 — survive client disconnect (in-memory).**
 
 - **Step 1 — pin the subset gate:** a `resolveDurableGeneration`-style classifier on
-  top of `resolveServerPromptAssembly` + the post-gen exclusion above.
+  top of `resolveServerPromptAssembly` + the post-gen exclusion above. Spec:
+  [`steps/step-1-subset-gate.md`](steps/step-1-subset-gate.md).
 - **Step 2 — decouple the lifecycle:** route `/generate/chat`'s provider stream through
   a generation `JobRegistry` instead of `req.raw.on('close') → abort`, for the subset.
-  Return a jobId; let the client attach/reattach. (EC-D1, EC-D3)
+  Return a jobId; let the client attach/reattach over SSE. (EC-D3 + the *lifecycle*
+  half of EC-D1; full persistence is Step 3.) Spec:
+  [`steps/step-2-lifecycle-decoupling.md`](steps/step-2-lifecycle-decoupling.md).
 - **Step 3 — server-owned result persistence:** extend C-A1's route persistence from
-  assembly-time scriptstate to the assistant result. (EC-D2, EC-D4)
+  assembly-time scriptstate to the assistant result. (The *persistence* half of EC-D1,
+  plus EC-D2, EC-D4.) Unblocked without slice 4 because the subset excludes the A2
+  post-gen surface. Spec:
+  [`steps/step-3-server-owned-result-persistence.md`](steps/step-3-server-owned-result-persistence.md).
 
 **Milestone 2 — survive server restart (deferred).** Disk-persist job state/result;
 HypaV3's `memoryRepository` / `routes/memoryJobs.ts` is the precedent to study then. Out
