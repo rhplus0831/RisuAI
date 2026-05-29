@@ -1,6 +1,6 @@
 # Reference: Server Assembler Parity (A1, server side)
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 Backs Phase 4 work-order item **3** (A1 content classes) and gives the parity
 baseline for item **1**. The server `/api/v1/generate/chat` assembler must
@@ -169,7 +169,7 @@ hooks run through VM-backed seams: `editRequest` at the template seam,
 `unsupported` (no-port list), and the `A4R-pluginv2` audit invariant forbids
 reintroducing a server-side plugin execution path in this dir.
 
-## `prompt/triggers.ts` — the trigger gap (A2)
+## `prompt/triggers.ts` — post-generation trigger path (A2 landed)
 
 `TriggerMode` declares six modes (`triggers.ts:99-107`):
 `'start' | 'manual' | 'output' | 'input' | 'display' | 'request'`. Server-side

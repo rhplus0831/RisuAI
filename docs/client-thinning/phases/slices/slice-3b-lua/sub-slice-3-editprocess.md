@@ -7,7 +7,7 @@ Date: 2026-05-29 (**landed**)
 | **Series** | [Lua server port](README.md), sub-slice **3 of 4** |
 | **Depends on** | **sub-slice 1** (the VM) |
 | **Goal** | Add the Lua `editprocess` hook to the history pass next to `processScript`. **Near-trivial: Lua `editprocess` is a browser no-op.** |
-| **Status** | **Done.** The `editProcess` seam is wired at both history `processScript('editprocess')` call sites (`history.ts`) and fed a VM-backed `runLuaEditTrigger(char, 'editprocess', …)` hook by the assembler (`assemble.ts::fillHistoryAndBias`, via the shared `buildLuaEditTriggerContext`). The hook is identity at parity because the runtime early-returns for `editprocess`. Proven green (api:test 1298, test 880, audit + check clean). |
+| **Status** | **Done.** The `editProcess` seam is wired at both history `processScript('editprocess')` call sites (`history.ts`) and fed a VM-backed `runLuaEditTrigger(char, 'editprocess', …)` hook by the assembler (`assemble.ts::fillHistoryAndBias`, via the shared `buildLuaEditTriggerContext`). The hook is identity at parity because the runtime early-returns for `editprocess`; latest aggregate verification is recorded in `coverage/latest-verification.md`. |
 
 ## The honest framing
 

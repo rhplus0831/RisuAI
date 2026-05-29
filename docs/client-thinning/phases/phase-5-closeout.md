@@ -1,8 +1,8 @@
 # Phase 5: Closeout
 
-Date: 2026-05-29
+Date: 2026-05-30
 
-Status: blocked until the phase-4 chat-process ownership work lands.
+Status: unblocked; closeout work remains.
 
 ## Exit Criteria
 

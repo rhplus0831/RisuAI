@@ -1,6 +1,6 @@
 # Client-Owned, Legacy, And Unsupported Behavior
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 This file separates three things that are easy to conflate: behavior that stays
 in the browser **on purpose** (keep), behavior that is **legacy** (remove from
@@ -109,8 +109,9 @@ documented here.
   path. Scripts using an interactive dialog API
   (`alertInput`/`alertSelect`/`alertConfirm`) stay `unsupported`; the classifier's
   Lua arm is `luaUsesInteractiveApi` (the only surviving Lua `unsupported` case).
-- Image-gen view instruction (slice 3c) still routes `unsupported` until its slice
-  lands.
+- **Image-gen view instruction (slice 3c)** — ported and routes `server`. The
+  automatic image-generation call and inlay-screen rendering stay B1 browser
+  effects, listed above.
 
 ## Deferred / Separate
 

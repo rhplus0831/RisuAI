@@ -1,6 +1,6 @@
 # Chat Process And Generation Coverage
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 ## Current Proof
 
@@ -24,7 +24,7 @@ Browser/server bridge and post-generation:
 
 ## Expected Coverage Shape
 
-A chat-process batch (one blocker item) should prove:
+A chat-process/runtime batch should prove:
 
 - exact mode: `send`, `continue`, `preview`, `preview_prompt`, or `regenerate`
 - the source branch removed or server-owned, OR the send classified `unsupported`
@@ -43,10 +43,12 @@ A chat-process batch (one blocker item) should prove:
 ## Known Gaps
 
 - Server prompt assembly is opt-in via `useServerPromptAssembly` (default off);
-  the classifier exists, but image-gen instruction still routes unsupported
-  (**A1**). Non-interactive Lua edit/input hooks are landed; interactive Lua
-  dialogs stay explicit `unsupported`.
-- The output trigger and `editoutput` have no server path (**A2**).
+  the classifier exists, and the server subset includes text sends, image-input
+  multimodal/asset sends, non-interactive Lua edit/input hooks, and the image-gen
+  instruction. Non-vision caption fallback, interactive Lua dialogs, and pluginV2
+  stay explicit `unsupported`.
+- A2 is server-owned on the server-dispatch path; the local-assembly/completion
+  path still uses the browser post-generation derivation while the flag is off.
 - Final-message persistence still depends on a browser-issued command (**B2**,
   acceptable). Assembly-time scriptstate persistence is route-owned.
 - Group chat is legacy and slated for client removal — not a coverage target.

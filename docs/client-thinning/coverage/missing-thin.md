@@ -1,21 +1,25 @@
 # Missing Or Thin Coverage
 
-Date: 2026-05-29
+Date: 2026-05-30
 
-The active gaps, framed by the blocker classification in [`../plan.md`](../plan.md).
+Active gaps after the A-item implementation, framed by the blocker classification
+in [`../plan.md`](../plan.md).
 
-## Open (Hard Blockers)
+## Resolved Hard Blockers
 
 - **A1 prompt-assembly content parity** — classifier, text-send server-mandatory
-  routing, C-A1, multimodal/asset inlining on image-input models, and
-  non-interactive Lua edit/input hooks are landed. Remaining gap: image-gen
-  instruction. Non-vision image caption fallback, interactive Lua dialog APIs,
-  and pluginV2 edit/replacer hooks are explicit `unsupported`. The flag still
+  routing, C-A1, multimodal/asset inlining on image-input models,
+  non-interactive Lua edit/input hooks, and the image-gen instruction are
+  landed. Non-vision image caption fallback, interactive Lua dialog APIs, and
+  pluginV2 edit/replacer hooks are explicit `unsupported`. The flag still
   defaults off, so local assembly remains the default production path.
-- **A2 post-generation durable derivation** — the server trigger engine is used
-  for `'start'` and submit-time `'input'`, but `/generate/chat` has no
-  post-generation `runTrigger(..., 'output')` pass, and `editoutput` script
-  processing is browser-only.
+- **A2 post-generation durable derivation** — landed on the server-dispatch path:
+  `runServerPostGeneration` runs the run-var pass, the `'output'` trigger, and
+  `editoutput`; the route persists the scriptstate delta and returns final text /
+  resend / revision on `done.postGeneration`.
+
+## Open (Separate / Not A-Blockers)
+
 - **Durable/resumable generation** — still separate and not achieved: `/chat`
   aborts on disconnect and final-result persistence remains browser-command
   backed.

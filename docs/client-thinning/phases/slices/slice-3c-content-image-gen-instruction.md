@@ -1,6 +1,6 @@
 # Slice 3c: A1 content — image-gen instruction
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 | | |
 | --- | --- |
@@ -9,6 +9,7 @@ Date: 2026-05-29
 | **Depends on** | **slice 1** (the classifier exists to flip) |
 | **Reference** | [`../../reference/local-assembler-content-classes.md`](../../reference/local-assembler-content-classes.md) class 3 + [`../../reference/server-assembler-parity.md`](../../reference/server-assembler-parity.md) |
 | **Goal** | Port `buildInlayViewInstruction` (the `newGenData`/`viewScreen` system row) to the server assembler so image-gen-instruction sends become server-mandatory. This is the **smallest** content port — static character fields only, no VM, no asset bytes. |
+| **Status** | **DONE** in commit `aea3db46`. |
 
 ## Outcome
 
@@ -19,9 +20,10 @@ Date: 2026-05-29
 - The actual image generation + inlay-screen rendering is untouched — it stays a
   post-gen **browser** effect (B1). Only the *instruction text* moves.
 
-## Preconditions
+## Historical Preconditions
 
-- [x] Slice 1 landed; image-gen-instruction sends currently route `unsupported`.
+- [x] Slice 1 landed; before this slice, image-gen-instruction sends routed
+      `unsupported`.
 - [x] `pnpm api:test` + serverBacked sweep green.
 
 > **Status: DONE (2026-05-30).** `buildInlayViewInstruction` is ported into
@@ -34,7 +36,10 @@ Date: 2026-05-29
 > `staticSections.test.ts` unit cases, the `generation.chat.test.ts` row
 > assertions, and the flipped classifier case.
 
-## Step-by-step
+## Historical Step-by-step
+
+The checklist below records the route shape and implementation path before
+slice 3c landed. Current behavior is summarized in the Outcome.
 
 ### Orient
 
@@ -47,9 +52,9 @@ Date: 2026-05-29
    - `viewScreen === 'emotion'` → `newGenData.emotionInstructions`, with `{{slot}}`
      replaced by the comma-joined `emotionImages` names;
    - `viewScreen === 'imggen'` → `newGenData.instructions`.
-3. Confirm the server has no equivalent: there is no `buildInlayViewInstruction`
-   /`newGenData` reference under `server/fastify/src/prompt/`. The instruction row
-   is simply absent server-side.
+3. Historical gap: before slice 3c there was no `buildInlayViewInstruction` /
+   `newGenData` reference under `server/fastify/src/prompt/`, so the instruction
+   row was absent server-side.
 
 ### Implement — server
 

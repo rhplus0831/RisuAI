@@ -1,14 +1,12 @@
 # Reference: Local Assembler Content Classes (A1, browser side)
 
-Date: 2026-05-29
+Date: 2026-05-30
 
-Backs Phase 4 work-order item **3** (A1 content classes). These are the specific
-content branches in the *browser's* local prompt assembly that the server cannot
-yet reproduce (see the GAP rows in
-[`server-assembler-parity.md`](server-assembler-parity.md)). Each is a class to
-either **port to the server** or **classify server-`unsupported`** — never a
-silent local fallback. Assembly is all-or-nothing per send, so any one of these
-in a send forces the whole send out of the server subset.
+Backs Phase 4 work-order item **3** (A1 content classes). These are the
+historical content branches in the *browser's* local prompt assembly and their
+current dispositions: ported server-side or explicitly server-`unsupported`.
+Assembly is all-or-nothing per send, so an unsupported class hard-fails instead
+of silently falling back to local assembly.
 
 Entry: `sendChat` (`src/ts/process/index.svelte.ts:54`) →
 `assembleLocalSendChatPrompt` (`src/ts/process/sendChatPromptAssembly.ts:62`) →

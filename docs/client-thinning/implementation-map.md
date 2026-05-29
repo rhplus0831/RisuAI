@@ -1,9 +1,9 @@
 # Implementation Map
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 Read this after [`status.md`](status.md) and before editing code. It maps the
-implementation to files, contracts, and proof points. For the active Phase 4
+implementation to files, contracts, and proof points. For the Phase 4
 chat-process batches, [`reference/`](reference/README.md) is the deeper,
 per-work-item routing (exact signatures, parity matrix, persistence round-trip,
 proof points).
@@ -50,16 +50,18 @@ Three boundaries (see [`status/sendchat-thinning.md`](status/sendchat-thinning.m
   `!isFastifyServer` or the default-off `useServerPromptAssembly` gate is off.
   With the flag on, the text-send subset and image-input multimodal/asset sends
   route to `/api/v1/generate/chat`; non-interactive Lua edit/input hooks run
-  server-side; unsupported content hard-fails. The remaining A1 port target is
-  the image-gen instruction. PluginV2, interactive Lua dialogs, and non-vision
-  image caption fallback are explicit unsupported.
-- **Post-generation + persistence (browser):**
-  `src/ts/process/postGeneration/{orchestrateResponse,runStage4}.ts`. **Blocker
-  A2:** the server trigger engine is used for `'start'` and submit-time
-  `'input'`, but there is no post-generation server `runTrigger(..., 'output')`
-  pass, and `editoutput` is browser-only. C-A1 is done: `/generate/chat`
-  persists assembly-time scriptstate and returns the bumped revision.
-  Final-message persistence still uses `dispatchPersistGenerationResult`.
+  server-side; the image-gen instruction is server-assembled; unsupported
+  content hard-fails. PluginV2, interactive Lua dialogs, and non-vision image
+  caption fallback are explicit unsupported.
+- **Post-generation + persistence (server-owned on the server-dispatch path):**
+  `server/fastify/src/prompt/assemble.ts::runServerPostGeneration` and
+  `server/fastify/src/routes/generationChat.ts::buildPostGenerationFrame` run
+  the run-var pass, `runTrigger(..., 'output', ...)`, and `editoutput` after
+  dispatch. The route persists the derived scriptstate delta via the slice-2
+  writer and returns final text / resend / revision on `done.postGeneration`.
+  `src/ts/process/postGeneration/orchestrateResponse.ts` skips browser
+  `editoutput` + output-trigger derivation when `serverOwnsPostGeneration` is
+  true; B1 effects and B2 final-message persistence remain browser-orchestrated.
 - **HypaV3 memory:** server-side persistence/jobs under
   `server/fastify/src/routes/memory*.ts`; progress UI is a transient browser
   projection.
@@ -95,8 +97,9 @@ slated for client removal as a separate task — see
 ## Scope Checklist (before changing behavior)
 
 Invariant · owner · timing · input context · allowed mutations · persistence shape
-· error shape · projection behavior · proof. Name one blocker item; do not mix A1
-content classes, A2, and group-chat removal.
+· error shape · projection behavior · proof. For closeout, keep group-chat
+removal, audit-rule hardening, event-patching, and docs-only reconciliation in
+separate batches.
 
 ## Focused Verification
 

@@ -167,7 +167,7 @@ work.
 
 ## Scope guard
 
-This is the batch most likely to overflow "one blocker item per review." If you
+This is the batch most likely to overflow its scope. If you
 take the port path, **split by sub-class** (the VM, then `editRequest`, then
 `editprocess`, then input-trigger/`editinput`) — do not land the VM and all four
 hooks in one review. Do not pull A2's `'output'` trigger / `editoutput` in here

@@ -1,6 +1,6 @@
 # Reference: Proof Points (tests, fixtures, audit)
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 What pins the current chat-process behavior, what each batch must keep green, and
 what it must add. Pairs with [`../coverage/sendchat-generation.md`](../coverage/sendchat-generation.md)
@@ -50,9 +50,10 @@ stable handle. All paths from the repo root.
   (`:430-440`), and stubs the provider via `dispatchProvider`. Sets
   `useServerPromptAssembly = true` (`:508`). Covers
   `['simple-send','continue','regenerate','preview','preview-prompt']` (`:165-171`).
-  Porting A1 content classes expands this list to prove server == local golden.
-  C-A1 is already covered by the zero outbound `/chats/:id/scriptstate` POST
-  assertion and revision reconciliation.
+  A1 content classes expanded this list with multimodal/asset, Lua, and image-gen
+  fixtures; A2 adds output-trigger and `editoutput` route-backed cases. C-A1 is
+  covered by the zero outbound `/chats/:id/scriptstate` POST assertion and
+  revision reconciliation.
 - **C** `'/chat adapter replay'` (`:741`): hypav3 patch + side-effect replay,
   rollback on dispatch failure, single server-sent TTS.
 

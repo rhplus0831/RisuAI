@@ -1,6 +1,6 @@
 # Client Thinning Docs
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 This directory is the active documentation set for client thinning as its own
 workstream. The project is a **Fastify-only** web variation: in Fastify-served
@@ -15,17 +15,17 @@ codebase is the source of truth; these docs route to it.
 
 ## The Spine: Server-Owned Chat Process
 
-The remaining work is defined by one question — *what blocks the server from
-owning the chat process, and which cases are fine to leave in the browser?* Every
-remaining batch is one item from this classification:
+The work is organized around one question — *what blocks the server from owning
+the chat process, and which cases are fine to leave in the browser?* The A-item
+implementation is now landed; closeout work remains.
 
 - **A. Hard blockers** — must move server-side or be explicitly classified
-  unsupported (never a silent browser fallback). A1 now has its classifier,
-  the text-send subset, and multimodal/asset inlining on vision models; the
-  Lua edit/input hooks are ported, with interactive Lua still explicitly
-  unsupported. The remaining A1 port target is the image-gen instruction. A2
-  post-generation durable derivation remains open. A3 provider coverage
-  hard-fails unsupported shapes.
+  unsupported (never a silent browser fallback). A1 is landed: classifier,
+  text-send subset, multimodal/asset inlining on vision models, non-interactive
+  Lua edit/input hooks, and the image-gen instruction. A2 is landed on the
+  server-dispatch path: the server runs the post-generation run-var pass,
+  `'output'` trigger, and `editoutput`. A3 provider coverage hard-fails
+  unsupported shapes.
 - **B. Fine in the browser** — the browser triggers, plays, orchestrates, or
   *requests* a write, but never owns durable state. B1 permanent client-owned,
   B2 acceptable-but-optimizable.
@@ -51,11 +51,11 @@ command-issuance. See [`plan.md`](plan.md) for the full breakdown.
    permanent client-owned behavior and the legacy/removed list (incl. group chat).
 8. [`coverage.md`](coverage.md) — test/audit coverage router.
 9. [`architecture.md`](architecture.md) — module ownership and complexity.
-10. [`phases/`](phases/README.md) — phase sequencing (0–3 done; 4 active; 5 closeout).
-    Phase 4 slices 1, 2, 3a, and 3b are done; 3c and A2 remain.
+10. [`phases/`](phases/README.md) — phase sequencing (0–4 A-items done; 5 closeout).
+    Phase 4 slices 1, 2, 3a, 3b, 3c, and 4 are landed.
 11. [`reference/`](reference/README.md) — deep, code-grounded routing for the
-    active Phase 4 batches (classifier, parity matrix, persistence round-trip,
-    proof points).
+    Phase 4 batches (classifier, parity matrix, persistence round-trip, proof
+    points).
 
 ## Canonical Detail
 

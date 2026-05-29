@@ -51,6 +51,6 @@ provider secret masking, and supported-provider server dispatch.
 ## Selection Order
 
 1. Prove or fix the audit baseline.
-2. Remove one named browser branch with a server contract and proof, or remove one
-   legacy surface — never both in one batch.
-3. Update docs after the code and proof are complete.
+2. Remove one legacy surface or harden one audit-rule family; keep docs-only
+   reconciliation separate from behavior changes.
+3. Update docs after code and proof are complete.

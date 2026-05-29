@@ -143,7 +143,8 @@ reconciliation), and the C-A1 persistence / 423 assertions in
   model. See [`../unsupported-and-client-owned.md`](../unsupported-and-client-owned.md).
 - Do not port browser UI/display ownership.
 - Do not widen provider support while removing prompt/post-gen branches.
-- Do not combine A1 content classes, A2, and group-chat removal in one batch.
+- A1/A2 are landed. Do not mix group-chat removal, audit-rule hardening,
+  event-patching, and docs-only reconciliation in one batch.
 - **Durable/resumable generation** (survive client disconnect, server-owned result
   persistence, reconnect/replay) is a separate future workstream, **not** part of
   these slices. C-A1 / slice 2 moves persistence server-side as a *prerequisite*,

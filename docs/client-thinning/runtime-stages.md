@@ -1,9 +1,9 @@
 # Runtime Stages
 
-Date: 2026-05-29
+Date: 2026-05-30
 
-Projection-stage boundaries. Stages A–D and F are largely closed; the active work
-is in Stage E (the chat process), classified by blocker in
+Projection-stage boundaries. Stages A–D are largely closed; Stage E's A-items are
+landed and closeout work is tracked in Stage F. The blocker classification lives in
 [`plan.md`](plan.md) and detailed in
 [`status/sendchat-thinning.md`](status/sendchat-thinning.md).
 
@@ -36,7 +36,7 @@ contracts. Per-event surgical patching stays deferred until a separate event
 contract exists; its precondition is closing the SSE reconnect/replay gap (today
 a stream error only logs — no reconnect, no `Last-Event-ID` replay).
 
-## Stage E: Generation, Prompt, And Memory — ACTIVE
+## Stage E: Generation, Prompt, And Memory — A-items landed
 
 Three boundaries, gated differently (see [`plan.md`](plan.md)):
 
@@ -46,20 +46,20 @@ Three boundaries, gated differently (see [`plan.md`](plan.md)):
 - **Prompt assembly** — gated by `useServerPromptAssembly` (default off), so the
   browser still assembles by default. With the flag on,
   `resolveServerPromptAssembly` makes the supported subset server-mandatory and
-  hard-fails unsupported content. The remaining **A1** port target is the
-  image-gen instruction; multimodal/asset inlining and non-interactive Lua
-  edit/input hooks are ported.
-- **Post-generation + persistence** — client-orchestrated after the server
-  stream. C-A1 is done: `/generate/chat` persists assembly-time scriptstate.
-  Blocker **A2** remains: the output trigger (no server `'output'` invocation)
-  and `editoutput` derive durable state with no server path. B1/B2 branches stay
-  in the browser.
+  hard-fails unsupported content. A1 content graduation is complete:
+  multimodal/asset inlining, non-interactive Lua edit/input hooks, and the
+  image-gen instruction are ported; non-vision caption, interactive Lua dialogs,
+  and pluginV2 stay explicit `unsupported`.
+- **Post-generation + persistence** — the browser still orchestrates effects and
+  final-message command persistence. On the server-dispatch path,
+  `/generate/chat` persists assembly-time scriptstate and A2 post-generation
+  scriptstate deltas, returning final text / resend / revision on
+  `done.postGeneration`. B1/B2 branches stay in the browser.
 - **HypaV3 memory** — server-side persistence and jobs; progress UI is a
   transient browser projection.
 
-Migration target: each batch names a source branch, the server contract, and the
-proof the local fallback is gone. **Group chat is legacy** (Stage E does not model
-it) and is slated for client removal — see
+Closeout target: **group chat is legacy** (Stage E does not model it) and is
+slated for client removal — see
 [`unsupported-and-client-owned.md`](unsupported-and-client-owned.md).
 
 ## Stage F: Audit And Closeout — partial

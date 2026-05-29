@@ -1,6 +1,6 @@
 # Client Thinning Status
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 Status router for the Fastify-only client-thinning workstream. The codebase is
 the source of truth; detailed inventories live in the shards.
@@ -21,26 +21,33 @@ Implemented / closed:
   the supported subset is server-mandatory instead of falling through to local.
 - Multimodal/asset prompt inlining is server-side at parity for image-input
   models; non-vision image caption fallback hard-fails as unsupported.
+- Image-gen / emotion view instruction assembly is server-side at parity
+  (slice 3c); the actual image-generation call and inlay rendering remain B1
+  browser effects.
 - Assembly-time scriptstate persistence (C-A1) is server-owned by
   `/generate/chat`; the browser applies the patch as projection and reconciles
   the returned revision instead of re-POSTing that delta.
 - The server Lua VM and prompt-assembly hooks are landed: `editRequest`,
   `editprocess`, input-trigger, and `editinput` run server-side for
   non-interactive Lua; interactive Lua dialog APIs stay `unsupported`.
+- A2 is landed on the server-dispatch path: `runServerPostGeneration` runs the
+  run-var pass, `runTrigger(..., 'output', ...)`, and `editoutput`; the route
+  persists the derived scriptstate delta and returns final text / resend /
+  revision on `done.postGeneration`.
 - Bootstrap projection, command-event invalidation, `.risu` import/export/bundle,
   asset routes, backup/restore, and provider secret masking are closed.
 - The client-thinning audit is wired as `pnpm client-thinning:audit` and its
   fixture reproducibility is complete (21 rules, 45 tests).
 
-Active blocker set (see [`plan.md`](plan.md) for the full classification):
+Resolved A-items (see [`plan.md`](plan.md) for the full classification):
 
-- **A1** prompt-assembly content parity — the remaining port target is the
-  image-gen view instruction. PluginV2 edit/replacer hooks, interactive Lua
-  dialog APIs, and non-vision image caption fallback are explicit
-  `unsupported`. `useServerPromptAssembly` still defaults off, so local
-  assembly remains the default production path.
-- **A2** post-generation durable derivation — the **output trigger** (no server
-  `'output'` invocation) and **`editoutput`** — needs server script execution.
+- **A1** prompt-assembly content parity — closed for current scope. PluginV2
+  edit/replacer hooks, interactive Lua dialog APIs, and non-vision image caption
+  fallback remain explicit `unsupported`. `useServerPromptAssembly` still
+  defaults off, so local assembly remains the default production path.
+- **A2** post-generation durable derivation — closed on the server-dispatch path
+  by slice 4. Browser derivation remains only on the local-assembly/completion
+  path while the prompt-assembly flag is off.
 - **A3** provider coverage — closed for current scope; unsupported shapes
   already hard-fail.
 
@@ -59,13 +66,13 @@ Audit-rule hardening is a tracked work item. See [`status/audit.md`](status/audi
 
 ## Active Direction
 
-- Treat the workstream as active, not complete.
+- Treat A1/A2 implementation as landed, but the workstream as not closed out.
 - Start with the audit. If `pnpm client-thinning:audit` is red, fix or triage
   before wider runtime changes; then record in
   [`coverage/latest-verification.md`](coverage/latest-verification.md).
-- Pick one blocker item per batch; name the browser branch, the server contract,
-  and the proof. Do not mix A1 content classes, A2, and group-chat removal in one
-  review.
+- Next work is group-chat legacy removal, audit-rule hardening, and any
+  documentation reconciliation after source changes. Keep event patching
+  deferred until SSE reconnect/replay exists.
 
 ## Start Here
 

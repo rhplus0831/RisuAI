@@ -10,9 +10,9 @@ missing middle layer: the **ordered procedure** for carrying out one batch —
 what to read, what to change, in what order, and what to prove — so the work is
 followable without re-deriving the sequence each time.
 
-Each slice is self-contained and maps 1:1 to a Work Order item (item 3 fans into
-three content batches, 3a/3b/3c, because each content class graduates
-independently and "one blocker item per batch" forbids mixing them).
+Each slice is self-contained and maps 1:1 to a Work Order item. Item 3 fans into
+three content batches, 3a/3b/3c, because each content class graduated
+independently.
 
 ## Work order → slice
 
@@ -54,7 +54,7 @@ sub-slices have landed; only interactive Lua dialog APIs remain `unsupported`.
 
 C-A1 (slice 2) and A2 (slice 4) are the post-generation persistence/derivation
 half and sit alongside this line: slice 2 moves an already-computed delta into
-the route; slice 4 adds a server path for a delta that has none.
+the route; slice 4 added the server path for the post-generation delta.
 
 ## Sequencing
 
@@ -98,6 +98,6 @@ with only the latest command + result.
 
 ## The rule (inherited from the phase doc)
 
-Inherit the phase batching rule: one blocker item per batch, no group-chat
-removal mixed with thinning, and update the status/coverage/parity shards after
-the code and proof land.
+For follow-up work, keep group-chat removal, audit-rule hardening, event-patching,
+and docs-only reconciliation in separate batches. Update the status/coverage/
+parity shards after code and proof land.

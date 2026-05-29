@@ -243,12 +243,11 @@ today:
 | Mode `send` with a string user message (or a non-`send` mode) | `serverPromptAssembly.ts:210-220` | yes, hard-fails unsupported |
 | Single, non-group character | `serverPromptAssembly.ts:222-230`; groups also filtered at `database.svelte.ts:110` | yes |
 | Server-routable provider | `resolveServerCompletionRoute` inside `serverPromptAssembly.ts:232-241` | yes |
-| No unsupported content | `sendHasUnsupportedContent` (`serverPromptAssembly.ts:128-155`) | yes; slice 3a graduated image-input multimodal/asset to `server` |
+| No unsupported content | `sendHasUnsupportedContent` (`serverPromptAssembly.ts:128-155`) | yes; slices 3a/3b/3c graduated image-input multimodal/asset, non-interactive Lua, and image-gen instruction to `server` |
 
 The current remaining unsupported content signals are non-vision image caption,
-image-gen instruction, interactive Lua dialog APIs, and pluginV2. PluginV2 and
-interactive Lua dialogs are explicit unsupported cases; image-gen is the
-remaining A1 port target.
+interactive Lua dialog APIs, and pluginV2. The image-gen / emotion view
+instruction is no longer an unsupported signal; slice 3c routes it to `server`.
 
 ### Proof landed for this batch
 

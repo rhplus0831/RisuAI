@@ -1,6 +1,6 @@
 # Phase 4 Reference
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 Deep, code-grounded routing for carrying out
 [`../phases/phase-4-sendchat-thinning.md`](../phases/phase-4-sendchat-thinning.md)
@@ -29,7 +29,7 @@ The Phase 4 batches, in order, and the doc that routes each into the code:
 | --- | --- | --- |
 | 1 | **A1 foundation** — `resolveServerPromptAssembly` landed; supported subset is server-mandatory when the flag is on | [`prompt-assembly-classifier.md`](prompt-assembly-classifier.md) |
 | 2 | **C-A1** — assembly-time scriptstate persistence lives in `/generate/chat` | [`post-generation-and-persistence.md`](post-generation-and-persistence.md) |
-| 3 | **A1 content classes** (multimodal/asset and non-interactive Lua hooks done; image-gen remains; pluginV2 permanent unsupported) | [`server-assembler-parity.md`](server-assembler-parity.md) (server gaps) + [`local-assembler-content-classes.md`](local-assembler-content-classes.md) (browser branches) |
+| 3 | **A1 content classes** — multimodal/asset, non-interactive Lua hooks, and image-gen instruction landed; non-vision caption, interactive Lua dialogs, and pluginV2 stay explicit unsupported | [`server-assembler-parity.md`](server-assembler-parity.md) + [`local-assembler-content-classes.md`](local-assembler-content-classes.md) |
 | 4 | **A2** — server output-trigger + `editoutput` | [`post-generation-and-persistence.md`](post-generation-and-persistence.md) |
 | — | Proof for every batch (tests, fixtures, audit, verification commands) | [`proof-points.md`](proof-points.md) |
 
@@ -39,8 +39,8 @@ The Phase 4 batches, in order, and the doc that routes each into the code:
    A1 classifier, runtime gates, supported-subset definition, and the historical
    silent-fallback hole it closed.
 2. [`server-assembler-parity.md`](server-assembler-parity.md) — what the server
-   `/generate/chat` assembler does (AT PARITY), remaining gaps (image-gen,
-   `'output'`), the route contract, and the full `prompt/` file map.
+   `/generate/chat` assembler and post-gen pass do at parity, explicit
+   unsupported cases, the route contract, and the full `prompt/` file map.
 3. [`local-assembler-content-classes.md`](local-assembler-content-classes.md) —
    the eight browser content branches (with the B1-vs-A1 split) that must be
    ported or classified `unsupported`.
@@ -60,9 +60,10 @@ Three independent boundaries gate the chat process (see [`../plan.md`](../plan.m
 - **Provider dispatch** — server-routed in Fastify mode (platform-gated, no
   flag); unsupported shapes hard-fail via `resolveServerCompletionRoute`
   (blocker A3, already correct). This is the **classifier precedent for A1**.
-- **Post-generation + persistence** — browser-orchestrated after the stream.
-  C-A1 is done: `/generate/chat` persists assembly-time scriptstate. Blocker
-  **A2** remains (output trigger + `editoutput`).
+- **Post-generation + persistence** — browser-orchestrated for B1 effects and
+  final-message command persistence. On the server-dispatch path,
+  `/generate/chat` persists assembly-time scriptstate and A2 post-generation
+  scriptstate deltas; final text / resend / revision ride `done.postGeneration`.
 
 Two facts that recur across these docs and are easy to get wrong:
 
@@ -72,9 +73,11 @@ Two facts that recur across these docs and are easy to get wrong:
 - There are **two scriptstate delta families**: assembly/submission-time
   mutations (start trigger, run-var, and submit-time input hooks), now persisted
   by `/generate/chat`, and the post-gen delta (output trigger + `editoutput`)
-  which has **no server path** (**A2**). Do not conflate them.
+  now derived and persisted by `/generate/chat` on the server-dispatch path
+  (**A2**). Do not conflate them.
 
 ## Scope discipline
 
-Inherit the phase batching rule: one blocker item per batch, no group-chat
-removal mixed with thinning, and update docs after the code and proof land.
+For closeout work, keep group-chat removal, audit-rule hardening, event-patching,
+and docs-only reconciliation in separate batches. Update docs after code and
+proof land.

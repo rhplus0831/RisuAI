@@ -1,6 +1,6 @@
 # Client Thinning Plan
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 ## Goal
 
@@ -33,17 +33,19 @@ The chat process is not one toggle. Three independent boundaries gate it:
    `isFastifyServer`, with NO user flag, so the DEFAULT is server-routed via
    `/api/v1/generate/completion`. Unsupported providers fail hard; `local` only
    when `!isFastifyServer`.
-3. **Post-generation + persistence** — always client-orchestrated; durable writes
-   mostly flow through command routes the browser triggers. Exception: server
-   prompt assembly now persists the assembly-time scriptstate delta inside
-   `/generate/chat`.
+3. **Post-generation + persistence** — the browser still orchestrates the stage
+   flow and B1 effects. On the server-dispatch path (`/generate/chat`),
+   `/generate/chat` now owns assembly-time scriptstate persistence and the A2
+   post-generation derivation (`run-var` pass, `'output'` trigger, `editoutput`);
+   final-message persistence remains a browser-issued command (B2).
 
 So today's default Fastify flow is: **browser assembles the prompt, server makes
 the LLM call, browser orchestrates post-gen, final-message persistence via a
 browser-issued command.** With server prompt assembly enabled, `/generate/chat`
-also persists assembly-time scriptstate. Flag history: `useServerGeneration` was
-a dead flag, removed 2026-05-29; `isFastifyServer` and
-`useServerPromptAssembly` are kept and annotated in-code (not deprecated).
+also owns assembly-time scriptstate and server-derived post-gen mutations. Flag
+history: `useServerGeneration` was a dead flag, removed 2026-05-29;
+`isFastifyServer` and `useServerPromptAssembly` are kept and annotated in-code
+(not deprecated).
 
 ## The Blocker Classification (the work breakdown)
 
@@ -54,16 +56,15 @@ a dead flag, removed 2026-05-29; `isFastifyServer` and
   server and hard-fails out-of-subset sends instead of silently falling back.
   Multimodal/asset inlining is at parity for image-input models, and the Lua
   `editRequest`, `editprocess`, input-trigger, and `editinput` hooks are ported
-  for non-interactive Lua. Remaining content is explicit: image-gen view
-  instruction still needs slice 3c; non-vision image caption fallback,
-  interactive Lua dialog APIs, and pluginV2 edit/replacer hooks are
-  `unsupported`. The flag still defaults off, so browser assembly is the
-  default production path.
-- **A2. Post-generation durable derivation with no server path.** The **output
-  trigger** (the server has no post-generation `'output'` invocation, though
-  `'start'` and submit-time `'input'` are wired) and **`editoutput` script
-  processing** derive durable scriptstate/message mutations. Requires
-  server-side script/trigger execution.
+  for non-interactive Lua. The image-gen view instruction is also at parity
+  (slice 3c). Remaining explicit `unsupported` content: non-vision image caption
+  fallback, interactive Lua dialog APIs, and pluginV2 edit/replacer hooks. The
+  flag still defaults off, so browser assembly is the default production path.
+- **A2. Post-generation durable derivation.** Landed in slice 4 on the
+  server-dispatch path. `runServerPostGeneration` runs the run-var pass,
+  `runTrigger(..., 'output', ...)`, and `editoutput` after dispatch; the derived
+  scriptstate delta is persisted by the slice-2 writer and the final text /
+  resend signal ride `done.postGeneration`.
 - **A3. Provider coverage.** Unsupported providers (NovelAI, Ooba, Plugin,
   WebLLM, non-vanilla OpenAI-compat) cannot be server-routed. Already handled
   correctly: `resolveServerCompletionRoute` returns `unsupported` and hard-fails
@@ -123,10 +124,11 @@ are partially ordered relative to this plan:
 
 - **Lifecycle decoupling** (run generation as a `generationId`-keyed task that
   survives disconnect) is independent of A1/A2 — prototypable on its own.
-- **Server-owned result persistence** is *gated on A2*: persisting the result
-  server-side while the browser still derives `editoutput`/output-trigger mutations
-  causes split-brain. Slice 2 (C-A1) moves *assembly-time* scriptstate persistence
-  server-side — a prerequisite, not this goal.
+- **Server-owned result persistence** was gated on A2; that split-brain blocker is
+  now removed on the server-dispatch path, but route-direct assistant-message
+  persistence is still separate durable-generation/B2 work. Slice 2 (C-A1) moved
+  *assembly-time* scriptstate persistence server-side — a prerequisite, not this
+  goal.
 - **A `generationId` job/read + reconnect contract** (status + accumulated output +
   `Last-Event-ID` replay or a read endpoint) replaces today's deferred SSE-reconnect
   gap.
@@ -137,14 +139,13 @@ persistence and a transient browser progress projection.
 ## Near-Term Order
 
 1. Run `pnpm client-thinning:audit`. If red, fix or triage before runtime work.
-2. Continue **A1 content graduation** one batch at a time:
-   - Slice 3c: port the image-gen view instruction.
-3. **A2:** server output-trigger + `editoutput` (needs server script execution).
-4. **Group-chat legacy removal** (separate from thinning).
-5. **Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
+2. **Group-chat legacy removal** (separate from thinning).
+3. **Audit-rule hardening:** convert the 4 empirically-defeated needle-rules
    (A4R2, A4R7, fanout-svelte path, EC2) to AST invariants; add adversarial
    fixtures. See [`status/audit.md`](status/audit.md).
-6. Keep **event patching deferred** until SSE reconnect/replay exists.
+4. Keep **event patching deferred** until SSE reconnect/replay exists.
+5. Durable-generation work (job lifecycle, reconnect/read contract, route-direct
+   result persistence) stays in its separate workstream.
 
-Each batch names one browser branch, the server contract that replaces it, and
-the proof the local fallback is gone — and does not mix classes in one review.
+For closeout batches, keep one concern per review and record the proof that the
+source and docs still agree.

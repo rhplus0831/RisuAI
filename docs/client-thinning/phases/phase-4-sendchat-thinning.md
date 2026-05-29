@@ -1,11 +1,11 @@
 # Phase 4: Chat-Process Server Ownership
 
-Date: 2026-05-29
+Date: 2026-05-30
 
-Status: ACTIVE.
+Status: DONE for A1/A2 implementation.
 
-The remaining work: make the server own the chat process so the browser stays a
-thin projection. This phase is driven entirely by the blocker classification —
+This phase made the server own the chat-process blocker set so the browser stays
+a thin projection. It is driven by the blocker classification —
 the server must own anything that **decides or derives durable state** (the
 assembled prompt, the LLM call, post-generation message/scriptstate mutations);
 the browser may keep effects, transient UI, orchestration, and command issuance.
@@ -14,8 +14,8 @@ Today's default Fastify flow: the browser assembles the prompt
 (`useServerPromptAssembly` defaults false), the server makes the LLM call
 (unsupported providers hard-fail via `resolveServerCompletionRoute`), and the
 browser orchestrates post-gen. When server prompt assembly is enabled, the
-classifier makes supported sends server-mandatory and `/generate/chat` now
-persists assembly-time scriptstate itself.
+classifier makes supported sends server-mandatory; `/generate/chat` now persists
+assembly-time scriptstate and owns the server-dispatch post-generation derivation.
 
 The code-level detail for each batch below — exact entry points and signatures,
 the server/browser parity matrix, the persistence round-trip, and the proof
@@ -41,15 +41,15 @@ class `unsupported`; 3a/3b/3c each flip one to `server`).
    server-mandatory when the flag is on.
 2. **DONE: C-A1 — server-side scriptstate persistence.** `/generate/chat`
    persists assembly-time chat-var deltas and returns the bumped revision.
-3. **A1 content classes, one batch each.** DONE: multimodal/asset inlining on
-   image-input models; pluginV2 permanent unsupported; Lua `editRequest`,
-   `editprocess`, input-trigger, and `editinput` for non-interactive Lua. OPEN:
-   image-gen instruction. Each class graduates from `unsupported` to
-   server-mandatory only after parity proof.
-4. **A2 — server output-trigger + `editoutput`.** The server trigger engine is
-   used for `'start'` and submit-time `'input'`, but `/generate/chat` has no
-   post-generation `'output'` pass and runs no `editoutput` processing. Needs
-   server output-script execution; sequence after A1's image-gen slice.
+3. **DONE: A1 content classes, one batch each.** Multimodal/asset inlining on
+   image-input models, pluginV2 permanent unsupported, non-interactive Lua
+   `editRequest` / `editprocess` / input-trigger / `editinput`, and the image-gen
+   instruction are all landed. Remaining unsupported cases are explicit:
+   non-vision caption fallback, interactive Lua dialogs, and pluginV2.
+4. **DONE: A2 — server output-trigger + `editoutput`.** Slice 4 runs the
+   post-generation run-var pass, `runTrigger(..., 'output', ...)`, and
+   `editoutput` server-side on the server-dispatch path, persists the scriptstate
+   delta, and removes the browser durable derivation for that path.
 
 Group chat is **legacy** and removed elsewhere — do not add a server group model
 here. See [`../status/sendchat-thinning.md`](../status/sendchat-thinning.md) for
@@ -57,6 +57,6 @@ the detailed A/B triage and [`../plan.md`](../plan.md) for the spine.
 
 ## Rule
 
-One blocker item per batch. Name the browser branch, the server contract that
-replaces it, and the proof the local fallback is gone. Do not mix A1 content
-classes, A2, and group-chat removal in one review.
+For any reopened or follow-up batch, name the browser branch, the server contract
+that replaces it, and the proof the local fallback is gone. Do not mix
+chat-process thinning with group-chat removal in one review.

@@ -1,27 +1,27 @@
 # Slice 4: A2 — server output-trigger + `editoutput`
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 | | |
 | --- | --- |
 | **Work-order item** | 4 (A2) |
-| **Blocker** | A2 (post-generation durable derivation; **no server path** today) |
+| **Blocker** | A2 (post-generation durable derivation; server path landed by this slice) |
 | **Depends on** | **slice 3b** (landed server Lua support) for Lua output/editoutput work; pluginV2 remains permanent unsupported |
 | **Reference** | [`../../reference/post-generation-and-persistence.md`](../../reference/post-generation-and-persistence.md) §A2 |
 | **Goal** | Give the server a post-generation pass that runs the `'output'` trigger and `editoutput` over the just-generated assistant text, deriving the durable scriptstate/message delta server-side, and remove the browser's authority over it. |
+| **Status** | **DONE** in commit `fb279717`. |
 
 ## Outcome
 
 - After generation, the server runs: the **pre-trigger run-var pass**, the
   **`'output'` trigger**, and **`editoutput`** over the completion text — deriving
-  the durable `chat.scriptstate` / `chat.message` / final-text mutations that only
-  the browser produces today.
-- The derived delta is surfaced (as a `message_patch`, and persisted by the
-  C-A1/slice-2 machinery) and the **browser branch is removed** for the
-  server-owned path.
+  the durable `chat.scriptstate` / `chat.message` / final-text mutations that
+  previously only the browser produced.
+- The scriptstate delta is persisted by the C-A1/slice-2 machinery; message patch,
+  final text, resend, and revision are surfaced on `done.postGeneration`, and the
+  **browser branch is removed** for the server-owned path.
 - Unlike C-A1's assembly-time delta, this delta is a function of the
-  **just-generated text** — it has no server equivalent today; this slice builds
-  it.
+  **just-generated text**; this slice added the server equivalent.
 
 ## The distinction to hold (do not conflate with C-A1)
 
@@ -31,7 +31,7 @@ matters"):
 - **Assembly-time** (`'start'` trigger + run-var) — server already computes it;
   **slice 2 / C-A1** persists it. *Not this slice.*
 - **Post-generation** (`'output'` trigger + `editoutput`, derived from the
-  assistant text) — server has **no path**. *This slice.*
+  assistant text) — server path landed here. *This slice.*
 
 ## Preconditions
 
@@ -45,7 +45,10 @@ matters"):
 - [x] **Slice 2 / C-A1** landed (recommended): reuse its route persistence path
       for the post-gen delta instead of building a second writer.
 
-## Step-by-step
+## Historical Step-by-step
+
+The checklist below records the route shape and implementation path before slice
+4 landed. Current behavior is summarized in the Outcome and checked items.
 
 ### Orient
 
@@ -63,13 +66,10 @@ matters"):
    per chunk (`streamResponse.ts:107-117`) and non-streaming
    (`nonStreamResponse.ts:68-82`, written back `:92-120`). It mutates the **final
    saved response text** (`result2.data`) and may set `emoChanged`.
-4. Confirm the server gap: server now uses the trigger runner for `'start'` and
-   submit-time `'input'`, but not after generation. `'editoutput'` exists in
-   `ScriptMode` (`scripts.ts:63`) but is never invoked; **no
-   `runTrigger(…, 'output', …)` exists anywhere server-side**. The
-   provider-dispatch path (`generationChat.ts`, `prompt/chatDispatch.ts`,
-   `prompt/providerTransport.ts`) has no post-generation `runTrigger` and no
-   `editoutput`.
+4. Historical server gap: before this slice, the server used the trigger runner
+   for `'start'` and submit-time `'input'`, but not after generation.
+   `'editoutput'` existed in `ScriptMode` (`scripts.ts:63`) but was not invoked
+   in the provider-dispatch path.
 
 ### Implement — server post-gen pass
 

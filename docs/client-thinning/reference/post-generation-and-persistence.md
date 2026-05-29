@@ -1,6 +1,6 @@
 # Reference: Post-Generation & Persistence (C-A1 + A2)
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 Backs Phase 4 work-order items **2** (C-A1 — move assembly-time scriptstate
 persistence into `/generate/chat`, retire the command replay) and **4** (A2 —
@@ -111,9 +111,10 @@ const triggerResult = await runTrigger(currentChar, 'output', { chat })
    (`orchestrateResponse.ts:131-133` / `:171-175`).
 
 **Why A2, not B1/B2:** it derives durable state (`chat.scriptstate` and
-`chat.message` edits) *as a function of the just-generated assistant text*, with
-no server equivalent. Browser behavior is pinned by
-`src/ts/process/__tests__/outputTrigger.test.ts:61`.
+`chat.message` edits) *as a function of the just-generated assistant text*.
+Before slice 4 this had no server equivalent; now the server equivalent is
+`runServerPostGeneration`. Browser behavior is pinned by
+`src/ts/process/__tests__/outputTrigger.test.ts`.
 
 ### `editoutput`
 
@@ -136,7 +137,7 @@ ported `runTrigger` accepts the `'output'` mode and has durable `setvar`/`v2SetV
 arms returning `varChanged` (`prompt/triggers.ts:155-164`); `processScript(…,
 'editoutput', …)` runs over the completion text; the `message_patch` contract
 carries the post-gen scriptstate delta, surfaced on `done.postGeneration`. Lua
-uses the landed VM (`editOutput`); pluginV2 remains permanent unsupported.
+uses the landed VM (`editOutput`).
 
 ## Master post-gen table
 

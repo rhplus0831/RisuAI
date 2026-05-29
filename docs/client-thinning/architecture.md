@@ -1,6 +1,6 @@
 # Architecture And Structure
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 ## Complexity Snapshot
 
@@ -12,14 +12,14 @@ Approximate `wc -l` from the tree. Routing data, not design targets.
 | `src/ts/storage/database.svelte.ts`            | ~2738 | Browser normalization + projection application; `useServerPromptAssembly` default + JSDoc live here. |
 | `util/client-thinning-audit.ts`                | ~2806 | Invariant audit; reproducible, several shallow rules (hardening open).     |
 | `src/ts/server/commands.ts`                    | ~2256 | Browser command transport; `canUseServerCommands()` = `isFastifyServer`.   |
-| `server/fastify/src/prompt/assemble.ts`        | ~1167 | Server prompt assembly facade; A1 parity wiring lives here.                |
-| `server/fastify/src/prompt/luaRuntime.ts`      | ~1091 | Server Lua VM runtime used by the ported Lua edit/input hooks.             |
+| `server/fastify/src/prompt/assemble.ts`        | ~1638 | Server prompt assembly facade plus A2 post-generation pass.                |
+| `server/fastify/src/prompt/luaRuntime.ts`      | ~1086 | Server Lua VM runtime used by the ported Lua edit/input hooks.             |
 | `server/fastify/src/prompt/chatDispatch.ts`    | ~1045 | Server provider dispatch for the chat route.                               |
 | `server/fastify/src/repository.ts`             |  ~477 | Durable data dir ownership; closed/stable.                                 |
-| `server/fastify/src/routes/generationChat.ts`  |  ~552 | `/generate/chat`; provider stream, assembly mutations, submit transcript persistence. |
-| `src/ts/process/index.svelte.ts`               |  ~380 | `sendChat`: the three boundaries + post-generation orchestration.          |
-| `src/ts/process/request/serverPromptAssembly.ts` | ~249 | Prompt-assembly classifier.                                                |
-| `src/ts/process/request/serverCompletion.ts`   |     — | `resolveServerCompletionRoute` (the classifier precedent for A1).          |
+| `server/fastify/src/routes/generationChat.ts`  |  ~652 | `/generate/chat`; provider stream, assembly/post-gen mutations, submit transcript persistence. |
+| `src/ts/process/index.svelte.ts`               |  ~390 | `sendChat`: the three boundaries + post-generation orchestration.          |
+| `src/ts/process/request/serverPromptAssembly.ts` | ~268 | Prompt-assembly classifier.                                                |
+| `src/ts/process/request/serverCompletion.ts`   | ~1213 | `resolveServerCompletionRoute` (the classifier precedent for A1).          |
 | `src/ts/server/projectionWriteGuard.svelte.ts` |  ~108 | Projection write guard primitive.                                          |
 
 ## Ownership Boundaries
@@ -33,8 +33,8 @@ Approximate `wc -l` from the tree. Routing data, not design targets.
 - `server/fastify/src/repository.ts`: persisted JSON, assets, backup/restore.
 - `server/fastify/src/routes/events.ts`: command/memory SSE (invalidation).
 - `server/fastify/src/routes/generationChat.ts` + `prompt/`: server prompt
-  assembly, chat dispatch, asset lookup, and assembly-time scriptstate
-  persistence.
+  assembly, chat dispatch, asset lookup, assembly-time scriptstate persistence,
+  and the server-owned post-generation derivation on the server-dispatch path.
 - `src/ts/process/index.svelte.ts`: `sendChat` — prompt-assembly gate, dispatch
   handoff, post-generation orchestration.
 - `src/ts/process/request/serverCompletion.ts`: provider route selection;

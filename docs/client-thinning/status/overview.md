@@ -1,6 +1,6 @@
 # Status Overview
 
-Date: 2026-05-29
+Date: 2026-05-30
 
 Read this when starting a client-thinning task, checking phase language, or
 finding canonical code entry points. Full direction is in [`../plan.md`](../plan.md);
@@ -12,11 +12,10 @@ current snapshot in [`../status.md`](../status.md).
   active-writer/guard contract, audit fixture reproducibility, and the
   command/projection invariant hardening families are complete. See
   [`../phases/README.md`](../phases/README.md).
-- **Phase 4: ACTIVE — chat-process server ownership.** Driven by the blocker
-  classification: A1 prompt-assembly content parity (slices 3a/3b/3c) and A2
-  post-generation durable derivation (slice 4) are **both landed**; A3 is a
-  hard-fail support cap. All A-blockers resolved — one blocker item per batch.
-- **Phase 5: closeout** — every A-item resolved or explicitly classified
+- **Phase 4: DONE — chat-process server ownership.** A1 prompt-assembly content
+  parity (slices 3a/3b/3c) and A2 post-generation durable derivation (slice 4)
+  are **landed**; A3 is a hard-fail support cap.
+- **Phase 5: ACTIVE closeout** — every A-item resolved or explicitly classified
   unsupported, group-chat legacy removal done, audit-rule hardening done, event
   patching shipped behind a closed reconnect/replay gap or still deferred.
 
