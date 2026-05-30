@@ -1,10 +1,11 @@
+import type { DatabaseSync } from 'node:sqlite'
 import { RisuSaveBlockType, encodeRisuSaveBlockEnvelope } from './blockCodec.js'
 import {
   type LegacyRisuSaveEnvelopeKind,
   encodeLegacyRisuSaveEnvelope,
 } from './legacyEnvelopeCodec.js'
 import { normalizeRisuSaveImportDatabase } from './importSnapshot.js'
-import { ValidationError, loadPersisted } from '../repository.js'
+import { ValidationError, loadPersistedWithMessages } from '../repository.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -26,8 +27,13 @@ const BLOCK_RESOURCE_KEYS = new Set([
   '__directory',
 ])
 
-export function buildRepositoryRisuSaveExportSnapshot(dataDir: string): RisuSaveExportSnapshot {
-  const persisted = loadPersisted(dataDir)
+export function buildRepositoryRisuSaveExportSnapshot(
+  db: DatabaseSync,
+  dataDir: string,
+): RisuSaveExportSnapshot {
+  // Messages live in SQLite (Phase 4); hydrate them back so the exported
+  // CHARACTER_WITH_CHAT blocks carry the full chat history.
+  const persisted = loadPersistedWithMessages(db, dataDir)
   if (persisted.database === null || persisted.database === undefined) {
     throw new ValidationError('database payload missing')
   }
@@ -37,17 +43,22 @@ export function buildRepositoryRisuSaveExportSnapshot(dataDir: string): RisuSave
 }
 
 export function encodeRepositoryRisuSaveLegacyExport(
+  db: DatabaseSync,
   dataDir: string,
   kind: LegacyRisuSaveEnvelopeKind = 'legacy-compressed',
 ): Uint8Array {
-  return encodeLegacyRisuSaveEnvelope(buildRepositoryRisuSaveExportSnapshot(dataDir).database, kind)
+  return encodeLegacyRisuSaveEnvelope(
+    buildRepositoryRisuSaveExportSnapshot(db, dataDir).database,
+    kind,
+  )
 }
 
 export function encodeRepositoryRisuSaveBlockExport(
+  db: DatabaseSync,
   dataDir: string,
   options: RisuSaveBlockExportOptions = {},
 ): Uint8Array {
-  const { database } = buildRepositoryRisuSaveExportSnapshot(dataDir)
+  const { database } = buildRepositoryRisuSaveExportSnapshot(db, dataDir)
   return encodeRisuSaveBlockEnvelope(buildRisuSaveExportBlocks(database, options))
 }
 

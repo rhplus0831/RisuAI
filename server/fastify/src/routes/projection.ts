@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import { loadPersisted } from '../repository.js'
+import { loadPersistedWithMessages } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
 
 // Targeted per-resource projection (lazy-projection Phase 2).
@@ -75,7 +75,7 @@ export function registerProjectionRoutes(
         return { revision, resource, mode: 'full' as const }
       }
 
-      const persisted = loadPersisted(dataDir)
+      const persisted = loadPersistedWithMessages(db, dataDir)
       const masked = maskProviderSecrets(persisted.database)
       const source =
         masked && typeof masked === 'object' && !Array.isArray(masked)

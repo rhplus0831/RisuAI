@@ -6,7 +6,7 @@ import type { AuthState } from '../auth.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import { loadPersisted } from '../repository.js'
+import { loadPersistedWithMessages } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
@@ -25,7 +25,7 @@ export function registerBootstrapRoutes(
       registerActiveWriterSession(activeWriterState, req)
     }
     const { version, revision } = getSchemaState(db)
-    const persisted = loadPersisted(dataDir)
+    const persisted = loadPersistedWithMessages(db, dataDir)
     return {
       revision,
       schemaVersion: version,

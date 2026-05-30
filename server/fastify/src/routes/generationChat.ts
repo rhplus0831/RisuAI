@@ -14,7 +14,7 @@ import {
   assetById,
   assetPath,
   isValidAssetId,
-  loadPersisted,
+  loadPersistedWithMessages,
 } from '../repository.js'
 import {
   assemblePrompt,
@@ -244,7 +244,7 @@ function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps 
   let database: Database | null = null
   return {
     loadDatabase: () => {
-      database = loadPersisted(dataDir).database as Database | null
+      database = loadPersistedWithMessages(db, dataDir).database as Database | null
       return database
     },
     loadMemoryDatabase: () => db,

@@ -82,7 +82,7 @@ export function registerSaveRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     try {
       const options = parseExportQuery(req.query)
-      const bytes = encodeRepositoryRisuSaveExport(dataDir, options)
+      const bytes = encodeRepositoryRisuSaveExport(db, dataDir, options)
       eventSink.emit({
         ...COMMAND_EVENT_CATALOG.stateExported,
         revision: getSchemaState(db).revision,
@@ -103,7 +103,7 @@ export function registerSaveRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     try {
       const options = parseExportQuery(req.query)
-      const risuBytes = encodeRepositoryRisuSaveExport(dataDir, options)
+      const risuBytes = encodeRepositoryRisuSaveExport(db, dataDir, options)
       const bundle = buildRepositoryRisuSaveBundleExport({
         dataDir,
         risuBytes,
@@ -128,12 +128,13 @@ export function registerSaveRoutes(
 }
 
 function encodeRepositoryRisuSaveExport(
+  db: DatabaseSync,
   dataDir: string,
   options: ReturnType<typeof parseExportQuery>,
 ): Uint8Array {
   return options.envelope === 'risusave-blocks'
-    ? encodeRepositoryRisuSaveBlockExport(dataDir, { compression: options.compression })
-    : encodeRepositoryRisuSaveLegacyExport(dataDir, options.envelope)
+    ? encodeRepositoryRisuSaveBlockExport(db, dataDir, { compression: options.compression })
+    : encodeRepositoryRisuSaveLegacyExport(db, dataDir, options.envelope)
 }
 
 function parseExportQuery(query: ExportQuery): {

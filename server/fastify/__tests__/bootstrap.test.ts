@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -174,6 +175,71 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.json().schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(bootstrap.json().assetBaseUrl).toBe('/api/v1/assets')
     expectNormalizedAdaDatabase(bootstrap.json().database, { greeting: 'hi' })
+  })
+
+  it('stores imported chat messages in SQLite, message-free on disk, hydrated over the wire', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sample = {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [
+            {
+              id: 'chat-1',
+              name: 'Chat 1',
+              note: '',
+              localLore: [],
+              message: [
+                { role: 'user', data: 'hello', chatId: 'm1' },
+                { role: 'char', data: 'hi there', chatId: 'm2' },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: sample },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    // db.json on disk is message-free: the chat exists but carries no message[].
+    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    const onDiskChat = onDisk.database.characters[0].chats[0]
+    expect(onDiskChat.id).toBe('chat-1')
+    expect(onDiskChat.message).toBeUndefined()
+
+    // The messages live as rows in the SQLite messages table.
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const rows = db
+        .prepare('SELECT chat_id, seq, uid, data FROM messages ORDER BY seq')
+        .all() as { chat_id: string; seq: number; uid: string; data: string }[]
+      expect(rows).toEqual([
+        { chat_id: 'chat-1', seq: 0, uid: 'm1', data: 'hello' },
+        { chat_id: 'chat-1', seq: 1, uid: 'm2', data: 'hi there' },
+      ])
+    } finally {
+      db.close()
+    }
+
+    // The bootstrap projection still ships the fully-hydrated chat.message[].
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    const hydratedChat = bootstrap.json().database.characters[0].chats[0]
+    expect(hydratedChat.message).toEqual([
+      { role: 'user', data: 'hello', chatId: 'm1' },
+      { role: 'char', data: 'hi there', chatId: 'm2' },
+    ])
   })
 
   it('rejects import with missing database field', async () => {

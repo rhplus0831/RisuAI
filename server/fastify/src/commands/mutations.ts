@@ -4,7 +4,9 @@ import {
   RevisionMismatchError,
   ValidationError,
   loadPersisted,
+  loadPersistedWithMessages,
   writePersisted,
+  writePersistedWithMessages,
 } from '../repository.js'
 import type { CommandEvent, CommandEventDraft, CommandEventSink } from './events.js'
 
@@ -41,7 +43,9 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
 ): JsonCommandMutationResult<TExtra> {
   let wrotePersisted = false
   let transactionOpen = false
-  let previous = loadPersisted(args.dataDir)
+  // Message-free snapshot of db.json for rollback restore. Messages roll back
+  // with the SQLite transaction; db.json (a file write) is restored manually.
+  let previousMessageFree = loadPersisted(args.dataDir)
 
   args.db.exec('BEGIN IMMEDIATE')
   transactionOpen = true
@@ -52,12 +56,15 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
       throw new RevisionMismatchError(currentRevision)
     }
 
-    previous = loadPersisted(args.dataDir)
-    const nextDatabase = cloneJsonValue(previous.database)
+    previousMessageFree = loadPersisted(args.dataDir)
+    // Hydrate messages so the mutate callback sees the full `chat.message[]`.
+    const hydrated = loadPersistedWithMessages(args.db, args.dataDir)
+    const nextDatabase = cloneJsonValue(hydrated.database)
     const mutation = args.mutate(nextDatabase)
 
-    writePersisted(args.dataDir, { ...previous, database: nextDatabase })
+    // Set before the write: any failure inside the split rolls db.json back too.
     wrotePersisted = true
+    writePersistedWithMessages(args.db, args.dataDir, { ...hydrated, database: nextDatabase })
 
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
@@ -76,7 +83,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
       args.db.exec('ROLLBACK')
     }
     if (wrotePersisted) {
-      writePersisted(args.dataDir, previous)
+      writePersisted(args.dataDir, previousMessageFree)
     }
     throw err
   }

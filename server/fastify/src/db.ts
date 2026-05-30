@@ -1,8 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
 import path from 'node:path'
+import { createMessageTable } from './messageStore.js'
 
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 4
 
 export interface MigrationStep {
   version: number
@@ -32,6 +33,18 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createMemoryTables(db)
     },
   },
+  {
+    version: 4,
+    name: 'chat-messages-table',
+    up: (db) => {
+      // Lazy-projection Phase 4: chat messages move to their own SQLite table.
+      // The migration only creates the table; embedded `db.json` messages are
+      // lossless-migrated on first read (SQLite-or-embedded join) and persisted
+      // to the table on the next write — see `loadPersistedWithMessages` /
+      // `writePersistedWithMessages` in repository.ts.
+      createMessageTable(db)
+    },
+  },
 ]
 
 export function openDatabase(dataDir: string): DatabaseSync {
@@ -58,6 +71,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
     }
     if (schemaState.version === CURRENT_SCHEMA_VERSION) {
       createMemoryTables(db)
+      createMessageTable(db)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {

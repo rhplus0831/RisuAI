@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { bumpRevision, getSchemaState } from './db.js'
+import { getAllChatMessagesGrouped, replaceAllChatMessages } from './messageStore.js'
 
 export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'application/x-onnx': 'onnx',
@@ -105,6 +106,89 @@ export function writePersisted(dataDir: string, next: Persisted): void {
   fs.renameSync(tmp, file)
 }
 
+// --- Lazy-projection Phase 4: chat messages live in SQLite, not in db.json. ---
+//
+// `loadPersisted` / `writePersisted` operate on the message-free `db.json` blob
+// (the asset-GC / memory / backup paths that never look at messages keep using
+// them). The `*WithMessages` variants below are the message-aware boundary used
+// by every reader that needs a fully-hydrated `Database` (mutation engine,
+// bootstrap, projection, prompt assembly, risuSave export) and the writers that
+// persist message edits (mutation engine, import).
+//
+// Join rule (lossless migration): a chat's messages come from the SQLite rows;
+// if a chat has *no* rows yet but still carries an embedded `message[]` in
+// db.json (un-migrated / freshly-imported-by-hand data), the embedded array is
+// used as the source. The next `writePersistedWithMessages` extracts it into the
+// table and strips it from db.json, so db.json converges to message-free.
+
+type JsonRecord = Record<string, unknown>
+
+function isRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function eachChat(database: unknown, visit: (chat: JsonRecord) => void): void {
+  if (!isRecord(database) || !Array.isArray(database.characters)) return
+  for (const character of database.characters) {
+    if (!isRecord(character) || !Array.isArray(character.chats)) continue
+    for (const chat of character.chats) {
+      if (isRecord(chat)) visit(chat)
+    }
+  }
+}
+
+/** `loadPersisted` + join each chat's messages (SQLite, with embedded fallback). */
+export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Persisted {
+  const persisted = loadPersisted(dataDir)
+  const grouped = getAllChatMessagesGrouped(db)
+  eachChat(persisted.database, (chat) => {
+    const chatId = chat.id
+    if (typeof chatId !== 'string') {
+      if (!Array.isArray(chat.message)) chat.message = []
+      return
+    }
+    const rows = grouped.get(chatId)
+    if (rows && rows.length > 0) {
+      chat.message = rows
+    } else if (!Array.isArray(chat.message)) {
+      // No SQLite rows and no embedded array → genuinely empty chat.
+      chat.message = []
+    }
+    // else: no rows but an embedded array is present → keep it (fallback).
+  })
+  return persisted
+}
+
+/**
+ * Persist a fully-hydrated `Persisted` value: split each chat's `message[]` into
+ * the SQLite table and write the message-free `db.json`. The SQLite write is the
+ * single transactional source of truth for messages; the caller MUST run this
+ * inside an open transaction (the mutation engine / import wrap) so the message
+ * rows roll back together with the revision bump. The `next.database` object is
+ * mutated in place (its chats lose `message`) — callers pass a throwaway clone.
+ *
+ * Invariant: `next.database` is a *complete* hydrated database (every chat
+ * present). The table is rebuilt wholesale, which also reclaims rows for deleted
+ * chats. Slice 4.2 replaces this whole-corpus rewrite with surgical per-command
+ * writes.
+ */
+export function writePersistedWithMessages(
+  db: DatabaseSync,
+  dataDir: string,
+  next: Persisted,
+): void {
+  const chats: { chatId: string; messages: unknown[] }[] = []
+  eachChat(next.database, (chat) => {
+    const messages = Array.isArray(chat.message) ? chat.message : []
+    if (typeof chat.id === 'string') {
+      chats.push({ chatId: chat.id, messages })
+    }
+    delete chat.message
+  })
+  replaceAllChatMessages(db, chats)
+  writePersisted(dataDir, next)
+}
+
 export function applyImport(
   db: DatabaseSync,
   dataDir: string,
@@ -113,10 +197,25 @@ export function applyImport(
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
+  // The imported payload carries embedded `message[]`; split them into the
+  // messages table and write a message-free db.json. Atomic across both stores:
+  // the SQLite rows + revision bump roll back together, then db.json is restored.
   const current = loadPersisted(dataDir)
-  writePersisted(dataDir, { ...current, database })
-  const revision = bumpRevision(db)
-  return { revision }
+  let wrotePersisted = false
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    wrotePersisted = true
+    writePersistedWithMessages(db, dataDir, { ...current, database })
+    const revision = bumpRevision(db)
+    db.exec('COMMIT')
+    return { revision }
+  } catch (err) {
+    db.exec('ROLLBACK')
+    if (wrotePersisted) {
+      writePersisted(dataDir, current)
+    }
+    throw err
+  }
 }
 
 export function assetsDir(dataDir: string): string {

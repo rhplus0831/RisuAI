@@ -72,6 +72,7 @@ describe('schema migrations', () => {
         'memory_embeddings',
         'memory_jobs',
         'memory_summaries',
+        'messages',
         'schema_version',
       ])
     } finally {
@@ -91,6 +92,7 @@ describe('schema migrations', () => {
         'memory_embeddings',
         'memory_jobs',
         'memory_summaries',
+        'messages',
         'schema_version',
       ])
     } finally {

@@ -24,6 +24,7 @@ import {
   encodeRepositoryRisuSaveLegacyExport,
 } from '../src/risuSave/exportSnapshot.js'
 import { writePersisted } from '../src/repository.js'
+import { openDatabase } from '../src/db.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const harnessSource = readFileSync(path.join(here, '../src/risuSave/fixtureHarness.ts'), 'utf8')
@@ -427,7 +428,7 @@ describe('server .risu fixture harness', () => {
       assets: [{ id: assetId, ext: 'png', size: 12, contentType: 'image/png' }],
     })
 
-    const encoded = encodeRepositoryRisuSaveLegacyExport(dataDir, 'legacy-raw')
+    const encoded = encodeRepositoryRisuSaveLegacyExport(openDatabase(dataDir), dataDir, 'legacy-raw')
     const decoded = decodeRisuSaveImportSnapshot(encoded)
 
     expect(decoded.envelope).toBe('legacy-raw')
@@ -462,7 +463,9 @@ describe('server .risu fixture harness', () => {
       assets: [{ id: assetId, ext: 'webp', size: 44, contentType: 'image/webp' }],
     })
 
-    const encoded = encodeRepositoryRisuSaveBlockExport(dataDir, { compression: true })
+    const encoded = encodeRepositoryRisuSaveBlockExport(openDatabase(dataDir), dataDir, {
+      compression: true,
+    })
     const blocks = decodeRisuSaveBlockEnvelope(encoded)
     const decoded = decodeRisuSaveImportSnapshot(encoded)
 
@@ -501,7 +504,8 @@ describe('server .risu fixture harness', () => {
   })
 
   it('rejects repository export when no persisted database exists', () => {
-    expect(() => encodeRepositoryRisuSaveLegacyExport(makeDataDir())).toThrow(
+    const dataDir = makeDataDir()
+    expect(() => encodeRepositoryRisuSaveLegacyExport(openDatabase(dataDir), dataDir)).toThrow(
       /database payload missing/,
     )
   })
