@@ -31,6 +31,7 @@ import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES, loadPersisted } from './repository.js'
+import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { GenerationJobRegistry } from './generationJobs.js'
 import {
@@ -55,6 +56,11 @@ export interface BuildAppOptions {
   memoryWorker?: false | Omit<MemoryWorkerOptions, 'db'>
   memoryEvents?: MemoryEventSink
   commandEvents?: CommandEventSink
+  /**
+   * Periodic server-side asset GC. `false` disables the timer (tests that do
+   * not exercise GC). An options object tunes the grace window / interval.
+   */
+  assetGc?: false | (AssetGcOptions & { intervalMs?: number })
 }
 
 export interface BuiltApp {
@@ -147,9 +153,26 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   }, PROXY_STREAM_GC_INTERVAL_MS)
   gcTimer.unref()
 
+  // Periodic, reference-counted reclamation of orphaned content-addressed
+  // assets. Runs off the request hot path; a grace window protects bytes that
+  // were just uploaded and are about to be referenced.
+  const assetGcOptions = opts.assetGc === false ? null : (opts.assetGc ?? {})
+  const assetGcTimer =
+    assetGcOptions === null
+      ? null
+      : setInterval(() => {
+          try {
+            runAssetGc(config.dataDir, assetGcOptions)
+          } catch (err) {
+            app.log.error({ err }, 'asset GC sweep failed')
+          }
+        }, assetGcOptions.intervalMs ?? ASSET_GC_INTERVAL_MS)
+  assetGcTimer?.unref()
+
   app.addHook('onClose', async () => {
     await memoryWorker?.stop()
     clearInterval(gcTimer)
+    if (assetGcTimer) clearInterval(assetGcTimer)
     for (const job of streamJobRegistry.list()) {
       streamJobRegistry.deleteJob(job.id)
     }

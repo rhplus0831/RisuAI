@@ -98,7 +98,6 @@ vi.mock('./globalApi.svelte', () => ({
   forageStorage: forageSpies,
   saveDb: persistenceSpies.saveDb,
   getDbBackups: vi.fn(async () => []),
-  getUncleanables: vi.fn(() => []),
   getBasename: vi.fn((value: string) => value.split('/').pop() ?? value),
   checkCharOrder: vi.fn(),
   downloadFile: vi.fn(),
