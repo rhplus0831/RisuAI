@@ -3,7 +3,11 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import { loadChatHydration, loadStubProjection } from '../repository.js'
+import {
+  loadCharacterLorebookHydration,
+  loadChatHydration,
+  loadStubProjection,
+} from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
 
 // Targeted per-resource projection (lazy-projection Phase 2).
@@ -88,6 +92,24 @@ export function registerProjectionRoutes(
           // Phase 6c: the preserved reroll candidates ("don't lose a rerolled
           // result"). Present (possibly empty); the current client ignores it.
           alternates: hydration.alternates,
+        }
+      }
+
+      // Phase 5: per-character `globalLore` hydration. The client fetches this on
+      // character-open to fill the stubbed globalLore (when `enableLorebookStubs`
+      // is on). Reads the full (un-stubbed) db.json.
+      if (resource === 'characterLorebook') {
+        const characterId = req.query.id
+        if (typeof characterId !== 'string' || characterId.trim() === '') {
+          return { revision, resource, mode: 'full' as const }
+        }
+        const hydration = loadCharacterLorebookHydration(dataDir, characterId)
+        return {
+          revision,
+          resource,
+          mode: 'character-lorebook' as const,
+          characterId,
+          globalLore: hydration.globalLore,
         }
       }
 

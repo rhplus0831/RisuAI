@@ -2,12 +2,16 @@ import { getDatabase } from './database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { alertNormal } from '../alert'
 import { language } from 'src/lang'
-import { ensureAllChatsHydrated } from '../server/chatMessageHydration.svelte'
+import {
+  ensureAllCharacterLorebooksHydrated,
+  ensureAllChatsHydrated,
+} from '../server/chatMessageHydration.svelte'
 
 export async function exportAsDataset() {
-  // Phase 4.3: chats are lazy-hydrated on open; this exports every chat's
-  // history, so make sure all chats' messages are loaded first.
+  // Phase 4.3 / 5: chats and (when stubbed) character globalLore are lazy-hydrated
+  // on open; this walks every character, so load all of both first.
   await ensureAllChatsHydrated()
+  await ensureAllCharacterLorebooksHydrated()
   const db = getDatabase()
 
   let dataset = []

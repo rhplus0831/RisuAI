@@ -3,20 +3,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const projectionState = vi.hoisted(() => ({
   canUse: vi.fn(() => true),
   fetchChat: vi.fn(),
+  fetchCharLore: vi.fn(),
 }))
 
 vi.mock('./projection', () => ({
   canUseServerProjection: projectionState.canUse,
   fetchServerChatMessages: projectionState.fetchChat,
+  fetchServerCharacterLorebook: projectionState.fetchCharLore,
 }))
 
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
   ensureAllChatsHydrated,
+  hydrateActiveCharacterLorebook,
   hydrateActiveChat,
   hydrateChatMessages,
   resetChatHydration,
 } from './chatMessageHydration.svelte'
+import { isCharacterLorebookHydrated, resetLorebookHydration } from './lorebookBridge.svelte'
 
 function okResult(chatId: string, message: Array<Record<string, unknown>>) {
   return { status: 'ok' as const, revision: 1, chatId, message }
@@ -42,7 +46,9 @@ function seedTwoStubChats() {
 beforeEach(() => {
   projectionState.canUse.mockReturnValue(true)
   projectionState.fetchChat.mockReset()
+  projectionState.fetchCharLore.mockReset()
   resetChatHydration()
+  resetLorebookHydration()
   seedTwoStubChats()
 })
 
@@ -146,5 +152,37 @@ describe('chat message hydration bridge', () => {
     await hydrateActiveChat()
     await ensureAllChatsHydrated()
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
+  })
+})
+
+describe('character globalLore hydration (Phase 5)', () => {
+  it('hydrates + marks the open character globalLore when stubs are on', async () => {
+    ;(DBState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    projectionState.fetchCharLore.mockResolvedValue({
+      status: 'ok',
+      revision: 1,
+      characterId: 'char-1',
+      globalLore: [{ key: 'k', content: 'lore' }],
+    })
+
+    expect(isCharacterLorebookHydrated('char-1')).toBe(false)
+    await hydrateActiveCharacterLorebook()
+
+    expect(projectionState.fetchCharLore).toHaveBeenCalledWith('char-1')
+    expect((db().characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
+      { key: 'k', content: 'lore' },
+    ])
+    // Marked hydrated → the lorebook watcher will now track (and persist) edits.
+    expect(isCharacterLorebookHydrated('char-1')).toBe(true)
+
+    // Deduped on a second call (no refetch).
+    await hydrateActiveCharacterLorebook()
+    expect(projectionState.fetchCharLore).toHaveBeenCalledTimes(1)
+  })
+
+  it('is a no-op when stubs are off (globalLore stays resident, no fetch)', async () => {
+    await hydrateActiveCharacterLorebook()
+    expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
+    expect(isCharacterLorebookHydrated('char-1')).toBe(false)
   })
 })

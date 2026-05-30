@@ -847,6 +847,24 @@ export function hydrateServerChatMessages(
   })
 }
 
+/**
+ * Lazy-projection Phase 5: fill a stubbed character's `globalLore` with the
+ * entries hydrated from the server on character-open. Targets the character by
+ * `chaId`; a trusted projection write so it passes the read-only guard. Returns
+ * true if the character was found and hydrated.
+ */
+export function hydrateServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
+  return withTrustedServerProjectionWrite(() => {
+    for (const character of DBState.db.characters ?? []) {
+      if (character.chaId === characterId) {
+        character.globalLore = globalLore as typeof character.globalLore
+        return true
+      }
+    }
+    return false
+  })
+}
+
 export {
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,
@@ -1411,6 +1429,14 @@ export interface Database {
    * this `false` to exercise `assembleLocalSendChatPrompt`. See docs/client-thinning/.
    */
   useServerPromptAssembly?: boolean
+  /**
+   * Lazy-projection Phase 5 (EXPERIMENTAL, Fastify-only, off by default — NOT
+   * RECOMMENDED). When on, the server projection ships character `globalLore` as a
+   * stub for non-open characters and the client hydrates it on character-open. The
+   * full reader surface still needs real-app validation (see the TODO in
+   * `server/fastify/src/repository.ts` loadStubProjection).
+   */
+  enableLorebookStubs?: boolean
   createFolderOnBranch?: boolean
   hamburgerButtonBottom?: boolean
   enableRemoteSaving?: boolean

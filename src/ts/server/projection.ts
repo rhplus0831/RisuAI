@@ -160,6 +160,66 @@ export async function fetchServerChatMessages(
   }
 }
 
+export type ServerCharacterLorebookResult =
+  | { status: 'ok'; revision: number; characterId: string; globalLore: unknown[] }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
+
+/**
+ * Per-character `globalLore` hydration (lazy-projection Phase 5). When the
+ * `enableLorebookStubs` setting is on, the projection ships a character's
+ * globalLore as a stub; this fetches the full globalLore on character-open.
+ */
+export async function fetchServerCharacterLorebook(
+  characterId: string,
+  options: { signal?: AbortSignal | null } = {},
+): Promise<ServerCharacterLorebookResult> {
+  if (!canUseServerProjection()) return { status: 'unavailable' }
+
+  const url = `${PROJECTION_ENDPOINT}/characterLorebook?id=${encodeURIComponent(characterId)}`
+  const auth = await getNodeServerProxyAuth()
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'GET',
+      signal: options.signal ?? undefined,
+      headers: { 'risu-auth': auth },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // Reported via HTTP status below.
+  }
+
+  if (!response.ok) {
+    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+  }
+  if (!body || typeof body !== 'object') {
+    return { status: 'error', error: 'Invalid character-lorebook response' }
+  }
+
+  const record = body as Record<string, unknown>
+  const revision = record.revision
+  if (!Number.isInteger(revision) || (revision as number) < 0) {
+    return { status: 'error', error: 'Invalid projection revision' }
+  }
+  if (record.mode !== 'character-lorebook' || !Array.isArray(record.globalLore)) {
+    return { status: 'error', error: 'Invalid character-lorebook response' }
+  }
+  return {
+    status: 'ok',
+    revision: revision as number,
+    characterId: typeof record.characterId === 'string' ? record.characterId : characterId,
+    globalLore: record.globalLore as unknown[],
+  }
+}
+
 function errorMessageFromBody(body: unknown, fallback: string): string {
   if (body && typeof body === 'object') {
     const record = body as Record<string, unknown>

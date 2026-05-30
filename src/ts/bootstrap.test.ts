@@ -108,8 +108,10 @@ vi.mock('./server/projection', () => ({
 const hydrationSpies = vi.hoisted(() => ({
   startChatMessageHydration: vi.fn(),
   hydrateActiveChat: vi.fn(async () => undefined),
+  hydrateActiveCharacterLorebook: vi.fn(async () => undefined),
   resetChatHydration: vi.fn(),
   ensureAllChatsHydrated: vi.fn(async () => undefined),
+  ensureAllCharacterLorebooksHydrated: vi.fn(async () => undefined),
   hydrateChatMessages: vi.fn(async () => undefined),
 }))
 vi.mock('./server/chatMessageHydration.svelte', () => hydrationSpies)

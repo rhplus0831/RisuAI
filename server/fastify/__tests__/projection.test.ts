@@ -120,3 +120,54 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('state')).toBeNull()
   })
 })
+
+describe('Phase 5 lorebook stubs (enableLorebookStubs)', () => {
+  const characterWithLore = (extra: Record<string, unknown> = {}) => ({
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'Ada',
+        globalLore: [{ key: 'k', content: 'secret lore' }],
+      },
+    ],
+    language: 'en',
+    ...extra,
+  })
+
+  it('keeps character globalLore resident by default (stubs off)', async () => {
+    await importDatabase(characterWithLore())
+    const body = (await getProjection('character')).json()
+    expect(body.fields.characters[0]).toHaveProperty('globalLore')
+    expect(body.fields.characters[0].globalLore).toHaveLength(1)
+  })
+
+  it('strips character globalLore from the projection when enableLorebookStubs is on', async () => {
+    await importDatabase(characterWithLore({ enableLorebookStubs: true }))
+    const body = (await getProjection('character')).json()
+    expect(body.fields.characters[0]).not.toHaveProperty('globalLore')
+  })
+
+  it('serves the full globalLore via /projection/characterLorebook even when stubbed', async () => {
+    await importDatabase(characterWithLore({ enableLorebookStubs: true }))
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/characterLorebook?id=char-a',
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.mode).toBe('character-lorebook')
+    expect(body.characterId).toBe('char-a')
+    expect(body.globalLore).toHaveLength(1)
+    expect(body.globalLore[0].content).toBe('secret lore')
+  })
+
+  it('returns mode:full for a missing characterLorebook id', async () => {
+    await importDatabase(characterWithLore())
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/characterLorebook',
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().mode).toBe('full')
+  })
+})

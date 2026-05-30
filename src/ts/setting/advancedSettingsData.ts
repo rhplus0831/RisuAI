@@ -192,6 +192,29 @@ export const advancedSettingsItems: SettingItem[] = [
     helpKey: 'useExperimental',
     classes: 'mt-4',
   },
+
+  // Lazy-projection Phase 5 — lorebook stubs (EXPERIMENTAL, Fastify-only).
+  {
+    id: 'adv.lorebookStubsWarn',
+    type: 'header',
+    fallbackLabel:
+      'NOT RECOMMENDED — experimental. "Enable lorebook stubs" lazily loads each ' +
+      "character's lorebook from the server instead of shipping it all up front. The " +
+      'full client lorebook reader surface has NOT been validated against stubs, so ' +
+      'lorebook entries may not appear or save correctly. Requires validation in the ' +
+      'real app — leave this off unless you are testing it.',
+    options: { level: 'warning' },
+    condition: () => isFastifyServer,
+    classes: 'mt-4',
+  },
+  {
+    id: 'adv.lorebookStubs',
+    type: 'check',
+    fallbackLabel: 'Enable lorebook stubs',
+    bindKey: 'enableLorebookStubs',
+    showExperimental: true,
+    condition: () => isFastifyServer,
+  },
   {
     id: 'adv.forceProxy',
     type: 'check',

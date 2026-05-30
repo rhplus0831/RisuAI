@@ -184,7 +184,36 @@ hydrated→stub (`[real]`→`[]`) transition as a deletion — is **closed**, te
   untouched. Unit: `lorebookBridge.svelte.test.ts` (4 cases, proven to fail when the
   gate is removed). Browser 1011 green.
 
-### ⏳ Remaining: activate the stub + character-lorebook hydration
+### ✅ Activation landed behind an opt-in flag (`enableLorebookStubs`, OFF by default)
+
+The full activation is implemented and data-safe, gated behind an EXPERIMENTAL
+advanced-settings toggle ("Enable lorebook stubs", Fastify-only, marked NOT
+RECOMMENDED with a warning header). Off by default ⇒ zero behaviour change.
+
+- **Server:** `loadStubProjection` strips every character's `globalLore` when the
+  flag is on (`stubCharacterLorebooks`, with the `TODO: Requires validation in the
+  real app` marker); a new `GET /api/v1/projection/characterLorebook?id=`
+  (`loadCharacterLorebookHydration`) serves the full globalLore from un-stubbed
+  db.json. Setting registered in both group maps + the boolean allowlist.
+- **Client:** `chatMessageHydration` hydrates the open character's globalLore on
+  selection / re-stub (`hydrateActiveCharacterLorebook`, gated on the flag) via
+  `fetchServerCharacterLorebook` + `hydrateServerCharacterLorebook`, and calls
+  `markCharacterLorebookHydrated`. `ensureAllCharacterLorebooksHydrated` covers the
+  export reader. **Data-safety:** `dispatchReplaceCharacterLorebooks` hard-guards
+  against persisting a non-hydrated character (so a pre-hydration edit can't replace
+  real entries with the stub `[]`).
+- Tests: server projection (stub gated + endpoint, 4 cases) + client hydration
+  (mark/merge/dedup, 2 cases). api 1388 / browser 1013 / audit green.
+
+**Still pending for the maintainer's real-app validation pass** (the toggle is
+explicitly experimental for this reason): confirm the full client `globalLore`
+reader surface (`cbs.ts:353` `{{lorebook}}`, `triggers.ts`,
+`process/lorebook.svelte.ts`, slash commands) reads only the *open/hydrated* char,
+with no pre-hydration `[]` leak; and audit `tokenizer.ts` / `characterCards.ts`.
+**Module-lorebook stubbing remains deferred** (low corpus saved; stubbing any
+*referenced* module breaks its render).
+
+### Original staging notes (kept for context)
 
 Stage it so the app never renders empty lorebooks mid-build (each step ships green):
 

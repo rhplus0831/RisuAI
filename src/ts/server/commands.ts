@@ -100,6 +100,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   enableCustomFlags: 'advanced',
   enableDevTools: 'advanced',
   enableDragPartialEdit: 'sidebar',
+  enableLorebookStubs: 'advanced',
   enableRemoteSaving: 'advanced',
   enableRisuaiProTools: 'sidebar',
   enableScrollToActiveChar: 'advanced',

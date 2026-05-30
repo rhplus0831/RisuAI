@@ -1,8 +1,16 @@
 import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
-import { hydrateServerChatMessages } from '../storage/database.svelte'
+import {
+  hydrateServerCharacterLorebook,
+  hydrateServerChatMessages,
+} from '../storage/database.svelte'
 import { seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
-import { canUseServerProjection, fetchServerChatMessages } from './projection'
+import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
+import {
+  canUseServerProjection,
+  fetchServerCharacterLorebook,
+  fetchServerChatMessages,
+} from './projection'
 
 // Lazy-projection Phase 4.3: the bootstrap ships chat *stubs* (empty message[]).
 // This bridge hydrates a chat's messages from the server when it is opened, and
@@ -14,6 +22,11 @@ import { canUseServerProjection, fetchServerChatMessages } from './projection'
 // re-opening a chat does not refetch. Cleared on a full re-stub (resync).
 const hydratedChatIds = new Set<string>()
 const inFlight = new Set<string>()
+
+// Phase 5: character ids whose `globalLore` this client has hydrated this session
+// (only when the EXPERIMENTAL `enableLorebookStubs` setting is on).
+const hydratedCharLorebookIds = new Set<string>()
+const charLorebookInFlight = new Set<string>()
 
 function activeChatId(): string | undefined {
   const selId = get(selectedCharID)
@@ -56,6 +69,62 @@ export async function hydrateChatMessages(chatId: string): Promise<void> {
   if (chatId) await hydrateChat(chatId, false)
 }
 
+// ── Phase 5: character globalLore hydration (only when stubs are on) ──────────────
+
+function activeCharacterId(): string | undefined {
+  const selId = get(selectedCharID)
+  if (selId < 0) return undefined
+  return DBState.db?.characters?.[selId]?.chaId
+}
+
+async function hydrateCharacterLorebook(characterId: string, force: boolean): Promise<void> {
+  if (!canUseServerProjection()) return
+  // Off unless globalLore is actually stubbed (the EXPERIMENTAL setting). When off,
+  // globalLore is already resident — no fetch needed and nothing to hydrate.
+  if (!DBState.db?.enableLorebookStubs) return
+  if (!force && hydratedCharLorebookIds.has(characterId)) return
+  if (charLorebookInFlight.has(characterId)) return
+  charLorebookInFlight.add(characterId)
+  try {
+    const result = await fetchServerCharacterLorebook(characterId)
+    if (result.status === 'ok') {
+      hydrateServerCharacterLorebook(characterId, result.globalLore)
+      // Mark hydrated so the lorebook watcher tracks (and persists) edits to it.
+      markCharacterLorebookHydrated(characterId)
+      hydratedCharLorebookIds.add(characterId)
+    }
+  } finally {
+    charLorebookInFlight.delete(characterId)
+  }
+}
+
+/** Hydrate the open character's `globalLore` (no-op if already hydrated / stubs off). */
+export async function hydrateActiveCharacterLorebook(
+  options: { force?: boolean } = {},
+): Promise<void> {
+  const characterId = activeCharacterId()
+  if (characterId) await hydrateCharacterLorebook(characterId, options.force ?? false)
+}
+
+/**
+ * Hydrate EVERY character's `globalLore`. Bulk readers (export, tokenizer) that
+ * walk all characters' lorebooks must await this first when stubs are on.
+ */
+export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
+  if (!canUseServerProjection() || !DBState.db?.enableLorebookStubs) return
+  const ids: string[] = []
+  for (const character of DBState.db?.characters ?? []) {
+    if (
+      typeof character.chaId === 'string' &&
+      character.chaId &&
+      !hydratedCharLorebookIds.has(character.chaId)
+    ) {
+      ids.push(character.chaId)
+    }
+  }
+  await Promise.all(ids.map((id) => hydrateCharacterLorebook(id, false)))
+}
+
 /**
  * Forget cached hydration (call after a full projection re-apply / resync that
  * re-stubs every chat), so the next `hydrateActiveChat` refetches.
@@ -63,6 +132,10 @@ export async function hydrateChatMessages(chatId: string): Promise<void> {
 export function resetChatHydration(): void {
   hydratedChatIds.clear()
   inFlight.clear()
+  // Phase 5: a re-stub also re-stubs character globalLore — forget those marks so
+  // the open character re-hydrates (the lorebook registry is reset in bootstrap.ts).
+  hydratedCharLorebookIds.clear()
+  charLorebookInFlight.clear()
 }
 
 /**
@@ -108,6 +181,9 @@ export function startChatMessageHydration(): void {
       const character = DBState.db?.characters?.[selectedCharMirror]
       const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
       if (chatId) void hydrateActiveChat()
+      // Phase 5: hydrate the open character's globalLore (reads chaId only — not
+      // globalLore — so writing the hydrated entries does not re-trigger this).
+      if (character?.chaId) void hydrateActiveCharacterLorebook()
     })
   })
 }

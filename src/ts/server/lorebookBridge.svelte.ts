@@ -264,6 +264,11 @@ export function dispatchReplaceCharacterLorebooks(
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
+  // Phase 5 (defence in depth): when stubs are on, NEVER persist a non-hydrated
+  // character's globalLore — `entries` would be the stub `[]` and replace (delete)
+  // the real server entries. The selected char is hydrated on open, so a real edit
+  // is safe; this only drops an edit made in the brief pre-hydration window.
+  if (DBState.db?.enableLorebookStubs && !hydratedCharacterLorebooks.has(characterId)) return
   ensureClientLorebookEntryIds(entries)
   queueReplacement(
     `character:${characterId}`,

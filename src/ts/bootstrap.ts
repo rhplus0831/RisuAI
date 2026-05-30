@@ -49,6 +49,7 @@ import {
 } from './server/commands'
 import { fetchServerProjectionResource } from './server/projection'
 import {
+  hydrateActiveCharacterLorebook,
   hydrateActiveChat,
   resetChatHydration,
   startChatMessageHydration,
@@ -277,9 +278,11 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
         resetChatHydration()
         void hydrateActiveChat({ force: true })
         // Phase 5: the merge re-stubs every character's globalLore too — forget the
-        // hydrated marks and re-record from the freshly merged (raw) characters.
+        // hydrated marks, re-record from the freshly merged (raw) characters, then
+        // re-hydrate the open character's globalLore (no-op unless stubs are on).
         resetLorebookHydration()
         recordHydratedCharacterLorebooks(result.fields.characters)
+        void hydrateActiveCharacterLorebook({ force: true })
       }
       // Advance by exactly one event; the fetch returns the resource as of the
       // server's *current* revision, but later events for other resources must
@@ -315,9 +318,11 @@ async function fullBootstrapResync(): Promise<void> {
         resetChatHydration()
         void hydrateActiveChat({ force: true })
         // Phase 5: the re-apply re-stubs character globalLore too — re-record the
-        // hydrated marks from the fresh (raw) projection.
+        // hydrated marks from the fresh (raw) projection, then re-hydrate the open
+        // character's globalLore (no-op unless stubs are on).
         resetLorebookHydration()
         recordHydratedCharacterLorebooks(rawProjectionCharacters(bootstrap.projection.database))
+        void hydrateActiveCharacterLorebook({ force: true })
       } else if (bootstrap.status === 'error') {
         console.warn(`Server projection refresh failed: ${bootstrap.error}`)
       }

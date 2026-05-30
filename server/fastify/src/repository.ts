@@ -319,7 +319,32 @@ export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted
     chat.message = []
     delete chat.hypaV3Data
   })
+  stubCharacterLorebooks(persisted)
   return persisted
+}
+
+/**
+ * Lazy-projection Phase 5 (EXPERIMENTAL, off by default — `enableLorebookStubs`):
+ * strip every character's `globalLore` so the projection ships it as a stub. The
+ * client hydrates a character's globalLore on character-open
+ * (`GET /api/v1/projection/characterLorebook?id=`), and the lorebook watcher's
+ * hydrated-character registry keeps a re-stub from being persisted as a deletion.
+ *
+ * TODO: Requires validation in the real app. The full client `globalLore` reader
+ * surface (cbs.ts `{{lorebook}}`, triggers, slash commands, bulk export/tokenizer)
+ * has NOT been validated against stubbed characters — keep this setting OFF until
+ * it is.
+ */
+function stubCharacterLorebooks(persisted: Persisted): void {
+  const database = persisted.database as {
+    enableLorebookStubs?: boolean
+    characters?: Array<{ globalLore?: unknown } | null>
+  } | null
+  if (!database || typeof database !== 'object') return
+  if (!database.enableLorebookStubs) return
+  for (const character of database.characters ?? []) {
+    if (character && typeof character === 'object') delete character.globalLore
+  }
 }
 
 /**
@@ -350,6 +375,26 @@ export function loadChatHydration(
     if (hypaV3Data === undefined && chat.hypaV3Data !== undefined) hypaV3Data = chat.hypaV3Data
   })
   return { message, hypaV3Data, alternates }
+}
+
+/**
+ * Phase 5: one character's full `globalLore` for the hydration endpoint (the
+ * projection ships a stub when `enableLorebookStubs` is on). Reads the FULL,
+ * un-stubbed db.json. Returns `[]` for an unknown / lore-less character.
+ */
+export function loadCharacterLorebookHydration(
+  dataDir: string,
+  characterId: string,
+): { globalLore: unknown[] } {
+  const persisted = loadPersisted(dataDir)
+  const characters =
+    (persisted.database as {
+      characters?: Array<{ chaId?: string; globalLore?: unknown } | null>
+    } | null)?.characters ?? []
+  const character = characters.find((candidate) => candidate?.chaId === characterId)
+  const globalLore =
+    character && Array.isArray(character.globalLore) ? (character.globalLore as unknown[]) : []
+  return { globalLore }
 }
 
 export function applyImport(
