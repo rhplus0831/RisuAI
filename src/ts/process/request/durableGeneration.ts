@@ -46,10 +46,12 @@ function deriveMode(input: ServerPromptAssemblyInput): DurableGenerationMode {
  * subset is the server-assembled subset, narrowed to `send` mode.
  *
  * Decision order (per the step spec):
- *   1. mode must be `send` (Milestone-1 first cut). `continue` / `regenerate`
- *      are durable-gen follow-ups (their idempotency/append semantics are not
- *      yet specified); `preview` / `preview_prompt` never generate. Any other
- *      mode → `non-durable`.
+ *   1. mode must be a **generating** mode: `send`, `continue`, or `regenerate`
+ *      (lazy-projection Phase 6b widened this past the Milestone-1 send-only cut).
+ *      The server finalizes all three mode-correctly (`resolvePostGenerationResult`:
+ *      continue extends the last row in place, regenerate replaces the target,
+ *      send appends), keyed idempotently for replay. `preview` / `preview_prompt`
+ *      never generate → `non-durable`.
  *   2. delegate to `resolveServerPromptAssembly`. Anything other than `server`
  *      → `non-durable`, carrying the assembly gate's `unsupported` reason (or a
  *      generic "not server-assembled" for the `local` arm: `!isFastifyServer`
@@ -66,12 +68,21 @@ function deriveMode(input: ServerPromptAssemblyInput): DurableGenerationMode {
  * client-thinning slice 4 (A2) landed, so the durable job runs
  * `runServerPostGeneration` at completion and persists the derived final text +
  * scriptstate delta (Step 3). There is no remaining post-gen surface this gate
- * must screen, so it adds exactly **one** restriction (`send` mode) on top of
- * the assembly subset; durable coverage widens automatically as that subset does.
+ * must screen, so it adds exactly **one** restriction (a generating mode) on top
+ * of the assembly subset; durable coverage widens automatically as that subset does.
  */
+const DURABLE_MODES: ReadonlySet<DurableGenerationMode> = new Set([
+  'send',
+  'continue',
+  'regenerate',
+])
+
 export function resolveDurableGeneration(input: ServerPromptAssemblyInput): DurableGenerationRoute {
-  if (deriveMode(input) !== 'send') {
-    return { type: 'non-durable', reason: 'durable generation currently supports send mode only' }
+  if (!DURABLE_MODES.has(deriveMode(input))) {
+    return {
+      type: 'non-durable',
+      reason: 'durable generation supports send, continue, and regenerate modes only',
+    }
   }
 
   const assembly = resolveServerPromptAssembly(input)

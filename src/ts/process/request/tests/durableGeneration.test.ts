@@ -177,35 +177,39 @@ describe('resolveDurableGeneration', () => {
       })
       expect(resolveDurableGeneration(input)).toEqual({ type: 'durable' })
     })
-  })
 
-  describe('non-durable — mode restriction (this gate)', () => {
-    it('rejects continue mode (durable-gen follow-up)', () => {
+    // Phase 6b: continue / regenerate are durable-eligible — the server finalizes
+    // them mode-correctly (extend-in-place / replace-target). Both are in the
+    // server-assembled subset (only `send` carries the last-message structural
+    // check), so they route durable like a send.
+    it('routes a continue to durable (Phase 6b)', () => {
       const input = makeInput({
         continue: true,
         currentChat: makeChat([{ role: 'char', data: 'previous reply' }]),
       })
-      expect(expectNonDurable(resolveDurableGeneration(input))).toMatch(/send mode only/)
+      expect(resolveDurableGeneration(input)).toEqual({ type: 'durable' })
     })
 
-    it('rejects regenerate mode (durable-gen follow-up)', () => {
+    it('routes a regenerate to durable (Phase 6b)', () => {
       const input = makeInput({
         regenerateMessageId: 'msg-char-1',
         currentChat: makeChat([{ role: 'char', data: 'previous reply' }]),
       })
-      expect(expectNonDurable(resolveDurableGeneration(input))).toMatch(/send mode only/)
+      expect(resolveDurableGeneration(input)).toEqual({ type: 'durable' })
     })
+  })
 
-    it('rejects preview mode', () => {
+  describe('non-durable — mode restriction (this gate)', () => {
+    it('rejects preview mode (never generates)', () => {
       expect(expectNonDurable(resolveDurableGeneration(makeInput({ preview: true })))).toMatch(
-        /send mode only/,
+        /send, continue, and regenerate/,
       )
     })
 
-    it('rejects preview_prompt mode', () => {
+    it('rejects preview_prompt mode (never generates)', () => {
       expect(
         expectNonDurable(resolveDurableGeneration(makeInput({ previewPrompt: true }))),
-      ).toMatch(/send mode only/)
+      ).toMatch(/send, continue, and regenerate/)
     })
   })
 

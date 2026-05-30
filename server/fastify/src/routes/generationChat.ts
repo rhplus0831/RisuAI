@@ -427,6 +427,133 @@ function resolveInlineGenerationMessage(args: {
 }
 
 /**
+ * The last `char` row in the assembler-state chat — the `continue` target.
+ * Captured BEFORE `runServerPostGeneration` rewrites it in place, so the failure
+ * / cancel fallback can still reconstruct the extended text + the original id.
+ * Mirrors `resolveInlineGenerationMessage`'s continue lookup.
+ */
+function findContinueRow(state: AssemblyState): Message | undefined {
+  return [...(state.currentChat.message ?? [])].reverse().find((m) => m.role === 'char')
+}
+
+/**
+ * Mode-aware RAW assistant message (no post-gen derivation) + replace target,
+ * shared by the post-gen derivation-failure fallback and the streaming-cancel
+ * persist. `continue` extends the captured continue row in place (keeping its id);
+ * `regenerate` replaces the target (`regenerateMessageId`); `send` appends a fresh
+ * row keyed by `generationId`. The mode-aware target is what makes a durable
+ * continue/regenerate (Phase 6b) land on the right row even without a post-gen pass.
+ */
+function buildRawModeMessage(args: {
+  input: AssembleInput
+  continueRow: Message | undefined
+  text: string
+  generationId: string
+  generationInfo: Record<string, unknown>
+  promptInfo?: Record<string, unknown>
+}): { message: Message; targetMessageId?: string } {
+  if (args.input.mode === 'continue') {
+    return {
+      message: buildAssistantMessage({
+        data: ((args.continueRow?.data ?? '') + args.text).trim(),
+        generationId: args.continueRow?.chatId ?? args.generationId,
+        characterId: args.input.characterId,
+        generationInfo: args.generationInfo,
+        promptInfo: args.promptInfo,
+      }),
+    }
+  }
+  return {
+    message: buildAssistantMessage({
+      data: args.text.trim(),
+      generationId: args.generationId,
+      characterId: args.input.characterId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    }),
+    targetMessageId:
+      args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined,
+  }
+}
+
+/**
+ * Run the A2 post-gen pass and resolve the mode-aware assistant message + replace
+ * target, with a mode-correct raw-text fallback when the derivation throws. Shared
+ * by the inline (`buildPostGenerationFrame`) and durable (`buildDurablePostGeneration`)
+ * finalization paths — they differ only in how they SURFACE a derivation/persist
+ * failure, not in WHAT they persist. A `postGen` of `undefined` signals the
+ * derivation threw (the raw fallback is in use).
+ */
+async function resolvePostGenerationResult(args: {
+  state: AssemblyState
+  input: AssembleInput
+  completionText: string
+  generationId: string
+  generationInfo: Record<string, unknown>
+  promptInfo?: Record<string, unknown>
+}): Promise<{
+  postGen?: Awaited<ReturnType<typeof runServerPostGeneration>>
+  message: Message
+  targetMessageId?: string
+  chatVarMutations: AssembleMutationPayload['chatVarMutations']
+}> {
+  // Capture the continue target BEFORE post-gen mutates the row in place.
+  const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
+  try {
+    const postGen = await runServerPostGeneration(args.state, {
+      completionText: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    })
+    const resolved = resolveInlineGenerationMessage({
+      state: args.state,
+      input: args.input,
+      generationId: args.generationId,
+      finalText: postGen.finalText,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    })
+    return {
+      postGen,
+      message: resolved.message,
+      targetMessageId: resolved.targetMessageId,
+      chatVarMutations: postGen.mutations.chatVarMutations,
+    }
+  } catch {
+    // Derivation threw: persist the raw provider text so the result is not lost.
+    const raw = buildRawModeMessage({
+      input: args.input,
+      continueRow,
+      text: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    })
+    return { message: raw.message, targetMessageId: raw.targetMessageId, chatVarMutations: [] }
+  }
+}
+
+/** Fold the post-gen derivation outputs onto the terminal `postGeneration` frame. */
+function buildPostGenerationFrameBody(
+  revision: number,
+  postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined,
+): PostGenerationFrame {
+  const frame: PostGenerationFrame = { revision }
+  if (postGen) {
+    if (postGen.textChanged) frame.finalText = postGen.finalText
+    if (
+      postGen.mutations.chatVarMutations.length > 0 ||
+      postGen.mutations.messageMutations.length > 0
+    ) {
+      frame.messagePatch = postGen.mutations
+    }
+    if (postGen.resendChat) frame.resendChat = true
+  }
+  return frame
+}
+
+/**
  * Slice 4 (A2) + lazy-projection Phase 3: run the server post-generation pass
  * over the provider's completion text, persist the result SERVER-SIDE, and build
  * the `done.postGeneration` frame. Runs the run-var pass, the `'output'` trigger,
@@ -454,58 +581,14 @@ async function buildPostGenerationFrame(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
-  // Capture the continue target BEFORE post-gen mutates the row in place, so the
-  // failure fallback can still reconstruct the extended text + original id.
-  const continueRow =
-    args.input.mode === 'continue'
-      ? [...(args.state.currentChat.message ?? [])].reverse().find((m) => m.role === 'char')
-      : undefined
-  const continueBase = continueRow?.data ?? ''
-
-  let postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined
-  let message: Message
-  let targetMessageId: string | undefined
-  let chatVarMutations: AssembleMutationPayload['chatVarMutations'] = []
-  try {
-    postGen = await runServerPostGeneration(args.state, {
-      completionText: args.completionText,
-      generationId: args.generationId,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-    })
-    const resolved = resolveInlineGenerationMessage({
-      state: args.state,
-      input: args.input,
-      generationId: args.generationId,
-      finalText: postGen.finalText,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-    })
-    message = resolved.message
-    targetMessageId = resolved.targetMessageId
-    chatVarMutations = postGen.mutations.chatVarMutations
-  } catch {
-    // Derivation threw: persist the raw provider text so the result is not lost.
-    if (args.input.mode === 'continue') {
-      message = buildAssistantMessage({
-        data: (continueBase + args.completionText).trim(),
-        generationId: continueRow?.chatId ?? args.generationId,
-        characterId: args.input.characterId,
-        generationInfo: args.generationInfo,
-        promptInfo: args.promptInfo,
-      })
-    } else {
-      message = buildAssistantMessage({
-        data: args.completionText.trim(),
-        generationId: args.generationId,
-        characterId: args.input.characterId,
-        generationInfo: args.generationInfo,
-        promptInfo: args.promptInfo,
-      })
-      targetMessageId =
-        args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined
-    }
-  }
+  const { postGen, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult({
+    state: args.state,
+    input: args.input,
+    completionText: args.completionText,
+    generationId: args.generationId,
+    generationInfo: args.generationInfo,
+    promptInfo: args.promptInfo,
+  })
 
   let revision: number
   try {
@@ -524,18 +607,7 @@ async function buildPostGenerationFrame(args: {
     return undefined
   }
 
-  const frame: PostGenerationFrame = { revision }
-  if (postGen) {
-    if (postGen.textChanged) frame.finalText = postGen.finalText
-    if (
-      postGen.mutations.chatVarMutations.length > 0 ||
-      postGen.mutations.messageMutations.length > 0
-    ) {
-      frame.messagePatch = postGen.mutations
-    }
-    if (postGen.resendChat) frame.resendChat = true
-  }
-  return frame
+  return buildPostGenerationFrameBody(revision, postGen)
 }
 
 /**
@@ -929,13 +1001,16 @@ function persistServerGenerationResult(args: {
 }
 
 /**
- * Step 3: the durable-job post-generation pass. Runs the A2 server derivation
- * (`runServerPostGeneration`: run-var pass + `'output'` trigger + `editoutput`),
- * then persists the **derived** assistant message + post-gen scriptstate delta
- * server-side and folds the bumped revision / final text / resend onto the `done`
- * frame so the (possibly reattached) browser reconciles without persisting.
+ * Step 3 + Phase 6b: the durable-job post-generation pass. Runs the A2 server
+ * derivation (`runServerPostGeneration`: run-var pass + `'output'` trigger +
+ * `editoutput`), then persists the **derived** assistant message + post-gen
+ * scriptstate delta server-side (mode-aware via the shared
+ * `resolvePostGenerationResult` — `send` appends, `continue` extends the last row
+ * in place, `regenerate` replaces the target) and folds the bumped revision /
+ * final text / resend onto the `done` frame so the (possibly reattached) browser
+ * reconciles without persisting.
  *
- * Failure policy:
+ * Failure policy (the only divergence from the inline `buildPostGenerationFrame`):
  *  - **derivation throws** (gotcha F): the client may be gone, so "browser keeps its
  *    copy" is unsafe — persist the **raw** provider text and emit a `warning`.
  *  - **persist throws** (gotcha C — chat deleted / materially changed): record a job
@@ -953,35 +1028,14 @@ async function buildDurablePostGeneration(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
-  let postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined
-  let message: Message
-  let chatVarMutations: AssembleMutationPayload['chatVarMutations'] = []
-  let warned = false
-  try {
-    postGen = await runServerPostGeneration(args.state, {
-      completionText: args.completionText,
-      generationId: args.generationId,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-    })
-    message = extractAssistantMessage(
-      args.state,
-      args.generationId,
-      postGen.finalText,
-      args.generationInfo,
-      args.promptInfo,
-    )
-    chatVarMutations = postGen.mutations.chatVarMutations
-  } catch {
-    warned = true
-    message = buildAssistantMessage({
-      data: args.completionText.trim(),
-      generationId: args.generationId,
-      characterId: args.input.characterId,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-    })
-  }
+  const { postGen, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult({
+    state: args.state,
+    input: args.input,
+    completionText: args.completionText,
+    generationId: args.generationId,
+    generationInfo: args.generationInfo,
+    promptInfo: args.promptInfo,
+  })
 
   let revision: number
   try {
@@ -992,13 +1046,16 @@ async function buildDurablePostGeneration(args: {
       chatId: args.input.chatId,
       message,
       chatVarMutations,
+      targetMessageId,
     })
   } catch (err) {
     args.emit({ type: 'error', error: errorMessage(err, 'failed to persist the generation result') })
     return undefined
   }
 
-  if (warned || !postGen) {
+  // `postGen === undefined` means the derivation threw: the client may be gone, so
+  // warn rather than silently keep an optimistic copy (the inline path's choice).
+  if (!postGen) {
     args.emit({
       type: 'warning',
       message: 'server post-generation derivation failed; persisted the raw provider text.',
@@ -1006,21 +1063,14 @@ async function buildDurablePostGeneration(args: {
     return { revision }
   }
 
-  const frame: PostGenerationFrame = { revision }
-  if (postGen.textChanged) frame.finalText = postGen.finalText
-  if (
-    postGen.mutations.chatVarMutations.length > 0 ||
-    postGen.mutations.messageMutations.length > 0
-  ) {
-    frame.messagePatch = postGen.mutations
-  }
-  if (postGen.resendChat) frame.resendChat = true
-  return frame
+  return buildPostGenerationFrameBody(revision, postGen)
 }
 
 /**
- * Step 2 gotcha B / E: on a **streaming** cancel persist the accumulated-so-far
- * provider text **raw** (no post-gen pass over a truncated turn), idempotent on
+ * Step 2 gotcha B / E + Phase 6b: on a **streaming** cancel persist the
+ * accumulated-so-far provider text **raw** (no post-gen pass over a truncated
+ * turn), mode-aware via `buildRawModeMessage` (`continue` extends the captured row
+ * in place, `regenerate` replaces the target, `send` appends) and idempotent on
  * `generationId`. A non-streaming cancel (no accumulated text) persists nothing.
  * A chat-changed failure during a cancel is swallowed (the job is aborted and there
  * is no connected client to notify).
@@ -1029,26 +1079,31 @@ function persistRawCancelledResult(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
+  state: AssemblyState
   input: AssembleInput
   generationId: string
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   text: string
 }): void {
+  const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
+  const raw = buildRawModeMessage({
+    input: args.input,
+    continueRow,
+    text: args.text,
+    generationId: args.generationId,
+    generationInfo: args.generationInfo,
+    promptInfo: args.promptInfo,
+  })
   try {
     persistServerGenerationResult({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
       chatId: args.input.chatId,
-      message: buildAssistantMessage({
-        data: args.text.trim(),
-        generationId: args.generationId,
-        characterId: args.input.characterId,
-        generationInfo: args.generationInfo,
-        promptInfo: args.promptInfo,
-      }),
+      message: raw.message,
       chatVarMutations: [],
+      targetMessageId: raw.targetMessageId,
     })
   } catch {
     // Chat gone / changed during a cancel: nothing to do (job aborted, no client).
@@ -1210,6 +1265,7 @@ async function runGenerationJob(args: {
                   db,
                   dataDir,
                   eventSink,
+                  state: successfulResult.state,
                   input,
                   generationId,
                   generationInfo,
@@ -1327,10 +1383,12 @@ export function registerGenerationChatRoutes(
     }
 
     const input = toAssembleInput(body)
-    // Durable path: a `send` the browser classified durable. The active-writer
-    // submission gate ran in the global preHandler; here we only add the
-    // one-job-per-chat rule and hand off to the detached runner.
-    if (body.durable === true && input.mode === 'send') {
+    // Durable path: a `send` / `continue` / `regenerate` the browser classified
+    // durable (Phase 6b widened it past send-only). The active-writer submission
+    // gate ran in the global preHandler; here we only add the one-job-per-chat rule
+    // and hand off to the detached runner. `isPersistingMode` is exactly the durable
+    // mode set (preview / preview_prompt never generate, so never durable).
+    if (body.durable === true && isPersistingMode(input.mode)) {
       startDurableGeneration({ req, reply, db, input, dataDir, eventSink, options, generationJobs })
       return
     }

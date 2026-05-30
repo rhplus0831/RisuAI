@@ -263,6 +263,27 @@ async function waitForAssistantMessage(): Promise<Record<string, unknown>> {
   })
 }
 
+/** Re-seed the fixture chat with an explicit transcript (for continue / regenerate). */
+async function seedChatWithMessages(messages: Array<Record<string, unknown>>): Promise<void> {
+  await seedDatabase({
+    ...fixtureDatabase,
+    characters: [
+      {
+        ...fixtureDatabase.characters[0],
+        chats: [{ id: 'chat-1', message: messages, note: '', name: 'Chat', localLore: [] }],
+      },
+    ],
+  })
+}
+
+/** Cancel a running durable job over the DELETE route. */
+async function cancelJob(jobId: string): Promise<void> {
+  const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+    method: 'DELETE',
+  })
+  expect(del.status).toBe(200)
+}
+
 describe('Durable generation (Milestone 1)', () => {
   // EC-D1 (lifecycle + persistence half): the generation survives the client drop
   // and the result lands in db.json with no client present.
@@ -571,6 +592,155 @@ describe('Durable generation (Milestone 1)', () => {
     expect(boot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
     const assistant = (await chatMessages(boot)).find((m) => m.role === 'char')
     expect(assistant?.data).toBe('reply text')
+    controller.abort()
+  })
+
+  // ── Phase 6b: durable continue / regenerate ──────────────────────────────────
+  // The durable job now finalizes all three generating modes mode-correctly
+  // (`resolvePostGenerationResult`): continue extends the last char row in place,
+  // regenerate replaces the target, send appends. Each survives a mid-stream
+  // disconnect (let-it-finish), and the streaming-cancel persist is mode-aware too.
+
+  it('survives a disconnect on a durable continue and extends the row in place (Phase 6b)', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'tell me a story', chatId: 'msg-user-1' },
+      { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: ' and they', after: ' lived happily.' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable(
+      { mode: 'continue', userMessage: undefined },
+      { signal: controller.signal },
+    )
+    await readSse(res, (ev) => ev.type === 'token')
+    controller.abort() // disconnect mid-stream — the job must keep running
+
+    gated.release()
+    const extended = await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.chatId === 'msg-char-1')
+      return typeof row?.data === 'string' && row.data.includes('lived happily') ? row : undefined
+    })
+    expect(extended.data).toBe('Once upon a time and they lived happily.')
+    // Extended the SAME row (id preserved); no duplicate appended.
+    const messages = await chatMessages(await bootstrap())
+    expect(messages).toHaveLength(2)
+    expect(messages[1].chatId).toBe('msg-char-1')
+  })
+
+  it('survives a disconnect on a durable regenerate and replaces the target (Phase 6b)', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: 'a brand', after: ' new reply' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable(
+      { mode: 'regenerate', regenerateMessageId: 'msg-char-1', userMessage: undefined },
+      { signal: controller.signal },
+    )
+    await readSse(res, (ev) => ev.type === 'token')
+    controller.abort()
+
+    gated.release()
+    const regenerated = await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char')
+      return typeof row?.data === 'string' && row.data.includes('new reply') ? row : undefined
+    })
+    expect(regenerated.data).toBe('a brand new reply')
+    // The old target was REPLACED in place (not duplicated): a single char row under
+    // a fresh id, and the old text is gone.
+    const messages = await chatMessages(await bootstrap())
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
+    expect(messages[1].chatId).not.toBe('msg-char-1')
+    expect(messages.some((m) => m.data === 'old reply')).toBe(false)
+  })
+
+  it('cancels a durable continue and extends the row with the streamed-so-far text (Phase 6b)', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'story', chatId: 'msg-user-1' },
+      { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: ' and then' }) // never released
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable(
+      { mode: 'continue', userMessage: undefined },
+      { signal: controller.signal },
+    )
+    let jobId = ''
+    await readSse(res, (ev) => {
+      if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
+      return ev.type === 'token'
+    })
+    await cancelJob(jobId)
+
+    const extended = await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.chatId === 'msg-char-1')
+      return typeof row?.data === 'string' && row.data.includes('and then') ? row : undefined
+    })
+    expect(extended.data).toBe('Once upon a time and then')
+    expect(await chatMessages(await bootstrap())).toHaveLength(2) // extended in place
+    controller.abort()
+  })
+
+  it('cancels a durable regenerate and replaces the target with the streamed-so-far text (Phase 6b)', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: 'partial regen' }) // never released
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable(
+      { mode: 'regenerate', regenerateMessageId: 'msg-char-1', userMessage: undefined },
+      { signal: controller.signal },
+    )
+    let jobId = ''
+    await readSse(res, (ev) => {
+      if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
+      return ev.type === 'token'
+    })
+    await cancelJob(jobId)
+
+    await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char')
+      return row?.data === 'partial regen' ? row : undefined
+    })
+    const messages = await chatMessages(await bootstrap())
+    // Replaced the target with the partial text, not duplicated; old text gone.
+    expect(messages).toHaveLength(2)
+    expect(messages.some((m) => m.data === 'old reply')).toBe(false)
+    expect(messages[1].chatId).not.toBe('msg-char-1')
+    controller.abort()
+  })
+
+  it('rejects a second durable generation (continue) while one is running for the chat (409)', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'story', chatId: 'msg-user-1' },
+      { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: ' more' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res1 = await postDurable(
+      { mode: 'continue', userMessage: undefined },
+      { signal: controller.signal },
+    )
+    await readSse(res1, (ev) => ev.type === 'token')
+
+    const res2 = await postDurable({ mode: 'continue', userMessage: undefined })
+    expect(res2.status).toBe(409)
+    expect((await res2.json()).error).toBe('generation_in_progress')
+
+    gated.release()
     controller.abort()
   })
 

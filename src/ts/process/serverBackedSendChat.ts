@@ -205,10 +205,12 @@ export async function assembleServerBackedSendChat(args: {
   if (mode === 'regenerate') {
     input.regenerateMessageId = args.regenerateMessageId
   }
-  // Durable generation: only a `send` is durable-eligible (Milestone 1). The server
-  // owns the result persistence for this job, so the browser will skip its own
-  // generation-result write.
-  if (args.durable && mode === 'send') {
+  // Durable generation: `send` / `continue` / `regenerate` are durable-eligible
+  // (lazy-projection Phase 6b widened past the Milestone-1 send-only cut). The
+  // caller already gated `durable` on `resolveDurableGeneration` (which only
+  // returns durable for those three generating modes), so the server owns the
+  // result persistence for this job and the browser skips its own write.
+  if (args.durable && (mode === 'send' || mode === 'continue' || mode === 'regenerate')) {
     input.durable = true
   }
   // Slice 3a: ship inlay bytes the server lacks so its assembler can inline
