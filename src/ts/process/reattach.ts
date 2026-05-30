@@ -44,7 +44,14 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     // Consume the job up front so a re-render / re-selection does not double
     // reattach while this one streams.
     activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== job.jobId))
-    await sendChat(-1, { reattachJobId: job.jobId })
+    // Phase 6b: carry the running job's mode so the replayed stream renders on the
+    // right row (continue → extend the existing row; regenerate → its target slot)
+    // rather than as a fresh send. Older servers omit `mode` → treated as send.
+    await sendChat(-1, {
+      reattachJobId: job.jobId,
+      continue: job.mode === 'continue' ? true : undefined,
+      regenerateMessageId: job.mode === 'regenerate' ? job.regenerateMessageId : undefined,
+    })
   } catch {
     // Reattach is an optimization; the persisted result still surfaces via the
     // projection refresh.

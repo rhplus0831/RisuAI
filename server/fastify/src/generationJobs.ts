@@ -60,14 +60,34 @@ export class GenerationJobRegistry {
 
   /**
    * The transient projection for bootstrap: the chats with a *running* job. Shaped
-   * `{ chatId, jobId }` so the wire shape is explicit and does not collide with
-   * persisted `database` fields. Done / GC'd jobs are filtered out.
+   * `{ chatId, jobId, mode?, regenerateMessageId? }` so the wire shape is explicit
+   * and does not collide with persisted `database` fields. `mode` (+ the regenerate
+   * target) lets a reloaded browser reattach with the right generating mode (Phase
+   * 6b) instead of rendering a continue/regenerate as a fresh send. Done / GC'd jobs
+   * are filtered out.
    */
-  activeJobs(): Array<{ chatId: string; jobId: string }> {
-    const out: Array<{ chatId: string; jobId: string }> = []
+  activeJobs(): Array<{
+    chatId: string
+    jobId: string
+    mode?: 'send' | 'continue' | 'regenerate'
+    regenerateMessageId?: string
+  }> {
+    const out: Array<{
+      chatId: string
+      jobId: string
+      mode?: 'send' | 'continue' | 'regenerate'
+      regenerateMessageId?: string
+    }> = []
     for (const [chatId, jobId] of this.runningByChat.entries()) {
       const job = this.registry.get(jobId)
-      if (job && !job.done) out.push({ chatId, jobId })
+      if (job && !job.done) {
+        out.push({
+          chatId,
+          jobId,
+          ...(job.mode ? { mode: job.mode } : {}),
+          ...(job.regenerateMessageId ? { regenerateMessageId: job.regenerateMessageId } : {}),
+        })
+      }
     }
     return out
   }

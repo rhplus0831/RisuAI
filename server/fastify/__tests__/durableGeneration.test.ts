@@ -223,7 +223,12 @@ function makeGatedProvider(opts: { before: string; after?: string }): {
 }
 
 async function bootstrap(): Promise<{
-  activeGenerationJobs: Array<{ chatId: string; jobId: string }>
+  activeGenerationJobs: Array<{
+    chatId: string
+    jobId: string
+    mode?: 'send' | 'continue' | 'regenerate'
+    regenerateMessageId?: string
+  }>
   database: { characters: Array<{ chats: Array<{ message: Array<Record<string, unknown>>; scriptstate?: Record<string, unknown> }> }> }
   revision: number
 }> {
@@ -366,7 +371,9 @@ describe('Durable generation (Milestone 1)', () => {
     })
 
     const boot = await bootstrap()
-    expect(boot.activeGenerationJobs).toContainEqual({ chatId: 'chat-1', jobId })
+    // Phase 6b: the projection carries the generating mode so a reload-resume
+    // reattach renders the right shape.
+    expect(boot.activeGenerationJobs).toContainEqual({ chatId: 'chat-1', jobId, mode: 'send' })
 
     // A fresh client reattaches via the discovered id.
     const reController = newController()
@@ -718,6 +725,36 @@ describe('Durable generation (Milestone 1)', () => {
     expect(messages).toHaveLength(2)
     expect(messages.some((m) => m.data === 'old reply')).toBe(false)
     expect(messages[1].chatId).not.toBe('msg-char-1')
+    controller.abort()
+  })
+
+  it('surfaces the generating mode + regenerate target on activeGenerationJobs (Phase 6b reattach)', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: 'partial' }) // never released — keeps the job running
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable(
+      { mode: 'regenerate', regenerateMessageId: 'msg-char-1', userMessage: undefined },
+      { signal: controller.signal },
+    )
+    let jobId = ''
+    await readSse(res, (ev) => {
+      if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
+      return ev.type === 'token'
+    })
+
+    const boot = await bootstrap()
+    expect(boot.activeGenerationJobs).toContainEqual({
+      chatId: 'chat-1',
+      jobId,
+      mode: 'regenerate',
+      regenerateMessageId: 'msg-char-1',
+    })
+    gated.release()
     controller.abort()
   })
 

@@ -69,6 +69,36 @@ describe('reattach open-chat generation (Phase 7)', () => {
     expect(get(activeGenerationJobs)).toEqual([])
   })
 
+  // Phase 6b: continue/regenerate are durable, so a reload can reattach to them —
+  // the mode must ride the reattach so the replayed stream renders on the right row.
+  it('reattaches a continue job with the continue flag', async () => {
+    openChat('chat-1')
+    setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-c', mode: 'continue' }])
+
+    await maybeReattachOpenChatGeneration()
+
+    expect(h.sendChat).toHaveBeenCalledWith(-1, {
+      reattachJobId: 'job-c',
+      continue: true,
+      regenerateMessageId: undefined,
+    })
+  })
+
+  it('reattaches a regenerate job with its target id', async () => {
+    openChat('chat-1')
+    setActiveGenerationJobs([
+      { chatId: 'chat-1', jobId: 'job-r', mode: 'regenerate', regenerateMessageId: 'msg-1' },
+    ])
+
+    await maybeReattachOpenChatGeneration()
+
+    expect(h.sendChat).toHaveBeenCalledWith(-1, {
+      reattachJobId: 'job-r',
+      continue: undefined,
+      regenerateMessageId: 'msg-1',
+    })
+  })
+
   it('does nothing when no job matches the open chat', async () => {
     openChat('chat-1')
     setActiveGenerationJobs([{ chatId: 'chat-other', jobId: 'job-x' }])

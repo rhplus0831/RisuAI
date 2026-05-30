@@ -316,14 +316,27 @@ export async function reattachServerBackedSendChat(args: {
   abortSignal: AbortSignal
   setProcessStage: (stage: number) => void
   jobId: string
+  /** The running job's generating mode (Phase 6b), so the reattach renders correctly. */
+  continue?: boolean
+  regenerateMessageId?: string
 }): Promise<ServerBackedAssemblyResult> {
   args.setProcessStage(1)
   args.stageTimings.stage1Start = Date.now()
+  // The reattach stream is keyed by jobId (the body mode is not what selects the
+  // buffered frames), but carrying the real mode keeps `input.mode` honest and lets
+  // the caller render continue/regenerate on the right row.
+  const mode: ServerChatInput['mode'] =
+    typeof args.regenerateMessageId === 'string'
+      ? 'regenerate'
+      : args.continue
+        ? 'continue'
+        : 'send'
   const input: ServerChatInput = {
     chatId: args.currentChat.id ?? '',
     characterId: args.currentChar.chaId,
-    mode: 'send',
+    mode,
   }
+  if (mode === 'regenerate') input.regenerateMessageId = args.regenerateMessageId
   const served = await requestServerChatGeneration(input, args.abortSignal, args.jobId)
 
   if (served.status === 'aborted') return { status: 'aborted' }

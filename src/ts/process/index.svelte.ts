@@ -188,6 +188,10 @@ export async function sendChat(
         abortSignal,
         setProcessStage,
         jobId: arg.reattachJobId,
+        // Phase 6b: the running job's mode (carried on the reattach arg) so the
+        // replayed stream renders on the correct row — see `serverGenerationTargetMessageId`.
+        continue: arg.continue,
+        regenerateMessageId: arg.regenerateMessageId,
       })
       if (reattached.status === 'aborted') return false
       if (reattached.status === 'failed') {

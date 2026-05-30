@@ -1351,6 +1351,10 @@ function startDurableGeneration(args: {
   const job = generationJobs.registry.create({ timeoutMs: undefined, heartbeatSec: undefined })
   job.chatId = input.chatId
   job.writerSessionId = readWriterSessionHeader(req)
+  // Phase 6b: record the generating mode (+ regenerate target) so the reload-resume
+  // `activeGenerationJobs` projection lets a reattaching browser render the right shape.
+  job.mode = input.mode === 'continue' || input.mode === 'regenerate' ? input.mode : 'send'
+  if (input.mode === 'regenerate') job.regenerateMessageId = input.regenerateMessageId
   generationJobs.register(input.chatId, job.id)
   attachGenerationViewer(req, reply, generationJobs, job)
   void runGenerationJob({

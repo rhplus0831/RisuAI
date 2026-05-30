@@ -55,9 +55,15 @@ export interface StreamJob {
    * it — it is a server-owned direct mutation finishing an already-authorized job;
    * write-conflict prevention is the submission gate + one-job-per-chat, not a
    * per-job lease re-check (see step-3 gotcha A).
+   *
+   * `mode` / `regenerateMessageId` (Phase 6b) ride the `activeGenerationJobs`
+   * projection so a reloaded browser can reattach with the right generating mode
+   * — without them the reattach renders a continue/regenerate as a fresh send.
    */
   chatId?: string
   writerSessionId?: string | null
+  mode?: 'send' | 'continue' | 'regenerate'
+  regenerateMessageId?: string
 }
 
 const PRIVATE_BLOCKS = (() => {

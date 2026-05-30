@@ -9,6 +9,14 @@ const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
 export interface ActiveGenerationJob {
   chatId: string
   jobId: string
+  /**
+   * The generating mode of the running job (Phase 6b). Lets a reload-resume
+   * reattach render a `continue` / `regenerate` on the right row instead of as a
+   * fresh send. Absent (treated as `send`) for older server builds.
+   */
+  mode?: 'send' | 'continue' | 'regenerate'
+  /** The regenerate target id, present only for `mode === 'regenerate'`. */
+  regenerateMessageId?: string
 }
 
 export interface ServerBootstrapProjection {
@@ -119,7 +127,18 @@ function parseActiveGenerationJobs(value: unknown): ActiveGenerationJob[] {
     if (!entry || typeof entry !== 'object') continue
     const record = entry as Record<string, unknown>
     if (typeof record.chatId === 'string' && typeof record.jobId === 'string') {
-      jobs.push({ chatId: record.chatId, jobId: record.jobId })
+      const job: ActiveGenerationJob = { chatId: record.chatId, jobId: record.jobId }
+      if (
+        record.mode === 'send' ||
+        record.mode === 'continue' ||
+        record.mode === 'regenerate'
+      ) {
+        job.mode = record.mode
+      }
+      if (typeof record.regenerateMessageId === 'string') {
+        job.regenerateMessageId = record.regenerateMessageId
+      }
+      jobs.push(job)
     }
   }
   return jobs
