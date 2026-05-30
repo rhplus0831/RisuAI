@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
-import { loadedStore } from '../stores.svelte'
+import { loadedStore, selectedCharID } from '../stores.svelte'
 import { getDatabase, type Database } from '../storage/database.svelte'
+import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { patchRuntimeSettings, runServerCommand, type ServerCommandResult } from './commands'
 
@@ -15,6 +16,12 @@ declare global {
         patch: Record<string, unknown>,
       ) => Promise<ServerCommandResult<Record<string, unknown>>>
       waitForLoaded: (timeoutMs?: number) => Promise<void>
+      // Phase 6c swipe-persistence E2E: open a character (drives chat hydration),
+      // read the reconstructed reroll candidates, and drive the swipe controls.
+      selectCharacter: (index: number) => void
+      getRerollCandidates: () => string[]
+      swipeRerollBack: () => Promise<void>
+      swipeRerollForward: () => Promise<void>
     }
   }
 }
@@ -38,6 +45,14 @@ export function installFastifyBrowserSmokeHook() {
         command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch }),
       }),
     waitForLoaded,
+    selectCharacter: (index) => selectedCharID.set(index),
+    getRerollCandidates: () =>
+      getRerollBuffer().map((entry) => {
+        const last = entry.at(-1) as { data?: unknown } | undefined
+        return typeof last?.data === 'string' ? last.data : ''
+      }),
+    swipeRerollBack: () => unReroll(),
+    swipeRerollForward: () => reroll({ sendChatMain: async () => {}, closeMenu: () => {} }),
   }
 }
 
