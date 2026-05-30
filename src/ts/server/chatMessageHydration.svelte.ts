@@ -31,7 +31,7 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
   try {
     const result = await fetchServerChatMessages(chatId)
     if (result.status === 'ok') {
-      hydrateServerChatMessages(chatId, result.message)
+      hydrateServerChatMessages(chatId, result.message, result.hypaV3Data)
       hydratedChatIds.add(chatId)
     }
   } finally {

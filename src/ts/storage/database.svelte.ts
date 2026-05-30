@@ -825,12 +825,23 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
  * characters; a trusted projection write so it passes the read-only guard.
  * Returns true if the chat was found and hydrated.
  */
-export function hydrateServerChatMessages(chatId: string, message: unknown[]): boolean {
+export function hydrateServerChatMessages(
+  chatId: string,
+  message: unknown[],
+  hypaV3Data?: unknown,
+): boolean {
   return withTrustedServerProjectionWrite(() => {
     for (const character of DBState.db.characters ?? []) {
       const chat = character.chats?.find((candidate) => candidate.id === chatId)
       if (chat) {
         chat.message = message as Message[]
+        // Phase 4.4: hypaV3Data is hydrated alongside messages. undefined means
+        // the chat has none — clear any stale value.
+        if (hypaV3Data === undefined) {
+          delete (chat as { hypaV3Data?: unknown }).hypaV3Data
+        } else {
+          chat.hypaV3Data = hypaV3Data as typeof chat.hypaV3Data
+        }
         return true
       }
     }

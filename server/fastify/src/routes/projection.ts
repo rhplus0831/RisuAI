@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import { loadChatMessages, loadStubProjection } from '../repository.js'
+import { loadChatHydration, loadStubProjection } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
 
 // Targeted per-resource projection (lazy-projection Phase 2).
@@ -77,12 +77,14 @@ export function registerProjectionRoutes(
         if (typeof chatId !== 'string' || chatId.trim() === '') {
           return { revision, resource, mode: 'full' as const }
         }
+        const hydration = loadChatHydration(db, dataDir, chatId)
         return {
           revision,
           resource,
           mode: 'chat-messages' as const,
           chatId,
-          message: loadChatMessages(db, dataDir, chatId),
+          message: hydration.message,
+          hypaV3Data: hydration.hypaV3Data,
         }
       }
 

@@ -194,6 +194,7 @@ describe('Phase 2A bootstrap + import', () => {
                 { role: 'user', data: 'hello', chatId: 'm1' },
                 { role: 'char', data: 'hi there', chatId: 'm2' },
               ],
+              hypaV3Data: { mainChunks: [{ text: 'summary' }], lastImportantSummary: 1 },
             },
           ],
         },
@@ -208,13 +209,15 @@ describe('Phase 2A bootstrap + import', () => {
     })
     expect(imported.statusCode).toBe(200)
 
-    // db.json on disk is message-free: the chat exists but carries no message[].
+    // db.json on disk is message-free + hypaV3Data-free: the chat exists but
+    // carries neither blob.
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     const onDiskChat = onDisk.database.characters[0].chats[0]
     expect(onDiskChat.id).toBe('chat-1')
     expect(onDiskChat.message).toBeUndefined()
+    expect(onDiskChat.hypaV3Data).toBeUndefined()
 
-    // The messages live as rows in the SQLite messages table.
+    // The messages + hypaV3Data live as rows in their SQLite tables.
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       const rows = db
@@ -224,6 +227,13 @@ describe('Phase 2A bootstrap + import', () => {
         { chat_id: 'chat-1', seq: 0, uid: 'm1', data: 'hello' },
         { chat_id: 'chat-1', seq: 1, uid: 'm2', data: 'hi there' },
       ])
+      const hypaRow = db
+        .prepare('SELECT json FROM chat_hypa_v3 WHERE chat_id = ?')
+        .get('chat-1') as { json: string } | undefined
+      expect(JSON.parse(hypaRow!.json)).toEqual({
+        mainChunks: [{ text: 'summary' }],
+        lastImportantSummary: 1,
+      })
     } finally {
       db.close()
     }
@@ -239,8 +249,9 @@ describe('Phase 2A bootstrap + import', () => {
     const stubChat = bootstrap.json().database.characters[0].chats[0]
     expect(stubChat.id).toBe('chat-1')
     expect(stubChat.message).toEqual([])
+    expect(stubChat.hypaV3Data).toBeUndefined() // stripped from the wire stub
 
-    // The per-chat hydration endpoint serves the real messages on open.
+    // The per-chat hydration endpoint serves the real messages + hypaV3Data.
     const hydration = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/projection/chatMessages?id=chat-1',
@@ -255,6 +266,7 @@ describe('Phase 2A bootstrap + import', () => {
         { role: 'user', data: 'hello', chatId: 'm1' },
         { role: 'char', data: 'hi there', chatId: 'm2' },
       ],
+      hypaV3Data: { mainChunks: [{ text: 'summary' }], lastImportantSummary: 1 },
     })
   })
 

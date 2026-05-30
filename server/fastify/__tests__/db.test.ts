@@ -68,6 +68,7 @@ describe('schema migrations', () => {
     try {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 0 })
       expect(listTables(db)).toEqual([
+        'chat_hypa_v3',
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',
@@ -88,6 +89,7 @@ describe('schema migrations', () => {
     try {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 7 })
       expect(listTables(db)).toEqual([
+        'chat_hypa_v3',
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',

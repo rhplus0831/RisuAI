@@ -5,10 +5,15 @@ import type { DatabaseSync } from 'node:sqlite'
 import { bumpRevision, getSchemaState } from './db.js'
 import {
   applyChatMessageDiff,
+  deleteChatHypaV3,
   deleteChatMessages,
+  getAllChatHypaV3Grouped,
   getAllChatMessagesGrouped,
+  getChatHypaV3,
   getChatMessages,
+  replaceAllChatHypaV3,
   replaceAllChatMessages,
+  setChatHypaV3,
 } from './messageStore.js'
 
 export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
@@ -147,6 +152,7 @@ function eachChat(database: unknown, visit: (chat: JsonRecord) => void): void {
 export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Persisted {
   const persisted = loadPersisted(dataDir)
   const grouped = getAllChatMessagesGrouped(db)
+  const hypaGrouped = getAllChatHypaV3Grouped(db)
   eachChat(persisted.database, (chat) => {
     const chatId = chat.id
     if (typeof chatId !== 'string') {
@@ -161,6 +167,12 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
       chat.message = []
     }
     // else: no rows but an embedded array is present → keep it (fallback).
+
+    // Phase 4.4: hypaV3Data joins the same way. It is optional, so only set it
+    // when the table has a row; otherwise keep any embedded value (fallback).
+    if (hypaGrouped.has(chatId)) {
+      chat.hypaV3Data = hypaGrouped.get(chatId)
+    }
   })
   return persisted
 }
@@ -184,14 +196,18 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
  */
 export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): Persisted {
   const chats: { chatId: string; messages: unknown[] }[] = []
+  const hypa: { chatId: string; hypaV3Data: unknown }[] = []
   eachChat(next.database, (chat) => {
     const messages = Array.isArray(chat.message) ? chat.message : []
     if (typeof chat.id === 'string') {
       chats.push({ chatId: chat.id, messages })
+      hypa.push({ chatId: chat.id, hypaV3Data: chat.hypaV3Data })
     }
     delete chat.message
+    delete chat.hypaV3Data
   })
   replaceAllChatMessages(db, chats)
+  replaceAllChatHypaV3(db, hypa)
   return next
 }
 
@@ -223,9 +239,11 @@ export function syncChatMessages(
   nextDatabase: unknown,
 ): void {
   const baseline = new Map<string, unknown[]>()
+  const baselineHypa = new Map<string, unknown>()
   eachChat(baselineDatabase, (chat) => {
     if (typeof chat.id === 'string') {
       baseline.set(chat.id, Array.isArray(chat.message) ? chat.message : [])
+      baselineHypa.set(chat.id, chat.hypaV3Data)
     }
   })
   const nextIds = new Set<string>()
@@ -234,16 +252,24 @@ export function syncChatMessages(
     nextIds.add(chat.id)
     const next = Array.isArray(chat.message) ? chat.message : []
     applyChatMessageDiff(db, chat.id, baseline.get(chat.id) ?? [], next)
+    // Phase 4.4: persist hypaV3Data only when it changed (surgical, like messages).
+    if (JSON.stringify(baselineHypa.get(chat.id)) !== JSON.stringify(chat.hypaV3Data)) {
+      setChatHypaV3(db, chat.id, chat.hypaV3Data)
+    }
   })
   for (const chatId of baseline.keys()) {
-    if (!nextIds.has(chatId)) deleteChatMessages(db, chatId)
+    if (!nextIds.has(chatId)) {
+      deleteChatMessages(db, chatId)
+      deleteChatHypaV3(db, chatId)
+    }
   }
 }
 
-/** Strip every chat's `message[]` so the database can be written message-free. */
+/** Strip every chat's `message[]` + `hypaV3Data` for message-free db.json/wire. */
 export function stripChatMessages(next: Persisted): Persisted {
   eachChat(next.database, (chat) => {
     delete chat.message
+    delete chat.hypaV3Data
   })
   return next
 }
@@ -261,7 +287,7 @@ export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void
   const raw = loadPersisted(dataDir)
   let hasEmbedded = false
   eachChat(raw.database, (chat) => {
-    if (Array.isArray(chat.message)) hasEmbedded = true
+    if (Array.isArray(chat.message) || chat.hypaV3Data !== undefined) hasEmbedded = true
   })
   if (!hasEmbedded) return
 
@@ -290,22 +316,34 @@ export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted
   const persisted = loadPersisted(dataDir)
   eachChat(persisted.database, (chat) => {
     chat.message = []
+    delete chat.hypaV3Data
   })
   return persisted
 }
 
-/** One chat's messages for the hydration endpoint (table, with embedded fallback). */
-export function loadChatMessages(db: DatabaseSync, dataDir: string, chatId: string): unknown[] {
-  const rows = getChatMessages(db, chatId)
-  if (rows.length > 0) return rows
+/**
+ * One chat's hydration payload — messages + hypaV3Data — for the hydration
+ * endpoint (table, with embedded db.json fallback for not-yet-extracted chats).
+ */
+export function loadChatHydration(
+  db: DatabaseSync,
+  dataDir: string,
+  chatId: string,
+): { message: unknown[]; hypaV3Data: unknown } {
+  let message = getChatMessages(db, chatId) as unknown[]
+  let hypaV3Data = getChatHypaV3(db, chatId)
+  if (message.length > 0 && hypaV3Data !== undefined) {
+    return { message, hypaV3Data }
+  }
   // Fallback for a chat not yet extracted into the table (defensive — startup
   // extraction normally makes the table authoritative).
   const persisted = loadPersisted(dataDir)
-  let embedded: unknown[] = []
   eachChat(persisted.database, (chat) => {
-    if (chat.id === chatId && Array.isArray(chat.message)) embedded = chat.message
+    if (chat.id !== chatId) return
+    if (message.length === 0 && Array.isArray(chat.message)) message = chat.message
+    if (hypaV3Data === undefined && chat.hypaV3Data !== undefined) hypaV3Data = chat.hypaV3Data
   })
-  return embedded
+  return { message, hypaV3Data }
 }
 
 export function applyImport(

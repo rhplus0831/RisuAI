@@ -48,6 +48,70 @@ export function createMessageTable(db: DatabaseSync): void {
   `)
 }
 
+// Phase 4.4: the heavy per-chat `hypaV3Data` blob lives in its own table (one
+// row per chat), out of db.json and the wire projection, hydrated on open like
+// messages. Distinct from the Hypa V3 *memory tables* (chunks/summaries/...).
+export function createChatBlobTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_hypa_v3 (
+      chat_id TEXT PRIMARY KEY,
+      json TEXT NOT NULL
+    );
+  `)
+}
+
+/** Upsert (or delete, when value is null/undefined) a chat's hypaV3Data blob. */
+export function setChatHypaV3(db: DatabaseSync, chatId: string, value: unknown): void {
+  if (value === undefined || value === null) {
+    deleteChatHypaV3(db, chatId)
+    return
+  }
+  db.prepare(
+    'INSERT INTO chat_hypa_v3 (chat_id, json) VALUES (?, ?) ' +
+      'ON CONFLICT(chat_id) DO UPDATE SET json = excluded.json',
+  ).run(chatId, JSON.stringify(value))
+}
+
+export function deleteChatHypaV3(db: DatabaseSync, chatId: string): void {
+  db.prepare('DELETE FROM chat_hypa_v3 WHERE chat_id = ?').run(chatId)
+}
+
+/** A chat's hypaV3Data blob, or undefined if none. */
+export function getChatHypaV3(db: DatabaseSync, chatId: string): unknown {
+  const row = db.prepare('SELECT json FROM chat_hypa_v3 WHERE chat_id = ?').get(chatId) as
+    | { json: string }
+    | undefined
+  return row ? (JSON.parse(row.json) as unknown) : undefined
+}
+
+/** All chats' hypaV3Data blobs, grouped by chat id (one query). */
+export function getAllChatHypaV3Grouped(db: DatabaseSync): Map<string, unknown> {
+  const rows = db.prepare('SELECT chat_id, json FROM chat_hypa_v3').all() as {
+    chat_id: string
+    json: string
+  }[]
+  const grouped = new Map<string, unknown>()
+  for (const row of rows) grouped.set(row.chat_id, JSON.parse(row.json) as unknown)
+  return grouped
+}
+
+/** Chat ids that currently have a hypaV3Data row. */
+export function getAllChatIdsWithHypaV3(db: DatabaseSync): string[] {
+  const rows = db.prepare('SELECT chat_id FROM chat_hypa_v3').all() as { chat_id: string }[]
+  return rows.map((row) => row.chat_id)
+}
+
+/** Rebuild the whole hypaV3Data table from a full set of chats (wipe + insert). */
+export function replaceAllChatHypaV3(
+  db: DatabaseSync,
+  chats: ReadonlyArray<{ chatId: string; hypaV3Data: unknown }>,
+): void {
+  db.exec('DELETE FROM chat_hypa_v3')
+  for (const { chatId, hypaV3Data } of chats) {
+    if (hypaV3Data !== undefined && hypaV3Data !== null) setChatHypaV3(db, chatId, hypaV3Data)
+  }
+}
+
 function readMessageObject(raw: unknown): JsonRecord {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { role: 'char', data: '', chatId: randomUUID() }

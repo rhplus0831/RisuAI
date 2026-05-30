@@ -90,7 +90,7 @@ export async function fetchServerProjectionResource(
 }
 
 export type ServerChatMessagesResult =
-  | { status: 'ok'; revision: number; chatId: string; message: unknown[] }
+  | { status: 'ok'; revision: number; chatId: string; message: unknown[]; hypaV3Data?: unknown }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
@@ -145,6 +145,7 @@ export async function fetchServerChatMessages(
     revision: revision as number,
     chatId: typeof record.chatId === 'string' ? record.chatId : chatId,
     message: record.message as unknown[],
+    hypaV3Data: record.hypaV3Data,
   }
 }
 

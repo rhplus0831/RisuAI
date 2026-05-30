@@ -1,9 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
 import path from 'node:path'
-import { createMessageTable } from './messageStore.js'
+import { createChatBlobTable, createMessageTable } from './messageStore.js'
 
-export const CURRENT_SCHEMA_VERSION = 4
+export const CURRENT_SCHEMA_VERSION = 5
 
 export interface MigrationStep {
   version: number
@@ -45,6 +45,16 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createMessageTable(db)
     },
   },
+  {
+    version: 5,
+    name: 'chat-hypa-v3-table',
+    up: (db) => {
+      // Lazy-projection Phase 4.4: the per-chat hypaV3Data blob moves to its own
+      // table (same boundary treatment as messages; extracted from db.json on
+      // startup via ensureMessagesExtracted).
+      createChatBlobTable(db)
+    },
+  },
 ]
 
 export function openDatabase(dataDir: string): DatabaseSync {
@@ -72,6 +82,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
     if (schemaState.version === CURRENT_SCHEMA_VERSION) {
       createMemoryTables(db)
       createMessageTable(db)
+      createChatBlobTable(db)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {

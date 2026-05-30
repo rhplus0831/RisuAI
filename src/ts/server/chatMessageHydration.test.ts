@@ -123,6 +123,24 @@ describe('chat message hydration bridge', () => {
     expect(db().characters[0].chats[1].message).toEqual([{ role: 'char', data: 'yo', chatId: 'm2' }])
   })
 
+  it('hydrates hypaV3Data alongside messages, and clears it when absent', async () => {
+    // chat-1 has hypaV3Data; chat-2 has none.
+    projectionState.fetchChat.mockImplementation(async (chatId: string) =>
+      chatId === 'chat-1'
+        ? { status: 'ok' as const, revision: 1, chatId, message: [], hypaV3Data: { mainChunks: [1] } }
+        : okResult(chatId, []),
+    )
+    // Seed a stale hypaV3Data on chat-2 to prove an absent value clears it.
+    ;(db().characters[0].chats[1] as { hypaV3Data?: unknown }).hypaV3Data = { stale: true }
+
+    await ensureAllChatsHydrated()
+
+    expect((db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data).toEqual({
+      mainChunks: [1],
+    })
+    expect((db().characters[0].chats[1] as { hypaV3Data?: unknown }).hypaV3Data).toBeUndefined()
+  })
+
   it('is a no-op when server projection is unavailable', async () => {
     projectionState.canUse.mockReturnValue(false)
     await hydrateActiveChat()

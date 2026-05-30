@@ -7,10 +7,15 @@ import { openDatabase } from '../src/db.js'
 import {
   applyChatMessageDiff,
   countChatMessages,
+  deleteChatHypaV3,
   deleteChatMessages,
+  getAllChatHypaV3Grouped,
+  getAllChatIdsWithHypaV3,
   getAllChatIdsWithMessages,
+  getChatHypaV3,
   getChatMessages,
   replaceChatMessages,
+  setChatHypaV3,
 } from '../src/messageStore.js'
 import {
   loadPersisted,
@@ -154,6 +159,30 @@ describe('applyChatMessageDiff surgical writes', () => {
   })
 })
 
+describe('chat hypaV3Data store (Phase 4.4)', () => {
+  it('upserts, reads, groups and deletes a chat blob', () => {
+    const db = makeDb(makeDataDir())
+    setChatHypaV3(db, 'chat-1', { mainChunks: [{ text: 'a' }], lastImportantSummary: 2 })
+    setChatHypaV3(db, 'chat-2', { mainChunks: [] })
+
+    expect(getChatHypaV3(db, 'chat-1')).toEqual({
+      mainChunks: [{ text: 'a' }],
+      lastImportantSummary: 2,
+    })
+    expect(getAllChatIdsWithHypaV3(db).sort()).toEqual(['chat-1', 'chat-2'])
+
+    // Upsert overwrites.
+    setChatHypaV3(db, 'chat-1', { mainChunks: [{ text: 'b' }] })
+    expect(getChatHypaV3(db, 'chat-1')).toEqual({ mainChunks: [{ text: 'b' }] })
+
+    // setChatHypaV3(null/undefined) deletes.
+    setChatHypaV3(db, 'chat-1', undefined)
+    expect(getChatHypaV3(db, 'chat-1')).toBeUndefined()
+    deleteChatHypaV3(db, 'chat-2')
+    expect(getAllChatHypaV3Grouped(db).size).toBe(0)
+  })
+})
+
 describe('repository message-aware load/write', () => {
   function seedHydrated(database: unknown): Persisted {
     return { _version: 1, database, assets: [] }
@@ -188,6 +217,35 @@ describe('repository message-aware load/write', () => {
     const hydrated = loadPersistedWithMessages(db, dataDir).database as typeof database
     expect(hydrated.characters[0].chats[0].message).toEqual(database.characters[0].chats[0].message)
     expect(hydrated.characters[0].chats[1].message).toEqual(database.characters[0].chats[1].message)
+  })
+
+  it('splits + rejoins per-chat hypaV3Data, message-free + hypa-free on disk', () => {
+    const dataDir = makeDataDir()
+    const db = makeDb(dataDir)
+    const database = {
+      characters: [
+        {
+          chaId: 'c',
+          chats: [
+            { id: 'chat-1', message: [msg('m1', 'user', 'hi')], hypaV3Data: { mainChunks: [{ t: 1 }] } },
+            { id: 'chat-2', message: [], hypaV3Data: undefined },
+          ],
+        },
+      ],
+    }
+
+    writePersistedWithMessages(db, dataDir, seedHydrated(structuredClone(database)))
+
+    // db.json carries neither message[] nor hypaV3Data.
+    const onDisk = JSON.parse(readFileSync(path.join(dataDir, 'db.json'), 'utf8'))
+    for (const chat of onDisk.database.characters[0].chats) {
+      expect(chat.message).toBeUndefined()
+      expect(chat.hypaV3Data).toBeUndefined()
+    }
+    // The hydrated load rejoins hypaV3Data (only where present).
+    const hydrated = loadPersistedWithMessages(db, dataDir).database as typeof database
+    expect(hydrated.characters[0].chats[0].hypaV3Data).toEqual({ mainChunks: [{ t: 1 }] })
+    expect(hydrated.characters[0].chats[1].hypaV3Data).toBeUndefined()
   })
 
   it('round-trips load->write->load preserving messages', () => {
