@@ -12,6 +12,7 @@ import { resolveDurableGeneration } from './request/durableGeneration'
 import {
   applyServerBackedTerminal,
   assembleServerBackedSendChat,
+  reattachServerBackedSendChat,
   type ServerBackedDispatch,
 } from './serverBackedSendChat'
 import {
@@ -61,6 +62,12 @@ export async function sendChat(
     preview?: boolean
     previewPrompt?: boolean
     regenerateMessageId?: string
+    /**
+     * lazy-projection Phase 7: re-attach to this live durable generation
+     * (server job id) instead of starting a fresh send. Skips assembly + the
+     * provider POST; the server replays the in-flight stream.
+     */
+    reattachJobId?: string
   } = {},
 ): Promise<boolean> {
   chatProcessStage.set(0)
@@ -167,14 +174,50 @@ export async function sendChat(
     // the flag nor the local fallback is deprecated — see the flag's JSDoc in
     // database.svelte.ts; removing them is the END of the prompt-assembly thinning
     // sub-family, not a precursor.
-    const assemblyRoute = resolveServerPromptAssembly({
-      currentChar,
-      currentChat,
-      preview: arg.preview,
-      previewPrompt: arg.previewPrompt,
-      continue: arg.continue,
-      regenerateMessageId: arg.regenerateMessageId,
-    })
+    if (arg.reattachJobId) {
+      // Phase 7: re-attach to a live durable generation instead of assembling +
+      // dispatching a fresh send. The job is server-persisted (durable), so the
+      // browser does not write the result; it only renders the replayed stream.
+      serverDurable = true
+      const reattached = await reattachServerBackedSendChat({
+        selectedChar,
+        selectedChat,
+        currentChar,
+        currentChat,
+        promptInfo,
+        stageTimings,
+        abortSignal,
+        setProcessStage,
+        jobId: arg.reattachJobId,
+      })
+      if (reattached.status === 'aborted') return false
+      if (reattached.status === 'failed') {
+        // Job GC'd / already completed: the result is persisted, so the
+        // projection refresh surfaces it. Nothing to render live.
+        return false
+      }
+      if (reattached.status === 'assembled') {
+        currentChat = reattached.currentChat
+        formated = reattached.formated
+        biases = reattached.biases
+        inputTokens = reattached.inputTokens
+        outputTokens = reattached.outputTokens
+        assembledByServer = true
+        serverDispatch = reattached.dispatch
+        generationInfo = reattached.dispatch?.generationInfo
+      }
+    }
+
+    const assemblyRoute = arg.reattachJobId
+      ? ({ type: 'local' } as const)
+      : resolveServerPromptAssembly({
+          currentChar,
+          currentChat,
+          preview: arg.preview,
+          previewPrompt: arg.previewPrompt,
+          continue: arg.continue,
+          regenerateMessageId: arg.regenerateMessageId,
+        })
     if (assemblyRoute.type === 'unsupported') {
       throwError(assemblyRoute.reason)
       return false

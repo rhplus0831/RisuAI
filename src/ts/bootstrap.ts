@@ -48,6 +48,10 @@ import {
   type CommandEvent,
 } from './server/commands'
 import { fetchServerProjectionResource } from './server/projection'
+import {
+  setActiveGenerationJobs,
+  startActiveGenerationReattach,
+} from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 
 // Delay before re-subscribing to the command-event stream after it drops. On
@@ -135,6 +139,10 @@ export async function loadWebInitialDatabase() {
   // against the revision this client has applied.
   setCachedServerCommandRevision(bootstrap.projection.revision)
   setServerProjectionWriteGuardEnabled(true)
+  // Phase 7: surface any in-flight server generations so opening their chat
+  // re-attaches to the live stream.
+  setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
+  startActiveGenerationReattach()
   await startServerProjectionEvents()
 }
 
@@ -261,6 +269,7 @@ async function fullBootstrapResync(): Promise<void> {
       if (bootstrap.status === 'ok') {
         applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
         setCachedServerCommandRevision(bootstrap.projection.revision)
+        setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
       } else if (bootstrap.status === 'error') {
         console.warn(`Server projection refresh failed: ${bootstrap.error}`)
       }

@@ -294,6 +294,94 @@ export async function assembleServerBackedSendChat(args: {
   }
 }
 
+/**
+ * lazy-projection Phase 7: re-attach to a live durable generation instead of
+ * starting a fresh send. The server replays the buffered `prompt` / `info` /
+ * `token` frames over `GET /generate/chat/:jobId/stream`, so the reattach stream
+ * yields the SAME `assembled` result a fresh send produces — the coordinator
+ * then drives the identical orchestrate -> terminal -> stage4 flow. There is no
+ * client-side assembly (no inlay collection, no request body): the running job
+ * already owns the prompt. A 404 (job GC'd / completed) surfaces as `failed`,
+ * and the coordinator falls back to the projection (the result is persisted).
+ */
+export async function reattachServerBackedSendChat(args: {
+  selectedChar: number
+  selectedChat: number
+  currentChar: character
+  currentChat: Chat
+  promptInfo: MessagePresetInfo
+  stageTimings: ServerBackedStageTimings
+  abortSignal: AbortSignal
+  setProcessStage: (stage: number) => void
+  jobId: string
+}): Promise<ServerBackedAssemblyResult> {
+  args.setProcessStage(1)
+  args.stageTimings.stage1Start = Date.now()
+  const input: ServerChatInput = {
+    chatId: args.currentChat.id ?? '',
+    characterId: args.currentChar.chaId,
+    mode: 'send',
+  }
+  const served = await requestServerChatGeneration(input, args.abortSignal, args.jobId)
+
+  if (served.status === 'aborted') return { status: 'aborted' }
+  if (served.status === 'error') {
+    const currentChat = applyServerMessagePatches({
+      patches: served.messagePatches ?? [],
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+    })
+    return { status: 'failed', error: served.error, currentChat }
+  }
+
+  args.stageTimings.stage1Duration =
+    numberFrom(served.info?.timings?.prompt) ?? Date.now() - args.stageTimings.stage1Start
+
+  const currentChat = applyServerMessagePatches({
+    patches: served.messagePatches,
+    selectedChar: args.selectedChar,
+    selectedChat: args.selectedChat,
+  })
+
+  if (!served.prompt.formated) {
+    return {
+      status: 'failed',
+      error: 'reattached generation did not return formated rows',
+      currentChat,
+    }
+  }
+
+  const promptText = served.prompt.promptInfo?.promptText
+  if (Array.isArray(promptText)) {
+    args.promptInfo.promptText = promptText as OpenAIChat[]
+  }
+
+  const dispatch = isServerChatGenerationOk(served)
+    ? {
+        req: served.req,
+        generationId: served.generationId,
+        generationInfo: served.generationInfo,
+        terminal: served.terminal,
+      }
+    : undefined
+
+  return {
+    status: 'assembled',
+    currentChat,
+    formated: served.prompt.formated,
+    biases: served.prompt.biases ?? [],
+    inputTokens:
+      numberFrom(served.info?.tokens?.prompt) ??
+      numberFrom(served.prompt.promptInfo?.inputTokens) ??
+      0,
+    outputTokens:
+      numberFrom(served.info?.responseBudget) ??
+      numberFrom(served.prompt.promptInfo?.outputTokens) ??
+      DBState.db.maxResponse,
+    ...(dispatch ? { dispatch } : {}),
+  }
+}
+
 export async function applyServerBackedTerminal(args: {
   terminal: ServerChatTerminal
   currentChar: character

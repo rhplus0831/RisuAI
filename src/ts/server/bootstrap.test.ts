@@ -94,6 +94,7 @@ describe('server bootstrap projection helper', () => {
         schemaVersion: 3,
         database,
         assetBaseUrl: '/api/v1/assets',
+        activeGenerationJobs: [],
       },
     })
     await expect(getServerCommandBaseRevision()).resolves.toBe(12)
@@ -146,5 +147,28 @@ describe('server bootstrap projection helper', () => {
       status: 'error',
       error: 'Invalid bootstrap revision',
     })
+  })
+
+  it('parses activeGenerationJobs and drops malformed entries (Phase 7)', async () => {
+    stubBootstrapFetch(() => ({
+      revision: 3,
+      database: {},
+      activeGenerationJobs: [
+        { chatId: 'chat-a', jobId: 'job-a' },
+        { chatId: 'chat-b' }, // missing jobId → dropped
+        { jobId: 'job-c' }, // missing chatId → dropped
+        'nonsense', // not an object → dropped
+        { chatId: 'chat-d', jobId: 'job-d' },
+      ],
+    }))
+
+    const result = await fetchServerBootstrapProjection()
+    expect(result.status).toBe('ok')
+    if (result.status === 'ok') {
+      expect(result.projection.activeGenerationJobs).toEqual([
+        { chatId: 'chat-a', jobId: 'job-a' },
+        { chatId: 'chat-d', jobId: 'job-d' },
+      ])
+    }
   })
 })

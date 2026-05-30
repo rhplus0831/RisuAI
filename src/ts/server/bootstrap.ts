@@ -6,11 +6,22 @@ import { setCachedServerCommandRevision } from './commands'
 
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
 
+export interface ActiveGenerationJob {
+  chatId: string
+  jobId: string
+}
+
 export interface ServerBootstrapProjection {
   revision: number
   schemaVersion?: number
   database: Database | null
   assetBaseUrl?: string
+  /**
+   * Durable generation (lazy-projection Phase 7): the generations still running
+   * server-side, so a reloaded browser can re-attach to the live stream of the
+   * open chat instead of only seeing the result after it lands. Empty when none.
+   */
+  activeGenerationJobs?: ActiveGenerationJob[]
 }
 
 export type ServerBootstrapResult =
@@ -96,8 +107,22 @@ async function fetchServerBootstrapProjectionWithMode(input: {
         : undefined,
       database: database as Database | null,
       assetBaseUrl: typeof record.assetBaseUrl === 'string' ? record.assetBaseUrl : undefined,
+      activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),
     },
   }
+}
+
+function parseActiveGenerationJobs(value: unknown): ActiveGenerationJob[] {
+  if (!Array.isArray(value)) return []
+  const jobs: ActiveGenerationJob[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const record = entry as Record<string, unknown>
+    if (typeof record.chatId === 'string' && typeof record.jobId === 'string') {
+      jobs.push({ chatId: record.chatId, jobId: record.jobId })
+    }
+  }
+  return jobs
 }
 
 function errorMessageFromBody(body: unknown, fallback: string): string {

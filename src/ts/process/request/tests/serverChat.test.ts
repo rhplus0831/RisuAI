@@ -477,3 +477,79 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     expect(deletes).toEqual([])
   })
 })
+
+describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
+  const enc = new TextEncoder()
+  function stubReattachFetch(
+    jobId: string,
+    opts: { hang?: boolean } = {},
+  ): { calls: Array<{ url: string; method: string }>; deletes: string[] } {
+    const calls: Array<{ url: string; method: string }> = []
+    const deletes: string[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      calls.push({ url, method })
+      if (method === 'DELETE') {
+        deletes.push(url)
+        return new Response(JSON.stringify({ success: true }), { status: 200 })
+      }
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode(`event: job_accepted\ndata: ${JSON.stringify({ jobId })}\n\n`))
+          controller.enqueue(
+            enc.encode(
+              `event: prompt\ndata: ${JSON.stringify({ formated: [{ role: 'user', content: 'hi' }] })}\n\n`,
+            ),
+          )
+          controller.enqueue(
+            enc.encode(
+              `event: info\ndata: ${JSON.stringify({ generationId: jobId, generationInfo: { model: 'm', generationId: jobId } })}\n\n`,
+            ),
+          )
+          controller.enqueue(
+            enc.encode(`event: token\ndata: ${JSON.stringify({ content: 'partial reply' })}\n\n`),
+          )
+          if (!opts.hang) {
+            controller.enqueue(
+              enc.encode(
+                `event: done\ndata: ${JSON.stringify({ result: 'partial reply', generationId: jobId, generationInfo: { generationId: jobId } })}\n\n`,
+              ),
+            )
+            controller.close()
+          }
+        },
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    })
+    return { calls, deletes }
+  }
+
+  it('GETs the job stream and consumes the replayed frames', async () => {
+    const { calls } = stubReattachFetch('job-reattach')
+    const res = await requestServerChatGeneration(baseInput, null, 'job-reattach')
+    expect(res.status).toBe('ok')
+    if (res.status === 'ok') {
+      expect(res.generationId).toBe('job-reattach')
+      const terminal = await res.terminal
+      expect(terminal.status).toBe('done')
+    }
+    expect(calls[0]).toEqual({
+      url: '/api/v1/generate/chat/job-reattach/stream',
+      method: 'GET',
+    })
+  })
+
+  it('cancels the job on abort even though durable is not set (reattach implies durable)', async () => {
+    const { deletes } = stubReattachFetch('job-reattach', { hang: true })
+    const controller = new AbortController()
+    const pending = requestServerChatGeneration(baseInput, controller.signal, 'job-reattach')
+    await new Promise((r) => setTimeout(r, 15))
+    controller.abort()
+    await pending
+    await new Promise((r) => setTimeout(r, 5))
+    expect(deletes).toContain('/api/v1/generate/chat/job-reattach')
+  })
+})

@@ -145,6 +145,7 @@ export async function cancelServerChatGeneration(generationId: string): Promise<
 async function openChatResponse(
   input: ServerChatInput,
   signal: AbortSignal | null,
+  reattachJobId?: string,
 ): Promise<
   { status: 'ok'; response: Response } | { status: 'error'; error: string } | { status: 'aborted' }
 > {
@@ -152,16 +153,27 @@ async function openChatResponse(
 
   let response: Response
   try {
-    response = await fetch(CHAT_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'risu-auth': auth,
-        ...activeWriterSessionHeader(),
-      },
-      body: JSON.stringify(input),
-      signal: signal ?? undefined,
-    })
+    // Phase 7 reattach: GET the live stream of an already-running durable job
+    // (replays buffered frames, then live). A fresh send POSTs the intent body.
+    response = reattachJobId
+      ? await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(reattachJobId)}/stream`, {
+          method: 'GET',
+          headers: {
+            'risu-auth': auth,
+            ...activeWriterSessionHeader(),
+          },
+          signal: signal ?? undefined,
+        })
+      : await fetch(CHAT_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'risu-auth': auth,
+            ...activeWriterSessionHeader(),
+          },
+          body: JSON.stringify(input),
+          signal: signal ?? undefined,
+        })
   } catch (err) {
     if (signal?.aborted) return { status: 'aborted' }
     const msg = err instanceof Error ? err.message : String(err)
@@ -301,8 +313,9 @@ function coerceGenerationInfo(
 export async function requestServerChatGeneration(
   input: ServerChatInput,
   signal: AbortSignal | null,
+  reattachJobId?: string,
 ): Promise<ServerChatGenerationResult> {
-  const opened = await openChatResponse(input, signal)
+  const opened = await openChatResponse(input, signal, reattachJobId)
   if (opened.status !== 'ok') return opened
 
   let prompt: ServerChatPrompt | null = null
@@ -318,9 +331,11 @@ export async function requestServerChatGeneration(
   // frame, before assembly. Capturing it here lets an abort at ANY point — including
   // mid-assembly, before `ready` resolves — translate into a server-side DELETE-cancel
   // (a bare disconnect only detaches the durable job; it keeps running otherwise).
-  let durableJobId = ''
+  let durableJobId = reattachJobId ?? ''
   const cancelDurableOnAbort = (): void => {
-    if (input.durable === true && durableJobId.length > 0) {
+    // A durable send or a reattached generation: an explicit abort (the stop
+    // button) cancels the server job; a bare disconnect only detaches.
+    if ((input.durable === true || reattachJobId !== undefined) && durableJobId.length > 0) {
       void cancelServerChatGeneration(durableJobId)
     }
   }
