@@ -90,7 +90,17 @@ export async function fetchServerProjectionResource(
 }
 
 export type ServerChatMessagesResult =
-  | { status: 'ok'; revision: number; chatId: string; message: unknown[]; hypaV3Data?: unknown }
+  | {
+      status: 'ok'
+      revision: number
+      chatId: string
+      message: unknown[]
+      hypaV3Data?: unknown
+      // Phase 6c: the persisted reroll candidates for this chat's turn (the
+      // alternate rows). Always present (empty array when none); the client seeds
+      // its swipe buffer from these so rerolls survive a reload.
+      alternates: unknown[]
+    }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
@@ -146,6 +156,7 @@ export async function fetchServerChatMessages(
     chatId: typeof record.chatId === 'string' ? record.chatId : chatId,
     message: record.message as unknown[],
     hypaV3Data: record.hypaV3Data,
+    alternates: Array.isArray(record.alternates) ? (record.alternates as unknown[]) : [],
   }
 }
 

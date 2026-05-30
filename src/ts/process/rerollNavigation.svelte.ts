@@ -170,6 +170,66 @@ export async function unReroll(): Promise<void> {
   }
 }
 
+/** The per-message id (stored, by historical misnomer, on `Message.chatId`). */
+function candidateUid(message: Message | undefined): string | undefined {
+  const uid = message?.chatId
+  return typeof uid === 'string' && uid.trim() ? uid : undefined
+}
+
+/**
+ * Lazy-projection Phase 6c (client): rebuild the swipe buffer from the chat's
+ * persisted reroll candidates (server alternate rows) so rerolls survive a
+ * *reload*, not just a disconnect. Called on active-chat hydration.
+ *
+ * The server buffers EVERY candidate of the live turn (Option X / the design
+ * doc's "insert the new candidate as an alternate row and flip the active tail"),
+ * so the active transcript tail is itself one of the candidates — matched back
+ * here by `uid` and positioned as `rerollid`. A swipe then only repositions the
+ * active tail (already durable as the persisted transcript); the buffer is never
+ * rewritten by navigation. Order is informational only (the guarantee is "not
+ * lost"); the server ships newest-added first, so we reverse for oldest-first.
+ *
+ * Reconciliation: when there are no persisted candidates we leave the live buffer
+ * untouched (a fresh / already-cleared turn — a send/continue clears both sides at
+ * the confirm boundary, so an empty `alternates` can never resurrect a buffer the
+ * client just cleared).
+ */
+export function seedRerollBufferFromAlternates(activeMessages: unknown[], alternates: unknown[]): void {
+  if (!Array.isArray(alternates) || alternates.length === 0) return
+  const activeTail = (activeMessages as Message[]).at(-1)
+  if (!activeTail || activeTail.role === 'user') return
+
+  const seen = new Set<string>()
+  const candidates: Message[] = []
+  // Server ships newest-added first → reverse to oldest-first for a natural swipe
+  // order; dedup by uid (the buffer holds the active candidate too).
+  for (const candidate of (alternates as Message[]).slice().reverse()) {
+    const uid = candidateUid(candidate)
+    if (!uid || seen.has(uid)) continue
+    seen.add(uid)
+    candidates.push(candidate)
+  }
+  if (candidates.length === 0) return
+
+  // Position the active tail. It is normally already among the candidates (the
+  // server buffers it) — swap in the live message (freshest content); otherwise
+  // (legacy displaced-only rows) append it as the newest.
+  const activeUid = candidateUid(activeTail)
+  let activeIdx = activeUid ? candidates.findIndex((c) => candidateUid(c) === activeUid) : -1
+  if (activeIdx === -1) {
+    candidates.push(activeTail)
+    activeIdx = candidates.length - 1
+  } else {
+    candidates[activeIdx] = activeTail
+  }
+
+  rerolls = candidates.map((candidate) => [safeStructuredClone(candidate)])
+  rerollid = activeIdx
+  // The buffer now belongs to the selected character — keep the char-change guard
+  // from wiping the freshly-seeded buffer on the next reroll/unReroll.
+  lastCharId = get(selectedCharID)
+}
+
 // ── test/observability accessors ────────────────────────────────────────────────
 export function getRerollBuffer(): Message[][] {
   return rerolls

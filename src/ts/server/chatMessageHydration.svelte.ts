@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { hydrateServerChatMessages } from '../storage/database.svelte'
+import { seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
 import { canUseServerProjection, fetchServerChatMessages } from './projection'
 
 // Lazy-projection Phase 4.3: the bootstrap ships chat *stubs* (empty message[]).
@@ -33,6 +34,11 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
     if (result.status === 'ok') {
       hydrateServerChatMessages(chatId, result.message, result.hypaV3Data)
       hydratedChatIds.add(chatId)
+      // Phase 6c: only the *open* chat's tail drives the swipe buffer — seed it
+      // from this chat's persisted reroll candidates so rerolls survive a reload.
+      if (activeChatId() === chatId) {
+        seedRerollBufferFromAlternates(result.message, result.alternates)
+      }
     }
   } finally {
     inFlight.delete(chatId)
