@@ -31,7 +31,11 @@ import { registerMemoryReadRoutes } from './routes/memoryReads.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
-import { SUPPORTED_ASSET_CONTENT_TYPES, loadPersisted } from './repository.js'
+import {
+  SUPPORTED_ASSET_CONTENT_TYPES,
+  ensureMessagesExtracted,
+  loadPersistedWithMessages,
+} from './repository.js'
 import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { GenerationJobRegistry } from './generationJobs.js'
@@ -102,7 +106,13 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   const db = openDatabase(config.dataDir)
   const activeWriterState = createActiveWriterState()
-  backfillLegacyHypaV3MemoryRows(db, loadPersisted(config.dataDir).database)
+  // Legacy memory backfill reads chat.message[]; hydrate from the table (or the
+  // still-embedded db.json on a first v3→v4 boot) so it sees the real history.
+  backfillLegacyHypaV3MemoryRows(db, loadPersistedWithMessages(db, config.dataDir).database)
+  // Proactively move any embedded chat.message[] into the SQLite table and make
+  // db.json message-free (Slice 4.3). No-op once converged. Must run after the
+  // backfill above, which needs the embedded messages on the first upgrade boot.
+  ensureMessagesExtracted(db, config.dataDir)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {
     if (opts.memoryEvents) {

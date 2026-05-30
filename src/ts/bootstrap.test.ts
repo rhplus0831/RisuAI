@@ -99,6 +99,18 @@ vi.mock('./server/events', () => ({
 
 vi.mock('./server/projection', () => ({
   fetchServerProjectionResource: serverProjectionState.fetchResource,
+  canUseServerProjection: () => platformState.isFastifyServer,
+  fetchServerChatMessages: vi.fn(),
+}))
+
+// Phase 4.3 chat-message hydration is exercised in its own tests; stub it here so
+// the surgical-sync assertions (fetch counts) are unaffected by hydration calls.
+vi.mock('./server/chatMessageHydration.svelte', () => ({
+  startChatMessageHydration: vi.fn(),
+  hydrateActiveChat: vi.fn(async () => undefined),
+  resetChatHydration: vi.fn(),
+  ensureAllChatsHydrated: vi.fn(async () => undefined),
+  hydrateChatMessages: vi.fn(async () => undefined),
 }))
 
 vi.mock('./globalApi.svelte', () => ({

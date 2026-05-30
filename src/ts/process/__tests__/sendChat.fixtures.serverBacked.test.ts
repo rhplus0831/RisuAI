@@ -384,6 +384,20 @@ interface RouteBackedHarness {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
 }
 
+// Phase 4.3: the bootstrap ships chat stubs (message-free); read a chat's
+// persisted messages via the per-chat hydration endpoint.
+async function persistedChatMessages(
+  harness: RouteBackedHarness,
+  chatId = 'chat-route-backed',
+): Promise<Array<Record<string, unknown>>> {
+  const res = await harness.app.inject({
+    method: 'GET',
+    url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+  })
+  expect(res.statusCode).toBe(200)
+  return res.json().message as Array<Record<string, unknown>>
+}
+
 function headersRecord(headers: RequestInit['headers']): Record<string, string> {
   if (!headers) return {}
   if (headers instanceof Headers) return Object.fromEntries(headers.entries())
@@ -807,7 +821,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       const persistedChat = bootstrap.json().database.characters[0].chats[0]
       expect(persistedChat.scriptstate).toEqual({ $score: '9' })
       expect(bootstrap.json().revision).toBe(3)
-      const persistedAssistant = [...persistedChat.message]
+      const persistedAssistant = [...(await persistedChatMessages(harness))]
         .reverse()
         .find((m: { role: string }) => m.role === 'char')
       expect(persistedAssistant?.data).toBe('route-backed reply')
@@ -877,7 +891,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       const persistedChat = bootstrap.json().database.characters[0].chats[0]
       expect(persistedChat.scriptstate).toMatchObject({ $mood: 'happy' })
       expect(bootstrap.json().revision).toBe(2)
-      const persistedAssistant = [...persistedChat.message]
+      const persistedAssistant = [...(await persistedChatMessages(harness))]
         .reverse()
         .find((m: { role: string }) => m.role === 'char')
       expect(persistedAssistant?.data).toBe('route-backed reply')
@@ -929,7 +943,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       )
       expect(generationResultPosts).toEqual([])
       const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
-      const persistedAssistant = [...bootstrap.json().database.characters[0].chats[0].message]
+      const persistedAssistant = [...(await persistedChatMessages(harness))]
         .reverse()
         .find((m: { role: string }) => m.role === 'char')
       expect(persistedAssistant?.data).toBe('route-backed REPLY')
@@ -1162,11 +1176,9 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       const userRow = liveChat.message.find((m) => m.role === 'user')
       expect(userRow?.data).toBe('Hi THERE')
 
-      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
-      const persistedChat = bootstrap.json().database.characters[0].chats[0]
-      const persistedUser = (persistedChat.message as Array<{ role: string; data: string }>).find(
-        (m) => m.role === 'user',
-      )
+      const persistedUser = (
+        (await persistedChatMessages(harness)) as Array<{ role: string; data: string }>
+      ).find((m) => m.role === 'user')
       expect(persistedUser?.data).toBe('Hi THERE')
       expect(getServerCompletionCalls()).toEqual([])
     } finally {

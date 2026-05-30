@@ -6,7 +6,7 @@ import type { AuthState } from '../auth.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import { loadPersistedWithMessages } from '../repository.js'
+import { loadStubProjection } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
@@ -25,7 +25,9 @@ export function registerBootstrapRoutes(
       registerActiveWriterSession(activeWriterState, req)
     }
     const { version, revision } = getSchemaState(db)
-    const persisted = loadPersistedWithMessages(db, dataDir)
+    // Lazy-projection Phase 4.3: ship chat *stubs* (metadata, no message[]). The
+    // client hydrates a chat's messages on open via the projection endpoint.
+    const persisted = loadStubProjection(db, dataDir)
     return {
       revision,
       schemaVersion: version,

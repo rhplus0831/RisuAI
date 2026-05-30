@@ -2,8 +2,12 @@ import { getDatabase } from './database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { alertNormal } from '../alert'
 import { language } from 'src/lang'
+import { ensureAllChatsHydrated } from '../server/chatMessageHydration.svelte'
 
 export async function exportAsDataset() {
+  // Phase 4.3: chats are lazy-hydrated on open; this exports every chat's
+  // history, so make sure all chats' messages are loaded first.
+  await ensureAllChatsHydrated()
   const db = getDatabase()
 
   let dataset = []

@@ -228,18 +228,34 @@ describe('Phase 2A bootstrap + import', () => {
       db.close()
     }
 
-    // The bootstrap projection still ships the fully-hydrated chat.message[].
+    // Phase 4.3: the bootstrap projection ships a chat STUB — metadata present,
+    // message[] empty. The client hydrates messages on open.
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    const hydratedChat = bootstrap.json().database.characters[0].chats[0]
-    expect(hydratedChat.message).toEqual([
-      { role: 'user', data: 'hello', chatId: 'm1' },
-      { role: 'char', data: 'hi there', chatId: 'm2' },
-    ])
+    const stubChat = bootstrap.json().database.characters[0].chats[0]
+    expect(stubChat.id).toBe('chat-1')
+    expect(stubChat.message).toEqual([])
+
+    // The per-chat hydration endpoint serves the real messages on open.
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/chatMessages?id=chat-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(hydration.statusCode).toBe(200)
+    expect(hydration.json()).toMatchObject({
+      resource: 'chatMessages',
+      mode: 'chat-messages',
+      chatId: 'chat-1',
+      message: [
+        { role: 'user', data: 'hello', chatId: 'm1' },
+        { role: 'char', data: 'hi there', chatId: 'm2' },
+      ],
+    })
   })
 
   it('rejects import with missing database field', async () => {

@@ -103,6 +103,22 @@ async function importDatabase(
   return imported.json().revision as number
 }
 
+// Phase 4.3: the bootstrap ships chat stubs (message-free); read a chat's
+// persisted messages via the per-chat hydration endpoint.
+async function persistedChatMessages(
+  app: FastifyInstance,
+  assertion: string,
+  chatId: string,
+): Promise<Array<Record<string, unknown>>> {
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+    headers: { 'risu-auth': assertion },
+  })
+  expect(res.statusCode).toBe(200)
+  return res.json().message as Array<Record<string, unknown>>
+}
+
 async function uploadAsset(
   app: FastifyInstance,
   assertion: string,
@@ -4282,12 +4298,7 @@ describe('Phase 9-3c message history commands', () => {
       messageId: 'msg-tail',
     })
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(bootstrap.json().database.characters[0].chats[0].message).toEqual([
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
       { role: 'user', data: 'one', chatId: 'msg-1' },
     ])
   })
@@ -4376,7 +4387,7 @@ describe('Phase 9-3c message history commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    const messages = bootstrap.json().database.characters[0].chats[0].message
+    const messages = await persistedChatMessages(harness.app, assertion, 'chat-a')
     expect(messages.map((message: { role: string; data: string }) => message.data)).toEqual([
       'missing id',
       'duplicate a',
@@ -4432,11 +4443,15 @@ describe('Phase 9-3c message history commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    const [charA, charB] = bootstrap.json().database.characters
-    const renamedMessageId = charB.chats[0].message[0].chatId
-    expect(charA.chats[0].message[0].chatId).toBe('msg-shared')
+    const [, charB] = bootstrap.json().database.characters
+    const chatAMessages = await persistedChatMessages(harness.app, assertion, 'chat-a')
+    const chatBMessages = await persistedChatMessages(harness.app, assertion, 'chat-b')
+    const renamedMessageId = chatBMessages[0].chatId as string
+    expect(chatAMessages[0].chatId).toBe('msg-shared')
     expect(renamedMessageId).not.toBe('msg-shared')
     expect(typeof renamedMessageId).toBe('string')
+    // The import's cross-chat uid repair also rewrote chat-b's bookmarks (db.json
+    // metadata) to the renamed id — verified against the stub bootstrap.
     expect(charB.chats[0].bookmarks).toEqual([renamedMessageId])
     expect(charB.chats[0].bookmarkNames).toEqual({ [renamedMessageId]: 'Pinned' })
   })
@@ -4530,13 +4545,12 @@ describe('Phase 9-3c message history commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(
-      bootstrap
-        .json()
-        .database.characters.flatMap((character: { chats: { message: { chatId: string }[] }[] }) =>
-          character.chats.flatMap((chat) => chat.message.map((message) => message.chatId)),
-        ),
-    ).toEqual(['msg-a', 'msg-b'])
+    const chatAMessages = await persistedChatMessages(harness.app, assertion, 'chat-a')
+    const chatBMessages = await persistedChatMessages(harness.app, assertion, 'chat-b')
+    expect([...chatAMessages, ...chatBMessages].map((message) => message.chatId)).toEqual([
+      'msg-a',
+      'msg-b',
+    ])
   })
 
   it('returns 404 and 409 for missing messages and stale message revisions', async () => {
@@ -4681,12 +4695,7 @@ describe('Phase 9-3d generation persistence command', () => {
       messageId: 'gen-2',
     })
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(bootstrap.json().database.characters[0].chats[0].message).toEqual([
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
       { role: 'user', data: 'hello', chatId: 'msg-a' },
       {
         role: 'char',
@@ -4790,7 +4799,7 @@ describe('Phase 9-3d generation persistence command', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats[0].message).toEqual([])
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([])
   })
 
   it('returns 404 and 409 for missing generation targets and stale revisions', async () => {

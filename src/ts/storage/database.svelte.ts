@@ -819,6 +819,25 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   })
 }
 
+/**
+ * Lazy-projection Phase 4.3: fill a stubbed chat's `message[]` with the messages
+ * hydrated from the server on chat-open. Targets the chat by id across all
+ * characters; a trusted projection write so it passes the read-only guard.
+ * Returns true if the chat was found and hydrated.
+ */
+export function hydrateServerChatMessages(chatId: string, message: unknown[]): boolean {
+  return withTrustedServerProjectionWrite(() => {
+    for (const character of DBState.db.characters ?? []) {
+      const chat = character.chats?.find((candidate) => candidate.id === chatId)
+      if (chat) {
+        chat.message = message as Message[]
+        return true
+      }
+    }
+    return false
+  })
+}
+
 export {
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,

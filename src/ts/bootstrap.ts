@@ -49,6 +49,11 @@ import {
 } from './server/commands'
 import { fetchServerProjectionResource } from './server/projection'
 import {
+  hydrateActiveChat,
+  resetChatHydration,
+  startChatMessageHydration,
+} from './server/chatMessageHydration.svelte'
+import {
   setActiveGenerationJobs,
   startActiveGenerationReattach,
 } from './process/reattach'
@@ -143,6 +148,10 @@ export async function loadWebInitialDatabase() {
   // re-attaches to the live stream.
   setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
   startActiveGenerationReattach()
+  // Phase 4.3: chats arrive as message-free stubs; hydrate the open chat's
+  // messages on open (and re-hydrate after a re-stub).
+  startChatMessageHydration()
+  void hydrateActiveChat()
   await startServerProjectionEvents()
 }
 
@@ -241,6 +250,11 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
     })
     if (result.status === 'ok' && result.mode === 'fields') {
       mergeServerProjectionFields(result.fields)
+      // The `characters` slice is message-free (Phase 4.3 stubs), so merging it
+      // re-stubs the open chat — re-hydrate its messages.
+      if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
+        void hydrateActiveChat({ force: true })
+      }
       // Advance by exactly one event; the fetch returns the resource as of the
       // server's *current* revision, but later events for other resources must
       // still be processed, so the cursor only moves to this event.
@@ -270,6 +284,10 @@ async function fullBootstrapResync(): Promise<void> {
         applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
         setCachedServerCommandRevision(bootstrap.projection.revision)
         setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
+        // The full re-apply re-stubbed every chat — forget cached hydration and
+        // re-hydrate the open chat (Phase 4.3).
+        resetChatHydration()
+        void hydrateActiveChat({ force: true })
       } else if (bootstrap.status === 'error') {
         console.warn(`Server projection refresh failed: ${bootstrap.error}`)
       }
@@ -341,6 +359,11 @@ async function checkNewFormat(): Promise<void> {
       v.type ??= 'character'
       v.chatPage ??= 0
       v.chats ??= []
+      // Phase 4.3: chats arrive as message-free stubs; keep `message` a valid
+      // array so the active-chat UI renders before hydration fills it on open.
+      for (const chat of v.chats) {
+        if (chat && !Array.isArray(chat.message)) chat.message = []
+      }
       v.customscript ??= []
       v.firstMessage ??= ''
       v.globalLore ??= []

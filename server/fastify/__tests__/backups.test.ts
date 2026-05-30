@@ -353,8 +353,16 @@ describe('Phase 2D backups', () => {
     const chats = afterRestore.json().database.characters[0].chats
     expect(chats).toHaveLength(1)
     expect(chats[0].id).toBe('chat-1')
+    expect(chats[0].message).toEqual([]) // stub — messages hydrate on open
+
     // The restored chat hydrates A's message — not B's, and not empty.
-    expect(chats[0].message).toEqual([{ role: 'user', data: 'message-A', chatId: 'mA' }])
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/chatMessages?id=chat-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(hydration.statusCode).toBe(200)
+    expect(hydration.json().message).toEqual([{ role: 'user', data: 'message-A', chatId: 'mA' }])
   })
 
   it('round-trips asset bytes with the backup snapshot', async () => {

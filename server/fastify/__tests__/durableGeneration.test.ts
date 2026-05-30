@@ -232,8 +232,18 @@ async function bootstrap(): Promise<{
   return (await res.json()) as never
 }
 
-function chatMessages(boot: Awaited<ReturnType<typeof bootstrap>>): Array<Record<string, unknown>> {
-  return boot.database.characters[0].chats[0].message
+async function chatMessages(
+  boot: Awaited<ReturnType<typeof bootstrap>>,
+): Promise<Array<Record<string, unknown>>> {
+  // Phase 4.3: the bootstrap ships chat stubs (message-free); read the persisted
+  // messages via the per-chat hydration endpoint.
+  const chat = boot.database.characters[0]?.chats[0] as { id?: string } | undefined
+  if (!chat?.id) return []
+  const res = await fetch(
+    `${harness.baseUrl}/api/v1/projection/chatMessages?id=${encodeURIComponent(chat.id)}`,
+  )
+  expect(res.status).toBe(200)
+  return ((await res.json()) as { message: Array<Record<string, unknown>> }).message
 }
 
 async function waitFor<T>(fn: () => Promise<T | undefined>, timeoutMs = 5000): Promise<T> {
@@ -249,7 +259,7 @@ async function waitFor<T>(fn: () => Promise<T | undefined>, timeoutMs = 5000): P
 async function waitForAssistantMessage(): Promise<Record<string, unknown>> {
   return waitFor(async () => {
     const boot = await bootstrap()
-    return chatMessages(boot).find((m) => m.role === 'char')
+    return (await chatMessages(boot)).find((m) => m.role === 'char')
   })
 }
 
@@ -279,7 +289,7 @@ describe('Durable generation (Milestone 1)', () => {
     expect(message.chatId).toBe(jobId)
     // Persisted exactly once (idempotent on generationId — EC-D4 server half).
     const boot = await bootstrap()
-    expect(chatMessages(boot).filter((m) => m.role === 'char')).toHaveLength(1)
+    expect((await chatMessages(boot)).filter((m) => m.role === 'char')).toHaveLength(1)
   })
 
   // EC-D3: drop the initial connection mid-stream, reattach to the still-running
@@ -453,7 +463,7 @@ describe('Durable generation (Milestone 1)', () => {
     // Nothing was started — bootstrap shows no active job and an empty transcript.
     const boot = await bootstrap()
     expect(boot.activeGenerationJobs).toEqual([])
-    expect(chatMessages(boot)).toEqual([])
+    expect(await chatMessages(boot)).toEqual([])
   })
 
   // Step 2 gotcha B + E: explicit cancel aborts the dispatch; a streaming cancel
@@ -559,7 +569,7 @@ describe('Durable generation (Milestone 1)', () => {
     const boot = await bootstrap()
     // The derived scriptstate + the assistant message both persisted server-side.
     expect(boot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
-    const assistant = chatMessages(boot).find((m) => m.role === 'char')
+    const assistant = (await chatMessages(boot)).find((m) => m.role === 'char')
     expect(assistant?.data).toBe('reply text')
     controller.abort()
   })

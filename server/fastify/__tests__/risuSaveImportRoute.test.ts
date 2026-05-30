@@ -227,8 +227,12 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
-    const messages = bootstrap.json().database.characters[0].chats[0].message as Array<{
+    // Phase 4.3: messages are hydrated via the per-chat endpoint, not the stub.
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/chatMessages?id=chat-a',
+    })
+    const messages = hydration.json().message as Array<{
       chatId?: unknown
       data?: unknown
     }>
@@ -242,6 +246,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(messages.every((message) => typeof message.chatId === 'string' && message.chatId)).toBe(
       true,
     )
+    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().database).toMatchObject({
       characters: [
         expect.objectContaining({
@@ -250,7 +255,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
             expect.objectContaining({
               id: 'chat-a',
               localLore: [],
-              message: messages,
+              message: [], // stub
             }),
           ],
         }),

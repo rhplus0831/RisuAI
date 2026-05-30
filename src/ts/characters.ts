@@ -59,6 +59,10 @@ import {
 } from './characterCommands'
 import { isFastifyServer } from './platform'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import {
+  ensureAllChatsHydrated,
+  hydrateChatMessages,
+} from './server/chatMessageHydration.svelte'
 
 export function createNewCharacter() {
   const previous = currentCharacterStateSnapshot()
@@ -261,6 +265,8 @@ export async function exportChat(page: number) {
     const db = DBState.db
     const chat = db.characters[selectedID].chats[page]
     const char = db.characters[selectedID]
+    // Phase 4.3: the exported chat may not be the open (hydrated) one.
+    if (chat?.id) await hydrateChatMessages(chat.id)
     const date = new Date().toJSON()
     const htmlChatParse = async (v: string) => {
       v = parseMarkdownSafe(v)
@@ -631,6 +637,8 @@ export async function importChat() {
 
 export async function exportAllChats() {
   try {
+    // Phase 4.3: serializes every chat's history — hydrate the lazy chats first.
+    await ensureAllChatsHydrated()
     const selectedID = get(selectedCharID)
     const db = getDatabase()
     const char = db.characters[selectedID]

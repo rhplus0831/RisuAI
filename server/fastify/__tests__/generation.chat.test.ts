@@ -739,6 +739,21 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return parseEvents(res.body)
   }
 
+  // Read a persisted chat's messages via the Phase 4.3 hydration endpoint (the
+  // bootstrap now ships message-free stubs).
+  async function persistedMessages(
+    assertion: string,
+    chatId = 'chat-1',
+  ): Promise<Array<{ role: string; data: string; chatId: string; [k: string]: unknown }>> {
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(res.statusCode).toBe(200)
+    return res.json().message
+  }
+
   async function bootstrapChat(
     assertion: string,
   ): Promise<{
@@ -751,7 +766,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(200)
-    return res.json().database.characters[0].chats[0]
+    // Chat metadata (incl. scriptstate) comes from the stub bootstrap; the
+    // message[] is hydrated separately (Phase 4.3 stubs the bootstrap).
+    const chat = res.json().database.characters[0].chats[0]
+    return { ...chat, message: await persistedMessages(assertion, chat.id) }
   }
 
   it('runs a Lua input trigger that rewrites the transcript + persists it (slice 3b-4)', async () => {
@@ -1360,15 +1378,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const done = events.at(-1)!.data as { postGeneration?: { revision?: number } }
     expect(done.postGeneration?.revision).toBe(2)
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    const persisted = bootstrap.json().database.characters[0].chats[0].message as Array<{
-      role: string
-      data: string
-    }>
+    const persisted = await persistedMessages(assertion)
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply' })
   })
 
@@ -1527,15 +1537,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(done.postGeneration?.revision).toBe(2)
     expect(done.postGeneration?.messagePatch).toBeUndefined()
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    const persisted = bootstrap.json().database.characters[0].chats[0].message as Array<{
-      role: string
-      data: string
-    }>
+    const persisted = await persistedMessages(assertion)
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo REPLY' })
   })
 
@@ -1581,16 +1583,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    const persisted = bootstrap.json().database.characters[0].chats[0].message as Array<{
-      role: string
-      data: string
-      chatId: string
-    }>
+    const persisted = await persistedMessages(assertion)
     // Extended the SAME assistant row (chatId preserved); no duplicate appended.
     expect(persisted).toHaveLength(2)
     expect(persisted[1].chatId).toBe('msg-char-1')
@@ -1623,16 +1616,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    const persisted = bootstrap.json().database.characters[0].chats[0].message as Array<{
-      role: string
-      data: string
-      chatId: string
-    }>
+    const persisted = await persistedMessages(assertion)
     // The old target was REPLACED (not duplicated): the char row carries the new
     // text under a fresh generation id, and the old reply is gone.
     expect(persisted).toHaveLength(2)

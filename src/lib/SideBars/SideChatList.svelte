@@ -35,6 +35,7 @@
   import { language } from 'src/lang'
   import Toggles from './Toggles.svelte'
   import { changeChatTo, createChatCopyName } from 'src/ts/globalApi.svelte'
+  import { ensureAllChatsHydrated } from 'src/ts/server/chatMessageHydration.svelte'
   import {
     currentChatStateSnapshot,
     dispatchCreateChat,
@@ -775,7 +776,10 @@
       </button>
       <button
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
-        onclick={() => {
+        onclick={async () => {
+          // Phase 4.3: the branch tree hashes every chat's messages; hydrate the
+          // lazily-loaded chats before opening it.
+          await ensureAllChatsHydrated()
           alertStore.set({
             type: 'branches',
             msg: '',

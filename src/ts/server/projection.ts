@@ -89,6 +89,65 @@ export async function fetchServerProjectionResource(
   return { status: 'error', error: 'Invalid projection mode' }
 }
 
+export type ServerChatMessagesResult =
+  | { status: 'ok'; revision: number; chatId: string; message: unknown[] }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
+
+/**
+ * Per-chat message hydration (lazy-projection Phase 4.3). The bootstrap ships
+ * chat stubs (empty `message[]`); this fetches one chat's messages on open.
+ */
+export async function fetchServerChatMessages(
+  chatId: string,
+  options: { signal?: AbortSignal | null } = {},
+): Promise<ServerChatMessagesResult> {
+  if (!canUseServerProjection()) return { status: 'unavailable' }
+
+  const url = `${PROJECTION_ENDPOINT}/chatMessages?id=${encodeURIComponent(chatId)}`
+  const auth = await getNodeServerProxyAuth()
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'GET',
+      signal: options.signal ?? undefined,
+      headers: { 'risu-auth': auth },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // Reported via HTTP status below.
+  }
+
+  if (!response.ok) {
+    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+  }
+  if (!body || typeof body !== 'object') {
+    return { status: 'error', error: 'Invalid chat-messages response' }
+  }
+
+  const record = body as Record<string, unknown>
+  const revision = record.revision
+  if (!Number.isInteger(revision) || (revision as number) < 0) {
+    return { status: 'error', error: 'Invalid projection revision' }
+  }
+  if (record.mode !== 'chat-messages' || !Array.isArray(record.message)) {
+    return { status: 'error', error: 'Invalid chat-messages response' }
+  }
+  return {
+    status: 'ok',
+    revision: revision as number,
+    chatId: typeof record.chatId === 'string' ? record.chatId : chatId,
+    message: record.message as unknown[],
+  }
+}
+
 function errorMessageFromBody(body: unknown, fallback: string): string {
   if (body && typeof body === 'object') {
     const record = body as Record<string, unknown>

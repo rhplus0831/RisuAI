@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import { loadPersistedWithMessages } from '../repository.js'
+import { loadChatMessages, loadStubProjection } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
 
 // Targeted per-resource projection (lazy-projection Phase 2).
@@ -62,12 +62,30 @@ export function registerProjectionRoutes(
   authState: AuthState,
   dataDir: string,
 ): void {
-  app.get<{ Params: { resource: string } }>(
+  app.get<{ Params: { resource: string }; Querystring: { id?: string } }>(
     '/api/v1/projection/:resource',
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       const { resource } = req.params
       const { revision } = getSchemaState(db)
+
+      // Lazy-projection Phase 4.3: per-chat message hydration. The client fetches
+      // this on chat-open to fill the stubbed `message[]`. Distinct from the
+      // event-driven `chat` resource (which projects chat metadata).
+      if (resource === 'chatMessages') {
+        const chatId = req.query.id
+        if (typeof chatId !== 'string' || chatId.trim() === '') {
+          return { revision, resource, mode: 'full' as const }
+        }
+        return {
+          revision,
+          resource,
+          mode: 'chat-messages' as const,
+          chatId,
+          message: loadChatMessages(db, dataDir, chatId),
+        }
+      }
+
       const fieldKeys = resourceProjectionFields(resource)
 
       if (fieldKeys === null) {
@@ -75,7 +93,9 @@ export function registerProjectionRoutes(
         return { revision, resource, mode: 'full' as const }
       }
 
-      const persisted = loadPersistedWithMessages(db, dataDir)
+      // Ship chat stubs (message-free) here too; the client re-hydrates the open
+      // chat after merging a `characters` slice (see bootstrap.ts hydration).
+      const persisted = loadStubProjection(db, dataDir)
       const masked = maskProviderSecrets(persisted.database)
       const source =
         masked && typeof masked === 'object' && !Array.isArray(masked)

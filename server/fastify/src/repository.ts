@@ -7,6 +7,7 @@ import {
   applyChatMessageDiff,
   deleteChatMessages,
   getAllChatMessagesGrouped,
+  getChatMessages,
   replaceAllChatMessages,
 } from './messageStore.js'
 
@@ -245,6 +246,66 @@ export function stripChatMessages(next: Persisted): Persisted {
     delete chat.message
   })
   return next
+}
+
+/**
+ * One-time proactive extraction (lazy-projection Phase 4): if `db.json` still
+ * carries embedded `chat.message[]` (an existing v3 store upgraded to v4, or a
+ * hand-written fixture), move every chat's messages into the table and rewrite
+ * db.json message-free. Idempotent — a no-op once db.json is message-free, so it
+ * is safe to call on every boot. This guarantees the stub projection's counts
+ * and the per-chat hydration endpoint are always backed by the table, not by
+ * stale embedded arrays. Run at startup, before serving requests.
+ */
+export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void {
+  const raw = loadPersisted(dataDir)
+  let hasEmbedded = false
+  eachChat(raw.database, (chat) => {
+    if (Array.isArray(chat.message)) hasEmbedded = true
+  })
+  if (!hasEmbedded) return
+
+  const hydrated = loadPersistedWithMessages(db, dataDir)
+  let transactionOpen = false
+  db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
+  try {
+    const messageFree = splitChatMessagesIntoTable(db, hydrated)
+    db.exec('COMMIT')
+    transactionOpen = false
+    writePersisted(dataDir, messageFree)
+  } catch (err) {
+    if (transactionOpen) db.exec('ROLLBACK')
+    throw err
+  }
+}
+
+/**
+ * The bootstrap / foreign-event projection of the database: chat *metadata* only,
+ * every `chat.message[]` replaced by an empty array (Slice 4.3 stub). The client
+ * hydrates a chat's messages on open. Prompt assembly keeps using
+ * `loadPersistedWithMessages` — only the wire projection is stubbed.
+ */
+export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted {
+  const persisted = loadPersisted(dataDir)
+  eachChat(persisted.database, (chat) => {
+    chat.message = []
+  })
+  return persisted
+}
+
+/** One chat's messages for the hydration endpoint (table, with embedded fallback). */
+export function loadChatMessages(db: DatabaseSync, dataDir: string, chatId: string): unknown[] {
+  const rows = getChatMessages(db, chatId)
+  if (rows.length > 0) return rows
+  // Fallback for a chat not yet extracted into the table (defensive — startup
+  // extraction normally makes the table authoritative).
+  const persisted = loadPersisted(dataDir)
+  let embedded: unknown[] = []
+  eachChat(persisted.database, (chat) => {
+    if (chat.id === chatId && Array.isArray(chat.message)) embedded = chat.message
+  })
+  return embedded
 }
 
 export function applyImport(
