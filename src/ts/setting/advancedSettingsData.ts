@@ -32,13 +32,6 @@ export const advancedSettingsItems: SettingItem[] = [
     bindKey: 'loreBookToken',
     options: { min: 0, max: 4096 },
   },
-  {
-    id: 'adv.autoContinueMin',
-    type: 'number',
-    labelKey: 'autoContinueMinTokens',
-    bindKey: 'autoContinueMinTokens',
-    options: { min: 0 },
-  },
 
   // Prompts
   {
@@ -240,14 +233,6 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'block mb-1',
     containerClasses: 'pl-7',
     options: { min: 30, max: 3600, inputClassName: 'w-full', marginBottom: false },
-  },
-  {
-    id: 'adv.autoCont',
-    type: 'check',
-    labelKey: 'autoContinueChat',
-    bindKey: 'autoContinueChat',
-    helpKey: 'autoContinueChat',
-    classes: 'mt-4',
   },
   {
     id: 'adv.remIncomp',

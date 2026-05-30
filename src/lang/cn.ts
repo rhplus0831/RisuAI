@@ -125,8 +125,6 @@ export const languageChinese = {
       '若 Claude 过载发生，叡苏会透过继续相同的提示来阻止它，以减少过载的概率。此功能仅适用于串流回应（Streamed Responses），对非官方 API 端点可能无效。',
     triggerScript:
       '触发器（Trigger）是一个自定义脚本，在符合条件时执行。可用于修改聊天数据、执行命令、更改变量等。类型取决于触发时的情况，也可由按钮触发，如 {{button::Display::TriggerName}} 或带有 risu-trigger="<TriggerName>" 属性的 HTML 按钮。',
-    autoContinueChat:
-      '激活后，当聊天不以标点符号结束时，系统将尝试继续对话。请勿在不使用标点符号的语言中激活此功能。',
     combineTranslation:
       '激活后，将把被 HTML 标签分隔但属于同一句的文本合并后进行翻译，并在翻译结果上重新套用“修改显示”（Modify Display）。这有助于提高翻译的准确性。若激活此后接口出现异常，请关闭此选项并回报问题。',
     dynamicAssets:
@@ -1034,8 +1032,6 @@ export const languageChinese = {
   importFromRealmDesc: 'RisuRealm 提供超过 1000 位角色',
   random: '随机',
   metaData: 'Metadata',
-  autoContinueMinTokens: '目标 Tokens（自动继续）',
-  autoContinueChat: '防止不完整回复（自动继续）',
   removeIncompleteResponse: '移除不完整句子',
   tokenizer: 'Tokenizer',
   chatFormating: '聊天格式',

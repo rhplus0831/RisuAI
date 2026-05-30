@@ -565,8 +565,6 @@ export function setDatabase(data: Database) {
     data.ollamaCloudModel = data.ollamaModel
     data.ollamaCloudModelName = data.ollamaModelName
   }
-  data.autoContinueChat ??= false
-  data.autoContinueMinTokens ??= 0
   data.repetition_penalty ??= 1
   data.min_p ??= 0
   data.top_a ??= 0
@@ -1189,8 +1187,6 @@ export interface Database {
   ollamaCloudModel: string
   ollamaCloudModelName: string
   ollamaThinkingMode: 'auto' | 'off' | 'on' | 'low' | 'medium' | 'high'
-  autoContinueChat: boolean
-  autoContinueMinTokens: number
   removeIncompleteResponse: boolean
   customTokenizer: string
   instructChatTemplate: string

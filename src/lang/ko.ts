@@ -135,8 +135,6 @@ export const languageKorean = {
       'Claude 과부하가 발생하면, Risuai는 동일한 프롬프트로 계속 진행하여 과부하 발생 가능성을 줄이려고 시도합니다. 스트리밍 응답에서만 작동합니다. 공식 API 엔드포인트가 아닌 경우 작동하지 않을 수 있습니다.',
     triggerScript:
       '트리거 스크립트는 조건이 충족될 때 실행되는 커스텀 스크립트입니다. 채팅 데이터를 수정하거나, 명령어를 실행하거나, 변수를 변경하는 등의 작업에 사용할 수 있습니다. 실행 시점은 타입에 따라 다릅니다. {{button::Display::TriggerName}}을 사용하여 버튼으로 실행하거나, `risu-trigger="<TriggerName>"` 속성이 있는 HTML 버튼으로도 실행할 수 있습니다.',
-    autoContinueChat:
-      '활성화되면 문장 부호로 끝나지 않을 경우 채팅을 계속 이어가려고 시도합니다. 문장 부호를 사용하지 않는 언어에서는 사용하지 마세요.',
     combineTranslation:
       '활성화된 경우, 한 문장이지만 HTML 태그로 분리된 텍스트를 모두 합쳐서 번역한 후, 번역된 결과에 다시 디스플레이 수정 스크립트를 적용합니다.\n이를 통해 번역기가 올바른 번역을 하도록 도와줍니다.\n이 옵션을 활성화하고 UI가 이상해지면 옵션을 끄고 제보해 주세요.',
     dynamicAssets:
@@ -1112,8 +1110,6 @@ export const languageKorean = {
   importFromRealmDesc: '여러 캐릭터들이 공유된 RisuRealm에서 캐릭터를 고르세요.',
   random: '랜덤',
   metaData: '메타데이터',
-  autoContinueMinTokens: '타겟 토큰 (자동 컨티뉴)',
-  autoContinueChat: '불완전 문단 방지 (자동 컨티뉴)',
   removeIncompleteResponse: '불완전 문단 제거',
   tokenizer: '토크나이저',
   chatFormating: '채팅 포맷',

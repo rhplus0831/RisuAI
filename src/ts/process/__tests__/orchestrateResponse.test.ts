@@ -16,10 +16,6 @@ const fakes = vi.hoisted(() => ({
     next: null as unknown,
     calls: 0,
   },
-  autoContinue: {
-    next: { shouldContinue: false, resultTokens: 0 } as unknown,
-    calls: 0,
-  },
   igp: { calls: 0 },
   inlay: { calls: 0, next: { text: 'inlay-text' } as { text: string; promise?: Promise<string> } },
   tts: { calls: 0 },
@@ -44,13 +40,6 @@ vi.mock('../postGeneration/outputTrigger', () => ({
   applyOutputTrigger: async () => {
     fakes.output.calls++
     return fakes.output.next
-  },
-}))
-
-vi.mock('../autoContinue', () => ({
-  evaluateAutoContinue: async () => {
-    fakes.autoContinue.calls++
-    return fakes.autoContinue.next
   },
 }))
 
@@ -129,8 +118,6 @@ function seedDb(extra: Partial<Database> = {}) {
     subModel: 'gpt-4o',
     characters: [char],
     ttsAutoSpeech: false,
-    autoContinueMinTokens: 0,
-    autoContinueChat: false,
     ...extra,
   } as unknown as Database)
 }
@@ -158,14 +145,12 @@ beforeEach(() => {
   fakes.stream.calls = 0
   fakes.nonStream.calls = 0
   fakes.output.calls = 0
-  fakes.autoContinue.calls = 0
   fakes.igp.calls = 0
   fakes.inlay.calls = 0
   fakes.tts.calls = 0
   fakes.stream.next = null
   fakes.nonStream.next = null
   fakes.output.next = null
-  fakes.autoContinue.next = { shouldContinue: false, resultTokens: 0 }
   fakes.inlay.next = { text: 'inlay-text' }
   fakes.rerolls.calls = []
 })
@@ -217,7 +202,6 @@ describe('orchestrateResponse - streaming branch', () => {
     expect(fakes.inlay.calls).toBe(0)
     expect(fakes.tts.calls).toBe(0)
     expect(fakes.rerolls.calls).toHaveLength(0)
-    expect(fakes.autoContinue.calls).toBe(0)
     expect(fakes.igp.calls).toBe(0)
   })
 
@@ -283,26 +267,6 @@ describe('orchestrateResponse - non-streaming branch', () => {
     )
 
     expect(fakes.rerolls.calls).toHaveLength(0)
-  })
-})
-
-describe('orchestrateResponse - auto-continue handoff', () => {
-  it('returns continue with resultTokens and skips IGP', async () => {
-    seedDb()
-    fakes.stream.next = {
-      result: 'short',
-      emoChanged: false,
-      msgIndex: 0,
-      lastResponseChunk: {},
-      streamAborted: false,
-    }
-    fakes.output.next = { chat: makeChat(), triggerChat: null, resendChat: false }
-    fakes.autoContinue.next = { shouldContinue: true, resultTokens: 42 }
-
-    const result = await orchestrateResponse(baseArgs())
-
-    expect(result).toEqual({ status: 'continue', resultTokens: 42 })
-    expect(fakes.igp.calls).toBe(0)
   })
 })
 

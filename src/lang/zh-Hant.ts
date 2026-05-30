@@ -124,8 +124,6 @@ export const languageChineseTraditional = {
       '當 Claude 發生過載時，Risuai 會嘗試繼續發送相同的提示詞以防止請求中斷，藉此減少過載機率。此功能僅適用於串流回應 (Streamed Responses)，對非官方 API 端點可能無效。',
     triggerScript:
       '觸發式（Trigger）是一個自訂腳本，在符合條件時執行。可用於修改對話資料、執行指令、更改變數等。類型取決於觸發時的情況，也可由按鈕觸發，如 {{button::Display::TriggerName}} 或帶有 risu-trigger="<TriggerName>" 屬性的 HTML 按鈕。',
-    autoContinueChat:
-      '啟用後，當角色回應未以標點符號結尾時，系統將自動嘗試接續生成。請勿在標點不規範的情境下啟用。',
     combineTranslation:
       '啟用後，將把被 HTML 標籤分隔但屬於同一句的文字合併後進行翻譯，並在翻譯結果上重新套用「修改顯示」（Modify Display）。這有助於提高翻譯的準確性。若啟用此功能後介面出現異常，請關閉此選項並回報問題。',
     dynamicAssets:
@@ -1054,8 +1052,6 @@ export const languageChineseTraditional = {
   importFromRealmDesc: 'RisuRealm 提供超過 1000 位角色',
   random: '隨機',
   metaData: '中繼資料',
-  autoContinueMinTokens: '目標 Token（自動繼續）',
-  autoContinueChat: '防止不完整回應（自動繼續）',
   removeIncompleteResponse: '移除不完整句子',
   tokenizer: 'Tokenizer',
   chatFormating: '對話格式',

@@ -2,7 +2,6 @@ import { addRerolls } from '../prereroll'
 import { DBState } from '../../stores.svelte'
 import { runInlayScreen } from '../inlayScreen'
 import { sayTTS } from '../tts'
-import { evaluateAutoContinue } from '../autoContinue'
 import { evaluateIgp } from './igp'
 import { applyOutputTrigger } from './outputTrigger'
 import { applyNonStreamResponse } from './nonStreamResponse'
@@ -18,7 +17,6 @@ import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 
 export type OrchestrateResponseResult =
   | { status: 'aborted' }
-  | { status: 'continue'; resultTokens: number }
   | {
       status: 'done'
       currentChat: Chat
@@ -29,11 +27,10 @@ export type OrchestrateResponseResult =
 
 /**
  * Subset of the sendChat `arg` parameter the orchestrator forwards onto the
- * stream / non-stream helpers and reads for auto-continue accounting.
+ * stream / non-stream helpers (the `continue` mode flag).
  */
 export interface OrchestrateResponseArg {
   continue?: boolean
-  usedContinueTokens?: number
 }
 
 export interface OrchestrateResponseArgs {
@@ -69,13 +66,9 @@ export interface OrchestrateResponseArgs {
 /**
  * Run the post-dispatch response stage: route to the streaming or
  * non-streaming response helper, apply the shared output-trigger, drive
- * the streaming-only inlay / TTS side effects, evaluate auto-continue, and
- * run IGP.
+ * the streaming-only inlay / TTS side effects, and run IGP.
  *
  * Returns a discriminated union. The coordinator owns:
- *   - `status: 'continue'` → release `doingChat` lease, clear
- *     `iOwnDoingChat`, and recursively call `sendChat` with `continue: true`.
- *     The recursion cannot live in this helper without a circular import.
  *   - `status: 'aborted'`  → return false from sendChat.
  *   - `status: 'done'`     → continue into stage 4 with `currentChat`,
  *     `result`, `emoChanged`, `resendChat`.
@@ -204,16 +197,6 @@ export async function orchestrateResponse(
         resendChat = true
       }
     }
-  }
-
-  const { shouldContinue, resultTokens } = await evaluateAutoContinue({
-    result,
-    usedContinueTokens: arg.usedContinueTokens || 0,
-    db: DBState.db,
-  })
-
-  if (shouldContinue) {
-    return { status: 'continue', resultTokens }
   }
 
   await evaluateIgp({

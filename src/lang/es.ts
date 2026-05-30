@@ -154,8 +154,6 @@ export const languageSpanish = {
       'Si ocurre sobrecarga de Claude, Risuai intentará evitarla continuando con el mismo prompt, haciéndolo menos probable que ocurra. Funciona solo para respuestas transmitidas. Esto podría no funcionar para endpoints de API no oficiales.',
     triggerScript:
       'Trigger Script es un script personalizado que se ejecuta cuando se cumple una condición. Se puede usar para modificar los datos del chat, ejecutar un comando, cambiar variables, etc. El tipo depende de cuándo se activa. También puede ejecutarse mediante botones, que se pueden usar con {{button::Display::TriggerName}}, o botones HTML con el atributo `risu-trigger="<TriggerName>"`.',
-    autoContinueChat:
-      'Si está habilitado, intentará continuar el chat si no termina con un signo de puntuación. NO USES ESTO CON IDIOMAS QUE NO USAN SIGNOS DE PUNTUACIÓN.',
     combineTranslation:
       'Si está habilitado, el texto que es una oración pero está separado por etiquetas HTML se combinará y se traducirá, luego se volverá a aplicar el script de Modificar Visualización a la respuesta traducida.\nEsto ayuda al traductor a realizar la traducción correcta.\nSi la interfaz de usuario se vuelve extraña cuando activas esta opción, desactiva la opción e informa sobre el problema.',
     dynamicAssets:
@@ -1129,8 +1127,6 @@ export const languageSpanish = {
   importFromRealmDesc: 'Elige entre más de 1000 personajes en RisuRealm',
   random: 'Aleatorio',
   metaData: 'Meta Data',
-  autoContinueMinTokens: 'Tokens Objetivo (Continuar Automáticamente)',
-  autoContinueChat: 'Anti-Respuesta Incompleta (Continuar Automáticamente)',
   removeIncompleteResponse: 'Eliminar Frases Incompletas',
   tokenizer: 'Tokenizador',
   chatFormating: 'Formateo de Chat',

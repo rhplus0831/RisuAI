@@ -58,7 +58,6 @@ export async function sendChat(
     chatAdditonalTokens?: number
     signal?: AbortSignal
     continue?: boolean
-    usedContinueTokens?: number
     preview?: boolean
     previewPrompt?: boolean
     regenerateMessageId?: string
@@ -123,7 +122,7 @@ export async function sendChat(
   //   (a) own         — fresh call, finally clears.
   //   (b) reentrant   — chatProcessIndex !== -1 while doingChat is already
   //                     true; we never took ownership, finally must not clear.
-  //   (c) handoff     — auto-continue or sendAIprompt resend recurse into
+  //   (c) handoff     — a stage-4 `resend` recurses into
   //                     sendChat. The inner call's entry guard refuses on
   //                     `chatProcessIndex === -1` while doingChat is true, so
   //                     before recursing we clear `doingChat` manually AND
@@ -377,17 +376,6 @@ export async function sendChat(
     })
     if (orchestrate.status === 'aborted') {
       return false
-    }
-    if (orchestrate.status === 'continue') {
-      // Handoff — see iOwnDoingChat contract above.
-      doingChat.set(false)
-      iOwnDoingChat = false
-      return await sendChat(chatProcessIndex, {
-        chatAdditonalTokens: arg.chatAdditonalTokens,
-        continue: true,
-        signal: abortSignal,
-        usedContinueTokens: orchestrate.resultTokens,
-      })
     }
     currentChat = orchestrate.currentChat
     const result = orchestrate.result

@@ -35,8 +35,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   assetMaxDifference: 'advanced',
   assetWidth: 'display',
   authRefreshes: 'providers',
-  autoContinueChat: 'runtime',
-  autoContinueMinTokens: 'runtime',
   autoScrollToNewMessage: 'sidebar',
   autoTranslate: 'language',
   autoTranslateCachedOnly: 'language',

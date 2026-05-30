@@ -142,7 +142,6 @@ const FIXTURES = [
   'continue',
   'regenerate',
   'provider-error',
-  'auto-continue',
   'author-note',
   'cache-point',
   'persona',

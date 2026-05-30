@@ -148,8 +148,6 @@ export const languageVietnamese = {
       'Nếu xảy ra quá tải Claude, Risuai sẽ cố gắng ngăn chặn bằng cách tiếp tục với cùng một lời nhắc, giúp giảm khả năng xảy ra lỗi. Chỉ hoạt động với các phản hồi được truyền trực tuyến. Điều này có thể không hoạt động đối với các điểm cuối api không chính thức.',
     triggerScript:
       'Trigger Script là tập lệnh tùy chỉnh chạy khi điều kiện được đáp ứng. Nó có thể được sử dụng để sửa đổi dữ liệu trò chuyện, chạy lệnh, thay đổi biến, v.v. Loại kích hoạt phụ thuộc vào thời điểm kích hoạt. Nó cũng có thể được chạy bằng các nút, có thể được sử dụng với {{button::Display::TriggerName}} hoặc các nút HTML có thuộc tính `risu-trigger="<TriggerName>"`.',
-    autoContinueChat:
-      'Nếu được bật, nó sẽ cố gắng tiếp tục cuộc trò chuyện nếu nó không kết thúc bằng dấu câu. KHÔNG SỬ DỤNG TÍNH NĂNG NÀY VỚI CÁC NGÔN NGỮ KHÔNG SỬ DỤNG DẤU CÂU.',
     combineTranslation:
       'Nếu được bật, văn bản là một câu nhưng bị tách bởi các thẻ HTML sẽ được kết hợp lại và dịch, sau đó tập lệnh Sửa đổi hiển thị sẽ được áp dụng lại cho đầu ra đã dịch.\nĐiều này giúp trình dịch thực hiện bản dịch chính xác.\nNếu giao diện người dùng trở nên kỳ lạ khi bạn bật tùy chọn này, hãy tắt tùy chọn và báo cáo.',
     dynamicAssets:
@@ -1108,8 +1106,6 @@ export const languageVietnamese = {
   importFromRealmDesc: 'Chọn hơn 1000 nhân vật trong RisuRealm',
   random: 'Ngẫu nhiên',
   metaData: 'Siêu dữ liệu',
-  autoContinueMinTokens: 'Token mục tiêu (Tự động tiếp tục)',
-  autoContinueChat: 'Chống phản hồi không hoàn chỉnh (Tự động tiếp tục)',
   removeIncompleteResponse: 'Xóa câu không hoàn chỉnh',
   tokenizer: 'Tokenizer',
   chatFormating: 'Định dạng trò chuyện',

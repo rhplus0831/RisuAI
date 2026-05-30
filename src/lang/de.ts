@@ -157,8 +157,6 @@ export const languageGerman = {
       'Wenn eine Claude-Überlastung auftritt, versucht Risuai, diese zu verhindern, indem es mit derselben Anweisung fortfährt, wodurch die Wahrscheinlichkeit verringert wird. Funktioniert nur für gestreamte Antworten. Dies funktioniert möglicherweise nicht für inoffizielle API-Endpunkte.',
     triggerScript:
       'Trigger Script ist ein benutzerdefiniertes Skript, das ausgeführt wird, wenn eine Bedingung erfüllt ist. Es kann verwendet werden, um die Chat-Daten zu ändern, einen Befehl auszuführen, eine Variable zu ändern usw. Der Typ hängt davon ab, wann es ausgelöst wird. Es kann auch durch Schaltflächen ausgeführt werden, die mit {{button::Display::TriggerName}} oder HTML-Schaltflächen mit dem Attribut `risu-trigger="<TriggerName>"` verwendet werden können.',
-    autoContinueChat:
-      'Wenn aktiviert, wird versucht, den Chat fortzusetzen, wenn er nicht mit einem Satzzeichen endet. VERWENDEN SIE DIES NICHT BEI SPRACHEN, DIE KEINE SATZZEICHEN VERWENDEN.',
     combineTranslation:
       "Wenn aktiviert, wird Text, der einen Satz bildet, aber durch HTML-Tags getrennt ist, zusammengefasst und übersetzt. Anschließend wird das Skript 'Modify Display' erneut auf die übersetzte Ausgabe angewendet.\nDies hilft dem Übersetzer, eine korrekte Übersetzung zu erstellen.\nWenn die Benutzeroberfläche bei Aktivierung dieser Option seltsam aussieht, deaktivieren Sie die Option bitte und melden Sie dies.",
     dynamicAssets:
@@ -1129,8 +1127,6 @@ export const languageGerman = {
   importFromRealmDesc: 'Wählen Sie über 1000 Charaktere in RisuRealm',
   random: 'Zufällig',
   metaData: 'Metadaten',
-  autoContinueMinTokens: 'Ziel-Tokens (Automatische Fortsetzung)',
-  autoContinueChat: 'Anti-Unvollständige Antwort (Automatische Fortsetzung)',
   removeIncompleteResponse: 'Unvollständige Sätze entfernen',
   tokenizer: 'Tokenizer',
   chatFormating: 'Chat-Formatierung',
