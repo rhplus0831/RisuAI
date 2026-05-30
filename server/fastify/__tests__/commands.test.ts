@@ -218,6 +218,36 @@ describe('Phase 9-1 command foundation', () => {
     expect(res.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 
+  it('emits no event and leaves revision + db.json untouched on a stale (409) write', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDatabase(harness.app, assertion, { useServerPromptAssembly: false })
+    // Drop the import's own event so we observe only what the stale write does.
+    harness.commandEvents.clear()
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, patch: { useServerPromptAssembly: true } },
+    })
+    expect(res.statusCode).toBe(409)
+
+    // The revision-mismatch guard throws BEFORE the mutate callback, so nothing
+    // may have leaked: no event, no revision bump, no db.json write.
+    expect(harness.commandEvents.list()).toEqual([])
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database).toMatchObject({ useServerPromptAssembly: false })
+
+    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(onDisk.database).toMatchObject({ useServerPromptAssembly: false })
+  })
+
   it('applies the runtime settings harness command, emits an event, and appears in bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

@@ -1,0 +1,199 @@
+# Fastify Port Report
+
+Date: 2026-05-31 · Branch: `fastify` (593 commits ahead of `main`)
+
+This report documents (1) which responsibilities the Fastify port has **moved to the
+server**, (2) which responsibilities **remain on the client**, and (3) the result of a
+regression + test-coverage audit of the port. It is grounded in the code on the
+`fastify` branch (the source of truth); `docs/structure/` holds the navigation map and
+`docs/leftover.md` the canonical list of intentionally-deferred items.
+
+## TL;DR
+
+- **The port is sound.** A 10-subsystem adversarial audit (each finding independently
+  verified by a second model, cross-checked by hand against the code) found **no
+  confirmed critical or high-severity port regression**. The data-path invariants —
+  atomic SQLite transactions, post-COMMIT db.json ordering, revision-bump-exactly-once,
+  idempotent generation persistence, the no-data-loss lorebook watcher, asset-GC
+  reference counting — hold up under scrutiny.
+- A handful of **real but low/medium, self-healing** issues were confirmed (listed
+  below). None lose data; most are corrected by the next revision-conflict reconcile.
+- **No redundant/dead tests** were found. All 6 subsystem reviewers + a dedicated
+  removed-feature scan returned zero, independently re-confirmed by hand (the "group",
+  "supaMemory", "auto-continue" lookalikes are all live, legitimately-named code).
+- **Coverage was added** for the highest-value untested invariants: table-wide route
+  auth enforcement, the 409-stale-write no-side-effects contract, and active-writer
+  header validation.
+
+Baselines at audit time (all green):
+
+| Suite              | Command                      | Result                                           |
+| ------------------ | ---------------------------- | ------------------------------------------------ |
+| Server             | `pnpm api:test`              | 1388 → **1395** passing (77 → 78 files)          |
+| Client             | `pnpm test`                  | 1013 passing (+4 pre-existing skipped, 89 files) |
+| Architecture audit | `pnpm client-thinning:audit` | pass (23 AST invariants)                         |
+
+---
+
+## Part 1 — Responsibilities moved to Fastify (server)
+
+The server (`server/fastify/src/`) is now authoritative for all durable state and the
+entire generation pipeline. State lives in `data/`: `risu.db` (SQLite), `db.json`
+(domain blob), `assets/` (content-addressed), `backups/`, and the auth files.
+
+| #   | Responsibility                                            | Owner files                                                                                                                                                                                         | What the server now does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 1   | **App wiring / lifecycle**                                | `app.ts`, `index.ts`                                                                                                                                                                                | `buildApp()` opens the DB, runs message-extraction + legacy-memory backfill, builds every registry (active-writer, command-event sink, memory worker, proxy + generation job registries, asset-GC timer), registers all routes, and serves the SPA + injects `globalThis.__FASTIFY__`.                                                                                                                                                                                                                                            |
+| 2   | **SQLite persistence (schema + migrations)**              | `db.ts`, `messageStore.ts`                                                                                                                                                                          | Owns `risu.db`: `schema_version` with a monotonic `revision`, a 6-step forward-only migration runner, and the `messages` / `chat_hypa_v3` / `memory_*` tables. `messageStore.ts` is the CRUD layer: rows keyed `(chat_id, seq)`, O(1) surgical `applyChatMessageDiff`, and the negative-seq `alternate` reroll buffer.                                                                                                                                                                                                            |
+| 3   | **Hybrid db.json + SQLite repository (storage boundary)** | `repository.ts`                                                                                                                                                                                     | Splits state across `db.json` (chat metadata + asset registry) and SQLite (`chat.message[]` + per-chat `hypaV3Data`). `loadPersistedWithMessages` joins; `syncChatMessages` writes only changed rows; **db.json is written only after the SQLite COMMIT** so it never lands ahead of the message rows + revision bump. Also owns content-addressed assets, backup snapshot/restore (ATTACH-based table swap that keeps the live DB handle), and `applyImport`.                                                                    |
+| 4   | **Revision counter + projection / hydration**             | `db.ts`, `routes/bootstrap.ts`, `routes/projection.ts`, `repository.ts`                                                                                                                             | `schema_version.revision` is the single optimistic-concurrency cursor (bumped on every mutating write). Bootstrap ships a **message-free stub projection**; `/projection/:resource` does targeted per-resource field refreshes for foreign events, plus per-chat (`chatMessages`) and per-character (`characterLorebook`) hydration on open.                                                                                                                                                                                      |
+| 5   | **Auth (ECDSA assertions + password)**                    | `auth.ts`, `routes/auth.ts`, `http.ts`                                                                                                                                                              | Stores the password + an LRU set of known ES256 public-key hashes (cap 4096); `verifyAssertion` checks alg/exp/known-key/signature. `requireAuth` gates every protected route.                                                                                                                                                                                                                                                                                                                                                    |
+| 6   | **Active-writer lease**                                   | `activeWriter.ts`, `routes/bootstrap.ts`                                                                                                                                                            | A single in-memory `sessionId` (claimed by the latest `/bootstrap` via `risu-writer-session`) gates every server-owned mutation in a preHandler: a stale writer gets `423 active_writer_stale`.                                                                                                                                                                                                                                                                                                                                   |
+| 7   | **Command mutation engine**                               | `commands/mutations.ts`, `routes/commands.ts`, `commands/*.ts`                                                                                                                                      | `applyJsonCommandMutation` is the transactional write core for ~90 command routes: `BEGIN IMMEDIATE` → revision-match guard (`409`) → hydrate → clone → mutate → surgical message sync → optional extra-SQLite (reroll buffer) → bump → COMMIT → write db.json → emit event.                                                                                                                                                                                                                                                      |
+| 8   | **Command-event bus + SSE stream**                        | `commands/events.ts`, `routes/events.ts`, `memoryEvents.ts`                                                                                                                                         | In-memory sink with a 1000-entry history fans `command` + `memory` events out to `/api/v1/events` subscribers with heartbeats.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 9   | **Prompt assembly (server-authoritative)**                | `prompt/assemble.ts`, `history.ts`, `staticSections.ts`, `plainSections.ts`, `lorebook.ts`, `memory.ts`, `budgetFinalize.ts`, `tokens.ts`                                                           | `assemblePrompt()` is the full server port of the browser assembler: char/chat/preset resolution, static + plain sections, lorebook activation, token preflight + budget trim, history window + depth prompts + bias, memory bridge, scripts/triggers/Lua hooks, final `OpenAIChat[]`. Persisting modes return an assembly-time chat-var + submit-transcript delta the route persists. Default on (`useServerPromptAssembly`).                                                                                                    |
+| 10  | **Server Lua VM**                                         | `prompt/luaRuntime.ts`, `triggers.ts`, `triggerVars.ts`, `scripts.ts`                                                                                                                               | A wasmoon engine (per-call isolated, `functionTimeout` + `lua_sethook` exec limit, `json.lua` from disk) runs user Lua `editRequest`/`editinput`/`editoutput`/`editprocess` + input/output triggers server-side, behind an SSRF egress guard (banned-host list, 30/min window, 10s/2MB caps).                                                                                                                                                                                                                                     |
+| 11  | **Provider dispatch / generation**                        | `prompt/chatDispatch.ts`, `generation/*.ts`                                                                                                                                                         | `dispatchChatProvider` derives a per-side model info from `db.aiModel`, routes via the shared `resolveProviderCapability` table, reformats messages per provider flags, resolves keys/URLs, and streams `CompletionStreamFrame`. `/generate/completion` is the stateless multi-provider endpoint for the browser's non-assembled path. Adapters: OpenAI (+responses, +legacy-instruct, +compatible), Anthropic, Gemini (+vertex), Bedrock (sigv4), Cohere, Mistral, Ollama, Kobold, Horde.                                        |
+| 12  | **Durable generation jobs**                               | `routes/generationChat.ts`, `generationJobs.ts`, `prompt/providerTransport.ts`, `prompt/sseEvents.ts`                                                                                               | `POST /generate/chat` with `durable:true` runs assemble → dispatch → post-gen as a **detached** job: a client disconnect detaches a viewer but the job keeps generating, buffers SSE, and is reattachable via `GET /:id/stream`; `DELETE /:id` (current-writer-authorized) cancels and persists streamed-so-far text. One-running-job-per-chat (`409`). At completion the server persists the derived assistant message itself (idempotent on `generationId`). `activeGenerationJobs` is surfaced in bootstrap for reload-resume. |
+| 13  | **Post-generation derivation (A2)**                       | `prompt/assemble.ts`, `routes/generationChat.ts`                                                                                                                                                    | `runServerPostGeneration` applies `editoutput` + run-var + the `'output'` trigger, computes final text + scriptstate delta + resend flag + message surgery, then `persistServerGenerationResult` writes the **mode-aware** result (send appends / continue extends-in-place / regenerate replaces-target) in one transaction and folds revision/finalText/resend onto `done.postGeneration`.                                                                                                                                      |
+| 14  | **Hypa V3 memory**                                        | `memoryRepository.ts`, `memoryWorker.ts`, `memoryPlanner.ts`, `memoryChunkPlanner.ts`, `memorySelectionService.ts`, `memorySummarizeJobHandler.ts`, `memoryEmbedJobHandler.ts`, `routes/memory*.ts` | Owns `memory_chunks/summaries/embeddings/jobs`, the planners + selection/ranking, and a polling worker that claims jobs (retry/backoff + crash-recovery) and emits memory events. `/memory/jobs` enqueue/list/cancel + `/memory/chunks                                                                                                                                                                                                                                                                                            | summaries` reads. |
+| 15  | **Content-addressed assets + GC**                         | `routes/assets.ts`, `assetGc.ts`, `repository.ts`                                                                                                                                                   | `POST /assets` stores sha256-deduped bytes (event + revision bump); reference-counted `runAssetGc` walks the whole corpus and deletes unreferenced assets behind an upload-race grace window.                                                                                                                                                                                                                                                                                                                                     |
+| 16  | **Import / export (risuSave)**                            | `routes/save.ts`, `risuSave/*.ts`                                                                                                                                                                   | `POST /import/risusave` decodes a `.risu` and `applyImport`s it (split messages into SQLite, bump revision, replace legacy memory rows); `/export/risusave` + `/export/bundle` re-encode the repository (optionally a zip with assets).                                                                                                                                                                                                                                                                                           |
+| 17  | **Provider-secret masking**                               | `providerSecrets.ts`, `routes/commands.ts`                                                                                                                                                          | Masks ~40 API-key paths before any projection ships to the browser; re-hydrates the real value on the settings write so an echoed sentinel never overwrites a real key.                                                                                                                                                                                                                                                                                                                                                           |
+| 18  | **Provider-config proxy + reconnectable stream jobs**     | `routes/proxy.ts`, `proxy.ts`, `routes/streamJobs.ts`, `streamJobs.ts`                                                                                                                              | `/proxy/fetch` forwards upstream requests; `/proxy/stream-jobs` is a reconnectable streamer restricted to local/private hosts (SSRF blocklist).                                                                                                                                                                                                                                                                                                                                                                                   |
+| 19  | **Risu Hub proxy**                                        | `routes/hub.ts`                                                                                                                                                                                     | `/api/v1/hub/*` transparently forwards to the configured hub URL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 20  | **Legacy key-value storage + crypto helper**              | `routes/legacyStorage.ts`                                                                                                                                                                           | `/storage/{list,read,write,remove}` is a hex-filename file store under `data/save`; `/auth/crypto` is a sha256 helper.                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+---
+
+## Part 2 — Responsibilities still on the client
+
+The browser (`src/`) is a Svelte 5 SPA that now renders a **server-backed projection**.
+It owns presentation, input, runtime/display state, plugin execution, and a set of
+send-time effects that have no server equivalent.
+
+| Responsibility                           | Owner files                                                                                                             | What the client still does                                                                                                                                                                                                                                          | Server interaction                                 |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Rendering / UI shell**                 | `src/App.svelte`, `src/lib/**`                                                                                          | All rendering, routing between screens, modals, settings UI, mobile/lite UI.                                                                                                                                                                                        | Renders `DBState.db` projection.                   |
+| **Bootstrap + projection apply**         | `src/ts/bootstrap.ts`, `src/ts/server/bootstrap.ts`, `src/ts/storage/database.svelte.ts`                                | Fetches `/api/v1/bootstrap`, applies the projection into `DBState.db`, enables the projection write guard, seeds the revision cursor + `activeGenerationJobs`.                                                                                                      | Read projection; writer-intent header.             |
+| **SSE event reconcile**                  | `src/ts/server/events.ts`, `src/ts/bootstrap.ts`                                                                        | Subscribes to `/api/v1/events`; echo-skips own revisions, fetches a targeted `/projection/:resource` for contiguous foreign events, full-bootstraps on a gap/reconnect.                                                                                             | Consumes server events.                            |
+| **Chat + lorebook hydration on open**    | `src/ts/server/chatMessageHydration.svelte.ts`, `src/ts/server/lorebookBridge.svelte.ts`, `src/ts/server/projection.ts` | Hydrates the open chat's stubbed `message[]` (and, behind the experimental flag, `globalLore`) on open; resets + re-hydrates after a `characters` re-stub; the **no-data-loss watcher** prevents a re-stub from persisting as a deletion.                           | `GET /projection/chatMessages                      | characterLorebook`.     |
+| **Projection write guard**               | `src/ts/server/projectionWriteGuard.svelte.ts`                                                                          | Traps accidental direct writes to server-owned `DBState.db`; trusted refresh/hydration paths wrap their writes.                                                                                                                                                     | Enforces command-backed writes.                    |
+| **Server commands (optimistic writes)**  | `src/ts/server/commands.ts`, `characterCommands.ts`, `chatCommands.ts`, `moduleCommands.ts`, `pluginCommands.ts`        | Issues revision-checked command POSTs for every persisted UI mutation, caches the revision, rolls back on conflict.                                                                                                                                                 | `POST /api/v1/commands/*`.                         |
+| **sendChat orchestration**               | `src/ts/process/index.svelte.ts`, `serverBackedSendChat.ts`, `request/serverChat.ts`                                    | Classifies each send (`local`/`server`/`unsupported`), POSTs raw inputs + consumes the SSE stream, renders streamed tokens, applies `done.postGeneration`, **suppresses its own persist on every server-dispatch path**, drives the resend/auto-continue recursion. | `POST /generate/chat` (SSE).                       |
+| **Request routing classifiers**          | `request/serverPromptAssembly.ts`, `durableGeneration.ts`, `providerCapability.ts`, `serverCompletion.ts`               | The `local                                                                                                                                                                                                                                                          | server                                             | unsupported`and`durable | non-durable` decisions; the shared provider-capability table that keeps browser + server routing aligned. | Decides the route; hard-fails `unsupported`. |
+| **Durable reattach UX**                  | `src/ts/process/reattach.ts`                                                                                            | Consumes `activeGenerationJobs` and re-drives `sendChat` against `GET /generate/chat/:id/stream` for the open chat after a reload; threads continue/regenerate mode through.                                                                                        | `GET /generate/chat/:id/stream`; `DELETE` on stop. |
+| **Reroll / swipe UX**                    | `src/ts/process/rerollNavigation.svelte.ts`                                                                             | The swipe state machine over the persisted `alternates`; guard-safe optimistic swaps; seeds from server alternates on hydration.                                                                                                                                    | Reads `alternates` from hydration.                 |
+| **B1 send-time effects**                 | `src/ts/process/index.svelte.ts`, slash/file-inlay paths                                                                | Slash-command + file-inlay transforms the server doesn't reproduce; B1 effects after a server send.                                                                                                                                                                 | Browser-only.                                      |
+| **Plugin runtime (V2 + V3)**             | `src/ts/plugins/**`                                                                                                     | Executes plugin code in the browser. The server **stores** plugin records/storage but never executes plugin code (pluginV2 edit hooks are permanently `unsupported`).                                                                                               | Plugin records are command-backed.                 |
+| **Local fallback assembler/dispatcher**  | `src/ts/process/sendChatPromptAssembly.ts`, `request/*`                                                                 | The in-browser assembler + provider dispatch used when `!isFastifyServer` (e.g. `pnpm dev`) or the flag is off, and for providers the server routes `unsupported` (NovelAI/NovelList/Ooba-OAI/plugin/WebLLM).                                                       | None (local path).                                 |
+| **TTS, media, emotion, MCP, translator** | `src/ts/process/tts.ts`, `src/ts/media/**`, `src/ts/process/mcp/**`, `src/ts/translator/**`, emotion-image selection    | Playback, image preview/compression, MCP client, translation, emotion-image choice — all client-side; the server only emits a TTS _side-effect hint_ on the generation stream.                                                                                      | Mostly browser-only.                               |
+| **Auth key material**                    | `src/ts/storage/nodeStorage.ts`                                                                                         | Generates the ES256 keypair, signs short-lived `risu-auth` assertions, sends the `risu-writer-session` header.                                                                                                                                                      | Supplies auth/writer headers.                      |
+
+### Shared / split concerns
+
+- **CBS / regex scripting** is parsed on **both** sides: the server assembler runs it
+  during prompt assembly (`prompt/scripts.ts`, `cbsAdapter.ts`); the browser still parses
+  CBS for display and the local fallback path (`src/ts/parser/`, `src/ts/process/scripts.ts`).
+- **Generation result persistence** is server-owned on the server-dispatch path
+  (the browser suppresses its write) and browser-owned only on the local path.
+- **Provider capability** is decided by one shared table consumed by both sides.
+
+---
+
+## Part 3 — Audit: regressions & broken behavior
+
+Method: 10 subsystems were reviewed in parallel; every non-trivial finding was
+adversarially verified by a second model and then re-checked by hand against the code.
+Most candidate findings were **refuted** as misreads or co-designed behavior (examples
+below). The confirmed issues are all low/medium and self-healing — **no data loss, no
+auth bypass, no silent corruption** of the supported path.
+
+### Confirmed (real) port issues — all low/medium, self-healing
+
+| Sev    | Issue                                                                                                                                                                                               | Location                                                                                   | Effect & why it's bounded                                                                                                                                                                                                                                                  |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| medium | A post-COMMIT `writePersisted` failure leaves SQLite (revision + message rows) ahead of `db.json` and **skips the command-event emit** (both run after COMMIT).                                     | `commands/mutations.ts::applyJsonCommandMutation` (lines 79–85)                            | Requires a disk write to fail _after_ a successful COMMIT — rare. db.json is re-applied by the next successful write; the missing event self-heals via the client's gap/reconnect full-bootstrap. Worth a `finally` that emits the event even if the db.json write throws. |
+| low    | The regenerate transcript-trim depth is keyed on `Message.saying` (a kept-but-vestigial field) — a server-introduced heuristic with no SPA equivalent; can over/under-trim when `saying` is absent. | `prompt/assemble.ts::prepareRegenerateTranscript` (~707–718)                               | The target is already validated as the last message, so a plain index-based pop is equivalent and simpler. Affects only an unusual multi-trailing-row regenerate.                                                                                                          |
+| low    | On a **streaming cancel** the terminal `done` omits the bumped revision and emits the _untrimmed_ accumulated text, while the persisted row is trimmed.                                             | `routes/generationChat.ts::runGenerationJob` abort branch (~1284) vs `buildRawModeMessage` | Only a _separately-reattached_ observer is affected (the canceller already tore down its reader); corrected by the next command's 409-reconcile + projection refresh. Cosmetic + one wasted round-trip.                                                                    |
+| low    | `coerceGenerationInfo` backfills `outputTokens` with `responseBudget` (the max-output budget, not the real count) when the done frame omits a count.                                                | `request/serverChat.ts::coerceGenerationInfo` (~293)                                       | Overstates a displayed/persisted token count; no behavioral impact.                                                                                                                                                                                                        |
+
+### Notable findings that were **refuted** on verification (not bugs)
+
+These are recorded so they aren't re-raised:
+
+- **Regenerate post-gen final text lands on the wrong row** — _refuted_. The server
+  appends the regenerate row keyed by `generationId` (`extractAssistantMessage` matches
+  `chatId === generationId`), so the client's `findGeneratedAssistantMessage(generationId)`
+  matches it. `continue` needs an explicit `targetMessageId` only because it extends a
+  pre-existing row; regenerate does not.
+- **SSE parser deletes newlines in multi-line `data:` blocks** — _refuted as a port bug_.
+  The server emits each frame as exactly one `data:` line via `formatPromptChatFrame`
+  (`JSON.stringify` escapes newlines), so a literal multi-line block never occurs. (Cheap
+  to harden defensively, but not a regression.)
+- **`getGlobalVar` omits a defaultVariables fallback** — _refuted_. The browser
+  `getGlobalChatVar` also reads only `globalChatVariables[key] ?? 'null'`; the server is a
+  faithful port.
+- **`runServerPostGeneration` first-match `chatId` scan returns a stale row** — _refuted_.
+  `generationId` is a fresh `randomUUID()`, so a collision with a pre-existing row is
+  unreachable.
+- **Active-writer guard fails open for unclassified routes** — _real but already mitigated_.
+  The EC5 invariant in `util/client-thinning-audit.ts` statically fails CI if a mutating
+  route is unclassified, so the structural-drift risk is covered. (This audit adds a
+  _runtime_ complement — see Part 4.)
+
+### Intentional deferrals (NOT regressions — see `docs/leftover.md`)
+
+Confirmed present and correct as designed: best-effort A2 derivation on the non-durable
+inline path; in-memory-only durable jobs (lost on restart); no `Last-Event-ID` SSE replay
+buffer; output-trigger message surgery is projection-only; pluginV2 + non-vision
+image-caption content permanently `unsupported`; the Lua host-fn stubs
+(`LLM`/`similarity`/image/persona); the `useServerPromptAssembly` `local` arm kept for
+tests; `Message.saying` + the `type !== 'group'` load filter kept; `promptTemplate`
+null→`[]` import coercion; Vite-dev does not inject `__FASTIFY__`.
+
+---
+
+## Part 4 — Test changes
+
+### Removed / redundant tests: none
+
+All six subsystem reviewers plus a dedicated removed-feature scan returned **zero**
+redundant or dead tests, independently re-confirmed by hand. The suite contains no tests
+for removed features (group chat, auto-continue, peer/Drive sync, SupaMemory/HypaV2/
+Hanurai engines, service worker). The lookalikes are all live code:
+
+- `commands.test.ts` "settings **groups**" = scalar-settings grouping, not group chat.
+- `buildMemoryWindow.test.ts` `supaMemory` = a **kept Hypa V3 trigger field**, not the
+  removed engine.
+- No `autoContinue` tests exist (the feature + its tests were already removed in `5b751fcb`).
+- The 4 skipped client tests are pre-existing parser edge cases (ChatML / CBS
+  reverse / precedence), unrelated to the port.
+
+Tests that _assert a removed feature stays removed_ (e.g. the `A4R-group-chat-removed`
+audit invariant) are valuable and were kept.
+
+### Added tests (critical paths that were uncovered)
+
+| File                                                     | Tests                                                                                                                                                                                                                                                                                                                        | Closes which gap                                                                                                                                                                  |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/fastify/__tests__/routeProtection.test.ts` (new) | Table-wide: every mutating `/api/v1/*` route returns `401` without auth (route list **derived from the live app** via `printRoutes`, so new routes auto-enroll); documented public routes stay reachable; durable reattach/cancel require auth; active-writer header validation (missing / empty / oversize / fresh-server). | The two critical auth gaps: nothing previously asserted requireAuth across the _whole_ route table, and the writer-session header edge cases (null/empty/oversize) were untested. |
+| `server/fastify/__tests__/commands.test.ts` (extended)   | A stale (409) write emits **no event** and leaves the revision + db.json untouched.                                                                                                                                                                                                                                          | The 409 path previously asserted only status+body, not the no-side-effects contract (revision-not-bumped + event-not-emitted before `mutate`).                                    |
+
+Both additions were verified green (`routeProtection` 6/6; `commands` 93/93). The
+route-introspection approach is deliberately **drift-proof**: a future mutating route
+that forgets `requireAuth` fails `routeProtection.test.ts` automatically.
+
+### High-value gaps left for follow-up (lower priority, not added here)
+
+Recorded for a future pass; each is a real coverage gap but lower-risk than the auth
+contract above:
+
+- Streaming-cancel revision reconciliation surfaced to a reattached observer
+  (`durableGeneration.test.ts`).
+- Mode-aware terminal placement on **reattach** for continue/regenerate (only send-mode
+  reattach is tested today).
+- Client exactly-once persistence across local / inline-server / durable paths
+  (`orchestrateResponse.test.ts`).
+- Open-chat re-hydration when a foreign `characters` merge re-stubs the slice
+  (`chatMessageHydration.test.ts`).
