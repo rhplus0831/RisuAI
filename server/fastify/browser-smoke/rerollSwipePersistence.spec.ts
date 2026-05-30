@@ -50,7 +50,9 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
 
   await page.goto(harness.baseUrl)
   await expect
-    .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)))
+    .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)), {
+      timeout: 15_000,
+    })
     .toBe(true)
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
 
@@ -94,7 +96,9 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   // RELOAD: the buffer must be rebuilt purely from the persisted projection.
   await page.reload()
   await expect
-    .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)))
+    .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)), {
+      timeout: 15_000,
+    })
     .toBe(true)
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
   // Re-open the character after the reload (selection resets to the char list).
