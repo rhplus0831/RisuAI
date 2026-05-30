@@ -138,6 +138,30 @@ describe('Phase 2A bootstrap + import', () => {
     expect(res.statusCode).toBe(401)
   })
 
+  it('accepts bootstrap immediately when setup registers the client key', async () => {
+    const keypair = (await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+      'sign',
+      'verify',
+    ])) as CryptoKeyPair
+    const publicKey = await subtle.exportKey('jwk', keypair.publicKey)
+
+    const setup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2', publicKey },
+    })
+    expect(setup.statusCode).toBe(200)
+
+    const assertion = await signAssertion(keypair.privateKey, publicKey)
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().revision).toBe(0)
+  })
+
   it('imports a database and serves it back via bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const sample = { greeting: 'hi', characters: [{ chaId: 'char-a', name: 'Ada' }] }

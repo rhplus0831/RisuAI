@@ -16,6 +16,7 @@ interface LoginBody {
 
 interface SetupBody {
   password?: unknown
+  publicKey?: unknown
 }
 
 export function registerAuthRoutes(app: FastifyInstance, state: AuthState): void {
@@ -42,6 +43,9 @@ export function registerAuthRoutes(app: FastifyInstance, state: AuthState): void
       return { error: 'Password already set' }
     }
     setPassword(state, body.password)
+    if (typeof body.publicKey === 'object' && body.publicKey !== null) {
+      registerPublicKey(state, body.publicKey)
+    }
     return { status: 'success' }
   })
 

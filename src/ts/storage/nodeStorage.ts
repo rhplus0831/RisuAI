@@ -1,7 +1,10 @@
 import { language } from 'src/lang'
 import { alertError, alertInput, waitAlert } from '../alert'
 import { isFastifyServer } from '../platform'
-import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from '../server/activeWriterSession'
+import {
+  activeWriterSessionHeader,
+  handleActiveWriterStaleResponse,
+} from '../server/activeWriterSession'
 import { base64url, getKeypairStore, saveKeypairStore } from '../util'
 
 const ROUTES = {
@@ -182,16 +185,32 @@ export class NodeStorage {
       const status = await fetchAuthStatus(await this.createAuth())
 
       if (status === 'unset') {
+        const keypair = await this.getKeyPair()
+        const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
         const input = await digestPassword(await alertInput(language.setNodePassword))
-        await fetch(ROUTES.setPassword, {
+        const s = await fetch(ROUTES.setPassword, {
           method: 'POST',
           body: JSON.stringify({
             password: input,
+            publicKey: publicKey,
           }),
           headers: {
             'content-type': 'application/json',
           },
         })
+        if (s.status < 200 || s.status >= 300) {
+          let message = `Password setup failed (${s.status})`
+          try {
+            const body = await s.json()
+            if (body?.error) {
+              message = body.error
+            }
+          } catch {}
+          alertError(message)
+          await waitAlert()
+          throw message
+        }
+        this.authChecked = true
         return await this.createAuth()
       } else if (status === 'incorrect') {
         const keypair = await this.getKeyPair()

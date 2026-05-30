@@ -124,7 +124,10 @@ describe('Fastify NodeStorage client', () => {
       'POST /api/v1/storage/write',
     ])
     expect(JSON.parse(calls[1].body ?? '{}')).toEqual({ data: 'hunter2' })
-    expect(JSON.parse(calls[2].body ?? '{}')).toEqual({ password: 'hashed-password' })
+    expect(JSON.parse(calls[2].body ?? '{}')).toEqual({
+      password: 'hashed-password',
+      publicKey: expect.objectContaining({ kty: 'EC' }),
+    })
     expect(alertState.alertInput).toHaveBeenCalledTimes(1)
   })
 })
