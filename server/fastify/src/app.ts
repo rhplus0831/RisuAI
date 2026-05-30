@@ -15,6 +15,7 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerCommandRoutes } from './routes/commands.js'
+import { registerProjectionRoutes } from './routes/projection.js'
 import { registerEventsRoutes } from './routes/events.js'
 import { registerGenerationRoutes } from './routes/generation.js'
 import {
@@ -193,6 +194,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     generationJobRegistry,
   )
   registerActiveWriterGuard(app, activeWriterState)
+  registerProjectionRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerEventsRoutes(app, authState, commandEventSink, memoryEventBus)

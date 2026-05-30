@@ -802,6 +802,23 @@ export function applyServerProjectionDatabase(data: Database) {
   return withTrustedServerProjectionWrite(() => setDatabase(data))
 }
 
+/**
+ * Surgically merges a targeted projection slice (the top-level keys owned by a
+ * single resource) into the live projection, without the full `setDatabase`
+ * replace. Used by the Phase 2 decision tree for foreign command events and by
+ * Phases 4–5 for entity hydration. The fields come from the server projection
+ * (same source as bootstrap), so no re-normalization is needed; this must not
+ * clobber locally-hydrated entities outside the named keys.
+ */
+export function mergeServerProjectionFields(fields: Partial<Database>) {
+  return withTrustedServerProjectionWrite(() => {
+    const db = DBState.db as unknown as Record<string, unknown>
+    for (const [key, value] of Object.entries(fields)) {
+      db[key] = value
+    }
+  })
+}
+
 export {
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,

@@ -65,6 +65,9 @@ const serverEventsState = vi.hoisted(() => ({
     },
   ),
 }))
+const serverProjectionState = vi.hoisted(() => ({
+  fetchResource: vi.fn(),
+}))
 const forageSpies = vi.hoisted(() => ({
   Init: vi.fn(async () => undefined),
   getItem: vi.fn(async () => undefined),
@@ -92,6 +95,10 @@ vi.mock('./server/bootstrap', () => ({
 
 vi.mock('./server/events', () => ({
   subscribeServerCommandEvents: serverEventsState.subscribe,
+}))
+
+vi.mock('./server/projection', () => ({
+  fetchServerProjectionResource: serverProjectionState.fetchResource,
 }))
 
 vi.mock('./globalApi.svelte', () => ({
@@ -152,6 +159,11 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './storage/database.svelte'
+import {
+  clearCachedServerCommandRevision,
+  peekCachedServerCommandRevision,
+  setCachedServerCommandRevision,
+} from './server/commands'
 import { DBState, LoadingStatusState, hypaV3ProgressStore, loadedStore } from './stores.svelte'
 
 beforeEach(() => {
@@ -175,6 +187,15 @@ beforeEach(() => {
   serverEventsState.subscriptions = []
   serverEventsState.unsubscribe.mockClear()
   serverEventsState.subscribe.mockClear()
+  // Default: the server cannot narrow the resource → full bootstrap. Targeted
+  // tests override this per-case.
+  serverProjectionState.fetchResource.mockReset()
+  serverProjectionState.fetchResource.mockImplementation(async () => ({
+    status: 'ok' as const,
+    revision: 6,
+    mode: 'full' as const,
+  }))
+  clearCachedServerCommandRevision()
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
   forageSpies.setItem.mockClear()
@@ -191,6 +212,14 @@ beforeEach(() => {
   })
   loadedStore.set(false)
 })
+
+// The surgical-sync decision tree processes command events on a serial promise
+// chain; drain the microtask queue so a no-op (echo-skip) outcome has settled.
+async function flushServerProjectionSync(): Promise<void> {
+  for (let i = 0; i < 50; i += 1) {
+    await Promise.resolve()
+  }
+}
 
 describe('web bootstrap startup source', () => {
   it('loads the Fastify bootstrap projection without entering localForage', async () => {
@@ -209,39 +238,119 @@ describe('web bootstrap startup source', () => {
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
   })
 
-  it('debounces command events into one bootstrap projection refresh', async () => {
+  it('skips its own echoed command events without any refetch', async () => {
+    await loadWebInitialDatabase()
+    expect(peekCachedServerCommandRevision()).toBe(5)
+
+    // The writer just issued a command, which cached its post-command revision.
+    setCachedServerCommandRevision(6)
+
+    const subscription = serverEventsState.subscriptions[0]
+    // The echoed event carries the revision we already applied.
+    subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
+    await flushServerProjectionSync()
+
+    expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+    expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
+  it('targeted-fetches a foreign contiguous event for just its resource', async () => {
+    await loadWebInitialDatabase()
+    expect(peekCachedServerCommandRevision()).toBe(5)
+
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: { characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }] },
+    }))
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({ type: 'chat.updated', revision: 6, resource: 'chat' })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [] }])
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('chat', {
+      id: undefined,
+      parentId: undefined,
+    })
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+    expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
+  it('full-bootstraps when the server cannot narrow the resource', async () => {
+    await loadWebInitialDatabase()
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: { characters: [], modules: [], personas: [], language: 'ko' },
+      },
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    // The default projection mock returns mode 'full' for this resource.
+    subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.language).toBe('ko')
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('settings', {
+      id: undefined,
+      parentId: undefined,
+    })
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
+  it('full-bootstraps on a revision gap, without a targeted fetch', async () => {
+    await loadWebInitialDatabase()
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 9,
+        database: { characters: [], modules: [], personas: [], language: 'ko' },
+      },
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    // revision 9 is a gap over the applied baseline of 5.
+    subscription.onCommandEvent({ type: 'chat.updated', revision: 9, resource: 'chat' })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.language).toBe('ko')
+    })
+    expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(9)
+  })
+
+  it('re-subscribes and full-bootstraps after the event stream drops', async () => {
     vi.useFakeTimers()
     try {
       await loadWebInitialDatabase()
-      expect(DBState.db.language).toBe('en')
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
 
       serverBootstrapState.response = {
         status: 'ok',
         projection: {
           revision: 6,
-          database: {
-            characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }],
-            modules: [],
-            personas: [],
-            language: 'ko',
-          },
+          database: { characters: [], modules: [], personas: [], language: 'ko' },
         },
       }
 
       const subscription = serverEventsState.subscriptions[0]
-      subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
-      subscription.onCommandEvent({ type: 'chat.updated', revision: 7, resource: 'chat' })
+      subscription.onError?.('stream dropped')
 
-      await vi.advanceTimersByTimeAsync(99)
-      expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
-      expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
-      expect(DBState.db.language).toBe('en')
+      await vi.advanceTimersByTimeAsync(1000)
 
-      await vi.advanceTimersByTimeAsync(1)
-      expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
+      // Reconnected and reconciled the full projection.
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
       expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
       expect(DBState.db.language).toBe('ko')
-      expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [] }])
+      expect(peekCachedServerCommandRevision()).toBe(6)
     } finally {
       vi.useRealTimers()
     }
@@ -277,40 +386,36 @@ describe('web bootstrap startup source', () => {
   })
 
   it('blocks direct Fastify projection writes after the guard is enabled', async () => {
-    vi.useFakeTimers()
-    try {
-      await loadWebInitialDatabase()
+    await loadWebInitialDatabase()
 
-      expect(isServerProjectionWriteGuardEnabled()).toBe(true)
-      expect(() => {
-        DBState.db.language = 'ja'
-      }).toThrow()
+    expect(isServerProjectionWriteGuardEnabled()).toBe(true)
+    expect(() => {
+      DBState.db.language = 'ja'
+    }).toThrow()
 
-      serverBootstrapState.response = {
-        status: 'ok',
-        projection: {
-          revision: 6,
-          database: {
-            characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }],
-            modules: [],
-            personas: [],
-            language: 'ko',
-          },
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: {
+          characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }],
+          modules: [],
+          personas: [],
+          language: 'ko',
         },
-      }
-
-      const subscription = serverEventsState.subscriptions[0]
-      subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
-
-      await vi.advanceTimersByTimeAsync(100)
-      expect(DBState.db.language).toBe('ko')
-      expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [] }])
-      expect(() => {
-        DBState.db.characters.push({ chaId: 'char-b', name: 'Babbage', chats: [] } as any)
-      }).toThrow()
-    } finally {
-      vi.useRealTimers()
+      },
     }
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.language).toBe('ko')
+    })
+    expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [] }])
+    expect(() => {
+      DBState.db.characters.push({ chaId: 'char-b', name: 'Babbage', chats: [] } as any)
+    }).toThrow()
   })
 
   it('allows command-owned trusted projection writes and re-freezes afterward', async () => {

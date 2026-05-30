@@ -964,6 +964,16 @@ export function clearCachedServerCommandRevision(): void {
   cachedServerCommandRevision = null
 }
 
+/**
+ * Returns the cached revision without ever issuing a fetch. The surgical-sync
+ * decision tree (Phase 2) needs to compare an inbound event's revision against
+ * the last revision this client applied, with no network round trip in the hot
+ * path; `null` means we have no baseline yet (cold) and must full-bootstrap.
+ */
+export function peekCachedServerCommandRevision(): number | null {
+  return cachedServerCommandRevision
+}
+
 export async function getServerCommandBaseRevision(
   signal?: AbortSignal | null,
 ): Promise<number | null> {

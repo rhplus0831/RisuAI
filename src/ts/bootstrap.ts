@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { get } from 'svelte/store'
 import {
   applyServerProjectionDatabase,
+  mergeServerProjectionFields,
   setDatabase,
   defaultSdDataFunc,
   getDatabase,
@@ -41,14 +42,26 @@ import {
   fetchServerBootstrapProjectionReadOnly,
 } from './server/bootstrap'
 import { subscribeServerCommandEvents } from './server/events'
+import {
+  peekCachedServerCommandRevision,
+  setCachedServerCommandRevision,
+  type CommandEvent,
+} from './server/commands'
+import { fetchServerProjectionResource } from './server/projection'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 
-const SERVER_PROJECTION_REFRESH_DEBOUNCE_MS = 100
+// Delay before re-subscribing to the command-event stream after it drops. On
+// reconnect we full-bootstrap to recover any events missed while disconnected.
+const SERVER_PROJECTION_RECONNECT_DELAY_MS = 1000
 
 let serverProjectionEventSubscription: { unsubscribe: () => void } | null = null
-let serverProjectionRefreshTimer: ReturnType<typeof setTimeout> | null = null
 let serverProjectionRefreshInFlight = false
 let serverProjectionRefreshPending = false
+// Serializes the surgical-sync decision tree so inbound command events are
+// applied strictly in arrival order (gap detection per-event, not batched).
+let serverProjectionSyncChain: Promise<void> = Promise.resolve()
+let serverProjectionEventsDesired = false
+let serverProjectionReconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 /**
  * Loads the application data.
@@ -118,33 +131,61 @@ export async function loadWebInitialDatabase() {
     )
   }
   applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
+  // Seed the surgical-sync baseline: subsequent command events are decided
+  // against the revision this client has applied.
+  setCachedServerCommandRevision(bootstrap.projection.revision)
   setServerProjectionWriteGuardEnabled(true)
   await startServerProjectionEvents()
 }
 
 export function stopServerProjectionEvents() {
+  serverProjectionEventsDesired = false
   serverProjectionEventSubscription?.unsubscribe()
   serverProjectionEventSubscription = null
-  if (serverProjectionRefreshTimer) {
-    clearTimeout(serverProjectionRefreshTimer)
-    serverProjectionRefreshTimer = null
+  if (serverProjectionReconnectTimer) {
+    clearTimeout(serverProjectionReconnectTimer)
+    serverProjectionReconnectTimer = null
   }
   serverProjectionRefreshInFlight = false
   serverProjectionRefreshPending = false
 }
 
 async function startServerProjectionEvents() {
-  stopServerProjectionEvents()
+  teardownServerProjectionSubscription()
+  serverProjectionEventsDesired = true
   const subscription = await subscribeServerCommandEvents({
-    onCommandEvent: scheduleServerProjectionRefresh,
+    onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
-    onError: (error) => console.warn(error),
+    onError: (error) => {
+      console.warn(error)
+      scheduleServerProjectionReconnect()
+    },
   })
   if (subscription.status === 'ok') {
     serverProjectionEventSubscription = subscription
   } else if (subscription.status === 'error') {
     console.warn(`Server event subscription failed: ${subscription.error}`)
+    scheduleServerProjectionReconnect()
   }
+}
+
+function teardownServerProjectionSubscription() {
+  serverProjectionEventSubscription?.unsubscribe()
+  serverProjectionEventSubscription = null
+}
+
+function scheduleServerProjectionReconnect() {
+  if (serverProjectionReconnectTimer || !serverProjectionEventsDesired) return
+  serverProjectionReconnectTimer = setTimeout(() => {
+    serverProjectionReconnectTimer = null
+    if (!serverProjectionEventsDesired) return
+    void (async () => {
+      await startServerProjectionEvents()
+      // Self-heal: a dropped stream may have missed events, so reconcile the
+      // full projection on reconnect (the gap/reconnect fallback).
+      enqueueServerProjectionSync(() => fullBootstrapResync())
+    })()
+  }, SERVER_PROJECTION_RECONNECT_DELAY_MS)
 }
 
 function applyServerMemoryEvent(event: { sideEffect?: { kind: string; payload: unknown } }) {
@@ -153,17 +194,60 @@ function applyServerMemoryEvent(event: { sideEffect?: { kind: string; payload: u
   }
 }
 
-function scheduleServerProjectionRefresh() {
-  if (serverProjectionRefreshTimer) {
-    clearTimeout(serverProjectionRefreshTimer)
-  }
-  serverProjectionRefreshTimer = setTimeout(() => {
-    serverProjectionRefreshTimer = null
-    void refreshServerProjection()
-  }, SERVER_PROJECTION_REFRESH_DEBOUNCE_MS)
+/**
+ * Surgical inbound sync (lazy-projection Phase 2). Each command event is
+ * decided against the last revision this client applied:
+ *   - `event.revision <= cached` → own echo / already applied → skip.
+ *   - `event.revision === cached + 1` → contiguous foreign event → targeted
+ *     fetch of just that resource (or full bootstrap if the server cannot
+ *     narrow it).
+ *   - `event.revision > cached + 1` (gap) or no baseline → full bootstrap.
+ * Events are processed strictly in arrival order via a serial chain so gap
+ * detection is per-event rather than batched.
+ */
+function handleServerCommandEvent(event: CommandEvent) {
+  enqueueServerProjectionSync(() => processServerCommandEvent(event))
 }
 
-async function refreshServerProjection() {
+function enqueueServerProjectionSync(task: () => Promise<void>) {
+  serverProjectionSyncChain = serverProjectionSyncChain
+    .then(task)
+    .catch((error) => console.warn('Server projection sync failed', error))
+}
+
+async function processServerCommandEvent(event: CommandEvent): Promise<void> {
+  const cached = peekCachedServerCommandRevision()
+  if (cached === null) {
+    // No baseline yet: reconcile from scratch.
+    await fullBootstrapResync()
+    return
+  }
+  if (event.revision <= cached) {
+    // Own echo or an event already covered by a prior apply → nothing to do.
+    return
+  }
+  if (event.revision === cached + 1) {
+    const result = await fetchServerProjectionResource(event.resource, {
+      id: event.id,
+      parentId: event.parentId,
+    })
+    if (result.status === 'ok' && result.mode === 'fields') {
+      mergeServerProjectionFields(result.fields)
+      // Advance by exactly one event; the fetch returns the resource as of the
+      // server's *current* revision, but later events for other resources must
+      // still be processed, so the cursor only moves to this event.
+      setCachedServerCommandRevision(event.revision)
+      return
+    }
+    // 'full' mode, error, or unavailable → fall back to a full reconcile.
+    await fullBootstrapResync()
+    return
+  }
+  // Gap detected (event.revision > cached + 1) → self-healing full bootstrap.
+  await fullBootstrapResync()
+}
+
+async function fullBootstrapResync(): Promise<void> {
   if (serverProjectionRefreshInFlight) {
     serverProjectionRefreshPending = true
     return
@@ -176,6 +260,7 @@ async function refreshServerProjection() {
       const bootstrap = await fetchServerBootstrapProjectionReadOnly()
       if (bootstrap.status === 'ok') {
         applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
+        setCachedServerCommandRevision(bootstrap.projection.revision)
       } else if (bootstrap.status === 'error') {
         console.warn(`Server projection refresh failed: ${bootstrap.error}`)
       }
