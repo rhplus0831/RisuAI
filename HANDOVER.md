@@ -2,16 +2,17 @@
 
 Date: 2026-05-30 · Branch: `fastify` · Plan: [`docs/lazy-projection/`](docs/lazy-projection/)
 
-Session handover for the **lazy-projection** workstream. **Phases 1–4, 6a, 6b are
-fully done**, and **6c landed server-side** ("don't lose a rerolled result"). Two
-pieces remain, both now committed to under **Option C** (each backed by a unit
-invariant **and** a real-browser E2E test):
+Session handover for the **lazy-projection** workstream. **Phases 1–4, 6a, 6b, and
+6c (full swipe-persistence, Task A) are done**. One piece remains:
 
-- **A — full 6c swipe-persistence** (client side): reconstruct the reroll swipe
-  buffer from the persisted `alternates` so rerolled candidates survive a reload,
-  not just disconnect. The server half already stores + ships them.
-- **B — Phase 5 lorebook stub**: stub `globalLore` + disabled-module `lorebook`;
-  rework `lorebookBridge` with a hard no-data-loss invariant; hydrate on open.
+- ~~**A — full 6c swipe-persistence** (client side)~~ **DONE 2026-05-31**
+  (`7a13c0e3`→`d281766c`, adversarially reviewed). Server buffer holds the full
+  candidate set; the swipe machine is extracted to `rerollNavigation.svelte.ts` and
+  reconstructs from persisted `alternates` on hydration; optimistic swaps are
+  guard-safe; reload E2E (`browser-smoke/rerollSwipePersistence.spec.ts`) green.
+- **B — Phase 5 lorebook stub** (the last open item): stub `globalLore` +
+  disabled-module `lorebook`; rework `lorebookBridge` with a hard no-data-loss
+  invariant; hydrate on open.
 
 The codebase is the source of truth. Line numbers drift; the **symbol names** are
 the stable handle — `rg` for the symbol before acting.
@@ -40,7 +41,7 @@ in the real app before shipping (this is a personal, not-yet-released port).
 | **6 (a)** remove auto-continue | ✅ | `5b751fcb` | deleted the off-by-default feature + settings + i18n + recursion. |
 | **6 (b)** durable continue/regenerate | ✅ | `d48bff23`, `b145ed72` | widened `resolveDurableGeneration` + the durable job to `send\|continue\|regenerate` (shared `resolvePostGenerationResult`/`buildRawModeMessage`); mode-aware reattach (job carries `mode` on `activeGenerationJobs`). Adversarially reviewed (one reattach finding, fixed `b145ed72`). |
 | **6 (c) server** reroll buffer | ✅ | `79fca3e5` | "don't lose a rerolled result": regenerate preserves the displaced candidate as a flagged `alternate` row (v6 migration, negative `seq`), cleared on send/continue; shipped on the `chatMessages` hydration wire. Adversarial review: 0 findings. |
-| **A — 6 (c) client** swipe-persistence | ⏳ TODO | — | reconstruct the swipe buffer from `alternates` so rerolls survive reload; lazy-persist swaps. Unit (extracted module) + E2E. |
+| **A — 6 (c) client** swipe-persistence | ✅ | `7a13c0e3`…`d281766c` | full candidate set on the server; extracted `rerollNavigation.svelte.ts`; seed-from-`alternates` on hydration; guard-safe swaps; reload E2E. Adversarially reviewed (2 findings: optimistic-clear-before-send fixed; swipe/regenerate race mitigated by `$doingChat`). |
 | **B — Phase 5** Lorebooks stub | ⏳ TODO | — | stub `globalLore` + disabled-module `lorebook`; rework `lorebookBridge` (no-data-loss invariant); hydrate on open. Unit (watcher harness) + E2E. |
 
 Progress memory: `lazy-projection-phase6b-landed`, `lazy-projection-phase6c-landed`,
