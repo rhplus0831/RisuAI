@@ -1,6 +1,6 @@
 # Lazy-Projection Handover
 
-Date: 2026-05-30 · Branch: `fastify` · Plan: [`docs/lazy-projection/`](docs/lazy-projection/)
+Date: 2026-05-30 · Branch: `fastify` · Plan: [`docs/archive/lazy-projection/`](docs/archive/lazy-projection/)
 
 Session handover for the **lazy-projection** workstream. **Phases 1–4, 6a, 6b, and
 6c (full swipe-persistence, Task A) are done**. One piece remains:
@@ -282,10 +282,10 @@ persists; trigger a re-stub → assert **no** deletion command fired. Adversaria
 
 ## Pointers
 
-- Plan + decisions: [`docs/lazy-projection/plan.md`](docs/lazy-projection/plan.md),
-  [`reference/decisions.md`](docs/lazy-projection/reference/decisions.md),
-  [`reference/durable-generation-modes.md`](docs/lazy-projection/reference/durable-generation-modes.md),
-  [`reference/stub-hydration.md`](docs/lazy-projection/reference/stub-hydration.md).
+- Plan + decisions: [`docs/archive/lazy-projection/plan.md`](docs/archive/lazy-projection/plan.md),
+  [`reference/decisions.md`](docs/archive/lazy-projection/reference/decisions.md),
+  [`reference/durable-generation-modes.md`](docs/archive/lazy-projection/reference/durable-generation-modes.md),
+  [`reference/stub-hydration.md`](docs/archive/lazy-projection/reference/stub-hydration.md).
 - Test commands: `pnpm api:test` (server), `pnpm test` (browser),
   `pnpm client-thinning:audit` (invariant gate), `pnpm smoke:fastify-browser`
   (real-browser E2E). `tsc --noEmit` on the server has pre-existing test-file type

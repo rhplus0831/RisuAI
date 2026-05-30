@@ -80,19 +80,19 @@ mode the **server owns prompt assembly and the provider call** by default
    consumes the SSE stream (stage / prompt / `message_patch` / info / token / error /
    done frames) via `src/ts/process/request/serverChat.ts`. It renders streamed tokens
    and applies the server's post-generation patch + final text from `done.postGeneration`.
-3. On the **non-durable** path the browser still issues the final-message persistence
-   command (B2). On the **durable** path the server persists the result, so the browser
-   suppresses its persist call (EC-D4).
+3. On every server-dispatch path the server persists the final generation result, so
+   the browser suppresses its old generation-result command. Browser persistence remains
+   only for the local assembler/dispatcher path.
 
 ### Durable generation (browser side)
 
-When `resolveDurableGeneration(...) === 'durable'` (a server-assembled `send`), the
-browser sends `durable: true`, keeps rendering the live stream, and **does not persist
-the result** (the server does, at job completion). The stop button maps to
-`cancelServerChatGeneration` → `DELETE /api/v1/generate/chat/:id` (a bare disconnect no
-longer cancels). The browser does **not** yet auto-reattach to a running job after a
-mid-generation disconnect / reload — the server surfaces `activeGenerationJobs` from
-bootstrap, but consuming it is a documented follow-up ([`../leftover.md`](../leftover.md)).
+When `resolveDurableGeneration(...) === 'durable'` (a server-assembled `send`,
+`continue`, or `regenerate`), the browser sends `durable: true`, keeps rendering the
+live stream, and **does not persist the result** (the server does, at job completion).
+The stop button maps to `cancelServerChatGeneration` →
+`DELETE /api/v1/generate/chat/:id` (a bare disconnect no longer cancels). Bootstrap
+also surfaces `activeGenerationJobs`; `src/ts/process/reattach.ts` consumes it and
+re-drives `sendChat` against `GET /api/v1/generate/chat/:id/stream` for the open chat.
 
 ### Active-writer lease
 

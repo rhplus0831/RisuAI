@@ -14,6 +14,11 @@
 > (survive a server *restart*) is deferred. Open items: [`../../leftover.md`](../../leftover.md).
 > These docs are kept as the design/decision record (the step specs retain their
 > original DRAFT framing).
+>
+> **Superseded by lazy projection:** browser auto-reattach and durable
+> `continue`/`regenerate` landed later in
+> [`../lazy-projection/`](../lazy-projection/README.md). The M1 notes below are
+> retained as the historical closeout snapshot.
 
 Date: 2026-05-29 (draft) · 2026-05-30 (Milestone 1 implemented)
 Status: **Milestone 1 implemented (ARCHIVED).** Steps 1–3 landed; see the implementation note below.

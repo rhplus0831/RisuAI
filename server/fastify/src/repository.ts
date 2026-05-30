@@ -537,10 +537,10 @@ export function backupDir(dataDir: string, id: string): string {
 //   - 'db.json'  : the user-owned JSON state. Copied via file write/rename.
 //   - 'assets'   : asset bytes referenced from db.json. Copied as a directory.
 //   - 'risu.db'  : SQLite database (schema_version + hypa-v3 memory tables +
-//                  the `messages` chat-history table, Phase 4). Backed up after
-//                  a WAL checkpoint; restored via ATTACH so the live
-//                  `DatabaseSync` handle stays valid. Every table that must
-//                  survive restore is listed in SQLITE_BACKUP_TABLES.
+//                  the `messages` chat-history table and `chat_hypa_v3` per-chat
+//                  blobs, Phase 4). Backed up after a WAL checkpoint; restored via
+//                  ATTACH so the live `DatabaseSync` handle stays valid. Every table
+//                  that must survive restore is listed in SQLITE_BACKUP_TABLES.
 //   - 'save'     : legacy storage directory written by /api/v1/storage/*.
 export const KNOWN_DATA_DIR_CHILDREN = ['db.json', 'assets', 'risu.db', 'save'] as const
 
@@ -553,14 +553,14 @@ function sqliteDbPath(dataDir: string): string {
 }
 
 // Tables that must survive a backup/restore round-trip. Kept in sync with
-// `createMemoryTables`, the `messages` table (`createMessageTable`), and
-// `schema_version` in `db.ts`. The audit (A4R-backup) asserts createBackup /
-// restoreBackup names every entry in KNOWN_DATA_DIR_CHILDREN, and these tables
-// sit inside `risu.db`. `createBackup` file-copies all of risu.db, but
-// `restoreBackup` swaps tables one-by-one via ATTACH — so a table absent here is
-// silently NOT restored (its live rows would survive a restore, desyncing it
-// from the restored db.json). `messages` holds chat history (Phase 4), so it
-// must be listed.
+// `createMemoryTables`, the chat-history tables (`createMessageTable` /
+// `createChatBlobTable`), and `schema_version` in `db.ts`. The audit (A4R-backup)
+// asserts createBackup / restoreBackup names every entry in KNOWN_DATA_DIR_CHILDREN,
+// and these tables sit inside `risu.db`. `createBackup` file-copies all of risu.db,
+// but `restoreBackup` swaps tables one-by-one via ATTACH — so a table absent here is
+// silently NOT restored (its live rows would survive a restore, desyncing it from the
+// restored db.json). Chat messages and per-chat `hypaV3Data` both moved to SQLite in
+// lazy-projection Phase 4, so both tables must be listed.
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
   'memory_chunks',
@@ -568,6 +568,7 @@ const SQLITE_BACKUP_TABLES = [
   'memory_embeddings',
   'memory_jobs',
   'messages',
+  'chat_hypa_v3',
 ] as const
 
 function checkpointWal(db: DatabaseSync): void {

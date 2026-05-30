@@ -2,24 +2,25 @@
 
 Date: 2026-05-30
 
-Short handoff for the Fastify-only lazy-projection workstream. Start with
-[`plan.md`](plan.md) and [`architecture.md`](architecture.md), then the single
-phase shard for the work in flight.
+Archived handoff for the Fastify-only lazy-projection workstream. Start with
+[`README.md`](README.md) for the closeout summary; the original plan and phase shards
+remain below it as the historical design record.
 
 ## Status
 
-PLANNED — nothing implemented. This is a fresh workstream authored after the
-`client-thinning` and `durable-generation` (Milestone 1) workstreams closed and
-were archived under [`../archive/`](../archive/README.md). The plan was designed
-through a sequence of design reviews; the decisions are locked in
+ARCHIVED — implemented, excluding the lorebook-stub item. This workstream was authored
+after the `client-thinning` and `durable-generation` (Milestone 1) workstreams closed
+and were archived under [`..`](../README.md). The plan was designed through a sequence
+of design reviews; the decisions are locked in
 [`reference/decisions.md`](reference/decisions.md).
 
 ## What This Workstream Is
 
 Make the browser hold/receive a lean, lazily-hydrated projection (stubs for
-chats/messages/lorebooks, hydrate on open), make the SSE refresh surgical so
-hydration is not clobbered, move chat messages into SQLite, and complete durable
-generation (`continue`/`regenerate` + browser auto-reattach).
+chats/messages, hydrate on open), make the SSE refresh surgical so hydration is not
+clobbered, move chat messages into SQLite, and complete durable generation
+(`continue`/`regenerate` + browser auto-reattach). Lorebook stubs are intentionally
+outside this archive audit.
 
 ## The One Hard Sequencing Rule
 

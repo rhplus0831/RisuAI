@@ -291,7 +291,7 @@ describe('Phase 2D backups', () => {
     expect(afterRestore.json().revision).toBe(revisionAfter)
   })
 
-  it('round-trips chat messages (SQLite table) with backup/restore', async () => {
+  it('round-trips chat messages and per-chat hypaV3Data (SQLite tables) with backup/restore', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, {
       characters: [
@@ -304,6 +304,7 @@ describe('Phase 2D backups', () => {
               name: 'Chat',
               note: '',
               localLore: [],
+              hypaV3Data: { marker: 'hypa-A' },
               message: [{ role: 'user', data: 'message-A', chatId: 'mA' }],
             },
           ],
@@ -331,6 +332,7 @@ describe('Phase 2D backups', () => {
               name: 'Chat 2',
               note: '',
               localLore: [],
+              hypaV3Data: { marker: 'hypa-B' },
               message: [{ role: 'user', data: 'message-B', chatId: 'mB' }],
             },
           ],
@@ -363,6 +365,7 @@ describe('Phase 2D backups', () => {
     })
     expect(hydration.statusCode).toBe(200)
     expect(hydration.json().message).toEqual([{ role: 'user', data: 'message-A', chatId: 'mA' }])
+    expect(hydration.json().hypaV3Data).toEqual({ marker: 'hypa-A' })
   })
 
   it('round-trips asset bytes with the backup snapshot', async () => {

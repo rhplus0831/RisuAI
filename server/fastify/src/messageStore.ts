@@ -6,7 +6,7 @@ import type { DatabaseSync } from 'node:sqlite'
 // pure CRUD layer over that table. The `db.json` blob keeps chat *metadata*; the
 // `messages` table keeps the unbounded, high-churn `message[]`.
 //
-// Storage model (see docs/lazy-projection/reference/storage-model.md):
+// Storage model (see docs/archive/lazy-projection/reference/storage-model.md):
 //   - `chat_id` — the chat's id (`Chat.id`).
 //   - `seq`     — explicit array-order index (0-based); a relational table has no
 //                 inherent order and the conversation depends on it.
@@ -306,7 +306,7 @@ export function countChatMessages(db: DatabaseSync, chatId: string): number {
 // active transcript tail, never touching this buffer (the active tail is one of
 // these candidates, matched back by `uid` on hydration). This realizes the design
 // doc's "insert the new candidate as an alternate row and flip the active tail"
-// (docs/lazy-projection/reference/durable-generation-modes.md). The buffer is
+// (docs/archive/lazy-projection/reference/durable-generation-modes.md). The buffer is
 // cleared at the confirm boundary (send / continue). Alternate rows use a NEGATIVE
 // `seq` (monotonically decreasing) so the `(chat_id, seq)` PK stays unique against
 // active rows (seq >= 0) without a PK change. No order is preserved (the only

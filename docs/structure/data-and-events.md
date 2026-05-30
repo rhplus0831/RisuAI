@@ -7,14 +7,15 @@ revision-checked commands when it needs persistence.
 
 | Store       | Path                                                     | Owner  | Contents                                                                             |
 | ----------- | -------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------ |
-| SQLite      | `data/risu.db`                                           | Server | Schema version, global revision, Hypa V3 memory chunks, summaries, embeddings, jobs. |
-| Domain JSON | `data/db.json`                                           | Server | The main Risu `Database` blob and asset manifest.                                    |
+| SQLite      | `data/risu.db`                                           | Server | Schema version, global revision, chat messages, per-chat `hypaV3Data`, Hypa V3 memory chunks, summaries, embeddings, jobs. |
+| Domain JSON | `data/db.json`                                           | Server | The main Risu `Database` blob minus chat message arrays / per-chat `hypaV3Data`, plus the asset manifest. |
 | Assets      | `data/assets/<sha256>.<ext>`                             | Server | Content-addressed images, audio, video, fonts, CSS, and other supported asset bytes. |
 | Backups     | `data/backups/<id>/`                                     | Server | Snapshot `db.json`, `assets/`, `risu.db`, `save/`, plus `manifest.json`.              |
 | Auth files  | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user password hash string and registered browser public key hashes.           |
 
-`server/fastify/src/repository.ts` is the main file for `db.json`, assets, and
-backups. `server/fastify/src/db.ts` owns SQLite schema setup and revision bumps.
+`server/fastify/src/repository.ts` is the main file for `db.json`, assets, backups,
+the message-table join/split boundary, and the stub projection. `server/fastify/src/db.ts`
+owns SQLite schema setup and revision bumps.
 
 ## Revision Contract
 
@@ -69,10 +70,14 @@ projection, asset base URL, and `activeGenerationJobs`. Browser startup loads th
 projection before the app is marked ready.
 
 `activeGenerationJobs` is a **transient, server-memory-only** projection (shape
-`{ chatId, jobId }[]`, empty when none) sourced from `GenerationJobRegistry.activeJobs()`.
-It is not a persisted `Database` field — it lets a returning client, even after a full
-reload, discover and reattach to an in-flight durable generation. (The browser-side
-live reattach consumer is a documented follow-up; see [`../leftover.md`](../leftover.md).)
+`{ chatId, jobId, mode?, regenerateMessageId? }[]`, empty when none) sourced from
+`GenerationJobRegistry.activeJobs()`. It is not a persisted `Database` field — it lets a
+returning client, even after a full reload, discover and reattach to an in-flight
+durable generation.
+
+The projected database is lean: chat `message[]` arrays are stubs in bootstrap /
+targeted projection responses, and the browser hydrates the active chat through
+`GET /api/v1/projection/chatMessages?id=...`.
 
 Projection writes are intentionally guarded in Fastify mode:
 
@@ -90,11 +95,11 @@ Event kinds:
 - `command`: domain command event with revision, resource, and optional ids.
 - `memory`: memory job event, optionally carrying Hypa V3 progress side effects.
 
-The current browser behavior is conservative: command events schedule a debounced
-bootstrap refresh instead of patching the local projection resource-by-resource.
-That makes command event correctness important, but it also means UI state often
-updates after the refresh debounce rather than instantly in the original command
-call stack.
+The browser keeps a cached revision cursor. Own echoes / already-applied events are
+skipped, contiguous foreign events fetch a targeted projection slice through
+`GET /api/v1/projection/:resource`, and revision gaps or reconnects fall back to a full
+bootstrap refresh. `characters` slices are message-free, so the client resets chat
+hydration and rehydrates the open chat after a re-stub.
 
 ## Binary And Streaming Surfaces
 

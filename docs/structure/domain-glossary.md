@@ -54,7 +54,7 @@ client-thinning and durable-generation workstreams; design records under
 | Post-generation pass     | `runServerPostGeneration`: run-var pass + `'output'` trigger + `editoutput`, persisting the derived text + scriptstate.  | `server/fastify/src/prompt/assemble.ts`, `server/fastify/src/routes/generationChat.ts` |
 | Durable generation       | Milestone 1: a `send` runs as a detached job that survives client disconnect; the server persists the result.           | `src/ts/process/request/durableGeneration.ts`, `server/fastify/src/generationJobs.ts` |
 | Generation job           | A detached, reattachable chat generation in `GenerationJobRegistry` (one running job per chat; reattach/cancel routes).  | `server/fastify/src/generationJobs.ts`, `server/fastify/src/routes/generationChat.ts` |
-| `activeGenerationJobs`   | Transient, server-memory-only bootstrap projection (`{ chatId, jobId }[]`) of running durable jobs for reload-resume.    | `server/fastify/src/routes/bootstrap.ts`, `server/fastify/src/generationJobs.ts` |
+| `activeGenerationJobs`   | Transient, server-memory-only bootstrap projection (`{ chatId, jobId, mode?, regenerateMessageId? }[]`) of running durable jobs for reload-resume.    | `server/fastify/src/routes/bootstrap.ts`, `server/fastify/src/generationJobs.ts`, `src/ts/process/reattach.ts` |
 | Active writer            | Single-writer submission gate (`risu-writer-session` header) enforced by a global preHandler; stale writers get `423`.   | `server/fastify/src/activeWriter.ts`                                            |
 
 ## Identity Rules

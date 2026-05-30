@@ -81,7 +81,7 @@ High-level flow (non-durable / inline path, `streamAssembly`):
 1. Validate route body and auth.
 2. Attach an abort signal to the request close event (inline path only — see durable
    path below, which detaches instead).
-3. Load the persisted database projection from `data/db.json`.
+3. Load the persisted database with chat messages joined from SQLite.
 4. Call `prompt/assemble.ts`. Assembly runs the server **Lua VM**
    (`prompt/luaRuntime.ts`) for non-interactive `editRequest` / `editprocess` /
    input-trigger / `editinput` hooks, and persists the assembly-time scriptstate
@@ -102,9 +102,9 @@ memory adapters, the server Lua VM, and budget finalization.
 
 ### Durable Generation (survive client disconnect)
 
-A send the browser classifies durable (`resolveDurableGeneration === 'durable'` →
-`body.durable === true`, `send` mode only) does **not** run inline. Instead the route
-hands off to a detached job so the generation survives the browser disconnecting:
+A generating request the browser classifies durable (`resolveDurableGeneration === 'durable'` →
+`body.durable === true`, `send` / `continue` / `regenerate`) does **not** run inline.
+Instead the route hands off to a detached job so the generation survives the browser disconnecting:
 
 - The job runs in `GenerationJobRegistry` (`generationJobs.ts`, wired + GC-ticked in
   `app.ts`), which wraps the proxy's reconnectable `streamJobs.ts` `JobRegistry` with a
@@ -121,8 +121,11 @@ hands off to a detached job so the generation survives the browser disconnecting
 - `GET /api/v1/generate/chat/:id/stream` reattaches (read-only observe, open to any
   authed client). `DELETE /api/v1/generate/chat/:id` cancels (authorized by the current
   active writer; the browser stop button calls it — a bare disconnect does not cancel).
-- In-memory only (Milestone 1): jobs are lost on a server restart. Design record:
-  [`../archive/durable-generation/`](../archive/durable-generation/README.md).
+- Bootstrap surfaces `activeGenerationJobs`; the browser consumes it and auto-reattaches
+  to an open chat's in-flight job after reload / reconnect.
+- In-memory only: jobs are lost on a server restart. Design records:
+  [`../archive/durable-generation/`](../archive/durable-generation/README.md) and
+  [`../archive/lazy-projection/`](../archive/lazy-projection/README.md).
 
 ## Memory System
 

@@ -1,16 +1,28 @@
-# Lazy Projection Docs
+# Lazy Projection Docs (ARCHIVED 2026-05-30)
 
 Date: 2026-05-30
 
-Status: PLANNED. No phase has started; this folder is the execution plan, not a
-status record. The codebase is the source of truth; these docs route to it.
+> **ARCHIVED — implemented, excluding lorebook stub.** Moved from
+> `docs/lazy-projection/` to `docs/archive/lazy-projection/` after a source/history
+> audit. The workstream delivered server-side asset GC; surgical inbound projection
+> sync; server-owned generation result writes; SQLite-backed chat messages and
+> per-chat `hypaV3Data`; chat-stub bootstrap plus hydrate-on-open; durable `send`,
+> `continue`, and `regenerate`; persisted reroll alternates; and browser
+> auto-reattach to in-flight durable jobs. The lorebook-stub item is deliberately
+> outside this audit and remains opt-in/experimental. Server-restart durability
+> remains out of scope. The phase files retain their original PLANNED framing.
+> Verification: `pnpm api:test -- ...` (77 files / 1,388 tests) and
+> `pnpm test -- ...` (89 files / 1,013 passed / 4 skipped).
 
-This directory is the active documentation set for the **lazy-projection**
-workstream — the successor to [`client-thinning`](../archive/client-thinning/README.md)
-and [`durable-generation`](../archive/durable-generation/README.md). Those two
-closed workstreams made the **server own the chat process** (assembly, provider
-call, post-generation derivation) and made a `send` **survive client disconnect**.
-This workstream takes the next step on the same Fastify-only, single-writer
+Status: **ARCHIVED.** These docs are the historical execution plan and decision
+record; the codebase is the source of truth.
+
+This directory was the active documentation set for the **lazy-projection**
+workstream — the successor to [`client-thinning`](../client-thinning/README.md) and
+[`durable-generation`](../durable-generation/README.md). Those two closed
+workstreams made the **server own the chat process** (assembly, provider call,
+post-generation derivation) and made a `send` **survive client disconnect**. This
+workstream took the next step on the same Fastify-only, single-writer
 architecture.
 
 ## The Spine: A Lean, Reconnectable Client View
@@ -27,10 +39,11 @@ appends one message rewrites the entire `data/db.json` on disk
 (`server/fastify/src/repository.ts:100-105`). This workstream removes both the
 wire cost and the write cost, and finishes durable generation:
 
-- **Lean projection (Phases 1–5).** Move the unbounded data (chat messages) into
-  SQLite; ship *stubs* for chats / messages / lorebooks; hydrate on the explicit
-  load point (open a chat, open a character, open a module). Make the SSE refresh
-  **surgical** so hydrated entities are not clobbered.
+- **Lean projection (Phases 1–5, original plan).** Move the unbounded data (chat
+  messages) into SQLite; ship *stubs* for chats / messages / lorebooks; hydrate on
+  the explicit load point (open a chat, open a character, open a module). This archive
+  audit excludes the lorebook-stub item. Make the SSE refresh **surgical** so hydrated
+  entities are not clobbered.
 - **Durable generation completion (Phases 6–7).** Extend durability from `send` to
   `continue` and `regenerate` (with a chat-level reroll buffer), and let a
   reloaded browser **re-attach** to a live in-flight generation.

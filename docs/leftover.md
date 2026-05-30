@@ -1,15 +1,16 @@
-# Leftover Items — client-thinning + durable-generation
+# Leftover Items — closed Fastify workstreams
 
 Date: 2026-05-30
 
 Canonical list of items that still need an owner decision or were intentionally
-deferred, after the **client-thinning** and **durable-generation (Milestone 1)**
-workstreams were implemented and archived. Each entry names what it is, why it is
-not done, and the trigger that would make it actionable.
+deferred, after the **client-thinning**, **durable-generation (Milestone 1)**, and
+**lazy-projection** workstreams were implemented and archived. Each entry names what
+it is, why it is not done, and the trigger that would make it actionable.
 
 This file supersedes the former `docs/deferred.md` (folded in below). The source
-workstream docs now live under [`archive/client-thinning/`](archive/client-thinning/)
-and [`archive/durable-generation/`](archive/durable-generation/).
+workstream docs now live under [`archive/client-thinning/`](archive/client-thinning/),
+[`archive/durable-generation/`](archive/durable-generation/), and
+[`archive/lazy-projection/`](archive/lazy-projection/).
 
 The codebase is the source of truth. Where a claim cites a file, it was verified
 against the tree on 2026-05-30 (branch `fastify`).
@@ -39,6 +40,16 @@ against the tree on 2026-05-30 (branch `fastify`).
 - **Doc count contradictions — fixed.** Stale "22 rules / 55 tests" mentions in
   `phases/slices/README.md` and `reference/proof-points.md` corrected to the real
   **23 checks / 58 tests**.
+- **Lazy projection audit closed.** The source/history audit confirmed the non-lorebook
+  lazy-projection work landed: server-side asset GC, surgical inbound sync,
+  server-owned generation result writes, SQLite chat messages + per-chat `hypaV3Data`,
+  chat-stub bootstrap + hydration, durable `continue`/`regenerate`, persisted reroll
+  alternates, and browser auto-reattach. The plan is archived under
+  [`archive/lazy-projection/`](archive/lazy-projection/).
+- **Stale durable-generation follow-ups resolved by lazy projection.** Browser
+  auto-reattach now consumes `activeGenerationJobs`; durable generation now includes
+  `send`, `continue`, and `regenerate`; contiguous command events use targeted
+  projection fetches instead of a debounced full-bootstrap refresh.
 
 ---
 
@@ -75,15 +86,6 @@ against the tree on 2026-05-30 (branch `fastify`).
   lang keys (`src/lang/*.ts`), the `src/ts/cbs.ts` `{{char}}` group-name description,
   and the `risuai.d.ts` "and group chats" comment still exist. Deferred to the final
   cleanup pass, not a standalone task. Docs-only; proof = no live behavior change.
-- **Route-direct final-message (assistant message) persistence** (decision #7).
-  Still command-backed (B2): the browser POSTs `generation-result` on the non-durable
-  path. The route-owned assistant-message write + double-write avoidance was handed to
-  the durable-generation workstream (and is now done **for the durable path** — the
-  durable job persists the result server-side). Trigger: a slice that moves
-  non-durable assistant-message persistence server-side.
-- **Event patching** (decision #8). Command events stay invalidation-only (debounced
-  full-projection refetch). Precondition to revisit: SSE reconnect + `Last-Event-ID`
-  replay specified and tested. Same precondition as durable-gen event patching below.
 - **A2 post-generation derivation is best-effort on the non-durable path.** A thrown
   `runServerPostGeneration` is swallowed (no `done.postGeneration` frame, no browser
   fallback). Code TODO at `server/fastify/src/routes/generationChat.ts` (the
@@ -131,21 +133,8 @@ against the tree on 2026-05-30 (branch `fastify`).
 
 ---
 
-## Durable generation — open items (Milestone 1 done; these are beyond it)
+## Durable generation — remaining open items
 
-- **Browser live auto-reattach UX — follow-up, NOT implemented.** The server surfaces
-  `activeGenerationJobs` (`server/fastify/src/routes/bootstrap.ts:37`) and the
-  `GET /api/v1/generate/chat/:id/stream` reattach endpoint, both tested, but **no
-  browser code consumes them** (`rg activeGenerationJobs src/` → zero hits). To wire
-  it: add `activeGenerationJobs` to the client bootstrap projection contract
-  (`src/ts/server/bootstrap.ts`) and a client reattach path that re-drives the
-  orchestrator off `GET …/:id/stream` after a mid-generation disconnect / fresh reload.
-  The durability guarantee does **not** depend on this — the result is server-persisted
-  and surfaces on the next projection/bootstrap refresh (EC-D2). This is the only part
-  of EC-D3 that is not end-to-end (its server half is done).
-- **Modes beyond `send` (`continue` / `regenerate`).** Milestone 1 is `send`-only;
-  `resolveDurableGeneration` hard-restricts to `send`. Widening needs idempotency +
-  append/replace semantics defined first. Source: `durableGeneration.ts:49-52,73`.
 - **Milestone 2 — survive a server restart.** M1 jobs are in-memory
   (`GenerationJobRegistry`, lost on restart). Disk-persisting job state/result is
   deferred; a chat generation is short-lived, so restart-survival is low value for a
@@ -153,10 +142,10 @@ against the tree on 2026-05-30 (branch `fastify`).
   `routes/memoryJobs.ts`. The `StreamJob.writerSessionId` field captured at M1 job
   creation is the hook left for this (currently stored but unused by the completion
   write, which is a server-owned completion of an already-authorized job).
-- **Event patching / SSE reconnect-replay contract.** Surgical per-event projection
-  patching stays out until SSE reconnect + replay (`Last-Event-ID` or an equivalent
-  read/replay endpoint) is specified and tested. Same precondition as client-thinning
-  decision #8 above.
+- **SSE reconnect replay buffer.** Lazy projection intentionally uses revision gap
+  detection plus full-bootstrap fallback on reconnect; there is still no `Last-Event-ID`
+  replay buffer or equivalent event-history endpoint. Add one only if reconnect traffic
+  or latency makes the current full-bootstrap fallback too expensive.
 
 ---
 

@@ -5,7 +5,7 @@ Last explored: 2026-05-30.
 This folder is the present-tense navigation map of the codebase. It is the
 companion to the **archived** workstream records in
 [`docs/archive/`](../archive/README.md) — the Fastify migration, client thinning,
-and durable generation all ran to completion and now live there. Use this folder
+durable generation, and lazy projection all ran to completion and now live there. Use this folder
 when you need to find the right part of the codebase quickly before making a
 change, and use [`docs/leftover.md`](../leftover.md) for the still-open items.
 
@@ -23,8 +23,9 @@ For workstream history and decision records, start with
 [`docs/archive/README.md`](../archive/README.md): the Fastify migration
 ([`archive/fastify/`](../archive/fastify/README.md)), the client-thinning
 server-projection workstream ([`archive/client-thinning/`](../archive/client-thinning/README.md)),
-and durable generation ([`archive/durable-generation/`](../archive/durable-generation/README.md)).
-All three are closed; the archives hold the consolidated invariant contracts, phase
+durable generation ([`archive/durable-generation/`](../archive/durable-generation/README.md)),
+and lazy projection ([`archive/lazy-projection/`](../archive/lazy-projection/README.md)).
+All four are closed; the archives hold the consolidated invariant contracts, phase
 scope docs, and design references.
 
 ## Top-Level Map
@@ -49,7 +50,7 @@ scope docs, and design references.
 | `public/`                        | Static source assets copied by Vite.                                                         |
 | `dist/`                          | Generated Vite output; do not hand-edit.                                                     |
 | `docs/leftover.md`               | Live tracker of decisions-needed and intentionally-deferred items across the closed workstreams. |
-| `docs/archive/`                  | Closed workstream records: `fastify/` migration, `client-thinning/`, and `durable-generation/`. |
+| `docs/archive/`                  | Closed workstream records: `fastify/` migration, `client-thinning/`, `durable-generation/`, and `lazy-projection/`. |
 
 ## Standing Conventions
 
