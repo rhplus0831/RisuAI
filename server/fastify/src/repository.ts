@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -149,6 +149,37 @@ function eachChat(database: unknown, visit: (chat: JsonRecord) => void): void {
   }
 }
 
+function chatIdNeedsRepair(chat: JsonRecord, seen: Set<string>): boolean {
+  const id = chat.id
+  return typeof id !== 'string' || id.trim() === '' || seen.has(id)
+}
+
+function repairChatIds(database: unknown): boolean {
+  const seen = new Set<string>()
+  let repaired = false
+  eachChat(database, (chat) => {
+    if (chatIdNeedsRepair(chat, seen)) {
+      let id = randomUUID()
+      while (seen.has(id)) id = randomUUID()
+      chat.id = id
+      repaired = true
+    }
+    seen.add(chat.id as string)
+  })
+  return repaired
+}
+
+function hasEmbeddedChatPayloadsOrBadIds(database: unknown): boolean {
+  const seen = new Set<string>()
+  let hasWork = false
+  eachChat(database, (chat) => {
+    if (chatIdNeedsRepair(chat, seen)) hasWork = true
+    if (Array.isArray(chat.message) || chat.hypaV3Data !== undefined) hasWork = true
+    if (typeof chat.id === 'string' && chat.id.trim() !== '') seen.add(chat.id)
+  })
+  return hasWork
+}
+
 /** `loadPersisted` + join each chat's messages (SQLite, with embedded fallback). */
 export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Persisted {
   const persisted = loadPersisted(dataDir)
@@ -195,14 +226,14 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
  * chats.
  */
 export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): Persisted {
+  repairChatIds(next.database)
   const chats: { chatId: string; messages: unknown[] }[] = []
   const hypa: { chatId: string; hypaV3Data: unknown }[] = []
   eachChat(next.database, (chat) => {
     const messages = Array.isArray(chat.message) ? chat.message : []
-    if (typeof chat.id === 'string') {
-      chats.push({ chatId: chat.id, messages })
-      hypa.push({ chatId: chat.id, hypaV3Data: chat.hypaV3Data })
-    }
+    const chatId = chat.id as string
+    chats.push({ chatId, messages })
+    hypa.push({ chatId, hypaV3Data: chat.hypaV3Data })
     delete chat.message
     delete chat.hypaV3Data
   })
@@ -278,11 +309,7 @@ export function stripChatMessages(next: Persisted): Persisted {
  */
 export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void {
   const raw = loadPersisted(dataDir)
-  let hasEmbedded = false
-  eachChat(raw.database, (chat) => {
-    if (Array.isArray(chat.message) || chat.hypaV3Data !== undefined) hasEmbedded = true
-  })
-  if (!hasEmbedded) return
+  if (!hasEmbeddedChatPayloadsOrBadIds(raw.database)) return
 
   const hydrated = loadPersistedWithMessages(db, dataDir)
   let transactionOpen = false

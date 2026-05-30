@@ -24,6 +24,7 @@ import {
 import {
   loadPersisted,
   loadPersistedWithMessages,
+  ensureMessagesExtracted,
   writePersisted,
   writePersistedWithMessages,
   type Persisted,
@@ -374,6 +375,53 @@ describe('repository message-aware load/write', () => {
     // The first message-aware write then extracts it into SQLite.
     writePersistedWithMessages(db, dataDir, structuredClone(loadPersistedWithMessages(db, dataDir)))
     expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'embedded')])
+  })
+
+  it('repairs missing chat ids before extracting embedded messages', () => {
+    const dataDir = makeDataDir()
+    const db = makeDb(dataDir)
+    const database = {
+      characters: [
+        {
+          chaId: 'c',
+          chats: [{ name: 'Legacy', message: [msg('m1', 'user', 'embedded')] }],
+        },
+      ],
+    }
+    writePersisted(dataDir, { _version: 1, database, assets: [] })
+
+    ensureMessagesExtracted(db, dataDir)
+
+    const onDisk = JSON.parse(readFileSync(path.join(dataDir, 'db.json'), 'utf8'))
+    const repairedId = onDisk.database.characters[0].chats[0].id
+    expect(typeof repairedId).toBe('string')
+    expect(repairedId.length).toBeGreaterThan(0)
+    expect(onDisk.database.characters[0].chats[0].message).toBeUndefined()
+    expect(getChatMessages(db, repairedId)).toEqual([msg('m1', 'user', 'embedded')])
+
+    const hydrated = loadPersistedWithMessages(db, dataDir).database as {
+      characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }>
+    }
+    expect(hydrated.characters[0].chats[0].id).toBe(repairedId)
+    expect(hydrated.characters[0].chats[0].message).toEqual([msg('m1', 'user', 'embedded')])
+  })
+
+  it('repairs missing chat ids even when the chat is already message-free', () => {
+    const dataDir = makeDataDir()
+    const db = makeDb(dataDir)
+    const database = {
+      characters: [{ chaId: 'c', chats: [{ name: 'Empty legacy chat', localLore: [] }] }],
+    }
+    writePersisted(dataDir, { _version: 1, database, assets: [] })
+
+    ensureMessagesExtracted(db, dataDir)
+
+    const onDisk = JSON.parse(readFileSync(path.join(dataDir, 'db.json'), 'utf8'))
+    const repairedId = onDisk.database.characters[0].chats[0].id
+    expect(typeof repairedId).toBe('string')
+    expect(repairedId.length).toBeGreaterThan(0)
+    expect(onDisk.database.characters[0].chats[0].message).toBeUndefined()
+    expect(getChatMessages(db, repairedId)).toEqual([])
   })
 
   it('reclaims rows for chats removed from the database', () => {
