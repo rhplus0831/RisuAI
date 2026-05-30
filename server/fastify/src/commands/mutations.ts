@@ -3,10 +3,9 @@ import { bumpRevision, getSchemaState } from '../db.js'
 import {
   RevisionMismatchError,
   ValidationError,
-  loadPersisted,
   loadPersistedWithMessages,
+  splitChatMessagesIntoTable,
   writePersisted,
-  writePersistedWithMessages,
 } from '../repository.js'
 import type { CommandEvent, CommandEventDraft, CommandEventSink } from './events.js'
 
@@ -41,11 +40,7 @@ export function readBaseRevision(body: unknown): number {
 export function applyJsonCommandMutation<TExtra extends Record<string, unknown> = {}>(
   args: JsonCommandMutationArgs<TExtra>,
 ): JsonCommandMutationResult<TExtra> {
-  let wrotePersisted = false
   let transactionOpen = false
-  // Message-free snapshot of db.json for rollback restore. Messages roll back
-  // with the SQLite transaction; db.json (a file write) is restored manually.
-  let previousMessageFree = loadPersisted(args.dataDir)
 
   args.db.exec('BEGIN IMMEDIATE')
   transactionOpen = true
@@ -56,21 +51,27 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
       throw new RevisionMismatchError(currentRevision)
     }
 
-    previousMessageFree = loadPersisted(args.dataDir)
     // Hydrate messages so the mutate callback sees the full `chat.message[]`.
     const hydrated = loadPersistedWithMessages(args.db, args.dataDir)
     const nextDatabase = cloneJsonValue(hydrated.database)
     const mutation = args.mutate(nextDatabase)
 
-    // Set before the write: any failure inside the split rolls db.json back too.
-    wrotePersisted = true
-    writePersistedWithMessages(args.db, args.dataDir, { ...hydrated, database: nextDatabase })
+    // Write messages into the SQLite table inside the transaction; defer the
+    // db.json file write until after COMMIT (see splitChatMessagesIntoTable).
+    const messageFree = splitChatMessagesIntoTable(args.db, {
+      ...hydrated,
+      database: nextDatabase,
+    })
 
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
 
     args.db.exec('COMMIT')
     transactionOpen = false
+    // db.json is durable only after the SQLite COMMIT, never ahead of it. On any
+    // pre-COMMIT failure the transaction rolls back the message rows + revision
+    // and db.json was never touched — no manual restore needed.
+    writePersisted(args.dataDir, messageFree)
     args.eventSink.emit(event)
 
     return {
@@ -81,9 +82,6 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
   } catch (err) {
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
-    }
-    if (wrotePersisted) {
-      writePersisted(args.dataDir, previousMessageFree)
     }
     throw err
   }

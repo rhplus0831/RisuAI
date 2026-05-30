@@ -291,6 +291,72 @@ describe('Phase 2D backups', () => {
     expect(afterRestore.json().revision).toBe(revisionAfter)
   })
 
+  it('round-trips chat messages (SQLite table) with backup/restore', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'c',
+          name: 'C',
+          chats: [
+            {
+              id: 'chat-1',
+              name: 'Chat',
+              note: '',
+              localLore: [],
+              message: [{ role: 'user', data: 'message-A', chatId: 'mA' }],
+            },
+          ],
+        },
+      ],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'msgs A' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const backupId = backup.json().id
+
+    // Replace with a different chat/message so the messages table now holds B.
+    await importDb(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'c',
+          name: 'C',
+          chats: [
+            {
+              id: 'chat-2',
+              name: 'Chat 2',
+              note: '',
+              localLore: [],
+              message: [{ role: 'user', data: 'message-B', chatId: 'mB' }],
+            },
+          ],
+        },
+      ],
+    })
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const afterRestore = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const chats = afterRestore.json().database.characters[0].chats
+    expect(chats).toHaveLength(1)
+    expect(chats[0].id).toBe('chat-1')
+    // The restored chat hydrates A's message — not B's, and not empty.
+    expect(chats[0].message).toEqual([{ role: 'user', data: 'message-A', chatId: 'mA' }])
+  })
+
   it('round-trips asset bytes with the backup snapshot', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const upload = await harness.app.inject({

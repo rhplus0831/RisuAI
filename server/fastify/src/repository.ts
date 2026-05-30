@@ -160,23 +160,23 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
 }
 
 /**
- * Persist a fully-hydrated `Persisted` value: split each chat's `message[]` into
- * the SQLite table and write the message-free `db.json`. The SQLite write is the
- * single transactional source of truth for messages; the caller MUST run this
- * inside an open transaction (the mutation engine / import wrap) so the message
- * rows roll back together with the revision bump. The `next.database` object is
- * mutated in place (its chats lose `message`) — callers pass a throwaway clone.
+ * Split each chat's `message[]` into the messages table and return the
+ * message-free `Persisted`. Pure SQLite write — it does NOT touch db.json. Run
+ * inside the caller's open transaction; persist the returned value with
+ * `writePersisted` only AFTER the transaction COMMITs. Ordering matters: the
+ * durable db.json write must never land ahead of the message rows + revision
+ * bump, so a crash between the two stores leaves db.json *behind* (re-applied by
+ * the next write) instead of pairing new chat metadata with stale messages.
+ *
+ * The `next.database` object is mutated in place (its chats lose `message`) —
+ * callers pass a throwaway clone.
  *
  * Invariant: `next.database` is a *complete* hydrated database (every chat
  * present). The table is rebuilt wholesale, which also reclaims rows for deleted
  * chats. Slice 4.2 replaces this whole-corpus rewrite with surgical per-command
  * writes.
  */
-export function writePersistedWithMessages(
-  db: DatabaseSync,
-  dataDir: string,
-  next: Persisted,
-): void {
+export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): Persisted {
   const chats: { chatId: string; messages: unknown[] }[] = []
   eachChat(next.database, (chat) => {
     const messages = Array.isArray(chat.message) ? chat.message : []
@@ -186,7 +186,20 @@ export function writePersistedWithMessages(
     delete chat.message
   })
   replaceAllChatMessages(db, chats)
-  writePersisted(dataDir, next)
+  return next
+}
+
+/**
+ * Convenience for non-transactional callers (and tests): split messages into the
+ * table and write the message-free db.json in one step. Transactional callers
+ * use `splitChatMessagesIntoTable` + a post-COMMIT `writePersisted` instead.
+ */
+export function writePersistedWithMessages(
+  db: DatabaseSync,
+  dataDir: string,
+  next: Persisted,
+): void {
+  writePersisted(dataDir, splitChatMessagesIntoTable(db, next))
 }
 
 export function applyImport(
@@ -198,21 +211,28 @@ export function applyImport(
     throw new ValidationError('database payload missing')
   }
   // The imported payload carries embedded `message[]`; split them into the
-  // messages table and write a message-free db.json. Atomic across both stores:
-  // the SQLite rows + revision bump roll back together, then db.json is restored.
+  // messages table and write a message-free db.json. We persist a *clone* so the
+  // caller's `database` object is left fully hydrated — downstream consumers
+  // (e.g. the legacy hypaV3 memory backfill in routes/save.ts) read chat.message
+  // after this returns, and splitting mutates its argument in place. db.json is
+  // written only after COMMIT so it never lands ahead of the message rows.
   const current = loadPersisted(dataDir)
-  let wrotePersisted = false
+  let transactionOpen = false
   db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
   try {
-    wrotePersisted = true
-    writePersistedWithMessages(db, dataDir, { ...current, database })
+    const messageFree = splitChatMessagesIntoTable(db, {
+      ...current,
+      database: structuredClone(database),
+    })
     const revision = bumpRevision(db)
     db.exec('COMMIT')
+    transactionOpen = false
+    writePersisted(dataDir, messageFree)
     return { revision }
   } catch (err) {
-    db.exec('ROLLBACK')
-    if (wrotePersisted) {
-      writePersisted(dataDir, current)
+    if (transactionOpen) {
+      db.exec('ROLLBACK')
     }
     throw err
   }
@@ -321,9 +341,11 @@ export function backupDir(dataDir: string, id: string): string {
 // Implementation notes per entry:
 //   - 'db.json'  : the user-owned JSON state. Copied via file write/rename.
 //   - 'assets'   : asset bytes referenced from db.json. Copied as a directory.
-//   - 'risu.db'  : SQLite memory database (schema_version + hypa-v3 tables).
-//                  Backed up after a WAL checkpoint; restored via ATTACH so the
-//                  live `DatabaseSync` handle stays valid.
+//   - 'risu.db'  : SQLite database (schema_version + hypa-v3 memory tables +
+//                  the `messages` chat-history table, Phase 4). Backed up after
+//                  a WAL checkpoint; restored via ATTACH so the live
+//                  `DatabaseSync` handle stays valid. Every table that must
+//                  survive restore is listed in SQLITE_BACKUP_TABLES.
 //   - 'save'     : legacy storage directory written by /api/v1/storage/*.
 export const KNOWN_DATA_DIR_CHILDREN = ['db.json', 'assets', 'risu.db', 'save'] as const
 
@@ -336,15 +358,21 @@ function sqliteDbPath(dataDir: string): string {
 }
 
 // Tables that must survive a backup/restore round-trip. Kept in sync with
-// `createMemoryTables` and `schema_version` in `db.ts`. The audit (A4R-backup)
-// asserts createBackup / restoreBackup names every entry in
-// KNOWN_DATA_DIR_CHILDREN, and these tables sit inside `risu.db`.
+// `createMemoryTables`, the `messages` table (`createMessageTable`), and
+// `schema_version` in `db.ts`. The audit (A4R-backup) asserts createBackup /
+// restoreBackup names every entry in KNOWN_DATA_DIR_CHILDREN, and these tables
+// sit inside `risu.db`. `createBackup` file-copies all of risu.db, but
+// `restoreBackup` swaps tables one-by-one via ATTACH — so a table absent here is
+// silently NOT restored (its live rows would survive a restore, desyncing it
+// from the restored db.json). `messages` holds chat history (Phase 4), so it
+// must be listed.
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
   'memory_chunks',
   'memory_summaries',
   'memory_embeddings',
   'memory_jobs',
+  'messages',
 ] as const
 
 function checkpointWal(db: DatabaseSync): void {

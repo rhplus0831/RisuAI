@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 
 // Lazy-projection Phase 4: chat messages live in their own SQLite table, one row
@@ -47,16 +48,20 @@ export function createMessageTable(db: DatabaseSync): void {
   `)
 }
 
-function readMessageObject(raw: unknown, fallbackUid: string): JsonRecord {
+function readMessageObject(raw: unknown): JsonRecord {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { role: 'char', data: '', chatId: fallbackUid }
+    return { role: 'char', data: '', chatId: randomUUID() }
   }
   return raw as JsonRecord
 }
 
-function uidOf(message: JsonRecord, seq: number): string {
+// The message's own id (`Message.chatId`). Normalized data always carries one;
+// for un-normalized / hand-imported messages that lack it, mint a globally
+// unique UUID (matching the command layer's `normalizeGlobalMessageIds`) rather
+// than a chat-relative `seq-N` that would collide across chats.
+function uidOf(message: JsonRecord): string {
   const raw = message.chatId
-  return typeof raw === 'string' && raw.trim() ? raw : `seq-${seq}`
+  return typeof raw === 'string' && raw.trim() ? raw : randomUUID()
 }
 
 function disabledColumn(message: JsonRecord): string | null {
@@ -66,8 +71,8 @@ function disabledColumn(message: JsonRecord): string | null {
   return value ? 'true' : 'false'
 }
 
-function toRow(message: JsonRecord, seq: number): MessageRow {
-  const uid = uidOf(message, seq)
+function toRow(message: JsonRecord): MessageRow {
+  const uid = uidOf(message)
   // Persist the uid we keyed on into the stored record so the column and the
   // round-tripped json never disagree (defensive — they already match for
   // normalized data).
@@ -101,8 +106,8 @@ function insertChatMessages(
     'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json) VALUES (?, ?, ?, ?, ?, ?, ?)',
   )
   messages.forEach((raw, seq) => {
-    const message = readMessageObject(raw, `seq-${seq}`)
-    const row = toRow(message, seq)
+    const message = readMessageObject(raw)
+    const row = toRow(message)
     insert.run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
   })
 }
