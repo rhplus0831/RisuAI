@@ -149,7 +149,11 @@ afterEach(async () => {
 })
 
 describe('Phase 3C hub passthrough', () => {
-  it('rejects without auth once a password is set', async () => {
+  it('allows public GET reads without local auth once a password is set', async () => {
+    echo.setResponder((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end(`hello ${req.url}`)
+    })
     await harness.app.inject({
       method: 'POST',
       url: '/api/v1/auth/setup',
@@ -157,7 +161,40 @@ describe('Phase 3C hub passthrough', () => {
     })
     const res = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/hub/anything',
+      url: '/api/v1/hub/realm/search%3D%3D%20__shared%26%26page%3D%3D0',
+      headers: { 'x-risuai-info': '2026.4.181;fastify' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe('hello /realm/search%3D%3D%20__shared%26%26page%3D%3D0')
+    expect(echo.requests).toHaveLength(1)
+    expect(echo.requests[0].headers['x-risuai-info']).toBe('2026.4.181;fastify')
+  })
+
+  it('rejects mutating hub requests without auth once a password is set', async () => {
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2' },
+    })
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/hub/report',
+      payload: { id: 'realm-id', report: 'spam' },
+    })
+    expect(res.statusCode).toBe(401)
+    expect(echo.requests).toHaveLength(0)
+  })
+
+  it('rejects unauthenticated upstream URL overrides on otherwise public methods', async () => {
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2' },
+    })
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/hub/ignored',
+      headers: { 'x-risu-node-path': encodeURIComponent(`${echo.url}/anything`) },
     })
     expect(res.statusCode).toBe(401)
     expect(echo.requests).toHaveLength(0)

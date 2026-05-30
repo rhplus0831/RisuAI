@@ -5,12 +5,25 @@ import { requireAuth } from '../http.js'
 import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from '../proxy.js'
 
 const HUB_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
+const PUBLIC_HUB_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 const STRIP_REQUEST_HEADERS = new Set(['x-risu-node-path'])
 
 const HUB_TRANSPORT_RESPONSE_HEADERS = new Set(['content-length', 'transfer-encoding'])
 
 const PREFIX = '/api/v1/hub'
+
+function headerString(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '')
+}
+
+function hasUpstreamOverride(req: FastifyRequest): boolean {
+  return headerString(req.headers['x-risu-node-path']).length > 0
+}
+
+function requiresLocalAuth(req: FastifyRequest): boolean {
+  return !PUBLIC_HUB_METHODS.has(req.method) || hasUpstreamOverride(req)
+}
 
 function buildForwardHeaders(
   source: Record<string, unknown>,
@@ -27,8 +40,7 @@ function buildForwardHeaders(
 }
 
 function resolveUpstreamUrl(req: FastifyRequest, hubUrl: string): string {
-  const override = req.headers['x-risu-node-path']
-  const overrideValue = Array.isArray(override) ? override[0] : override
+  const overrideValue = headerString(req.headers['x-risu-node-path'])
   if (typeof overrideValue === 'string' && overrideValue.length > 0) {
     try {
       return decodeURIComponent(overrideValue)
@@ -100,7 +112,7 @@ export function registerHubRoutes(
       method: [...HUB_METHODS],
       url: '/api/v1/hub/*',
       handler: async (req, reply) => {
-        if (!(await requireAuth(authState, req, reply))) return
+        if (requiresLocalAuth(req) && !(await requireAuth(authState, req, reply))) return
 
         const upstreamUrl = resolveUpstreamUrl(req, hubUrl)
         const headers = buildForwardHeaders(req.headers as Record<string, unknown>, hubOrigin)

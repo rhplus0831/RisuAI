@@ -42,6 +42,7 @@ import {
   VirtualWriter,
 } from './globalApi.svelte'
 import { isFastifyServer } from 'src/ts/platform'
+import { getNodeServerProxyAuth } from './storage/nodeStorage'
 import { compressImage, getImageType } from './media'
 import {
   DBState,
@@ -72,6 +73,15 @@ export const hubURL = isFastifyServer
   : window.location.hostname === 'nightly.risuai.xyz' || localStorage.getItem('hub') === 'nightly'
     ? NIGHTLY_HUB_URL
     : EXTERNAL_HUB_URL
+
+export async function authenticatedHubFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  if (!isFastifyServer) {
+    return fetch(input, init)
+  }
+  const headers = new Headers(init.headers)
+  headers.set('risu-auth', await getNodeServerProxyAuth())
+  return fetch(input, { ...init, headers })
+}
 
 function appendImportedCharacter(
   character: character,
@@ -1660,7 +1670,7 @@ export async function shareRisuHub2(
       return
     }
 
-    const fetchPromise = fetch(hubURL + '/hub/realm/upload', {
+    const fetchPromise = authenticatedHubFetch(hubURL + '/hub/realm/upload', {
       method: 'POST',
       body: writer.buf.buffer as any,
       headers: {
