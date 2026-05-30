@@ -400,6 +400,14 @@ const MUTATING_ROUTE_RULES: MutatingRouteRule[] = [
     activeWriterNeedles: ["path === '/api/v1/generate/preview-prompt'"],
   },
   {
+    methods: ['DELETE'],
+    route: '/api/v1/generate/chat/:id',
+    kind: 'active-writer',
+    reason:
+      'durable-generation cancel is authorized by the current active writer (writer handoff)',
+    activeWriterNeedles: ["method === 'DELETE'", '/^\\/api\\/v1\\/generate\\/chat\\/[^/]+$/'],
+  },
+  {
     methods: ['POST'],
     route: '/api/v1/memory/jobs',
     kind: 'active-writer',

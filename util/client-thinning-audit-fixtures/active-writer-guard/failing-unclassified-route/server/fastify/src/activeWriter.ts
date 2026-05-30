@@ -8,6 +8,7 @@ export function requiresActiveWriter(method: string, path: string): boolean {
   if (path.startsWith('/api/v1/backups')) return true
   if (path === '/api/v1/generate/chat') return true
   if (path === '/api/v1/generate/preview-prompt') return true
+  if (method === 'DELETE' && /^\/api\/v1\/generate\/chat\/[^/]+$/.test(path)) return true
   if (path === '/api/v1/memory/jobs') return true
   if (method === 'DELETE' && path.startsWith('/api/v1/memory/jobs/')) return true
   if (path === '/api/v1/storage/write') return true

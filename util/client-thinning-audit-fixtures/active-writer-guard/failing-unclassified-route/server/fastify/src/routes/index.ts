@@ -23,6 +23,7 @@ export function registerRoutes(app: RouteApp): void {
   app.post('/api/v1/backups', noop)
   app.post('/api/v1/generate/chat', noop)
   app.post('/api/v1/generate/preview-prompt', noop)
+  app.delete('/api/v1/generate/chat/:id', noop)
   app.post('/api/v1/memory/jobs', noop)
   app.delete('/api/v1/memory/jobs/:id', noop)
   app.post('/api/v1/storage/write', noop)
