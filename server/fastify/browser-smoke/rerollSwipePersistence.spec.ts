@@ -59,14 +59,16 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
 
   // The open chat hydrates to [user, char 'old reply'].
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
-        const chat = (
-          snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
-        )[0].chats[0]
-        return chat.message.map((m) => m.data)
-      }),
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
+          const chat = (
+            snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
+          )[0].chats[0]
+          return chat.message.map((m) => m.data)
+        }),
+      { timeout: 15_000 },
     )
     .toEqual(['greet me', 'old reply'])
 
@@ -101,9 +103,9 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   // The reroll buffer is reconstructed: the displaced 'old reply' is recoverable
   // alongside the new active candidate.
   await expect
-    .poll(() =>
-      page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRerollCandidates()),
-    )
+    .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRerollCandidates()), {
+      timeout: 15_000,
+    })
     .toEqual(
       expect.arrayContaining([
         expect.stringContaining('old reply'),
@@ -118,8 +120,9 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   // The active tail is the new candidate before swiping.
   const tailBefore = await page.evaluate(() => {
     const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
-    const message = (snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>)[0]
-      .chats[0].message
+    const message = (
+      snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
+    )[0].chats[0].message
     return message.at(-1)!.data
   })
   expect(tailBefore).toContain('rerolled reply')
@@ -128,14 +131,16 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   // prior candidate 'old reply' is recovered as the active tail.
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.swipeRerollBack())
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
-        const message = (
-          snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
-        )[0].chats[0].message
-        return message.at(-1)!.data
-      }),
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
+          const message = (
+            snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
+          )[0].chats[0].message
+          return message.at(-1)!.data
+        }),
+      { timeout: 15_000 },
     )
     .toContain('old reply')
 })

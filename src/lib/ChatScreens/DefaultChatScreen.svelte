@@ -266,10 +266,13 @@
     if (transcriptChanged && currentChatRecord.id) {
       dispatchReplaceMessages(currentChatRecord.id, cha, previous)
     }
-    clearRerollBuffer()
     await sleep(10)
     updateInputSizeAll()
-    await sendChatMain(continueResponse)
+    // confirmBoundary: clear the reroll buffer only when the send/continue actually
+    // lands — clearing it optimistically here would diverge from the server (which
+    // only drops the alternates on a *successful* generation), resurrecting a
+    // half-cleared buffer on reload after a failed send.
+    await sendChatMain(continueResponse, undefined, true)
   }
 
   async function reroll() {
@@ -288,7 +291,11 @@
 
   let abortController: null | AbortController = null
 
-  async function sendChatMain(continued: boolean = false, regenerateMessageId?: string) {
+  async function sendChatMain(
+    continued: boolean = false,
+    regenerateMessageId?: string,
+    confirmBoundary: boolean = false,
+  ) {
     let previousLength =
       DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
         .message.length
@@ -300,6 +307,10 @@
         continue: continued,
         regenerateMessageId,
       })
+      // The send/continue confirm boundary: the server drops the reroll buffer on a
+      // successful generation, so mirror that here (clear the old candidates) only
+      // now that it has landed, then record the new tail as the fresh candidate.
+      if (confirmBoundary) clearRerollBuffer()
       recordGeneratedReroll(previousLength)
     } catch (error) {
       console.error(error)

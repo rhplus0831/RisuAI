@@ -119,6 +119,11 @@ function applyTranscript(messages: Message[]): void {
   }
 }
 
+// Concurrency contract: callers MUST NOT invoke reroll/unReroll while a generation
+// is in flight (the component wrappers gate on `$doingChat`). A swipe's
+// dispatchReplaceMessages would otherwise race an in-flight regenerate's persist —
+// the swap could remove the regenerate's target row before the server commits it.
+// The one-job-per-chat lock + the `$doingChat` gate keep these mutually exclusive.
 export async function reroll(deps: RerollDeps): Promise<void> {
   resetRerollOnCharChange()
   const genId = currentTailGenerationId()
