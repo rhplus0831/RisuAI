@@ -35,6 +35,7 @@ import {
 } from '../commands/messages.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { applyJsonCommandMutation } from '../commands/mutations.js'
+import { addAlternateMessage, clearAlternateMessages } from '../messageStore.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import {
@@ -987,6 +988,20 @@ function persistServerGenerationResult(args: {
         messages[existingIndex] = record
       }
       validateUniqueMessageIds(messages)
+      // Phase 6c — the reroll buffer ("don't lose a rerolled result"):
+      //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve the one
+      //    it displaces as an alternate row instead of destroying it;
+      //  - send / continue is the confirm boundary — drop the chat's reroll buffer.
+      // Both run inside this mutation's transaction (atomic with the message write).
+      const displaced =
+        args.targetMessageId && existing ? (structuredClone(existing) as Message) : undefined
+      const sqlite = (db: DatabaseSync): void => {
+        if (args.targetMessageId) {
+          if (displaced) addAlternateMessage(db, args.chatId, displaced)
+        } else {
+          clearAlternateMessages(db, args.chatId)
+        }
+      }
       return {
         event: {
           ...COMMAND_EVENT_CATALOG.generationPersisted,
@@ -994,6 +1009,7 @@ function persistServerGenerationResult(args: {
           parentId: args.chatId,
         },
         extra: { chatId: args.chatId, messageId },
+        sqlite,
       }
     },
   })

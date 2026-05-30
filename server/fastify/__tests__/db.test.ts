@@ -102,6 +102,54 @@ describe('schema migrations', () => {
     }
   })
 
+  it('adds the reroll-alternate column to a pre-v6 messages table, preserving rows (v6)', () => {
+    const dataDir = makeDataDir()
+    // Reconstruct an existing v5 database: schema_version at 5 + the OLD messages
+    // table (no `alternate` column) with a row — the shape a real user db has
+    // before pulling Phase 6c.
+    const seed = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      seed.exec(`
+        CREATE TABLE schema_version (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          version INTEGER NOT NULL,
+          revision INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (id, version, revision) VALUES (1, 5, 9);
+        CREATE TABLE messages (
+          chat_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          uid TEXT NOT NULL,
+          role TEXT NOT NULL,
+          data TEXT NOT NULL,
+          disabled TEXT,
+          json TEXT NOT NULL,
+          PRIMARY KEY (chat_id, seq)
+        );
+        INSERT INTO messages (chat_id, seq, uid, role, data, json)
+          VALUES ('chat-1', 0, 'm-0', 'user', 'hi', '{"chatId":"m-0","role":"user","data":"hi"}');
+      `)
+    } finally {
+      seed.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 9 })
+      const columns = (
+        db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
+      ).map((row) => row.name)
+      expect(columns).toContain('alternate')
+      // The pre-existing row defaults to an active (alternate = 0) row, intact.
+      const row = db
+        .prepare('SELECT data, alternate FROM messages WHERE chat_id = ? AND seq = 0')
+        .get('chat-1')
+      expect(row).toEqual({ data: 'hi', alternate: 0 })
+    } finally {
+      db.close()
+    }
+  })
+
   it('is safe to reopen and reapply after migrations are current', () => {
     const dataDir = makeDataDir()
     seedSchemaVersion(dataDir, 0, 3)

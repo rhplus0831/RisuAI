@@ -24,6 +24,13 @@ export interface JsonCommandMutationArgs<TExtra extends Record<string, unknown>>
   mutate: (database: unknown) => {
     event: CommandEventDraft
     extra?: TExtra
+    /**
+     * Optional extra SQLite writes to run INSIDE the same transaction, after the
+     * active-message sync and before COMMIT — so they roll back atomically with
+     * the JSON mutation + revision bump. Phase 6c uses this for the reroll-buffer
+     * (alternate) rows, which live in SQLite only (not the JSON `database`).
+     */
+    sqlite?: (db: DatabaseSync) => void
   }
 }
 
@@ -62,6 +69,9 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     // a non-message command writes nothing to the messages table. Inside the
     // transaction; the db.json file write is deferred until after COMMIT.
     syncChatMessages(args.db, hydrated.database, nextDatabase)
+    // Phase 6c: extra SQLite-only writes (the reroll buffer) inside the same
+    // transaction, so they commit/roll back with the message sync + revision bump.
+    mutation.sqlite?.(args.db)
     const messageFree = stripChatMessages({ ...hydrated, database: nextDatabase })
 
     const revision = bumpRevision(args.db)

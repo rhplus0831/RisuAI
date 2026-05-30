@@ -754,6 +754,20 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return res.json().message
   }
 
+  // Phase 6c: the preserved reroll candidates, surfaced on the hydration endpoint.
+  async function persistedAlternates(
+    assertion: string,
+    chatId = 'chat-1',
+  ): Promise<Array<{ role: string; data: string; chatId: string; [k: string]: unknown }>> {
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(res.statusCode).toBe(200)
+    return res.json().alternates
+  }
+
   async function bootstrapChat(
     assertion: string,
   ): Promise<{
@@ -1625,6 +1639,62 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted[1].data).toContain('a brand new reply')
     expect(persisted[1].chatId).not.toBe('msg-char-1')
     expect(persisted.some((m) => m.data === 'old reply')).toBe(false)
+  })
+
+  // Phase 6c — the reroll buffer ("don't lose a rerolled result"): a regenerate
+  // preserves the candidate it replaces as an alternate; further regenerates
+  // accumulate; a send (the confirm boundary) clears the buffer.
+  it('preserves the replaced candidate as an alternate, accumulates, and clears on send (Phase 6c)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedChatWithMessages(
+      assertion,
+      [
+        { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+        { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+      ],
+      'a brand new reply',
+    )
+
+    const regenerate = (targetId: string): Promise<{ statusCode: number }> =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          mode: 'regenerate',
+          regenerateMessageId: targetId,
+        },
+      })
+
+    // First regenerate: the displaced "old reply" is preserved, not destroyed.
+    expect((await regenerate('msg-char-1')).statusCode).toBe(200)
+    let active = await persistedMessages(assertion)
+    expect(active.at(-1)!.data).toContain('a brand new reply')
+    let alternates = await persistedAlternates(assertion)
+    expect(alternates).toHaveLength(1)
+    expect(alternates[0].data).toBe('old reply')
+
+    // Second regenerate (target = the now-active candidate): alternates accumulate.
+    expect((await regenerate(active.at(-1)!.chatId)).statusCode).toBe(200)
+    alternates = await persistedAlternates(assertion)
+    expect(alternates).toHaveLength(2)
+    expect(alternates.some((m) => m.data === 'old reply')).toBe(true)
+    expect(alternates.some((m) => m.data.includes('a brand new reply'))).toBe(true)
+    // The active transcript stays a single char row (no duplication).
+    active = await persistedMessages(assertion)
+    expect(active.filter((m) => m.role === 'char')).toHaveLength(1)
+
+    // A send confirms the turn → the reroll buffer is dropped.
+    const send = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'send', userMessage: 'again' },
+    })
+    expect(send.statusCode).toBe(200)
+    expect(await persistedAlternates(assertion)).toHaveLength(0)
   })
 
   it('runs a Lua editOutput hook server-side over the completion (A2 / slice 3b VM)', async () => {

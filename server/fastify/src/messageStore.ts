@@ -18,6 +18,13 @@ import type { DatabaseSync } from 'node:sqlite'
 //   - `json`    — the full `Message` record, the lossless source of truth that
 //                 `getChatMessages` reconstructs from. The structured columns are
 //                 auxiliary (indexing / stub headers).
+//   - `alternate` (Phase 6c) — 0 for an active transcript row (the normal case),
+//                 1 for a preserved reroll candidate ("don't lose a rerolled
+//                 result"). Active rows keep their 0-based `seq`; alternate rows use
+//                 a NEGATIVE `seq` so the `(chat_id, seq)` PK never collides with an
+//                 active row and the active-transcript diff (`seq >= prefix`) never
+//                 touches them. Every active query filters `alternate = 0`; the
+//                 reroll buffer is read/cleared via the dedicated alternate ops.
 
 type JsonRecord = Record<string, unknown>
 
@@ -29,7 +36,12 @@ interface MessageRow {
   json: string
 }
 
-/** Idempotent DDL. Safe to call on fresh + already-migrated databases. */
+/**
+ * Idempotent DDL. Safe to call on fresh + already-migrated databases. The
+ * `alternate` column carries Phase 6c reroll candidates; a fresh database gets it
+ * here (the schema-version row is stamped CURRENT, so the v6 migration that adds it
+ * to *existing* databases never runs for a fresh one — see `db.ts`).
+ */
 export function createMessageTable(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -40,6 +52,7 @@ export function createMessageTable(db: DatabaseSync): void {
       data TEXT NOT NULL,
       disabled TEXT,
       json TEXT NOT NULL,
+      alternate INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (chat_id, seq)
     );
 
@@ -150,13 +163,14 @@ function toRow(message: JsonRecord): MessageRow {
   }
 }
 
-/** Replace a single chat's messages (DELETE + ordered INSERT). */
+/** Replace a single chat's ACTIVE messages (DELETE + ordered INSERT); the reroll
+ *  buffer (alternate rows) is left intact. */
 export function replaceChatMessages(
   db: DatabaseSync,
   chatId: string,
   messages: readonly unknown[],
 ): void {
-  db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId)
+  db.prepare('DELETE FROM messages WHERE chat_id = ? AND alternate = 0').run(chatId)
   insertChatMessages(db, chatId, messages)
 }
 
@@ -167,7 +181,7 @@ function insertChatMessages(
 ): void {
   if (messages.length === 0) return
   const insert = db.prepare(
-    'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
   )
   messages.forEach((raw, seq) => {
     const message = readMessageObject(raw)
@@ -224,11 +238,16 @@ export function applyChatMessageDiff(
   if (prefix === base.length && prefix === next.length) return // unchanged
 
   if (prefix < base.length) {
-    db.prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ?').run(chatId, prefix)
+    // Active rows only: alternate rows carry a negative `seq` (`seq >= prefix`
+    // already excludes them); `alternate = 0` makes that explicit and robust.
+    db.prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ? AND alternate = 0').run(
+      chatId,
+      prefix,
+    )
   }
   if (prefix < next.length) {
     const insert = db.prepare(
-      'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
     )
     for (let seq = prefix; seq < next.length; seq++) {
       const message = readMessageObject(next[seq])
@@ -238,18 +257,18 @@ export function applyChatMessageDiff(
   }
 }
 
-/** All messages for a chat, in `seq` order, reconstructed from the json column. */
+/** All ACTIVE messages for a chat, in `seq` order, reconstructed from the json column. */
 export function getChatMessages(db: DatabaseSync, chatId: string): JsonRecord[] {
   const rows = db
-    .prepare('SELECT json FROM messages WHERE chat_id = ? ORDER BY seq')
+    .prepare('SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq')
     .all(chatId) as { json: string }[]
   return rows.map((row) => JSON.parse(row.json) as JsonRecord)
 }
 
-/** Every chat's messages, grouped by chat id, in `seq` order (one query). */
+/** Every chat's ACTIVE messages, grouped by chat id, in `seq` order (one query). */
 export function getAllChatMessagesGrouped(db: DatabaseSync): Map<string, JsonRecord[]> {
   const rows = db
-    .prepare('SELECT chat_id, json FROM messages ORDER BY chat_id, seq')
+    .prepare('SELECT chat_id, json FROM messages WHERE alternate = 0 ORDER BY chat_id, seq')
     .all() as { chat_id: string; json: string }[]
   const grouped = new Map<string, JsonRecord[]>()
   for (const row of rows) {
@@ -263,18 +282,60 @@ export function getAllChatMessagesGrouped(db: DatabaseSync): Map<string, JsonRec
   return grouped
 }
 
-/** Chat ids that currently have at least one message row. */
+/** Chat ids that currently have at least one ACTIVE message row. */
 export function getAllChatIdsWithMessages(db: DatabaseSync): string[] {
-  const rows = db.prepare('SELECT DISTINCT chat_id FROM messages').all() as {
-    chat_id: string
-  }[]
+  const rows = db
+    .prepare('SELECT DISTINCT chat_id FROM messages WHERE alternate = 0')
+    .all() as { chat_id: string }[]
   return rows.map((row) => row.chat_id)
 }
 
-/** Number of message rows for a chat (cheap header for stub projection). */
+/** Number of ACTIVE message rows for a chat (cheap header for stub projection). */
 export function countChatMessages(db: DatabaseSync, chatId: string): number {
   const row = db
-    .prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ?')
+    .prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 0')
+    .get(chatId) as { count: number } | undefined
+  return row?.count ?? 0
+}
+
+// ── Phase 6c: the reroll buffer (alternate rows) ────────────────────────────────
+// Preserved reroll candidates for a chat — "don't lose a rerolled result". A
+// regenerate moves the candidate it replaces here instead of destroying it; the
+// buffer is cleared at the confirm boundary (send / continue). Alternate rows use
+// a NEGATIVE `seq` (monotonically decreasing) so the `(chat_id, seq)` PK stays
+// unique against active rows (seq >= 0) without a PK change. No order is preserved
+// (the only guarantee is "not lost").
+
+/** Append one preserved reroll candidate to a chat's alternate buffer. */
+export function addAlternateMessage(db: DatabaseSync, chatId: string, message: unknown): void {
+  const row = toRow(readMessageObject(message))
+  const min = db
+    .prepare('SELECT MIN(seq) AS minSeq FROM messages WHERE chat_id = ? AND alternate = 1')
+    .get(chatId) as { minSeq: number | null } | undefined
+  const seq = (min?.minSeq ?? 0) - 1 // -1, -2, -3, … (first alternate is -1)
+  db.prepare(
+    'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+  ).run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
+}
+
+/** A chat's preserved reroll candidates, most-recently-added first (newest =
+ *  most-negative `seq` → ascending). Order is informational only ("not lost"). */
+export function getAlternateMessages(db: DatabaseSync, chatId: string): JsonRecord[] {
+  const rows = db
+    .prepare('SELECT json FROM messages WHERE chat_id = ? AND alternate = 1 ORDER BY seq ASC')
+    .all(chatId) as { json: string }[]
+  return rows.map((row) => JSON.parse(row.json) as JsonRecord)
+}
+
+/** Drop a chat's reroll buffer (the confirm boundary: send / continue). */
+export function clearAlternateMessages(db: DatabaseSync, chatId: string): void {
+  db.prepare('DELETE FROM messages WHERE chat_id = ? AND alternate = 1').run(chatId)
+}
+
+/** Number of preserved reroll candidates for a chat. */
+export function countAlternateMessages(db: DatabaseSync, chatId: string): number {
+  const row = db
+    .prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 1')
     .get(chatId) as { count: number } | undefined
   return row?.count ?? 0
 }

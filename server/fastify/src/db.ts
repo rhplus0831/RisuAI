@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 
-export const CURRENT_SCHEMA_VERSION = 5
+export const CURRENT_SCHEMA_VERSION = 6
 
 export interface MigrationStep {
   version: number
@@ -55,7 +55,28 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createChatBlobTable(db)
     },
   },
+  {
+    version: 6,
+    name: 'message-reroll-alternates',
+    up: (db) => {
+      // Lazy-projection Phase 6c: the reroll buffer ("don't lose a rerolled
+      // result"). Add the `alternate` flag column to the existing `messages` table.
+      // Guarded because a database created via the v4 migration runs the CURRENT
+      // `createMessageTable`, which already defines the column — only an older,
+      // pre-v6 `messages` table is missing it. Fresh databases get the column from
+      // `createMessageTable` and never reach this migration (version stamped CURRENT).
+      if (!hasColumn(db, 'messages', 'alternate')) {
+        db.exec('ALTER TABLE messages ADD COLUMN alternate INTEGER NOT NULL DEFAULT 0')
+      }
+    },
+  },
 ]
+
+/** Whether `table` already has a column named `column` (PRAGMA table_info). */
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  return rows.some((row) => row.name === column)
+}
 
 export function openDatabase(dataDir: string): DatabaseSync {
   fs.mkdirSync(dataDir, { recursive: true })

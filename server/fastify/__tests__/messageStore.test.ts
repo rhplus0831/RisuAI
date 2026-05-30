@@ -5,13 +5,17 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from '../src/db.js'
 import {
+  addAlternateMessage,
   applyChatMessageDiff,
+  clearAlternateMessages,
+  countAlternateMessages,
   countChatMessages,
   deleteChatHypaV3,
   deleteChatMessages,
   getAllChatHypaV3Grouped,
   getAllChatIdsWithHypaV3,
   getAllChatIdsWithMessages,
+  getAlternateMessages,
   getChatHypaV3,
   getChatMessages,
   replaceChatMessages,
@@ -90,12 +94,100 @@ describe('messageStore CRUD', () => {
     expect(getAllChatIdsWithMessages(db)).toEqual(['chat-b'])
   })
 
-  it('replaceChatMessages with an empty array removes all rows', () => {
+  it('replaceChatMessages with an empty array removes all active rows', () => {
     const db = makeDb(makeDataDir())
     replaceChatMessages(db, 'chat-a', [msg('a1', 'user', 'a')])
     replaceChatMessages(db, 'chat-a', [])
     expect(getChatMessages(db, 'chat-a')).toEqual([])
     expect(getAllChatIdsWithMessages(db)).toEqual([])
+  })
+})
+
+// Phase 6c: the reroll buffer ("don't lose a rerolled result"). Alternate rows are
+// preserved candidates that NEVER appear in the active transcript queries.
+describe('reroll-alternate rows', () => {
+  it('keeps alternates out of every active query', () => {
+    const db = makeDb(makeDataDir())
+    replaceChatMessages(db, 'chat-1', [msg('m1', 'user', 'hi'), msg('m2', 'char', 'active')])
+    addAlternateMessage(db, 'chat-1', msg('alt1', 'char', 'old candidate'))
+
+    // The active transcript is unchanged by the alternate.
+    expect(getChatMessages(db, 'chat-1')).toEqual([
+      msg('m1', 'user', 'hi'),
+      msg('m2', 'char', 'active'),
+    ])
+    expect(countChatMessages(db, 'chat-1')).toBe(2)
+    expect(getAllChatIdsWithMessages(db)).toEqual(['chat-1'])
+    // The alternate is retrievable via the dedicated buffer queries.
+    expect(getAlternateMessages(db, 'chat-1')).toEqual([msg('alt1', 'char', 'old candidate')])
+    expect(countAlternateMessages(db, 'chat-1')).toBe(1)
+  })
+
+  it('accumulates alternates with unique negative seqs (most-recent first)', () => {
+    const db = makeDb(makeDataDir())
+    addAlternateMessage(db, 'chat-1', msg('a', 'char', 'first'))
+    addAlternateMessage(db, 'chat-1', msg('b', 'char', 'second'))
+    addAlternateMessage(db, 'chat-1', msg('c', 'char', 'third'))
+
+    expect(countAlternateMessages(db, 'chat-1')).toBe(3)
+    expect(getAlternateMessages(db, 'chat-1').map((m) => m.data)).toEqual([
+      'third',
+      'second',
+      'first',
+    ])
+    const seqs = (
+      db.prepare('SELECT seq FROM messages WHERE chat_id = ? AND alternate = 1').all('chat-1') as {
+        seq: number
+      }[]
+    ).map((r) => r.seq)
+    expect(seqs.sort((x, y) => x - y)).toEqual([-3, -2, -1])
+  })
+
+  it('clears a chat reroll buffer without touching the active transcript', () => {
+    const db = makeDb(makeDataDir())
+    replaceChatMessages(db, 'chat-1', [msg('m1', 'char', 'active')])
+    addAlternateMessage(db, 'chat-1', msg('alt', 'char', 'candidate'))
+
+    clearAlternateMessages(db, 'chat-1')
+
+    expect(getAlternateMessages(db, 'chat-1')).toEqual([])
+    expect(countAlternateMessages(db, 'chat-1')).toBe(0)
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'char', 'active')])
+  })
+
+  it('does not disturb alternates when the active transcript is appended/diffed', () => {
+    const db = makeDb(makeDataDir())
+    const base = [msg('m1', 'user', 'a')]
+    replaceChatMessages(db, 'chat-1', base)
+    addAlternateMessage(db, 'chat-1', msg('alt', 'char', 'candidate'))
+
+    // Surgical active append must leave the alternate intact.
+    applyChatMessageDiff(db, 'chat-1', base, [...base, msg('m2', 'char', 'b')])
+
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'a'), msg('m2', 'char', 'b')])
+    expect(getAlternateMessages(db, 'chat-1')).toEqual([msg('alt', 'char', 'candidate')])
+  })
+
+  it('deleteChatMessages drops the reroll buffer too (chat lifecycle)', () => {
+    const db = makeDb(makeDataDir())
+    replaceChatMessages(db, 'chat-1', [msg('m1', 'char', 'active')])
+    addAlternateMessage(db, 'chat-1', msg('alt', 'char', 'candidate'))
+
+    deleteChatMessages(db, 'chat-1')
+
+    expect(getChatMessages(db, 'chat-1')).toEqual([])
+    expect(getAlternateMessages(db, 'chat-1')).toEqual([])
+  })
+
+  it('scopes the buffer per chat', () => {
+    const db = makeDb(makeDataDir())
+    addAlternateMessage(db, 'chat-a', msg('a', 'char', 'A'))
+    addAlternateMessage(db, 'chat-b', msg('b', 'char', 'B'))
+
+    clearAlternateMessages(db, 'chat-a')
+
+    expect(getAlternateMessages(db, 'chat-a')).toEqual([])
+    expect(getAlternateMessages(db, 'chat-b')).toEqual([msg('b', 'char', 'B')])
   })
 })
 

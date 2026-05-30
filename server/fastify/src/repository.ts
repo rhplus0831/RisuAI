@@ -9,6 +9,7 @@ import {
   deleteChatMessages,
   getAllChatHypaV3Grouped,
   getAllChatMessagesGrouped,
+  getAlternateMessages,
   getChatHypaV3,
   getChatMessages,
   replaceAllChatHypaV3,
@@ -322,18 +323,23 @@ export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted
 }
 
 /**
- * One chat's hydration payload — messages + hypaV3Data — for the hydration
- * endpoint (table, with embedded db.json fallback for not-yet-extracted chats).
+ * One chat's hydration payload — messages + hypaV3Data + the Phase 6c reroll
+ * buffer — for the hydration endpoint (table, with embedded db.json fallback for
+ * not-yet-extracted chats). `alternates` are the preserved reroll candidates
+ * ("don't lose a rerolled result"); they make the guarantee reachable over the
+ * wire. The current client ignores the field — it is foundation for surfacing the
+ * candidates later, and is always present (empty array when none).
  */
 export function loadChatHydration(
   db: DatabaseSync,
   dataDir: string,
   chatId: string,
-): { message: unknown[]; hypaV3Data: unknown } {
+): { message: unknown[]; hypaV3Data: unknown; alternates: unknown[] } {
+  const alternates = getAlternateMessages(db, chatId) as unknown[]
   let message = getChatMessages(db, chatId) as unknown[]
   let hypaV3Data = getChatHypaV3(db, chatId)
   if (message.length > 0 && hypaV3Data !== undefined) {
-    return { message, hypaV3Data }
+    return { message, hypaV3Data, alternates }
   }
   // Fallback for a chat not yet extracted into the table (defensive — startup
   // extraction normally makes the table authoritative).
@@ -343,7 +349,7 @@ export function loadChatHydration(
     if (message.length === 0 && Array.isArray(chat.message)) message = chat.message
     if (hypaV3Data === undefined && chat.hypaV3Data !== undefined) hypaV3Data = chat.hypaV3Data
   })
-  return { message, hypaV3Data }
+  return { message, hypaV3Data, alternates }
 }
 
 export function applyImport(

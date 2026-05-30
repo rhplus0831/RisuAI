@@ -85,6 +85,9 @@ export function registerProjectionRoutes(
           chatId,
           message: hydration.message,
           hypaV3Data: hydration.hypaV3Data,
+          // Phase 6c: the preserved reroll candidates ("don't lose a rerolled
+          // result"). Present (possibly empty); the current client ignores it.
+          alternates: hydration.alternates,
         }
       }
 
