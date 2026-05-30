@@ -1,5 +1,4 @@
-// A4R-provider-capability fixture (failing): the browser side is correct; only
-// the /chat dispatcher re-forks, so the failure is attributable to chatDispatch.
+// Invariant: the browser completion classifier consumes the shared capability table.
 import { resolveProviderCapability } from './providerCapability'
 
 export function resolveServerCompletionRoute(format: number) {

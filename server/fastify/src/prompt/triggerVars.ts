@@ -4,14 +4,13 @@ import type {
 } from '../../../../src/ts/storage/database.svelte'
 
 /**
- * Phase 7-9b trigger variable engine, ported from the closures inside
- * `src/ts/process/triggers.ts` `runTrigger` (L1224-1338).
+ * Trigger variable engine, ported from the closures inside
+ * `src/ts/process/triggers.ts` `runTrigger`.
  *
  * The SPA defines `getVar` / `setVar` and the local-variable scope
  * helpers as closures over `runTrigger`'s mutable state. The server
  * extracts them into this factory so they are unit-testable on their
- * own (7-9b runs no effects, so `setVar` / the local scopes are not
- * reachable through `runTrigger` this slice) and so `triggers.ts` does
+ * own and so `triggers.ts` does
  * not balloon as 7-9c/d add effects that drive them.
  *
  * Resolution order for `getVar` (L1295-1315):

@@ -111,8 +111,7 @@
           textTheme: 'highcontrast',
           claudeCachingExperimental: true,
         }
-        // Snapshot the projection before applying the preset so we can persist
-        // every field setPreset() changes, not just the smaller patch below.
+        // Capture preset changes that are outside the explicit patch below.
         const beforeSetup = safeStructuredClone(
           DBState.db as unknown as Record<string, unknown>,
         )
@@ -202,10 +201,7 @@
         withTrustedServerProjectionWrite(() => {
           Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
         })
-        // Persist everything the preset + patch changed, not only the patch.
-        // applyServerBackedSettingsPatch keeps only command-backed settings
-        // keys, so unrelated keys are ignored safely; this stops preset fields
-        // from being lost on the next projection refresh in server mode.
+        // Persist command-backed preset fields so server projection refresh keeps them.
         const afterSetup = DBState.db as unknown as Record<string, unknown>
         const fullPatch: Record<string, unknown> = { ...patch }
         for (const key of Object.keys(afterSetup)) {

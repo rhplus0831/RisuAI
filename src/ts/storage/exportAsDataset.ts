@@ -8,8 +8,8 @@ import {
 } from '../server/chatMessageHydration.svelte'
 
 export async function exportAsDataset() {
-  // Phase 4.3 / 5: chats and (when stubbed) character globalLore are lazy-hydrated
-  // on open; this walks every character, so load all of both first.
+  // Chats and stubbed character globalLore hydrate on open; this walks every
+  // character, so load all of both first.
   await ensureAllChatsHydrated()
   await ensureAllCharacterLorebooksHydrated()
   const db = getDatabase()

@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Regression coverage for the Phase 9 projection-guard audit: the global
-// lorebook add / folder / import helpers captured a `lorebook`/`lore` alias
-// from the read-only projection *before* the trusted write swapped DBState.db
-// to a mutable clone, then pushed into that stale alias and threw. The writes
-// must run against the freshly-cloned mutable projection and still dispatch the
-// matching global-lorebook command.
+// Regression coverage: the global lorebook add / folder / import helpers
+// captured a `lorebook`/`lore` alias from the read-only projection before the
+// trusted write swapped DBState.db to a mutable clone, then pushed into that
+// stale alias and threw. The writes must run against the freshly-cloned mutable
+// projection and still dispatch the matching global-lorebook command.
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 

@@ -268,10 +268,8 @@
 
       ctx.fillStyle = item.bg_hex_color
       ctx.fillRect(x_min, y_min, x_max - x_min, y_max - y_min)
-      // ctx.fillStyle = item.text_hex_color;
-      // ctx.fillText(item.translation, x_min, y_min);
 
-      //make text wrap, and fit the text in the box
+      // Wrap text to fit the box.
       const text = item.translation
       const maxWidth = x_max - x_min
       const maxHeight = y_max - y_min

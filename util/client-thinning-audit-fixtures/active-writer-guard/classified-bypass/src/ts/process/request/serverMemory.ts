@@ -1,6 +1,5 @@
-// EC5 needle carrier for the server memory client helper. In the real tree this
-// attaches the writer session header, marks the request as a writer mutation,
-// and handles the stale-writer (423) response.
+// Server memory client needle carrier for writer headers, writer mutation flags,
+// and stale-writer handling.
 export const serverMemoryActiveWriterHandling = {
   header: 'activeWriterSessionHeader',
   stale: 'handleActiveWriterStaleResponse',

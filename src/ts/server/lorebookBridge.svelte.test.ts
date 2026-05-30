@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
-// Lazy-projection Phase 5 — the no-data-loss invariant for `watchServerBackedLorebooks`.
+// No-data-loss invariant for `watchServerBackedLorebooks`.
 // The watcher auto-persists any lorebook change it diffs; stubbing character
 // `globalLore` makes a `[real]`→`[]` (hydrated→stub) transition possible, which —
 // without the hydrated registry — the watcher would persist as a DELETION. Per the

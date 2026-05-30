@@ -1,6 +1,4 @@
-// Accepted: a non-wrapper helper may observe a `status === 'conflict'` result
-// but must surface it to the caller (return/throw) instead of replaying the
-// mutating command with a refreshed baseRevision.
+// Accepted: non-wrapper helpers may observe conflicts only to surface them.
 
 interface CommandResult {
   status: 'ok' | 'conflict'

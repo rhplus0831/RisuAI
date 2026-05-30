@@ -1,7 +1,5 @@
-// A4R-pluginv2 fixture (failing): a hypothetical — and forbidden — server-side
-// port of the pluginV2 `editprocess` hook. Importing the browser plugin runtime
-// and iterating the registry is exactly the "silent port into a server sandbox"
-// the invariant exists to catch.
+// Violation: the server assembler imports the browser plugin runtime and runs a
+// pluginV2 edit hook.
 import { pluginV2 } from '../../../../../src/ts/plugins/plugins.svelte'
 
 export function applyPluginEditProcess(data: string): string {

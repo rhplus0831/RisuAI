@@ -110,8 +110,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // still-embedded db.json on a first v3→v4 boot) so it sees the real history.
   backfillLegacyHypaV3MemoryRows(db, loadPersistedWithMessages(db, config.dataDir).database)
   // Proactively move any embedded chat.message[] into the SQLite table and make
-  // db.json message-free (Slice 4.3). No-op once converged. Must run after the
-  // backfill above, which needs the embedded messages on the first upgrade boot.
+  // db.json message-free. No-op once converged. Must run after the backfill
+  // above, which needs the embedded messages on the first upgrade boot.
   ensureMessagesExtracted(db, config.dataDir)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {
@@ -155,8 +155,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const authState = createAuthState(config.dataDir)
   const commandEventSink = opts.commandEvents ?? createCommandEventSink()
   const streamJobRegistry = new JobRegistry()
-  // Durable generation (Milestone 1): a dedicated, separately GC-ticked registry for
-  // detached chat generations + their transient chatId→jobId submission lock.
+  // Separately GC-ticked registry for detached chat generations and their
+  // transient chatId→jobId submission lock.
   const generationJobRegistry = new GenerationJobRegistry()
   const gcTimer = setInterval(() => {
     streamJobRegistry.tickGc()

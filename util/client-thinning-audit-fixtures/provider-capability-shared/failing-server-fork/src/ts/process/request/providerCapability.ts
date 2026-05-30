@@ -1,4 +1,4 @@
-// A4R-provider-capability fixture: minimal stand-in for the shared table.
+// Shared provider capability table.
 export type ProviderCapabilityVerdict =
   | { routable: true; provider: string }
   | { routable: false; reason: string }

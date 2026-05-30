@@ -1,5 +1,4 @@
-// A4R-group-chat-removed fixture (failing-ui-branch): keep-layers intact so only the
-// negative half (UI branch) fails.
+// Invariant: load-time database filtering keeps group characters out of client state.
 interface Database {
   characters: ({ type?: string } | null)[]
 }

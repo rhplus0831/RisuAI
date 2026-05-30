@@ -13,16 +13,14 @@ import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
- * Phase 7-7a / 7-7b / 7-7c lorebook activation: constant + keyword +
- * recursive.
+ * Lorebook activation: constant + keyword + recursive.
  *
- * Ports the always-on, keyword-driven, and recursive-scanning slices
- * of `src/ts/process/lorebook.svelte.ts:loadLoreBookV3Prompt` into a
- * Svelte-free, request-scoped function. The decorator parser scaffold
- * here is reused by the remaining slices:
+ * Ports the always-on, keyword-driven, and recursive-scanning paths of
+ * `loadLoreBookV3Prompt` into a Svelte-free, request-scoped function. The
+ * decorator parser scaffold is reused by the remaining work:
  *
- *   - 7-7d: token-budget truncation (requires `tokens` from 7-8).
- *   - 7-7e: depth-prompt emission into history.
+ *   - token-budget truncation.
+ *   - depth-prompt emission into history.
  *
  * In-scope decorators (parsed, applied, and stripped from prompt text
  * unless noted):
@@ -675,10 +673,8 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
 }
 
 /**
- * Phase 7-7e depth-prompt helpers. The SPA inserts these at the
- * assemble root (`src/ts/process/index.svelte.ts:275-283`), not
- * inside the history walk, so we expose them as standalone helpers
- * that the eventual 7-11a assembler can call between
+ * Depth-prompt helpers. The SPA inserts these at the assemble root, not inside
+ * the history walk, so they are standalone helpers called between
  * `buildHistoryWindow` and the final render.
  */
 

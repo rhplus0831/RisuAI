@@ -518,7 +518,7 @@ export function setDatabase(data: Database) {
   }
   data.top_p ??= 1
   if (typeof data.top_p !== 'number') {
-    //idk why type changes, but it does so this is a fix
+    // Normalize migrated data that stored top_p as a non-number.
     data.top_p = 1
   }
   //@ts-expect-error data.google has required fields (accessToken, projectId), but we use empty object as default and populate below
@@ -772,10 +772,10 @@ export function setDatabase(data: Database) {
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
   // Incomplete-migration gate (see the `useServerPromptAssembly` JSDoc on the
-  // Database type). Default ON as of the decision-#5 closeout: server `/chat`
-  // prompt assembly is the supported default path; the documented `unsupported`
-  // content classes hard-fail rather than silently falling back to local. Tests /
-  // cases exercising the local assembler set this `false` explicitly. Not deprecated.
+  // Database type). Server `/chat` prompt assembly is the supported default path;
+  // documented `unsupported` content classes hard-fail rather than silently
+  // falling back to local. Tests / cases exercising the local assembler set this
+  // `false` explicitly. Not deprecated.
   data.useServerPromptAssembly ??= true
   if (!isFastifyServer) {
     //this is intended to forcely reduce the size of the database in web
@@ -801,12 +801,11 @@ export function applyServerProjectionDatabase(data: Database) {
 }
 
 /**
- * Surgically merges a targeted projection slice (the top-level keys owned by a
- * single resource) into the live projection, without the full `setDatabase`
- * replace. Used by the Phase 2 decision tree for foreign command events and by
- * Phases 4–5 for entity hydration. The fields come from the server projection
- * (same source as bootstrap), so no re-normalization is needed; this must not
- * clobber locally-hydrated entities outside the named keys.
+ * Surgically merges targeted projection fields into the live projection without
+ * a full `setDatabase` replace. Used for foreign command events and entity
+ * hydration. The fields come from the server projection (same source as
+ * bootstrap), so no re-normalization is needed; this must not clobber
+ * locally-hydrated entities outside the named keys.
  */
 export function mergeServerProjectionFields(fields: Partial<Database>) {
   return withTrustedServerProjectionWrite(() => {
@@ -818,10 +817,9 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
 }
 
 /**
- * Lazy-projection Phase 4.3: fill a stubbed chat's `message[]` with the messages
- * hydrated from the server on chat-open. Targets the chat by id across all
- * characters; a trusted projection write so it passes the read-only guard.
- * Returns true if the chat was found and hydrated.
+ * Fill a stubbed chat's `message[]` with messages hydrated from the server on
+ * chat-open. Targets the chat by id across all characters; a trusted projection
+ * write so it passes the read-only guard. Returns true if found and hydrated.
  */
 export function hydrateServerChatMessages(
   chatId: string,
@@ -833,8 +831,8 @@ export function hydrateServerChatMessages(
       const chat = character.chats?.find((candidate) => candidate.id === chatId)
       if (chat) {
         chat.message = message as Message[]
-        // Phase 4.4: hypaV3Data is hydrated alongside messages. undefined means
-        // the chat has none — clear any stale value.
+        // `hypaV3Data` is hydrated alongside messages; undefined means the chat
+        // has none, so clear any stale value.
         if (hypaV3Data === undefined) {
           delete (chat as { hypaV3Data?: unknown }).hypaV3Data
         } else {
@@ -848,10 +846,9 @@ export function hydrateServerChatMessages(
 }
 
 /**
- * Lazy-projection Phase 5: fill a stubbed character's `globalLore` with the
- * entries hydrated from the server on character-open. Targets the character by
- * `chaId`; a trusted projection write so it passes the read-only guard. Returns
- * true if the character was found and hydrated.
+ * Fill a stubbed character's `globalLore` with entries hydrated from the server
+ * on character-open. Targets by `chaId`; a trusted projection write so it passes
+ * the read-only guard. Returns true if found and hydrated.
  */
 export function hydrateServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
   return withTrustedServerProjectionWrite(() => {
@@ -1414,16 +1411,16 @@ export interface Database {
   echoMessage?: string
   echoDelay?: number
   /**
-   * Phase 7-12a: route browser prompt assembly through the server
-   * `POST /api/v1/generate/chat` route instead of the in-browser path.
+   * Route browser prompt assembly through the server `POST /api/v1/generate/chat`
+   * route instead of the in-browser path.
    * Server-side completion dispatch is mandatory in Fastify mode; this
    * setting controls prompt assembly only.
    *
    * EXPERIMENTAL / INCOMPLETE-MIGRATION GATE — not a stable user setting and NOT
-   * deprecated. Defaults to `true` as of the decision-#5 closeout: server prompt
-   * assembly is the supported default path, and its provider-routing decision is
-   * shared with the completion path via `resolveProviderCapability`. The documented
-   * `unsupported` content classes (non-vision image caption fallback, interactive
+   * deprecated. Defaults to `true`: server prompt assembly is the supported
+   * default path, and its provider-routing decision is shared with the completion
+   * path via `resolveProviderCapability`. The documented `unsupported` content
+   * classes (non-vision image caption fallback, interactive
    * Lua dialogs, plugin-V2 script hooks, group-chat legacy) hard-fail by default
    * instead of silently falling back to local assembly. Tests / specific cases set
    * this `false` to exercise `assembleLocalSendChatPrompt`. See docs/client-thinning/.

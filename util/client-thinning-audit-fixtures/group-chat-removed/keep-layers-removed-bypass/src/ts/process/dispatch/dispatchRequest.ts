@@ -1,5 +1,4 @@
-// A4R-group-chat-removed fixture (bypass): the isGroupChat: false hardcode was
-// dropped from the request boundary.
+// Violation: the request boundary no longer pins isGroupChat to false.
 declare function requestChatData(payload: unknown): Promise<unknown>
 
 export async function dispatchRequest() {

@@ -42,18 +42,12 @@ interface PendingCollectionReplacement {
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
 let suppressRollbackDispatch = false
 
-// Lazy-projection Phase 5 (no-data-loss invariant). Character `globalLore` is
-// stubbed in the projection for non-open characters and hydrated on character-open;
-// `checkNewFormat` then defaults a stubbed (absent) `globalLore` to `[]`
-// (bootstrap.ts), so field-presence can no longer tell a stubbed character from a
-// genuinely-empty hydrated one. This registry is the source of truth instead: the
-// reactive watcher only ever snapshots/persists a character whose `globalLore` is
-// HYDRATED here. A character that is stubbed (or re-stubbed by a projection
-// re-apply) is absent from the registry, so a `[real]`→`[]` transition can never be
-// observed as a deletion and persisted — the data-loss path this phase must kill.
-// (Module `lorebook` keeps using field-presence: `checkNewFormat` never defaults an
-// absent module lorebook to `[]`, so a stubbed disabled module stays `Array.isArray`
-// === false and is already skipped below.)
+// No-data-loss guard for character `globalLore` stubs. `checkNewFormat` defaults
+// absent character lore to `[]`, so field presence cannot distinguish a stub from
+// an empty hydrated lorebook. The watcher only snapshots/persists ids in this
+// registry; re-stubbed characters are absent until hydrated again. Module
+// lorebooks still use field presence because absent module lorebooks are not
+// defaulted.
 const hydratedCharacterLorebooks = new Set<string>()
 
 /** Mark a character's `globalLore` as hydrated (real, persistable). */
@@ -67,9 +61,9 @@ export function isCharacterLorebookHydrated(characterId: string): boolean {
 }
 
 /**
- * Forget all hydrated-character marks — call BEFORE a full projection re-apply /
- * `characters`-slice merge re-stubs every character (mirrors `resetChatHydration`),
- * so a re-stubbed character is treated as non-hydrated until it is hydrated again.
+ * Forget all hydrated-character marks before a full projection re-apply or
+ * `characters` merge re-stubs every character, so each re-stubbed character stays
+ * non-hydrated until it is fetched again.
  */
 export function resetLorebookHydration(): void {
   hydratedCharacterLorebooks.clear()
@@ -141,7 +135,7 @@ export function ensureAllClientLorebookIds(): void {
       if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
         character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
       }
-      // Chat localLore stays resident (not stubbed in Phase 5).
+      // Chat localLore stays resident, not stubbed.
       for (const chat of character.chats ?? []) {
         chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
       }
@@ -264,10 +258,9 @@ export function dispatchReplaceCharacterLorebooks(
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
-  // Phase 5 (defence in depth): when stubs are on, NEVER persist a non-hydrated
-  // character's globalLore — `entries` would be the stub `[]` and replace (delete)
-  // the real server entries. The selected char is hydrated on open, so a real edit
-  // is safe; this only drops an edit made in the brief pre-hydration window.
+  // Defense in depth: when stubs are on, never persist a non-hydrated character's
+  // globalLore. `entries` would be the stub `[]` and delete the real server
+  // entries. A real selected-character edit is safe after hydration on open.
   if (DBState.db?.enableLorebookStubs && !hydratedCharacterLorebooks.has(characterId)) return
   ensureClientLorebookEntryIds(entries)
   queueReplacement(

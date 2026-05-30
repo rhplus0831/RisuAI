@@ -16,8 +16,8 @@ declare global {
         patch: Record<string, unknown>,
       ) => Promise<ServerCommandResult<Record<string, unknown>>>
       waitForLoaded: (timeoutMs?: number) => Promise<void>
-      // Phase 6c swipe-persistence E2E: open a character (drives chat hydration),
-      // read the reconstructed reroll candidates, and drive the swipe controls.
+      // Swipe-persistence E2E: open a character (drives chat hydration), read the
+      // reconstructed reroll candidates, and drive the swipe controls.
       selectCharacter: (index: number) => void
       getRerollCandidates: () => string[]
       swipeRerollBack: () => Promise<void>

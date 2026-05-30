@@ -8,9 +8,8 @@ import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
 
 /**
- * Phase 7-6d server-side helpers ported from
- * `src/ts/process/modules.ts:357-466`. Resolves the active modules
- * for an assembly call and exposes their regex script lists for
+ * Server-side module helpers ported from `src/ts/process/modules.ts`. Resolves
+ * active modules for an assembly call and exposes their regex script lists for
  * `processScript`.
  *
  * Skips the SPA's `lastModules` / `lastModuleData` memoization

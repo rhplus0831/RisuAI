@@ -19,14 +19,8 @@ import {
 } from '../src/prompt/luaRuntime.js'
 
 /**
- * Sub-slice 3b-1 proof suite for the server Lua runtime. Per the slice's
- * "Prove" step: a pure `editRequest` handler rewrites rows (prelude + dispatch +
- * JSON round-trip); `setChatVar`/`setState` mutate the bound var engine; the
- * `request()` SSRF + rate/url/https limits are enforced; a runaway script is
- * interrupted by the exec limit; and an interactive API fails explicitly.
- *
- * No assembler hook is wired and the classifier Lua arm still routes
- * `unsupported` — this file exercises the runtime in isolation.
+ * Server Lua runtime proof suite: prompt rewrites, var writes, request safety,
+ * execution limits, and explicit failures for interactive APIs.
  */
 
 beforeAll(() => {

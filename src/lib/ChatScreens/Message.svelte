@@ -1,10 +1,3 @@
-<!--
-    A rewrite of Chat.svelte for future-proofing and better maintainability.
-
-    Unlike Chat.svelte, this component doesn't have side-effects,
-    and all data is passed in as props and only renders based on that data.
--->
-
 <script lang="ts">
   interface Props {
     characterIcon: string

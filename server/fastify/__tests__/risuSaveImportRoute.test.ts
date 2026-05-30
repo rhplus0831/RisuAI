@@ -227,7 +227,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(200)
 
-    // Phase 4.3: messages are hydrated via the per-chat endpoint, not the stub.
+    // Messages are hydrated via the per-chat endpoint, not the stub.
     const hydration = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/projection/chatMessages?id=chat-a',

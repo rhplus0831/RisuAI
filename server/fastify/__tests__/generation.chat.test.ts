@@ -389,9 +389,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const prompt = events.find((e) => e.type === 'prompt')!
     expect(Array.isArray(prompt.data.messages)).toBe(true)
     expect((prompt.data.messages as unknown[]).length).toBeGreaterThan(0)
-    // 7-12b: the prompt event also carries the full OpenAIChat rows + biases
-    // so the browser adapter can drive a preview / dispatch. `formated`
-    // preserves the `role`/`content` of the lossy `messages` projection.
+    // The prompt event also carries full OpenAIChat rows + biases so the browser
+    // adapter can drive a preview / dispatch. `formated` preserves the
+    // `role`/`content` of the lossy `messages` projection.
     const formated = prompt.data.formated as Array<{ role: string; content: unknown }>
     expect(Array.isArray(formated)).toBe(true)
     expect(formated.map((r) => ({ role: r.role, content: r.content }))).toEqual(
@@ -480,10 +480,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
-  // Slice 3b sub-slice 2: the server Lua VM runs the `editRequest` hook during
-  // assembly (mirrors the browser's `renderFinalPrompt.ts:384`
-  // `runLuaEditTrigger(char,'editRequest',formated)`), so a `triggerlua` char's
-  // edits show up in the server-assembled prompt — not the pre-slice identity.
+  // The server Lua VM runs the `editRequest` hook during assembly, mirroring the
+  // browser's `runLuaEditTrigger(char,'editRequest',formated)`.
   function dbWithEditRequestLua(code: string): unknown {
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
@@ -628,14 +626,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(serverMarker).toEqual(goldenMarker)
   })
 
-  // Slice 3b sub-slice 3: the server wires Lua `editprocess` through the runtime
-  // at the two history call sites (first message + per-message bodies). Lua
-  // `editprocess` is a browser no-op — `runLuaEditTrigger` early-returns for it
-  // before booting the engine or dispatching — so a `triggerlua` char must
-  // assemble its history identically to the same char without it. The Lua here
-  // defines an `editprocess` global that *would* rewrite any body it processed if
-  // the hook ever dispatched, so the marker's absence proves the no-op is wired
-  // through the VM (not skipped) and faithful.
+  // Lua `editprocess` is a browser no-op, so a `triggerlua` char must assemble
+  // history identically to the same char without it. The Lua here would rewrite
+  // any body it processed, so the marker's absence proves the no-op is faithful.
   it('runs Lua editprocess through the runtime as a no-op at parity (slice 3b)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
 
@@ -704,14 +697,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return db
   }
 
-  // ── Slice 3b sub-slice 4: submit-time input trigger + `editinput` ──────────
+  // Submit-time input trigger + `editinput`.
   //
-  // The server now runs the chat-screen submit handler's input trigger
-  // (`runTrigger(char,'input')`, with `triggerlua` on the VM) and `editinput`
-  // transform before assembly, and owns the post-`editinput` transcript write.
-  // The browser sends the raw user text for a server-backed send. These tests
-  // live in the node-env server suite because wasmoon cannot init under the
-  // browser suite's jsdom (same reason as the editRequest golden proof above).
+  // The server runs the chat-screen submit handler's input trigger and
+  // `editinput` transform before assembly, then owns the post-`editinput`
+  // transcript write. These tests live in node because wasmoon cannot init under
+  // the browser suite's jsdom.
 
   /** A char whose `triggerlua` defines the submit-time hook (`onInput` for the
    * input trigger, `listenEdit('editInput', …)` for editinput). `type: 'input'`
@@ -739,8 +730,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return parseEvents(res.body)
   }
 
-  // Read a persisted chat's messages via the Phase 4.3 hydration endpoint (the
-  // bootstrap now ships message-free stubs).
+  // Read persisted chat messages via hydration; bootstrap ships message-free stubs.
   async function persistedMessages(
     assertion: string,
     chatId = 'chat-1',
@@ -754,7 +744,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return res.json().message
   }
 
-  // Phase 6c: the preserved reroll candidates, surfaced on the hydration endpoint.
+  // Preserved reroll candidates surfaced on the hydration endpoint.
   async function persistedAlternates(
     assertion: string,
     chatId = 'chat-1',
@@ -780,8 +770,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(200)
-    // Chat metadata (incl. scriptstate) comes from the stub bootstrap; the
-    // message[] is hydrated separately (Phase 4.3 stubs the bootstrap).
+    // Chat metadata (incl. scriptstate) comes from the stub bootstrap; message[]
+    // is hydrated separately.
     const chat = res.json().database.characters[0].chats[0]
     return { ...chat, message: await persistedMessages(assertion, chat.id) }
   }
@@ -994,9 +984,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(userRow?.content).not.toContain('{{asset_prompt::hero}}')
   })
 
-  // Slice 3c: the image-gen / emotion view instruction. `buildInlayViewInstruction`
-  // appends a static `system` row drawn from `newGenData` when `inlayViewScreen`
-  // is set; it rides postEverything. No request field is needed — the config is
+  // `buildInlayViewInstruction` appends a static `system` row from `newGenData`
+  // when `inlayViewScreen` is set. No request field is needed; the config is
   // already on the loaded character.
   function dbWithInlayView(view: 'emotion' | 'imggen', extra: Record<string, unknown>): unknown {
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
@@ -1069,8 +1058,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
-  // Slice 3c: with `inlayViewScreen` unset (the default), no instruction row is
-  // appended — the static section is a no-op, matching the browser gate.
+  // With `inlayViewScreen` unset, no instruction row is appended.
   it('omits the view instruction when inlayViewScreen is unset (slice 3c)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
@@ -1385,10 +1373,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         generationId: info.data.generationId,
       },
     })
-    // lazy-projection Phase 3: the inline (non-durable) path now persists the
-    // assistant message server-side — the browser issues no generation-result
-    // command — so the `done` frame carries the bumped revision and the chat
-    // shows the persisted reply.
+    // The inline path persists the assistant message server-side, so the `done`
+    // frame carries the bumped revision and the chat shows the persisted reply.
     const done = events.at(-1)!.data as { postGeneration?: { revision?: number } }
     expect(done.postGeneration?.revision).toBe(2)
 
@@ -1396,15 +1382,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply' })
   })
 
-  // ── Slice 4 (A2): server post-generation pass (output trigger + editoutput) ──
+  // Server post-generation pass (output trigger + editoutput).
   //
-  // After the provider produces the completion, the server runs the run-var pass,
-  // the `'output'` trigger, and `editoutput` over the just-generated text — the
-  // durable derivations the browser used to own (`postGeneration/outputTrigger.ts`
-  // + the `editoutput` arm of `processScriptFull`). The chat-var delta is persisted
-  // through the slice-2 writer (revision bump) and surfaced, with the final text /
-  // resend, on the terminal `done.postGeneration`. (wasmoon-in-node is why the Lua
-  // proof lives here, like the slice-3b proofs above.)
+  // After provider completion, the server runs the run-var pass, the `'output'`
+  // trigger, and `editoutput` over the generated text. The chat-var delta is
+  // persisted and surfaced, with final text / resend, on `done.postGeneration`.
 
   /** A server-dispatch echo db (`useServerPromptAssembly` + echo) with char overrides. */
   function dbWithServerDispatch(charOverride: Record<string, unknown>): unknown {
@@ -1542,10 +1524,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const events = parseEvents(res.body)
     const done = doneFrame(events)
 
-    // The raw streamed text is unchanged; the server-owned `editoutput` transform
-    // rides on `finalText`. lazy-projection Phase 3: the inline path persists the
-    // transformed message server-side, so the revision bumps and bootstrap shows
-    // the editoutput-applied text. No chat-var write, so no messagePatch.
+    // The raw streamed text is unchanged; server-owned `editoutput` rides on
+    // `finalText`. The inline path persists the transformed message server-side,
+    // so the revision bumps and bootstrap shows the editoutput-applied text.
+    // No chat-var write, so no messagePatch.
     expect(done.result).toBe('server echo reply')
     expect(done.postGeneration?.finalText).toBe('server echo REPLY')
     expect(done.postGeneration?.revision).toBe(2)
@@ -1555,8 +1537,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo REPLY' })
   })
 
-  // lazy-projection Phase 3: the inline path (continue / regenerate) is now
-  // server-persisted too — the browser issues zero generation-result commands.
+  // The inline continue / regenerate paths are server-persisted too; the browser
+  // issues zero generation-result commands.
   function seedChatWithMessages(
     assertion: string,
     messages: Array<Record<string, unknown>>,
@@ -1641,11 +1623,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted.some((m) => m.data === 'old reply')).toBe(false)
   })
 
-  // Phase 6c — the reroll buffer ("don't lose a rerolled result"): a regenerate
-  // preserves BOTH the candidate it replaces AND the new one it produces as
-  // alternates (so the full candidate set survives a reload and swiping away from
-  // the newest one never loses it); further regenerates accumulate (deduped by
-  // uid); a send (the confirm boundary) clears the buffer.
+  // The reroll buffer preserves both the replaced candidate and the new one as
+  // alternates, accumulates further regenerates by uid, and clears on send.
   it('preserves both the replaced and the new candidate as alternates, accumulates, and clears on send (Phase 6c)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedChatWithMessages(

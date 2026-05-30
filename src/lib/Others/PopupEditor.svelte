@@ -55,8 +55,6 @@
     class="bg-darkbg rounded-lg p-4 w-11/12 h-11/12 flex flex-col gap-2"
     onclick={(e) => e.stopPropagation()}
   >
-    <!-- <h2 class="text-xl font-bold">Popup Editor</h2> -->
-    <!-- Header Toolbar -->
     <div class="flex items-center justify-between">
       <h2 class="text-xl font-bold">Popup Editor</h2>
       <div class="flex items-center gap-2">

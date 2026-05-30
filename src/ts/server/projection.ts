@@ -15,13 +15,13 @@ export function canUseServerProjection(): boolean {
 }
 
 /**
- * Targeted per-resource projection fetch (lazy-projection Phase 2).
+ * Targeted per-resource projection fetch.
  *
  * Returns the current server-projected value of the top-level `database` keys
  * owned by `resource`, so a foreign command event can refresh only that
  * resource. `mode: 'full'` means the server could not narrow the resource and
- * the caller should fall back to a full bootstrap. This is the fetch half of
- * the primitive Phases 4–5 reuse for entity hydration.
+ * the caller should fall back to a full bootstrap. Entity hydration reuses the
+ * same fetch primitive.
  */
 export async function fetchServerProjectionResource(
   resource: string,
@@ -96,17 +96,17 @@ export type ServerChatMessagesResult =
       chatId: string
       message: unknown[]
       hypaV3Data?: unknown
-      // Phase 6c: the persisted reroll candidates for this chat's turn (the
-      // alternate rows). Always present (empty array when none); the client seeds
-      // its swipe buffer from these so rerolls survive a reload.
+      // Persisted reroll candidates for this chat's turn (the alternate rows).
+      // Always present (empty array when none); the client seeds its swipe buffer
+      // from these so rerolls survive a reload.
       alternates: unknown[]
     }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
 /**
- * Per-chat message hydration (lazy-projection Phase 4.3). The bootstrap ships
- * chat stubs (empty `message[]`); this fetches one chat's messages on open.
+ * Per-chat message hydration. The bootstrap ships chat stubs (empty `message[]`);
+ * this fetches one chat's messages on open.
  */
 export async function fetchServerChatMessages(
   chatId: string,
@@ -166,9 +166,9 @@ export type ServerCharacterLorebookResult =
   | { status: 'unavailable' }
 
 /**
- * Per-character `globalLore` hydration (lazy-projection Phase 5). When the
- * `enableLorebookStubs` setting is on, the projection ships a character's
- * globalLore as a stub; this fetches the full globalLore on character-open.
+ * Per-character `globalLore` hydration. When `enableLorebookStubs` is on, the
+ * projection ships a character's globalLore as a stub; this fetches the full
+ * globalLore on character-open.
  */
 export async function fetchServerCharacterLorebook(
   characterId: string,

@@ -149,8 +149,6 @@
         }}
       />
       {#if value.ableFlag}
-        <!-- <span class="text-textcolor mt-6">FLAG:</span>
-                <TextInput size="sm" bind:value={value.flag} /> -->
         <Accordion styled name="FLAGS">
           <span class="text-textcolor mt-3">Normal Flag</span>
           <div class="grid w-full grid-cols-2 rounded-md border border-darkborderc">

@@ -277,10 +277,9 @@ describe('Phase 9-3f compatibility adapters', () => {
   })
 
   it('prepareCompatibleCharacterUpdate returns one update factory routed through the sequencer', async () => {
-    // A4EC2 / B1: the V3 plugin API uses prepareCompatibleCharacterUpdate +
-    // runOptimisticCommandSequence so the dispatch sits inside the
-    // allowed-sequencer scope. Verify factories build the update with the
-    // sequenced baseRevision and rollback restores the snapshot.
+    // The V3 plugin API uses prepareCompatibleCharacterUpdate +
+    // runOptimisticCommandSequence so dispatch sits inside the allowed-sequencer
+    // scope. Verify factories build the update and rollback restores the snapshot.
     const calls = stubCommandFetch()
     const previousCharacter = snapshot(DBState.db.characters[0])
     const previous = currentCharacterStateSnapshot()

@@ -72,7 +72,7 @@ const BANNED_URL_PREFIXES = [
   'https://risuai.xyz',
 ]
 
-// ── json.lua + factory singleton (decision 2/3) ─────────────────────────────
+// json.lua + factory singleton.
 
 let luaFactoryPromise: Promise<LuaFactory> | null = null
 
@@ -868,7 +868,7 @@ function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
   })
 }
 
-// ── Bounded load (decision 1) ───────────────────────────────────────────────
+// Bounded load.
 
 /**
  * `engine.doString` equivalent that bounds the load with a wall-clock timeout, so

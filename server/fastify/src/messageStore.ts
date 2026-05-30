@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 
-// Lazy-projection Phase 4: chat messages live in their own SQLite table, one row
-// per message, instead of being embedded in `data/db.json`. This module is the
-// pure CRUD layer over that table. The `db.json` blob keeps chat *metadata*; the
-// `messages` table keeps the unbounded, high-churn `message[]`.
+// Chat messages live in their own SQLite table, one row per message, instead of
+// being embedded in `data/db.json`. This module is the pure CRUD layer over that
+// table. The `db.json` blob keeps chat *metadata*; the `messages` table keeps the
+// unbounded, high-churn `message[]`.
 //
 // Storage model (see docs/archive/lazy-projection/reference/storage-model.md):
 //   - `chat_id` — the chat's id (`Chat.id`).
@@ -18,7 +18,7 @@ import type { DatabaseSync } from 'node:sqlite'
 //   - `json`    — the full `Message` record, the lossless source of truth that
 //                 `getChatMessages` reconstructs from. The structured columns are
 //                 auxiliary (indexing / stub headers).
-//   - `alternate` (Phase 6c) — 0 for an active transcript row (the normal case),
+//   - `alternate` — 0 for an active transcript row (the normal case),
 //                 1 for a preserved reroll candidate ("don't lose a rerolled
 //                 result"). Active rows keep their 0-based `seq`; alternate rows use
 //                 a NEGATIVE `seq` so the `(chat_id, seq)` PK never collides with an
@@ -38,9 +38,9 @@ interface MessageRow {
 
 /**
  * Idempotent DDL. Safe to call on fresh + already-migrated databases. The
- * `alternate` column carries Phase 6c reroll candidates; a fresh database gets it
- * here (the schema-version row is stamped CURRENT, so the v6 migration that adds it
- * to *existing* databases never runs for a fresh one — see `db.ts`).
+ * `alternate` column carries reroll candidates; fresh databases get it here
+ * because their schema-version row is stamped CURRENT and the v6 migration only
+ * upgrades existing databases.
  */
 export function createMessageTable(db: DatabaseSync): void {
   db.exec(`
@@ -61,9 +61,9 @@ export function createMessageTable(db: DatabaseSync): void {
   `)
 }
 
-// Phase 4.4: the heavy per-chat `hypaV3Data` blob lives in its own table (one
-// row per chat), out of db.json and the wire projection, hydrated on open like
-// messages. Distinct from the Hypa V3 *memory tables* (chunks/summaries/...).
+// The heavy per-chat `hypaV3Data` blob lives in its own table, out of db.json and
+// the wire projection, hydrated on open like messages. Distinct from the Hypa V3
+// memory tables (chunks/summaries/...).
 export function createChatBlobTable(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS chat_hypa_v3 (
@@ -192,8 +192,8 @@ function insertChatMessages(
 
 /**
  * Rebuild the entire table from a full set of chats (one transactional wipe +
- * insert). Used by the storage-boundary write path while message commands are
- * still whole-blob (Slice 4.1); the caller drives the surrounding transaction.
+ * insert). Used by the storage-boundary write path; the caller drives the
+ * surrounding transaction.
  */
 export function replaceAllChatMessages(
   db: DatabaseSync,
@@ -298,19 +298,10 @@ export function countChatMessages(db: DatabaseSync, chatId: string): number {
   return row?.count ?? 0
 }
 
-// ── Phase 6c: the reroll buffer (alternate rows) ────────────────────────────────
-// Preserved reroll candidates for a chat — "don't lose a rerolled result". A
-// regenerate stores *every* candidate of the current turn here (the one it
-// displaces AND the new one it produces) so the full set survives a reload and
-// swipe-navigation is durable for free: flipping candidates only repositions the
-// active transcript tail, never touching this buffer (the active tail is one of
-// these candidates, matched back by `uid` on hydration). This realizes the design
-// doc's "insert the new candidate as an alternate row and flip the active tail"
-// (docs/archive/lazy-projection/reference/durable-generation-modes.md). The buffer is
-// cleared at the confirm boundary (send / continue). Alternate rows use a NEGATIVE
-// `seq` (monotonically decreasing) so the `(chat_id, seq)` PK stays unique against
-// active rows (seq >= 0) without a PK change. No order is preserved (the only
-// guarantee is "not lost").
+// Reroll buffer (alternate rows): regenerate stores every candidate of the
+// current turn here, including the displaced row and the new candidate, so the
+// set survives reloads. Send / continue clears the buffer. Alternate rows use a
+// monotonically decreasing negative `seq` so they never collide with active rows.
 
 /**
  * Append one preserved reroll candidate to a chat's alternate buffer, keyed by

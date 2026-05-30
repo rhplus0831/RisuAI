@@ -209,7 +209,7 @@
       </div>
 
       {#if $PlaygroundStore === 2}
-        <!-- <PlaygroundChat/> -->
+        <!-- Reserved for Playground chat. -->
       {/if}
       {#if $PlaygroundStore === 3}
         <PlaygroundEmbedding />

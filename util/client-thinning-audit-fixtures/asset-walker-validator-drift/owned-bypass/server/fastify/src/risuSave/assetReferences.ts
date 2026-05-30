@@ -1,9 +1,5 @@
-// Minimal fixture for the EC6 asset walker validator drift rule. The audit
-// extracts every collector call inside collectRisuSaveAssetReferences and
-// requires a matching entry in the audit's ASSET_WALKER_OWNERS table, plus the
-// owner's validator needles in the owning validator file. This walker mirrors
-// the real server/fastify/src/risuSave/assetReferences.ts so collected fields
-// equal the owner table exactly.
+// Invariant: every collected asset reference has an ASSET_WALKER_OWNERS entry
+// and validator needles in its owner file.
 
 type Found = Map<string, Set<string>>
 

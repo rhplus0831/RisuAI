@@ -12,11 +12,7 @@
   } = $props()
 </script>
 
-<!--
-  We can define button color using template literals,
-  but since tailwind doesn't support dynamic class names,
-  we need to use a workaround.
---->
+<!-- Tailwind needs static class names for each size/color branch. -->
 
 {#if color == 'primary'}
   {#if size == 'xs'}

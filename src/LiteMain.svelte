@@ -14,8 +14,6 @@
       <nav class="mr-4 sm:mr-0">
         <ul class="flex space-x-4">
           <li><a class="text-white" href="/account">계정</a></li>
-          <!-- <li><a class="text-white">About</a></li>
-                    <li><a class="text-white">Contact</a></li> -->
         </ul>
       </nav>
     </div>

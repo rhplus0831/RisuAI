@@ -201,8 +201,8 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
  * The assembler dependency surface bound to the persisted store. The
  * route owns the storage import so `assemble.ts` stays
  * storage-global-free. The loaded database reference is kept for provider
- * dispatch and mutation event payloads; durable chat-var persistence is now
- * performed by the route itself (Phase 9 C-A1, `persistAssemblyChatVars`)
+ * dispatch and mutation event payloads; durable chat-var persistence is
+ * performed by the route itself through `persistAssemblyChatVars`
  * through the same JSON-command machinery the scriptstate command uses.
  */
 interface RouteAssembleDeps extends AssembleDeps {
@@ -212,8 +212,8 @@ interface RouteAssembleDeps extends AssembleDeps {
 const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
 
 /**
- * Slice 3a: resolve an asset reference to its sha256 store id. Accepts either a
- * bare id or the `assets/<id>.<ext>` path form, mirroring the browser's
+ * Resolve an asset reference to its sha256 store id. Accepts either a bare id or
+ * the `assets/<id>.<ext>` path form, mirroring the browser's
  * `serverAssetIdFromReference` (`src/ts/server/assets.ts`) and the risuSave
  * reference collector (`risuSave/assetReferences.ts`).
  */
@@ -223,12 +223,12 @@ function assetIdFromReference(reference: string): string | null {
 }
 
 /**
- * Slice 3a: read an `{{asset_prompt::}}` / char-icon reference from the on-disk
- * assets store and re-wrap it as a `data:image/png;base64,` URI. Hardcoding the
+ * Read an `{{asset_prompt::}}` / char-icon reference from the on-disk assets
+ * store and re-wrap it as a `data:image/png;base64,` URI. Hardcoding the
  * png mime keeps byte-parity with the browser's `readImage(asset[1])` path
  * (`formatHistoryMessage.ts:161-176`), which does the same regardless of the
  * stored content-type. Returns `undefined` for an unresolvable reference so the
- * marker is stripped without bytes (the pre-3a behavior for missing assets).
+ * marker is stripped without bytes when assets are missing.
  */
 function resolveStoredAssetImage(dataDir: string, reference: string): MultiModal | undefined {
   const id = assetIdFromReference(reference)
@@ -301,8 +301,8 @@ function isPersistingMode(mode: AssembleInput['mode']): boolean {
 }
 
 /**
- * Phase 9 C-A1 + slice 3b sub-slice 4: persist the assembly-time chat-var delta
- * the assembler computed (`mutations.chatVarMutations`) and — when a submit-time
+ * Persist the assembly-time chat-var delta the assembler computed
+ * (`mutations.chatVarMutations`) and, when a submit-time
  * input trigger / `editinput` rewrote the transcript — the post-`editinput`
  * submit transcript (`submitMessages`), through the same JSON command machinery
  * the scriptstate command uses (`applyJsonCommandMutation`): one revision bump,
@@ -443,7 +443,7 @@ function findContinueRow(state: AssemblyState): Message | undefined {
  * persist. `continue` extends the captured continue row in place (keeping its id);
  * `regenerate` replaces the target (`regenerateMessageId`); `send` appends a fresh
  * row keyed by `generationId`. The mode-aware target is what makes a durable
- * continue/regenerate (Phase 6b) land on the right row even without a post-gen pass.
+ * continue/regenerate land on the right row even without a post-gen pass.
  */
 function buildRawModeMessage(args: {
   input: AssembleInput
@@ -555,21 +555,13 @@ function buildPostGenerationFrameBody(
 }
 
 /**
- * Slice 4 (A2) + lazy-projection Phase 3: run the server post-generation pass
- * over the provider's completion text, persist the result SERVER-SIDE, and build
- * the `done.postGeneration` frame. Runs the run-var pass, the `'output'` trigger,
- * and `editoutput` (`runServerPostGeneration`), then persists the derived
- * assistant message + post-gen chat-var delta in one mutation
- * (`persistServerGenerationResult` — same shape + `generation.persisted` event as
- * the durable path), and surfaces the final text / delta / resend / bumped
- * revision for the browser.
+ * Run the server post-generation pass over the provider's completion text,
+ * persist the result server-side, and build the `done.postGeneration` frame.
+ * This surfaces final text / delta / resend / bumped revision for the browser.
  *
- * Phase 3 makes the server the sole author of generation results: this inline
- * path (continue / regenerate) now owns the message write the browser used to do
- * via the `/generation-result` command (B2). A derivation failure persists the
- * RAW provider text best-effort (mode-correct target) rather than losing it, then
- * still terminates cleanly; a persist failure (chat changed) is swallowed and the
- * browser keeps its optimistic copy.
+ * The inline path is the sole author of generation results. A derivation failure
+ * persists the raw provider text best-effort rather than losing it; a persist
+ * failure is swallowed and the browser keeps its optimistic copy.
  */
 async function buildPostGenerationFrame(args: {
   state: NonNullable<Parameters<typeof runServerPostGeneration>[0]>
@@ -612,14 +604,11 @@ async function buildPostGenerationFrame(args: {
 }
 
 /**
- * Phase 7-11g: stream the assembled prompt. The SSE head is written
- * up front, so every assembly failure (bad IDs, missing database, a
- * trigger/overflow `stopSending`) is a terminal `error` event rather
- * than an HTTP status — body validation already returned 400 before we
- * committed to streaming. Provider dispatch lands with later 7-12d
- * slices. Phase 9 C-A1 persists the assembly-time chat-var delta itself
- * (`persistAssemblyChatVars`) and returns the bumped revision on the `info`
- * frame; the browser keeps the `message_patch` for its projection but no
+ * Stream the assembled prompt. The SSE head is written up front, so every
+ * assembly failure is a terminal `error` event rather than an HTTP status. The
+ * route persists the assembly-time chat-var delta and returns the bumped
+ * revision on the `info` frame; the browser keeps the `message_patch` for its
+ * projection but no
  * longer replays the delta as a command.
  */
 async function streamAssembly(
@@ -651,12 +640,9 @@ async function streamAssembly(
       const result = await assemblePrompt(input, deps)
       const database = deps.getDatabase()
       const promptMs = Date.now() - startedAt
-      // C-A1 + slice 3b sub-slice 4: the route owns the assembly-time chat-var
-      // write and the post-`editinput` submit-transcript write for persisting
-      // modes (preview / preview_prompt stay read-only). This runs for both the
-      // success and the trigger/overflow `stopSending` branches because the
-      // browser used to replay the delta in both — dropping the replay without
-      // persisting here would lose the write on an aborted send.
+      // The route owns assembly-time chat-var writes and post-`editinput`
+      // submit-transcript writes for persisting modes. This runs for both success
+      // and `stopSending` so aborted sends do not lose the assembly mutations.
       const persistedRevision =
         isPersistingMode(input.mode) && result.mutations
           ? persistAssemblyMutations({
@@ -686,9 +672,8 @@ async function streamAssembly(
           emit({ type: 'message_patch', patch: result.mutations })
         }
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
-        // 7-11i: assembly telemetry. `outputTokens` is the response *budget*,
-        // not a completion count, so it rides on `responseBudget` rather than
-        // `tokens.completion` (which stays unset until dispatch in 7-12).
+        // `outputTokens` is the response budget, not a completion count, so it
+        // rides on `responseBudget` rather than `tokens.completion`.
         emit({
           type: 'info',
           timings: { prompt: promptMs },
@@ -696,8 +681,8 @@ async function streamAssembly(
           responseBudget: result.outputTokens,
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
-          // C-A1: present only when a chat-var write actually persisted, so the
-          // browser reconciles its cached command revision; omitted otherwise.
+          // Present only when a chat-var write actually persisted, so the browser
+          // reconciles its cached command revision; omitted otherwise.
           revision: persistedRevision,
         })
         if (shouldDispatch && database && generationInfo) {
@@ -799,16 +784,14 @@ async function streamAssembly(
   }
 }
 
-// ── Durable generation (Milestone 1): decoupled lifecycle + server-owned result ──
+// Durable generation: decoupled lifecycle + server-owned result.
 //
 // For a `durable` send (browser `resolveDurableGeneration === 'durable'` →
 // `body.durable === true`, mode `send`), the generation runs as a detached
 // `JobRegistry` job whose lifecycle is **not** tied to the request connection:
 // dropping the connection detaches a viewer, the job keeps generating, buffers,
-// and is reattachable; at completion the server runs the A2 post-gen pass and
-// persists the derived assistant message + scriptstate delta itself (no browser
-// replay). See `docs/durable-generation/steps/step-2-lifecycle-decoupling.md`
-// and `step-3-server-owned-result-persistence.md`.
+// and is reattachable. At completion the server persists the derived assistant
+// message + scriptstate delta itself.
 
 /** The active-writer identity carried on the `/chat` request (captured at job creation). */
 function readWriterSessionHeader(req: FastifyRequest): string | null {
@@ -988,7 +971,7 @@ function persistServerGenerationResult(args: {
         messages[existingIndex] = record
       }
       validateUniqueMessageIds(messages)
-      // Phase 6c — the reroll buffer ("don't lose a rerolled result"):
+      // Reroll buffer ("don't lose a rerolled result"):
       //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve BOTH the
       //    one it displaces AND the new one it produces as alternate rows, so the
       //    full candidate set of the turn survives a reload and swipe-navigation is
@@ -1025,20 +1008,19 @@ function persistServerGenerationResult(args: {
 }
 
 /**
- * Step 3 + Phase 6b: the durable-job post-generation pass. Runs the A2 server
- * derivation (`runServerPostGeneration`: run-var pass + `'output'` trigger +
- * `editoutput`), then persists the **derived** assistant message + post-gen
- * scriptstate delta server-side (mode-aware via the shared
+ * Durable-job post-generation pass. Runs server derivation, then persists the
+ * **derived** assistant message + post-gen scriptstate delta server-side
+ * (mode-aware via the shared
  * `resolvePostGenerationResult` — `send` appends, `continue` extends the last row
  * in place, `regenerate` replaces the target) and folds the bumped revision /
  * final text / resend onto the `done` frame so the (possibly reattached) browser
  * reconciles without persisting.
  *
  * Failure policy (the only divergence from the inline `buildPostGenerationFrame`):
- *  - **derivation throws** (gotcha F): the client may be gone, so "browser keeps its
- *    copy" is unsafe — persist the **raw** provider text and emit a `warning`.
- *  - **persist throws** (gotcha C — chat deleted / materially changed): record a job
- *    `error` the reattaching client sees; do not force-write.
+ *  - **derivation throws**: the client may be gone, so persist the raw provider
+ *    text and emit a `warning`.
+ *  - **persist throws**: record a job `error` the reattaching client sees; do not
+ *    force-write.
  */
 async function buildDurablePostGeneration(args: {
   emit: (event: PromptChatEvent) => void
@@ -1091,11 +1073,9 @@ async function buildDurablePostGeneration(args: {
 }
 
 /**
- * Step 2 gotcha B / E + Phase 6b: on a **streaming** cancel persist the
- * accumulated-so-far provider text **raw** (no post-gen pass over a truncated
- * turn), mode-aware via `buildRawModeMessage` (`continue` extends the captured row
- * in place, `regenerate` replaces the target, `send` appends) and idempotent on
- * `generationId`. A non-streaming cancel (no accumulated text) persists nothing.
+ * On a **streaming** cancel, persist accumulated-so-far provider text **raw**:
+ * no post-gen pass over a truncated turn, mode-aware via `buildRawModeMessage`,
+ * and idempotent on `generationId`. A non-streaming cancel persists nothing.
  * A chat-changed failure during a cancel is swallowed (the job is aborted and there
  * is no connected client to notify).
  */
@@ -1283,7 +1263,7 @@ async function runGenerationJob(args: {
             })
             terminalDoneEmitted = transportResult.status !== 'aborted'
             if (transportResult.status === 'aborted') {
-              // Step 2 gotcha E: a streaming cancel persists the accumulated-so-far text.
+              // A streaming cancel persists the accumulated-so-far text.
               if (transportResult.result.length > 0 && successfulResult.state) {
                 persistRawCancelledResult({
                   db,
@@ -1375,8 +1355,8 @@ function startDurableGeneration(args: {
   const job = generationJobs.registry.create({ timeoutMs: undefined, heartbeatSec: undefined })
   job.chatId = input.chatId
   job.writerSessionId = readWriterSessionHeader(req)
-  // Phase 6b: record the generating mode (+ regenerate target) so the reload-resume
-  // `activeGenerationJobs` projection lets a reattaching browser render the right shape.
+  // Record the generating mode and regenerate target so reload-resume can render
+  // the right shape.
   job.mode = input.mode === 'continue' || input.mode === 'regenerate' ? input.mode : 'send'
   if (input.mode === 'regenerate') job.regenerateMessageId = input.regenerateMessageId
   generationJobs.register(input.chatId, job.id)
@@ -1411,11 +1391,9 @@ export function registerGenerationChatRoutes(
     }
 
     const input = toAssembleInput(body)
-    // Durable path: a `send` / `continue` / `regenerate` the browser classified
-    // durable (Phase 6b widened it past send-only). The active-writer submission
-    // gate ran in the global preHandler; here we only add the one-job-per-chat rule
-    // and hand off to the detached runner. `isPersistingMode` is exactly the durable
-    // mode set (preview / preview_prompt never generate, so never durable).
+    // Durable path for persisting generation modes. The active-writer submission
+    // gate ran in the global preHandler; here we add the one-job-per-chat rule
+    // and hand off to the detached runner.
     if (body.durable === true && isPersistingMode(input.mode)) {
       startDurableGeneration({ req, reply, db, input, dataDir, eventSink, options, generationJobs })
       return
@@ -1424,11 +1402,9 @@ export function registerGenerationChatRoutes(
     await streamAssembly(req, reply, db, input, dataDir, eventSink, options)
   })
 
-  // Step 2: reattach to a running (or done-within-grace) durable generation over
-  // SSE — observe is open to any authenticated client (no writer lease). A returning
-  // client discovers the id from bootstrap `activeGenerationJobs` (reload-resume) or
-  // the `job_accepted` / `info` frame. 404 if the job is unknown / GC'd (a completed
-  // job is read from `db.json` via the normal projection refresh, EC-D2).
+  // Reattach to a running, or done-within-grace, durable generation over SSE.
+  // Observe is open to any authenticated client; completed jobs are read back via
+  // the normal projection refresh.
   app.get<{ Params: { id: string } }>(
     '/api/v1/generate/chat/:id/stream',
     async (req, reply) => {
@@ -1442,11 +1418,9 @@ export function registerGenerationChatRoutes(
     },
   )
 
-  // Step 2 gotcha B: explicit cancel. Authorized by the **current** active writer
-  // (the global guard preHandler enforces it — including writer handoff, so a new
-  // writer can cancel a prior, now-disconnected writer's job). Aborts the provider
-  // dispatch; the runner persists the streaming-so-far text (gotcha E) and clears
-  // the submission lock. A bare disconnect does NOT cancel (it only detaches).
+  // Explicit cancel is authorized by the current active writer. It aborts provider
+  // dispatch; the runner persists the streaming-so-far text and clears the
+  // submission lock. A bare disconnect only detaches.
   app.delete<{ Params: { id: string } }>('/api/v1/generate/chat/:id', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const job = generationJobs.registry.get(req.params.id)
@@ -1462,8 +1436,8 @@ export function registerGenerationChatRoutes(
     return { success: true }
   })
 
-  // 7-11h: one-shot JSON preview. Unlike `/chat` this never opens an SSE
-  // stream, so scope errors surface as real HTTP status codes.
+  // One-shot JSON preview. Unlike `/chat`, this never opens an SSE stream, so
+  // scope errors surface as real HTTP status codes.
   app.post('/api/v1/generate/preview-prompt', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 

@@ -1,9 +1,5 @@
-// Minimal fixture for the A4R1 passive refresh writer ownership rule. The real
-// helpers live in src/ts/server/bootstrap.ts. The writer-intent / read-only
-// split is the accepted shape: the writer helper attaches the active-writer
-// session header and is only called from the page-load entrypoint
-// (src/ts/bootstrap.ts, in WRITER_BOOTSTRAP_CALLERS); the refresh helper stays
-// read-only.
+// Invariant: writer-intent bootstrap attaches the active-writer session header;
+// projection refresh remains read-only.
 
 function activeWriterSessionHeader(): Record<string, string> {
   return { 'x-risu-writer': 'session' }

@@ -222,13 +222,8 @@
     } else {
       const char = DBState.db.characters[selectedChar]
       if (char.type === 'character') {
-        // Slice 3b sub-slice 4: when server prompt assembly owns the send, the
-        // server runs the submit-time input trigger + `editinput` over the raw
-        // user text and persists the rewritten transcript (`assemble.ts`
-        // runInputTrigger / applyEditInput). The browser sends the raw text and
-        // skips both here to avoid double-applying them. B1 input plumbing (the
-        // slash-command + file-inlay branches above) stays browser-owned. The
-        // local path (flag off / non-Fastify) keeps running them in the browser.
+        // Server prompt assembly owns submit-time input triggers/editinput;
+        // browser-side handling would double-apply them in Fastify mode.
         if (isFastifyServer && DBState.db.useServerPromptAssembly) {
           cha.push({
             role: 'user',
@@ -268,10 +263,7 @@
     }
     await sleep(10)
     updateInputSizeAll()
-    // confirmBoundary: clear the reroll buffer only when the send/continue actually
-    // lands — clearing it optimistically here would diverge from the server (which
-    // only drops the alternates on a *successful* generation), resurrecting a
-    // half-cleared buffer on reload after a failed send.
+    // Clear the reroll buffer only after send/continue succeeds.
     await sendChatMain(continueResponse, undefined, true)
   }
 
@@ -307,9 +299,7 @@
         continue: continued,
         regenerateMessageId,
       })
-      // The send/continue confirm boundary: the server drops the reroll buffer on a
-      // successful generation, so mirror that here (clear the old candidates) only
-      // now that it has landed, then record the new tail as the fresh candidate.
+      // Mirror the server's successful-generation boundary for reroll state.
       if (confirmBoundary) clearRerollBuffer()
       recordGeneratedReroll(previousLength)
     } catch (error) {

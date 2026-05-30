@@ -156,7 +156,6 @@
         {/if}
       </button>
 
-      <!--Also, remove button.-->
       <button
         class="textcolor2 hover:gray-200 cursor-pointer"
         onclick={async () => {
@@ -185,7 +184,6 @@
           .replace('{{plugin_version}}', 'API V1')
           .replace('{{required_version}}', 'API V3')}
       </span>
-      <!--List up args-->
     {:else if Object.keys(plugin.arguments).filter((i) => !i.startsWith('hidden_')).length > 0 && showParams.includes(i)}
       <div class="flex flex-col mt-2 bg-dark-900/50 p-3">
         {#each Object.keys(plugin.arguments) as arg}

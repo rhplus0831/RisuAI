@@ -272,11 +272,9 @@ describe('orchestrateResponse - non-streaming branch', () => {
 
 describe('orchestrateResponse - server-owned post-generation (A2)', () => {
   it('skips applyOutputTrigger, inlay, and TTS on the server-owned path', async () => {
-    // Slice 4 (A2): the server runs the run-var pass, `'output'` trigger, and
-    // `editoutput`; the browser relays the stream for display only. The durable
-    // derivation (`applyOutputTrigger`) is removed here — it is consumed from the
-    // terminal patch (`applyServerBackedTerminal`) instead. Inlay + final text +
-    // resend are applied at terminal time, so none of those fire in this branch.
+      // The server runs the run-var pass, `'output'` trigger, and `editoutput`;
+      // the browser relays the stream for display only. Final text, inlay, and
+      // resend are consumed from the terminal patch instead of derived here.
     seedDb({ ttsAutoSpeech: true })
     fakes.stream.next = {
       result: 'streamed',

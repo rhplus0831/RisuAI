@@ -1,5 +1,4 @@
-// A4R-group-chat-removed fixture (bypass): the load-time group filter was silently
-// dropped during a refactor — group characters could now load into client state.
+// Violation: load-time database filtering lets group characters enter client state.
 interface Database {
   characters: ({ type?: string } | null)[]
 }

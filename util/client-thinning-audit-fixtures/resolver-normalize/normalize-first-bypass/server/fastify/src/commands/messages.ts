@@ -1,7 +1,5 @@
-// Accepted shape for the message pair: global message-id normalization runs
-// first, then the globally-addressed resolver runs against the normalized ids in
-// the same scope. This mirrors the real command mutations in
-// server/fastify/src/commands/messages.ts and routes/commands.ts.
+// Invariant: globally addressed message mutations normalize all message ids
+// before resolving a message by global id in the same scope.
 
 interface CharacterRecord {
   chats?: Record<string, unknown>[]
@@ -32,7 +30,7 @@ export function normalizeAllChatMessages(database: unknown): CharacterRecord[] {
   return (database as { characters?: CharacterRecord[] }).characters ?? []
 }
 
-// Accepted: normalize global message ids first, THEN resolve by global id.
+// Accepted: normalize global message ids first, then resolve by global id.
 export function editMessageByGlobalId(database: unknown, messageId: string, data: string): void {
   const characters = normalizeAllChatMessages(database)
   const { chat, messageIndex } = requireMessageLocation(characters, messageId)

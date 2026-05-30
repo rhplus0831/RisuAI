@@ -7,7 +7,7 @@ const subtle = webcrypto.subtle
 // Soft cap on the in-memory and on-disk known-key set. Evicts the
 // least-recently-seen hash when the set would otherwise exceed the cap. The
 // cap is deliberately conservative; the only operational cost of eviction is
-// that an evicted client must log in again. See A4EC5 / B6.
+// that an evicted client must log in again.
 const KNOWN_KEY_HASH_CAP = 4096
 
 export interface AuthState {

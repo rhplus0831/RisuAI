@@ -1,7 +1,5 @@
-// A4R-pluginv2 fixture (bypass): the server assembler is clean, but a "sincere
-// simplification" dropped the pluginV2 detector from the classifier — no registry
-// import, no edit-set inspection. With the gate gone, a pluginV2 send would fall
-// through to server assembly. The positive half of the invariant must catch this.
+// Violation: the classifier drops the pluginV2 detector, so pluginV2 sends can
+// fall through to server assembly.
 declare const isFastifyServer: boolean
 type Route = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason: string }
 

@@ -1,7 +1,7 @@
 import { JobRegistry, type StreamJob } from './streamJobs.js'
 
 /**
- * Durable-generation job registry (Milestone 1 — survive client disconnect).
+ * Durable-generation job registry.
  *
  * Wraps the proxy's reconnectable {@link JobRegistry} with the two primitives
  * durable generation adds:
@@ -14,9 +14,8 @@ import { JobRegistry, type StreamJob } from './streamJobs.js'
  *    client — even after a full reload — discovers and reattaches to a running
  *    generation.
  *
- * In-memory only (no `db.json`): a chat generation is short-lived, so surviving a
- * server *restart* is deferred to Milestone 2. Separate from the proxy's registry
- * instance — generation jobs and proxy stream jobs never share state.
+ * In-memory only (no `db.json`) and separate from the proxy registry; generation
+ * jobs and proxy stream jobs never share state.
  */
 export class GenerationJobRegistry {
   readonly registry = new JobRegistry()
@@ -62,9 +61,8 @@ export class GenerationJobRegistry {
    * The transient projection for bootstrap: the chats with a *running* job. Shaped
    * `{ chatId, jobId, mode?, regenerateMessageId? }` so the wire shape is explicit
    * and does not collide with persisted `database` fields. `mode` (+ the regenerate
-   * target) lets a reloaded browser reattach with the right generating mode (Phase
-   * 6b) instead of rendering a continue/regenerate as a fresh send. Done / GC'd jobs
-   * are filtered out.
+   * target) lets a reloaded browser reattach with the right generating mode. Done /
+   * GC'd jobs are filtered out.
    */
   activeJobs(): Array<{
     chatId: string

@@ -25,17 +25,16 @@ export function registerBootstrapRoutes(
       registerActiveWriterSession(activeWriterState, req)
     }
     const { version, revision } = getSchemaState(db)
-    // Lazy-projection Phase 4.3: ship chat *stubs* (metadata, no message[]). The
-    // client hydrates a chat's messages on open via the projection endpoint.
+    // Ship chat stubs (metadata, no message[]); the client hydrates messages via
+    // the projection endpoint when a chat opens.
     const persisted = loadStubProjection(db, dataDir)
     return {
       revision,
       schemaVersion: version,
       database: maskProviderSecrets(persisted.database),
       assetBaseUrl: ASSET_BASE_URL,
-      // Durable generation (Milestone 1): the transient running generations, so a
-      // returning client — even after a full reload — discovers + reattaches to an
-      // in-flight generation. Server-memory only; empty when none are running.
+      // Transient running generations so a returning client, even after a full
+      // reload, can discover and reattach. Server-memory only.
       activeGenerationJobs: generationJobs?.activeJobs() ?? [],
     }
   })

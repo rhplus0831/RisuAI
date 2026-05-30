@@ -11,11 +11,10 @@ import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard
 import type { Chat, Message } from '../storage/database.svelte'
 import { PreUnreroll, Prereroll } from './prereroll'
 
-// Lazy-projection Phase 6c (client): the reroll *swipe* state machine, extracted
-// out of `DefaultChatScreen.svelte` so it is unit-testable and so the persisted
-// reroll buffer (server alternate rows) can be reconstructed into it on chat-open
-// (`seedRerollBufferFromAlternates`). Behaviour is preserved verbatim from the
-// component — the swipe E2E is the safety net.
+// Reroll *swipe* state machine, extracted out of `DefaultChatScreen.svelte` so it
+// is unit-testable and so persisted reroll buffers (server alternate rows) can be
+// reconstructed on chat-open (`seedRerollBufferFromAlternates`). Behaviour is
+// preserved verbatim from the component; the swipe E2E is the safety net.
 //
 // `rerolls` is the swipe history: each entry is the message *tail slice* a swipe
 // restores (the last assistant message group); `rerollid` is the active position.
@@ -77,7 +76,7 @@ export function markRerollChar(): void {
 // run inside `withTrustedServerProjectionWrite` and RE-READ the record there (the
 // wrapper swaps `DBState.db` for a mutable snapshot for the duration), then persist
 // via the dispatch command. Off Fastify the wrapper is a pass-through, so behaviour
-// is identical. (See the `phase9-guard-optimistic-write-gap` precedent.)
+// is identical.
 
 /** Swap just the active tail message's `data` (prefetch reroll), then persist. */
 function applyTailDataSwap(data: string): void {
@@ -196,9 +195,9 @@ function candidateUid(message: Message | undefined): string | undefined {
 }
 
 /**
- * Lazy-projection Phase 6c (client): rebuild the swipe buffer from the chat's
- * persisted reroll candidates (server alternate rows) so rerolls survive a
- * *reload*, not just a disconnect. Called on active-chat hydration.
+ * Rebuild the swipe buffer from the chat's persisted reroll candidates (server
+ * alternate rows) so rerolls survive a *reload*, not just a disconnect. Called on
+ * active-chat hydration.
  *
  * The server buffers EVERY candidate of the live turn (Option X / the design
  * doc's "insert the new candidate as an alternate row and flip the active tail"),

@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Phase 7-12c preview-path wiring. With `db.useServerPromptAssembly` on and a
-// preview / previewPrompt call, sendChat short-circuits to the `/chat` route
-// (stubbed by serverChatFetch) and threads the assembled prompt into
-// `previewFormated` / `previewBody` without dispatching. The send path stays
-// local (7-12d), so this file only exercises the two preview modes.
+// Preview-path wiring. With `db.useServerPromptAssembly` on and a preview /
+// previewPrompt call, sendChat short-circuits to the `/chat` route (stubbed by
+// serverChatFetch) and threads the assembled prompt into `previewFormated` /
+// `previewBody` without dispatching.
 //
 // The mock preamble mirrors sendChat.fixtures.serverBacked.test.ts: index.svelte
 // pulls in the post-generation + tokenizer graph at import time, so the
@@ -318,11 +317,10 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
   it('hard-fails an out-of-subset send (interactive Lua) as unsupported, never reaching local or /chat', async () => {
     await seedEcho()
     localAssemblerState.throwIfEntered = true
-    // Slice 3b sub-slice 2 flipped non-interactive Lua to `server` (the VM runs
-    // the editRequest hook). A script using an interactive dialog API
-    // (alertInput/alertSelect/alertConfirm) still has no server equivalent, so the
-    // classifier must return `unsupported` (hard fail) rather than assembling on
-    // the server or falling back to local.
+    // Non-interactive Lua routes to `server` because the VM runs the editRequest
+    // hook. A script using an interactive dialog API still has no server
+    // equivalent, so the classifier must return `unsupported` rather than
+    // assembling on the server or falling back to local.
     DBState.db.characters[0].triggerscript = [
       {
         comment: '',

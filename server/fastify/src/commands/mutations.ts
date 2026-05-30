@@ -27,8 +27,8 @@ export interface JsonCommandMutationArgs<TExtra extends Record<string, unknown>>
     /**
      * Optional extra SQLite writes to run INSIDE the same transaction, after the
      * active-message sync and before COMMIT — so they roll back atomically with
-     * the JSON mutation + revision bump. Phase 6c uses this for the reroll-buffer
-     * (alternate) rows, which live in SQLite only (not the JSON `database`).
+     * the JSON mutation + revision bump. Used for SQLite-only rows such as
+     * reroll-buffer alternates.
      */
     sqlite?: (db: DatabaseSync) => void
   }
@@ -64,13 +64,12 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     const nextDatabase = cloneJsonValue(hydrated.database)
     const mutation = args.mutate(nextDatabase)
 
-    // Surgically persist only the chats whose messages changed (Slice 4.2): a
-    // message append is one row insert, an unrelated chat is never rewritten, and
-    // a non-message command writes nothing to the messages table. Inside the
-    // transaction; the db.json file write is deferred until after COMMIT.
+    // Persist only chats whose messages changed: a message append is one row
+    // insert, unrelated chats are not rewritten, and non-message commands write
+    // nothing to the messages table. The db.json write is deferred until COMMIT.
     syncChatMessages(args.db, hydrated.database, nextDatabase)
-    // Phase 6c: extra SQLite-only writes (the reroll buffer) inside the same
-    // transaction, so they commit/roll back with the message sync + revision bump.
+    // Extra SQLite-only writes, such as the reroll buffer, commit or roll back
+    // with the message sync and revision bump.
     mutation.sqlite?.(args.db)
     const messageFree = stripChatMessages({ ...hydrated, database: nextDatabase })
 

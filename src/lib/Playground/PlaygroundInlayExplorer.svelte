@@ -19,7 +19,7 @@
   let displayCount = $state(PAGE_SIZE)
   let loading = $state(true)
   let loadMoreSentinel: HTMLDivElement | null = $state(null)
-  // For revoking
+  // Object URLs to revoke on teardown.
   let previewURLs = $state<Map<string, string>>(new Map())
   let selection = $state<Set<string>>(new SvelteSet())
 

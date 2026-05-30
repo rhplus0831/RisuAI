@@ -11,12 +11,9 @@ import {
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 
 /**
- * Phase 7-2c smoke suite for the server-side `expandVariables`. Covers
- * the "Minimum Server Slice" set from PARSER.md so subsequent Phase 7
- * slices have a regression target. The browser parser test suite in
- * `src/ts/parser/tests/cbs/*.test.ts` is the broader oracle; this file
- * verifies that the server adapter wires the canonical parser
- * correctly.
+ * Smoke suite for server-side `expandVariables`. The browser parser test suite
+ * in `src/ts/parser/tests/cbs/*.test.ts` is the broader oracle; this file
+ * verifies that the server adapter wires the canonical parser correctly.
  */
 
 beforeAll(() => {

@@ -4,9 +4,8 @@ import { getActiveModules, getModuleAssets } from './modules.js'
 import type { AssetLookup } from './history.js'
 
 /**
- * Phase 9 / slice 3a: build the non-empty {@link AssetLookup} the history walk
- * feeds image/asset bytes from. Two byte sources, split exactly as the slice
- * decided:
+ * Build the non-empty {@link AssetLookup} that feeds image/asset bytes into the
+ * history walk. It has two byte sources:
  *
  *  - **Inlay bytes** (`{{inlay/inlayed/inlayeddata::id}}`) live only in the
  *    browser's localForage `inlayStorage`; the server has no copy. The client

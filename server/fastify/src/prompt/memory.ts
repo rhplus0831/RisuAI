@@ -6,29 +6,22 @@ import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 /**
- * Phase 7-11e — the server memory window. Ports the **non-Hypa budget
- * fallback** of the SPA's
- * `src/ts/process/promptAssembly/buildMemoryWindow.ts` (the `else` branch
- * at `:121-135` plus the memory split at `:137-163`).
- *
- * Hypa V3 summary creation (the `supaMemory && hypaV3` branch, the
- * `stageTimings` / `setProcessStage` UX, and the `throwError` callback)
- * stays **Phase 8**. On the server today no history row carries a
- * `supaMemory` / `hypaMemory` memo, so `memories` is empty in practice;
- * the split is ported for parity and so Phase 8 only has to add the Hypa
- * arm.
+ * Server memory window: ports the SPA's non-Hypa budget fallback from
+ * `buildMemoryWindow.ts`. Hypa V3 summary creation remains out of scope; today
+ * server history rows do not carry `supaMemory` / `hypaMemory` memos, so
+ * `memories` is empty in practice.
  */
 
 export interface MemoryWindowInput {
   /** The flattened history rows (`AssemblyState.historyMessages`). */
   chats: OpenAIChat[]
-  /** The running token estimate seeded by the lorebook preflight (7-11c). */
+  /** The running token estimate seeded by lorebook preflight. */
   currentTokens: number
   /** `db.maxContext`. */
   maxContextTokens: number
   /** The working chat; `lastMemory` is written when the budget trims. */
   currentChat: Chat
-  /** From the 7-11c preflight: the template renders a `memory` card. */
+  /** Whether the template renders a `memory` card. */
   memoryCardUsed: boolean
   /** When null, the trailing chat is promoted to `unformated.lastChat`. */
   promptTemplate: PromptItem[] | null

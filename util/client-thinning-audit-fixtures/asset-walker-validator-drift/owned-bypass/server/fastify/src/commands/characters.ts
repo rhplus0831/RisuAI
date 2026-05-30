@@ -1,6 +1,4 @@
-// EC6 validator-needle carrier for character + character-order asset refs. In
-// the real tree these are live validator calls in
-// server/fastify/src/commands/characters.ts.
+// Validator-needle carrier for character and character-order asset refs.
 //
 // Needles:
 //   validateCharacterOrderLegacyImageRef(dataDir, entry.img

@@ -331,9 +331,7 @@
           (DBState.db as unknown as Record<string, unknown>)[key],
         )
         withTrustedServerProjectionWrite(() => {
-          // Re-read DBState.db inside the callback: the trusted write swaps it
-          // to a mutable clone, so an alias captured earlier still points at
-          // the read-only projection and would throw on write.
+          // Re-read inside the trusted write to get the mutable projection.
           const target = DBState.db as unknown as Record<string, unknown>
           target[key] = attempted
         })

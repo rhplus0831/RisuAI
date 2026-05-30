@@ -555,11 +555,9 @@ export async function applyModule() {
     if (nextTriggers) target.triggerscript = safeStructuredClone(nextTriggers)
   })
 
-  // A4EC2 / B1: serialize the three module-apply replacements against one
-  // optimistic snapshot. The dispatcher path (bridge timer + delay=0) fired
-  // all three on the same macrotask, racing on cachedServerCommandRevision;
-  // the second/third command 409d after the first succeeded. The sequencer
-  // awaits each response so the next reads the updated cached revision.
+  // Serialize the three module-apply replacements against one optimistic
+  // snapshot. The sequencer awaits each response so the next command reads the
+  // updated cached revision.
   if (characterId) {
     const factories: Array<(baseRevision: number) => Promise<unknown>> = []
     if (nextLorebooks && lorePrevious) {

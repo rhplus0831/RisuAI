@@ -77,11 +77,9 @@ export function setupSendChatContext(args: {
   const lastInteraction = Date.now()
 
   if (serverBacked) {
-    // A4EC2 / B1: serialize the lastInteraction update and the message-id
-    // backfill against one optimistic snapshot. The two dispatchers shared
-    // a single cached baseRevision; the second one 409d after the first
-    // succeeded. The sequencer awaits each response so the next reads the
-    // updated revision.
+    // Serialize the lastInteraction update and the message-id backfill against
+    // one optimistic snapshot. The sequencer awaits each response so the next
+    // command reads the updated revision.
     const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
     let rollbackSnapshot: ChatStateSnapshot | null = null
 

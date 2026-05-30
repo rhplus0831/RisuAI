@@ -3,15 +3,14 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { AssembleMutationPayload } from './assemble.js'
 
 /**
- * Phase 7 SSE event taxonomy for `POST /api/v1/generate/chat`.
+ * SSE event taxonomy for `POST /api/v1/generate/chat`.
  *
  * Each event maps 1:1 to a named SSE `event:` line. The discriminator
  * (`type`) is encoded as the SSE event name; the JSON `data:` line carries
  * the remaining fields.
  *
- * IMPORTANT: per `docs/archive/fastify/phases/phase-7-prompt-assembly.md`, this
- * shape is locked once shipped. Phase 9 must not rename events. Adding new
- * fields is fine; renaming or removing is not.
+ * IMPORTANT: this shape is locked once shipped. Adding new fields is fine;
+ * renaming or removing is not.
  */
 
 export type PromptChatStage = 'validate' | 'prompt' | 'provider' | 'done'
@@ -23,11 +22,9 @@ export interface StageEvent {
 }
 
 /**
- * Durable generation (Milestone 1): the first frame on a durable send / reattach,
- * carrying the `jobId` (unified with `generationId`) so a client that drops during
- * assembly — before the `info` frame — still knows the id to reattach with. Additive
- * to the locked contract; the non-durable path never emits it, and the browser's
- * existing SSE parser ignores unknown events (a no-op for non-durable consumers).
+ * First frame on a durable send / reattach, carrying the `jobId` so a client that
+ * drops during assembly still knows the id to reattach with. The non-durable path
+ * never emits it.
  */
 export interface JobAcceptedEvent {
   type: 'job_accepted'
@@ -63,11 +60,9 @@ export interface InfoEvent {
    */
   responseBudget?: number
   /**
-   * The chat revision after the route persisted the assembly-time chat-var
-   * delta (Phase 9 C-A1). Present only when a persisting mode actually wrote
-   * `chatVarMutations`; the browser reconciles its cached command revision to
-   * it so the next command does not revision-conflict. Omitted (and so absent
-   * from the JSON frame) when nothing was persisted.
+   * The chat revision after the route persisted the assembly-time chat-var delta.
+   * Present only when a persisting mode actually wrote `chatVarMutations`; omitted
+   * when nothing was persisted.
    */
   revision?: number
 }
@@ -103,11 +98,9 @@ export interface ErrorEvent {
 }
 
 /**
- * Slice 4 (A2): the server post-generation derivation surfaced on the terminal
- * `done` frame. Additive to the locked SSE contract. Present only when the
- * post-gen pass produced something — the byte-identical trigger-less / script-less
- * send omits it entirely, so the `done` frame stays `{ result, generationId,
- * generationInfo }` exactly as before.
+ * Server post-generation derivation surfaced on the terminal `done` frame. Present
+ * only when the post-gen pass produced something; trigger-less / script-less sends
+ * omit it entirely.
  */
 export interface PostGenerationFrame {
   /**
@@ -142,7 +135,7 @@ export interface DoneEvent {
   result?: string
   generationId?: string
   generationInfo?: Record<string, unknown>
-  /** Slice 4 (A2): server post-generation derivation. See {@link PostGenerationFrame}. */
+  /** Server post-generation derivation. See {@link PostGenerationFrame}. */
   postGeneration?: PostGenerationFrame
 }
 

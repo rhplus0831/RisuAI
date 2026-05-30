@@ -24,9 +24,8 @@ export interface ApplyNonStreamResponseOptions {
   promptInfo: MessagePresetInfo
   reformatContent: (data: string) => string
   /**
-   * Slice 4 (A2): when the server owns the post-generation pass, skip `editoutput`
-   * here — the server runs it. (Server dispatch always streams, so this branch is
-   * local-only in practice; the flag keeps the non-stream path faithful too.)
+   * When the server owns post-generation, skip `editoutput` here; the server runs
+   * it. Server dispatch always streams, so this branch is local-only in practice.
    */
   skipEditOutput?: boolean
 }
@@ -54,8 +53,8 @@ export async function applyNonStreamResponse(
     skipEditOutput,
   } = opts
 
-  // A2: `editoutput` runs server-side on the server-owned path; here it degrades
-  // to the reformatted text (the server ships the final text on `done`).
+  // `editoutput` runs server-side on the server-owned path; here it degrades to
+  // the reformatted text (the server ships final text on `done`).
   const runEditOutput = (
     text: string,
     idx: number,

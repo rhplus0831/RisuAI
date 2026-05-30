@@ -1,8 +1,4 @@
-// The central command wrapper IS the conflict surface. A4R2 exempts
-// runServerCommand in src/ts/server/commands.ts, so it may observe a
-// `status === 'conflict'` result and refresh baseRevision before re-issuing
-// through the same controlled path. The same body in any other function would
-// fail the rule.
+// The central command wrapper is the only allowed conflict retry surface.
 
 interface CommandResult {
   status: 'ok' | 'conflict'

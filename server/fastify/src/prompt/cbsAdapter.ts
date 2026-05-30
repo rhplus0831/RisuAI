@@ -22,16 +22,15 @@ import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
  * and the HTML emitters (`{{button}}`, `{{tex}}`, `{{ruby}}`, `{{codeblock}}`)
  * register with their original `cbs.ts` bodies, which reference `window`
  * / `navigator` / DOM globals and will throw at invocation on the
- * server. Phase 7 prompt-assembly paths do not invoke them; fix per
- * fixture if any future preset reaches them.
+ * server. Prompt-assembly paths do not invoke them; fix per fixture if any
+ * future preset reaches them.
  *
  * `getCurrentTriggerId` returns `'null'` because manual triggers are a
  * browser UI concept.
  *
  * `getModelInfo` returns a placeholder shape (same as
- * `defaultCBSRegisterArg`). The Phase 7 chat route does not yet need
- * the real model metadata at variable-expansion time; revisit when it
- * does.
+ * `defaultCBSRegisterArg`). The chat route does not yet need the real model
+ * metadata at variable-expansion time; revisit when it does.
  */
 
 // In-process pseudo-random generator, ported from src/ts/util.ts:604.
@@ -119,7 +118,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getGlobalChatVar,
     calcString,
     dateTimeFormat,
-    // Module + lorebook support arrives with later Phase 7 slices.
+    // Module + lorebook callbacks are not available in this server adapter yet.
     getModules: () => [],
     getModuleLorebooks: () => [],
     pickHashRand,

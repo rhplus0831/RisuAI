@@ -77,17 +77,6 @@
   }
 </script>
 
-<!-- <input
-    class="text-textcolor bg-transparent input-text"
-    class:mb-4={marginBottom}
-    type="range"
-    min={min}
-    max={max}
-    step={step}
-    bind:value
-    onchange
-> -->
-
 <div class="w-full flex" class:mb-4={marginBottom}>
   {#if disableable}
     <div
@@ -135,11 +124,6 @@
     onkeydown={handleKeydown}
     bind:this={slider}
   >
-    <!-- <div 
-      class="absolute top-0 left-0 h-8 rounded-full bg-borderc transition-width duration-200"
-      style="width: {(value - min) / (max - min) * 100}%;"
-    >
-    </div> -->
     <span
       class="absolute top-0 left-4 h-8 rounded-full items-center justify-center flex text-textcolor text-sm"
     >

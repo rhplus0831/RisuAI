@@ -112,10 +112,9 @@ export function dispatchCompatibleCharacterUpdate(
   dispatchUpdateCharacter(characterId, patch, previous)
 }
 
-// A4EC2 / B1: factory-list form of dispatchCompatibleCharacterUpdate so the
-// V3 plugin API site can route through runOptimisticCommandSequence instead
-// of a fire-and-forget dispatch. Returns the (possibly empty) factories
-// array and a rollback closure that restores the character snapshot.
+// Factory-list form of dispatchCompatibleCharacterUpdate so the V3 plugin API
+// can route through runOptimisticCommandSequence instead of a fire-and-forget
+// dispatch. Returns the factories array and a rollback closure.
 export function prepareCompatibleCharacterUpdate(
   previousCharacter: character | undefined,
   nextCharacter: character | undefined,

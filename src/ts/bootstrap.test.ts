@@ -103,8 +103,8 @@ vi.mock('./server/projection', () => ({
   fetchServerChatMessages: vi.fn(),
 }))
 
-// Phase 4.3 chat-message hydration is exercised in its own tests; stub it here so
-// the surgical-sync assertions (fetch counts) are unaffected by hydration calls.
+// Chat-message hydration is exercised in its own tests; stub it here so the
+// surgical-sync assertions (fetch counts) are unaffected by hydration calls.
 const hydrationSpies = vi.hoisted(() => ({
   startChatMessageHydration: vi.fn(),
   hydrateActiveChat: vi.fn(async () => undefined),
@@ -298,8 +298,8 @@ describe('web bootstrap startup source', () => {
     })
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
     expect(peekCachedServerCommandRevision()).toBe(6)
-    // Phase 4.3: merging the `characters` slice re-stubs every chat, so the
-    // hydration cache is reset and the open chat re-hydrated.
+    // Merging `characters` re-stubs every chat, so the hydration cache is reset
+    // and the open chat re-hydrated.
     expect(hydrationSpies.resetChatHydration).toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
   })

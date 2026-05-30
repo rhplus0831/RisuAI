@@ -149,10 +149,10 @@ describe('resolveServerPromptAssembly', () => {
       })
     })
 
-    // Slice 3a: with an image-input model the server assembler resolves inlay /
-    // asset / runtime-multimodal bytes, so class 1 routes to `server` instead of
-    // `unsupported`. echo_model lacks image input, so the vision flag is forced on
-    // via customFlags while keeping the server-routable Echo format.
+    // With an image-input model, the server assembler resolves inlay / asset /
+    // runtime-multimodal bytes, so this routes to `server`. echo_model lacks
+    // image input, so the vision flag is forced on via customFlags while keeping
+    // the server-routable Echo format.
     function seedVisionDb(): void {
       seedDb({ enableCustomFlags: true, customFlags: [LLMFlags.hasImageInput] })
     }
@@ -183,9 +183,8 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
-    // Slice 3b sub-slice 2: the server Lua VM runs the editRequest hook, so a
-    // (non-interactive) `triggerlua` char now routes `server` instead of the
-    // pre-slice port-pending hard fail.
+    // The server Lua VM runs the editRequest hook, so a non-interactive
+    // `triggerlua` char routes `server` instead of hard-failing.
     it('routes a non-interactive Lua trigger char to server (slice 3b)', () => {
       const input = makeInput({
         currentChar: makeChar({
@@ -204,12 +203,10 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
-    // Slice 3b sub-slice 3: an editprocess-only Lua char (no editRequest handler,
-    // no interactive dialog API) routes `server` — the editprocess hook is wired
-    // through the runtime as a browser no-op. The classifier cannot tell which
-    // edit mode a script hooks, so this is the same Lua-arm flip from sub-slice 2;
-    // the test pins that the editprocess sub-class stays `server` (not a hard
-    // fail) now that the seam exists.
+    // An editprocess-only Lua char (no editRequest handler, no interactive dialog
+    // API) routes `server`; the editprocess hook is wired through the runtime as
+    // a browser no-op. The classifier cannot tell which edit mode a script hooks,
+    // so this pins that the editprocess sub-class stays `server`.
     it('routes an editprocess-only Lua trigger char to server (slice 3b)', () => {
       const input = makeInput({
         currentChar: makeChar({
@@ -228,11 +225,9 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
-    // Slice 3b sub-slice 4: a submit-time input-trigger / `editinput` Lua char
-    // (no interactive dialog API) routes `server` — the server now runs both the
-    // `onInput` trigger and the `editInput` hook before assembly. Same Lua-arm
-    // flip; pins that the editinput/input sub-class is `server` (not a hard fail)
-    // now that the submit-time seam exists.
+    // A submit-time input-trigger / `editinput` Lua char (no interactive dialog
+    // API) routes `server`; the server runs both the `onInput` trigger and the
+    // `editInput` hook before assembly.
     it('routes an input-trigger / editinput Lua char to server (slice 3b-4)', () => {
       const input = makeInput({
         currentChar: makeChar({
@@ -251,11 +246,9 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
-    // Slice 3c: the image-gen / emotion view instruction is now server-assembled
-    // (`buildInlayViewInstruction` ported into the server static-section pass), so
-    // a char with `inlayViewScreen` set routes `server` instead of the pre-slice
-    // hard fail. The post-gen image generation / inlay rendering stays a browser
-    // effect (B1) — only the instruction text moved.
+    // The image-gen / emotion view instruction is server-assembled, so a char with
+    // `inlayViewScreen` set routes `server`. Post-gen image generation / inlay
+    // rendering stays a browser effect; only the instruction text moved.
     it('routes a char with an image-gen view instruction to server (slice 3c)', () => {
       const input = makeInput({ currentChar: makeChar({ inlayViewScreen: true } as never) })
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
@@ -284,13 +277,11 @@ describe('resolveServerPromptAssembly', () => {
       expect(reason).toContain('novelai')
     })
 
-    // One case per content class. Each later content slice flips exactly one of
-    // these from `unsupported` to `server`.
+    // One case per unsupported content class.
     //
-    // Slice 3a class 2 (non-vision caption): the seeded echo_model lacks image
-    // input, so image/asset/inlay content still hard-fails — the browser's
-    // runImageEmbedding caption fallback has no server equivalent. The reason
-    // text differs from the (now-ported) class-1 vision path above.
+    // Non-vision caption case: the seeded echo_model lacks image input, so
+    // image/asset/inlay content still hard-fails because the browser's
+    // runImageEmbedding caption fallback has no server equivalent.
     it('rejects an inlay marker on a model without image input — caption case (slice 3a class 2)', () => {
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'see {{inlayed::img1}}' }]),
@@ -314,10 +305,8 @@ describe('resolveServerPromptAssembly', () => {
       expectUnsupported(resolveServerPromptAssembly(input))
     })
 
-    // Slice 3b splits the old combined Lua/plugin detector into two arms with
-    // distinct dispositions and distinct reasons. Sub-slice 2 flips the Lua arm to
-    // `server` (the VM runs the editRequest hook) — see the `server` describe
-    // above — EXCEPT scripts using an interactive dialog API, which stay
+    // Lua and plugin detectors have distinct dispositions and reasons. Lua routes
+    // `server` except when scripts use an interactive dialog API, which stays
     // `unsupported` (no server browser dialog). The pluginV2 arm is a permanent
     // hard fail (server-side plugin code execution is on the no-port list and
     // pluginV2 is superseded by Plugin V3).

@@ -58,12 +58,11 @@ function identityRccf(chat: Chat): Chat {
   return chat
 }
 
-// Slice 4 (A2): `applyOutputTrigger` is now the **local-path** durable derivation
-// (run-var pass + `'output'` trigger). On the server-owned path the server runs
-// this derivation and the browser consumes it from the terminal patch instead of
-// calling `applyOutputTrigger` — pinned by `orchestrateResponse.test.ts`
-// ("server-owned post-generation (A2)", which asserts `applyOutputTrigger` is not
-// invoked) and the route-backed sweep's output-trigger fixture
+// `applyOutputTrigger` is the local-path durable derivation (run-var pass +
+// `'output'` trigger). On the server-owned path the server runs this derivation
+// and the browser consumes it from the terminal patch instead of calling
+// `applyOutputTrigger`, pinned by `orchestrateResponse.test.ts` and the
+// route-backed sweep's output-trigger fixture
 // (`sendChat.fixtures.serverBacked.test.ts`). These tests keep pinning the
 // local-path contract, which is unchanged.
 describe('applyOutputTrigger', () => {

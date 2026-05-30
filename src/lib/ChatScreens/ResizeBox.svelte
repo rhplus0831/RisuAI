@@ -63,7 +63,6 @@
   bind:this={box}
   style="width: {$ViewBoxsize.width}px; height: {$ViewBoxsize.height}px;"
 >
-  <!-- Your content here -->
   <TransitionImage classType="risu" src={getEmotion(DBState.db, $CharEmotion, 'plain')} />
   <div
     role="button"

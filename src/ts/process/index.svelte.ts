@@ -62,9 +62,9 @@ export async function sendChat(
     previewPrompt?: boolean
     regenerateMessageId?: string
     /**
-     * lazy-projection Phase 7: re-attach to this live durable generation
-     * (server job id) instead of starting a fresh send. Skips assembly + the
-     * provider POST; the server replays the in-flight stream.
+     * Re-attach to this live durable generation (server job id) instead of
+     * starting a fresh send. Skips assembly + the provider POST; the server
+     * replays the in-flight stream.
      */
     reattachJobId?: string
   } = {},
@@ -156,27 +156,21 @@ export async function sendChat(
     let outputTokens = DBState.db.maxResponse
     let assembledByServer = false
     let serverDispatch: ServerBackedDispatch | undefined
-    // Durable generation (Milestone 1): when the send is durable-eligible, the server
-    // runs it as a detached job and persists the result itself, so the browser drops
-    // its own generation-result persist (gotcha F).
+    // When the send is durable-eligible, the server runs it as a detached job and
+    // persists the result itself, so the browser drops its own generation-result
+    // persist.
     let serverDurable = false
 
-    // Server-side prompt assembly with browser-side patch replay. Send-like
-    // calls consume the `/chat` provider stream; preview modes only read the
-    // assembled prompt payload. `resolveServerPromptAssembly` mirrors
-    // `resolveServerCompletionRoute`: in Fastify mode with the experimental
-    // `useServerPromptAssembly` master-enable on, the supported text-send subset
-    // is server-mandatory (`server`) and every out-of-subset send hard-fails
-    // (`unsupported`) — there is no silent local fall-through. `local` (the
-    // `!assembledByServer` branch below) is reached only when the server path is
-    // not engaged: `!isFastifyServer` (dev/web/tests) or the flag is off. Neither
-    // the flag nor the local fallback is deprecated — see the flag's JSDoc in
-    // database.svelte.ts; removing them is the END of the prompt-assembly thinning
-    // sub-family, not a precursor.
+    // Server-side prompt assembly with browser-side patch replay. Send-like calls
+    // consume the `/chat` provider stream; preview modes only read the assembled
+    // prompt payload. In Fastify mode with `useServerPromptAssembly` on, supported
+    // text sends are server-mandatory and out-of-subset sends hard-fail instead of
+    // silently falling through to local assembly. The local branch remains for
+    // dev/web/tests and for the flag-off path.
     if (arg.reattachJobId) {
-      // Phase 7: re-attach to a live durable generation instead of assembling +
-      // dispatching a fresh send. The job is server-persisted (durable), so the
-      // browser does not write the result; it only renders the replayed stream.
+      // Re-attach to a live durable generation instead of assembling and
+      // dispatching a fresh send. The job is server-persisted, so the browser only
+      // renders the replayed stream.
       serverDurable = true
       const reattached = await reattachServerBackedSendChat({
         selectedChar,
@@ -188,8 +182,8 @@ export async function sendChat(
         abortSignal,
         setProcessStage,
         jobId: arg.reattachJobId,
-        // Phase 6b: the running job's mode (carried on the reattach arg) so the
-        // replayed stream renders on the correct row — see `serverGenerationTargetMessageId`.
+        // Carry the running job's mode so the replayed stream renders on the
+        // correct row; see `serverGenerationTargetMessageId`.
         continue: arg.continue,
         regenerateMessageId: arg.regenerateMessageId,
       })
@@ -226,9 +220,9 @@ export async function sendChat(
       return false
     }
     if (assemblyRoute.type === 'server') {
-      // Durable subset (Milestone 1): a server-assembled `send` survives disconnect +
-      // is persisted server-side. A restriction of `resolveServerPromptAssembly`, so it
-      // is only ever `durable` when this branch already routed `server`.
+      // Durable server-assembled sends survive disconnect and are persisted
+      // server-side. This can only be `durable` after prompt assembly routes to
+      // the server.
       serverDurable =
         resolveDurableGeneration({
           currentChar,
@@ -373,9 +367,8 @@ export async function sendChat(
       reformatContent,
       runCurrentChatFunction,
       suppressStreamingTts: !!serverDispatch,
-      // A2: the server owns the post-gen derivation (editoutput + run-var +
-      // output trigger) on the server-dispatch path; the browser relays the
-      // stream for display and applies the terminal patch instead of deriving.
+      // The server owns post-gen derivation on the server-dispatch path; the
+      // browser relays the stream and applies the terminal patch instead.
       serverOwnsPostGeneration: !!serverDispatch,
     })
     if (orchestrate.status === 'aborted') {
@@ -384,7 +377,7 @@ export async function sendChat(
     currentChat = orchestrate.currentChat
     const result = orchestrate.result
     const emoChanged = orchestrate.emoChanged
-    // A2: on the server-dispatch path the resend request rides the terminal
+    // On the server-dispatch path, the resend request rides the terminal
     // (`done.postGeneration.resendChat`); orchestrate no longer derives it.
     let resendChat = orchestrate.resendChat
 
@@ -430,12 +423,11 @@ export async function sendChat(
         signal: abortSignal,
       })
     }
-    // lazy-projection Phase 3: the server is the sole author of generation
-    // results on EVERY server-dispatch path. The durable send job persists at
-    // completion (Step 3); the inline continue/regenerate path persists in its
-    // post-gen pass (`buildPostGenerationFrame` → `persistServerGenerationResult`).
-    // Either way the browser only reconciles the terminal-frame revision and
-    // issues zero generation-result commands (B2 removed).
+    // The server is the sole author of generation results on every
+    // server-dispatch path. Durable jobs persist at completion; inline
+    // continue/regenerate persists in the post-gen pass. The browser only
+    // reconciles the terminal-frame revision and issues no generation-result
+    // commands.
     return true
   } finally {
     if (iOwnDoingChat) {

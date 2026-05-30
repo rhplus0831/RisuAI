@@ -9,8 +9,8 @@ import { encodingForModel, tokenize } from './tokens.js'
 import type { TriggerVarEngine } from './triggerVars.js'
 
 /**
- * Phase 7-9d-ii: the V2 trigger "safe data helper" leaf arms, extracted
- * from the `runTrigger` switch in `src/ts/process/triggers.ts`.
+ * V2 trigger "safe data helper" leaf arms, extracted from the `runTrigger`
+ * switch in `src/ts/process/triggers.ts`.
  *
  * Every arm here is side-effect-free with respect to prompt assembly:
  * it reads `chat` / `char` and the variable engine, computes, and
@@ -32,23 +32,23 @@ import type { TriggerVarEngine } from './triggerVars.js'
  * returns from this helper as a handled no-op so the trigger run
  * continues.
  *
- * 7-9e adds the request/display state arms (`v2GetDisplayState` /
+ * Request/display state arms (`v2GetDisplayState` /
  * `v2SetDisplayState` and the five request-state arms). Unlike the data
  * helpers above they also write the per-run display/request state slot,
  * carried through `deps.displayState` (a mutable `{ data }` holder) so
  * `runTrigger` can surface the writes on `result.displayData`. They
  * gate on `deps.displayMode`; see the divergence note below.
  *
- * Divergence (7-9e): each SPA state arm does `if (!arg.displayMode)
- * return`, which aborts the *entire* `runTrigger` (returns `undefined`,
- * almost certainly an unintended bug). As with the make-var guard above
- * we instead `return true` here — a handled no-op so the run continues.
+ * Divergence: each SPA state arm does `if (!arg.displayMode) return`, which
+ * aborts the *entire* `runTrigger` (returns `undefined`, almost certainly an
+ * unintended bug). As with the make-var guard above we instead `return true`
+ * here, a handled no-op so the run continues.
  * The request-state arms otherwise match the SPA exactly, including the
  * un-guarded `JSON.parse(displayState.data)`: in `request` mode the
  * caller contractually supplies a valid `OpenAIChat[]` JSON payload.
  *
- * Deferred (handled elsewhere or beyond Phase 7, so they fall through
- * to `return false`): the persistent character/persona/author-note
+ * Deferred or handled elsewhere, so they fall through to `return false`: the
+ * persistent character/persona/author-note
  * get+set pairs, the `lowLevelAccess`-gated
  * alert/LLM/image/similarity/extractRegex arms, `command`,
  * `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`, and the lorebook arms.

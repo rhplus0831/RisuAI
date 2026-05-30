@@ -4,11 +4,10 @@ import type { PromptItem } from '../../../../src/ts/process/prompt'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
- * Phase 7-10a template normalization + slot contract, ported from the
- * SPA's `src/ts/process/promptAssembly/{normalizeTemplate,
- * renderFinalPrompt}.ts`.
+ * Template normalization + slot contract, ported from the SPA's
+ * `normalizeTemplate` and `renderFinalPrompt`.
  *
- * 7-10a ported the branch-free renderer foundation:
+ * Branch-free renderer foundation:
  *   - the canonical slot contract (`UnformatedPromptSlots`),
  *   - `normalizeTemplate` (utility-bot forced template + implicit
  *     `postEverything`),

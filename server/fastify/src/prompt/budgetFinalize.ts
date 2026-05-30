@@ -4,32 +4,23 @@ import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 /**
- * Phase 7-8c request budget finalization ported from the SPA's
- * `src/ts/process/promptBudget/finalizeRequestBudget.ts`.
- *
- * Operates on an already-flattened `OpenAIChat[]` (the render-final
- * walker lands in 7-11a). Re-tokenizes the whole array, trims
- * `removable` rows front-to-back until the request fits under
- * `maxContextTokens`, drops the now-empty rows (keeping
- * multimodal-only rows), and clamps the response budget.
+ * Request budget finalization ported from the SPA's
+ * `finalizeRequestBudget.ts`. Re-tokenizes the flattened `OpenAIChat[]`, trims
+ * `removable` rows front-to-back until the request fits under `maxContextTokens`,
+ * drops now-empty rows while keeping multimodal-only rows, and clamps the response
+ * budget.
  *
  * `finalizeRequestBudget` re-tokenizes from scratch; it does **not**
- * consume `preflightTemplateTokens`' output. Preflight feeds the
- * memory-window budget (Phase 8); finalize is the independent final
- * re-check the SPA runs at `index.svelte.ts:329` right before
- * dispatch.
+ * consume `preflightTemplateTokens`' output. Finalize is the independent final
+ * re-check the SPA runs right before dispatch.
  *
  * The `removable` flag is set upstream (the SPA marks non-memory
- * history rows `removable: true` in `buildMemoryWindow.ts:147`); this
- * slice only honors it. Non-removable rows are pinned and can force
- * an `overflow` result.
+ * history rows `removable: true` in `buildMemoryWindow.ts:147`). Non-removable
+ * rows are pinned and can force an `overflow` result.
  *
  * Divergence from the SPA: the server's `tokenizeChat` is text-only
- * (7-8a deferred multimodal image-token math), so multimodal rows
- * contribute only their content + overhead here. The multimodal-only
- * survival filter still applies. Exact image-token accounting lands
- * only when a fixture forces it (Phase 7 scope re-verification,
- * archived in docs/archive/fastify/phases/phase-7-prompt-assembly.md).
+ * so multimodal rows contribute only their content + overhead here. The
+ * multimodal-only survival filter still applies.
  */
 
 export type FinalizeRequestBudgetResult =

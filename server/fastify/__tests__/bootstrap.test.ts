@@ -123,7 +123,7 @@ describe('Phase 2A bootstrap + import', () => {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       database: null,
       assetBaseUrl: '/api/v1/assets',
-      // Durable generation (Milestone 1): empty when no generation is in flight.
+      // Empty when no generation is in flight.
       activeGenerationJobs: [],
     })
   })
@@ -238,8 +238,8 @@ describe('Phase 2A bootstrap + import', () => {
       db.close()
     }
 
-    // Phase 4.3: the bootstrap projection ships a chat STUB — metadata present,
-    // message[] empty. The client hydrates messages on open.
+    // The bootstrap projection ships a chat stub: metadata present, message[] empty.
+    // The client hydrates messages on open.
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',

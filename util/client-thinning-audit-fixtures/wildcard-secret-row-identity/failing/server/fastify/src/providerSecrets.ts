@@ -1,7 +1,5 @@
-// Minimal fixture for the A4R6 wildcard secret row identity rule. The real
-// declarations live in server/fastify/src/providerSecrets.ts. Masked provider
-// secrets are restored against the durable source; wildcard object-array paths
-// must restore by a stable row identity key, never by array index.
+// Invariant: wildcard object-array secrets restore by stable row identity, never
+// by array index.
 
 const WILDCARD = Symbol('secret-path-wildcard')
 
@@ -10,8 +8,7 @@ export const MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED =
 
 type PathSegment = string | typeof WILDCARD
 
-// Anti-pattern: `customModels` is a wildcard object-array secret path (length 3)
-// but has no row identity key here, so masked rows would be restored by index.
+// Violation: `customModels` is an object-array secret path with no row identity key.
 const ARRAY_ROW_IDENTITY_KEYS: Record<string, string> = {
   botPresets: 'id',
 }

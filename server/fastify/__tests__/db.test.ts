@@ -105,8 +105,7 @@ describe('schema migrations', () => {
   it('adds the reroll-alternate column to a pre-v6 messages table, preserving rows (v6)', () => {
     const dataDir = makeDataDir()
     // Reconstruct an existing v5 database: schema_version at 5 + the OLD messages
-    // table (no `alternate` column) with a row — the shape a real user db has
-    // before pulling Phase 6c.
+    // table (no `alternate` column) with a row.
     const seed = new DatabaseSync(path.join(dataDir, 'risu.db'))
     try {
       seed.exec(`

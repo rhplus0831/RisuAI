@@ -1,5 +1,4 @@
-// A4R-group-chat-removed fixture (failing-ui-branch): keep-layers intact so only the
-// negative half (UI branch) fails.
+// Invariant: prompt assembly rejects surviving group characters as unsupported.
 type Route = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason: string }
 
 export function resolveServerPromptAssembly(input: { currentChar: { type?: string } }): Route {

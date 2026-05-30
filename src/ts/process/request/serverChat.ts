@@ -1,17 +1,15 @@
 /**
- * Phase 7-12a: browser client adapter for `POST /api/v1/generate/chat`.
+ * Browser client adapter for `POST /api/v1/generate/chat`.
  *
- * Mirrors the Phase 6 `serverCompletion.ts` precedent: POST an intent body,
- * authenticate with the `risu-auth` header, and stream-parse the SSE
- * response. Unlike `/completion` (which dispatches an already-assembled
- * prompt to a provider), `/chat` performs server-side prompt *assembly* and
- * streams back the assembled `prompt` payload plus `info` telemetry.
+ * POSTs an intent body, authenticates with the `risu-auth` header, and
+ * stream-parses the SSE response. Unlike `/completion` (which dispatches an
+ * already-assembled prompt to a provider), `/chat` performs server-side prompt
+ * assembly and streams back the assembled `prompt` payload plus `info` telemetry.
  *
  * This adapter consumes `stage` / `prompt` / `message_patch` / `info` /
- * `error` / `done`. Token / side-effect / warning events remain tolerated
- * until later 7-12d slices move provider dispatch to `/chat`. The `prompt`
- * event carries the full `formated` rows and `biases` additively (7-12b), so
- * previews and the send path can use the server payload directly.
+ * `error` / `done`. Token / side-effect / warning events are tolerated for
+ * generation streams. The `prompt` event carries full `formated` rows and
+ * `biases`, so previews and the send path can use the server payload directly.
  */
 
 import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
@@ -47,10 +45,9 @@ export interface ServerChatInput {
   expectedRevision?: number
   inlayAssets?: unknown[]
   /**
-   * Durable generation (Milestone 1): when set, the server runs this `send` as a
-   * detached, reconnectable job and persists the result itself — so the browser
-   * suppresses its own generation-result persist (gotcha F). Computed by
-   * `resolveDurableGeneration`; only ever true for a server-assembled `send`.
+   * When set, the server runs this as a detached, reconnectable job and persists
+   * the result itself, so the browser suppresses its own generation-result persist.
+   * Computed by `resolveDurableGeneration`.
    */
   durable?: boolean
 }
@@ -58,7 +55,7 @@ export interface ServerChatInput {
 /** The assembled prompt payload, parsed from the `prompt` SSE event. */
 export type ServerChatPrompt = Omit<PromptEvent, 'type'>
 
-/** Telemetry parsed from the `info` SSE event (7-11i). */
+/** Telemetry parsed from the `info` SSE event. */
 export type ServerChatInfo = Omit<InfoEvent, 'type'>
 
 export type ServerChatResult =
@@ -107,11 +104,10 @@ function parseData(data: string): Record<string, unknown> | null {
 }
 
 /**
- * C-A1: when `/generate/chat` persisted the assembly-time chat-var delta it
- * returns the bumped revision on the `info` frame. Sync the command layer's
- * cached revision to it so the next browser command POSTs the right
- * `baseRevision` instead of a stale one (which would 409). Absent when the
- * route persisted nothing, in which case this is a no-op.
+ * When `/generate/chat` persists an assembly-time chat-var delta, it returns the
+ * bumped revision on the `info` frame. Sync the command layer's cached revision
+ * so the next browser command POSTs the right `baseRevision` instead of a stale
+ * one. Absent when the route persisted nothing, in which case this is a no-op.
  */
 function reconcileServerCommandRevision(info: ServerChatInfo): void {
   if (typeof info.revision === 'number') {
@@ -120,11 +116,10 @@ function reconcileServerCommandRevision(info: ServerChatInfo): void {
 }
 
 /**
- * Durable generation (Milestone 1): explicitly cancel a running durable job. A bare
- * disconnect only detaches the viewer — the job keeps generating — so the stop
- * button must `DELETE /generate/chat/:id` to actually abort it (Step 2 gotcha B).
- * Authorized by the current active writer (the guard handles writer handoff).
- * Best-effort: if the cancel fails the job still finishes and persists.
+ * Explicitly cancel a running durable job. A bare disconnect only detaches the
+ * viewer; the job keeps generating, so the stop button must
+ * `DELETE /generate/chat/:id` to abort it. Authorized by the current active
+ * writer. Best-effort: if the cancel fails the job still finishes and persists.
  */
 export async function cancelServerChatGeneration(generationId: string): Promise<void> {
   if (!generationId) return
@@ -153,8 +148,8 @@ async function openChatResponse(
 
   let response: Response
   try {
-    // Phase 7 reattach: GET the live stream of an already-running durable job
-    // (replays buffered frames, then live). A fresh send POSTs the intent body.
+    // Reattach by GETting the live stream of an already-running durable job
+    // (buffered frames first, then live). A fresh send POSTs the intent body.
     response = reattachJobId
       ? await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(reattachJobId)}/stream`, {
           method: 'GET',
@@ -245,8 +240,7 @@ export async function requestServerChat(
       case 'done':
         done = true
         break
-      // stage + dispatch-coupled events (token / side_effect / warning) are
-      // ignored until later 7-12d slices.
+      // Prompt-only calls ignore stage and dispatch-coupled events.
       default:
         break
     }
@@ -443,9 +437,9 @@ export async function requestServerChatGeneration(
                   tokenResult = donePayload.result
                   controller.enqueue({ [streamKey]: tokenResult })
                 }
-                // A2: the post-gen pass may have persisted a scriptstate delta and
-                // bumped the revision; reconcile it (like C-A1's `info.revision`) so
-                // the follow-up generation-result command POSTs the right baseRevision.
+                // The post-gen pass may have persisted a scriptstate delta and
+                // bumped the revision; reconcile it so the follow-up command POSTs
+                // the right baseRevision.
                 if (typeof donePayload.postGeneration?.revision === 'number') {
                   setCachedServerCommandRevision(donePayload.postGeneration.revision)
                 }

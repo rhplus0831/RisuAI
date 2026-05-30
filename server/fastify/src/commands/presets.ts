@@ -186,12 +186,6 @@ export function readPresetPatch(
   return patch
 }
 
-// A4EC3 / B10: `repairPresetRecord` was an unused export that minted
-// preset ids. It survived the Alpha-3 sweep because A3R3 only flagged
-// direct route-handler calls, not stale exports. Deleted in Alpha-4 to
-// prevent drive-by re-introduction of command-path id minting; in-process
-// repair-on-read is handled by `ensurePresetCollection` instead.
-
 export function findPresetIndex(presets: readonly PresetRecord[], presetId: string): number {
   return presets.findIndex((preset) => preset.id === presetId)
 }

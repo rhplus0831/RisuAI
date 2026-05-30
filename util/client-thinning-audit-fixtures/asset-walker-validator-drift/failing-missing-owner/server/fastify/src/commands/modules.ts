@@ -1,5 +1,4 @@
-// EC6 validator-needle carrier for module asset triples. In the real tree these
-// are live validator calls in server/fastify/src/commands/modules.ts.
+// Validator-needle carrier for module asset triples.
 //
 // Needles:
 //   'assets' in record

@@ -3,10 +3,10 @@ import { DBState, selectedCharID } from '../stores.svelte'
 import type { ActiveGenerationJob } from '../server/bootstrap'
 
 /**
- * lazy-projection Phase 7: durable generations still running server-side, as
- * surfaced by the bootstrap projection. A reloaded browser uses this to
- * re-attach to the live stream of the chat it opens, instead of only seeing the
- * result once the projection refreshes. Consumed (removed) once reattached.
+ * Durable generations still running server-side, as surfaced by the bootstrap
+ * projection. A reloaded browser uses this to re-attach to the live stream of
+ * the chat it opens, instead of only seeing the result once the projection
+ * refreshes. Consumed once reattached.
  */
 export const activeGenerationJobs = writable<ActiveGenerationJob[]>([])
 
@@ -44,9 +44,9 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     // Consume the job up front so a re-render / re-selection does not double
     // reattach while this one streams.
     activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== job.jobId))
-    // Phase 6b: carry the running job's mode so the replayed stream renders on the
-    // right row (continue → extend the existing row; regenerate → its target slot)
-    // rather than as a fresh send. Older servers omit `mode` → treated as send.
+    // Carry the running job's mode so the replayed stream renders on the right
+    // row (continue extends the existing row; regenerate targets its slot) rather
+    // than as a fresh send. Older servers omit `mode` and are treated as send.
     await sendChat(-1, {
       reattachJobId: job.jobId,
       continue: job.mode === 'continue' ? true : undefined,

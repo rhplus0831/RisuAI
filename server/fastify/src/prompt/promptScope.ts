@@ -17,9 +17,8 @@ import type { ChatVarBackend } from '../../../../src/ts/parser/chatVarBackend'
  * Concurrency: matches the SPA's existing race behavior. Two concurrent
  * `expandVariables` calls would interleave their chat-var writes; this
  * is the same risk the SPA's `DBState.db` carries today and is
- * acceptable under the single-user assumption. If Phase 8/9 introduces
- * concurrent server-driven work, swap this singleton for an
- * `AsyncLocalStorage`-backed scope.
+ * acceptable under the single-user assumption. If concurrent server-driven work
+ * arrives, swap this singleton for an `AsyncLocalStorage`-backed scope.
  */
 
 export interface PromptScope {

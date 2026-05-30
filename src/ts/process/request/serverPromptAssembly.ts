@@ -39,18 +39,16 @@ function deriveMode(input: ServerPromptAssemblyInput): ServerPromptAssemblyMode 
 }
 
 // Inlay / asset markers the local converter resolves into image/asset bytes
-// (`formatHistoryMessage.ts:76,85,154`). As of slice 3a the server assembler
-// resolves these (inlay bytes ride the request `inlayAssets`; asset bytes come
-// from the server store), so their mere presence no longer forces `unsupported`
-// — only the non-vision caption sub-case (class 2) below does.
+// (`formatHistoryMessage.ts:76,85,154`). The server assembler resolves them too:
+// inlay bytes ride the request `inlayAssets`, and asset bytes come from the
+// server store. Only the non-vision caption case below remains unsupported.
 const INLAY_MARKER = /\{\{(?:inlay|inlayed|inlayeddata)::/i
 const ASSET_MARKER = /\{\{asset_?prompt::/i
 
 /**
- * Multimodal / asset content (local-assembler class 1): any message carrying a
- * runtime `multimodals` array (set by scripting at `scriptings.ts:563,938`) or an
- * inlay/asset marker in its `.data`. Ported to the server by slice 3a; still
- * used to detect the class-2 caption sub-case.
+ * Multimodal / asset content: any message carrying a runtime `multimodals` array
+ * (set by scripting at `scriptings.ts:563,938`) or an inlay/asset marker in its
+ * `.data`. Used to detect the non-vision caption fallback case.
  */
 function sendHasMultimodalOrAsset(currentChat: Chat): boolean {
   for (const message of currentChat.message ?? []) {
@@ -112,16 +110,10 @@ function hasPluginV2EditSet(): boolean {
 }
 
 /**
- * Lua script content (local-assembler classes 4-6): a `triggerlua` effect on the
- * character or any enabled module. **Server-supported as of slice 3b** — the
- * server Lua VM runs the `editRequest` hook (sub-slice 2) at parity, so a
- * `triggerlua` char routes `server` instead of hard-failing. The one exception is
- * a script that references an interactive dialog API (`alertInput`/`alertSelect`/
- * `alertConfirm`): those need a browser the server lacks, so this predicate keeps
- * them `unsupported`. The `editprocess`/`editinput` execution seams graduate in
- * sub-slices 3/4; until then a non-interactive Lua char routes `server` even if it
- * only hooks those. The Lua edit/input sub-slices have landed; see
- * `docs/client-thinning/phases/slices/slice-3b-lua/`.
+ * Lua script content: a `triggerlua` effect on the character or any enabled
+ * module. The server Lua VM runs non-interactive hooks, so only scripts that
+ * reference browser dialog APIs (`alertInput`/`alertSelect`/`alertConfirm`) stay
+ * `unsupported`.
  * Kept separate from `hasPluginV2EditSet` so the permanent pluginV2 hard-fail is
  * undisturbed.
  */
@@ -133,38 +125,28 @@ function luaUsesInteractiveApi(currentChar: character): boolean {
 }
 
 /**
- * True if the send carries any content class the server `/chat` assembler cannot
- * yet reproduce. Coarse presence detection: on doubt, report content (→
- * `unsupported`), never silently fall through to a server assembly that would
- * drop it. Each later content slice (3a/3b/3c) deletes exactly one branch here.
+ * True if the send carries content the server `/chat` assembler cannot reproduce.
+ * Coarse presence detection: on doubt, report content as `unsupported`, never
+ * silently fall through to a server assembly that would drop it.
  */
 function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | null {
-  // Class 2 (non-vision caption): when the model lacks image input the local
-  // assembler replaces an image with a `runImageEmbedding` caption
+  // When the model lacks image input, the local assembler replaces an image with
+  // a `runImageEmbedding` caption
   // (`formatHistoryMessage.ts:111-114`) — a browser-only ML pipeline with no
   // server equivalent. Rather than emit a silently captionless prompt, any
-  // image/asset/inlay content on a non-vision model is `unsupported`. (Class 1,
-  // the vision path, is now server-assembled; see `sendHasMultimodalOrAsset`.)
+  // image/asset/inlay content on a non-vision model is `unsupported`.
   if (sendHasMultimodalOrAsset(input.currentChat) && !modelAcceptsImageInput()) {
     return 'This model has no image input, so image/asset content would need the browser caption fallback, which server prompt assembly cannot reproduce. Disable server prompt assembly to send it.'
   }
-  // Image-gen / emotion view instruction (class 3): now server-assembled (slice
-  // 3c). `buildInlayViewInstruction` (`prompt/staticSections.ts`) appends the same
-  // static `newGenData` / `viewScreen` `system` row the browser does, so a char
-  // with `inlayViewScreen` set no longer hard-fails here. The post-gen image
-  // generation / inlay-screen rendering stays a browser effect (B1).
-  // Lua scripts (classes 4-6): the server Lua VM (slice 3b) runs the editRequest
-  // hook at parity, so a `triggerlua` char routes `server`. The exception is a
-  // script that references an interactive dialog API — it needs a browser dialog
-  // the server cannot drive, so it stays `unsupported` rather than surfacing as a
-  // runtime generation error.
+  // Image-gen / emotion view instructions are server-assembled. The post-gen
+  // image generation / inlay-screen rendering stays a browser effect.
+  // Lua scripts route to the server unless they reference an interactive dialog
+  // API the server cannot drive.
   if (luaUsesInteractiveApi(input.currentChar)) {
     return 'Lua scripts using interactive dialogs (alertInput / alertSelect / alertConfirm) require the browser and are not supported by server prompt assembly. Disable server prompt assembly to send.'
   }
-  // pluginV2 (class 5, plugin arm): permanent `unsupported` (no-port list;
-  // deprecated by Plugin V3). Reported separately from the Lua arm above so the
-  // Lua sub-classes can flip to `server` independently while this stays a hard
-  // fail forever — see `hasPluginV2EditSet`.
+  // pluginV2 edit hooks stay permanently `unsupported` (no-port list; deprecated
+  // by Plugin V3). Reported separately from Lua; see `hasPluginV2EditSet`.
   if (hasPluginV2EditSet()) {
     return 'Plugin (V2) scripts run only in the browser plugin runtime and are not supported by server prompt assembly. Disable server prompt assembly to send.'
   }
@@ -206,13 +188,10 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
  *   3. single, non-group character.
  *   4. server-routable provider (reuse `resolveServerCompletionRoute`).
- *   5. no interactive-Lua / pluginV2 content, and no non-vision caption case
- *      (image/asset/inlay content on a model without image input — class 2).
- *      Vision-model image/asset/inlay content is server-assembled (slice 3a) and
- *      the image-gen / emotion view instruction is server-assembled (slice 3c).
- *      Lua now routes `server` — the VM runs the editRequest hook (slice 3b) —
- *      except scripts using an interactive dialog API, which stay `unsupported`;
- *      the pluginV2 arm is a permanent hard fail (no-port list).
+ *   5. no interactive-Lua / pluginV2 content, and no image/asset/inlay content
+ *      on a model without image input. Vision-model image/asset/inlay content,
+ *      image-gen / emotion view instructions, and non-interactive Lua hooks are
+ *      server-assembled; pluginV2 edit hooks stay a permanent hard fail.
  *   6. otherwise → `server`.
  *
  * From step 2 on (Fastify mode, flag on) the verdict is always `server` or

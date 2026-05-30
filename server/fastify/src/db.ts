@@ -37,11 +37,8 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     version: 4,
     name: 'chat-messages-table',
     up: (db) => {
-      // Lazy-projection Phase 4: chat messages move to their own SQLite table.
       // The migration only creates the table; embedded `db.json` messages are
-      // lossless-migrated on first read (SQLite-or-embedded join) and persisted
-      // to the table on the next write — see `loadPersistedWithMessages` /
-      // `writePersistedWithMessages` in repository.ts.
+      // lossless-migrated on first read and persisted to SQLite on the next write.
       createMessageTable(db)
     },
   },
@@ -49,9 +46,8 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     version: 5,
     name: 'chat-hypa-v3-table',
     up: (db) => {
-      // Lazy-projection Phase 4.4: the per-chat hypaV3Data blob moves to its own
-      // table (same boundary treatment as messages; extracted from db.json on
-      // startup via ensureMessagesExtracted).
+      // Per-chat hypaV3Data gets the same boundary treatment as messages:
+      // extracted from db.json on startup and stored in SQLite.
       createChatBlobTable(db)
     },
   },
@@ -59,12 +55,8 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     version: 6,
     name: 'message-reroll-alternates',
     up: (db) => {
-      // Lazy-projection Phase 6c: the reroll buffer ("don't lose a rerolled
-      // result"). Add the `alternate` flag column to the existing `messages` table.
-      // Guarded because a database created via the v4 migration runs the CURRENT
-      // `createMessageTable`, which already defines the column — only an older,
-      // pre-v6 `messages` table is missing it. Fresh databases get the column from
-      // `createMessageTable` and never reach this migration (version stamped CURRENT).
+      // Add the reroll-buffer `alternate` flag to existing `messages` tables.
+      // Fresh databases already get it from `createMessageTable`.
       if (!hasColumn(db, 'messages', 'alternate')) {
         db.exec('ALTER TABLE messages ADD COLUMN alternate INTEGER NOT NULL DEFAULT 0')
       }

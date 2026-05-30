@@ -1,5 +1,4 @@
-// A4R-group-chat-removed fixture (passing): the request boundary keeps isGroupChat
-// hardcoded false.
+// Invariant: the request boundary never marks client chat requests as group chat.
 declare function requestChatData(payload: unknown): Promise<unknown>
 
 export async function dispatchRequest() {

@@ -786,11 +786,9 @@ function dispatchModuleCollectionPatch(
   const beforeModules = new Map(previous.modules.map((module) => [module.id, module]))
   const nextModules = new Map(modules.map((module) => [module.id, module]))
 
-  // A4EC2 / B1: collect every diff into one sequenced factory list. Pre-fix
-  // each create/update/delete/reorder fired against the shared optimistic
-  // snapshot on the same cached baseRevision; only the first won, the rest
-  // 409d. The sequencer awaits each response so the next reads the updated
-  // revision.
+  // Collect every diff into one sequenced factory list. Each response updates the
+  // cached baseRevision before the next command reads it, avoiding 409s from
+  // parallel fan-out against the same optimistic snapshot.
   const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
 
   for (const module of modules) {
@@ -847,9 +845,8 @@ function dispatchEnabledModulesPatch(
   const next = new Set(enabledModules.filter((id): id is string => typeof id === 'string'))
   const knownModules = new Set(modules.map((module) => module.id))
 
-  // A4EC2 / B1: serialize enable/disable diffs against one optimistic
-  // snapshot. The previous fan-out fired N back-to-back enableModule calls
-  // on the same cached baseRevision, racing on response order.
+  // Serialize enable/disable diffs against one optimistic snapshot so each
+  // enableModule call reads the revision returned by the previous response.
   const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
 
   for (const moduleId of next) {

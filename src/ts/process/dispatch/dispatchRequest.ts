@@ -31,7 +31,7 @@ export type DispatchRequestResult =
     }
 
 /**
- * Run the provider dispatch slice: stage 3 transition, preview / previewPrompt
+ * Run the provider dispatch helper: stage 3 transition, preview / previewPrompt
  * early returns, `requestChatData` invocation, model-override propagation,
  * post-provider abort and fail handling. Returns a discriminated union that
  * the coordinator dispatches on; the coordinator owns the `previewFormated` /

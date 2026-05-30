@@ -119,14 +119,7 @@
   --default-ring-color: rgb(59 130 246 / 0.5);
 }
 
-/*
-  The default border color has changed to `currentcolor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
-*/
+/* Preserve Tailwind v3's default border color while using Tailwind v4. */
 @layer base {
   *,
   ::after,
@@ -316,17 +309,14 @@ body {
   height: 5px;
 }
 
-/* Track */
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* Handle */
 ::-webkit-scrollbar-thumb {
   background: rgba(136, 136, 136, 0.5);
 }
 
-/* Handle on hover */
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(85, 85, 85, 0.5);
 }
@@ -394,7 +384,6 @@ body {
   height: 1rem;
   border-top: 0.4rem solid var(--risu-theme-borderc);
   border-left: 0.4rem solid var(--risu-theme-borderc);
-  /* transition colors */
   transition: border-color 0.5s;
 }
 
@@ -525,8 +514,7 @@ body {
 }
 
 .root-loaded-image {
-  /* This class is used to indicate that the image has been with root-loaded method */
-  /* We need to style it to centered and pretty */
+  /* Center root-loaded images. */
   display: block;
   margin-left: auto;
   margin-right: auto;

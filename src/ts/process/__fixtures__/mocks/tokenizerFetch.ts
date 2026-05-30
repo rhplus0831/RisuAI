@@ -6,9 +6,8 @@ import { fileURLToPath } from 'node:url'
  * Serves the tokenizer JSON/spiece files normally loaded over HTTP
  * (`fetch('/token/claude/claude.json')` etc.) directly from `public/`.
  *
- * The Phase 6-5 anthropic-basic fixture pulls in Claude's tokenizer for
- * preflight token math; the fixture vitest env has no static file server,
- * so we shim the fetch.
+ * The anthropic-basic fixture pulls in Claude's tokenizer for preflight token
+ * math; the fixture vitest env has no static file server, so we shim the fetch.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url))

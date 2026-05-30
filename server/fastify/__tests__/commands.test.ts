@@ -103,8 +103,7 @@ async function importDatabase(
   return imported.json().revision as number
 }
 
-// Phase 4.3: the bootstrap ships chat stubs (message-free); read a chat's
-// persisted messages via the per-chat hydration endpoint.
+// The bootstrap ships chat stubs; read persisted messages via per-chat hydration.
 async function persistedChatMessages(
   app: FastifyInstance,
   assertion: string,
@@ -5368,10 +5367,8 @@ describe('Phase 9-4a lorebook commands', () => {
   })
 
   it('rejects POST /lorebooks payloads that omit nested entry ids (A4EC3 / B2)', async () => {
-    // A4EC3 / B2: the create route now routes through validateGlobalLorebookCreate,
-    // which delegates to the no-mint validateLorebookEntries. Pre-fix the
-    // route silently minted UUIDs for missing entry ids the client could not
-    // observe.
+    // The create route uses the no-mint validator so missing entry ids are
+    // rejected instead of being silently minted.
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       loreBook: [{ id: 'book-a', name: 'A', data: [] }],
@@ -5455,9 +5452,8 @@ describe('Phase 9-4a lorebook commands', () => {
   })
 
   it('rejects PUT /characters /chats /modules lorebook payloads with missing or duplicate entry ids (A4EC3 / B2)', async () => {
-    // A4EC3 / B2: the four replace routes now route through validateLorebookEntries,
-    // which is a no-mint constructor. Pre-fix readLorebookEntries forwarded
-    // through repair-on-read and accepted minted ids.
+    // The replace routes use the no-mint validator so missing or duplicate entry
+    // ids are rejected.
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       loreBook: [{ id: 'book-a', name: 'A', data: [] }],

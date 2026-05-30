@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Regression coverage for the Phase 9 hotkey closeout: ordinary keydown
-// matching must not mutate `DBState.db.hotkeys`, and hotkey settings edits must
-// route through a server-backed settings patch instead of a raw projection
-// write. Both throw under the read-only server projection guard otherwise.
+// Regression coverage: ordinary keydown matching must not mutate
+// `DBState.db.hotkeys`, and hotkey settings edits must route through a
+// server-backed settings patch instead of a raw projection write. Both throw
+// under the read-only server projection guard otherwise.
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 

@@ -8,10 +8,9 @@ import { buildApp } from '../src/app.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import type { ChatProviderDispatcher } from '../src/routes/generationChat.js'
 
-// Durable generation (Milestone 1) lives on a *detached* job whose lifecycle is
-// not tied to the request connection, so these go through a real listening server
-// + `fetch` (not `app.inject`, which buffers the whole response and cannot model a
-// mid-stream disconnect / reattach).
+// Durable generation lives on a detached job whose lifecycle is not tied to the
+// request connection, so these use a real listening server + `fetch`. `app.inject`
+// buffers the whole response and cannot model a mid-stream disconnect / reattach.
 
 interface Harness {
   app: FastifyInstance
@@ -240,8 +239,7 @@ async function bootstrap(): Promise<{
 async function chatMessages(
   boot: Awaited<ReturnType<typeof bootstrap>>,
 ): Promise<Array<Record<string, unknown>>> {
-  // Phase 4.3: the bootstrap ships chat stubs (message-free); read the persisted
-  // messages via the per-chat hydration endpoint.
+  // The bootstrap ships chat stubs; read persisted messages via per-chat hydration.
   const chat = boot.database.characters[0]?.chats[0] as { id?: string } | undefined
   if (!chat?.id) return []
   const res = await fetch(
@@ -290,8 +288,7 @@ async function cancelJob(jobId: string): Promise<void> {
 }
 
 describe('Durable generation (Milestone 1)', () => {
-  // EC-D1 (lifecycle + persistence half): the generation survives the client drop
-  // and the result lands in db.json with no client present.
+  // The generation survives the client drop and persists with no client present.
   it('keeps generating after the client drops mid-stream and persists the result (EC-D1)', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
@@ -313,14 +310,13 @@ describe('Durable generation (Milestone 1)', () => {
     expect(message.role).toBe('char')
     expect(message.data).toBe('Hello')
     expect(message.chatId).toBe(jobId)
-    // Persisted exactly once (idempotent on generationId — EC-D4 server half).
+    // Persisted exactly once; generationId makes the write idempotent.
     const boot = await bootstrap()
     expect((await chatMessages(boot)).filter((m) => m.role === 'char')).toHaveLength(1)
   })
 
-  // EC-D3: drop the initial connection mid-stream, reattach to the still-running
-  // (gated) job, then let it produce the remaining tokens — the reattached client
-  // receives them + the terminal done, and the result persists.
+  // Drop the initial connection mid-stream, reattach to the still-running job,
+  // then let it produce the remaining tokens and terminal done.
   it('reattaches to an in-flight generation and receives the remaining events (EC-D3)', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
@@ -371,8 +367,7 @@ describe('Durable generation (Milestone 1)', () => {
     })
 
     const boot = await bootstrap()
-    // Phase 6b: the projection carries the generating mode so a reload-resume
-    // reattach renders the right shape.
+    // The projection carries the generating mode so reload-resume renders correctly.
     expect(boot.activeGenerationJobs).toContainEqual({ chatId: 'chat-1', jobId, mode: 'send' })
 
     // A fresh client reattaches via the discovered id.
@@ -394,10 +389,8 @@ describe('Durable generation (Milestone 1)', () => {
     reController.abort()
   })
 
-  // Cluster A regression: reattaching to an already-completed (in-grace) job must
-  // CLOSE the connection server-side — not dangle the socket + the uncollectable job
-  // until the client hangs up. Reading the reattach stream to its end must return
-  // (the server closes it) rather than hang to the test timeout.
+  // Reattaching to an already-completed in-grace job must close server-side
+  // instead of dangling the socket until the client hangs up.
   it('closes the connection itself when reattaching to an already-completed job (no leak)', async () => {
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
@@ -429,8 +422,8 @@ describe('Durable generation (Milestone 1)', () => {
     reController.abort()
   }, 8000)
 
-  // Cluster B regression: an explicit cancel must push a terminal frame so a
-  // reattached observer's stream ends cleanly (not a spurious "stream ended" cut).
+  // Explicit cancel must push a terminal frame so a reattached observer's stream
+  // ends cleanly.
   it('emits a terminal done to a reattached observer when the job is cancelled', async () => {
     const gated = makeGatedProvider({ before: 'partial' }) // never released
     providerImpl = gated.dispatchProvider
@@ -494,8 +487,8 @@ describe('Durable generation (Milestone 1)', () => {
     expect(await chatMessages(boot)).toEqual([])
   })
 
-  // Step 2 gotcha B + E: explicit cancel aborts the dispatch; a streaming cancel
-  // persists the accumulated-so-far text raw.
+  // Explicit cancel aborts dispatch; a streaming cancel persists the
+  // accumulated-so-far text raw.
   it('cancels a running generation via DELETE and persists the streamed-so-far text', async () => {
     const gated = makeGatedProvider({ before: 'partial reply' }) // never released
     providerImpl = gated.dispatchProvider
@@ -552,9 +545,8 @@ describe('Durable generation (Milestone 1)', () => {
     })
   })
 
-  // EC-D1 + A2 derivation on the durable path (decision #2): the server runs the
-  // post-gen pass (output trigger), persists the scriptstate delta + the assistant
-  // message, and folds the bumped revision onto done.postGeneration.
+  // The durable path runs the post-gen pass, persists the scriptstate delta and
+  // assistant message, and folds the bumped revision onto done.postGeneration.
   it('runs the A2 post-gen pass on the durable path and persists the derived result (EC-D1/A2)', async () => {
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
@@ -602,11 +594,11 @@ describe('Durable generation (Milestone 1)', () => {
     controller.abort()
   })
 
-  // ── Phase 6b: durable continue / regenerate ──────────────────────────────────
-  // The durable job now finalizes all three generating modes mode-correctly
-  // (`resolvePostGenerationResult`): continue extends the last char row in place,
-  // regenerate replaces the target, send appends. Each survives a mid-stream
-  // disconnect (let-it-finish), and the streaming-cancel persist is mode-aware too.
+  // Durable continue / regenerate.
+  // The durable job finalizes all three generating modes: continue extends the
+  // last char row in place, regenerate replaces the target, and send appends.
+  // Each survives a mid-stream disconnect, and streaming-cancel persistence is
+  // mode-aware too.
 
   it('survives a disconnect on a durable continue and extends the row in place (Phase 6b)', async () => {
     await seedChatWithMessages([
@@ -781,8 +773,8 @@ describe('Durable generation (Milestone 1)', () => {
     controller.abort()
   })
 
-  // gotcha C: the target chat is gone at completion (a full re-import replaced the
-  // db mid-generation) → the persist fails gracefully (job error, no bad write).
+  // If the target chat is gone at completion, persistence fails gracefully with a
+  // job error and no bad write.
   it('records a job error when the target chat vanishes mid-generation (gotcha C)', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider

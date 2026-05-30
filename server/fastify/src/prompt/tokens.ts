@@ -2,34 +2,18 @@ import { get_encoding, type Tiktoken } from '@dqbd/tiktoken'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 
 /**
- * Phase 7-8a minimal server tokenizer.
- *
- * Replaces the SPA's 654-line tokenizer dispatcher
- * (`src/ts/tokenizer.ts`) with the slice of behavior that Phase 7
- * budget heuristics actually need: text-only tiktoken counting plus
- * `OpenAIChat` per-message overhead.
- *
- * Out of scope (see the archived Phase 7 scope re-verification in
- * docs/archive/fastify/phases/phase-7-prompt-assembly.md):
- * Svelte stores, plugin / custom tokenizer hooks,
- * `@mlc-ai/web-tokenizers` providers (Claude / Llama / Mistral /
- * NovelAI / NovelList / Gemma / Cohere / DeepSeek / GLM), Google
- * count-token calls, local GGUF tokenization, and multimodal
- * image-token math. Anything not routed to `o200k_base` here falls
- * back to the conservative `cl100k_base` encoder so Phase 7 budgets
- * stay stable; exact provider tokenizers land only when a fixture
- * needs them.
+ * Minimal server tokenizer: text-only tiktoken counting plus `OpenAIChat`
+ * per-message overhead. Provider-specific tokenizers, custom tokenizer hooks,
+ * count-token API calls, local GGUF tokenization, and multimodal image-token
+ * math remain out of scope. Anything not routed to `o200k_base` falls back to
+ * the conservative `cl100k_base` encoder.
  */
 
 export type TokenEncoding = 'cl100k_base' | 'o200k_base'
 
-// Prefix list from Phase 7-8a: the families the SPA's
-// `src/ts/model/providers/openai.ts` tags with
-// `LLMTokenizer.tiktokenO200Base`. Two SPA rows that fall outside this
-// list (`chatgpt-4o-latest`, `gpt-4.5-preview*`) are intentionally
-// routed to `cl100k_base` per the documented conservative fallback;
-// add their prefixes here only when a fixture requires the exact
-// per-model parity.
+// Prefixes the SPA tags with `LLMTokenizer.tiktokenO200Base`. The omitted
+// `chatgpt-4o-latest` and `gpt-4.5-preview*` rows intentionally use the
+// conservative `cl100k_base` fallback until a fixture needs exact parity.
 const O200K_PREFIXES: readonly string[] = [
   'gpt-4o',
   'gpt-4.1',

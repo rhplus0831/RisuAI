@@ -1,7 +1,7 @@
 /**
- * Fetch stub for the Phase 6-3 dual-mode fixture sweep. Emulates the
- * Phase 6-1 `POST /api/v1/generate/completion` route well enough to round-trip
- * the echo / openai / anthropic providers. Tokenizer JSON fetches
+ * Fetch stub for the dual-mode fixture sweep. Emulates the
+ * `POST /api/v1/generate/completion` route well enough to round-trip the
+ * echo / openai / anthropic providers. Tokenizer JSON fetches
  * (`/token/*`) are served from disk via the shared shim. Any other URL is
  * rejected so an accidental escape inside a fixture surfaces loudly.
  */

@@ -3,8 +3,7 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
- * Phase 7-4 plain prompt sections ported from the SPA's
- * `src/ts/process/promptAssembly/buildPlainPromptSections.ts`.
+ * Plain prompt sections ported from the SPA's `buildPlainPromptSections.ts`.
  *
  * Produces the three top-level system-style blocks the assembler
  * consumes when the user has not switched to a structured promptTemplate:

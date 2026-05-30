@@ -1,5 +1,4 @@
-// A4R-group-chat-removed fixture (failing-ui-branch): keep-layers intact so only the
-// negative half (UI branch) fails.
+// Invariant: the request boundary never marks client chat requests as group chat.
 declare function requestChatData(payload: unknown): Promise<unknown>
 
 export async function dispatchRequest() {

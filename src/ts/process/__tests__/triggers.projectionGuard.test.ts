@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Regression coverage for the Phase 9 projection-guard audit: trigger data
-// effects that mutate durable character/persona state must route through
-// typed commands instead of writing `DBState.db` directly, so they do not
-// throw under the server-backed read-only projection guard.
+// Regression coverage: trigger data effects that mutate durable character/persona
+// state must route through typed commands instead of writing `DBState.db`
+// directly, so they do not throw under the server-backed read-only projection
+// guard.
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 

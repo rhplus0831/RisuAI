@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Phase 6c: prove the extracted swipe machine is safe under the Fastify read-only
-// projection guard — the original component mutated `DBState` directly, which
-// throws once the guard wraps it. `isFastifyServer` is forced on so the real
+// Prove the extracted swipe machine is safe under the Fastify read-only
+// projection guard. `isFastifyServer` is forced on so the real
 // `withTrustedServerProjectionWrite` actually freezes/snapshots (the unit suite
 // otherwise runs off-Fastify, where it is a pass-through).
 

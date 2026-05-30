@@ -12,19 +12,18 @@ import {
   fetchServerChatMessages,
 } from './projection'
 
-// Lazy-projection Phase 4.3: the bootstrap ships chat *stubs* (empty message[]).
-// This bridge hydrates a chat's messages from the server when it is opened, and
-// re-hydrates the open chat after a projection apply re-stubs it. Chats other
-// than the open one stay stubbed until opened (the lazy win); bulk readers that
-// need every chat call `ensureAllChatsHydrated`.
+// The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
+// chat's messages when it is opened and re-hydrates the open chat after a
+// projection apply re-stubs it. Bulk readers that need every chat call
+// `ensureAllChatsHydrated`.
 
 // Chat ids whose messages this client has already hydrated this session, so
 // re-opening a chat does not refetch. Cleared on a full re-stub (resync).
 const hydratedChatIds = new Set<string>()
 const inFlight = new Set<string>()
 
-// Phase 5: character ids whose `globalLore` this client has hydrated this session
-// (only when the EXPERIMENTAL `enableLorebookStubs` setting is on).
+// Character ids whose `globalLore` this client has hydrated this session (only
+// when the EXPERIMENTAL `enableLorebookStubs` setting is on).
 const hydratedCharLorebookIds = new Set<string>()
 const charLorebookInFlight = new Set<string>()
 
@@ -47,8 +46,8 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
     if (result.status === 'ok') {
       hydrateServerChatMessages(chatId, result.message, result.hypaV3Data)
       hydratedChatIds.add(chatId)
-      // Phase 6c: only the *open* chat's tail drives the swipe buffer — seed it
-      // from this chat's persisted reroll candidates so rerolls survive a reload.
+      // Only the open chat's tail drives the swipe buffer; seed it from this
+      // chat's persisted reroll candidates so rerolls survive a reload.
       if (activeChatId() === chatId) {
         seedRerollBufferFromAlternates(result.message, result.alternates)
       }
@@ -69,7 +68,7 @@ export async function hydrateChatMessages(chatId: string): Promise<void> {
   if (chatId) await hydrateChat(chatId, false)
 }
 
-// ── Phase 5: character globalLore hydration (only when stubs are on) ──────────────
+// Character globalLore hydration (only when stubs are on).
 
 function activeCharacterId(): string | undefined {
   const selId = get(selectedCharID)
@@ -132,8 +131,8 @@ export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
 export function resetChatHydration(): void {
   hydratedChatIds.clear()
   inFlight.clear()
-  // Phase 5: a re-stub also re-stubs character globalLore — forget those marks so
-  // the open character re-hydrates (the lorebook registry is reset in bootstrap.ts).
+  // A re-stub also re-stubs character globalLore; forget these marks so the open
+  // character re-hydrates (the lorebook registry is reset in bootstrap.ts).
   hydratedCharLorebookIds.clear()
   charLorebookInFlight.clear()
 }
@@ -181,8 +180,8 @@ export function startChatMessageHydration(): void {
       const character = DBState.db?.characters?.[selectedCharMirror]
       const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
       if (chatId) void hydrateActiveChat()
-      // Phase 5: hydrate the open character's globalLore (reads chaId only — not
-      // globalLore — so writing the hydrated entries does not re-trigger this).
+      // Hydrate the open character's globalLore. This reads chaId only, so
+      // writing the hydrated entries does not re-trigger the effect.
       if (character?.chaId) void hydrateActiveCharacterLorebook()
     })
   })

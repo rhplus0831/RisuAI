@@ -1,7 +1,5 @@
-// Minimal fixture for the A4R3 transitive command-path id minting rule. The
-// real command routes live in server/fastify/src/routes/commands.ts. Durable
-// ids must be supplied by the validated request and never minted on the
-// command path, directly or transitively.
+// Invariant: command routes use durable ids from validated requests and never
+// mint them on the command path, directly or transitively.
 import { randomUUID } from 'node:crypto'
 import { createChatRecord } from '../commands/chats.js'
 

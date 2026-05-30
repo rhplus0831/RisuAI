@@ -8,11 +8,11 @@ import {
 } from './promptScope.js'
 
 /**
- * Phase 7-2c server-side `risuChatParser` entry point.
+ * Server-side `risuChatParser` entry point.
  *
  * Sets the active prompt scope from `ctx.database` + selected character
  * + chat indices, runs the canonical browser parser (extracted to a
- * Svelte-free module in slice 7-2b), then clears the scope. The chat's
+ * Svelte-free module), then clears the scope. The chat's
  * `scriptstate` object is mutated in place when `runVar` is true and
  * the preset contains `{{setvar}}` / `{{addvar}}` / `{{setdefaultvar}}`;
  * the caller can check `expandVariables.returns.dirty` to decide
@@ -20,8 +20,8 @@ import {
  *
  * Browser-only cbs callbacks (`{{screenwidth}}`, `{{metadata::browserlanguage}}`,
  * HTML emitters) register but will throw at invocation on the server.
- * Phase 7 prompt-assembly paths do not invoke them; revisit per fixture
- * if any preset reaches them.
+ * Prompt-assembly paths do not invoke them; revisit per fixture if any preset
+ * reaches them.
  *
  * `bootPromptVariables()` must have been called before the first
  * `expandVariables` invocation; the boot wires the chatVar backend and

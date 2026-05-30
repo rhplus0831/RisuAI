@@ -24,10 +24,9 @@ export interface ConsumeStreamResponseOptions {
   abortSignal: AbortSignal
   reformatContent: (data: string) => string
   /**
-   * Slice 4 (A2): when the server owns the post-generation pass, skip the
-   * `editoutput` transform here — the server runs it and ships the final text on
-   * the terminal `done` frame. The browser still writes the streamed (reformatted)
-   * text for live display; the server-owned final text is applied at terminal time.
+   * When the server owns post-generation, skip `editoutput` here; the server runs
+   * it and ships final text on the terminal `done` frame. The browser still writes
+   * streamed reformatted text for live display.
    */
   skipEditOutput?: boolean
 }
@@ -114,8 +113,8 @@ export async function consumeStreamResponse(
         }
         let nextData: string
         if (skipEditOutput) {
-          // A2: the server owns `editoutput`; write the reformatted stream for
-          // display and defer the final text to the terminal `done` frame.
+          // The server owns `editoutput`; write the reformatted stream for display
+          // and defer final text to the terminal `done` frame.
           nextData = reformatContent(prefix + result)
         } else {
           const result2 = await processScriptFull(

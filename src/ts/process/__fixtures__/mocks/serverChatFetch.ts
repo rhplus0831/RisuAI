@@ -1,5 +1,5 @@
 /**
- * Fetch stub for the Phase 7-12a `/chat` adapter and 7-12c preview wiring.
+ * Fetch stub for the `/chat` adapter and preview wiring.
  * Emulates `POST /api/v1/generate/chat` well enough to round-trip the named
  * SSE taxonomy (`stage` / `prompt` / `info` / `error` / `done`). Tokenizer
  * JSON fetches (`/token/*`) pass through the shared shim; any other URL is

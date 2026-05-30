@@ -4,10 +4,8 @@ import type { Database } from '../../../src/ts/storage/database.svelte'
 import { resolveChatProviderRoute } from '../src/prompt/chatDispatch.js'
 
 // Proves the server /chat dispatcher wires the shared capability table
-// (closeout decision #5): the routing decision matches the browser completion
-// path (see src/ts/process/request/tests/{providerCapability,serverCompletion}.test.ts),
-// the unknown-id guard stays server-only, and the reverse_proxy + ooba case now
-// dispatches instead of hard-failing.
+// consistently with the browser completion path; the unknown-id guard stays
+// server-only, and the reverse_proxy + ooba case dispatches instead of hard-failing.
 
 function db(overrides: Partial<Database> = {}): Database {
   return { aiModel: 'echo_model', ...overrides } as unknown as Database

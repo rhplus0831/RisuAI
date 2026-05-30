@@ -399,7 +399,6 @@
         })
       }
     }
-    //rediculously long line
     obj[obj.length - 1].end = '99:99.000'
     return obj
   }

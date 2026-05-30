@@ -17,7 +17,6 @@
     if (currentCharacter.type === 'character') {
       if (currentCharacter.additionalAssets) {
         for (let i = 0; i < currentCharacter.additionalAssets.length; i++) {
-          // console.log('check content type ...', currentCharacter.additionalAssets[i][0], currentCharacter.additionalAssets[i][1]);
           if (
             currentCharacter.additionalAssets[i].length > 2 &&
             currentCharacter.additionalAssets[i][2]
@@ -80,7 +79,6 @@
                 {additionalAsset[0]}
               </div>
             </div>
-            <!-- <audio controls class="w-16 h-16 m-1 rounded-md"><source src={assetPath} type="audio/mpeg"></audio> -->
           {:else}
             <img src={assetFilePath[i]} class="w-16 h-16 m-1 rounded-md" alt={additionalAsset[0]} />
           {/if}

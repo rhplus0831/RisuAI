@@ -101,7 +101,6 @@ export function runMessageCommand<T extends Record<string, unknown>>(
 // one fails (including conflict), the rollback is invoked once and the rest
 // are skipped. Without this, sibling `runServerCommand` calls all read the
 // same cached `baseRevision` and the later ones 409 after the first succeeds.
-// See A4EC2 / B1.
 export function runOptimisticCommandSequence(
   commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
   rollback: () => void,
@@ -172,10 +171,9 @@ export function dispatchCompatibleChatUpdate(
   if (factories.length > 0) runChatCommandSequence(factories, rollback)
 }
 
-// A4EC2 / B1: factory-list form of dispatchCompatibleChatUpdate so the V3
-// plugin API site can route through runOptimisticCommandSequence instead of
-// a fire-and-forget dispatch. Returns the (possibly empty) factories array
-// and a rollback closure that restores the chat snapshot.
+// Factory-list form of dispatchCompatibleChatUpdate so the V3 plugin API can
+// route through runOptimisticCommandSequence instead of a fire-and-forget
+// dispatch. Returns the factories array and a rollback closure.
 export function prepareCompatibleChatUpdate(
   previousChat: Chat | undefined,
   nextChat: Chat | undefined,

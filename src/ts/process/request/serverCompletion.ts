@@ -170,8 +170,7 @@ function findXcustomEntry(aiModel: string): XcustomEntry | null {
 }
 
 /**
- * Parse the xcustom `params` block (and reverse_proxy's `additionalParams`
- * table, once that slice lands) into `[key, value][]` pairs. Mirrors the
+ * Parse the xcustom `params` block into `[key, value][]` pairs. Mirrors the
  * local code in `src/ts/process/request/shared.ts:getAdditionalParameters`.
  * Each non-empty line is split on the first `=`; the value can contain `=`.
  */

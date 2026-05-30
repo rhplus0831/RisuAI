@@ -10,9 +10,9 @@ export interface ActiveGenerationJob {
   chatId: string
   jobId: string
   /**
-   * The generating mode of the running job (Phase 6b). Lets a reload-resume
-   * reattach render a `continue` / `regenerate` on the right row instead of as a
-   * fresh send. Absent (treated as `send`) for older server builds.
+   * The generating mode of the running job. Lets a reload-resume reattach render
+   * a `continue` / `regenerate` on the right row instead of as a fresh send.
+   * Absent (treated as `send`) for older server builds.
    */
   mode?: 'send' | 'continue' | 'regenerate'
   /** The regenerate target id, present only for `mode === 'regenerate'`. */
@@ -25,9 +25,9 @@ export interface ServerBootstrapProjection {
   database: Database | null
   assetBaseUrl?: string
   /**
-   * Durable generation (lazy-projection Phase 7): the generations still running
-   * server-side, so a reloaded browser can re-attach to the live stream of the
-   * open chat instead of only seeing the result after it lands. Empty when none.
+   * Generations still running server-side, so a reloaded browser can re-attach to
+   * the live stream of the open chat instead of only seeing the result after it
+   * lands. Empty when none.
    */
   activeGenerationJobs?: ActiveGenerationJob[]
 }

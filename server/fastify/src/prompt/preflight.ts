@@ -14,8 +14,8 @@ import {
 } from './templates.js'
 
 /**
- * Phase 7-8b template-wide token preflight ported from the SPA's
- * `src/ts/process/promptBudget/preflightTemplateTokens.ts`.
+ * Template-wide token preflight ported from the SPA's
+ * `preflightTemplateTokens.ts`.
  *
  * Walks the active `promptTemplate` card list, tokenizes every row
  * it would emit, and returns `{ addedTokens, memoryCardUsed,
@@ -27,14 +27,9 @@ import {
  * `tokenizerOptionsFromDb(db)` (gpt → overhead 5 / `noName`;
  * everything else → overhead 3 / `name`).
  *
- * Out of scope per the archived Phase 7 scope re-verification
- * (docs/archive/fastify/phases/phase-7-prompt-assembly.md):
- * multimodal image-token math (the SPA's `tokenizeMultiModal` is
- * fixture-gated; the server adds it only when a fixture forces the
- * issue), final budget pruning + fallback chains (7-8c), card
- * normalization / alias resolution (7-10a), cache-marker emission
- * as actual prompt rows (7-10c), and wiring through the route
- * layer (7-11a).
+ * Out of scope: multimodal image-token math, final budget pruning + fallback
+ * chains, card normalization / alias resolution, cache-marker emission as actual
+ * prompt rows, and route-layer wiring.
  *
  * `positionParser`: the SPA injects `inject_lore` location-targeted
  * lorebooks here too, but 7-7d already filters those entries out of

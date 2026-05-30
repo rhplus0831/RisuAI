@@ -191,7 +191,7 @@ function normalizePollIntervalMs(value: number | undefined): number {
 }
 
 function noopMemoryJobHandler(): void {
-  // Stub dispatch only; real memory mutation lands in later Phase 8 slices.
+  // Stub dispatch only; memory mutation is supplied by concrete handlers.
 }
 
 function defaultMemoryWorkerErrorHandler(error: unknown): void {

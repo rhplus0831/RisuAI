@@ -172,7 +172,7 @@ describe('getServerCompletionProvider', () => {
     // NovelAI / NovelList stay deferred per
     // docs/archive/fastify/other/design/novelai-novellist-stringlize.md; both should
     // return null from formatToServerProvider (and therefore from
-    // getServerCompletionProvider) until Phase 7 lands.
+    // getServerCompletionProvider) until server support is added.
     const r = getServerCompletionProvider(
       makeTarg({
         modelInfo: {

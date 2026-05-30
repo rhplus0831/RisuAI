@@ -3,20 +3,19 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
- * Phase 7-3 static prompt sections ported from the SPA's
- * `src/ts/process/promptAssembly/buildStaticPromptSections.ts` and
- * `buildDescription.ts`.
+ * Static prompt sections ported from the SPA's `buildStaticPromptSections.ts`
+ * and `buildDescription.ts`.
  *
  * Mirrors browser behavior for `{{description}}`, `{{personality}}`,
  * `{{scenario}}` assembly, the author-note default-text fallback into
  * `db.promptTemplate`, the persona prompt, the chain-of-thought
- * instruction, and (slice 3c) the image-gen / emotion view instruction.
+ * instruction, and the image-gen / emotion view instruction.
  * Each function returns `OpenAIChat[]` (normalized — the SPA's
  * `buildDescription` returns a single object; the server smooths the
  * asymmetry so the assembler can `.flatMap` uniformly).
  *
- * Deferred to later slices:
- * - `additionalInformations` (embedding-based extras; Phase 8 memory).
+ * Deferred:
+ * - `additionalInformations` (embedding-based extras).
  */
 
 const COT_INSTRUCTION =
@@ -95,8 +94,8 @@ export function buildCotInstruction(
 }
 
 /**
- * Slice 3c: the image-gen / emotion view instruction, ported from the SPA's
- * `buildStaticPromptSections.ts::buildInlayViewInstruction`. Gated on
+ * Image-gen / emotion view instruction, ported from the SPA's
+ * `buildInlayViewInstruction`. Gated on
  * `currentChar.inlayViewScreen`; emits a single `system` row drawn from the
  * static `newGenData` character config:
  *

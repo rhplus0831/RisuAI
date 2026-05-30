@@ -137,9 +137,7 @@ export function ensureModuleCollection(database: JsonRecord): ModuleRecord[] {
 }
 
 // Command-path constructor. Rejects request payloads that omit entry ids;
-// the public route caller is responsible for supplying stable ids. A4EC3 /
-// B2 — replaces the previous repair-permissive `createGlobalLorebookRecord`
-// on every command route.
+// the public route caller is responsible for supplying stable ids.
 export function validateGlobalLorebookCreate(
   input: unknown,
   label = 'lorebook',
@@ -155,7 +153,7 @@ export function validateGlobalLorebookCreate(
 
 // Import/bootstrap-only repair-permissive constructor. Allowed to mint
 // missing entry ids on degraded persisted state but never reachable from a
-// command-path route handler — A4R3 walks the call graph and forbids it.
+// command-path route handler.
 export function createGlobalLorebookRecord(
   input: unknown,
   label = 'lorebook',
@@ -212,11 +210,7 @@ export function readLorebookIdList(input: unknown, label = 'lorebookIds'): strin
   return input.map((id, index) => readLorebookId(id, `${label}[${index}]`))
 }
 
-// A4EC3 / B2: command-path entry validator. No `randomUUID()` reference
-// reachable transitively — A4R3 verifies this with a static call-graph walk.
-// Replaces the dead `readLorebookEntries` alias that used to forward to
-// `createLorebookEntryRecord({ repairId: false })`; the audit treated the
-// shared minter as a propagating mint.
+// Command-path entry validator. It must not mint ids directly or transitively.
 export function validateLorebookEntries(input: unknown, label = 'entries'): LorebookEntryRecord[] {
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
@@ -279,9 +273,7 @@ export function validateFullLorebookOrder(
 }
 
 // Import/bootstrap-only repair-permissive mapper. Mints replacement ids for
-// degraded persisted state; the A4R3 audit walks the call graph and
-// classifies this as a propagating mint, so command-path route handlers may
-// not reach it directly or transitively.
+// degraded persisted state, so command-path route handlers must not reach it.
 export function repairLorebookEntries(input: unknown, label: string): LorebookEntryRecord[] {
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
@@ -316,10 +308,8 @@ export function normalizeSelectedChatLorebooks(
   database: JsonRecord,
   chatId: string,
 ): { character: CharacterRecord; chat: { localLore: LorebookEntryRecord[] }; parentId: string } {
-  // A4EC8 / B9: every globally-addressed resolver (requireChatLocation)
-  // must run after global id normalization. Without normalizeAllCharacterChats
-  // first, persisted cross-character duplicate chat ids would let this route
-  // mutate the wrong row. Normalize is idempotent.
+  // Globally-addressed chat lookup must run after id normalization; otherwise
+  // persisted cross-character duplicate chat ids could mutate the wrong row.
   normalizeAllCharacterChats(database)
   const characters = ensureCharacterCollection(database)
   const location = requireChatLocation(characters, chatId)
@@ -351,8 +341,7 @@ function lorebookEntryFromInput(input: unknown, label: string): LorebookEntryRec
   ) as LorebookEntryRecord
 }
 
-// A4EC3 / B2: command-path single-entry validator. Has no transitive
-// reference to `randomUUID()` — A4R3 confirms this is non-propagating.
+// Command-path single-entry validator. It must not mint ids.
 function validateLorebookEntry(input: unknown, label: string): LorebookEntryRecord {
   const entry = lorebookEntryFromInput(input, label)
   if (typeof entry.id !== 'string' || entry.id.trim() === '') {

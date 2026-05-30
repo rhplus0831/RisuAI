@@ -17,9 +17,8 @@ import { applyV2DataEffect } from './triggerDataEffects.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
- * Phase 7-9a trigger model + runner shell, ported from the Svelte-bound
- * `runTrigger` in `src/ts/process/triggers.ts` (3350 lines, 151 effect
- * arms).
+ * Trigger model + runner shell, ported from the Svelte-bound `runTrigger` in
+ * `src/ts/process/triggers.ts`.
  *
  * 7-9a established the deterministic, store-free skeleton:
  *   - the trigger type surface and result shape (`TriggerMode`,
@@ -84,23 +83,19 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * `addedTokens` token contribution, `stopSending`, and surfacing
  * `triggerResult.additonalSysPrompt` for the future assemble root.
  *
- * The trigger front is now complete for Phase 7; only browser-side and
- * persistent-resource arms remain deferred beyond the phase.
- *
- * Out of scope beyond Phase 7 (unhandled effect types fall through the
- * `switch` as no-ops): `command` (Phase 9 command APIs) and the
+ * Browser-side and persistent-resource arms remain deferred. Unhandled effect
+ * types fall through the `switch` as no-ops: `command` and the
  * `lowLevelAccess`-gated `showAlert` / `sendAIprompt` / `runLLM` /
  * `checkSimilarity` / `extractRegex` / `runImgGen` arms, plus browser
  * plugin trigger code (`triggercode`). These bypass the mode filter in
  * the SPA (`triggers.ts:1343`) so they are still *selected* here for
  * parity, but no code runs for them.
  *
- * Slice 3b sub-slice 4 graduates `triggerlua`: a `case 'triggerlua'` arm now
- * runs the server Lua VM via the injected {@link TriggerRunContext.runLua}
- * seam (the submit-time input trigger supplies it; the start-trigger path does
- * not, so `triggerlua` no-ops there as before). It likewise bypasses the mode
- * filter, so it is selected in every run mode but only executes when a runner
- * is injected.
+ * `triggerlua` runs the server Lua VM via the injected
+ * {@link TriggerRunContext.runLua} seam. The submit-time input trigger supplies
+ * it; the start-trigger path does not, so `triggerlua` no-ops there as before.
+ * It bypasses the mode filter, so it is selected in every run mode but only
+ * executes when a runner is injected.
  */
 
 /** SPA `triggerMode` (`src/ts/process/triggers.ts:222`, unexported). */
@@ -155,12 +150,9 @@ export interface TriggerRunContext {
   /** Index into the selected character's `chats`. */
   chatPage: number
   /**
-   * Slice 3b sub-slice 4: VM runner for `triggerlua` effects. When provided
-   * (the submit-time input trigger, `assemble.ts::runInputTrigger`), a
-   * `triggerlua` effect runs the server Lua VM; when absent (the start-trigger
-   * path, which runs editRequest via the template seam instead), `triggerlua`
-   * stays the no-op fall-through it was before — see the `case 'triggerlua'`
-   * arm in {@link runTrigger}.
+   * VM runner for `triggerlua` effects. When provided, a `triggerlua` effect
+   * runs the server Lua VM; when absent, it stays the no-op fall-through it was
+   * before. See the `case 'triggerlua'` arm in {@link runTrigger}.
    */
   runLua?: (args: TriggerLuaRunArgs) => Promise<TriggerLuaRunResult>
 }
@@ -297,7 +289,7 @@ export function collectTriggers(
  *   - `triggercode` / `triggerlua` first effects bypass the filter (so they
  *     run in every mode). `triggercode` execution stays browser-side (selected
  *     for parity, no-op here); `triggerlua` runs via the VM seam when injected
- *     (slice 3b sub-slice 4).
+ *     (submit-time Lua path).
  *   - with a `manualName`, only triggers whose `comment` matches run.
  *   - otherwise the trigger's `type` must equal the run `mode`.
  */
@@ -402,11 +394,8 @@ export function evaluateConditions(
 }
 
 /**
- * Phase 7-9a/b runner. Collects triggers, clones inputs, applies the
- * selection filter, evaluates each selected trigger's conditions
- * (7-9b), and returns the SPA result shape. Effect execution is still
- * deferred (see the module header); the post-condition body is an
- * explicit seam for 7-9c/d.
+ * Collects triggers, clones inputs, applies the selection filter, evaluates
+ * each selected trigger's conditions, and returns the SPA result shape.
  *
  * Returns `null` when there are no triggers at all (SPA
  * `triggers.ts:1215-1220`). When triggers exist but none match the
@@ -855,13 +844,13 @@ export async function runTrigger(
           break
         }
         case 'triggerlua': {
-          // Slice 3b sub-slice 4: run the user Lua under the server VM via the
-          // injected seam, mirroring the SPA's `runScripted(effect.code, {...})`
+          // Run user Lua under the server VM via the injected seam, mirroring
+          // the SPA's `runScripted(effect.code, {...})`
           // (`src/ts/process/triggers.ts:1695-1710`). The runner binds the host
           // fns to `chat` + `engine`, so message/var writes thread through this
           // run's state; it returns the (in-place mutated) chat + stopSending.
           // When no runner is injected (the start-trigger path), this stays a
-          // no-op — preserving the pre-slice fall-through behavior.
+          // no-op, preserving the fall-through behavior.
           if (ctx.runLua) {
             const luaMode = mode === 'manual' ? (arg.manualName ?? 'manual') : mode
             const r = await ctx.runLua({
@@ -926,11 +915,9 @@ export async function runTrigger(
 }
 
 /**
- * Phase 7-9f start-trigger handoff. Bridges the prompt-pipeline scope
- * (an `ExpandContext` plus the in-scope char/chat that `history.ts`
- * already holds) to the richer `TriggerRunContext` and runs the `start`
- * trigger, mirroring the SPA's `runTrigger(char, 'start', { chat })`
- * call inside `buildHistoryWindow` (`buildHistoryWindow.ts:129`).
+ * Start-trigger handoff. Bridges the prompt-pipeline scope to the richer
+ * `TriggerRunContext` and runs the `start` trigger, mirroring the SPA's
+ * `runTrigger(char, 'start', { chat })` call inside `buildHistoryWindow`.
  *
  * A `start` run is not `displayMode`, so `runTrigger` deep-clones the
  * char/chat and `setVar` writes persist into the db snapshot; the

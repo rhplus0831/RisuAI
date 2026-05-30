@@ -5,10 +5,9 @@ import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import type { FastifyInstance } from 'fastify'
 
-// Lazy-projection Phase 6c — swipe persistence E2E. Proves the real Fastify-served
-// browser reconstructs the reroll swipe buffer from the persisted alternate rows
-// after a RELOAD (not just a disconnect), and that swiping back over the rebuilt
-// buffer works under the live read-only projection guard.
+// Swipe persistence E2E. Proves the real Fastify-served browser reconstructs the
+// reroll swipe buffer from persisted alternate rows after a reload, and that
+// swiping back over the rebuilt buffer works under the live read-only projection guard.
 
 interface Harness {
   app: FastifyInstance

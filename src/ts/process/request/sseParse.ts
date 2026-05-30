@@ -3,9 +3,9 @@
  *
  * The Fastify generation routes encode each event as one `event: <name>`
  * line plus one or more `data: <chunk>` lines, terminated by a blank line
- * (`\n\n`). Both the Phase 6 `/completion` adapter (`serverCompletion.ts`)
- * and the Phase 7-12a `/chat` adapter (`serverChat.ts`) decode that same
- * wire shape, so the block parser lives here once.
+ * (`\n\n`). Both `/completion` (`serverCompletion.ts`) and `/chat`
+ * (`serverChat.ts`) decode that same wire shape, so the block parser lives here
+ * once.
  */
 
 /** Parse one SSE block (text between `\n\n` separators) into its event name + data. */

@@ -8,12 +8,11 @@ import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
 
 /**
- * Phase 7-6a/b/c regex script processor ported from
- * `src/ts/process/scripts.ts` `processScript` + `executeScript`.
+ * Regex script processor ported from `src/ts/process/scripts.ts`
+ * `processScript` + `executeScript`.
  *
  * Walks `db.presetRegex ?? []`, then `char.customscript ?? []`, then
- * the regex scripts from the active modules (`getActiveModules` +
- * `getModuleRegexScripts` from `./modules.js`, ported in 7-6d).
+ * the regex scripts from the active modules.
  * Parses each entry through the `ableFlag` `<order N, action…>` DSL,
  * stable sorts by `order desc` when any script declared one, then
  * runs each script where `script.type === mode`.
@@ -40,27 +39,21 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  * `cbs` action (`scripts.ts:211-213`): pre-expand `script.in` through
  * `expandVariables` before compiling the RegExp.
  *
- * Two documented divergences from the SPA carried over from 7-6b:
+ * Two documented divergences from the SPA:
  *   - Reset `reg.lastIndex = 0` after the dispatching `reg.test()` so
  *     `@@move_top g` finds all matches (SPA loses the first one via
  *     lastIndex leak; the move dispatch later defangs `g` anyway).
  *   - `@@repeat_back` adds an r-null guard the SPA elides
  *     (`scripts.ts:306` accesses `r[0]` blindly).
  *
- * Deferred to 7-6e:
+ * Deferred:
  *   - script-cache (`generateScriptCacheKey` / `getScriptCache` /
  *     `cacheScript`)
- *   - `runLuaEditTrigger` — `processScript` stays regex-only; the Lua
- *     edit hooks are wired alongside it by the callers. The `editRequest`
- *     hook lands at the final render (`assemble.ts` →
- *     `templates.ts::renderFinalPrompt`, slice 3b sub-slice 2), the
- *     `editprocess` hook at the two history call sites
- *     (`history.ts`, slice 3b sub-slice 3 — a browser no-op routed through
- *     the runtime), and the submit-time `editinput` hook in
- *     `assemble.ts::applyEditInput` (slice 3b sub-slice 4), which calls this
- *     `processScript` (mode `'editinput'`) after the Lua hook + CBS expansion.
+ *   - `runLuaEditTrigger` — `processScript` stays regex-only; Lua edit hooks
+ *     are wired alongside it by callers at final render, history call sites,
+ *     and submit-time `editinput`.
  *   - `runTrigger('display', …)` (orthogonal: `editdisplay` mode only,
- *     blocked on Triggers 7-9)
+ *     blocked on trigger support)
  *   - `pluginV2[mode]` browser plugin V2 hooks
  *
  * Errors from a single bad regex are swallowed (mirrors the SPA's
@@ -355,8 +348,7 @@ export function processScript(
         currentChat,
       )
     } catch {
-      // Mirror SPA scripts.ts:372-376 — one bad regex shouldn't kill the
-      // rest of the script chain. Logging deferred to a later 7-6 slice.
+      // Mirror SPA behavior: one bad regex should not stop the rest of the chain.
     }
   }
 

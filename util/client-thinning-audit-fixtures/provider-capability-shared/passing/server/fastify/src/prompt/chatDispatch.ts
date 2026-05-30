@@ -1,5 +1,4 @@
-// A4R-provider-capability fixture (passing): the server /chat dispatcher
-// consumes the shared table and declares no local capability fork.
+// Invariant: the server /chat dispatcher consumes the shared capability table.
 import { resolveProviderCapability } from '../../../../src/ts/process/request/providerCapability'
 
 export function dispatchChatProvider(format: number): string {

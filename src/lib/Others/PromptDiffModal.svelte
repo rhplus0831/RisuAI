@@ -19,14 +19,12 @@
   let { firstPresetId, secondPresetId, onClose = () => {} }: Props = $props()
 
   // Lazy-loaded diff module
-  // -----------------------------------------------------------------------------
   let diffModulePromise: Promise<typeof import('diff')> | null = null
   function loadDiffModule() {
     return (diffModulePromise ??= import('diff'))
   }
 
   // Config / constants
-  // -----------------------------------------------------------------------------
   const SIM_THRESHOLD = 0.35
   const DEFAULT_BAND_MIN = 15
   const DEFAULT_BAND_RATIO = 0.15
@@ -34,7 +32,6 @@
   const BANDED_DP_LIMIT = 1000
 
   // Types
-  // -----------------------------------------------------------------------------
   type DiffCounts = { modifiedCount: number; addedCount: number; removedCount: number }
   type PromptKind = 'plain' | 'chatml' | 'typed' | 'authorNote' | 'chat'
   type SimpleDiff = 'same' | 'add' | 'remove'
@@ -156,7 +153,6 @@
   type ViewStyle = 'unified' | 'split'
 
   // UI state
-  // -----------------------------------------------------------------------------
   const DEFAULT_PROMPT_DIFF_PREFS: PromptDiffPrefs = {
     diffStyle: 'intraline',
     formatStyle: 'raw',
@@ -206,7 +202,6 @@
   }
 
   // Derived values
-  // -----------------------------------------------------------------------------
   const cardlineFlatResult = $derived.by<DiffResult | null>(() => {
     if (!cardDiffResult) return null
 
@@ -239,7 +234,6 @@
   })
 
   // UI option lists
-  // -----------------------------------------------------------------------------
   const diffOptions = [
     { value: 'line', label: 'Line' },
     { value: 'intraline', label: 'Intraline' },
@@ -256,12 +250,10 @@
   ] as const
 
   // Inputs
-  // -----------------------------------------------------------------------------
   const firstCards = $derived.by(() => getPromptCards(firstPresetId))
   const secondCards = $derived.by(() => getPromptCards(secondPresetId))
 
   // Effects (state invariants + diff recompute)
-  // -----------------------------------------------------------------------------
   $effect(() => {
     if (diffStyle !== 'line' && isGrouped) {
       isGrouped = false
@@ -283,7 +275,6 @@
   })
 
   // Style helpers (classnames)
-  // -----------------------------------------------------------------------------
   const pillBase = 'px-2 py-1 text-xs cursor-pointer select-none'
   const pillActive = 'text-black bg-white'
   const pillInactive = 'text-textcolor2 bg-transparent'
@@ -362,7 +353,6 @@
   }
 
   // Data shaping (prompt → cards/lines/raw)
-  // -----------------------------------------------------------------------------
   function getPromptCards(id: number): PromptCard[] {
     const isPromptItemPlain = (item: PromptItem): item is PromptItemPlain =>
       item.type === 'plain' || item.type === 'jailbreak' || item.type === 'cot'
@@ -482,7 +472,6 @@
   }
 
   // Diff core
-  // -----------------------------------------------------------------------------
   let diffRunId = 0
 
   async function recomputeDiff(firstCards: PromptCard[], secondCards: PromptCard[]) {
@@ -836,7 +825,6 @@
   }
 
   // Line alignment (similarity + DP + pairing)
-  // -----------------------------------------------------------------------------
   function normalizeText(s: string): string {
     return s
       .trim()
@@ -914,11 +902,7 @@
     const sMax = edgeMatchCount / maxLen // Overlap relative to the longer string
     const sMin = edgeMatchCount / minLen // Overlap relative to the shorter string
     const lengthRatio = minLen / maxLen // How similar the lengths of the two strings are (1 = same length, 0 = very different)
-    // Interpolate between sMax and sMin based on length similarity:
-    // - When lengths are similar, the score is closer to sMin
-    //   (rewarding full coverage of the shorter string).
-    // - When lengths differ a lot (lengthRatio small), the score is closer to sMax
-    //   (penalizing big length mismatches).
+    // Blend coverage scores by length similarity.
     const boosted = sMax + (sMin - sMax) * lengthRatio
     return boosted
   }
@@ -961,8 +945,7 @@
     return mixScore(ps, dice)
   }
 
-  // 0: none, 1: up, 2: left, 3: diag
-  // const DIR_NONE = 0
+  // 1: up, 2: left, 3: diag
   const DIR_UP = 1
   const DIR_LEFT = 2
   const DIR_DIAG = 3
@@ -1028,7 +1011,6 @@
       }
     }
 
-    // backtrack
     const pairs: Pair[] = []
     let i = n
     let j = m
@@ -1058,14 +1040,14 @@
   function buildAlignmentFromAnchorPair(nLeft: number, nRight: number, pairs: Pair[]): PairCell[] {
     const cells: PairCell[] = []
     const extPairs: Pair[] = [
-      { leftIndex: -1, rightIndex: -1 }, // start sentinel
-      ...pairs, // anchor pairs selected by DP
-      { leftIndex: nLeft, rightIndex: nRight }, // end sentinel
+      { leftIndex: -1, rightIndex: -1 },
+      ...pairs,
+      { leftIndex: nLeft, rightIndex: nRight },
     ]
 
     for (let k = 0; k < extPairs.length - 1; k++) {
-      const curr = extPairs[k] // current anchor pair or sentinel
-      const next = extPairs[k + 1] // next next anchor pair or sentinel
+      const curr = extPairs[k]
+      const next = extPairs[k + 1]
 
       let i = curr.leftIndex + 1
       let j = curr.rightIndex + 1
@@ -1095,7 +1077,6 @@
   }
 
   // View helpers
-  // -----------------------------------------------------------------------------
   function buildSegments(parts: DiffPart[], opts: SegmentOptions): DiffSegment[] {
     const { showOnlyChanges, contextRadius, scope, expandedRanges } = opts
     const len = parts.length
@@ -1435,7 +1416,6 @@
 {#snippet renderModify(part: ModifyPart, idx: number)}
   {@const tag = tagText(part)}
   {#if diffStyle === 'line'}
-    <!-- line diff -->
     <div
       class={`whitespace-pre-wrap ${lineRemoveClass}`}
       class:mt-5={isLineby(part) && part.right.lineRole === 'name' && idx > 0}
@@ -1458,7 +1438,6 @@
       {/if}
     </div>
   {:else}
-    <!-- intraline diff -->
     <div
       class={`whitespace-pre-wrap ${lineModifyClass}`}
       class:mt-5={isLineby(part) && part.right.lineRole === 'name' && idx > 0}
@@ -1473,7 +1452,6 @@
 
 {#snippet renderModifyGroup(parts: ModifyPart[])}
   {#if diffStyle === 'line'}
-    <!-- grouped + line diff -->
     <div class={`whitespace-pre-wrap ${lineRemoveClass}`}>
       {#each parts as part, i (i)}
         {@render renderTokens(part.tokens, 'add', tokenPackLineRemove)}{#if tagText(part)}<span
@@ -1511,9 +1489,7 @@
     {#if part && part.src === 'linebyline'}
       {#if part.k === 'modify'}
         {#if diffStyle === 'line'}
-          <!-- line diff -->
           {#if side === null}
-            <!-- unified -->
             <div class="whitespace-pre-wrap text-red-400">
               {@render renderTokens(part.tokens, 'add', tokenPackLineRemove)}
             </div>
@@ -1521,7 +1497,6 @@
               {@render renderTokens(part.tokens, 'remove', tokenPackLineAdd)}
             </div>
           {:else}
-            <!-- split -->
             <div
               class={`whitespace-pre-wrap ${side === 'left' ? 'text-red-400' : 'text-green-400'}`}
             >
@@ -1533,14 +1508,11 @@
             </div>
           {/if}
         {:else}
-          <!-- intraline diff -->
           {#if side === null}
-            <!-- unified intraline -->
             <div class="whitespace-pre-wrap">
               {@render renderTokens(part.tokens, null, tokenPackIntraline)}
             </div>
           {:else}
-            <!-- split intraline: -->
             <div
               class={`whitespace-pre-wrap ${side === 'left' ? 'text-red-300' : 'text-green-300'}`}
             >
@@ -1553,7 +1525,6 @@
           {/if}
         {/if}
       {:else}
-        <!-- same/add/remove -->
         <div
           class={`whitespace-pre-wrap ${
             part.k === 'same'
@@ -1592,7 +1563,6 @@
       {:else if d.pos === 'between'}
         … {d.omitted} lines skipped (click to expand) …
       {:else}
-        <!-- end -->
         {#if d.omitted > 0}
           … {d.omitted} lines below not shown (click to expand) …
         {:else}
@@ -1746,7 +1716,6 @@
     </div>
 
     <div class="p-4 overflow-y-auto">
-      <!-- card view -->
       {#if !isFlatText && formatStyle === 'card'}
         {#if cardDiffResult}
           {@const cardChangedTotal =
@@ -1789,18 +1758,15 @@
                 <div
                   class="prompt-diff-hover bg-black/40 border border-darkborderc rounded-xl p-3 flex flex-col gap-2"
                 >
-                  <!-- name / header / card diff -->
                   <div class="flex items-start justify-between gap-2">
                     <div class="flex flex-col gap-2 min-w-0">
                       {@render renderCardMeta(namePart, 'name', null)}
                       {@render renderCardMeta(headerPart, 'type', null)}
                     </div>
 
-                    <!-- card diff -->
                     {@render renderCardStatus(cardPart)}
                   </div>
 
-                  <!-- body -->
                   <div class="mt-2 border-t border-darkborderc pt-2 font-mono text-sm leading-5">
                     {#if bodyParts.length === 0}
                       <div class="text-textcolor2 italic">No body content</div>
@@ -1821,7 +1787,6 @@
                             {/if}
                           {/each}
                         {:else}
-                          <!-- change segment -->
                           {@const lines = buildLines(seg.parts)}
                           {#each lines as line, idx (idx)}
                             {#if line.kind === 'simple'}
@@ -1829,11 +1794,9 @@
                               {#if part.k !== 'modify'}
                                 {@render renderSimpleLine(part)}
                               {:else}
-                                <!-- modify -->
                                 {@render renderModify(part, idx)}
                               {/if}
                             {:else}
-                              <!-- modifyGroup -->
                               {@render renderModifyGroup(line.parts)}
                             {/if}
                           {/each}
@@ -1843,7 +1806,6 @@
                   </div>
                 </div>
               {:else}
-                <!-- split view -->
                 {@const scope = `card-${idx}`}
                 {@const lines = cardPart.bodyLines?.parts ?? []}
                 {@const namePart = lines[0] ?? null}
@@ -1868,7 +1830,6 @@
                   </div>
 
                   <div class="relative z-10 grid grid-cols-2 gap-x-3 p-px">
-                    <!-- left header -->
                     <div class="p-3">
                       {#if leftExists && namePart && headerPart}
                         <div class="flex items-start justify-between gap-2">
@@ -1887,7 +1848,6 @@
                       {/if}
                     </div>
 
-                    <!-- right header -->
                     <div class="p-3">
                       {#if rightExists && namePart && headerPart}
                         <div class="flex items-start justify-between gap-2">
@@ -1909,7 +1869,6 @@
                     <div class="h-px bg-white/10 mx-3"></div>
                     <div class="h-px bg-white/10 mx-3"></div>
 
-                    <!-- body rows -->
                     {#each rows as r, rIdx (r.key)}
                       {#if r.kind === 'divider'}
                         <div class="col-span-2 px-2">
@@ -1944,7 +1903,7 @@
         {:else}
           <div class="text-textcolor2 text-sm">No diff computed yet.</div>
         {/if}
-      {:else}<!-- raw view -->
+      {:else}
         {#if currentFlatResult}
           {@const segments = buildSegments(currentFlatResult.parts, {
             showOnlyChanges,
@@ -1975,7 +1934,6 @@
                     {/if}
                   {/each}
                 {:else}
-                  <!-- change segment -->
                   {@const lines = buildLines(seg.parts)}
                   {#each lines as line, idx (idx)}
                     {#if line.kind === 'simple'}
@@ -1983,11 +1941,9 @@
                       {#if part.k !== 'modify'}
                         {@render renderSimpleLine(part)}
                       {:else}
-                        <!-- modify -->
                         {@render renderModify(part, idx)}
                       {/if}
                     {:else}
-                      <!-- modifyGroup -->
                       {@render renderModifyGroup(line.parts)}
                     {/if}
                   {/each}
@@ -1995,7 +1951,6 @@
               {/each}
             </div>
           {:else}
-            <!-- split view -->
             {@const rows = toSplitRows(segments, 'raw')}
             <div class="rounded-xl border border-darkborderc bg-black/30 overflow-hidden">
               <div class="grid grid-cols-[1fr_auto_1fr] gap-0 font-mono text-sm leading-5">

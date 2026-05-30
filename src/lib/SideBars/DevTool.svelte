@@ -243,10 +243,7 @@
         if ($doingChat) {
           return
         }
-        // Apply the optimistic user message inside a trusted write so it does
-        // not throw against the server projection guard, then let sendChat
-        // drive the command-backed persistence (same path as the /send slash
-        // command).
+        // Apply the optimistic message inside a trusted write before sendChat persists it.
         withTrustedServerProjectionWrite(() => {
           const db = getDatabase()
           const currentChar = db.characters[$selectedCharID]

@@ -222,10 +222,9 @@ describe('Phase 7-3 buildCotInstruction', () => {
   })
 })
 
-// Slice 3c: byte-parity with the SPA's buildInlayViewInstruction
-// (`src/ts/process/promptAssembly/buildStaticPromptSections.ts`). These mirror
-// the browser unit cases in `buildStaticPromptSections.test.ts` exactly — no
-// variable expansion, only the manual `{{slot}}` → emotionImages substitution.
+// Byte-parity with the SPA's buildInlayViewInstruction. These mirror the browser
+// unit cases exactly: no variable expansion, only the manual
+// `{{slot}}` → emotionImages substitution.
 describe('Slice 3c buildInlayViewInstruction', () => {
   it('returns [] when inlayViewScreen is false', () => {
     const char = makeCharacter({

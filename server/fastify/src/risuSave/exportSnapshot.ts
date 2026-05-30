@@ -31,7 +31,7 @@ export function buildRepositoryRisuSaveExportSnapshot(
   db: DatabaseSync,
   dataDir: string,
 ): RisuSaveExportSnapshot {
-  // Messages live in SQLite (Phase 4); hydrate them back so the exported
+  // Messages live in SQLite; hydrate them back so exported
   // CHARACTER_WITH_CHAT blocks carry the full chat history.
   const persisted = loadPersistedWithMessages(db, dataDir)
   if (persisted.database === null || persisted.database === undefined) {

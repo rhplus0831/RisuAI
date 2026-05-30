@@ -52,13 +52,10 @@ export interface OrchestrateResponseArgs {
   runCurrentChatFunction: (chat: Chat) => Chat
   suppressStreamingTts?: boolean
   /**
-   * Slice 4 (A2): the server owns the post-generation derivation (`editoutput`,
-   * the pre-trigger run-var pass, and the `'output'` trigger). When set, this
-   * orchestrator relays the stream for live display only — it skips the
-   * `editoutput` transform and `applyOutputTrigger`, and defers the inlay-screen
-   * render + final-text write to `applyServerBackedTerminal`. The derived
-   * scriptstate delta, final text, and resend request arrive on the terminal
-   * `done.postGeneration`.
+   * The server owns post-generation derivation (`editoutput`, the pre-trigger
+   * run-var pass, and the `'output'` trigger). When set, this orchestrator relays
+   * the stream for live display only and defers final-text write, inlay rendering,
+   * scriptstate patch, and resend handling to the terminal `done.postGeneration`.
    */
   serverOwnsPostGeneration?: boolean
 }
@@ -122,11 +119,9 @@ export async function orchestrateResponse(
     addRerolls(generationId, Object.values(stream.lastResponseChunk))
 
     if (serverOwnsPostGeneration) {
-      // A2: the server already ran the run-var pass + `'output'` trigger +
-      // `editoutput`. The browser keeps the streamed text for display; the
-      // inlay-screen render over the server-owned final text, the scriptstate
-      // patch, and the resend request are applied from the terminal
-      // (`applyServerBackedTerminal`). Nothing durable to derive here.
+      // The server already ran the run-var pass, `'output'` trigger, and
+      // `editoutput`. The browser keeps streamed text for display; final text,
+      // inlay rendering, scriptstate patch, and resend arrive on the terminal.
       currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
     } else {
       const streamTrigger = await applyOutputTrigger({
@@ -178,9 +173,9 @@ export async function orchestrateResponse(
       addRerolls(generationId, nonStream.mrerolls)
     }
 
-    // A2: on the server-owned path the `'output'` trigger ran server-side; the
-    // browser consumes the terminal patch instead of deriving it here. (Server
-    // dispatch always streams, so this branch is local-only in practice.)
+    // On the server-owned path, the `'output'` trigger ran server-side; the
+    // browser consumes the terminal patch instead of deriving it here. Server
+    // dispatch always streams, so this branch is local-only in practice.
     if (!serverOwnsPostGeneration) {
       const nonStreamTrigger = await applyOutputTrigger({
         currentChar,

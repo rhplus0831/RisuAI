@@ -35,7 +35,6 @@ export default defineConfig(({ command, mode }) => {
           changeOrigin: true,
         },
       },
-      // hmr: false,
     },
     envPrefix: ['VITE_'],
     build: {

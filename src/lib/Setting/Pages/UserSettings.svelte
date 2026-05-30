@@ -50,19 +50,3 @@
 <Button onclick={exportAsDataset} className="mt-2">
   {language.exportAsDataset}
 </Button>
-
-<!--
-
-    My song for dear, my old friend.
-
-    Should old aquaintance be forgot,
-    and never brought to mind?
-    Should old lang syne be forgot,
-    and auld lang syne?
-
-    For auld lang syne, my dear,
-    for auld lang syne,
-    we'll take a cup o' kindness yet,
-    for auld lang syne.
-
--->

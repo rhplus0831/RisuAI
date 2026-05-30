@@ -205,9 +205,8 @@ describe('sendChat fixtures', () => {
   beforeEach(() => {
     resetProviderState()
     resetSideEffectCalls()
-    // sendChat now owns its own doingChat lifecycle (set on entry, cleared in
-    // a finally on every exit). Reset here defensively in case a fixture's
-    // expected-state snapshot needs to start from a clean baseline.
+    // sendChat owns the doingChat lifecycle (set on entry, cleared in finally on
+    // every exit). Reset defensively so fixtures start from a clean baseline.
     doingChat.set(false)
     abortChat.set(false)
     chatProcessStage.set(0)

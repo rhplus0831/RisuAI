@@ -89,13 +89,11 @@ function serverChatMode(args: {
   return 'send'
 }
 
-// C-A1: apply the server's `message_patch` to the local projection only. The
-// assembly-time chat-var delta is now persisted by `/generate/chat` itself, so
-// the browser no longer replays it as a `PATCH …/scriptstate` command — that
-// re-POST (and the snapshot/rollback bookkeeping that supported it) is gone.
-// `applyServerMessagePatch` still writes `chatVarMutations` into the live chat
-// so the local view reflects the write without a refresh; the revision the
-// route returns over SSE keeps the cached command revision in sync.
+// Apply the server's `message_patch` to the local projection only. `/generate/chat`
+// persists assembly-time chat-var deltas itself, so the browser no longer replays
+// them as `PATCH .../scriptstate` commands. `applyServerMessagePatch` still writes
+// `chatVarMutations` into the live chat so the local view reflects the write
+// without a refresh; the SSE revision keeps the cached command revision in sync.
 function applyServerMessagePatches(args: {
   patches: ServerChatMessagePatch[]
   selectedChar: number
@@ -123,11 +121,9 @@ interface ServerInlayAssetPayload {
 const INLAY_MARKER_RE = /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g
 
 /**
- * Slice 3a: inlay bytes (`{{inlay/inlayed/inlayeddata::id}}`) live only in the
- * browser's localForage `inlayStorage`; the server has no copy. Resolve every
- * inlay id referenced by the chat (the same `getInlayAsset` path the local
- * assembler uses, `formatHistoryMessage.ts:102`) and ship the bytes so the
- * server `getInlay` can return them.
+ * Inlay bytes (`{{inlay/inlayed/inlayeddata::id}}`) live only in the browser's
+ * localForage `inlayStorage`; the server has no copy. Resolve every inlay id the
+ * chat references and ship the bytes so the server `getInlay` can return them.
  *
  * Id-collection mirrors `formatHistoryMessage.ts:73-91`: `char`-role messages
  * surface only `inlayeddata` ids (the SPA quirk where `inlay`/`inlayed` tags are
@@ -178,9 +174,9 @@ export async function assembleServerBackedSendChat(args: {
   continue?: boolean
   regenerateMessageId?: string
   /**
-   * Durable generation (Milestone 1): `resolveDurableGeneration === 'durable'` for
-   * this send. The server runs it as a detached job and persists the result, so the
-   * coordinator suppresses the browser's generation-result persist (gotcha F).
+   * `resolveDurableGeneration === 'durable'` for this send. The server runs it as
+   * a detached job and persists the result, so the coordinator suppresses the
+   * browser's generation-result persist.
    */
   durable?: boolean
 }): Promise<ServerBackedAssemblyResult> {
@@ -205,17 +201,15 @@ export async function assembleServerBackedSendChat(args: {
   if (mode === 'regenerate') {
     input.regenerateMessageId = args.regenerateMessageId
   }
-  // Durable generation: `send` / `continue` / `regenerate` are durable-eligible
-  // (lazy-projection Phase 6b widened past the Milestone-1 send-only cut). The
-  // caller already gated `durable` on `resolveDurableGeneration` (which only
-  // returns durable for those three generating modes), so the server owns the
-  // result persistence for this job and the browser skips its own write.
+  // `send`, `continue`, and `regenerate` are durable-eligible. The caller already
+  // gated `durable` on `resolveDurableGeneration`, so the server owns result
+  // persistence for this job and the browser skips its own write.
   if (args.durable && (mode === 'send' || mode === 'continue' || mode === 'regenerate')) {
     input.durable = true
   }
-  // Slice 3a: ship inlay bytes the server lacks so its assembler can inline
-  // image/asset multimodals instead of dropping them. Asset-store bytes
-  // (`{{asset_prompt::}}`) are resolved server-side and need no client payload.
+  // Ship browser-only inlay bytes so the server assembler can inline image/asset
+  // multimodals instead of dropping them. Asset-store bytes (`{{asset_prompt::}}`)
+  // are resolved server-side and need no client payload.
   const inlayAssets = await collectServerInlayAssets(args.currentChat)
   if (inlayAssets.length > 0) {
     input.inlayAssets = inlayAssets
@@ -297,14 +291,12 @@ export async function assembleServerBackedSendChat(args: {
 }
 
 /**
- * lazy-projection Phase 7: re-attach to a live durable generation instead of
- * starting a fresh send. The server replays the buffered `prompt` / `info` /
- * `token` frames over `GET /generate/chat/:jobId/stream`, so the reattach stream
- * yields the SAME `assembled` result a fresh send produces — the coordinator
- * then drives the identical orchestrate -> terminal -> stage4 flow. There is no
- * client-side assembly (no inlay collection, no request body): the running job
- * already owns the prompt. A 404 (job GC'd / completed) surfaces as `failed`,
- * and the coordinator falls back to the projection (the result is persisted).
+ * Re-attach to a live durable generation instead of starting a fresh send. The
+ * server replays buffered `prompt` / `info` / `token` frames over
+ * `GET /generate/chat/:jobId/stream`, so the coordinator can drive the same
+ * orchestrate -> terminal -> stage4 flow. There is no client-side assembly; the
+ * running job already owns the prompt. A 404 surfaces as `failed`, and the
+ * coordinator falls back to the persisted projection.
  */
 export async function reattachServerBackedSendChat(args: {
   selectedChar: number
@@ -316,7 +308,7 @@ export async function reattachServerBackedSendChat(args: {
   abortSignal: AbortSignal
   setProcessStage: (stage: number) => void
   jobId: string
-  /** The running job's generating mode (Phase 6b), so the reattach renders correctly. */
+  /** The running job's generating mode, so the reattach renders correctly. */
   continue?: boolean
   regenerateMessageId?: string
 }): Promise<ServerBackedAssemblyResult> {
@@ -445,13 +437,10 @@ export async function applyServerBackedTerminal(args: {
     }
   }
 
-  // Slice 4 (A2): apply the server-owned post-generation derivation. The browser
-  // skipped `editoutput` + `applyOutputTrigger` on this path (`orchestrateResponse`
-  // `serverOwnsPostGeneration`), so here it: (1) applies the post-gen scriptstate
-  // (+ any output-trigger message) patch to the projection, and (2) renders the
-  // inlay screen (B1) over the server-owned final text written onto the assistant
-  // message. The generation-result persist (B2) then writes this final text. Resend
-  // is reported back so the coordinator can re-issue (the recursion stays browser).
+  // Apply the server-owned post-generation derivation. The browser skipped
+  // `editoutput` and `applyOutputTrigger` on this path, so here it applies the
+  // post-gen patch, renders the inlay screen over the server-owned final text, and
+  // reports any resend request back to the coordinator.
   const postGen = args.terminal.done?.postGeneration
   const resendChat = !!postGen?.resendChat
   const generationId = args.generationInfo.generationId ?? ''
@@ -490,4 +479,3 @@ export async function applyServerBackedTerminal(args: {
     resendChat,
   }
 }
-

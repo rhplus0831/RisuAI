@@ -4,16 +4,9 @@ import {
 } from './serverPromptAssembly'
 
 /**
- * Two-arm verdict for the durable-generation subset gate (Milestone 1 =
- * survive client disconnect only). Deliberately **not** the 3-arm
- * `local | server | unsupported` shape of `resolveServerPromptAssembly` /
- * `resolveServerCompletionRoute`: those gates carry an `unsupported` arm that
- * **must hard-fail** because a wrong prompt assembly or a mis-routed provider
- * silently corrupts the send. There is no analogous correctness hole here — a
- * send that is not durable-eligible simply uses today's connection-scoped flow,
- * which is *correct*, just not disconnect-survivable. Durability is an
- * **enhancement, not a correctness gate**, so a non-eligible send never
- * hard-fails; it falls back to the inline flow.
+ * Two-arm verdict for durable generation. Unlike prompt/provider routing, a
+ * non-durable result is still correct; it just cannot survive disconnect. This
+ * gate therefore falls back to the inline flow instead of hard-failing.
  *
  * `reason` is for diagnostics / tests and a future "why can't this chat survive
  * disconnect?" hint — it never triggers a hard fail.
@@ -40,14 +33,11 @@ function deriveMode(input: ServerPromptAssemblyInput): DurableGenerationMode {
 }
 
 /**
- * Decide whether a send is **durable-generation-eligible** — i.e. the server
- * owns the whole generation lifecycle (survive disconnect, persist the result,
- * reattach). A thin restriction of `resolveServerPromptAssembly`: the durable
- * subset is the server-assembled subset, narrowed to `send` mode.
+ * Decide whether a send is **durable-generation-eligible**: the server owns the
+ * whole generation lifecycle, including reconnect and result persistence.
  *
- * Decision order (per the step spec):
+ * Decision order:
  *   1. mode must be a **generating** mode: `send`, `continue`, or `regenerate`
- *      (lazy-projection Phase 6b widened this past the Milestone-1 send-only cut).
  *      The server finalizes all three mode-correctly (`resolvePostGenerationResult`:
  *      continue extends the last row in place, regenerate replaces the target,
  *      send appends), keyed idempotently for replay. `preview` / `preview_prompt`
@@ -60,16 +50,13 @@ function deriveMode(input: ServerPromptAssemblyInput): DurableGenerationMode {
  *      char, non-server-routable provider, non-vision image caption fallback,
  *      interactive Lua dialogs, and pluginV2 edit/replacer hooks all stay
  *      `non-durable`; image-input multimodal/asset content, the image-gen view
- *      instruction, and non-interactive Lua edit/input hooks are in-subset
- *      because the relevant client-thinning slices landed.
+ *      instruction, and non-interactive Lua edit/input hooks stay durable.
  *   3. otherwise → `durable`.
  *
- * Decision #2 (2026-05-30): output triggers and `editoutput` are **in-subset** —
- * client-thinning slice 4 (A2) landed, so the durable job runs
- * `runServerPostGeneration` at completion and persists the derived final text +
- * scriptstate delta (Step 3). There is no remaining post-gen surface this gate
- * must screen, so it adds exactly **one** restriction (a generating mode) on top
- * of the assembly subset; durable coverage widens automatically as that subset does.
+ * Output triggers and `editoutput` are durable: the server runs
+ * `runServerPostGeneration` at completion and persists the derived final text
+ * and scriptstate delta. This gate adds only the generating-mode restriction on
+ * top of the assembly verdict.
  */
 const DURABLE_MODES: ReadonlySet<DurableGenerationMode> = new Set([
   'send',

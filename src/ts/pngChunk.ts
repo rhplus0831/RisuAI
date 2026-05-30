@@ -52,7 +52,7 @@ class StreamChunkWriter {
     const keyData = new TextEncoder().encode(key)
     const value = Buffer.from(val)
     const lenNum = value.byteLength + keyData.byteLength + 1
-    //idk, but uint32array is not working
+    // Write PNG chunk length bytes manually.
     const length = new Uint8Array([
       (lenNum / 0x1000000) % 0x100,
       (lenNum / 0x10000) % 0x100,
@@ -286,7 +286,7 @@ export const PngChunk = {
       const keyData = new TextEncoder().encode(key)
       const value = Buffer.from(chunks[key])
       const lenNum = value.byteLength + keyData.byteLength + 1
-      //idk, but uint32array is not working
+      // Write PNG chunk length bytes manually.
       const length = new Uint8Array([
         (lenNum / 0x1000000) % 0x100,
         (lenNum / 0x10000) % 0x100,

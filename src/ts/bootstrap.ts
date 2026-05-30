@@ -136,7 +136,7 @@ export async function loadData() {
   }
 }
 
-/** The raw characters of a projection database, for the Phase 5 hydration record. */
+/** Raw projection characters before format defaults hide lorebook stubs. */
 function rawProjectionCharacters(
   database: Database | undefined,
 ): ReadonlyArray<{ chaId?: string; globalLore?: unknown }> | undefined {
@@ -154,21 +154,21 @@ export async function loadWebInitialDatabase() {
     )
   }
   applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
-  // Phase 5: record which characters arrive with a REAL (resident) globalLore —
-  // read from the raw projection BEFORE `checkNewFormat` defaults an absent
-  // (stubbed) value to []. The lorebook watcher only persists hydrated characters.
+  // Record which characters arrive with a REAL (resident) globalLore before
+  // `checkNewFormat` defaults an absent (stubbed) value to []. The lorebook
+  // watcher only persists hydrated characters.
   resetLorebookHydration()
   recordHydratedCharacterLorebooks(bootstrap.projection.database?.characters)
   // Seed the surgical-sync baseline: subsequent command events are decided
   // against the revision this client has applied.
   setCachedServerCommandRevision(bootstrap.projection.revision)
   setServerProjectionWriteGuardEnabled(true)
-  // Phase 7: surface any in-flight server generations so opening their chat
-  // re-attaches to the live stream.
+  // Surface any in-flight server generations so opening their chat re-attaches
+  // to the live stream.
   setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
   startActiveGenerationReattach()
-  // Phase 4.3: chats arrive as message-free stubs; hydrate the open chat's
-  // messages on open (and re-hydrate after a re-stub).
+  // Chats arrive as message-free stubs; hydrate the open chat's messages on
+  // open (and re-hydrate after a re-stub).
   startChatMessageHydration()
   void hydrateActiveChat()
   await startServerProjectionEvents()
@@ -231,7 +231,7 @@ function applyServerMemoryEvent(event: { sideEffect?: { kind: string; payload: u
 }
 
 /**
- * Surgical inbound sync (lazy-projection Phase 2). Each command event is
+ * Surgical inbound sync for server projection command events. Each event is
  * decided against the last revision this client applied:
  *   - `event.revision <= cached` → own echo / already applied → skip.
  *   - `event.revision === cached + 1` → contiguous foreign event → targeted
@@ -269,17 +269,16 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
     })
     if (result.status === 'ok' && result.mode === 'fields') {
       mergeServerProjectionFields(result.fields)
-      // The `characters` slice is message-free (Phase 4.3 stubs) and the merge
-      // wholesale-replaces the array, so it re-stubs EVERY chat — not just the
-      // open one. Forget all cached hydration (like fullBootstrapResync) so a
-      // later re-open or bulk read refetches the now-stale non-active chats, then
-      // re-hydrate the open chat eagerly.
+      // The `characters` fields are message-free stubs and the merge replaces
+      // the whole array, so it re-stubs EVERY chat, not just the open one.
+      // Forget cached hydration so re-open or bulk reads refetch stale chats,
+      // then re-hydrate the open chat eagerly.
       if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
         resetChatHydration()
         void hydrateActiveChat({ force: true })
-        // Phase 5: the merge re-stubs every character's globalLore too — forget the
-        // hydrated marks, re-record from the freshly merged (raw) characters, then
-        // re-hydrate the open character's globalLore (no-op unless stubs are on).
+        // The merge re-stubs every character's globalLore too: forget hydrated
+        // marks, re-record from the freshly merged raw characters, then re-hydrate
+        // the open character's globalLore (no-op unless stubs are on).
         resetLorebookHydration()
         recordHydratedCharacterLorebooks(result.fields.characters)
         void hydrateActiveCharacterLorebook({ force: true })
@@ -313,13 +312,13 @@ async function fullBootstrapResync(): Promise<void> {
         applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
         setCachedServerCommandRevision(bootstrap.projection.revision)
         setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
-        // The full re-apply re-stubbed every chat — forget cached hydration and
-        // re-hydrate the open chat (Phase 4.3).
+        // The full re-apply re-stubbed every chat; forget cached hydration and
+        // re-hydrate the open chat.
         resetChatHydration()
         void hydrateActiveChat({ force: true })
-        // Phase 5: the re-apply re-stubs character globalLore too — re-record the
-        // hydrated marks from the fresh (raw) projection, then re-hydrate the open
-        // character's globalLore (no-op unless stubs are on).
+        // The re-apply also re-stubs character globalLore: re-record hydrated
+        // marks from the fresh raw projection, then re-hydrate the open character
+        // globalLore (no-op unless stubs are on).
         resetLorebookHydration()
         recordHydratedCharacterLorebooks(rawProjectionCharacters(bootstrap.projection.database))
         void hydrateActiveCharacterLorebook({ force: true })
@@ -394,8 +393,8 @@ async function checkNewFormat(): Promise<void> {
       v.type ??= 'character'
       v.chatPage ??= 0
       v.chats ??= []
-      // Phase 4.3: chats arrive as message-free stubs; keep `message` a valid
-      // array so the active-chat UI renders before hydration fills it on open.
+      // Chats arrive as message-free stubs; keep `message` a valid array so the
+      // active-chat UI renders before hydration fills it on open.
       for (const chat of v.chats) {
         if (chat && !Array.isArray(chat.message)) chat.message = []
       }

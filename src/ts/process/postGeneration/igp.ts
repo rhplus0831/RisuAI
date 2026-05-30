@@ -22,7 +22,6 @@ export async function evaluateIgp(opts: EvaluateIgpOptions): Promise<void> {
   const messages =
     DBState.db.characters[opts.selectedChar].chats[opts.selectedChat].message
   // Behavior preserved verbatim from sendChat: the upstream code appended the
-  // full `requestDataResponse` object, which coerces to "[object Object]". A
-  // fix (e.g. `+= rq.result`) belongs in its own slice.
+  // full `requestDataResponse` object, which coerces to "[object Object]".
   messages[messages.length - 1].data += rq as unknown as string
 }

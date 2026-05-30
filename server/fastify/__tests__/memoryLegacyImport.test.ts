@@ -149,10 +149,9 @@ describe('legacy Hypa V3 memory import', () => {
           payload: {},
         })
         expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(2)
-        // The backfill must read the chat's messages — which Phase 4 moves out
-        // of db.json. The import route splits messages in place, so the backfill
-        // must run against the still-hydrated payload (regression guard: a
-        // stripped payload would yield bare summary text + a fallback seq range).
+        // The backfill must read messages that no longer live in db.json. The
+        // import route splits messages in place, so the backfill must run against
+        // the still-hydrated payload.
         const chunks = listMemoryChunks(db, { chatId: 'chat-1' })
         expect(chunks).toHaveLength(2)
         expect(chunks[0]).toMatchObject({

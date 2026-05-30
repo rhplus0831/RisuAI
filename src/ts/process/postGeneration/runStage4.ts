@@ -38,9 +38,9 @@ export interface RunStage4Args {
  * notification / provider-emotion / emotion-fallback / imggen routing, or
  * finalize stage 4 cleanly.
  *
- * The discriminated-union return mirrors slice 5-25: `resend` asks the
- * coordinator to release the `doingChat` lease and recurse into `sendChat`
- * (the helper avoids the circular import that direct recursion would
+ * The discriminated-union return lets `resend` ask the coordinator to release
+ * the `doingChat` lease and recurse into `sendChat` (the helper avoids the
+ * circular import that direct recursion would
  * introduce); `done` means the helper has already called `finalizeStage4`
  * (default path) or intentionally skipped it (emotion-fallback paths,
  * preserving production behavior verbatim).

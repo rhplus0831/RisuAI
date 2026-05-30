@@ -118,7 +118,7 @@ export function writePersisted(dataDir: string, next: Persisted): void {
   fs.renameSync(tmp, file)
 }
 
-// --- Lazy-projection Phase 4: chat messages live in SQLite, not in db.json. ---
+// Chat messages live in SQLite, not in db.json.
 //
 // `loadPersisted` / `writePersisted` operate on the message-free `db.json` blob
 // (the asset-GC / memory / backup paths that never look at messages keep using
@@ -169,8 +169,8 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
     }
     // else: no rows but an embedded array is present → keep it (fallback).
 
-    // Phase 4.4: hypaV3Data joins the same way. It is optional, so only set it
-    // when the table has a row; otherwise keep any embedded value (fallback).
+    // hypaV3Data joins the same way. It is optional, so only set it when the
+    // table has a row; otherwise keep any embedded value.
     if (hypaGrouped.has(chatId)) {
       chat.hypaV3Data = hypaGrouped.get(chatId)
     }
@@ -192,8 +192,7 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
  *
  * Invariant: `next.database` is a *complete* hydrated database (every chat
  * present). The table is rebuilt wholesale, which also reclaims rows for deleted
- * chats. Slice 4.2 replaces this whole-corpus rewrite with surgical per-command
- * writes.
+ * chats.
  */
 export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): Persisted {
   const chats: { chatId: string; messages: unknown[] }[] = []
@@ -226,13 +225,10 @@ export function writePersistedWithMessages(
 }
 
 /**
- * Surgical message persistence for the command path (Slice 4.2). Diff each
- * chat's `message[]` between the hydrated `baselineDatabase` (what the table
- * currently holds) and the mutated `nextDatabase`, writing only the rows that
- * actually changed — so a message append touches one row, an unrelated chat is
- * never rewritten, and a non-message command writes nothing to the table. Chats
- * removed by the command (chat/character delete) have their rows dropped. Runs
- * inside the caller's open transaction; does NOT touch db.json.
+ * Surgical message persistence for the command path. Diff each chat's
+ * `message[]` between the hydrated `baselineDatabase` and mutated `nextDatabase`,
+ * writing only changed rows. Removed chats have their rows dropped. Runs inside
+ * the caller's open transaction; does NOT touch db.json.
  */
 export function syncChatMessages(
   db: DatabaseSync,
@@ -253,7 +249,7 @@ export function syncChatMessages(
     nextIds.add(chat.id)
     const next = Array.isArray(chat.message) ? chat.message : []
     applyChatMessageDiff(db, chat.id, baseline.get(chat.id) ?? [], next)
-    // Phase 4.4: persist hypaV3Data only when it changed (surgical, like messages).
+    // Persist hypaV3Data only when it changed, like messages.
     if (JSON.stringify(baselineHypa.get(chat.id)) !== JSON.stringify(chat.hypaV3Data)) {
       setChatHypaV3(db, chat.id, chat.hypaV3Data)
     }
@@ -276,13 +272,9 @@ export function stripChatMessages(next: Persisted): Persisted {
 }
 
 /**
- * One-time proactive extraction (lazy-projection Phase 4): if `db.json` still
- * carries embedded `chat.message[]` (an existing v3 store upgraded to v4, or a
- * hand-written fixture), move every chat's messages into the table and rewrite
- * db.json message-free. Idempotent — a no-op once db.json is message-free, so it
- * is safe to call on every boot. This guarantees the stub projection's counts
- * and the per-chat hydration endpoint are always backed by the table, not by
- * stale embedded arrays. Run at startup, before serving requests.
+ * One-time proactive extraction: if `db.json` still carries embedded
+ * `chat.message[]`, move every chat's messages into the table and rewrite db.json
+ * message-free. Idempotent and safe to call on every boot.
  */
 export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void {
   const raw = loadPersisted(dataDir)
@@ -309,9 +301,9 @@ export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void
 
 /**
  * The bootstrap / foreign-event projection of the database: chat *metadata* only,
- * every `chat.message[]` replaced by an empty array (Slice 4.3 stub). The client
- * hydrates a chat's messages on open. Prompt assembly keeps using
- * `loadPersistedWithMessages` — only the wire projection is stubbed.
+ * every `chat.message[]` replaced by an empty array. The client hydrates a chat's
+ * messages on open. Prompt assembly keeps using `loadPersistedWithMessages` —
+ * only the wire projection is stubbed.
  */
 export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted {
   const persisted = loadPersisted(dataDir)
@@ -348,12 +340,9 @@ function stubCharacterLorebooks(persisted: Persisted): void {
 }
 
 /**
- * One chat's hydration payload — messages + hypaV3Data + the Phase 6c reroll
- * buffer — for the hydration endpoint (table, with embedded db.json fallback for
- * not-yet-extracted chats). `alternates` are the preserved reroll candidates
- * ("don't lose a rerolled result"); they make the guarantee reachable over the
- * wire. The current client ignores the field — it is foundation for surfacing the
- * candidates later, and is always present (empty array when none).
+ * One chat's hydration payload: messages, hypaV3Data, and reroll alternates for
+ * the hydration endpoint. Uses the table with embedded db.json fallback for
+ * not-yet-extracted chats. `alternates` is always present, empty when none.
  */
 export function loadChatHydration(
   db: DatabaseSync,
@@ -378,9 +367,8 @@ export function loadChatHydration(
 }
 
 /**
- * Phase 5: one character's full `globalLore` for the hydration endpoint (the
- * projection ships a stub when `enableLorebookStubs` is on). Reads the FULL,
- * un-stubbed db.json. Returns `[]` for an unknown / lore-less character.
+ * One character's full `globalLore` for the hydration endpoint. Reads the full,
+ * un-stubbed db.json and returns `[]` for an unknown / lore-less character.
  */
 export function loadCharacterLorebookHydration(
   dataDir: string,
@@ -527,20 +515,17 @@ export function backupDir(dataDir: string, id: string): string {
   return path.join(backupsDir(dataDir), id)
 }
 
-// A4EC4 / B4 / B5: the exhaustive list of child entries inside `dataDir` that
-// the backup contract owns. Every file/directory in this list must be
-// snapshotted by `createBackup` and restored by `restoreBackup`. The audit
-// (`pnpm client-thinning:audit`, rule A4R-backup) compares this list against
-// `createBackup` and `restoreBackup` bodies to catch drift.
+// Exhaustive list of child entries inside `dataDir` that the backup contract
+// owns. Every file/directory in this list must be snapshotted by `createBackup`
+// and restored by `restoreBackup`.
 //
 // Implementation notes per entry:
 //   - 'db.json'  : the user-owned JSON state. Copied via file write/rename.
 //   - 'assets'   : asset bytes referenced from db.json. Copied as a directory.
 //   - 'risu.db'  : SQLite database (schema_version + hypa-v3 memory tables +
-//                  the `messages` chat-history table and `chat_hypa_v3` per-chat
-//                  blobs, Phase 4). Backed up after a WAL checkpoint; restored via
-//                  ATTACH so the live `DatabaseSync` handle stays valid. Every table
-//                  that must survive restore is listed in SQLITE_BACKUP_TABLES.
+//                  chat-history tables). Backed up after a WAL checkpoint; restored
+//                  via ATTACH so the live `DatabaseSync` handle stays valid. Every
+//                  table that must survive restore is listed in SQLITE_BACKUP_TABLES.
 //   - 'save'     : legacy storage directory written by /api/v1/storage/*.
 export const KNOWN_DATA_DIR_CHILDREN = ['db.json', 'assets', 'risu.db', 'save'] as const
 
@@ -554,13 +539,10 @@ function sqliteDbPath(dataDir: string): string {
 
 // Tables that must survive a backup/restore round-trip. Kept in sync with
 // `createMemoryTables`, the chat-history tables (`createMessageTable` /
-// `createChatBlobTable`), and `schema_version` in `db.ts`. The audit (A4R-backup)
-// asserts createBackup / restoreBackup names every entry in KNOWN_DATA_DIR_CHILDREN,
-// and these tables sit inside `risu.db`. `createBackup` file-copies all of risu.db,
-// but `restoreBackup` swaps tables one-by-one via ATTACH — so a table absent here is
-// silently NOT restored (its live rows would survive a restore, desyncing it from the
-// restored db.json). Chat messages and per-chat `hypaV3Data` both moved to SQLite in
-// lazy-projection Phase 4, so both tables must be listed.
+// `createChatBlobTable`), and `schema_version` in `db.ts`. `createBackup`
+// file-copies all of risu.db, but `restoreBackup` swaps tables one-by-one via
+// ATTACH. A table absent here would not be restored, leaving live rows desynced
+// from the restored db.json.
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
   'memory_chunks',
@@ -645,8 +627,8 @@ function restoreSqliteFromBackup(
   // active route holding the same handle). The transaction is atomic with
   // respect to other queries on this connection.
   if (!fs.existsSync(backupDbPath)) {
-    // No SQLite backup payload: clear out any live memory rows so the restore
-    // is consistent with a snapshot taken before SQLite-aware backups landed.
+    // No SQLite backup payload: clear live memory rows so the restore is
+    // consistent with a snapshot taken without SQLite backup state.
     db.exec('BEGIN')
     try {
       for (const table of SQLITE_BACKUP_TABLES) {

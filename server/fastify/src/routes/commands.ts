@@ -3172,8 +3172,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as { baseRevision?: unknown; lorebook?: unknown }
       const baseRevision = readBaseRevision(body)
-      // A4EC3 / B2: validate-only constructor rejects missing entry ids
-      // rather than minting them.
+      // Validate-only constructor rejects missing entry ids rather than minting them.
       const lorebook = validateGlobalLorebookCreate(body.lorebook)
       const result = applyJsonCommandMutation<{ lorebookId: string }>({
         db,

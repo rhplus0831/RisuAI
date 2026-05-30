@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Regression coverage for the Phase 9 projection-guard audit: slash-command
-// handlers (`/send`, `/setvar`, `/cut`, ...) apply an optimistic local update
-// before dispatching a command. That optimistic update must run inside a
-// trusted write scope so it does not throw against the server-backed read-only
-// projection guard, and it must still dispatch the matching chat command.
+// Regression coverage: slash-command handlers (`/send`, `/setvar`, `/cut`, ...)
+// apply an optimistic local update before dispatching a command. That update
+// must run inside a trusted write scope so it does not throw against the
+// server-backed read-only projection guard, and it must still dispatch the
+// matching chat command.
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 

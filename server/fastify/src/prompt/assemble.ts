@@ -96,8 +96,8 @@ export interface AssembleDeps {
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
   /**
-   * Slice 3a: resolve a stored-asset reference (sha256 id or `assets/<id>.<ext>`
-   * path) to image bytes for `{{asset_prompt::}}` / the char icon. The route
+   * Resolve a stored-asset reference (sha256 id or `assets/<id>.<ext>` path) to
+   * image bytes for `{{asset_prompt::}}` / the char icon. The route
    * binds this to the on-disk assets store; absent, asset prompts drop their
    * bytes (the pre-3a behavior). Inlay bytes ride the request `inlayAssets`, not
    * this resolver.
@@ -217,9 +217,9 @@ export interface AssembleResult {
   /** Browser-visible state from before the server-owned mutations replay. */
   restoration?: AssembleRestorationPayload
   /**
-   * Slice 3b sub-slice 4: the submit-time transcript (after the input trigger +
-   * `editinput` rewrite, before the run-var / history passes) the route persists
-   * when {@link submitTranscriptChanged} is set. The browser sends the *raw* user
+   * Submit-time transcript (after the input trigger + `editinput` rewrite,
+   * before the run-var / history passes) the route persists when
+   * {@link submitTranscriptChanged} is set. The browser sends the *raw* user
    * text for a server-backed send and defers the transform to the server, so this
    * is the authoritative post-`editinput` transcript the route writes. Route-only
    * (not on the SSE wire).
@@ -233,8 +233,8 @@ export interface AssembleResult {
    */
   submitTranscriptChanged?: boolean
   /**
-   * Slice 4 (A2): the internal assembler state, exposed **route-only** (never on
-   * the SSE wire) so the route can run {@link runServerPostGeneration} over the
+   * Internal assembler state, exposed **route-only** (never on the SSE wire) so
+   * the route can run {@link runServerPostGeneration} over the
    * just-generated assistant text after provider dispatch — it reuses the same
    * chat clone, expansion context, var-engine coordinates, and persisted
    * scriptstate baseline assembly built. Present only on the dispatch-ready
@@ -314,7 +314,7 @@ export interface AssemblyState {
   promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
   promptMemoryRows?: OpenAIChat[]
-  // --- 7-11f: final render + budget (set by `renderAndBudget`) ---
+  // --- Final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
   formated?: OpenAIChat[]
   /** Template-path prompt-info rows (`renderFinalPrompt.promptText`). */
@@ -329,11 +329,11 @@ export interface AssemblyState {
   initialMessages?: Message[]
   messageMutationCheckpoint?: Message[]
   initialScriptstate?: Record<string, string | number | boolean>
-  /** Slice 3b sub-slice 4: the submit-time input trigger rewrote the transcript. */
+  /** The submit-time input trigger rewrote the transcript. */
   inputTriggerRewroteTranscript?: boolean
-  /** Slice 3b sub-slice 4: `editinput` transformed the submitted user message. */
+  /** `editinput` transformed the submitted user message. */
   editInputTransformed?: boolean
-  /** Slice 3b sub-slice 4: post-`editinput` submit transcript snapshot (pre run-var). */
+  /** Post-`editinput` submit transcript snapshot before run-var processing. */
   submitMessages?: Message[]
   messageMutations?: AssembleMessageMutation[]
   additionalSystemPromptMutations?: AssembleAdditionalSystemPromptMutation[]
@@ -542,14 +542,10 @@ function appendUserMessageRow(state: AssemblyState): void {
 }
 
 /**
- * Slice 3b sub-slice 4 — the submit-time **input trigger**, ported from the
- * browser chat-screen submit handler (`DefaultChatScreen.svelte:232`,
- * `runTrigger(char, 'input', { chat })`). It runs over the transcript **without
- * the new user message** (the browser appends the user row only *after* the
- * trigger), so when the loaded transcript already ends with the new user text
- * (a fixture seeds it, or the browser persisted the raw row before the send) we
- * exclude that last row for the trigger run and let {@link appendUserMessageRow}
- * re-add it afterward.
+ * Submit-time **input trigger**, ported from the browser chat-screen submit
+ * handler. It runs over the transcript **without the new user message**, so when
+ * the loaded transcript already ends with the new user text we exclude that last
+ * row for the trigger run and let {@link appendUserMessageRow} re-add it.
  *
  * The trigger's `triggerlua` effects run on the server Lua VM via the injected
  * `runLua` seam ({@link runServerLua}, mode `'input'` → the Lua `onInput`),
@@ -626,9 +622,8 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
 }
 
 /**
- * Slice 3b sub-slice 4 — the submit-time **`editinput`** transform of the
- * just-appended user message, ported from the browser's
- * `processScript(char, messageInput, 'editinput')`
+ * Submit-time **`editinput`** transform of the just-appended user message,
+ * ported from the browser's `processScript(char, messageInput, 'editinput')`
  * (`DefaultChatScreen.svelte:240` → `scripts.ts::processScriptFull`). Mirrors
  * `processScriptFull`'s order for the user text: the Lua `editInput` hook
  * (`runLuaEditTrigger(char,'editinput',…)`) → CBS expansion (the
@@ -782,20 +777,17 @@ function buildRestorationPayload(state: AssemblyState): AssembleRestorationPaylo
 }
 
 /**
- * Slice 3b sub-slice 4: snapshot the submit-time transcript right after the
- * input trigger + `editinput` rewrite, before `applyCurrentChatRunVars` (the
- * browser persists the post-submit transcript before assembly's run-var / history
- * passes). The route persists this when {@link submitTranscriptChanged}.
+ * Snapshot the submit-time transcript right after the input trigger + `editinput`
+ * rewrite, before `applyCurrentChatRunVars`. The route persists this when
+ * {@link submitTranscriptChanged}.
  */
 function captureSubmitTranscript(state: AssemblyState): void {
   state.submitMessages = cloneMessages(state.currentChat.message ?? [])
 }
 
 /**
- * Slice 3b sub-slice 4: the route owns the post-`editinput` transcript write only
- * when a submit hook actually changed the transcript (an input-trigger rewrite or
- * an `editinput` transform). A plain send leaves message persistence to the
- * browser exactly as before — so trigger-less sends are byte-for-byte unchanged.
+ * The route owns the post-`editinput` transcript write only when a submit hook
+ * changed the transcript. Plain sends leave message persistence to the browser.
  */
 function submitTranscriptChanged(state: AssemblyState): boolean {
   return !!state.inputTriggerRewroteTranscript || !!state.editInputTransformed
@@ -807,8 +799,8 @@ function submitTranscriptChanged(state: AssemblyState): boolean {
  *   - plain sections (`main` / `jailbreak` / `globalNote`) only on the
  *     non-utility, non-template path,
  *   - `authorNote`, the chain-of-thought into `postEverything`,
- *     `description`, `personaPrompt`, and (slice 3c) the image-gen / emotion
- *     view instruction into `postEverything` always.
+ *     `description`, `personaPrompt`, and the image-gen / emotion view
+ *     instruction into `postEverything` always.
  *
  * Sync — every leaf is sync. `buildInlayViewInstruction` mirrors the SPA's
  * push at `sendChatPromptAssembly.ts:114` (after the chain-of-thought row, so
@@ -902,12 +894,9 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   const { ctx, currentChar, usingPromptTemplate } = state
   const db = state.database
 
-  // Lua `editprocess` hook (slice 3b sub-slice 3): wire each first-message /
-  // per-message body through the runtime, mirroring the SPA's leading
-  // `runLuaEditTrigger(char, 'editprocess', …)` in `processScriptFull`. Lua
-  // `editprocess` is a browser no-op — `runLuaEditTrigger` early-returns for it
-  // before booting any engine or touching the var engine — so this is identity at
-  // parity; routing it through the runtime (not a hardcoded identity) keeps the
+  // Lua `editprocess` wires each first-message / per-message body through the
+  // runtime, mirroring the SPA's leading `runLuaEditTrigger`. It is a browser
+  // no-op, so this is identity at parity; routing it through the runtime keeps the
   // server faithful if the browser's behavior ever changes. No `varChanged` fold
   // is needed (unlike `buildLuaEditRequest`) precisely because the no-op never
   // writes vars.
@@ -998,9 +987,8 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
 
   state.currentChat = mem.currentChat
   state.memories = mem.memories
-  // The SPA root does not read `currentTokens` back (7-11f re-tokenizes
-  // the rendered prompt), but the post-trim estimate is the honest value
-  // for the 7-11i `info` telemetry, so keep it on the state.
+  // The SPA root re-tokenizes the rendered prompt, but the post-trim estimate is
+  // the honest value for `info` telemetry, so keep it on the state.
   state.currentTokens = mem.currentTokens
 
   // Lorebook depth-prompt splice (SPA `:275-283`). `applyDepthPrompts`
@@ -1256,9 +1244,8 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
 }
 
 /**
- * Slice 3b sub-slice 2 — build the VM-backed Lua `editRequest` hook the final
- * render applies over `formated` and the prompt-info capture, mirroring the
- * browser's `renderFinalPrompt.ts:384`
+ * Build the VM-backed Lua `editRequest` hook the final render applies over
+ * `formated` and the prompt-info capture, mirroring the browser's
  * `runLuaEditTrigger(char, 'editRequest', formated)`.
  *
  * Supplied unconditionally for byte-parity with the browser (which always calls
@@ -1289,8 +1276,7 @@ function buildLuaEditRequest(state: AssemblyState): {
  *     re-pushed here), `state.memories`, and `state.positionParser`,
  *     with the `isContinue` marker, and the VM-backed Lua `editRequest`
  *     hook ({@link buildLuaEditRequest}) over both `formated` and the
- *     prompt-info capture (slice 3b sub-slice 2; mirrors the browser's
- *     `renderFinalPrompt.ts:384` `runLuaEditTrigger`);
+ *     prompt-info capture, mirroring the browser's `runLuaEditTrigger`;
  *   - `finalizeRequestBudget` re-tokenizes the rendered rows, trims
  *     `removable` rows under `db.maxContext`, and clamps the response
  *     budget. On overflow the send aborts (`stopSending` +
@@ -1356,10 +1342,9 @@ export async function assemblePrompt(
 ): Promise<AssembleResult> {
   const state = beginAssembly(input, deps)
   prepareRegenerateTranscript(state)
-  // Slice 3b sub-slice 4: the submit-time input trigger runs over the transcript
-  // before the user message is appended; `editinput` then rewrites the appended
-  // user row. Both mirror the browser chat-screen submit handler, which the
-  // server-backed path no longer runs (it sends the raw user text).
+  // The submit-time input trigger runs before the user message is appended;
+  // `editinput` then rewrites that user row. This mirrors the browser
+  // chat-screen submit handler while the server receives the raw user text.
   await runInputTrigger(state)
   appendUserMessageRow(state)
   await applyEditInput(state)
@@ -1393,9 +1378,8 @@ export async function assemblePrompt(
         outputTokens: state.outputTokens,
       },
       lorebookActivation: state.report,
-      // 7-12b: carry the full rows + biases on the wire so the browser
-      // adapter can drive a preview / dispatch, not just the lossy
-      // `messages` projection. Additive to the locked SSE contract.
+      // Carry the full rows + biases on the wire so the browser adapter can
+      // drive a preview / dispatch, not just the lossy `messages` projection.
       formated,
       biases: state.biases,
     },
@@ -1407,35 +1391,29 @@ export async function assemblePrompt(
     restoration: buildRestorationPayload(state),
     submitMessages: state.submitMessages,
     submitTranscriptChanged: submitTranscriptChanged(state),
-    // Slice 4 (A2): hand the assembler state to the route so it can run the
-    // post-generation pass (`runServerPostGeneration`) over the provider's
-    // completion text after dispatch, reusing this exact chat/var context.
+    // Hand the assembler state to the route so post-generation processing can
+    // reuse this exact chat/var context after provider dispatch.
     state,
   }
 }
 
-// ── Slice 4 (A2): server post-generation pass ────────────────────────────────
+// Server post-generation pass.
 //
-// After the provider produces the completion text, the server runs the same
-// durable post-generation derivation the browser used to own
-// (`postGeneration/outputTrigger.ts` + the `editoutput` arm of
-// `processScriptFull`): `editoutput` over the completion, the pre-trigger
-// **run-var pass**, and the `'output'` trigger. It derives the durable
-// `chat.scriptstate` delta (run-var + output-trigger `setvar`/`v2SetVar`) and the
-// final assistant text, and reports whether the output trigger requested a resend.
+// After the provider produces the completion text, the server runs `editoutput`,
+// the pre-trigger run-var pass, and the `'output'` trigger. It derives the
+// `chat.scriptstate` delta and final assistant text, and reports whether the
+// output trigger requested a resend.
 //
-// The scriptstate delta is persisted by the route through the slice-2 writer
-// (`persistAssemblyMutations`); the final text rides back on the `done` frame so
-// the browser's generation-result persist (B2) writes the server-owned text. The
-// assistant message itself is **not** persisted here — B2 owns that — so the pass
-// derives the delta against the post-assembly scriptstate baseline and never
-// emits a transcript write for the appended assistant row.
+// The route persists the scriptstate delta through `persistAssemblyMutations`;
+// the final text rides back on the `done` frame. This pass derives against the
+// post-assembly scriptstate baseline and never emits a transcript write for the
+// appended assistant row.
 
 /** Route inputs for {@link runServerPostGeneration}. */
 export interface ServerPostGenerationInput {
   /** The raw provider completion text (pre-`editoutput`). */
   completionText: string
-  /** The assistant message id (`generationId`); B2 keys the persist on it. */
+  /** The assistant message id (`generationId`) used to key persistence. */
   generationId: string
   /** `createGenerationInfo` output, stamped onto the appended assistant row. */
   generationInfo?: Record<string, unknown>
@@ -1466,8 +1444,8 @@ function reformatCompletion(text: string): string {
  * The `editoutput` transform of the completion text, mirroring
  * `processScriptFull(…, 'editoutput', msgIndex)` (`scripts.ts:121-160`): the Lua
  * `editOutput` hook → CBS expansion → the regex `editoutput` scripts. Identical in
- * shape to the slice-3b-4 `applyEditInput`. pluginV2 stays permanent-unsupported,
- * so its arm is intentionally absent. Lua var writes fold into the chat-var delta.
+ * shape to `applyEditInput`. pluginV2 stays permanent-unsupported, so its arm is
+ * intentionally absent. Lua var writes fold into the chat-var delta.
  */
 async function applyEditOutput(
   state: AssemblyState,
@@ -1524,7 +1502,7 @@ function appendAssistantRow(
 /**
  * The `'output'` trigger over the post-generation transcript, mirroring
  * `applyOutputTrigger` (`postGeneration/outputTrigger.ts:29`) and reusing the
- * slice-3b-4 input-trigger wiring (the Lua VM seam, the var-engine writethrough).
+ * input-trigger wiring (the Lua VM seam, the var-engine writethrough).
  * `setvar`/`v2SetVar` arms fold into the chat-var delta; a transcript rewrite is
  * captured as an `output_trigger` message mutation (surfaced for the projection,
  * not persisted here). Returns the trigger's resend request (`sendAIprompt`).

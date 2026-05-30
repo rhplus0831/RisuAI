@@ -11,9 +11,8 @@ export function requireCharacter(chatId: string): CharacterRecord {
   return { chats: [] }
 }
 
-// Normalize-on-read: repairs persisted state by minting ids for chats that lack
-// them. The `ensure*` prefix marks it non-propagating; A4R3 accepts it when a
-// route handler calls it with a persisted-state binding (`character`).
+// Normalize-on-read repairs persisted chats that lack ids. Route handlers may
+// call it only with persisted-state bindings.
 export function ensureCharacterChats(character: CharacterRecord): void {
   for (const chat of character.chats ?? []) {
     if (!chat.id) chat.id = randomUUID()

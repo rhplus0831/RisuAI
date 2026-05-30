@@ -1,7 +1,4 @@
-// Minimal stand-in for the real command family. The audit discovers the
-// exported `dispatch*` helpers here and treats them as mutating dispatchers
-// for the fan-out scan, so the accepted shapes below are proven to pass
-// because of serialization, not because the dispatchers go unrecognized.
+// Invariant: exported `dispatch*` helpers are mutating dispatchers for fan-out detection.
 
 export async function runServerCommand(_name: string, _payload: unknown): Promise<void> {
   // Stand-in for the central optimistic command runner.

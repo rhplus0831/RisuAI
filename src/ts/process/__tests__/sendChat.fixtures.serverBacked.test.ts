@@ -7,10 +7,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { get } from 'svelte/store'
 import type { FastifyInstance } from 'fastify'
 
-// Server-backed dual-mode sweep (Phase 6-3). Unlike sendChat.fixtures.test.ts,
-// this file does NOT vi.mock('../request/request') — the real request module
-// loads, the Phase 6-2 branch inside requestChatDataMain fires, and the call
-// lands on a stubbed `fetch` that emulates the Phase 6-1 route.
+// Server-backed dual-mode sweep. Unlike sendChat.fixtures.test.ts, this file does
+// NOT vi.mock('../request/request'): the real request module loads and the call
+// lands on a stubbed `fetch` that emulates the completion route.
 //
 // Each dual-mode fixture's expected snapshot is shared with the local sweep
 // (under `expected/<name>.json`). The shared subset asserted here is
@@ -384,8 +383,8 @@ interface RouteBackedHarness {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
 }
 
-// Phase 4.3: the bootstrap ships chat stubs (message-free); read a chat's
-// persisted messages via the per-chat hydration endpoint.
+// The bootstrap ships chat stubs (message-free); read persisted messages via the
+// per-chat hydration endpoint.
 async function persistedChatMessages(
   harness: RouteBackedHarness,
   chatId = 'chat-route-backed',
@@ -839,8 +838,8 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  // Slice 4 (A2): the server now owns the post-generation derivation — the
-  // `'output'` trigger + run-var pass + `editoutput` over the just-generated text.
+  // The server owns post-generation derivation: the `'output'` trigger, run-var
+  // pass, and `editoutput` over the just-generated text.
   // These route-backed tests prove the browser consumes the server's derivation
   // (the scriptstate patch + final text on the terminal `done` frame) and no longer
   // re-derives it (zero scriptstate re-POSTs; editoutput applied server-side).
@@ -994,9 +993,8 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // The fixture ships `promptTemplate: null`, which the risusave import
       // coerces to `[]` — and the server then treats an empty array as an
       // (empty) active template, assembling zero rows. That null-coercion is a
-      // pre-existing concern unrelated to slice 3a's multimodal scope; clear it
-      // to `undefined` so the format-order path runs and a real prompt (with the
-      // inlay row) assembles.
+      // pre-existing multimodal concern; clear it to `undefined` so the
+      // format-order path runs and a real prompt (with the inlay row) assembles.
       ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
 
       await harness.seed(DBState.db)
@@ -1044,12 +1042,12 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  // Slice 3c: the image-gen / emotion view instruction (`buildInlayViewInstruction`)
-  // now assembles server-side. These fixtures set `inlayViewScreen` (one `emotion`,
+  // The image-gen / emotion view instruction (`buildInlayViewInstruction`)
+  // assembles server-side. These fixtures set `inlayViewScreen` (one `emotion`,
   // one `imggen`); the assertion pins that the server-assembled `system` instruction
   // row is byte-identical to the local golden, including the `{{slot}}` →
   // `emotionImages` substitution. The post-gen image generation / inlay rendering
-  // stays a browser effect (B1) and is untouched here.
+  // stays a browser effect and is untouched here.
   const IMAGE_GEN_PARITY = [
     {
       name: 'image-gen-emotion',
@@ -1074,7 +1072,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         // Mirror prepareRouteBackedFixture's prompt setup (these fixtures are not
         // in the parametrized ROUTE_BACKED_CHAT_FIXTURES set). The
         // `promptTemplate: null` → `[]` import coercion is cleared to `undefined`
-        // so the format-order path runs (same workaround as the slice 3a test).
+        // so the format-order path runs (same workaround as the multimodal test).
         const char = DBState.db.characters[0]
         char.chats[char.chatPage ?? 0].id = 'chat-route-backed'
         ;(DBState.db as typeof DBState.db & { currentChar: number }).currentChar = 0
@@ -1137,12 +1135,12 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     },
   )
 
-  // Slice 3b sub-slice 4: the submit-time `editinput` transform now runs on the
-  // server (the route), not the browser. This route-backed integration test
-  // proves the full path end-to-end: the browser ships the *raw* user text, the
-  // real in-process server runs a regex `editinput` script over it, owns the
-  // post-transform transcript write, and the browser reconciles its projection
-  // from the route's `message_patch`. (A *Lua* editinput char can't run here for
+  // The submit-time `editinput` transform runs on the server route, not the
+  // browser. This route-backed integration test proves the full path end-to-end:
+  // the browser ships the *raw* user text, the real in-process server runs a
+  // regex `editinput` script over it, owns the post-transform transcript write,
+  // and the browser reconciles its projection from the route's `message_patch`.
+  // (A *Lua* editinput char can't run here for
   // the same wasmoon-under-jsdom reason noted below; the Lua path is proven in
   // the server suite.)
   it('runs a regex editinput transform server-side and reconciles the projection (slice 3b-4)', async () => {

@@ -34,7 +34,6 @@
 <h2 class="text-2xl font-bold mt-2">{language.supporterThanks}</h2>
 <span class="mb-2 text-textcolor2">{language.supporterThanksDesc}</span>
 
-<!-- Patreon Button -->
 <div class="flex items-center justify-center rounded-md flex-wrap gap-2">
   <button
     class="h-12 w-44"
@@ -86,7 +85,6 @@
   <h3 class="text-xl font-bold mt-4">Supporter III</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
     {#each supporter.III as support}
-      <!-- make a card -->
       <div class="flex flex-col items-center justify-center border-selected border rounded-sm">
         <div class="w-32 flex justify-center items-center py-3 px-6">
           <span class="font-black prism-font prism-font-silver text-xl">{support}</span>
@@ -97,7 +95,6 @@
   <h3 class="text-xl font-bold mt-4">Supporter II</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
     {#each supporter.II as support}
-      <!-- make a card -->
       <div class="flex flex-col items-center justify-center border-selected border rounded-sm">
         <div class="w-32 flex justify-center items-center p-1">
           <span class="font-bold prism-font prism-font-copper text-lg">{support}</span>
@@ -108,7 +105,6 @@
   <h3 class="text-xl font-bold mt-4">Supporter I</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
     {#each supporter.I as support}
-      <!-- make a card -->
       <div class="flex flex-col items-center justify-center border-selected border rounded-sm">
         <div class="w-32 flex justify-center items-center p-1">
           <span class="font-bold prism-font prism-font-copper">{support}</span>

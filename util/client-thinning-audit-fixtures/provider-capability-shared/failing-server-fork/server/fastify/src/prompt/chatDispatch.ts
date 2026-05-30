@@ -1,6 +1,5 @@
-// A4R-provider-capability fixture (failing): the /chat dispatcher re-forks the
-// provider-routing decision locally instead of consuming the shared
-// resolveProviderCapability table — exactly the drift the invariant forbids.
+// Violation: the /chat dispatcher forks provider routing instead of using the
+// shared capability table.
 function resolveProvider(format: number): string | null {
   return format === 0 ? 'openai' : null
 }

@@ -1,7 +1,5 @@
-// A4R-pluginv2 fixture: the classifier still carries the permanent pluginV2 gate
-// (imports the registry, inspects an edit set, hard-fails). The audit failure
-// here comes purely from the server assembler having a plugin execution path —
-// proving the negative half catches a real port even when the gate is intact.
+// Invariant: the classifier keeps the pluginV2 hard-fail gate; any failure here
+// comes from the server assembler execution path.
 import { pluginV2 } from '../../../plugins/plugins.svelte'
 
 declare const isFastifyServer: boolean

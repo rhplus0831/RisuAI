@@ -122,9 +122,8 @@ describe('resolveDurableGeneration', () => {
       expect(resolveDurableGeneration(makeInput())).toEqual({ type: 'durable' })
     })
 
-    // Decision #2 (2026-05-30): output triggers / editoutput are in-subset — slice 4
-    // landed, so Step 3 runs the post-gen pass and persists the derived state. These
-    // sends are durable, not screened out by this gate.
+    // Output triggers / editoutput are durable: the server runs the post-gen pass
+    // and persists the derived state, so this gate does not screen them out.
     it('routes a char with an output triggerscript to durable (decision #2)', () => {
       const input = makeInput({
         currentChar: makeChar({ triggerscript: outputTriggerScript() as never }),
@@ -178,10 +177,9 @@ describe('resolveDurableGeneration', () => {
       expect(resolveDurableGeneration(input)).toEqual({ type: 'durable' })
     })
 
-    // Phase 6b: continue / regenerate are durable-eligible — the server finalizes
-    // them mode-correctly (extend-in-place / replace-target). Both are in the
-    // server-assembled subset (only `send` carries the last-message structural
-    // check), so they route durable like a send.
+    // continue / regenerate are durable-eligible: the server finalizes them
+    // mode-correctly (extend-in-place / replace-target). Both are in the
+    // server-assembled subset, so they route durable like a send.
     it('routes a continue to durable (Phase 6b)', () => {
       const input = makeInput({
         continue: true,

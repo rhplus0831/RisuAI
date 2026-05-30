@@ -981,9 +981,8 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         withTrustedServerProjectionWrite(() => {
           DBState.db.characters[charId] = char
         })
-        // A4EC2 / B1: route through the sequencer so this call shares a
-        // single revision baseline with anything else the audit groups
-        // inside makeRisuaiAPIV3.
+        // Route through the sequencer so this call shares one advancing revision
+        // baseline with other makeRisuaiAPIV3 command factories.
         const { factories, rollback } = prepareCompatibleCharacterUpdate(
           previousCharacter,
           char,
@@ -1016,9 +1015,8 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
           withTrustedServerProjectionWrite(() => {
             DBState.db.characters[charId].chats[chatIndex] = chat
           })
-          // A4EC2 / B1: route through the sequencer so this call shares a
-          // single revision baseline with anything else the audit groups
-          // inside makeRisuaiAPIV3.
+          // Route through the sequencer so this call shares one advancing revision
+          // baseline with other makeRisuaiAPIV3 command factories.
           const { factories, rollback } = prepareCompatibleChatUpdate(
             previousChat,
             chat,

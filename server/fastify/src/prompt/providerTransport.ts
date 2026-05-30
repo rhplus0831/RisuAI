@@ -23,10 +23,9 @@ export interface ProviderChunkTransportOptions {
   sideEffects?: (result: string) => PromptChatEvent[]
   errorRestoration?: () => ErrorEvent['restoration']
   /**
-   * Slice 4 (A2): the server post-generation pass, run over the full completion
-   * text after the stream succeeds and **before** the terminal `done`. Its
-   * result is folded into the `done` frame's `postGeneration` field so the
-   * derived scriptstate delta / final text / resend reach the browser in-band.
+   * Server post-generation pass, run over the full completion text after the
+   * stream succeeds and before the terminal `done`. Its result is folded into
+   * `done.postGeneration` so derived state reaches the browser in-band.
    * Runs only on a successful completion (never on abort / error). Returns
    * `undefined` (or throws — the route callback swallows its own failures) to
    * leave `done` untouched.
@@ -41,9 +40,8 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * Phase 7-12d-iii-a: map provider-agnostic completion frames onto the
- * locked `/chat` SSE taxonomy. The browser send path is wired later; this
- * helper only defines how server-side provider chunks become chat events.
+ * Map provider-agnostic completion frames onto the locked `/chat` SSE taxonomy.
+ * This helper defines how server-side provider chunks become chat events.
  */
 export async function emitProviderChunks(
   frames: AsyncIterable<CompletionStreamFrame>,
@@ -59,10 +57,8 @@ export async function emitProviderChunks(
       emit(event)
     }
   }
-  // Slice 4 (A2): run the post-generation pass, then emit the terminal `done` with
-  // its derivation folded in. Only the success paths call this; error/abort paths
-  // emit a bare `done` (no post-gen). The route's callback owns its own try/catch,
-  // so a post-gen failure degrades to a plain `done` rather than failing the send.
+  // Run the post-generation pass before the terminal `done`. Error and abort
+  // paths emit a bare `done`; post-gen failures degrade to a plain `done`.
   const emitSuccessDone = async (): Promise<void> => {
     emitSideEffects()
     const postGeneration = normalizedOptions.postGeneration

@@ -32,7 +32,6 @@
     save: { newData: string }
   }>()
 
-  // Min drag selection length
   const MIN_DRAG_SELECTION_LENGTH = 5
 
   let isEditing = $state(false)
@@ -61,11 +60,9 @@
 
   const SELECTOR = EDITABLE_BLOCK_SELECTORS.join(', ')
 
-  // Block edit state
   let blockButtonWrapper: HTMLDivElement | null = null
   let currentHoveredBlock: HTMLElement | null = null
 
-  // Drag edit state
   let dragButtonWrapper: HTMLDivElement | null = null
   let currentDragSelectedText: string = ''
 
@@ -73,14 +70,13 @@
   let isBlockActive = $derived(blockEditEnabled && isInViewport)
   let isDragActive = $derived(dragEditEnabled && isInViewport)
 
-  // Check if element has text content (excluding buttons)
+  // Exclude action buttons when checking editable block text.
   function hasTextContent(el: HTMLElement): boolean {
     const clone = el.cloneNode(true) as HTMLElement
     clone.querySelectorAll('button').forEach((btn) => btn.remove())
     return !!clone.textContent?.trim()
   }
 
-  // Create edit/delete button pair
   function createButton(
     className: string,
     onEdit: () => void,
@@ -130,7 +126,6 @@
     return wrapper
   }
 
-  // Show/hide block edit button
   function showBlockButton(block: HTMLElement) {
     if (currentHoveredBlock === block && blockButtonWrapper?.style.display === 'block') return
 
@@ -151,8 +146,6 @@
       document.body.appendChild(blockButtonWrapper)
     }
 
-    // Calculate button position (fixed to viewport)
-    // Place button at top-left of block
     const rect = block.getBoundingClientRect()
     const buttonHeight = 32
     blockButtonWrapper.style.position = 'fixed'
@@ -170,7 +163,6 @@
     currentHoveredBlock = null
   }
 
-  // Show/hide drag edit button
   function showDragButton(rect: DOMRect) {
     if (!dragButtonWrapper) {
       dragButtonWrapper = createButton(
@@ -209,13 +201,11 @@
 
     matchingState.mode = mode
 
-    // Set matching options based on mode
     const options =
       mode === 'edit'
         ? { extendToEOL: false, snapStartToPrevEOL: false }
         : { extendToEOL: true, snapStartToPrevEOL: true }
 
-    // Determine if matching from HTML element or text
     if (typeof elementOrText === 'string') {
       matchingState.targetElement = null
       matchingState.originalHTML = ''
@@ -239,7 +229,6 @@
       return
     }
 
-    // Filter high-confidence matches
     const highConfidenceMatches = matchingState.foundMatches.filter((m) => m.confidence >= 0.95)
 
     if (highConfidenceMatches.length === 1) {
@@ -252,7 +241,6 @@
     hideDragButton()
   }
 
-  // Start block edit/delete
   function startBlockEdit() {
     if (!currentHoveredBlock) return
     findAndProcessMatches('edit', currentHoveredBlock, proceedWithEdit)
@@ -263,7 +251,6 @@
     findAndProcessMatches('delete', currentHoveredBlock, proceedWithDelete)
   }
 
-  // Start drag edit/delete
   function startDragEdit() {
     if (!currentDragSelectedText) return
     findAndProcessMatches('edit', currentDragSelectedText, proceedWithEdit)
@@ -274,14 +261,12 @@
     findAndProcessMatches('delete', currentDragSelectedText, proceedWithDelete)
   }
 
-  // Proceed with edit/delete after match found
   function proceedWithEdit(match: RangeResultWithContext) {
     matchingState.selectedRange = match
     matchingState.mode = null
     editText = messageData.slice(match.start, match.end)
     isEditing = true
 
-    // Focus textarea on next tick
     setTimeout(() => {
       if (textareaRef) {
         textareaRef.focus()
@@ -298,7 +283,6 @@
     }, 10)
   }
 
-  // Select match from list
   function selectMatchAtIndex(index: number) {
     const match = matchingState.foundMatches[index]
     if (!match) return
@@ -310,7 +294,7 @@
     }
   }
 
-  // Cancel match selection (restore HTML if in edit mode)
+  // Restore block HTML if match selection is canceled during edit.
   function cancelMatchSelection() {
     if (
       matchingState.mode === 'edit' &&
@@ -329,7 +313,6 @@
     }
   }
 
-  // Save edited text
   function handleSave() {
     if (!matchingState.selectedRange) return
 
@@ -339,7 +322,6 @@
     closeEdit()
   }
 
-  // Cancel editing
   function handleCancel() {
     if (matchingState.targetElement && matchingState.originalHTML) {
       matchingState.targetElement.innerHTML = matchingState.originalHTML
@@ -347,7 +329,6 @@
     closeEdit()
   }
 
-  // Close edit mode
   function closeEdit() {
     isEditing = false
     editText = ''
@@ -360,14 +341,12 @@
     }
   }
 
-  // Proceed with delete after match selected
   function proceedWithDelete(match: RangeResultWithContext) {
     matchingState.selectedRange = match
     matchingState.mode = null
     isConfirmingDelete = true
   }
 
-  // Confirm deletion
   function handleConfirmDelete() {
     if (!matchingState.selectedRange) return
 
@@ -378,12 +357,10 @@
     closeDeleteConfirm()
   }
 
-  // Cancel deletion
   function handleCancelDelete() {
     closeDeleteConfirm()
   }
 
-  // Close delete confirmation
   function closeDeleteConfirm() {
     isConfirmingDelete = false
     matchingState = {
@@ -411,7 +388,6 @@
     }
   }
 
-  // Check if mouse is over block button
   function isMouseOnBlockButton(mouseX: number, mouseY: number): boolean {
     if (!blockButtonWrapper || blockButtonWrapper.style.display === 'none') return false
     const rect = blockButtonWrapper.getBoundingClientRect()
@@ -420,7 +396,6 @@
     )
   }
 
-  // Check if mouse is in extended button zone above block
   function isMouseInButtonZone(mouseX: number, mouseY: number, block: HTMLElement): boolean {
     const rect = block.getBoundingClientRect()
     const buttonHeight = 32
@@ -430,7 +405,6 @@
     return mouseX >= rect.left && mouseX <= rect.right && mouseY >= extendedTop && mouseY < rect.top
   }
 
-  // Viewport detection (enable block/drag edit when in view)
   $effect(() => {
     if (!bodyRoot || (!blockEditEnabled && !dragEditEnabled)) return
 
@@ -456,7 +430,7 @@
     }
   })
 
-  // Block hover detection (using elementFromPoint for precise detection)
+  // Track hover using document-level coordinates so the floating button stays reachable.
   $effect(() => {
     if (!bodyRoot || !isBlockActive) return
 
@@ -499,7 +473,6 @@
           }
         }
 
-        // Check if element is not hidden (verify at center top of block)
         const blocks = bodyRoot.querySelectorAll(SELECTOR)
         for (const block of blocks) {
           if (isMouseInButtonZone(lastMouseX, lastMouseY, block as HTMLElement)) {
@@ -520,7 +493,6 @@
       })
     }
 
-    // mouseleave handler
     const handleLeave = (e: MouseEvent) => {
       if (isEditing) return
 
@@ -538,7 +510,6 @@
       hideBlockButton()
     }
 
-    // Listen at document level to include button area
     document.addEventListener('mousemove', handleMove)
     bodyRoot.addEventListener('mouseleave', handleLeave)
     document.addEventListener('scroll', handleScroll, true)
@@ -553,7 +524,6 @@
     }
   })
 
-  // Drag selection detection
   $effect(() => {
     if (!bodyRoot || !isDragActive) return
 
@@ -571,7 +541,6 @@
           return
         }
 
-        // Check if selection is within bodyRoot
         const range = sel.getRangeAt(0)
         const ancestor = range.commonAncestorContainer
         const ancestorEl =
@@ -584,21 +553,18 @@
           return
         }
 
-        // Position button based on selection bounds
         const rect = range.getBoundingClientRect()
         if (rect.width === 0 && rect.height === 0) {
           hideDragButton()
           return
         }
 
-        // Check selection text length
         const selectedText = sel.toString()
         if (selectedText.length < MIN_DRAG_SELECTION_LENGTH) {
           hideDragButton()
           return
         }
 
-        // Save selected text and show button
         currentDragSelectedText = selectedText
         showDragButton(rect)
       }, 150)
@@ -627,7 +593,6 @@
     }
   })
 
-  // Cleanup on component unmount
   onDestroy(() => {
     if (blockButtonWrapper) {
       blockButtonWrapper.remove()
@@ -698,7 +663,6 @@
   </div>
 {/snippet}
 
-<!-- Match failed modal -->
 {#if showMatchFailedModal}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -727,7 +691,6 @@
   </div>
 {/if}
 
-<!-- Delete confirmation modal -->
 {#if isConfirmingDelete}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -778,7 +741,6 @@
   </div>
 {/if}
 
-<!-- Match selection modal (shared for edit/delete) -->
 {#if matchingState.mode === 'edit'}
   {@render MatchSelectionModal(
     'edit',
@@ -793,7 +755,6 @@
   )}
 {/if}
 
-<!-- Edit modal (shown only during edit) -->
 {#if isEditing}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1098,7 +1059,6 @@
     background: #4b5563;
   }
 
-  /* Match Selection Modal */
   .partial-match-selection-modal {
     background: var(--risu-theme-bgcolor, #fff);
     border-radius: 12px;

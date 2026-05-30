@@ -222,11 +222,9 @@ describe('module imports', () => {
     // The sequencer is fire-and-forget; let microtasks settle.
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    // A4EC2 / B1: applyModule now serializes its three child-replacement
-    // commands via runOptimisticCommandSequence (the dispatch* bridges with
-    // delayMs=0 raced on cachedServerCommandRevision). Assert the sequencer
-    // received factories that build the three commands with the merged
-    // arrays.
+    // applyModule serializes its three child-replacement commands via
+    // runOptimisticCommandSequence. Assert the sequencer received factories that
+    // build the three commands with the merged arrays.
     expect(runOptimisticCommandSequence).toHaveBeenCalledTimes(1)
     const [factories] = runOptimisticCommandSequence.mock.calls[0]
     expect(factories).toHaveLength(3)

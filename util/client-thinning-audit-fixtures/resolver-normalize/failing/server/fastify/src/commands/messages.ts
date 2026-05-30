@@ -1,7 +1,5 @@
-// Minimal fixture reproducing the A4R4 regression class for the message pair: a
-// globally-addressed mutation resolves a message by its global id WITHOUT first
-// running global message-id normalization in the same scope. The real
-// resolver/normalizer pair lives in server/fastify/src/commands/messages.ts.
+// Invariant: globally addressed message mutations normalize all message ids
+// before resolving a message by global id in the same scope.
 
 interface CharacterRecord {
   chats?: Record<string, unknown>[]

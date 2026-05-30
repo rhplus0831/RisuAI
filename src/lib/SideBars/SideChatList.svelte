@@ -148,9 +148,6 @@
             const chatIds: string[] = []
             const folderByChatId: Record<string, string | null> = {}
 
-            // const chats: HTMLElement = event.to
-            // chats.querySelectorAll()
-
             listEle.querySelectorAll('[data-risu-chat-folder-idx]').forEach((folder) => {
               const folderIdx = parseInt(folder.getAttribute('data-risu-chat-folder-idx'))
               folder.querySelectorAll('[data-risu-chat-idx]').forEach((chatInFolder) => {
@@ -249,10 +246,7 @@
 
         const selectedChatId = chara.chats[currentChatPage]?.id
         if (canUseServerCommands()) {
-          // A4EC2 / B1: serialize the folder+chat reorder commands against
-          // one optimistic snapshot. Without serialization the second call
-          // reads the cached baseRevision before the first response updates
-          // it, races, and 409s — leaving folders moved but chats not.
+          // Serialize folder and chat reorders against one optimistic snapshot.
           const folderIdsSnapshot = [...folderIds]
           const chatIdsSnapshot = [...chatIds]
           const folderByChatIdSnapshot = { ...folderByChatId }
@@ -777,8 +771,7 @@
       <button
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={async () => {
-          // Phase 4.3: the branch tree hashes every chat's messages; hydrate the
-          // lazily-loaded chats before opening it.
+          // Branch tree hashes require all lazily-loaded chats first.
           await ensureAllChatsHydrated()
           alertStore.set({
             type: 'branches',

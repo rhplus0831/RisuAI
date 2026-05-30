@@ -7,10 +7,9 @@
  * the server. The discriminator (`type`) is carried as the SSE `event:`
  * name; the JSON `data:` line holds the rest of the fields.
  *
- * Phase 7-12d-ii consumes `stage` / `prompt` / `message_patch` / `info` /
- * `error` / `done`. The remaining dispatch-coupled `token` / `side_effect` /
- * `warning` events are declared here for completeness and tolerated until
- * later send-path dispatch slices land.
+ * Prompt assembly consumes `stage` / `prompt` / `message_patch` / `info` /
+ * `error` / `done`; generation streams also use `token` / `side_effect` /
+ * `warning`.
  */
 
 import type { Message } from '../../storage/database.svelte'
@@ -30,12 +29,12 @@ export interface PromptEvent {
   promptInfo?: Record<string, unknown>
   lorebookActivation?: unknown
   /**
-   * The budgeted flat prompt as full `OpenAIChat` rows (7-12b). `messages`
-   * is a lossy `{ role, content }` projection; `formated` preserves the
-   * fields a preview / dispatch needs. Optional — older servers omit it.
+   * The budgeted flat prompt as full `OpenAIChat` rows. `messages` is a lossy
+   * `{ role, content }` projection; `formated` preserves fields a preview /
+   * dispatch needs. Optional for older servers.
    */
   formated?: OpenAIChat[]
-  /** Logit-bias rows for dispatch (7-12b). */
+  /** Logit-bias rows for dispatch. */
   biases?: [string, number][]
 }
 
@@ -48,9 +47,9 @@ export interface InfoEvent {
   generationInfo?: Record<string, unknown>
   /**
    * The chat revision after the route persisted the assembly-time chat-var
-   * delta (Phase 9 C-A1). Present only when a persisting mode actually wrote
-   * `chatVarMutations`; the browser reconciles its cached command revision to
-   * it (`setCachedServerCommandRevision`) so the next command does not conflict.
+   * delta. Present only when a persisting mode actually wrote `chatVarMutations`;
+   * the browser reconciles its cached command revision to avoid the next command
+   * conflicting.
    */
   revision?: number
 }
@@ -148,11 +147,10 @@ export interface ErrorEvent {
 }
 
 /**
- * Slice 4 (A2): the server post-generation derivation, surfaced on the terminal
- * `done` frame. Mirrors `PostGenerationFrame` in the server `sseEvents.ts`. The
- * browser applies `messagePatch` to its projection, writes `finalText` onto the
- * just-streamed assistant message (it no longer runs `editoutput` on the server
- * path), reconciles `revision`, and re-issues on `resendChat`.
+ * Server post-generation derivation, surfaced on the terminal `done` frame.
+ * Mirrors `PostGenerationFrame` in the server `sseEvents.ts`. The browser applies
+ * `messagePatch`, writes `finalText` onto the just-streamed assistant message,
+ * reconciles `revision`, and re-issues on `resendChat`.
  */
 export interface ServerChatPostGeneration {
   finalText?: string
@@ -166,7 +164,7 @@ export interface DoneEvent {
   result?: string
   generationId?: string
   generationInfo?: Record<string, unknown>
-  /** Slice 4 (A2): server post-generation derivation. See {@link ServerChatPostGeneration}. */
+  /** Server post-generation derivation. See {@link ServerChatPostGeneration}. */
   postGeneration?: ServerChatPostGeneration
 }
 

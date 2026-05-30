@@ -103,8 +103,7 @@ describe('messageStore CRUD', () => {
   })
 })
 
-// Phase 6c: the reroll buffer ("don't lose a rerolled result"). Alternate rows are
-// preserved candidates that NEVER appear in the active transcript queries.
+// Reroll buffer candidates never appear in active transcript queries.
 describe('reroll-alternate rows', () => {
   it('keeps alternates out of every active query', () => {
     const db = makeDb(makeDataDir())

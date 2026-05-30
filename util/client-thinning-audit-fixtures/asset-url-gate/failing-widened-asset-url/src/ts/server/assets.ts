@@ -1,8 +1,5 @@
-// Adversarial variant of the A4R7 gate-helper defeat: `serverAssetUrl` keeps
-// the anchored asset-id regex AND a null reject path (so the old surface-level
-// checks are satisfied), but a "sincere refactor" widened it to pass any
-// http(s):// URL straight through. The accepted shapes are no longer the
-// documented set; the hardened rule flags the raw `loc` passthrough.
+// Violation: serverAssetUrl widens the documented shape gate by passing any
+// http(s):// URL straight through.
 export function serverAssetUrl(loc: string): string | null {
   if (loc.startsWith('http://') || loc.startsWith('https://')) {
     return loc

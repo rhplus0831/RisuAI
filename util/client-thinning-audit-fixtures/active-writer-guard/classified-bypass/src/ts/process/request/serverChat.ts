@@ -1,6 +1,4 @@
-// EC5 needle carrier for the server chat client helper. In the real tree this
-// attaches the writer session header and handles the stale-writer (423)
-// response for chat generation.
+// Server chat client needle carrier for writer headers and stale-writer handling.
 export const serverChatActiveWriterHandling = {
   header: 'activeWriterSessionHeader',
   stale: 'handleActiveWriterStaleResponse',

@@ -956,7 +956,7 @@
       $sideBarClosing = true
     }}
   >
-    <!-- <button class="border-none bg-transparent p-0 text-textcolor"><X /></button> -->
+    <!-- Close icon intentionally omitted. -->
   </button>
   {#if sideBarMode === 0}
     {#if $selectedCharID < 0 || $settingsOpen}

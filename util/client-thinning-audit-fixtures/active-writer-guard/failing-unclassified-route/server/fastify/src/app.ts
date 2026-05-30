@@ -1,7 +1,5 @@
-// EC5 fixture: buildApp wiring. The active-writer guard must be registered
-// after bootstrap (so the latest writer session is known) and before any
-// server-owned mutation route registrar. The registrars are imported (not
-// defined here) so the `(`-suffixed needles only match the ordered calls below.
+// Invariant: buildApp registers the active-writer guard after bootstrap and
+// before server-owned mutation routes.
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerActiveWriterGuard } from './activeWriter.js'
 import {

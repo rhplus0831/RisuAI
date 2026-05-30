@@ -29,7 +29,6 @@
       const values = JSON.parse(json)
       output = template.render(values)
     } catch (e) {
-      //log error stack of e
       console.error(e.stack)
       output = `Error: ${e}`
     }

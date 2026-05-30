@@ -1,5 +1,4 @@
-// A4R-pluginv2 fixture (passing): the classifier keeps the permanent pluginV2
-// gate (registry import + edit-set inspection + hard fail) and the server
+// Invariant: the classifier keeps the pluginV2 hard-fail gate while the server
 // assembler has no plugin execution path.
 import { pluginV2 } from '../../../plugins/plugins.svelte'
 

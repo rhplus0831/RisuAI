@@ -1,9 +1,5 @@
-// Adversarial variant of the A4R2 conflict-replay anti-pattern. The conflict
-// status and the `baseRevision` payload key are aliased to module-level
-// constants, so the `applyMessageEdit` body no longer contains the bare
-// `'conflict'` / `'baseRevision'` substrings the old heuristic keyed on. The
-// function still blindly replays the mutating command on a conflict, so the
-// hardened AST rule must reject it.
+// Invariant: conflict replay detection follows aliases for the conflict status
+// and baseRevision key, not just bare string literals.
 
 const CONFLICT_STATUS = 'conflict'
 const REVISION_KEY = 'baseRevision'

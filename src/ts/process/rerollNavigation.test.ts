@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Lazy-projection Phase 6c (client): unit-drive the extracted reroll swipe state
-// machine. Per the handover, keep `stores.svelte` REAL (DBState is the live state
-// the machine reads/writes) and mock only the command layer (the durable dispatch)
-// + the prefetch buffer.
+// Unit-drive the extracted reroll swipe state machine. Keep `stores.svelte` real
+// (DBState is the live state the machine reads/writes) and mock only the command
+// layer plus the prefetch buffer.
 
 const commandSpies = vi.hoisted(() => ({
   currentChatStateSnapshot: vi.fn(() => ({ snapshot: true })),

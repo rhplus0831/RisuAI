@@ -376,9 +376,7 @@
         const attempted = cloneJsonValue(draft.value)
         const previous = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
         withTrustedServerProjectionWrite(() => {
-          // Re-read DBState.db inside the callback: the trusted write swaps it
-          // to a mutable clone, so an alias captured earlier still points at
-          // the read-only projection and would throw on write.
+          // Re-read inside the trusted write to get the mutable projection.
           const target = DBState.db as unknown as Record<string, unknown>
           target[key] = attempted
         })
@@ -1011,7 +1009,6 @@
 {/if}
 
 {#if submenu === 1 || submenu === -1}
-  <!-- Data-driven basic parameters -->
   <SettingRenderer items={allBasicParameterItems} {modelInfo} {subModelInfo} />
   {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.aiModel.startsWith('local_') || DBState.db.aiModel.startsWith('hf:::')}
     <span class="text-textcolor">Repetition Penalty</span>
@@ -1311,7 +1308,7 @@
       bind:value={ainconfigDraft.value.typical_p}
     />
   {:else}
-    <!-- Standard parameters now handled by SettingRenderer above -->
+    <!-- Standard parameters come from SettingRenderer. -->
   {/if}
 
   {#if (DBState.db.reverseProxyOobaMode && DBState.db.aiModel === 'reverse_proxy') || DBState.db.aiModel === 'ooba'}
@@ -1322,7 +1319,6 @@
     <OpenrouterSettings />
   {/if}
 
-  <!-- Separate Parameters - handled by custom component -->
   <SeparateParametersSection />
 {/if}
 

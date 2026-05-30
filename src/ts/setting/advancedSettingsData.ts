@@ -193,7 +193,7 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
 
-  // Lazy-projection Phase 5 — lorebook stubs (EXPERIMENTAL, Fastify-only).
+  // Lorebook stubs (EXPERIMENTAL, Fastify-only).
   {
     id: 'adv.lorebookStubsWarn',
     type: 'header',

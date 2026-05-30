@@ -1,5 +1,4 @@
-// A4R-provider-capability fixture (bypass): the browser completion classifier
-// consumes the shared table.
+// Invariant: the browser completion classifier consumes the shared capability table.
 import { resolveProviderCapability } from './providerCapability'
 
 export function resolveServerCompletionRoute(format: number) {

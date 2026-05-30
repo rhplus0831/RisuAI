@@ -47,18 +47,14 @@ export interface StreamJob {
   heartbeatSec: number
   timeoutMs: number
   /**
-   * Durable-generation extensions (Milestone 1). Unused by the proxy stream job.
-   * `chatId` ties the job to its chat for the one-job-per-chat submission lock +
-   * the reload-resume `activeGenerationJobs` projection. `writerSessionId` records
-   * the active-writer identity present at submission, for diagnostics (and a future
-   * Milestone-2 restart-durability hook). The M1 completion write does NOT re-check
-   * it — it is a server-owned direct mutation finishing an already-authorized job;
-   * write-conflict prevention is the submission gate + one-job-per-chat, not a
-   * per-job lease re-check (see step-3 gotcha A).
+   * Durable-generation extensions. Unused by the proxy stream job. `chatId` ties
+   * the job to its chat for the one-job-per-chat submission lock and reload-resume
+   * projection. `writerSessionId` records the active-writer identity present at
+   * submission for diagnostics; completion does not re-check it because the job was
+   * already authorized at submission.
    *
-   * `mode` / `regenerateMessageId` (Phase 6b) ride the `activeGenerationJobs`
-   * projection so a reloaded browser can reattach with the right generating mode
-   * — without them the reattach renders a continue/regenerate as a fresh send.
+   * `mode` / `regenerateMessageId` ride the `activeGenerationJobs` projection so
+   * a reloaded browser can reattach with the right generating mode.
    */
   chatId?: string
   writerSessionId?: string | null

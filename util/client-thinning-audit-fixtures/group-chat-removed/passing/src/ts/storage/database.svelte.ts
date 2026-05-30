@@ -1,5 +1,4 @@
-// A4R-group-chat-removed fixture (passing): setDatabase keeps the load-time filter
-// that strips group characters before they enter client state.
+// Invariant: load-time database filtering keeps group characters out of client state.
 interface Database {
   characters: ({ type?: string } | null)[]
 }

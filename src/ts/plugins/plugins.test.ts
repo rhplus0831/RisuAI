@@ -228,10 +228,9 @@ describe('plugin database command bridge', () => {
       expect(calls.some((call) => call.url === '/api/v1/commands/modules')).toBe(true)
       expect(calls.some((call) => call.url === '/api/v1/commands/modules/enable')).toBe(true)
     })
-    // A4EC2 / B1: dispatchModuleCollectionPatch and dispatchEnabledModulesPatch
-    // now route through runOptimisticCommandSequence. Within one sequencer
-    // each command awaits the previous response, so baseRevision is read
-    // from cache after each result, not from the original bootstrap.
+    // The module patch dispatchers route through runOptimisticCommandSequence.
+    // Within one sequencer, each command awaits the previous response, so
+    // baseRevision is read from cache after each result, not from the bootstrap.
     expect(calls.find((call) => call.url === '/api/v1/commands/modules/mod-a')).toMatchObject({
       method: 'PATCH',
       body: {
@@ -257,11 +256,9 @@ describe('plugin database command bridge', () => {
   })
 
   it('serializes module collection patch commands against advancing revisions', async () => {
-    // A4EC2 / B1: dispatchModuleCollectionPatch fans out update/create/delete/
-    // reorder calls against one optimistic snapshot. Pre-fix all N shared the
-    // same cached baseRevision and only the first won, the rest 409d. The
-    // sequencer must read the revision returned by each command into the
-    // next.
+    // dispatchModuleCollectionPatch fans out update/create/delete/reorder calls
+    // against one optimistic snapshot. The sequencer must thread each returned
+    // revision into the next command.
     let nextRevision = 100
     const captured: { url: string; body: { baseRevision?: number } }[] = []
     vi.stubGlobal(
@@ -310,9 +307,9 @@ describe('plugin database command bridge', () => {
   })
 
   it('serializes enabled-modules diff commands against advancing revisions', async () => {
-    // A4EC2 / B1: dispatchEnabledModulesPatch fans out N enable/disable
-    // calls against one optimistic snapshot. The sequencer must thread the
-    // revision returned by each command into the next.
+    // dispatchEnabledModulesPatch fans out N enable/disable calls against one
+    // optimistic snapshot. The sequencer must thread each returned revision into
+    // the next command.
     let nextRevision = 200
     const captured: { url: string; body: { baseRevision?: number } }[] = []
     vi.stubGlobal(

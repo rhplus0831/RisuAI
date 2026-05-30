@@ -24,16 +24,15 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { runStartTrigger, type TriggerRunResult } from './triggers.js'
 
 /**
- * Phase 7-5a/b/c history walk ported from the SPA's
- * `src/ts/process/promptAssembly/buildHistoryWindow.ts`,
- * `formatHistoryMessage.ts`, and `src/ts/process/exampleMessages.ts`.
+ * History walk ported from the SPA's `buildHistoryWindow.ts`,
+ * `formatHistoryMessage.ts`, and `exampleMessages.ts`.
  *
- * 7-5a (landed): examples block, `[Start a new chat]` marker gated by
+ * Includes the examples block, `[Start a new chat]` marker gated by
  * `!aiModel.startsWith('novelai') && !promptSettings.trimStartNewChat`,
  * first-message selection, `makeMs` filter for `disabled === true` /
  * `'allBefore'`, and per-message role mapping.
  *
- * 7-5b (this slice):
+ * History formatting:
  *   - First message and per-message bodies flow through
  *     `processScript(ctx, char, data, 'editprocess', cbsConditions)`
  *     after a pre-pass through `expandVariables` (mirrors the SPA's
@@ -55,10 +54,10 @@ import { runStartTrigger, type TriggerRunResult } from './triggers.js'
  *   - Per-message `memo` defaults to `msg.chatId`, backfilling
  *     `msg.chatId` with a UUID v4 when missing (mirrors `formatHistoryMessage.ts:69-71`).
  *
- * 7-5c (this slice): multimodal inlays + `{{asset_prompt::}}`. Adds an
+ * Multimodal inlays + `{{asset_prompt::}}`. Adds an
  * `AssetLookup` DI seam so the route layer can resolve inlay ids and
  * asset names to `MultiModal` bytes from request-body `inlayAssets` and
- * the Phase 2 assets store. Defaults to a no-op lookup so prompt-leaf
+ * the asset store. Defaults to a no-op lookup so prompt-leaf
  * tests can assert tag stripping without standing up the storage path.
  *
  * Inlay tag handling mirrors `formatHistoryMessage.ts:73-132`:
@@ -82,7 +81,7 @@ import { runStartTrigger, type TriggerRunResult } from './triggers.js'
  *   - regex accepts both `asset_prompt::` and `assetprompt::` (the SPA
  *     uses `asset_?prompt::` with `i` flag).
  *
- * 7-5e (this slice): `addedTokens` accumulator over every emitted
+ * `addedTokens` accumulator over every emitted
  * chat row (examples, start-new-chat marker, first message, per-message
  * bodies) plus a depth-prompt token preflight when the caller supplies
  * a `LorebookActivationReport`. Splicing depth prompts into history is
@@ -95,27 +94,21 @@ import { runStartTrigger, type TriggerRunResult } from './triggers.js'
  * 3, `useName: 'name'`. `encodingForModel` then picks `o200k_base` vs
  * `cl100k_base`.
  *
- * 7-9f (this slice): start-trigger handoff. After the first-message
+ * Start-trigger handoff. After the first-message
  * push, `buildHistoryWindow` runs `runStartTrigger` (the `triggers.ts`
  * adapter), re-runs `makeMs` against the possibly-mutated chat, folds
  * `triggerResult.tokens` into `addedTokens`, early-returns on
  * `stopSending`, and surfaces `triggerResult` / `currentChat` /
  * `varChanged` for the assemble root (which applies
  * `additonalSysPrompt` and persists the db). This makes the history
- * walk feature-complete (closes 7-5d). `buildHistoryWindow` is now
- * `async` because `runStartTrigger` is.
+ * walk feature-complete. `buildHistoryWindow` is async because
+ * `runStartTrigger` is.
  *
- * Slice 3b sub-slice 3 (Lua `editprocess`): each first-message /
- * per-message body additionally flows through the injectable
- * `editProcess` seam between the `expandVariables` pre-pass and
- * `processScript`, mirroring the leading
- * `runLuaEditTrigger(char, 'editprocess', data, …)` inside the SPA's
- * `processScriptFull` (`scripts.ts:130`). Lua `editprocess` is a browser
- * no-op — `runLuaEditTrigger` early-returns for it (`scriptings.ts:1431`,
- * mirrored in `luaRuntime.ts`) — so the default seam is identity; the
- * assembler (`assemble.ts::fillHistoryAndBias`) supplies the VM-backed
- * hook so the no-op stays faithful through the runtime if the browser's
- * behavior ever changes.
+ * Each first-message / per-message body additionally flows through the
+ * injectable `editProcess` seam between `expandVariables` and `processScript`.
+ * Lua `editprocess` is a browser no-op, so the default seam is identity; the
+ * assembler supplies the VM-backed hook so the no-op stays faithful through the
+ * runtime.
  */
 
 export interface AssetLookup {
@@ -130,9 +123,9 @@ export interface AssetLookup {
 export const NO_ASSETS: AssetLookup = {}
 
 /**
- * The `editprocess` history-edit seam (slice 3b sub-slice 3). Runs over each
- * first-message / per-message body between the `expandVariables` pre-pass and the
- * regex `processScript`, mirroring the leading
+ * The `editprocess` history-edit seam. Runs over each first-message /
+ * per-message body between the `expandVariables` pre-pass and the regex
+ * `processScript`, mirroring the leading
  * `runLuaEditTrigger(char, 'editprocess', data, { index })` inside the SPA's
  * `processScriptFull` (`scripts.ts:130`). `index` is the per-row index the SPA
  * threads as `{ index: chatID }` meta (`-1` for the first message). Lua
@@ -318,10 +311,8 @@ async function formatHistoryMessage(
     role: msg.role,
   }).text
 
-  // Lua `editprocess` hook (slice 3b sub-slice 3): runs through the runtime
-  // before the regex `processScript`, mirroring `processScriptFull`'s leading
-  // `runLuaEditTrigger`. A browser no-op, so identity unless the assembler
-  // supplies the VM-backed hook.
+  // Lua `editprocess` runs through the runtime before regex `processScript`.
+  // A browser no-op, so identity unless the assembler supplies the VM hook.
   const luaProcessed = await editProcess(preExpanded, index)
 
   let formatted = processScript(
@@ -485,9 +476,8 @@ export async function buildHistoryWindow(
       ...ctx,
       chara: currentChar,
     }).text
-    // Lua `editprocess` no-op hook (slice 3b sub-slice 3). The SPA threads the
-    // first message through `processScript` with the default `chatID = -1`, so
-    // the leading `runLuaEditTrigger` sees `{ index: -1 }`.
+    // Lua `editprocess` no-op hook. The SPA threads the first message through
+    // `processScript` with `chatID = -1`, so `runLuaEditTrigger` sees `{ index: -1 }`.
     const luaProcessed = await editProcess(preExpanded, -1)
     let content = processScript(
       ctx,
@@ -569,10 +559,9 @@ export async function buildHistoryWindow(
 }
 
 /**
- * Phase 7-7e: splice lorebook depth-prompts into a built history
- * window. Mirrors `src/ts/process/index.svelte.ts:275-283` — the SPA
- * runs this at the assemble root, after `buildHistoryWindow` and
- * `buildMemoryWindow`, against the final flattened chats array.
+ * Splice lorebook depth-prompts into a built history window. Mirrors the SPA
+ * root, which runs this after `buildHistoryWindow` and `buildMemoryWindow`
+ * against the final flattened chats array.
  *
  * Index semantics:
  *   - `@@depth N`         → splice at index `N` (counts from start).

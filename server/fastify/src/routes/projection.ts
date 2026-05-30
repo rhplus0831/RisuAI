@@ -10,7 +10,7 @@ import {
 } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
 
-// Targeted per-resource projection (lazy-projection Phase 2).
+// Targeted per-resource projection.
 //
 // Maps a command-event `resource` to the set of top-level `database` keys it
 // owns, so a *foreign* command event can refresh only those keys instead of
@@ -24,8 +24,7 @@ import { maskProviderSecrets } from '../providerSecrets.js'
 // Under the single-writer invariant the only foreign command events that
 // actually occur are server-originated ones (`generation.persisted`,
 // `asset.created`); the rest of the map exists for completeness and for the
-// gap/reconnect recovery path. Phases 4–5 add entity-scoped hydration on top of
-// this same client fetch+merge primitive.
+// gap/reconnect recovery path.
 const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   character: ['characters', 'characterOrder'],
   chat: ['characters'],
@@ -73,9 +72,8 @@ export function registerProjectionRoutes(
       const { resource } = req.params
       const { revision } = getSchemaState(db)
 
-      // Lazy-projection Phase 4.3: per-chat message hydration. The client fetches
-      // this on chat-open to fill the stubbed `message[]`. Distinct from the
-      // event-driven `chat` resource (which projects chat metadata).
+      // Per-chat message hydration fills the stubbed `message[]` on chat-open.
+      // Distinct from the event-driven `chat` resource, which projects metadata.
       if (resource === 'chatMessages') {
         const chatId = req.query.id
         if (typeof chatId !== 'string' || chatId.trim() === '') {
@@ -89,15 +87,14 @@ export function registerProjectionRoutes(
           chatId,
           message: hydration.message,
           hypaV3Data: hydration.hypaV3Data,
-          // Phase 6c: the preserved reroll candidates ("don't lose a rerolled
-          // result"). Present (possibly empty); the current client ignores it.
+          // Preserved reroll candidates. Present, possibly empty; the current
+          // client ignores it.
           alternates: hydration.alternates,
         }
       }
 
-      // Phase 5: per-character `globalLore` hydration. The client fetches this on
-      // character-open to fill the stubbed globalLore (when `enableLorebookStubs`
-      // is on). Reads the full (un-stubbed) db.json.
+      // Per-character `globalLore` hydration fills the stubbed globalLore on
+      // character-open when `enableLorebookStubs` is on.
       if (resource === 'characterLorebook') {
         const characterId = req.query.id
         if (typeof characterId !== 'string' || characterId.trim() === '') {
@@ -121,7 +118,7 @@ export function registerProjectionRoutes(
       }
 
       // Ship chat stubs (message-free) here too; the client re-hydrates the open
-      // chat after merging a `characters` slice (see bootstrap.ts hydration).
+      // chat after merging a `characters` projection (see bootstrap.ts hydration).
       const persisted = loadStubProjection(db, dataDir)
       const masked = maskProviderSecrets(persisted.database)
       const source =

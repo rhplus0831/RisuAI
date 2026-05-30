@@ -1,6 +1,4 @@
-// EC5 active-writer classifier needle carrier. In the real tree this is the
-// requiresActiveWriter predicate in server/fastify/src/activeWriter.ts; every
-// active-writer route rule's needles must appear here.
+// Active-writer classifier needle carrier: every guarded route rule appears here.
 export function requiresActiveWriter(method: string, path: string): boolean {
   if (path.startsWith('/api/v1/commands/')) return true
   if (path === '/api/v1/import/risusave') return true

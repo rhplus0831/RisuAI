@@ -660,10 +660,8 @@ function checkStableIdCommandPaths(): void {
     [chats, ['createChatRecord', 'createChatFolderRecord']],
     [prompts, ['createPromptItemRecord']],
     [messages, ['createMessageRecord', 'readReplacementMessages', 'readGenerationResult']],
-    // A4EC3 / B2: command-path validators are the no-mint constructors.
-    // `validateGlobalLorebookCreate` and `validateLorebookEntries` replaced
-    // the repair-permissive `createGlobalLorebookRecord` and
-    // `readLorebookEntries` shims at the public routes.
+    // Lorebook command-path validators reject missing or duplicate ids without
+    // repair-on-read minting.
     [lorebooks, ['validateGlobalLorebookCreate', 'validateLorebookEntries']],
     [scripts, ['readScriptDefinitions', 'readTriggerDefinitions']],
   ])
@@ -746,11 +744,8 @@ function checkPluginStorageGates(): void {
     safeClass,
   )
 
-  // Device-local storage sinks. The set is DERIVED, not a fixed per-method
-  // allowlist: the browser storage globals plus every localforage instance
-  // declared in the file. Any method / accessor / SafeIdbFactory property that
-  // reaches one of these must assert Plugin Compatibility Mode first, so a NEW
-  // device-local method cannot slip past a hardcoded method-name list.
+  // Any method or accessor that reaches browser storage globals or a localforage
+  // instance must assert Plugin Compatibility Mode first.
   const deviceLocalSinks = new Set<string>([
     'localStorage',
     'sessionStorage',
@@ -1362,10 +1357,9 @@ function checkProviderOwnership(): void {
   }
 }
 
-// Alpha 4 rule rewrites: every rule below derives its surface from
-// authoritative source structures (function exports, call graphs, AST literals)
-// rather than literal pre-fix substrings or hardcoded allow-lists. The
-// invariant the rule enforces is stated in a comment above each function.
+// Client-thinning checks below derive their surfaces from source structures
+// (function exports, call graphs, AST literals), with each invariant stated
+// above its rule.
 
 // ----- A4R1: Passive refresh must not register writer ownership -----
 //
@@ -2770,17 +2764,15 @@ function extractSvelteAttributeExpressions(markup: string): string[] {
   return expressions
 }
 
-// Svelte files known to contain mutating dispatchers from earlier audits.
+// Svelte files whose script or markup can contain mutating dispatchers.
 const FANOUT_SVELTE_PATHS = ['src/lib/SideBars/SideChatList.svelte'] as const
 
 function checkAlpha4CompositeFanout(): void {
   const check = 'A4R-fanout composite command race'
   const dispatcherNames = findMutatingDispatcherNames()
 
-  // A scope races iff it holds ≥2 unserialized dispatches that can both fire in
-  // one invocation. Dispatches in mutually-exclusive branches (if/else,
-  // ternary arms) are dropped — only one fires — so a legitimate
-  // branch-per-command shape is not a false positive.
+  // A scope races when at least two unserialized dispatches can fire in one
+  // invocation. Mutually exclusive branches are ignored.
   const visitScope = (
     rl: string,
     scopeNode: Node,
@@ -2831,13 +2823,8 @@ function checkAlpha4CompositeFanout(): void {
     visitContainer(rl, file, true)
   }
 
-  // Svelte files: parse the <script> block(s) and the markup attribute handlers
-  // as TS via a throwaway in-memory project, then run the SAME AST scope
-  // analysis. This replaces the old line-text scan, which counted a line once
-  // (so two dispatches on one line under-counted) and skipped any line holding
-  // an `await` (so `const x = await y(); void dispatchA(); void dispatchB()`
-  // read as serialized). Findings report at file level because the synthetic
-  // sources do not carry the original line numbers.
+  // Parse Svelte scripts and markup handlers into temporary TS sources, then
+  // run the same AST scope analysis. Synthetic sources report at file level.
   const scriptBlockPattern = /<script\b[^>]*>([\s\S]*?)<\/script>/gi
   for (const rl of FANOUT_SVELTE_PATHS) {
     const absolute = path.join(root, rl)
@@ -2931,10 +2918,8 @@ const BOUNDED_ACCUMULATOR_DECLARATIONS: readonly BoundedAccumulatorDeclaration[]
 
 function checkAlpha4BoundedAccumulators(): void {
   const check = 'A4R-bounded process-lifetime accumulators'
-  // Surface assertion: each declared bounded accumulator must have an
-  // accompanying enforcement reference in the file (e.g. an `eviction`/`splice`/
-  // `slice` call that trims the collection). This is a minimum sanity check;
-  // the rationale string documents the chosen policy.
+  // Each declared bounded accumulator must have a visible trim/eviction
+  // reference; its rationale documents the chosen policy.
   for (const decl of BOUNDED_ACCUMULATOR_DECLARATIONS) {
     const fileText = text(decl.file)
     if (!fileText.includes(decl.expression)) {
@@ -2961,11 +2946,8 @@ function checkAlpha4BoundedAccumulators(): void {
     }
   }
 
-  // Drift detection: walk top-level Set/Map/Array declarations in
-  // server/fastify/src/ and class fields of those types. For each that is
-  // written by a request handler (heuristic: same file imports a route
-  // registrar or is part of a route file), require that it is in
-  // BOUNDED_ACCUMULATOR_DECLARATIONS or has a bound comment marker.
+  // Any request-reachable top-level Set/Map/Array accumulator must be declared
+  // above or carry an audit:bounded marker.
   const boundedFiles = new Set(BOUNDED_ACCUMULATOR_DECLARATIONS.map((d) => d.file))
   const ACCUMULATOR_TYPES = new Set(['Set', 'Map', 'Array'])
   for (const file of project.getSourceFiles()) {
@@ -3004,13 +2986,8 @@ function checkAlpha4BoundedAccumulators(): void {
 
 // ----- A4R-saveasset: every saveAsset caller declares classification -----
 //
-// Invariant: every call to `saveAsset(bytes, ...)` either:
-//   - passes a real filename string (arg index 2), so the persisted metadata
-//     honestly records the extension/content-type, OR
-//   - is annotated with a leading `// audit:image-default` comment that
-//     declares the call is intentionally PNG-defaulted.
-// Non-annotated callers without a filename default to PNG metadata, which is
-// the B7 bug. The audit asserts every call site picks one of the two paths.
+// Invariant: every `saveAsset(bytes, ...)` call either passes a real filename or
+// carries `audit:image-default` to declare intentional PNG-default metadata.
 
 const IMAGE_DEFAULT_MARKER = 'audit:image-default'
 
@@ -3092,8 +3069,7 @@ function checkAlpha4SaveAssetClassification(): void {
             )
           }
         }
-        // Non-empty literal or variable: assume the caller passes a real
-        // filename. The audit can be tightened later if drift appears.
+        // Non-empty literals and variables count as filename-providing calls.
         return
       }
       // Arg 2 omitted: no filename. Caller must be annotated image-default.
@@ -3110,18 +3086,15 @@ function checkAlpha4SaveAssetClassification(): void {
 
 // ----- A4R-pluginv2: no server-side plugin (V2) execution path -----
 //
-// Invariant (slice 3b): pluginV2 edit/replacer hooks are *permanent*
-// `unsupported` for server prompt assembly. Server-side plugin code execution is
-// on the no-port list (docs/client-thinning/plan.md) and pluginV2 is superseded
-// by Plugin V3, so — unlike the Lua arm, which slice 3b graduates to `server` —
-// this never flips. Two halves, both AST-derived so the deferral *comments* in
-// the assembler (which name `pluginV2[mode]`) never trip the rule:
+// Invariant: pluginV2 edit/replacer hooks stay unsupported for server prompt
+// assembly because server-side plugin code execution is on the no-port list.
+// Both halves are AST-derived so deferral comments in the assembler never trip
+// the rule:
 //
 //   negative — no file in the server assembler (server/fastify/src/prompt/**)
 //     may import the browser plugin runtime, reference the `pluginV2` registry,
 //     or open a JS eval sandbox (`eval` / `new Function`) that plugin code could
-//     be fed into. This is the "can't silently port it into an unsafe sandbox"
-//     guard the slice asks for.
+//     be fed into.
 //   positive — the client classifier (serverPromptAssembly.ts) must still import
 //     the `pluginV2` registry and inspect at least one edit set, so the hard-fail
 //     gate cannot be silently deleted (which would let a pluginV2 send fall
@@ -3132,9 +3105,7 @@ function checkPluginV2NoServerExecution(): void {
   const absDir = path.join(root, promptDir)
   const pluginRuntimeSpecifier = /\/plugins\/(?:plugins|apiV3)|plugins\.svelte/
 
-  // Negative half. The assembler dir is absent in fixtures that exercise only
-  // the positive (classifier) half; a missing dir means there is no server
-  // execution path to guard, so skip rather than fail.
+  // A missing assembler dir means the fixture has no server execution path to inspect.
   if (fs.existsSync(absDir)) {
     for (const entry of fs.readdirSync(absDir)) {
       if (!entry.endsWith('.ts')) continue
@@ -3393,8 +3364,8 @@ function hasIsGroupChatFalse(sf: SourceFile): boolean {
 function checkGroupChatRemoved(): void {
   const check = 'A4R-group-chat-removed legacy group chat removed from client'
 
-  // Negative half: the catalog / chat-list UI surfaces must not compare a character
-  // type to 'group'. (A missing file means a fixture exercises only the positive half.)
+  // Catalog and chat-list UI surfaces must not compare character type to 'group';
+  // missing files are skipped for partial fixtures.
   for (const rl of GROUP_CHAT_UI_PATHS) {
     if (!fs.existsSync(path.join(root, rl))) continue
     if (svelteHasCharTypeGroupComparison(rl)) {
