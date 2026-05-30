@@ -1,13 +1,18 @@
-## Environment Notes
+# Environment Notes
 
-- When you are in the Ubuntu/Linux environment, and you can use the following commands. Use them if necessary:
-  - rg, fdfind, fzf, batcat, eza, zoxide, jq, yq, delta, gh, just, entr, shellcheck, shfmt, hyperfine, strace, lsof, btop
-- use pnpm
+* Use `pnpm`.
 
-## Response Language Guideline
+## Available Tools
 
-Write all responses in English, regardless of the language used in the user's input.
+* `rg`
+* `fd`
+* `jq`
+* `yq`
 
-## Collaboration Guideline
+# Project Structure Grounding
 
-When writing commit title, use prefixes like feat:, fix:, and refactor:
+Before making changes, read `STRUCTURE.md` first to get a high-level understanding of the project layout.
+
+# Collaboration Guideline
+
+When writing commit titles, use conventional prefixes such as `feat:`, `fix:`, and `refactor:`.
