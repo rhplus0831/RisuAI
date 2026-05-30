@@ -130,6 +130,15 @@ describe('active writer session guard', () => {
     expectStaleWriter(
       await harness.app.inject({
         method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        payload: { id: 'realm-id', baseRevision: 0 },
+      }),
+    )
+
+    expectStaleWriter(
+      await harness.app.inject({
+        method: 'POST',
         url: '/api/v1/assets',
         headers: {
           [ACTIVE_WRITER_SESSION_HEADER]: 'session-a',

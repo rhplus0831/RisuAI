@@ -19,11 +19,13 @@ import {
   type loreBook,
   type triggerscript,
   importPreset,
+  applyServerProjectionDatabase,
   setCurrentCharacter,
   getCurrentCharacter,
   getDatabase,
   setDatabaseLite,
   appVer,
+  type Database,
 } from './storage/database.svelte'
 import { checkNullish, decryptBuffer, isKnownUri, selectFileByDom, sleep } from './util'
 import { language } from 'src/lang'
@@ -65,6 +67,14 @@ import {
 } from './characterCommands'
 import { createGlobalModule } from './moduleCommands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { importRealmCharacterFromServer } from './server/realmImport'
+import { fetchServerBootstrapProjectionReadOnly } from './server/bootstrap'
+import { setCachedServerCommandRevision } from './server/commands'
+import { resetChatHydration } from './server/chatMessageHydration.svelte'
+import {
+  recordHydratedCharacterLorebooks,
+  resetLorebookHydration,
+} from './server/lorebookBridge.svelte'
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz'
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
@@ -1769,6 +1779,34 @@ export async function downloadRisuHub(
         msg: 'Downloading...',
       })
     }
+    if (isFastifyServer) {
+      const imported = await importRealmCharacterFromServer(id)
+      if (imported.status === 'low-level-access') {
+        const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
+        if (!confirmed) {
+          alertStore.set({ type: 'none', msg: '' })
+          return
+        }
+        const retry = await importRealmCharacterFromServer(id, { allowLowLevelAccess: true })
+        if (retry.status !== 'ok') {
+          if (retry.status !== 'unsupported') {
+            alertError(retry.status === 'error' ? retry.error : 'Error while importing')
+            return
+          }
+        } else {
+          await finishServerRealmImport(retry.characterId, arg)
+          return
+        }
+      } else if (imported.status !== 'ok') {
+        if (imported.status !== 'unsupported') {
+          alertError(imported.status === 'error' ? imported.error : 'Error while importing')
+          return
+        }
+      } else {
+        await finishServerRealmImport(imported.characterId, arg)
+        return
+      }
+    }
     const res = await fetch(
       'https://realm.risuai.net/api/v1/download/dynamic/' + id + '?cors=true',
       {
@@ -1836,6 +1874,41 @@ export async function downloadRisuHub(
     console.log(error.stack)
     alertError('Error while importing')
   }
+}
+
+async function finishServerRealmImport(
+  characterId: string,
+  arg: {
+    forceRedirect?: boolean
+  },
+) {
+  await refreshServerProjectionAfterRealmImport()
+  checkCharOrder()
+  const db = getDatabase()
+  const index = db.characters.findIndex((character) => character.chaId === characterId)
+  if (index !== -1 && (db.goCharacterOnImport || arg.forceRedirect)) {
+    changeChar(index)
+    alertStore.set({
+      type: 'none',
+      msg: '',
+    })
+  } else {
+    alertNormal(language.importedCharacter)
+  }
+}
+
+async function refreshServerProjectionAfterRealmImport() {
+  const bootstrap = await fetchServerBootstrapProjectionReadOnly()
+  if (bootstrap.status !== 'ok') {
+    throw new Error(
+      bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
+    )
+  }
+  applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
+  setCachedServerCommandRevision(bootstrap.projection.revision)
+  resetChatHydration()
+  resetLorebookHydration()
+  recordHydratedCharacterLorebooks(bootstrap.projection.database?.characters)
 }
 
 export async function getHubResources(id: string) {

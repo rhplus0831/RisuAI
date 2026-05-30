@@ -374,6 +374,13 @@ const MUTATING_ROUTE_RULES: MutatingRouteRule[] = [
   },
   {
     methods: ['POST'],
+    route: '/api/v1/import/realm-character',
+    kind: 'active-writer',
+    reason: 'Realm character import writes fetched assets and appends a character',
+    activeWriterNeedles: ["path === '/api/v1/import/realm-character'"],
+  },
+  {
+    methods: ['POST'],
     route: '/api/v1/assets',
     kind: 'active-writer',
     reason: 'asset upload writes repository asset metadata and blobs',

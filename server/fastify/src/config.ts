@@ -9,6 +9,7 @@ export interface AppConfig {
   trustProxy: boolean | number | string
   staticRoot?: string | null
   hubUrl: string
+  realmUrl?: string
 }
 
 function repoRoot(): string {
@@ -76,5 +77,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     staticRoot: parseStaticRoot(env.RISU_API_STATIC_ROOT, path.join(repoRoot(), 'dist')),
     hubUrl: parseHubUrl(env.RISU_HUB_URL, 'https://sv.risuai.xyz'),
+    realmUrl: parseHubUrl(env.RISU_REALM_URL, 'https://realm.risuai.net'),
   }
 }

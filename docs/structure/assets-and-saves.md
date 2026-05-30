@@ -52,6 +52,7 @@ bytes that the projected database no longer references.
 | `server/fastify/src/risuSave/assetReferences.ts`     | Asset-reference walker and orphan/unsupported reference reports. |
 | `server/fastify/src/risuSave/blockCodec.ts`          | Current block-based `.risu` envelope codec.                      |
 | `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` | Legacy raw/compressed/stream envelope compatibility.             |
+| `server/fastify/src/routes/realmImport.ts`           | Server-side RisuRealm character import with asset fetching.      |
 
 `POST /api/v1/import/risusave` accepts multipart `.risu` uploads or a JSON
 `database` body. Multipart imports decode the file, normalize the imported
@@ -62,6 +63,12 @@ memory rows, emit `state.imported`, and return an asset report.
 `GET /api/v1/export/bundle` wraps that `.risu` plus referenced asset bytes in a
 zip. The current default envelope is `risusave-blocks`; legacy raw, compressed,
 and stream envelopes remain available for compatibility.
+
+`POST /api/v1/import/realm-character` accepts a Realm id, fetches dynamic Realm
+JSON cards plus referenced hub resources server-side, and also handles Realm
+`charx`/zip packages by decoding `card.json` plus packaged assets. It persists
+those resources as content-addressed assets, then appends the converted
+character through the command mutation path.
 
 ## Backups
 

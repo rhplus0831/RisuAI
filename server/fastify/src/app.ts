@@ -29,6 +29,7 @@ import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
 import { registerMemoryJobRoutes } from './routes/memoryJobs.js'
 import { registerMemoryReadRoutes } from './routes/memoryReads.js'
 import { registerProxyRoutes } from './routes/proxy.js'
+import { registerRealmImportRoutes } from './routes/realmImport.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import {
@@ -206,6 +207,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerActiveWriterGuard(app, activeWriterState)
   registerProjectionRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink)
+  registerRealmImportRoutes(app, db, authState, config.dataDir, commandEventSink, {
+    hubUrl: config.hubUrl,
+    realmUrl: config.realmUrl,
+  })
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerEventsRoutes(app, authState, commandEventSink, memoryEventBus)
   registerAssetsRoutes(app, db, authState, config.dataDir, commandEventSink)
