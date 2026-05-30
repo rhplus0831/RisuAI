@@ -14,6 +14,7 @@ Use `pnpm` for all package scripts.
 | `pnpm check`                 | Run `svelte-check --tsconfig ./tsconfig.json`.                            |
 | `pnpm test`                  | Run root/browser Vitest tests.                                            |
 | `pnpm api:test`              | Run Fastify/server Vitest tests.                                          |
+| `pnpm client-thinning:audit` | Run the ts-morph architecture audit (`util/client-thinning-audit.ts`, 23 AST/invariant checks). Exits non-zero on any finding; regression-tested by `util/client-thinning-audit.test.ts` (58 tests, under the root suite). |
 | `pnpm smoke:fastify-browser` | Build site, then run Playwright Fastify browser smoke.                    |
 | `pnpm format`                | Prettier write.                                                           |
 | `pnpm format:check`          | Prettier check.                                                           |

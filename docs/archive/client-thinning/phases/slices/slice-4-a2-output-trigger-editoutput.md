@@ -176,10 +176,13 @@ re-open C-A1's assembly-time delta. Do not bundle group-chat removal.
   **scriptstate delta** (run-var + output-trigger `setvar`/`v2SetVar`) through the
   slice-2 writer. The `editoutput`'d + run-var'd **final text** rides on
   `done.postGeneration.finalText`; the browser writes it onto the assistant message
-  and its existing generation-result command (B2) persists it — B2 stays
-  browser-owned (the C-A1 route-backed test pins that the generation-result POST
-  still fires). The server does **not** persist the assistant message, avoiding a
-  double-write with B2.
+  and, **on the non-durable path**, its existing generation-result command (B2)
+  persists it — B2 stays browser-owned there, and the server does **not** persist the
+  assistant message on that path, avoiding a double-write with B2.
+  (Drift note: after durable generation landed, the route-backed `serverBacked`
+  fixtures now run a *durable* send, so they assert **zero** generation-result POSTs —
+  the durable job owns the result persist server-side per durable-gen Step 3 / EC-D4.
+  The general non-durable path keeps the browser B2 persist described above.)
 - **Output-trigger message surgery** (impersonate/cutchat/modifychat) is surfaced
   in the post-gen `message_patch` for the projection (matching today's
   projection-only behavior), not separately persisted — the scriptstate delta is

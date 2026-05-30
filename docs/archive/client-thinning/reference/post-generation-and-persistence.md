@@ -252,12 +252,13 @@ returns 423 before any mutation).
 
 - **C-A1 (satisfied):** `sendChat.fixtures.serverBacked.test.ts` Describe B now
   records `/api/v1/commands/*` calls and asserts **zero** `PATCH …/scriptstate`
-  POSTs for an assembly-time var write, that the route persisted (bootstrap shows
-  the written scriptstate + bumped revision), and that the cached command
-  revision reconciled (the follow-up `generation-result` POST carries the bumped
-  `baseRevision`). `generation.chat.test.ts` expects persistence, keeps preview
-  read-only, and proves a non-active-writer
-  `/chat` 423s before persisting.
+  POSTs for an assembly-time var write, and that the route persisted (bootstrap shows
+  the written scriptstate + bumped revision). After durable generation landed, this
+  fixture runs a *durable* send, so it also asserts **zero** `generation-result` POSTs
+  (the durable job owns the result persist per EC-D4) and reconciles the
+  terminal-frame revision rather than carrying a `baseRevision` on a follow-up POST.
+  `generation.chat.test.ts` expects persistence, keeps preview read-only, and proves a
+  non-active-writer `/chat` 423s before persisting.
 - **A2 (satisfied, slice 4):** `runServerPostGeneration` runs the run-var pass +
   `'output'` trigger + `editoutput`, derives the post-gen scriptstate delta +
   final text, persists the scriptstate via the slice-2 writer (revision bump), and

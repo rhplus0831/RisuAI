@@ -5,7 +5,7 @@ Date: 2026-05-29
 Status: DONE.
 
 Client thinning was extracted from the archived Fastify Phase 9 milestone into
-`docs/client-thinning/` as its own standing workstream, sharded so task agents
+`docs/archive/client-thinning/` as its own standing workstream, sharded so task agents
 load only the context they need. The archive remains historical source material,
 not the live task list.
 

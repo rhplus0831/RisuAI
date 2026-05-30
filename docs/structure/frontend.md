@@ -38,7 +38,8 @@ Useful `src/ts` subdirectories:
 | ----------------- | ---------------------------------------------------------------------------------- |
 | `src/ts/server/`  | Browser adapters for Fastify bootstrap, commands, events, backups, assets.         |
 | `src/ts/storage/` | Client database state, server-backed storage, `.risu` import/export.               |
-| `src/ts/process/` | Request flow, prompt/client-side helpers, memory client adapters, post-generation. |
+| `src/ts/process/` | Request flow (`index.svelte.ts` = `sendChat`), prompt/client-side helpers, memory client adapters, post-generation. |
+| `src/ts/process/request/` | Server-vs-local routing: `serverPromptAssembly.ts` + `durableGeneration.ts` classifiers, the `providerCapability.ts` table, and the `/chat` SSE adapter (`serverChat.ts`). |
 | `src/ts/model/`   | Client model lists and provider-related browser logic.                             |
 | `src/ts/parser/`  | Chat/parser utilities and tests.                                                   |
 | `src/ts/plugins/` | Plugin loading and browser-side plugin runtime.                                    |
@@ -63,6 +64,43 @@ Startup is server-backed only when the SPA is served by Fastify and
 
 When debugging stale UI, check command success revision, the SSE event stream,
 and the debounced bootstrap refresh before assuming a Svelte rendering problem.
+
+## Server-Side Generation Flow
+
+`sendChat` (`src/ts/process/index.svelte.ts`) is the browser orchestrator. In Fastify
+mode the **server owns prompt assembly and the provider call** by default
+(`useServerPromptAssembly` defaults `true`):
+
+1. The send is classified by `resolveServerPromptAssembly`
+   (`src/ts/process/request/serverPromptAssembly.ts`) + the shared
+   `resolveProviderCapability` table — `local | server | unsupported`. `unsupported`
+   throws (no silent fallback); `local` only happens when `!isFastifyServer` or the
+   flag is explicitly `false`.
+2. For a `server` send the browser POSTs raw inputs to `/api/v1/generate/chat` and
+   consumes the SSE stream (stage / prompt / `message_patch` / info / token / error /
+   done frames) via `src/ts/process/request/serverChat.ts`. It renders streamed tokens
+   and applies the server's post-generation patch + final text from `done.postGeneration`.
+3. On the **non-durable** path the browser still issues the final-message persistence
+   command (B2). On the **durable** path the server persists the result, so the browser
+   suppresses its persist call (EC-D4).
+
+### Durable generation (browser side)
+
+When `resolveDurableGeneration(...) === 'durable'` (a server-assembled `send`), the
+browser sends `durable: true`, keeps rendering the live stream, and **does not persist
+the result** (the server does, at job completion). The stop button maps to
+`cancelServerChatGeneration` → `DELETE /api/v1/generate/chat/:id` (a bare disconnect no
+longer cancels). The browser does **not** yet auto-reattach to a running job after a
+mid-generation disconnect / reload — the server surfaces `activeGenerationJobs` from
+bootstrap, but consuming it is a documented follow-up ([`../leftover.md`](../leftover.md)).
+
+### Active-writer lease
+
+Distinct from the projection write guard: a single browser session holds the
+**write/send lease**. It is registered through the writer-intent bootstrap request and
+carried as `risu-writer-session` on server-owned mutations. A newer session takes over;
+a stale session gets `423 active_writer_stale` on its next mutation and must reload.
+This is the submission-authorization layer the durable one-job-per-chat rule sits on.
 
 ## Server Commands From The Browser
 

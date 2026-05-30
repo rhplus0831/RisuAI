@@ -1,12 +1,13 @@
 # Structure Notes
 
-Last explored: 2026-05-28.
+Last explored: 2026-05-30.
 
-This folder is a navigation-first companion to the active client-thinning docs
-in [`docs/client-thinning/`](../client-thinning/README.md) and the archived
-Fastify migration docs in [`docs/archive/fastify/`](../archive/fastify/README.md).
-Use it when you need to find the right part of the codebase quickly before
-making a change.
+This folder is the present-tense navigation map of the codebase. It is the
+companion to the **archived** workstream records in
+[`docs/archive/`](../archive/README.md) — the Fastify migration, client thinning,
+and durable generation all ran to completion and now live there. Use this folder
+when you need to find the right part of the codebase quickly before making a
+change, and use [`docs/leftover.md`](../leftover.md) for the still-open items.
 
 ## Read Order
 
@@ -18,12 +19,13 @@ making a change.
 6. [`testing-and-operations.md`](testing-and-operations.md) - scripts, test split, env, Docker.
 7. [`generated-and-legacy.md`](generated-and-legacy.md) - generated files and removed/no-port surfaces.
 
-For active client-thinning work, start with
-[`docs/client-thinning/README.md`](../client-thinning/README.md). For migration
-background, start with
-[`docs/archive/fastify/README.md`](../archive/fastify/README.md). The
-Fastify migration is closed; that archive holds the consolidated
-invariant contract, phase scope docs, and design references.
+For workstream history and decision records, start with
+[`docs/archive/README.md`](../archive/README.md): the Fastify migration
+([`archive/fastify/`](../archive/fastify/README.md)), the client-thinning
+server-projection workstream ([`archive/client-thinning/`](../archive/client-thinning/README.md)),
+and durable generation ([`archive/durable-generation/`](../archive/durable-generation/README.md)).
+All three are closed; the archives hold the consolidated invariant contracts, phase
+scope docs, and design references.
 
 ## Top-Level Map
 
@@ -34,18 +36,20 @@ invariant contract, phase scope docs, and design references.
 | `server/fastify/src/routes/`     | Server route registrars for `/api/v1/*`.                                                     |
 | `server/fastify/src/commands/`   | Validators and mutation helpers for command-backed domain resources.                         |
 | `server/fastify/src/generation/` | Provider-specific completion adapters.                                                       |
-| `server/fastify/src/prompt/`     | Prompt assembly, lorebook, trigger, tokenizer, and provider dispatch plumbing.               |
+| `server/fastify/src/prompt/`     | Prompt assembly (`assemble.ts`), lorebook, triggers, tokenizer, provider dispatch, the server Lua VM (`luaRuntime.ts`), and the A2 post-generation pass (`runServerPostGeneration`). |
+| `server/fastify/src/generationJobs.ts` | Durable-generation job registry (`GenerationJobRegistry`): detached, reattachable chat-generation jobs that survive client disconnect. |
 | `server/fastify/src/memory*.ts`  | Hypa V3 memory tables, planning, repository, job handlers, and worker.                       |
 | `src/main.ts`                    | Browser SPA bootstrap.                                                                       |
 | `src/App.svelte`                 | Main Svelte shell and top-level render switch.                                               |
 | `src/lib/`                       | Svelte component directories.                                                                |
 | `src/ts/`                        | Client/domain logic: storage, server adapters, parser, plugins, generation, media, settings. |
+| `src/ts/process/request/`        | Browser-side request routing: the server-vs-local classifiers (`serverPromptAssembly.ts`, `durableGeneration.ts`), the shared `providerCapability.ts` table, and the `/chat` SSE adapter (`serverChat.ts`). |
 | `src/ts/server/`                 | Browser-side Fastify adapters for bootstrap, commands, assets, events, backups.              |
 | `src/ts/storage/`                | Client database state, server-backed storage auth, `.risu` import/export helpers.            |
 | `public/`                        | Static source assets copied by Vite.                                                         |
 | `dist/`                          | Generated Vite output; do not hand-edit.                                                     |
-| `docs/client-thinning/`          | Active client-thinning workstream docs: status, plan, phases, coverage, prompts.             |
-| `docs/archive/fastify/`          | Archived Fastify migration: invariant contract, phase scope docs, architecture, coverage.    |
+| `docs/leftover.md`               | Live tracker of decisions-needed and intentionally-deferred items across the closed workstreams. |
+| `docs/archive/`                  | Closed workstream records: `fastify/` migration, `client-thinning/`, and `durable-generation/`. |
 
 ## Standing Conventions
 
@@ -62,5 +66,13 @@ invariant contract, phase scope docs, and design references.
   the route is intentionally public.
 - Revision-tracked `data/db.json` mutations should go through the command
   mutation path so `baseRevision`, revision bumps, and command events stay in sync.
+  Generation is the exception: `/api/v1/generate/chat` is a server-owned mutation
+  route that persists assembly-time + post-generation scriptstate (and, on the
+  durable path, the assistant message) directly via `applyJsonCommandMutation`.
+- Server-side prompt assembly is the default Fastify path: `useServerPromptAssembly`
+  defaults `true`, so a supported send is classified by `resolveServerPromptAssembly`
+  + the shared `resolveProviderCapability` table and routed to the server assembler;
+  unsupported shapes hard-fail (no silent browser fallback). The browser assembles
+  locally only when `!isFastifyServer` or a test sets the flag `false`.
 - Root TypeScript is intentionally loose for browser code; `server/fastify` has
   its own strict TypeScript config.

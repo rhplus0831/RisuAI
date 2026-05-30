@@ -37,8 +37,25 @@ The current Fastify docs split `sendChat` into stages:
 | Stage 3 | Server        | Provider dispatch and token/message streaming.                                    |
 | Stage 4 | Server + browser | Server owns durable output-trigger / `editoutput` derivation on the server-dispatch path; browser owns B1 effects, resend/auto-continue recursion, and UI metadata. |
 
-See [`../client-thinning/runtime-stages.md`](../client-thinning/runtime-stages.md)
-for the current longer version.
+See [`../archive/client-thinning/runtime-stages.md`](../archive/client-thinning/runtime-stages.md)
+for the longer (archived) version.
+
+## Server Generation Terms
+
+These name the server-owned generation machinery (most of it landed via the
+client-thinning and durable-generation workstreams; design records under
+[`../archive/`](../archive/README.md)).
+
+| Term                     | Meaning                                                                                                                  | Primary Places                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Server prompt assembly   | Default-on (`useServerPromptAssembly`) path where the server assembles the prompt. A send is classified `local | server | unsupported`. | `src/ts/process/request/serverPromptAssembly.ts`, `server/fastify/src/prompt/assemble.ts` |
+| Provider capability table | Single shared classifier deciding which provider shapes the server `/chat` path can route; consumed by browser + server. | `src/ts/process/request/providerCapability.ts`                                 |
+| Server Lua VM            | wasmoon VM running non-interactive Lua hooks (`editRequest`/`editprocess`/`editinput`/input-trigger) during assembly.    | `server/fastify/src/prompt/luaRuntime.ts`                                       |
+| Post-generation pass     | `runServerPostGeneration`: run-var pass + `'output'` trigger + `editoutput`, persisting the derived text + scriptstate.  | `server/fastify/src/prompt/assemble.ts`, `server/fastify/src/routes/generationChat.ts` |
+| Durable generation       | Milestone 1: a `send` runs as a detached job that survives client disconnect; the server persists the result.           | `src/ts/process/request/durableGeneration.ts`, `server/fastify/src/generationJobs.ts` |
+| Generation job           | A detached, reattachable chat generation in `GenerationJobRegistry` (one running job per chat; reattach/cancel routes).  | `server/fastify/src/generationJobs.ts`, `server/fastify/src/routes/generationChat.ts` |
+| `activeGenerationJobs`   | Transient, server-memory-only bootstrap projection (`{ chatId, jobId }[]`) of running durable jobs for reload-resume.    | `server/fastify/src/routes/bootstrap.ts`, `server/fastify/src/generationJobs.ts` |
+| Active writer            | Single-writer submission gate (`risu-writer-session` header) enforced by a global preHandler; stale writers get `423`.   | `server/fastify/src/activeWriter.ts`                                            |
 
 ## Identity Rules
 

@@ -20,7 +20,7 @@ remains permanent `unsupported` and pinned by the `A4R-pluginv2` audit invariant
 **Decision (2026-05-29): the Lua arms are a committed server port; pluginV2 is
 permanent `unsupported`.** Lua is the primary bot-extension mechanism and is widely
 used, so leaving it permanently server-unsupported would cap server assembly — and
-durable generation (`docs/durable-generation/`) — to unscripted/regex-only chats.
+durable generation (`docs/archive/durable-generation/`) — to unscripted/regex-only chats.
 pluginV2 is being phased out in favor of Plugin V3, and "server-side plugin code
 execution" is on the no-port list (`../../plan.md`), so its `unsupported` status is
 intentional and kept.

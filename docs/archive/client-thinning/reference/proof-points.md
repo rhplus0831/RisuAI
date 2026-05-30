@@ -164,7 +164,7 @@ binary.
   23 checks, each spawning the real audit with a per-check `CLIENT_THINNING_AUDIT_CHECK_IDS`
   against a fixture. Fixtures in `util/client-thinning-audit-fixtures/<rule>/{failing*, *-bypass}/`
   (a failing fixture exits non-zero, a bypass fixture exits 0); some rules have
-  multiple failing/adversarial fixtures, hence 55 > 22.
+  multiple failing/adversarial fixtures, hence 58 > 23.
 
 ## Verification commands
 
@@ -177,7 +177,7 @@ binary.
 "api:test": "vitest run --config server/fastify/vitest.config.ts"
 ```
 
-- `pnpm client-thinning:audit` — the 22-rule audit (start here; if red, fix/triage
+- `pnpm client-thinning:audit` — the 23-check audit (start here; if red, fix/triage
   before runtime work).
 - `pnpm api:test` — server suite (incl. `generation.chat.test.ts`).
 - `pnpm test` — full client suite (incl. `src/ts/process/...`).

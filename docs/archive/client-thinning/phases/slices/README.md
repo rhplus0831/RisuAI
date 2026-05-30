@@ -85,7 +85,7 @@ done" section names the batch-specific additions.
 ## Shared verification (run before and after every slice)
 
 ```
-pnpm client-thinning:audit                                  # 22-rule audit; fix/triage red before runtime work
+pnpm client-thinning:audit                                  # 23-check audit; fix/triage red before runtime work
 pnpm api:test                                               # server suite (incl. generation.chat.test.ts)
 pnpm test                                                   # full client suite (incl. src/ts/process/...)
 ```

@@ -41,10 +41,14 @@ otherwise.
 
 The archived phase scope docs under `docs/archive/fastify/phases/` are useful
 for why decisions were made, but they are not always current implementation
-guidance. Prefer the present-tense docs in this `docs/structure/` folder and
-the active client-thinning docs in `docs/client-thinning/`. Treat
-`docs/archive/fastify/other/architecture.md` and
-`docs/archive/fastify/client-thinning/` as historical references.
+guidance. Prefer the present-tense docs in this `docs/structure/` folder for
+current state, and treat the workstream records under `docs/archive/` (the
+Fastify migration, `docs/archive/client-thinning/`, and
+`docs/archive/durable-generation/`) as historical design/decision references.
+Two large server-owned subsystems landed via those workstreams and are now core
+runtime, not legacy: **server-default prompt assembly** (`useServerPromptAssembly`
+defaults true; `resolveServerPromptAssembly` + `server/fastify/src/prompt/`) and
+**durable generation** (`server/fastify/src/generationJobs.ts`; see backend.md).
 
 ## Legacy Names That Are Still Active
 
@@ -55,6 +59,9 @@ Some files retain legacy names because they bridge current behavior:
 - `server/fastify/src/routes/hub.ts` backs retained hub passthrough behavior.
 - Browser plugin runtime remains in `src/ts/plugins/`; server command routes
   store plugin records and plugin storage but do not execute plugin code.
+  Note the distinction: **Lua** scripting now *does* execute server-side during
+  prompt assembly (`server/fastify/src/prompt/luaRuntime.ts`), but **pluginV2** code
+  execution stays permanently unsupported (no-port) — do not conflate the two.
 
 Do not remove these just because the filename contains "legacy".
 

@@ -52,14 +52,27 @@ writer-intent bootstrap request and sends `risu-writer-session` on server-owned
 mutations. Stale writer sessions receive `423 active_writer_stale`.
 
 `server/fastify/src/activeWriter.ts` classifies command routes, imports, asset
-uploads, backups, `/api/v1/generate/chat`, `/api/v1/generate/preview-prompt`,
-memory jobs, and legacy storage writes/removes as guarded server-owned mutations.
+uploads, backups, `POST /api/v1/generate/chat`, `/api/v1/generate/preview-prompt`,
+`DELETE /api/v1/generate/chat/:id` (durable-generation cancel — writer handoff lets a
+new writer stop a prior, now-disconnected writer's generation), memory job create +
+`DELETE /api/v1/memory/jobs/:id`, and legacy storage writes/removes as guarded
+server-owned mutations. The durable-generation reattach route
+`GET /api/v1/generate/chat/:id/stream` is read-only (observe) and intentionally **not**
+gated. When you add a mutating route, classify it here *and* add its matching entry to
+the EC5 rule table in `util/client-thinning-audit.ts` (the audit fails on an
+unclassified mutating route).
 
 ## Bootstrap And Projection
 
 `/api/v1/bootstrap` returns the current revision, schema version, database
-projection, and asset base URL. Browser startup loads this projection before the
-app is marked ready.
+projection, asset base URL, and `activeGenerationJobs`. Browser startup loads this
+projection before the app is marked ready.
+
+`activeGenerationJobs` is a **transient, server-memory-only** projection (shape
+`{ chatId, jobId }[]`, empty when none) sourced from `GenerationJobRegistry.activeJobs()`.
+It is not a persisted `Database` field — it lets a returning client, even after a full
+reload, discover and reattach to an in-flight durable generation. (The browser-side
+live reattach consumer is a documented follow-up; see [`../leftover.md`](../leftover.md).)
 
 Projection writes are intentionally guarded in Fastify mode:
 
@@ -92,6 +105,11 @@ changing body parser behavior.
 
 Streaming surfaces write directly to raw replies or WebSockets:
 
-- `routes/generationChat.ts` writes chat SSE frames and aborts on client close.
+- `routes/generationChat.ts` writes chat SSE frames. On the **non-durable** (inline)
+  path it aborts the provider call on client close. On the **durable** path a client
+  close only *detaches* the viewer — the detached `GenerationJobRegistry` job keeps
+  running and buffers its frames for a 30s reattach grace; cancel is the explicit
+  `DELETE .../:id`, not a disconnect. See backend.md "Durable Generation".
 - `routes/events.ts` hijacks the response for command/memory SSE.
-- `routes/streamJobs.ts` creates proxy stream jobs and attaches WebSockets.
+- `routes/streamJobs.ts` creates proxy stream jobs and attaches WebSockets
+  (the reusable `JobRegistry` that durable generation wraps).

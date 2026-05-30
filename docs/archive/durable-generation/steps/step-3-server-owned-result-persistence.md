@@ -121,12 +121,15 @@ persist the accumulated-so-far text **raw** (do not run output-trigger / `editou
 over a truncated turn — Step 2 gotcha B). **Non-streaming** cancel → no write. All are
 idempotent on `generationId` (gotcha B).
 
-**F. Post-gen failure policy on the durable path — OPEN.** Closeout decision #2 keeps
-the connected `/chat` post-gen pass *best-effort* (a throw is swallowed; the browser
-keeps its streamed copy). On the durable path the client may be gone, so "browser
-keeps its copy" is not a safe fallback. Decide when implementing: persist the **raw**
-provider text + flag a warning (so a disconnected turn is never silently lost), or
-record a job **error** the reattaching client sees. Leaning persist-raw-with-warning.
+**F. Post-gen failure policy on the durable path — RESOLVED (implemented).** Closeout
+decision #2 keeps the connected `/chat` post-gen pass *best-effort* (a throw is
+swallowed; the browser keeps its streamed copy). On the durable path the client may be
+gone, so "browser keeps its copy" is not a safe fallback. Decided and shipped in
+`buildDurablePostGeneration` (`server/fastify/src/routes/generationChat.ts`): a
+**derivation** throw (`runServerPostGeneration`) → persist the **raw** provider text +
+emit a `warning` (so a disconnected turn is never silently lost); a **persist** throw
+(gotcha C — chat deleted / materially changed) → emit an `error` the reattaching client
+sees, and do not force-write.
 
 ## EC closure
 

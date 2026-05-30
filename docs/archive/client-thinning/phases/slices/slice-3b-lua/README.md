@@ -55,7 +55,7 @@ even though it reuses the same VM.
 
 ## Why this matters
 
-The durable-generation subset (`docs/durable-generation/`) now inherits
+The durable-generation subset (`docs/archive/durable-generation/`) now inherits
 non-interactive Lua support from `resolveServerPromptAssembly`, so the server Lua
 VM is the **single biggest lever that already widened durable-generation
 coverage**. Without it, durable generation would cover only unscripted /
@@ -131,7 +131,9 @@ explicitly. Start with (a); never silently drop the interaction.
 The gate to design **before wiring `request()`/`LLM()`** (the parent slice says so):
 
 - **`request(url)` — SSRF-guarded egress.** Mirror the browser's bounds (https-only,
-  URL ≤120 chars, ≤5 req/min rate limit — `scriptings.ts:314-353`) **and add an
+  URL ≤120 chars, ~5 req/min rate limit — `scriptings.ts:314-353`; the server impl
+  loosened the window to 30/min for self-host, `luaRuntime.ts` `MAX_REQUESTS_PER_WINDOW`)
+  **and add an
   SSRF guard the browser does not need**: resolve the host, reject any
   loopback/link-local/private/reserved IP (127/8, ::1, 169.254/16 incl. the cloud
   metadata IP 169.254.169.254, 10/8, 172.16/12, 192.168/16, fd00::/8, non-global),

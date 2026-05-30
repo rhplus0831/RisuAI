@@ -42,7 +42,7 @@ Route modules export `registerXRoutes(app, ...)` and register concrete
 | Hub                | `routes/hub.ts`            | Retained hub passthrough, despite legacy naming elsewhere.  |
 | Legacy storage     | `routes/legacyStorage.ts`  | Active `/api/v1/storage/*` bridge for client `NodeStorage`. |
 | Generation         | `routes/generation.ts`     | Completion route and provider request validation.           |
-| Chat generation    | `routes/generationChat.ts` | Prompt assembly SSE and optional provider dispatch.         |
+| Chat generation    | `routes/generationChat.ts` | Prompt assembly SSE + provider dispatch + post-gen pass; also the durable-generation reattach (`GET .../:id/stream`) and cancel (`DELETE .../:id`) routes. |
 | Memory jobs        | `routes/memoryJobs.ts`     | Queue/cancel/list memory jobs.                              |
 | Memory reads       | `routes/memoryReads.ts`    | Read chunks and summaries.                                  |
 
@@ -70,22 +70,59 @@ helpers such as `src/ts/characterCommands.ts`, `src/ts/chatCommands.ts`,
 
 ## Generation Path
 
-`POST /api/v1/generate/chat` is registered in `routes/generationChat.ts`.
+`POST /api/v1/generate/chat` is registered in `routes/generationChat.ts`. In the
+default Fastify flow the **server owns prompt assembly and the provider call**. The
+browser classifies each send with `resolveServerPromptAssembly` + the shared
+`resolveProviderCapability` table (`src/ts/process/request/`) and POSTs raw inputs;
+unsupported shapes hard-fail rather than silently falling back to local assembly.
 
-High-level flow:
+High-level flow (non-durable / inline path, `streamAssembly`):
 
 1. Validate route body and auth.
-2. Attach an abort signal to the request close event.
+2. Attach an abort signal to the request close event (inline path only — see durable
+   path below, which detaches instead).
 3. Load the persisted database projection from `data/db.json`.
-4. Call `prompt/assemble.ts`.
+4. Call `prompt/assemble.ts`. Assembly runs the server **Lua VM**
+   (`prompt/luaRuntime.ts`) for non-interactive `editRequest` / `editprocess` /
+   input-trigger / `editinput` hooks, and persists the assembly-time scriptstate
+   delta to `data/db.json` itself (C-A1).
 5. Emit SSE stage, prompt, `message_patch`, info, warning, token, error, and done frames.
-6. If dispatch is enabled, route through `prompt/chatDispatch.ts`.
+6. Dispatch the provider call through `prompt/chatDispatch.ts`.
 7. Convert provider frames to chat SSE in `prompt/providerTransport.ts`.
+8. After dispatch, run the **A2 post-generation pass** (`runServerPostGeneration` in
+   `prompt/assemble.ts`): the run-var pass, the `'output'` trigger, and `editoutput`.
+   The derived scriptstate delta is persisted and the final text / resend / revision
+   ride on `done.postGeneration`. A thrown post-gen pass is best-effort-swallowed on
+   the inline path (no frame, no browser fallback — a code TODO marks this).
 
 Provider-specific adapters live in `server/fastify/src/generation/`. Prompt
 assembly helpers live in `server/fastify/src/prompt/` and cover history,
 lorebook, static/plain sections, modules, scripts, triggers, tokenizer config,
-memory adapters, and budget finalization.
+memory adapters, the server Lua VM, and budget finalization.
+
+### Durable Generation (survive client disconnect)
+
+A send the browser classifies durable (`resolveDurableGeneration === 'durable'` →
+`body.durable === true`, `send` mode only) does **not** run inline. Instead the route
+hands off to a detached job so the generation survives the browser disconnecting:
+
+- The job runs in `GenerationJobRegistry` (`generationJobs.ts`, wired + GC-ticked in
+  `app.ts`), which wraps the proxy's reconnectable `streamJobs.ts` `JobRegistry` with a
+  transient `chatId → jobId` submission lock (**one running job per chat**, `409` on a
+  second) and the `activeGenerationJobs` bootstrap projection.
+- The request connection is a detachable **viewer**: a disconnect calls `detach`
+  (the job keeps running and buffers its SSE frames), **not** `abort`. The first frame
+  is `job_accepted` carrying the `jobId`, sent before assembly.
+- At completion the job runs the same A2 post-generation pass and **persists the
+  derived assistant message + scriptstate delta itself** (one `applyJsonCommandMutation`,
+  `generation.persisted` event, idempotent on `generationId`) — so the result is durable
+  with no browser command-replay. Failure policy: derivation throw → persist raw +
+  `warning`; persist throw (chat gone) → job `error`.
+- `GET /api/v1/generate/chat/:id/stream` reattaches (read-only observe, open to any
+  authed client). `DELETE /api/v1/generate/chat/:id` cancels (authorized by the current
+  active writer; the browser stop button calls it — a bare disconnect does not cancel).
+- In-memory only (Milestone 1): jobs are lost on a server restart. Design record:
+  [`../archive/durable-generation/`](../archive/durable-generation/README.md).
 
 ## Memory System
 

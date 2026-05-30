@@ -1,7 +1,22 @@
-# Durable / Client-Independent Generation
+# Durable / Client-Independent Generation (ARCHIVED 2026-05-30)
+
+> **ARCHIVED — Milestone 1 complete.** Moved from `docs/durable-generation/` to
+> `docs/archive/durable-generation/` on 2026-05-30. Milestone 1 (survive client
+> disconnect, in-memory) is implemented and verified: a durable send runs as a detached
+> `GenerationJobRegistry` job (`server/fastify/src/generationJobs.ts`); the request
+> connection is a detachable viewer (detach-not-abort on disconnect); the server runs
+> the A2 post-generation pass and persists the derived result itself at completion
+> (idempotent on `generationId`); reattach over `GET …/:id/stream`; cancel over
+> `DELETE …/:id` (writer-gated); and a bootstrap `activeGenerationJobs` projection
+> surfaces running jobs. **EC-D1/D2/D4 are end-to-end; EC-D3's server half is done.**
+> Beyond M1: the **browser live auto-reattach UX** is a documented follow-up (not
+> implemented — no browser consumer of `activeGenerationJobs` yet), and **Milestone 2**
+> (survive a server *restart*) is deferred. Open items: [`../../leftover.md`](../../leftover.md).
+> These docs are kept as the design/decision record (the step specs retain their
+> original DRAFT framing).
 
 Date: 2026-05-29 (draft) · 2026-05-30 (Milestone 1 implemented)
-Status: **Milestone 1 implemented.** Steps 1–3 landed; see the implementation note below.
+Status: **Milestone 1 implemented (ARCHIVED).** Steps 1–3 landed; see the implementation note below.
 
 ## Implementation status (2026-05-30)
 
@@ -75,7 +90,7 @@ Owner decisions refining this draft:
 Resolved during the docs audit: the `/chat` writer/423 gate is already the global
 active-writer guard in `server/fastify/src/activeWriter.ts`; `isServerOwnedMutation`
 includes `POST /api/v1/generate/chat` and `/api/v1/generate/preview-prompt`.
-Remaining open/ambiguous tasks live in [`../deferred.md`](../deferred.md).
+Remaining open/ambiguous tasks live in [`../../leftover.md`](../../leftover.md).
 
 ## Goal
 
@@ -94,7 +109,7 @@ Client-thinning moves *authority over the correctness of state* server-side; thi
 workstream moves *ownership of the generation lifecycle*. **Completing client-thinning
 (A1/A2/B) does not by itself reach this goal.** But A1 (server prompt assembly) and A2
 (server post-gen derivation) are **prerequisites** — "the client only sends a request"
-needs both. Reverse-direction marker: `docs/client-thinning/plan.md` "Out Of Scope Here".
+needs both. Reverse-direction marker: `docs/archive/client-thinning/plan.md` "Out Of Scope Here".
 
 ## Existing primitives — what we build on (re-grounded 2026-05-29)
 
@@ -234,16 +249,27 @@ of scope until Milestone 1 lands.
   by bootstrap, so a returning client (even after a full reload) discovers +
   reattaches; observing is open, starting/cancelling need the writer lease (Step 2).
 
-## Still Open / Ambiguous Before Implementation
+## Still Open / Deferred (after Milestone 1)
 
-- **Durable post-gen failure policy:** Step 3 still needs to decide whether a
-  thrown durable-job `runServerPostGeneration` persists raw provider text with a
-  warning or records a job error.
+- **Durable post-gen failure policy — RESOLVED (implemented).** A thrown durable-job
+  `runServerPostGeneration` persists the **raw** provider text + emits a `warning`; a
+  persist throw (chat gone / changed) records a job `error`. Implemented in
+  `buildDurablePostGeneration` (`server/fastify/src/routes/generationChat.ts`).
+- **Browser live auto-reattach UX — follow-up (not implemented).** The server surfaces
+  `activeGenerationJobs` and the `GET …/:id/stream` reattach endpoint, but no browser
+  code consumes them to re-drive the orchestrator after a mid-generation disconnect /
+  reload. The durability guarantee does not depend on it (the result is server-persisted
+  and surfaces on the next projection/bootstrap refresh).
 - **Modes beyond `send`:** `continue` and `regenerate` remain out of M1 and need
   their own idempotency/append semantics before widening.
+- **Milestone 2 — survive server restart:** in-memory jobs only today; disk-persisting
+  job state/result is deferred.
 - **Event patching / replay contract:** surgical projection patching remains outside
   this work until SSE reconnect + replay semantics are specified.
 
+The canonical, current list of open items across both workstreams lives in
+[`../../leftover.md`](../../leftover.md).
+
 ---
 
-Once stable, shard like `docs/client-thinning/` (router + shards). One doc while drafting.
+Once stable, shard like `docs/archive/client-thinning/` (router + shards). One doc while drafting.

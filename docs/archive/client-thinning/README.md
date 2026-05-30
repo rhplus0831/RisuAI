@@ -1,8 +1,23 @@
-# Client Thinning Docs
+# Client Thinning Docs (ARCHIVED 2026-05-30)
+
+> **ARCHIVED — workstream complete.** Moved from `docs/client-thinning/` to
+> `docs/archive/client-thinning/` on 2026-05-30. The A-item blockers (A1/A2/A3) are
+> landed, all eight Phase-5 closeout decisions are resolved, and the
+> `pnpm client-thinning:audit` gate is green (23 checks / 58 tests). What the server
+> now owns: prompt assembly (default-on `useServerPromptAssembly`), the supported
+> text-send subset + multimodal/asset/image-gen content, the non-interactive Lua VM
+> (editRequest/editprocess/editinput/input-trigger), the A2 post-generation pass
+> (output trigger + `editoutput` + run-var), assembly-time + post-gen scriptstate
+> persistence, and a single shared provider-capability table. The browser keeps B1
+> effects, B2 orchestration/command-issuance, and renders the projection. Group chat's
+> dead UI branches were removed (`A4R-group-chat-removed`). Remaining decisions and
+> deferrals live in [`../../leftover.md`](../../leftover.md); the current architecture
+> is summarized in [`../../structure/`](../../structure/README.md). These docs are kept
+> as the design/decision record.
 
 Date: 2026-05-30
 
-This directory is the active documentation set for client thinning as its own
+This directory was the active documentation set for client thinning as its own
 workstream. The project is a **Fastify-only** web variation: in Fastify-served
 web mode the browser is a projection of server-owned durable state. It renders
 UI, forwards user intent, applies server projections/events, runs browser-only

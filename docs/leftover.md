@@ -1,0 +1,169 @@
+# Leftover Items — client-thinning + durable-generation
+
+Date: 2026-05-30
+
+Canonical list of items that still need an owner decision or were intentionally
+deferred, after the **client-thinning** and **durable-generation (Milestone 1)**
+workstreams were implemented and archived. Each entry names what it is, why it is
+not done, and the trigger that would make it actionable.
+
+This file supersedes the former `docs/deferred.md` (folded in below). The source
+workstream docs now live under [`archive/client-thinning/`](archive/client-thinning/)
+and [`archive/durable-generation/`](archive/durable-generation/).
+
+The codebase is the source of truth. Where a claim cites a file, it was verified
+against the tree on 2026-05-30 (branch `fastify`).
+
+---
+
+## Resolved during this audit (2026-05-30)
+
+- **Client-thinning audit was RED — found and fixed.** The durable-generation work
+  added `DELETE /api/v1/generate/chat/:id` (cancel) and classified it in
+  `server/fastify/src/activeWriter.ts:63`, but never added the matching entry to the
+  EC5 audit's `MUTATING_ROUTE_RULES` table, so `pnpm client-thinning:audit` exited 1
+  with "Unclassified mutating Fastify route: DELETE /api/v1/generate/chat/:id" — while
+  every status doc claimed the audit passed. Fixed by adding the `active-writer` rule
+  entry (`util/client-thinning-audit.ts`) plus the route + needle in both EC5 fixtures
+  (`util/client-thinning-audit-fixtures/active-writer-guard/{classified-bypass,failing-unclassified-route}/`).
+  Audit now green; `util/client-thinning-audit.test.ts` is 58/58.
+- **Durable post-gen failure policy — was marked OPEN, actually implemented.** The
+  draft (Step 3 gotcha F) and `deferred.md` listed this as undecided; it is implemented
+  in `buildDurablePostGeneration` (`server/fastify/src/routes/generationChat.ts`):
+  derivation throw → persist raw + `warning`; persist throw (chat gone/changed) → job
+  `error`. Docs reconciled.
+- **Durable `/chat` writer/423 gate location — resolved.** The gate is the global
+  active-writer `preHandler` in `server/fastify/src/activeWriter.ts`;
+  `isServerOwnedMutation()` includes `POST /api/v1/generate/chat`,
+  `/api/v1/generate/preview-prompt`, and `DELETE /api/v1/generate/chat/:id`.
+- **Doc count contradictions — fixed.** Stale "22 rules / 55 tests" mentions in
+  `phases/slices/README.md` and `reference/proof-points.md` corrected to the real
+  **23 checks / 58 tests**.
+
+---
+
+## Client-thinning — open items
+
+### Needs a decision
+
+- **Remove the `useServerPromptAssembly` flag.** Its `local` arm is the only surviving
+  `local` verdict in Fastify mode; it is kept because tests / specific cases set it
+  `false` to exercise the in-browser assembler. Trigger: when the local in-browser
+  assembler path is itself removed, the flag and its `local` return can be deleted.
+  This is the *end* of the prompt-assembly thinning sub-family, not a gap to patch.
+  Source: `archive/client-thinning/phases/slices/slice-1-a1-foundation-classifier.md`;
+  `src/ts/storage/database.svelte.ts:781`.
+  - Note: the in-code JSDoc (`database.svelte.ts:~1361`) attributes the default-`true`
+    flip to "the decision-#5 closeout"; the closeout record numbers it **decision #1**
+    (decision #5 is the provider-resolver unification). Harmless label mismatch; align
+    when the flag is next touched.
+- **`Message.saying` field fate / load-time group filter.** Decision #3 keeps
+  `Message.saying` (single-character speaker attribution; removal gated on a designed
+  replacement attribution model). Decision #4 keeps the `setDatabase` `type !== 'group'`
+  load filter (enforced by `A4R-group-chat-removed`). Trigger: a designed
+  speaker-attribution replacement is specified.
+- **Lua server VM security model is single-user self-host only.** The egress guard +
+  exec limits (incl. the 30/min request window) are scaled to "your own code on your
+  own box." A hosted/multi-tenant deployment needs a much higher bar (egress
+  allow-list, per-tenant isolation, possibly `worker_threads`). Trigger: deciding to
+  ship a hosted/multi-tenant Fastify deployment.
+  Source: `archive/client-thinning/phases/slices/slice-3b-lua/README.md`.
+
+### Intentionally deferred (no action unless the trigger fires)
+
+- **Stale group-chat strings/comments cleanup** (decision #6). Dead `removeFromGroup`
+  lang keys (`src/lang/*.ts`), the `src/ts/cbs.ts` `{{char}}` group-name description,
+  and the `risuai.d.ts` "and group chats" comment still exist. Deferred to the final
+  cleanup pass, not a standalone task. Docs-only; proof = no live behavior change.
+- **Route-direct final-message (assistant message) persistence** (decision #7).
+  Still command-backed (B2): the browser POSTs `generation-result` on the non-durable
+  path. The route-owned assistant-message write + double-write avoidance was handed to
+  the durable-generation workstream (and is now done **for the durable path** — the
+  durable job persists the result server-side). Trigger: a slice that moves
+  non-durable assistant-message persistence server-side.
+- **Event patching** (decision #8). Command events stay invalidation-only (debounced
+  full-projection refetch). Precondition to revisit: SSE reconnect + `Last-Event-ID`
+  replay specified and tested. Same precondition as durable-gen event patching below.
+- **A2 post-generation derivation is best-effort on the non-durable path.** A thrown
+  `runServerPostGeneration` is swallowed (no `done.postGeneration` frame, no browser
+  fallback). Code TODO at `server/fastify/src/routes/generationChat.ts` (the
+  `buildPostGenerationFrame` catch). Trigger: a stricter hard-fail / restore / retry
+  contract is needed.
+- **Output-trigger message surgery not durably persisted.** impersonate/cutchat/
+  modifychat from an `'output'` trigger are surfaced in the post-gen `message_patch`
+  for the projection only, not separately persisted server-side (matches today's
+  projection-only behavior). Likewise `editoutput`-that-adds-inlay-markers is an
+  ordering edge the terminal pass does not specially reconcile.
+- **Lua host functions returning stubbed values.** On the server VM these are deferred
+  (`server/fastify/src/prompt/luaRuntime.ts`): `LLM()`/`axLLM()` return an error JSON
+  (port path: route through `dispatchChatProvider`), `similarity()` returns `[]`
+  (needs server embedding infra), `generateImage`/`getCharacterImage`/`getPersonaImage`
+  are no-op/error (B1 image-gen; could reuse slice-3a `resolveStoredAssetImage`),
+  `getPersonaDescription()` returns `''`. Trigger: a real char's `triggerlua` needs one
+  during a server-assembled send.
+- **Non-vision image-caption (content class 2) is permanently unsupported.** No server
+  equivalent of the browser-only `runImageEmbedding` captioning pipeline; emitting a
+  silently captionless prompt was rejected, so it hard-fails as `unsupported`. Trigger:
+  only if a server-side image-captioning pipeline is ever introduced.
+- **pluginV2 edit/replacer hooks are permanently unsupported** (no-port; superseded by
+  Plugin V3). `hasPluginV2EditSet` never flips to server; guarded by `A4R-pluginv2`.
+  Listed as a standing constraint, not a gap.
+- **Server `/chat` can still hard-fail a provider shape the completion resolver
+  supports** (decision #5 seam). The `db → modelInfo` derivation stays per-side
+  (server uses string-prefix, not the `LLMModels` registry). Closing it would require
+  replicating the model registry on the server; explicitly out of scope for #5.
+- **Manual legacy local-client verification** is separate from Fastify projection
+  hardening; only opened if a dedicated local-client verification task is created.
+
+### Follow-ups (smaller, gated)
+
+- **Promote the interactive-Lua detection to the precise runtime-abort arm.** Today
+  it is a classify-time source scan (`alertInput|alertSelect|alertConfirm` regex →
+  `unsupported`); the runtime also flags `interactiveInvoked`. Trigger: a
+  false-positive/negative on the regex is observed.
+- **Move the remaining shallow string/regex audit rules to AST invariants.** Only the
+  four empirically-defeated rules (A4R2, A4R7, A4R-fanout-svelte, EC2) are hardened.
+  Trigger: a sincere variant prints "Client-thinning audit passed." against a still-
+  shallow rule; then convert that rule + ship adversarial fixtures.
+- **Fanout Svelte AST extraction misses quoted-attribute interpolations**
+  (`attr="{ ... }"`). It covers `<script>` blocks and `={ ... }` handlers only.
+  Trigger: a mutating dispatch site lands inside a quoted attribute interpolation.
+
+---
+
+## Durable generation — open items (Milestone 1 done; these are beyond it)
+
+- **Browser live auto-reattach UX — follow-up, NOT implemented.** The server surfaces
+  `activeGenerationJobs` (`server/fastify/src/routes/bootstrap.ts:37`) and the
+  `GET /api/v1/generate/chat/:id/stream` reattach endpoint, both tested, but **no
+  browser code consumes them** (`rg activeGenerationJobs src/` → zero hits). To wire
+  it: add `activeGenerationJobs` to the client bootstrap projection contract
+  (`src/ts/server/bootstrap.ts`) and a client reattach path that re-drives the
+  orchestrator off `GET …/:id/stream` after a mid-generation disconnect / fresh reload.
+  The durability guarantee does **not** depend on this — the result is server-persisted
+  and surfaces on the next projection/bootstrap refresh (EC-D2). This is the only part
+  of EC-D3 that is not end-to-end (its server half is done).
+- **Modes beyond `send` (`continue` / `regenerate`).** Milestone 1 is `send`-only;
+  `resolveDurableGeneration` hard-restricts to `send`. Widening needs idempotency +
+  append/replace semantics defined first. Source: `durableGeneration.ts:49-52,73`.
+- **Milestone 2 — survive a server restart.** M1 jobs are in-memory
+  (`GenerationJobRegistry`, lost on restart). Disk-persisting job state/result is
+  deferred; a chat generation is short-lived, so restart-survival is low value for a
+  single-user self-host. Precedent to study: HypaV3 `memoryRepository` /
+  `routes/memoryJobs.ts`. The `StreamJob.writerSessionId` field captured at M1 job
+  creation is the hook left for this (currently stored but unused by the completion
+  write, which is a server-owned completion of an already-authorized job).
+- **Event patching / SSE reconnect-replay contract.** Surgical per-event projection
+  patching stays out until SSE reconnect + replay (`Last-Event-ID` or an equivalent
+  read/replay endpoint) is specified and tested. Same precondition as client-thinning
+  decision #8 above.
+
+---
+
+## Cross-cutting / infrastructure
+
+- **Vite dev Fastify marker.** `pnpm dev` proxies `/api` but does not inject
+  `globalThis.__FASTIFY__`, so `isFastifyServer` is false in dev (only
+  `pnpm buildsite` + `pnpm api:start` is true Fastify-backed mode). Decide separately
+  whether true Fastify-backed dev needs a documented build/serve flow or a dev-time
+  marker injection.
