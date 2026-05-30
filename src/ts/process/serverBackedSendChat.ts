@@ -6,11 +6,6 @@ import type {
   MessageGenerationInfo,
   MessagePresetInfo,
 } from '../storage/database.svelte'
-import {
-  currentChatStateSnapshot,
-  dispatchPersistGenerationResult,
-  ensureMessageId,
-} from '../chatCommands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { getInlayAsset } from './files/inlays'
 import { runInlayScreen } from './inlayScreen'
@@ -393,20 +388,3 @@ export async function applyServerBackedTerminal(args: {
   }
 }
 
-export function persistServerBackedGenerationResult(args: {
-  currentChat: Chat
-  generationId: string
-  targetMessageId?: string
-}): void {
-  if (!args.currentChat.id) return
-  const assistantMessage = findGeneratedAssistantMessage(args.currentChat, args.generationId)
-  if (!assistantMessage) return
-  const previous = currentChatStateSnapshot()
-  ensureMessageId(assistantMessage)
-  dispatchPersistGenerationResult(
-    args.currentChat.id,
-    assistantMessage,
-    previous,
-    args.targetMessageId,
-  )
-}

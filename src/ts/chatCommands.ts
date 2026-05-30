@@ -9,7 +9,6 @@ import {
   deleteMessageCommand,
   forkChatCommand,
   patchChatScriptstateCommand,
-  persistGenerationResultCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
   replaceMessagesCommand,
@@ -465,27 +464,6 @@ export function dispatchReplaceMessages(
         baseRevision,
         chatId,
         messages: messages.map(toMessageSnapshot),
-      }),
-    () => restoreChatState(previous),
-  )
-}
-
-export function dispatchPersistGenerationResult(
-  chatId: string,
-  message: Message,
-  previous: ChatStateSnapshot,
-  targetMessageId?: string,
-): void {
-  ensureMessageId(message)
-  runMessageCommand(
-    (baseRevision) =>
-      persistGenerationResultCommand({
-        baseRevision,
-        chatId,
-        generationResult: {
-          message: toMessageSnapshot(message),
-          targetMessageId,
-        },
       }),
     () => restoreChatState(previous),
   )

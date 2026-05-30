@@ -379,18 +379,69 @@ function persistAssemblyMutations(args: {
 }
 
 /**
- * Slice 4 (A2): run the server post-generation pass over the provider's
- * completion text and build the `done.postGeneration` frame. Runs the run-var
- * pass, the `'output'` trigger, and `editoutput` (`runServerPostGeneration`),
- * persists the derived chat-var delta through the same slice-2 writer the
- * assembly delta uses (`persistAssemblyMutations` — no second writer), and
- * surfaces the final text / delta / resend / bumped revision for the browser.
+ * Resolve the assistant message + replace target for the inline (non-durable)
+ * server-dispatch path, which carries `continue` and `regenerate` (a send is
+ * always durable). The two modes differ in message identity:
+ *   - continue: `runServerPostGeneration` extended the last `char` row IN PLACE
+ *     (its original `chatId` preserved), so persist that row — replace by its
+ *     own `chatId`, no separate target.
+ *   - regenerate: a NEW row keyed by `generationId` was appended after the
+ *     transcript was truncated to the target; persist it but REPLACE the old
+ *     target (`regenerateMessageId`).
+ */
+function resolveInlineGenerationMessage(args: {
+  state: AssemblyState
+  input: AssembleInput
+  generationId: string
+  finalText: string
+  generationInfo: Record<string, unknown>
+  promptInfo?: Record<string, unknown>
+}): { message: Message; targetMessageId?: string } {
+  if (args.input.mode === 'continue') {
+    const messages = args.state.currentChat.message ?? []
+    const row = [...messages].reverse().find((message) => message.role === 'char')
+    if (row) return { message: structuredClone(row) as Message }
+    // Defensive: no prior assistant row to extend — append a fresh one.
+    return {
+      message: buildAssistantMessage({
+        data: args.finalText,
+        generationId: args.generationId,
+        characterId: args.state.currentChar.chaId,
+        generationInfo: args.generationInfo,
+        promptInfo: args.promptInfo,
+      }),
+    }
+  }
+  const message = extractAssistantMessage(
+    args.state,
+    args.generationId,
+    args.finalText,
+    args.generationInfo,
+    args.promptInfo,
+  )
+  return {
+    message,
+    targetMessageId:
+      args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined,
+  }
+}
+
+/**
+ * Slice 4 (A2) + lazy-projection Phase 3: run the server post-generation pass
+ * over the provider's completion text, persist the result SERVER-SIDE, and build
+ * the `done.postGeneration` frame. Runs the run-var pass, the `'output'` trigger,
+ * and `editoutput` (`runServerPostGeneration`), then persists the derived
+ * assistant message + post-gen chat-var delta in one mutation
+ * (`persistServerGenerationResult` — same shape + `generation.persisted` event as
+ * the durable path), and surfaces the final text / delta / resend / bumped
+ * revision for the browser.
  *
- * The assistant message itself is **not** persisted here: the browser's
- * generation-result command (B2) owns that write and uses `finalText` so the
- * server-derived `editoutput` text is what lands. A derivation failure is
- * swallowed so a healthy completion still terminates cleanly (the browser keeps
- * its own streamed copy).
+ * Phase 3 makes the server the sole author of generation results: this inline
+ * path (continue / regenerate) now owns the message write the browser used to do
+ * via the `/generation-result` command (B2). A derivation failure persists the
+ * RAW provider text best-effort (mode-correct target) rather than losing it, then
+ * still terminates cleanly; a persist failure (chat changed) is swallowed and the
+ * browser keeps its optimistic copy.
  */
 async function buildPostGenerationFrame(args: {
   state: NonNullable<Parameters<typeof runServerPostGeneration>[0]>
@@ -401,24 +452,80 @@ async function buildPostGenerationFrame(args: {
   completionText: string
   generationId: string
   generationInfo: Record<string, unknown>
+  promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
+  // Capture the continue target BEFORE post-gen mutates the row in place, so the
+  // failure fallback can still reconstruct the extended text + original id.
+  const continueRow =
+    args.input.mode === 'continue'
+      ? [...(args.state.currentChat.message ?? [])].reverse().find((m) => m.role === 'char')
+      : undefined
+  const continueBase = continueRow?.data ?? ''
+
+  let postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined
+  let message: Message
+  let targetMessageId: string | undefined
+  let chatVarMutations: AssembleMutationPayload['chatVarMutations'] = []
   try {
-    const postGen = await runServerPostGeneration(args.state, {
+    postGen = await runServerPostGeneration(args.state, {
       completionText: args.completionText,
       generationId: args.generationId,
       generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
     })
-    const frame: PostGenerationFrame = {}
-    if (postGen.changed) {
-      const revision = persistAssemblyMutations({
-        db: args.db,
-        dataDir: args.dataDir,
-        eventSink: args.eventSink,
-        input: args.input,
-        mutations: postGen.mutations,
+    const resolved = resolveInlineGenerationMessage({
+      state: args.state,
+      input: args.input,
+      generationId: args.generationId,
+      finalText: postGen.finalText,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    })
+    message = resolved.message
+    targetMessageId = resolved.targetMessageId
+    chatVarMutations = postGen.mutations.chatVarMutations
+  } catch {
+    // Derivation threw: persist the raw provider text so the result is not lost.
+    if (args.input.mode === 'continue') {
+      message = buildAssistantMessage({
+        data: (continueBase + args.completionText).trim(),
+        generationId: continueRow?.chatId ?? args.generationId,
+        characterId: args.input.characterId,
+        generationInfo: args.generationInfo,
+        promptInfo: args.promptInfo,
       })
-      if (revision !== undefined) frame.revision = revision
+    } else {
+      message = buildAssistantMessage({
+        data: args.completionText.trim(),
+        generationId: args.generationId,
+        characterId: args.input.characterId,
+        generationInfo: args.generationInfo,
+        promptInfo: args.promptInfo,
+      })
+      targetMessageId =
+        args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined
     }
+  }
+
+  let revision: number
+  try {
+    revision = persistServerGenerationResult({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      chatId: args.input.chatId,
+      message,
+      chatVarMutations,
+      targetMessageId,
+    })
+  } catch {
+    // Chat changed / gone during persist: leave the browser's optimistic copy
+    // and terminate cleanly (no frame).
+    return undefined
+  }
+
+  const frame: PostGenerationFrame = { revision }
+  if (postGen) {
     if (postGen.textChanged) frame.finalText = postGen.finalText
     if (
       postGen.mutations.chatVarMutations.length > 0 ||
@@ -427,17 +534,8 @@ async function buildPostGenerationFrame(args: {
       frame.messagePatch = postGen.mutations
     }
     if (postGen.resendChat) frame.resendChat = true
-    return Object.keys(frame).length > 0 ? frame : undefined
-  } catch {
-    // TODO: For now, this is handled on a best-effort basis. A thrown server
-    // post-generation pass (run-var / 'output' trigger / editoutput) is
-    // swallowed: no `done.postGeneration` frame is emitted and the browser runs
-    // no fallback derivation, so a healthy completion still terminates cleanly.
-    // Decided 2026-05-30 to keep this best-effort; revisit only if a stricter
-    // hard-fail/restore or retry contract is needed. See
-    // docs/client-thinning/phases/phase-5-closeout.md (decision A2).
-    return undefined
   }
+  return frame
 }
 
 /**
@@ -592,6 +690,7 @@ async function streamAssembly(
                       completionText,
                       generationId,
                       generationInfo,
+                      promptInfo: successfulResult.prompt.promptInfo,
                     })
                   : Promise.resolve(undefined),
             })
@@ -753,13 +852,21 @@ function extractAssistantMessage(
  * (`dispatchPersistGenerationResult` → the `/generation-result` route) produces, so
  * the result is byte-identical whether server- or (legacy) browser-written.
  */
-function persistDurableGenerationResult(args: {
+function persistServerGenerationResult(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
   chatId: string
   message: Message
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  /**
+   * Continue/regenerate target. When set, the result REPLACES the existing
+   * message at this id (the regenerate target, or the continue row) rather than
+   * appending/replacing by the result's own `chatId` — identical semantics to
+   * the legacy browser `/generation-result` command (`lookupMessageId`). `send`
+   * leaves it unset and appends by `generationId`.
+   */
+  targetMessageId?: string
 }): number {
   const patch: Record<string, string | number | boolean> = {}
   const deleteKeys: string[] = []
@@ -791,12 +898,18 @@ function persistDurableGenerationResult(args: {
       }
       const record = createMessageRecord(structuredClone(args.message), 'generationResult.message')
       const messageId = record.chatId
-      const existingIndex = messages.findIndex((message) => message.chatId === messageId)
+      const lookupMessageId = args.targetMessageId ?? messageId
+      const existingIndex = messages.findIndex((message) => message.chatId === lookupMessageId)
       const existing = existingIndex === -1 ? undefined : messages[existingIndex]
       if (messageIdExists(characters, messageId, { excludeMessage: existing })) {
         throw new ValidationError(`Duplicate message id: ${messageId}`)
       }
       if (existingIndex === -1) {
+        if (args.targetMessageId) {
+          throw new EntityNotFoundError(
+            `Message not found for chat ${args.chatId}: ${args.targetMessageId}`,
+          )
+        }
         messages.push(record)
       } else {
         messages[existingIndex] = record
@@ -872,7 +985,7 @@ async function buildDurablePostGeneration(args: {
 
   let revision: number
   try {
-    revision = persistDurableGenerationResult({
+    revision = persistServerGenerationResult({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
@@ -923,7 +1036,7 @@ function persistRawCancelledResult(args: {
   text: string
 }): void {
   try {
-    persistDurableGenerationResult({
+    persistServerGenerationResult({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,

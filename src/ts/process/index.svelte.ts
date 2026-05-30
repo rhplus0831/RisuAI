@@ -12,7 +12,6 @@ import { resolveDurableGeneration } from './request/durableGeneration'
 import {
   applyServerBackedTerminal,
   assembleServerBackedSendChat,
-  persistServerBackedGenerationResult,
   type ServerBackedDispatch,
 } from './serverBackedSendChat'
 import {
@@ -396,17 +395,12 @@ export async function sendChat(
         signal: abortSignal,
       })
     }
-    if (serverDispatch && !serverDurable) {
-      // Non-durable server dispatch: the browser persists the result (B2). On the
-      // durable path the server already persisted it at job completion (Step 3), so
-      // the browser reconciles the terminal-frame revision instead (EC-D4: zero
-      // generation-result POSTs).
-      persistServerBackedGenerationResult({
-        currentChat,
-        generationId,
-        targetMessageId: serverGenerationTargetMessageId,
-      })
-    }
+    // lazy-projection Phase 3: the server is the sole author of generation
+    // results on EVERY server-dispatch path. The durable send job persists at
+    // completion (Step 3); the inline continue/regenerate path persists in its
+    // post-gen pass (`buildPostGenerationFrame` → `persistServerGenerationResult`).
+    // Either way the browser only reconciles the terminal-frame revision and
+    // issues zero generation-result commands (B2 removed).
     return true
   } finally {
     if (iOwnDoingChat) {

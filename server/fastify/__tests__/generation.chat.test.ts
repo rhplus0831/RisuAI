@@ -1353,9 +1353,23 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         generationId: info.data.generationId,
       },
     })
-    // Slice 4 (A2): a trigger-less / script-less send runs the post-gen pass as a
-    // no-op, so the `done` frame omits `postGeneration` entirely (byte-parity).
-    expect((events.at(-1)?.data as { postGeneration?: unknown }).postGeneration).toBeUndefined()
+    // lazy-projection Phase 3: the inline (non-durable) path now persists the
+    // assistant message server-side — the browser issues no generation-result
+    // command — so the `done` frame carries the bumped revision and the chat
+    // shows the persisted reply.
+    const done = events.at(-1)!.data as { postGeneration?: { revision?: number } }
+    expect(done.postGeneration?.revision).toBe(2)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const persisted = bootstrap.json().database.characters[0].chats[0].message as Array<{
+      role: string
+      data: string
+    }>
+    expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply' })
   })
 
   // ── Slice 4 (A2): server post-generation pass (output trigger + editoutput) ──
@@ -1505,12 +1519,128 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const done = doneFrame(events)
 
     // The raw streamed text is unchanged; the server-owned `editoutput` transform
-    // rides on `finalText` (the browser writes it onto the assistant message). No
-    // chat-var write, so no revision bump.
+    // rides on `finalText`. lazy-projection Phase 3: the inline path persists the
+    // transformed message server-side, so the revision bumps and bootstrap shows
+    // the editoutput-applied text. No chat-var write, so no messagePatch.
     expect(done.result).toBe('server echo reply')
     expect(done.postGeneration?.finalText).toBe('server echo REPLY')
-    expect(done.postGeneration?.revision).toBeUndefined()
+    expect(done.postGeneration?.revision).toBe(2)
     expect(done.postGeneration?.messagePatch).toBeUndefined()
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const persisted = bootstrap.json().database.characters[0].chats[0].message as Array<{
+      role: string
+      data: string
+    }>
+    expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo REPLY' })
+  })
+
+  // lazy-projection Phase 3: the inline path (continue / regenerate) is now
+  // server-persisted too — the browser issues zero generation-result commands.
+  function seedChatWithMessages(
+    assertion: string,
+    messages: Array<Record<string, unknown>>,
+    echoMessage: string,
+  ): Promise<void> {
+    return seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      useServerPromptAssembly: true,
+      aiModel: 'echo_model',
+      echoMessage,
+      echoDelay: 0,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [{ id: 'chat-1', message: messages, note: '', name: 'Chat', localLore: [] }],
+        },
+      ],
+    })
+  }
+
+  it('persists a continue result server-side, extending the last row in place', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedChatWithMessages(
+      assertion,
+      [
+        { role: 'user', data: 'tell me a story', chatId: 'msg-user-1' },
+        { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+      ],
+      ' and they lived happily.',
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'continue' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const persisted = bootstrap.json().database.characters[0].chats[0].message as Array<{
+      role: string
+      data: string
+      chatId: string
+    }>
+    // Extended the SAME assistant row (chatId preserved); no duplicate appended.
+    expect(persisted).toHaveLength(2)
+    expect(persisted[1].chatId).toBe('msg-char-1')
+    expect(persisted[1].data).toContain('Once upon a time')
+    expect(persisted[1].data).toContain('and they lived happily')
+  })
+
+  it('persists a regenerate result server-side, replacing the target message', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedChatWithMessages(
+      assertion,
+      [
+        { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+        { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+      ],
+      'a brand new reply',
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'regenerate',
+        regenerateMessageId: 'msg-char-1',
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const persisted = bootstrap.json().database.characters[0].chats[0].message as Array<{
+      role: string
+      data: string
+      chatId: string
+    }>
+    // The old target was REPLACED (not duplicated): the char row carries the new
+    // text under a fresh generation id, and the old reply is gone.
+    expect(persisted).toHaveLength(2)
+    expect(persisted[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
+    expect(persisted[1].role).toBe('char')
+    expect(persisted[1].data).toContain('a brand new reply')
+    expect(persisted[1].chatId).not.toBe('msg-char-1')
+    expect(persisted.some((m) => m.data === 'old reply')).toBe(false)
   })
 
   it('runs a Lua editOutput hook server-side over the completion (A2 / slice 3b VM)', async () => {
