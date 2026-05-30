@@ -350,6 +350,115 @@ describe('Phase 9-1 command foundation', () => {
   })
 })
 
+describe('first-run database seed', () => {
+  it('rejects a settings command on a never-seeded (null database) server', async () => {
+    // Regression: a fresh server ships database: null, and every command path
+    // requires an existing object. The welcome screen's first action (set
+    // username) is the first to hit it.
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/account',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, patch: { username: 'Test' } },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('database must be an object before settings commands can run')
+  })
+
+  it('seeds the default database, emits an event, and unblocks settings commands', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    harness.commandEvents.clear()
+
+    const seeded = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: { database: { username: 'User', temperature: 80 } },
+    })
+
+    expect(seeded.statusCode).toBe(200)
+    expect(seeded.json()).toEqual({
+      revision: 1,
+      initialized: true,
+      event: {
+        type: 'state.initialized',
+        revision: 1,
+        resource: 'state',
+      },
+    })
+    expect(harness.commandEvents.list()).toEqual([seeded.json().event])
+
+    // db.json now holds the seeded database.
+    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(onDisk.database).toMatchObject({ username: 'User', temperature: 80 })
+
+    // The previously-rejected settings command now succeeds against revision 1.
+    const account = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/account',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 1, patch: { username: 'Test' } },
+    })
+    expect(account.statusCode).toBe(200)
+    expect(account.json().revision).toBe(2)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(2)
+    expect(bootstrap.json().database).toMatchObject({ username: 'Test', temperature: 80 })
+  })
+
+  it('is an idempotent no-op that never clobbers an existing database', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      username: 'Existing',
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+    })
+    harness.commandEvents.clear()
+
+    const seeded = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: { database: { username: 'Should not overwrite' } },
+    })
+
+    expect(seeded.statusCode).toBe(200)
+    expect(seeded.json()).toEqual({ revision, initialized: false })
+    // No write happened: no event, revision unchanged, data preserved.
+    expect(harness.commandEvents.list()).toEqual([])
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database).toMatchObject({ username: 'Existing' })
+  })
+
+  it('rejects a non-object seed payload', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    for (const database of [null, ['array'], 'string']) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/commands/state/initialize',
+        headers: { 'risu-auth': assertion },
+        payload: { database },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error).toBe('database payload must be an object')
+    }
+  })
+})
+
 describe('Phase 9-2a scalar settings groups', () => {
   it('applies display settings through the grouped settings command', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

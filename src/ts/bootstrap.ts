@@ -43,6 +43,8 @@ import {
 } from './server/bootstrap'
 import { subscribeServerCommandEvents } from './server/events'
 import {
+  canUseServerCommands,
+  initializeServerDatabase,
   peekCachedServerCommandRevision,
   setCachedServerCommandRevision,
   type CommandEvent,
@@ -76,6 +78,9 @@ let serverProjectionRefreshPending = false
 let serverProjectionSyncChain: Promise<void> = Promise.resolve()
 let serverProjectionEventsDesired = false
 let serverProjectionReconnectTimer: ReturnType<typeof setTimeout> | null = null
+// Set when the bootstrap projection arrives with a null database (a never-seeded
+// server). Consumed once by seedServerDatabaseIfEmpty after format defaults fill.
+let pendingServerDatabaseSeed = false
 
 /**
  * Loads the application data.
@@ -91,6 +96,10 @@ export async function loadData() {
       } catch (error) {}
       LoadingStatusState.text = 'Checking For Format Update...'
       await withTrustedServerProjectionWrite(() => checkNewFormat())
+      // A fresh server ships `database: null` and never seeds itself; persist the
+      // complete default we just built (after checkNewFormat) so server-owned
+      // commands and prompt assembly have a database to operate on.
+      await seedServerDatabaseIfEmpty()
       const db = getDatabase()
 
       LoadingStatusState.text = 'Updating States...'
@@ -153,6 +162,10 @@ export async function loadWebInitialDatabase() {
       bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
     )
   }
+  // A fresh server has never been seeded: it ships `database: null`. Remember
+  // that so `loadData` can push the built default back once the format defaults
+  // are filled in (see seedServerDatabaseIfEmpty).
+  pendingServerDatabaseSeed = bootstrap.projection.database == null
   applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
   // Record which characters arrive with a REAL (resident) globalLore before
   // `checkNewFormat` defaults an absent (stubbed) value to []. The lorebook
@@ -172,6 +185,33 @@ export async function loadWebInitialDatabase() {
   startChatMessageHydration()
   void hydrateActiveChat()
   await startServerProjectionEvents()
+}
+
+/**
+ * One-time first-run seed. When the bootstrap projection arrived with a null
+ * database, push the complete default we built in memory (after checkNewFormat
+ * filled the format defaults) back to the server so server-owned commands and
+ * prompt assembly have a real database object. The server guards the write
+ * idempotently, so a stale flag can never clobber existing data. A failed seed
+ * is logged but non-fatal — it degrades to the prior behaviour (the first
+ * settings command surfaces the server's "database must be an object" 400).
+ */
+async function seedServerDatabaseIfEmpty(): Promise<void> {
+  if (!pendingServerDatabaseSeed) return
+  pendingServerDatabaseSeed = false
+  if (!canUseServerCommands()) return
+
+  // A plain JSON snapshot strips the Svelte state proxy and matches exactly what
+  // the server persists (writePersisted stringifies the same shape).
+  const snapshot = JSON.parse(JSON.stringify(getDatabase())) as Database
+  const result = await initializeServerDatabase(snapshot)
+  if (result.status === 'ok') {
+    // Advance the command cursor to the seed revision so the echoed
+    // state.initialized event is recognised as our own and skipped.
+    setCachedServerCommandRevision(result.revision)
+  } else if (result.status === 'error') {
+    console.warn(`Initial server database seed failed: ${result.error}`)
+  }
 }
 
 export function stopServerProjectionEvents() {

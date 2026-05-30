@@ -312,6 +312,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'state.restored',
     resource: 'state',
   },
+  stateInitialized: {
+    type: 'state.initialized',
+    resource: 'state',
+  },
   stateImported: {
     type: 'state.imported',
     resource: 'state',

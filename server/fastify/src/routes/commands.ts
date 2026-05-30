@@ -181,7 +181,12 @@ import {
 } from '../commands/pluginStorage.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
-import { EntityNotFoundError, RevisionMismatchError, ValidationError } from '../repository.js'
+import {
+  EntityNotFoundError,
+  RevisionMismatchError,
+  ValidationError,
+  seedInitialDatabase,
+} from '../repository.js'
 
 interface RuntimeSettingsCommandBody {
   baseRevision?: unknown
@@ -991,6 +996,30 @@ export function registerCommandRoutes(
   dataDir: string,
   eventSink: CommandEventSink,
 ): void {
+  // First-run seed: a fresh server starts with `database: null`, which every
+  // command path rejects (they require an existing object). The client pushes
+  // its freshly-built default database here once, before issuing any other
+  // command. Idempotent and clobber-safe — a no-op when a database already
+  // exists, so it can never overwrite real data.
+  app.post('/api/v1/commands/state/initialize', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as { database?: unknown }
+      const result = seedInitialDatabase(db, dataDir, body.database)
+      if (!result.initialized) {
+        // Already initialized: report the live revision so the client can sync
+        // its cursor; no write happened, so no event is emitted.
+        return { revision: result.revision, initialized: false }
+      }
+      const event = { ...COMMAND_EVENT_CATALOG.stateInitialized, revision: result.revision }
+      eventSink.emit(event)
+      return { revision: result.revision, initialized: true, event }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.patch('/api/v1/commands/settings/:group', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 

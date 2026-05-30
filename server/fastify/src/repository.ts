@@ -421,6 +421,62 @@ export function applyImport(
   }
 }
 
+/**
+ * First-run seed: write `database` to db.json ONLY when no database exists yet.
+ *
+ * Idempotent and clobber-safe — if a database is already present (a non-null
+ * object), this is a no-op that returns the current revision without writing or
+ * bumping. The presence check runs inside the same `BEGIN IMMEDIATE`
+ * transaction as the write, so two clients opening the same fresh server (a
+ * second tab, a reload race) can never seed twice or overwrite real data.
+ *
+ * Mirrors `applyImport`'s split-messages-then-write-after-COMMIT ordering, so a
+ * crash between the SQLite COMMIT and the db.json write leaves db.json behind
+ * (re-applied next write), never paired with stale message rows.
+ */
+export function seedInitialDatabase(
+  db: DatabaseSync,
+  dataDir: string,
+  database: unknown,
+): { revision: number; initialized: boolean } {
+  if (
+    database === null ||
+    database === undefined ||
+    typeof database !== 'object' ||
+    Array.isArray(database)
+  ) {
+    throw new ValidationError('database payload must be an object')
+  }
+  let transactionOpen = false
+  db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
+  try {
+    const current = loadPersisted(dataDir)
+    if (current.database !== null && current.database !== undefined) {
+      // Already initialized → never overwrite. Report the live revision so the
+      // caller can sync its cursor.
+      const { revision } = getSchemaState(db)
+      db.exec('COMMIT')
+      transactionOpen = false
+      return { revision, initialized: false }
+    }
+    const messageFree = splitChatMessagesIntoTable(db, {
+      ...current,
+      database: structuredClone(database),
+    })
+    const revision = bumpRevision(db)
+    db.exec('COMMIT')
+    transactionOpen = false
+    writePersisted(dataDir, messageFree)
+    return { revision, initialized: true }
+  } catch (err) {
+    if (transactionOpen) {
+      db.exec('ROLLBACK')
+    }
+    throw err
+  }
+}
+
 export function assetsDir(dataDir: string): string {
   return path.join(dataDir, 'assets')
 }
