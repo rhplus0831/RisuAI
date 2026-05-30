@@ -11,7 +11,7 @@
 
 # Project Structure Grounding
 
-Before making changes, read `STRUCTURE.md` first to get a high-level understanding of the project layout.
+Start by reading `STRUCTURE.md` to understand the project structure.
 
 # Collaboration Guideline
 
