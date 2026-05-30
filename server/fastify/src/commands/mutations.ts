@@ -4,7 +4,8 @@ import {
   RevisionMismatchError,
   ValidationError,
   loadPersistedWithMessages,
-  splitChatMessagesIntoTable,
+  stripChatMessages,
+  syncChatMessages,
   writePersisted,
 } from '../repository.js'
 import type { CommandEvent, CommandEventDraft, CommandEventSink } from './events.js'
@@ -56,12 +57,12 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     const nextDatabase = cloneJsonValue(hydrated.database)
     const mutation = args.mutate(nextDatabase)
 
-    // Write messages into the SQLite table inside the transaction; defer the
-    // db.json file write until after COMMIT (see splitChatMessagesIntoTable).
-    const messageFree = splitChatMessagesIntoTable(args.db, {
-      ...hydrated,
-      database: nextDatabase,
-    })
+    // Surgically persist only the chats whose messages changed (Slice 4.2): a
+    // message append is one row insert, an unrelated chat is never rewritten, and
+    // a non-message command writes nothing to the messages table. Inside the
+    // transaction; the db.json file write is deferred until after COMMIT.
+    syncChatMessages(args.db, hydrated.database, nextDatabase)
+    const messageFree = stripChatMessages({ ...hydrated, database: nextDatabase })
 
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }

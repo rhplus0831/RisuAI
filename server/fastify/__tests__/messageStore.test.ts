@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from '../src/db.js'
 import {
+  applyChatMessageDiff,
   countChatMessages,
   deleteChatMessages,
   getAllChatIdsWithMessages,
@@ -90,6 +91,66 @@ describe('messageStore CRUD', () => {
     replaceChatMessages(db, 'chat-a', [])
     expect(getChatMessages(db, 'chat-a')).toEqual([])
     expect(getAllChatIdsWithMessages(db)).toEqual([])
+  })
+})
+
+describe('applyChatMessageDiff surgical writes', () => {
+  function rowids(db: DatabaseSync, chatId: string): { seq: number; rowid: number }[] {
+    return db
+      .prepare('SELECT rowid, seq FROM messages WHERE chat_id = ? ORDER BY seq')
+      .all(chatId) as { seq: number; rowid: number }[]
+  }
+
+  it('appends exactly one row and leaves prior rows physically untouched', () => {
+    const db = makeDb(makeDataDir())
+    const base = [msg('m1', 'user', 'a'), msg('m2', 'char', 'b')]
+    replaceChatMessages(db, 'chat-1', base)
+    const before = rowids(db, 'chat-1')
+
+    applyChatMessageDiff(db, 'chat-1', base, [...base, msg('m3', 'user', 'c')])
+
+    const after = rowids(db, 'chat-1')
+    // The two prefix rows keep their rowid (not deleted+reinserted); one new row.
+    expect(after.slice(0, 2)).toEqual(before)
+    expect(after).toHaveLength(3)
+    expect(getChatMessages(db, 'chat-1')).toEqual([...base, msg('m3', 'user', 'c')])
+  })
+
+  it('writes nothing when the array is unchanged', () => {
+    const db = makeDb(makeDataDir())
+    const base = [msg('m1', 'user', 'a'), msg('m2', 'char', 'b')]
+    replaceChatMessages(db, 'chat-1', base)
+    const before = rowids(db, 'chat-1')
+
+    applyChatMessageDiff(db, 'chat-1', base, structuredClone(base))
+
+    expect(rowids(db, 'chat-1')).toEqual(before)
+  })
+
+  it('deletes from the divergence point and reseqs the tail', () => {
+    const db = makeDb(makeDataDir())
+    const base = [msg('m1', 'user', 'a'), msg('m2', 'char', 'b'), msg('m3', 'user', 'c')]
+    replaceChatMessages(db, 'chat-1', base)
+    const before = rowids(db, 'chat-1')
+
+    // Delete the middle message → tail reseqs.
+    applyChatMessageDiff(db, 'chat-1', base, [base[0], base[2]])
+
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'a'), msg('m3', 'user', 'c')])
+    // The untouched prefix (m1 at seq 0) keeps its rowid.
+    expect(rowids(db, 'chat-1')[0]).toEqual(before[0])
+  })
+
+  it('truncates by dropping trailing rows only', () => {
+    const db = makeDb(makeDataDir())
+    const base = [msg('m1', 'user', 'a'), msg('m2', 'char', 'b'), msg('m3', 'user', 'c')]
+    replaceChatMessages(db, 'chat-1', base)
+    const before = rowids(db, 'chat-1')
+
+    applyChatMessageDiff(db, 'chat-1', base, base.slice(0, 1))
+
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'a')])
+    expect(rowids(db, 'chat-1')).toEqual([before[0]])
   })
 })
 

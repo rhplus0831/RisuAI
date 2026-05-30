@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
+import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
@@ -4033,6 +4034,101 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     expect(stale.statusCode).toBe(409)
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+  })
+})
+
+describe('Phase 4 slice 4.2 surgical message writes', () => {
+  function messageRowids(dataDir: string, chatId: string): { seq: number; rowid: number }[] {
+    const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      return db
+        .prepare('SELECT rowid, seq FROM messages WHERE chat_id = ? ORDER BY seq')
+        .all(chatId) as { seq: number; rowid: number }[]
+    } finally {
+      db.close()
+    }
+  }
+
+  async function seedTwoChats(assertion: string): Promise<number> {
+    return importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            { id: 'chat-a', name: 'A', note: '', localLore: [], message: [{ role: 'user', data: 'a1', chatId: 'a1' }] },
+            { id: 'chat-b', name: 'B', note: '', localLore: [], message: [{ role: 'user', data: 'b1', chatId: 'b1' }] },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+  }
+
+  it('appends one row to the target chat without rewriting an unrelated chat', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await seedTwoChats(assertion)
+    const chatBBefore = messageRowids(harness.dataDir, 'chat-b')
+    const chatABefore = messageRowids(harness.dataDir, 'chat-a')
+
+    const appended = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, message: { role: 'char', data: 'a2', chatId: 'a2' } },
+    })
+    expect(appended.statusCode).toBe(200)
+
+    // chat-b is physically untouched (same rowids); chat-a kept its existing
+    // row and gained exactly one (no whole-chat rewrite).
+    expect(messageRowids(harness.dataDir, 'chat-b')).toEqual(chatBBefore)
+    const chatAAfter = messageRowids(harness.dataDir, 'chat-a')
+    expect(chatAAfter.slice(0, chatABefore.length)).toEqual(chatABefore)
+    expect(chatAAfter).toHaveLength(chatABefore.length + 1)
+  })
+
+  it('a non-message command writes nothing to the messages table', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await seedTwoChats(assertion)
+    const before = [
+      ...messageRowids(harness.dataDir, 'chat-a'),
+      ...messageRowids(harness.dataDir, 'chat-b'),
+    ]
+
+    const persona = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        persona: { id: 'persona-p', name: 'P', personaPrompt: 'hi', note: '' },
+      },
+    })
+    expect(persona.statusCode).toBe(200)
+
+    const after = [
+      ...messageRowids(harness.dataDir, 'chat-a'),
+      ...messageRowids(harness.dataDir, 'chat-b'),
+    ]
+    expect(after).toEqual(before)
+  })
+
+  it('deleting a chat drops its message rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await seedTwoChats(assertion)
+    expect(messageRowids(harness.dataDir, 'chat-b')).toHaveLength(1)
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/chats/chat-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(messageRowids(harness.dataDir, 'chat-b')).toEqual([])
+    expect(messageRowids(harness.dataDir, 'chat-a')).toHaveLength(1)
   })
 })
 

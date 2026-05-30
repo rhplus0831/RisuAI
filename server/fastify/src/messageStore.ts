@@ -132,6 +132,48 @@ export function deleteChatMessages(db: DatabaseSync, chatId: string): void {
   db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId)
 }
 
+function stableEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+/**
+ * Surgically reconcile a single chat's rows from `base` (current persisted) to
+ * `next` (desired) with the minimum number of row writes:
+ *   - identical arrays → no write at all;
+ *   - a pure append → exactly one INSERT (the new tail row);
+ *   - an edit/delete/truncate at position k → one DELETE of seq ≥ k + reinsert
+ *     of the (usually short) tail.
+ * `seq = array index`, so reseqing the tail after a delete falls out for free.
+ * This is what makes a message append O(1) row writes instead of a whole-chat
+ * (let alone whole-corpus) rewrite.
+ */
+export function applyChatMessageDiff(
+  db: DatabaseSync,
+  chatId: string,
+  base: readonly unknown[],
+  next: readonly unknown[],
+): void {
+  let prefix = 0
+  const shared = Math.min(base.length, next.length)
+  while (prefix < shared && stableEqual(base[prefix], next[prefix])) prefix++
+
+  if (prefix === base.length && prefix === next.length) return // unchanged
+
+  if (prefix < base.length) {
+    db.prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ?').run(chatId, prefix)
+  }
+  if (prefix < next.length) {
+    const insert = db.prepare(
+      'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    for (let seq = prefix; seq < next.length; seq++) {
+      const message = readMessageObject(next[seq])
+      const row = toRow(message)
+      insert.run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
+    }
+  }
+}
+
 /** All messages for a chat, in `seq` order, reconstructed from the json column. */
 export function getChatMessages(db: DatabaseSync, chatId: string): JsonRecord[] {
   const rows = db

@@ -3,7 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { bumpRevision, getSchemaState } from './db.js'
-import { getAllChatMessagesGrouped, replaceAllChatMessages } from './messageStore.js'
+import {
+  applyChatMessageDiff,
+  deleteChatMessages,
+  getAllChatMessagesGrouped,
+  replaceAllChatMessages,
+} from './messageStore.js'
 
 export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'application/x-onnx': 'onnx',
@@ -200,6 +205,46 @@ export function writePersistedWithMessages(
   next: Persisted,
 ): void {
   writePersisted(dataDir, splitChatMessagesIntoTable(db, next))
+}
+
+/**
+ * Surgical message persistence for the command path (Slice 4.2). Diff each
+ * chat's `message[]` between the hydrated `baselineDatabase` (what the table
+ * currently holds) and the mutated `nextDatabase`, writing only the rows that
+ * actually changed — so a message append touches one row, an unrelated chat is
+ * never rewritten, and a non-message command writes nothing to the table. Chats
+ * removed by the command (chat/character delete) have their rows dropped. Runs
+ * inside the caller's open transaction; does NOT touch db.json.
+ */
+export function syncChatMessages(
+  db: DatabaseSync,
+  baselineDatabase: unknown,
+  nextDatabase: unknown,
+): void {
+  const baseline = new Map<string, unknown[]>()
+  eachChat(baselineDatabase, (chat) => {
+    if (typeof chat.id === 'string') {
+      baseline.set(chat.id, Array.isArray(chat.message) ? chat.message : [])
+    }
+  })
+  const nextIds = new Set<string>()
+  eachChat(nextDatabase, (chat) => {
+    if (typeof chat.id !== 'string') return
+    nextIds.add(chat.id)
+    const next = Array.isArray(chat.message) ? chat.message : []
+    applyChatMessageDiff(db, chat.id, baseline.get(chat.id) ?? [], next)
+  })
+  for (const chatId of baseline.keys()) {
+    if (!nextIds.has(chatId)) deleteChatMessages(db, chatId)
+  }
+}
+
+/** Strip every chat's `message[]` so the database can be written message-free. */
+export function stripChatMessages(next: Persisted): Persisted {
+  eachChat(next.database, (chat) => {
+    delete chat.message
+  })
+  return next
 }
 
 export function applyImport(
