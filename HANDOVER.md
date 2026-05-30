@@ -33,8 +33,8 @@ leaves all suites green — land related steps together.
 | **4.3** stub bootstrap + hydrate-on-open | ✅ | `24f8f8d3`, `de295e3d` | `loadStubProjection`, `GET /projection/chatMessages?id=`, client `chatMessageHydration.svelte.ts`; hardened by review. |
 | **4.4** hypaV3Data → SQLite | ✅ | `5000be42` | `chat_hypa_v3` table; same boundary + hydration as messages. |
 | **6 (a)** remove auto-continue | ✅ | `5b751fcb` | deleted the off-by-default feature + settings + i18n + recursion. |
+| **6 (b)** durable continue/regenerate | ✅ | `d48bff23`, `b145ed72` | widened `resolveDurableGeneration` + the durable job to `send\|continue\|regenerate` (shared `resolvePostGenerationResult`/`buildRawModeMessage`); mode-aware reattach (job carries `mode` on `activeGenerationJobs`). Adversarially reviewed (only the reattach finding, fixed in `b145ed72`). |
 | **5** Lorebooks stub | ⏳ TODO | — | stub globalLore + module lorebook; **lorebookBridge data-loss hazard**. |
-| **6 (b)** durable continue/regenerate | ⏳ TODO | — | widen `resolveDurableGeneration`; mode-aware durable persistence. |
 | **6 (c)** reroll buffer | ⏳ TODO | — | alternate rows in the `messages` table; "no rerolled result is lost". |
 
 Two adversarial reviews were run (4.1 and 4.2+4.3); all confirmed findings were
