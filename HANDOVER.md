@@ -42,7 +42,7 @@ in the real app before shipping (this is a personal, not-yet-released port).
 | **6 (b)** durable continue/regenerate | ✅ | `d48bff23`, `b145ed72` | widened `resolveDurableGeneration` + the durable job to `send\|continue\|regenerate` (shared `resolvePostGenerationResult`/`buildRawModeMessage`); mode-aware reattach (job carries `mode` on `activeGenerationJobs`). Adversarially reviewed (one reattach finding, fixed `b145ed72`). |
 | **6 (c) server** reroll buffer | ✅ | `79fca3e5` | "don't lose a rerolled result": regenerate preserves the displaced candidate as a flagged `alternate` row (v6 migration, negative `seq`), cleared on send/continue; shipped on the `chatMessages` hydration wire. Adversarial review: 0 findings. |
 | **A — 6 (c) client** swipe-persistence | ✅ | `7a13c0e3`…`d281766c` | full candidate set on the server; extracted `rerollNavigation.svelte.ts`; seed-from-`alternates` on hydration; guard-safe swaps; reload E2E. Adversarially reviewed (2 findings: optimistic-clear-before-send fixed; swipe/regenerate race mitigated by `$doingChat`). |
-| **B — Phase 5** Lorebooks stub | ⏳ TODO | — | stub `globalLore` + disabled-module `lorebook`; rework `lorebookBridge` (no-data-loss invariant); hydrate on open. Unit (watcher harness) + E2E. |
+| **B — Phase 5** Lorebooks stub | 🟡 keystone done | `77bf6290` | no-data-loss invariant (hydrated-character registry + watcher gates + record-at-apply) landed & unit-tested (inert without the stub). Remaining: character-lorebook hydration mechanism → bulk-hydrate → flip the stub (staged; see §B). Module-lorebook stubbing recommended deferred. |
 
 Progress memory: `lazy-projection-phase6b-landed`, `lazy-projection-phase6c-landed`,
 `lazy-projection-phase4-landed`, `lazy-projection-phases-1-2-3-7-landed`.
@@ -159,6 +159,62 @@ in sync (don't resurrect a cleared buffer from a stale `alternates` snapshot; re
 on the revision).
 
 ## B — Phase 5: Lorebooks stub (HIGH RISK — data loss; unit-invariant first)
+
+### ✅ Keystone landed (`77bf6290`): the no-data-loss invariant
+
+The data-loss hazard — the `watchServerBackedLorebooks` auto-diff persisting a
+hydrated→stub (`[real]`→`[]`) transition as a deletion — is **closed**, test-first:
+
+- `src/ts/server/lorebookBridge.svelte.ts` now holds a **hydrated-character
+  registry** (`markCharacterLorebookHydrated` / `isCharacterLorebookHydrated` /
+  `resetLorebookHydration` / `recordHydratedCharacterLorebooks`).
+  `collectLorebookCollectionSnapshots` skips non-hydrated characters and
+  `dispatchWatchedReplacement` hard-guards on the registry, so a stubbed /
+  re-stubbed character can never be diffed into a deletion. (Modules keep using
+  field-presence — `checkNewFormat` never `[]`-defaults an absent module lorebook.)
+- **Key correction to the note below:** `v.globalLore ??= []` is in
+  `checkNewFormat()`, which **does** run in Fastify web mode (`bootstrap.ts loadData`
+  calls it unconditionally after `loadWebInitialDatabase`), so field-presence does
+  NOT survive — the registry is mandatory. It is populated from the **raw projection
+  characters** (before the `[]`-default) at every apply: bootstrap +
+  `characters`-merge + `fullBootstrapResync` (alongside `resetChatHydration`).
+- Without the server stub this is **inert** (all characters ship resident → all
+  marked → watcher identical); explicit `dispatchReplaceCharacterLorebooks` edits
+  (editor / triggers / MCP) on the open char are the primary persist path and are
+  untouched. Unit: `lorebookBridge.svelte.test.ts` (4 cases, proven to fail when the
+  gate is removed). Browser 1011 green.
+
+### ⏳ Remaining: activate the stub + character-lorebook hydration
+
+Stage it so the app never renders empty lorebooks mid-build (each step ships green):
+
+1. **Hydration mechanism FIRST, stub OFF (inert).** Add a server
+   `loadCharacterLorebookHydration(dataDir, chaId) → { globalLore }` +
+   `GET /api/v1/projection/characterLorebook?id=` (mirror the `chatMessages`
+   handler), a client `fetchServerCharacterLorebook`, and a hydration bridge
+   modelled on `chatMessageHydration.svelte.ts` that, on character **selection**
+   (the `selectedCharID` effect) and on re-stub, fetches the char's `globalLore`,
+   merges it (a `hydrateServerCharacterLorebook` like `hydrateServerChatMessages`)
+   **and calls `markCharacterLorebookHydrated(chaId)`**. With the stub off this is a
+   no-op refetch — safe to land + unit-test alone.
+2. **Bulk-hydrate** for the all-character readers (`exportAsDataset.ts` already awaits
+   `ensureAllChatsHydrated` — add `ensureAllCharacterLorebooksHydrated`; audit
+   `tokenizer.ts` / `characterCards.ts`).
+3. **Flip the stub LAST:** `loadStubProjection` deletes every character's
+   `globalLore` (stub ALL — the client resets `selectedCharID` to -1 on load, so no
+   character is "open" at bootstrap; hydrate purely on selection). Now hydration is
+   load-bearing. **E2E** (`browser-smoke`): open character → globalLore hydrates →
+   edit persists; re-stub → assert **no** deletion. Then real-app validation of the
+   full client `globalLore` reader surface (`cbs.ts:353`, `triggers.ts`,
+   `process/lorebook.svelte.ts`, slash commands) — these read the *selected*
+   (hydrated) char, but confirm no pre-hydration read leaks `[]`.
+4. **Module `lorebook` is LOW VALUE / deferable:** a module's lorebook is read via
+   `getModules()` = `enabledModules` ∪ chat/char-attached ∪ integration, so stubbing
+   any *referenced* module breaks its render; only truly-unreferenced modules are
+   safe to stub, and the watcher already skips them by field-presence. Recommend
+   deferring module-lorebook stubbing (little corpus saved, real render risk).
+
+### Original notes (kept for context)
 
 Stub character `globalLore` + **disabled**-module `lorebook` in the projection;
 hydrate on character/module open; **enabled** modules stay resident (synchronous CBS
