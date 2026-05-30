@@ -105,13 +105,14 @@ vi.mock('./server/projection', () => ({
 
 // Phase 4.3 chat-message hydration is exercised in its own tests; stub it here so
 // the surgical-sync assertions (fetch counts) are unaffected by hydration calls.
-vi.mock('./server/chatMessageHydration.svelte', () => ({
+const hydrationSpies = vi.hoisted(() => ({
   startChatMessageHydration: vi.fn(),
   hydrateActiveChat: vi.fn(async () => undefined),
   resetChatHydration: vi.fn(),
   ensureAllChatsHydrated: vi.fn(async () => undefined),
   hydrateChatMessages: vi.fn(async () => undefined),
 }))
+vi.mock('./server/chatMessageHydration.svelte', () => hydrationSpies)
 
 vi.mock('./globalApi.svelte', () => ({
   forageStorage: forageSpies,
@@ -213,6 +214,11 @@ beforeEach(() => {
   forageSpies.setItem.mockClear()
   persistenceSpies.saveDb.mockClear()
   persistenceSpies.makeColdData.mockClear()
+  hydrationSpies.startChatMessageHydration.mockClear()
+  hydrationSpies.hydrateActiveChat.mockClear()
+  hydrationSpies.resetChatHydration.mockClear()
+  hydrationSpies.ensureAllChatsHydrated.mockClear()
+  hydrationSpies.hydrateChatMessages.mockClear()
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = {} as any
   LoadingStatusState.text = ''
@@ -290,6 +296,10 @@ describe('web bootstrap startup source', () => {
     })
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
     expect(peekCachedServerCommandRevision()).toBe(6)
+    // Phase 4.3: merging the `characters` slice re-stubs every chat, so the
+    // hydration cache is reset and the open chat re-hydrated.
+    expect(hydrationSpies.resetChatHydration).toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
   })
 
   it('full-bootstraps when the server cannot narrow the resource', async () => {

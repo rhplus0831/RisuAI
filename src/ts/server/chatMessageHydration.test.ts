@@ -96,6 +96,27 @@ describe('chat message hydration bridge', () => {
     ])
   })
 
+  it('resetChatHydration makes ensureAllChatsHydrated refetch re-stubbed chats', async () => {
+    projectionState.fetchChat.mockImplementation(async (chatId: string) =>
+      okResult(chatId, [{ role: 'user', data: chatId, chatId: `m-${chatId}` }]),
+    )
+    await ensureAllChatsHydrated()
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(2)
+
+    // Simulate a foreign `characters` event re-stubbing every chat: messages
+    // wiped in DBState AND the hydration cache cleared (bootstrap.ts does both).
+    for (const chat of db().characters[0].chats) chat.message = []
+    resetChatHydration()
+    projectionState.fetchChat.mockClear()
+
+    // Without the reset this would skip the cached ids and export empty stubs.
+    await ensureAllChatsHydrated()
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(2)
+    expect(db().characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'chat-1', chatId: 'm-chat-1' },
+    ])
+  })
+
   it('hydrateChatMessages targets a specific (non-active) chat', async () => {
     projectionState.fetchChat.mockResolvedValue(okResult('chat-2', [{ role: 'char', data: 'yo', chatId: 'm2' }]))
     await hydrateChatMessages('chat-2')

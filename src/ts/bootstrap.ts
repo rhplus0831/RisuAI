@@ -250,9 +250,13 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
     })
     if (result.status === 'ok' && result.mode === 'fields') {
       mergeServerProjectionFields(result.fields)
-      // The `characters` slice is message-free (Phase 4.3 stubs), so merging it
-      // re-stubs the open chat — re-hydrate its messages.
+      // The `characters` slice is message-free (Phase 4.3 stubs) and the merge
+      // wholesale-replaces the array, so it re-stubs EVERY chat — not just the
+      // open one. Forget all cached hydration (like fullBootstrapResync) so a
+      // later re-open or bulk read refetches the now-stale non-active chats, then
+      // re-hydrate the open chat eagerly.
       if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
+        resetChatHydration()
         void hydrateActiveChat({ force: true })
       }
       // Advance by exactly one event; the fetch returns the resource as of the
