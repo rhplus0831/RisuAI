@@ -136,6 +136,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'character.created',
     resource: 'character',
   },
+  characterCreatedAndSelected: {
+    type: 'character.createdAndSelected',
+    resource: 'character',
+  },
   characterUpdated: {
     type: 'character.updated',
     resource: 'character',

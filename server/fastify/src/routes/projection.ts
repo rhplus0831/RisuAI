@@ -26,7 +26,7 @@ import { maskProviderSecrets } from '../providerSecrets.js'
 // `asset.created`); the rest of the map exists for completeness and for the
 // gap/reconnect recovery path.
 const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
-  character: ['characters', 'characterOrder'],
+  character: ['characters', 'characterOrder', 'currentChar'],
   chat: ['characters'],
   chatFolder: ['characters'],
   message: ['characters'],

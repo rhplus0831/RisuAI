@@ -3187,6 +3187,7 @@ describe('Phase 9-3a character commands', () => {
       payload: {
         baseRevision: restored.json().revision,
         characterId: 'char-b',
+        lastInteraction: 4321,
       },
     })
     expect(selected.statusCode).toBe(200)
@@ -3199,6 +3200,13 @@ describe('Phase 9-3a character commands', () => {
         id: 'char-b',
       },
       characterId: 'char-b',
+    })
+    expect(
+      (loadPersisted(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+        (character) => character.chaId === 'char-b',
+      ),
+    ).toMatchObject({
+      lastInteraction: 4321,
     })
 
     const reordered = await harness.app.inject({
@@ -3271,6 +3279,62 @@ describe('Phase 9-3a character commands', () => {
         data: ['char-b'],
       },
     ])
+  })
+
+  it('creates and selects a character in one command', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [],
+          chatFolders: [],
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const createdAndSelected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/create-and-select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        character: {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [],
+          chatFolders: [],
+        },
+        lastInteraction: 9876,
+      },
+    })
+
+    expect(createdAndSelected.statusCode).toBe(200)
+    expect(createdAndSelected.json()).toEqual({
+      revision: revision + 1,
+      event: {
+        type: 'character.createdAndSelected',
+        revision: revision + 1,
+        resource: 'character',
+        id: 'char-b',
+      },
+      characterId: 'char-b',
+    })
+    expect(loadPersisted(harness.dataDir).database).toMatchObject({
+      currentChar: 1,
+      characterOrder: ['char-a', 'char-b'],
+    })
+    expect(
+      (loadPersisted(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+        (character) => character.chaId === 'char-b',
+      ),
+    ).toMatchObject({
+      name: 'B',
+      lastInteraction: 9876,
+    })
   })
 
   it('rejects malformed character commands without bumping revision', async () => {
@@ -4210,8 +4274,20 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
           chaId: 'char-a',
           name: 'A',
           chats: [
-            { id: 'chat-a', name: 'A', note: '', localLore: [], message: [{ role: 'user', data: 'a1', chatId: 'a1' }] },
-            { id: 'chat-b', name: 'B', note: '', localLore: [], message: [{ role: 'user', data: 'b1', chatId: 'b1' }] },
+            {
+              id: 'chat-a',
+              name: 'A',
+              note: '',
+              localLore: [],
+              message: [{ role: 'user', data: 'a1', chatId: 'a1' }],
+            },
+            {
+              id: 'chat-b',
+              name: 'B',
+              note: '',
+              localLore: [],
+              message: [{ role: 'user', data: 'b1', chatId: 'b1' }],
+            },
           ],
           chatFolders: [],
           chatPage: 0,

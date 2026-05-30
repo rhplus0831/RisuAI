@@ -249,6 +249,7 @@ interface CharacterCommandBody {
   characterId?: unknown
   characterIds?: unknown
   characterOrder?: unknown
+  lastInteraction?: unknown
 }
 
 interface ChatCommandBody {
@@ -2256,6 +2257,46 @@ export function registerCommandRoutes(
     }
   })
 
+  app.post('/api/v1/commands/characters/create-and-select', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as CharacterCommandBody
+      const baseRevision = readBaseRevision(body)
+      const character = createCharacterRecord(body.character, { assetDataDir: dataDir })
+      const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
+      character.lastInteraction = lastInteraction
+      const result = applyJsonCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        eventSink,
+        mutate(database) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = ensureCharacterCollection(target)
+          if (findCharacterIndex(characters, character.chaId) !== -1) {
+            throw new ValidationError(`Duplicate character id: ${character.chaId}`)
+          }
+          characters.push(character)
+          const normalizedCharacters = ensureCharacterCollection(target)
+          target.currentChar = requireCharacterIndex(normalizedCharacters, character.chaId)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.characterCreatedAndSelected, id: character.chaId },
+            extra: { characterId: character.chaId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.patch('/api/v1/commands/characters/:characterId', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -2344,6 +2385,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
       const characterId = readCharacterId(body.characterId)
+      const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
       const result = applyJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
@@ -2353,6 +2395,7 @@ export function registerCommandRoutes(
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
           const index = requireCharacterIndex(characters, characterId)
+          characters[index].lastInteraction = lastInteraction
           target.currentChar = index
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterSelected, id: characterId },
@@ -4252,6 +4295,14 @@ function validateSettingValue(key: string, value: unknown): void {
     throw new ValidationError(`${key} must be an array or null`)
   }
   validateJsonValue(key, value)
+}
+
+function readSelectionLastInteraction(value: unknown): number {
+  if (value === undefined) return Date.now()
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ValidationError('lastInteraction must be a finite number')
+  }
+  return value
 }
 
 function validateSettingsAssetRefs(dataDir: string, patch: Record<string, unknown>): void {

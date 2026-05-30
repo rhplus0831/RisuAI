@@ -452,6 +452,66 @@ describe('Phase 9-3f compatibility adapters', () => {
     })
   })
 
+  it('creates and selects scratch characters with one server command under the guard', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const index = createNewCharacter({ select: true })
+
+    expect(index).toBe(1)
+    expect(get(selectedCharID)).toBe(1)
+    expect(DBState.db.characters[1].lastInteraction).toEqual(expect.any(Number))
+    expect(() => {
+      DBState.db.characters[1].lastInteraction = 1
+    }).toThrow()
+
+    await vi.waitFor(() => {
+      expect(
+        calls.some((call) => call.url === '/api/v1/commands/characters/create-and-select'),
+      ).toBe(true)
+    })
+    const command = calls.find(
+      (call) => call.url === '/api/v1/commands/characters/create-and-select',
+    )
+    expect(command).toMatchObject({
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        character: expect.objectContaining({
+          chaId: DBState.db.characters[1].chaId,
+          lastInteraction: DBState.db.characters[1].lastInteraction,
+        }),
+        lastInteraction: DBState.db.characters[1].lastInteraction,
+      },
+    })
+  })
+
+  it('selects characters without formatting the guarded server projection', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.characters[0] = {
+      ...DBState.db.characters[0],
+      triggerscript: undefined,
+    } as character
+    setServerProjectionWriteGuardEnabled(true)
+
+    await changeChar(0)
+
+    expect(get(selectedCharID)).toBe(0)
+    expect(DBState.db.characters[0].triggerscript).toBeUndefined()
+    expect(DBState.db.characters[0].lastInteraction).toEqual(expect.any(Number))
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/select')).toBe(true)
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/select')).toMatchObject({
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        characterId: 'char-a',
+        lastInteraction: DBState.db.characters[0].lastInteraction,
+      },
+    })
+  })
+
   it('rejects cold-storage character hydration in server-backed web mode', async () => {
     const calls = stubCommandFetch()
     DBState.db.characters[0].coldstorage = 'cold-char-a'

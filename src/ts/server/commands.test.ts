@@ -22,6 +22,7 @@ import {
   bulkPluginStorageCommand,
   createChatCommand,
   createChatFolderCommand,
+  createAndSelectCharacterCommand,
   createCharacterCommand,
   createLoadoutCommand,
   createModuleCommand,
@@ -1434,6 +1435,18 @@ describe('server command API adapter', () => {
           characterId: 'char-a',
         }
       }
+      if (url.endsWith('/characters/create-and-select')) {
+        return {
+          revision: 7,
+          event: {
+            type: 'character.createdAndSelected',
+            revision: 7,
+            resource: 'character',
+            id: 'char-c',
+          },
+          characterId: 'char-c',
+        }
+      }
       if (url.endsWith('/characters/char-b')) {
         const method = commandFetch.calls.at(-1)?.method
         return method === 'DELETE'
@@ -1505,6 +1518,7 @@ describe('server command API adapter', () => {
       selectCharacterCommand({
         baseRevision: 4,
         characterId: 'char-a',
+        lastInteraction: 1234,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 5, characterId: 'char-a' })
 
@@ -1518,6 +1532,14 @@ describe('server command API adapter', () => {
       revision: 6,
       selectedCharacterId: 'char-a',
     })
+
+    await expect(
+      createAndSelectCharacterCommand({
+        baseRevision: 6,
+        character: { chaId: 'char-c', name: 'C' },
+        lastInteraction: 5678,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 7, characterId: 'char-c' })
 
     expect(
       commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
@@ -1558,6 +1580,7 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 4,
           characterId: 'char-a',
+          lastInteraction: 1234,
         },
       },
       {
@@ -1566,6 +1589,15 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 5,
           characterOrder: [{ id: 'folder-a', name: 'Folder', color: '', data: ['char-a'] }],
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/create-and-select',
+        method: 'POST',
+        body: {
+          baseRevision: 6,
+          character: { chaId: 'char-c', name: 'C' },
+          lastInteraction: 5678,
         },
       },
     ])

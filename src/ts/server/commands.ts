@@ -682,6 +682,10 @@ export interface CreateCharacterCommandInput extends CharacterCommandInput {
   character: CharacterSnapshot
 }
 
+export interface CreateAndSelectCharacterCommandInput extends CreateCharacterCommandInput {
+  lastInteraction?: number
+}
+
 export interface UpdateCharacterCommandInput extends CharacterCommandInput {
   characterId: string
   patch: CharacterSnapshot
@@ -693,6 +697,7 @@ export interface DeleteCharacterCommandInput extends CharacterCommandInput {
 
 export interface SelectCharacterCommandInput extends CharacterCommandInput {
   characterId: string
+  lastInteraction?: number
 }
 
 export interface ReorderCharactersCommandInput extends CharacterCommandInput {
@@ -1485,6 +1490,21 @@ export async function createCharacterCommand(
   })
 }
 
+export async function createAndSelectCharacterCommand(
+  input: CreateAndSelectCharacterCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson('/characters/create-and-select', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      character: input.character,
+      lastInteraction: input.lastInteraction,
+    },
+    signal,
+  })
+}
+
 export async function updateCharacterCommand(
   input: UpdateCharacterCommandInput,
   signal?: AbortSignal | null,
@@ -1521,6 +1541,7 @@ export async function selectCharacterCommand(
     body: {
       baseRevision: input.baseRevision,
       characterId: input.characterId,
+      lastInteraction: input.lastInteraction,
     },
     signal,
   })

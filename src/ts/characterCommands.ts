@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import {
   canUseServerCommands,
+  createAndSelectCharacterCommand,
   createCharacterCommand,
   deleteCharacterCommand,
   reorderCharactersCommand,
@@ -75,6 +76,22 @@ export function dispatchCreateCharacter(
       createCharacterCommand({
         baseRevision,
         character: toCharacterSnapshot(character),
+      }),
+    () => restoreCharacterState(previous),
+  )
+}
+
+export function dispatchCreateAndSelectCharacter(
+  character: character,
+  previous: CharacterStateSnapshot,
+  lastInteraction: number,
+): void {
+  runCharacterCommand(
+    (baseRevision) =>
+      createAndSelectCharacterCommand({
+        baseRevision,
+        character: toCharacterSnapshot(character),
+        lastInteraction,
       }),
     () => restoreCharacterState(previous),
   )
@@ -158,12 +175,14 @@ export function dispatchDeleteCharacter(
 export function dispatchSelectCharacter(
   characterId: string,
   previous: CharacterStateSnapshot,
+  lastInteraction?: number,
 ): void {
   runCharacterCommand(
     (baseRevision) =>
       selectCharacterCommand({
         baseRevision,
         characterId,
+        lastInteraction,
       }),
     () => restoreCharacterState(previous),
   )

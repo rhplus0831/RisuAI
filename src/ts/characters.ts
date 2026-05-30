@@ -51,6 +51,7 @@ import {
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
   currentCharacterStateSnapshot,
+  dispatchCreateAndSelectCharacter,
   dispatchCompatibleCharacterUpdate,
   dispatchCreateCharacter,
   dispatchDeleteCharacter,
@@ -59,20 +60,34 @@ import {
 } from './characterCommands'
 import { isFastifyServer } from './platform'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
-import {
-  ensureAllChatsHydrated,
-  hydrateChatMessages,
-} from './server/chatMessageHydration.svelte'
+import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 
-export function createNewCharacter() {
+export function createNewCharacter(
+  options: {
+    select?: boolean
+  } = {},
+) {
   const previous = currentCharacterStateSnapshot()
-  const character = createBlankChar()
+  const character = characterFormatUpdate(createBlankChar())
+  const select = options.select ?? false
+  const lastInteraction = Date.now()
+  let index = -1
   withTrustedServerProjectionWrite(() => {
     DBState.db.characters.push(character)
     checkCharOrder()
+    index = DBState.db.characters.length - 1
+    if (select) {
+      character.lastInteraction = lastInteraction
+      ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
+      selectedCharID.set(index)
+    }
   })
-  dispatchCreateCharacter(character, previous)
-  return DBState.db.characters.length - 1
+  if (select) {
+    dispatchCreateAndSelectCharacter(character, previous, lastInteraction)
+  } else {
+    dispatchCreateCharacter(character, previous)
+  }
+  return index
 }
 
 function cloneCharacterSnapshot(char: character | undefined): character | undefined {
@@ -919,18 +934,20 @@ export async function addCharacter(
   reseter()
   switch (r) {
     case 'createfromScratch':
-      createNewCharacter()
+      createNewCharacter({ select: true })
       break
     case 'importCharacter':
       await importCharacter()
+      {
+        let db = getDatabase()
+        if (db.characters[db.characters.length - 1]) {
+          changeChar(db.characters.length - 1)
+        }
+      }
       break
     default:
       MobileGUIStack.set(1)
       return
-  }
-  let db = getDatabase()
-  if (db.characters[db.characters.length - 1]) {
-    changeChar(db.characters.length - 1)
   }
   MobileGUIStack.set(1)
 }
@@ -958,6 +975,22 @@ export async function changeChar(
       alertError(language.errors.coldStorageVerifyFailed)
       return
     }
+  }
+  if (isFastifyServer) {
+    const previous = currentCharacterStateSnapshot()
+    const characterId = DBState.db.characters?.[index]?.chaId
+    if (!characterId) return
+    const lastInteraction = Date.now()
+    withTrustedServerProjectionWrite(() => {
+      const character = DBState.db.characters?.[index]
+      if (character) {
+        character.lastInteraction = lastInteraction
+      }
+      ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
+      selectedCharID.set(index)
+    })
+    dispatchSelectCharacter(characterId, previous, lastInteraction)
+    return
   }
   characterFormatUpdate(index, {
     updateInteraction: true,
