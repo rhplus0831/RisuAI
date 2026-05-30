@@ -25,7 +25,6 @@
   import AlertComp from './lib/Others/AlertComp.svelte'
   import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte'
   import GridChars from './lib/Others/GridCatalog.svelte'
-  import WelcomeRisu from './lib/Others/WelcomeRisu.svelte'
   import BookmarkList from './lib/Others/BookmarkList.svelte'
   import Settings from './lib/Setting/Settings.svelte'
   import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards'
@@ -58,7 +57,6 @@
   import { currentModuleStateSnapshot, dispatchCreateModule } from './ts/moduleCommands'
   import { isFastifyServer } from './ts/platform'
 
-  let didFirstSetup: boolean = $derived(DBState.db?.didFirstSetup)
   let gridOpen = $state(false)
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
@@ -233,8 +231,6 @@
     </div>
   {:else if $CustomGUISettingMenuStore}
     <CustomGUISettingMenu />
-  {:else if !didFirstSetup}
-    <WelcomeRisu />
   {:else if $settingsOpen}
     <Settings />
   {:else if $MobileGUI}

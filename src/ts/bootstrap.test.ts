@@ -68,6 +68,9 @@ const serverEventsState = vi.hoisted(() => ({
 const serverProjectionState = vi.hoisted(() => ({
   fetchResource: vi.fn(),
 }))
+const serverCommandsState = vi.hoisted(() => ({
+  initialize: vi.fn(),
+}))
 const forageSpies = vi.hoisted(() => ({
   Init: vi.fn(async () => undefined),
   getItem: vi.fn(async () => undefined),
@@ -102,6 +105,14 @@ vi.mock('./server/projection', () => ({
   canUseServerProjection: () => platformState.isFastifyServer,
   fetchServerChatMessages: vi.fn(),
 }))
+
+vi.mock('./server/commands', async (importActual) => {
+  const actual = await importActual<typeof import('./server/commands')>()
+  return {
+    ...actual,
+    initializeServerDatabase: serverCommandsState.initialize,
+  }
+})
 
 // Chat-message hydration is exercised in its own tests; stub it here so the
 // surgical-sync assertions (fetch counts) are unaffected by hydration calls.
@@ -210,6 +221,13 @@ beforeEach(() => {
     revision: 6,
     mode: 'full' as const,
   }))
+  serverCommandsState.initialize.mockReset()
+  serverCommandsState.initialize.mockResolvedValue({
+    status: 'ok',
+    revision: 1,
+    initialized: true,
+    event: { type: 'state.initialized', revision: 1, resource: 'state' },
+  })
   clearCachedServerCommandRevision()
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
@@ -517,5 +535,46 @@ describe('web bootstrap startup source', () => {
     expect(persistenceSpies.makeColdData).not.toHaveBeenCalled()
     expect(persistenceSpies.saveDb).not.toHaveBeenCalled()
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('seeds a missing server database before marking startup loaded', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 0,
+        database: null,
+      },
+    }
+
+    await loadData()
+
+    expect(serverCommandsState.initialize).toHaveBeenCalledTimes(1)
+    expect(serverCommandsState.initialize.mock.calls[0][0]).toMatchObject({
+      characters: [],
+      modules: [],
+      personas: [{ name: 'User', personaPrompt: '', icon: '', note: '', largePortrait: false }],
+      language: 'en',
+    })
+    expect(peekCachedServerCommandRevision()).toBe(1)
+    expect(get(loadedStore)).toBe(true)
+  })
+
+  it('keeps startup unloaded when a missing database cannot be seeded', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 0,
+        database: null,
+      },
+    }
+    serverCommandsState.initialize.mockResolvedValue({
+      status: 'error',
+      error: 'write failed',
+    })
+
+    await loadData()
+
+    expect(serverCommandsState.initialize).toHaveBeenCalledTimes(1)
+    expect(get(loadedStore)).toBe(false)
   })
 })

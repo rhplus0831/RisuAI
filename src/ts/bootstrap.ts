@@ -60,10 +60,7 @@ import {
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
 } from './server/lorebookBridge.svelte'
-import {
-  setActiveGenerationJobs,
-  startActiveGenerationReattach,
-} from './process/reattach'
+import { setActiveGenerationJobs, startActiveGenerationReattach } from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 
 // Delay before re-subscribing to the command-event stream after it drops. On
@@ -149,9 +146,7 @@ export async function loadData() {
 function rawProjectionCharacters(
   database: Database | undefined,
 ): ReadonlyArray<{ chaId?: string; globalLore?: unknown }> | undefined {
-  return database?.characters as
-    | ReadonlyArray<{ chaId?: string; globalLore?: unknown }>
-    | undefined
+  return database?.characters as ReadonlyArray<{ chaId?: string; globalLore?: unknown }> | undefined
 }
 
 export async function loadWebInitialDatabase() {
@@ -193,13 +188,15 @@ export async function loadWebInitialDatabase() {
  * filled the format defaults) back to the server so server-owned commands and
  * prompt assembly have a real database object. The server guards the write
  * idempotently, so a stale flag can never clobber existing data. A failed seed
- * is logged but non-fatal — it degrades to the prior behaviour (the first
- * settings command surfaces the server's "database must be an object" 400).
+ * is fatal for this startup: the app should not enter the home screen while the
+ * server still has no db.json-backed database.
  */
 async function seedServerDatabaseIfEmpty(): Promise<void> {
   if (!pendingServerDatabaseSeed) return
   pendingServerDatabaseSeed = false
-  if (!canUseServerCommands()) return
+  if (!canUseServerCommands()) {
+    throw new Error('Initial server database seed failed: server commands unavailable')
+  }
 
   // A plain JSON snapshot strips the Svelte state proxy and matches exactly what
   // the server persists (writePersisted stringifies the same shape).
@@ -209,8 +206,22 @@ async function seedServerDatabaseIfEmpty(): Promise<void> {
     // Advance the command cursor to the seed revision so the echoed
     // state.initialized event is recognised as our own and skipped.
     setCachedServerCommandRevision(result.revision)
-  } else if (result.status === 'error') {
-    console.warn(`Initial server database seed failed: ${result.error}`)
+    return
+  }
+
+  throw new Error(`Initial server database seed failed: ${serverCommandFailureMessage(result)}`)
+}
+
+function serverCommandFailureMessage(
+  result: Exclude<Awaited<ReturnType<typeof initializeServerDatabase>>, { status: 'ok' }>,
+): string {
+  switch (result.status) {
+    case 'conflict':
+      return `revision conflict at ${result.currentRevision}`
+    case 'error':
+      return result.error
+    case 'unavailable':
+      return 'server commands unavailable'
   }
 }
 
