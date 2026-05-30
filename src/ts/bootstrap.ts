@@ -54,6 +54,10 @@ import {
   startChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
 import {
+  recordHydratedCharacterLorebooks,
+  resetLorebookHydration,
+} from './server/lorebookBridge.svelte'
+import {
   setActiveGenerationJobs,
   startActiveGenerationReattach,
 } from './process/reattach'
@@ -131,6 +135,15 @@ export async function loadData() {
   }
 }
 
+/** The raw characters of a projection database, for the Phase 5 hydration record. */
+function rawProjectionCharacters(
+  database: Database | undefined,
+): ReadonlyArray<{ chaId?: string; globalLore?: unknown }> | undefined {
+  return database?.characters as
+    | ReadonlyArray<{ chaId?: string; globalLore?: unknown }>
+    | undefined
+}
+
 export async function loadWebInitialDatabase() {
   LoadingStatusState.text = 'Loading Server Projection...'
   const bootstrap = await fetchServerBootstrapProjection()
@@ -140,6 +153,11 @@ export async function loadWebInitialDatabase() {
     )
   }
   applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
+  // Phase 5: record which characters arrive with a REAL (resident) globalLore —
+  // read from the raw projection BEFORE `checkNewFormat` defaults an absent
+  // (stubbed) value to []. The lorebook watcher only persists hydrated characters.
+  resetLorebookHydration()
+  recordHydratedCharacterLorebooks(bootstrap.projection.database?.characters)
   // Seed the surgical-sync baseline: subsequent command events are decided
   // against the revision this client has applied.
   setCachedServerCommandRevision(bootstrap.projection.revision)
@@ -258,6 +276,10 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
         resetChatHydration()
         void hydrateActiveChat({ force: true })
+        // Phase 5: the merge re-stubs every character's globalLore too — forget the
+        // hydrated marks and re-record from the freshly merged (raw) characters.
+        resetLorebookHydration()
+        recordHydratedCharacterLorebooks(result.fields.characters)
       }
       // Advance by exactly one event; the fetch returns the resource as of the
       // server's *current* revision, but later events for other resources must
@@ -292,6 +314,10 @@ async function fullBootstrapResync(): Promise<void> {
         // re-hydrate the open chat (Phase 4.3).
         resetChatHydration()
         void hydrateActiveChat({ force: true })
+        // Phase 5: the re-apply re-stubs character globalLore too — re-record the
+        // hydrated marks from the fresh (raw) projection.
+        resetLorebookHydration()
+        recordHydratedCharacterLorebooks(rawProjectionCharacters(bootstrap.projection.database))
       } else if (bootstrap.status === 'error') {
         console.warn(`Server projection refresh failed: ${bootstrap.error}`)
       }

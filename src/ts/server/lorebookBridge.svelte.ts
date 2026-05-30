@@ -42,6 +42,55 @@ interface PendingCollectionReplacement {
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
 let suppressRollbackDispatch = false
 
+// Lazy-projection Phase 5 (no-data-loss invariant). Character `globalLore` is
+// stubbed in the projection for non-open characters and hydrated on character-open;
+// `checkNewFormat` then defaults a stubbed (absent) `globalLore` to `[]`
+// (bootstrap.ts), so field-presence can no longer tell a stubbed character from a
+// genuinely-empty hydrated one. This registry is the source of truth instead: the
+// reactive watcher only ever snapshots/persists a character whose `globalLore` is
+// HYDRATED here. A character that is stubbed (or re-stubbed by a projection
+// re-apply) is absent from the registry, so a `[real]`→`[]` transition can never be
+// observed as a deletion and persisted — the data-loss path this phase must kill.
+// (Module `lorebook` keeps using field-presence: `checkNewFormat` never defaults an
+// absent module lorebook to `[]`, so a stubbed disabled module stays `Array.isArray`
+// === false and is already skipped below.)
+const hydratedCharacterLorebooks = new Set<string>()
+
+/** Mark a character's `globalLore` as hydrated (real, persistable). */
+export function markCharacterLorebookHydrated(characterId: string): void {
+  if (characterId) hydratedCharacterLorebooks.add(characterId)
+}
+
+/** Whether a character's `globalLore` is hydrated (not a stub). */
+export function isCharacterLorebookHydrated(characterId: string): boolean {
+  return hydratedCharacterLorebooks.has(characterId)
+}
+
+/**
+ * Forget all hydrated-character marks — call BEFORE a full projection re-apply /
+ * `characters`-slice merge re-stubs every character (mirrors `resetChatHydration`),
+ * so a re-stubbed character is treated as non-hydrated until it is hydrated again.
+ */
+export function resetLorebookHydration(): void {
+  hydratedCharacterLorebooks.clear()
+}
+
+/**
+ * Record which characters arrive with a REAL (resident) `globalLore` in a raw
+ * projection — read from the projection bytes BEFORE `checkNewFormat` can default an
+ * absent value to `[]`. The bootstrap ships the selected character's `globalLore`
+ * resident; everything else is a stub (absent) and stays non-hydrated until opened.
+ */
+export function recordHydratedCharacterLorebooks(
+  characters: ReadonlyArray<{ chaId?: string; globalLore?: unknown }> | undefined,
+): void {
+  for (const character of characters ?? []) {
+    if (character?.chaId && Array.isArray(character.globalLore)) {
+      hydratedCharacterLorebooks.add(character.chaId)
+    }
+  }
+}
+
 export interface WatchServerBackedLorebooksOptions {
   delayMs?: number
 }
@@ -87,7 +136,12 @@ export function ensureAllClientLorebookIds(): void {
       lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
     }
     for (const character of DBState.db.characters ?? []) {
-      character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
+      // Only touch a HYDRATED character's globalLore — assigning ids to a stubbed
+      // one would default its absent globalLore to `[]` and mask the stub.
+      if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
+        character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
+      }
+      // Chat localLore stays resident (not stubbed in Phase 5).
       for (const chat of character.chats ?? []) {
         chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
       }
@@ -337,6 +391,9 @@ function dispatchWatchedReplacement(
   }
   if (key.startsWith('character:')) {
     const characterId = key.slice('character:'.length)
+    // Hard guard (defence in depth): never persist a non-hydrated character's
+    // globalLore, even if a snapshot somehow slipped through.
+    if (!hydratedCharacterLorebooks.has(characterId)) return
     const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
     if (character) {
       dispatchReplaceCharacterLorebooks(characterId, character.globalLore ?? [], previous, delayMs)
@@ -369,7 +426,10 @@ function collectLorebookCollectionSnapshots(): Map<string, string> {
     }
   }
   for (const character of DBState.db.characters ?? []) {
-    if (character.chaId) {
+    // Snapshot a character's globalLore ONLY when it is hydrated; a stubbed /
+    // not-yet-hydrated character is never tracked, so a re-stub can't be diffed into
+    // a deletion (the no-data-loss invariant).
+    if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
       snapshots.set(`character:${character.chaId}`, snapshotJson(character.globalLore ?? []))
     }
     for (const chat of character.chats ?? []) {
