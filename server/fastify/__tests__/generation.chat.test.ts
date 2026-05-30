@@ -1642,9 +1642,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   })
 
   // Phase 6c — the reroll buffer ("don't lose a rerolled result"): a regenerate
-  // preserves the candidate it replaces as an alternate; further regenerates
-  // accumulate; a send (the confirm boundary) clears the buffer.
-  it('preserves the replaced candidate as an alternate, accumulates, and clears on send (Phase 6c)', async () => {
+  // preserves BOTH the candidate it replaces AND the new one it produces as
+  // alternates (so the full candidate set survives a reload and swiping away from
+  // the newest one never loses it); further regenerates accumulate (deduped by
+  // uid); a send (the confirm boundary) clears the buffer.
+  it('preserves both the replaced and the new candidate as alternates, accumulates, and clears on send (Phase 6c)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedChatWithMessages(
       assertion,
@@ -1668,20 +1670,23 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         },
       })
 
-    // First regenerate: the displaced "old reply" is preserved, not destroyed.
+    // First regenerate: the displaced "old reply" AND the new active "a brand new
+    // reply" are both preserved — swiping away from the new candidate must survive.
     expect((await regenerate('msg-char-1')).statusCode).toBe(200)
     let active = await persistedMessages(assertion)
     expect(active.at(-1)!.data).toContain('a brand new reply')
     let alternates = await persistedAlternates(assertion)
-    expect(alternates).toHaveLength(1)
-    expect(alternates[0].data).toBe('old reply')
-
-    // Second regenerate (target = the now-active candidate): alternates accumulate.
-    expect((await regenerate(active.at(-1)!.chatId)).statusCode).toBe(200)
-    alternates = await persistedAlternates(assertion)
     expect(alternates).toHaveLength(2)
     expect(alternates.some((m) => m.data === 'old reply')).toBe(true)
     expect(alternates.some((m) => m.data.includes('a brand new reply'))).toBe(true)
+
+    // Second regenerate (target = the now-active candidate): candidates accumulate —
+    // the previously-active one is already buffered (deduped), the new one is added.
+    expect((await regenerate(active.at(-1)!.chatId)).statusCode).toBe(200)
+    alternates = await persistedAlternates(assertion)
+    expect(alternates).toHaveLength(3)
+    expect(alternates.filter((m) => m.data === 'old reply')).toHaveLength(1)
+    expect(alternates.filter((m) => m.data.includes('a brand new reply'))).toHaveLength(2)
     // The active transcript stays a single char row (no duplication).
     active = await persistedMessages(assertion)
     expect(active.filter((m) => m.role === 'char')).toHaveLength(1)

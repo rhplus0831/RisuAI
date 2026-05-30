@@ -300,15 +300,31 @@ export function countChatMessages(db: DatabaseSync, chatId: string): number {
 
 // ── Phase 6c: the reroll buffer (alternate rows) ────────────────────────────────
 // Preserved reroll candidates for a chat — "don't lose a rerolled result". A
-// regenerate moves the candidate it replaces here instead of destroying it; the
-// buffer is cleared at the confirm boundary (send / continue). Alternate rows use
-// a NEGATIVE `seq` (monotonically decreasing) so the `(chat_id, seq)` PK stays
-// unique against active rows (seq >= 0) without a PK change. No order is preserved
-// (the only guarantee is "not lost").
+// regenerate stores *every* candidate of the current turn here (the one it
+// displaces AND the new one it produces) so the full set survives a reload and
+// swipe-navigation is durable for free: flipping candidates only repositions the
+// active transcript tail, never touching this buffer (the active tail is one of
+// these candidates, matched back by `uid` on hydration). This realizes the design
+// doc's "insert the new candidate as an alternate row and flip the active tail"
+// (docs/lazy-projection/reference/durable-generation-modes.md). The buffer is
+// cleared at the confirm boundary (send / continue). Alternate rows use a NEGATIVE
+// `seq` (monotonically decreasing) so the `(chat_id, seq)` PK stays unique against
+// active rows (seq >= 0) without a PK change. No order is preserved (the only
+// guarantee is "not lost").
 
-/** Append one preserved reroll candidate to a chat's alternate buffer. */
+/**
+ * Append one preserved reroll candidate to a chat's alternate buffer, keyed by
+ * `uid`: a candidate already buffered (same `uid`) is a no-op. The dedup makes
+ * the op idempotent — a regenerate replay (reattach) and the regenerate that
+ * preserves both old+new without double-storing a candidate it already holds both
+ * land cleanly.
+ */
 export function addAlternateMessage(db: DatabaseSync, chatId: string, message: unknown): void {
   const row = toRow(readMessageObject(message))
+  const existing = db
+    .prepare('SELECT 1 FROM messages WHERE chat_id = ? AND alternate = 1 AND uid = ? LIMIT 1')
+    .get(chatId, row.uid) as { 1: number } | undefined
+  if (existing) return
   const min = db
     .prepare('SELECT MIN(seq) AS minSeq FROM messages WHERE chat_id = ? AND alternate = 1')
     .get(chatId) as { minSeq: number | null } | undefined

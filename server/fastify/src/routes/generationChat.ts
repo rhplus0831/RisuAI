@@ -989,15 +989,23 @@ function persistServerGenerationResult(args: {
       }
       validateUniqueMessageIds(messages)
       // Phase 6c — the reroll buffer ("don't lose a rerolled result"):
-      //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve the one
-      //    it displaces as an alternate row instead of destroying it;
+      //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve BOTH the
+      //    one it displaces AND the new one it produces as alternate rows, so the
+      //    full candidate set of the turn survives a reload and swipe-navigation is
+      //    durable for free (flipping the active tail never touches the buffer — the
+      //    active is just whichever candidate is positioned, matched by `uid` on
+      //    hydration). This realizes the design doc's "insert the new candidate as an
+      //    alternate row and flip the active tail". Dedup by `uid` keeps it
+      //    replay-idempotent and free of duplicates as candidates accumulate.
       //  - send / continue is the confirm boundary — drop the chat's reroll buffer.
       // Both run inside this mutation's transaction (atomic with the message write).
       const displaced =
         args.targetMessageId && existing ? (structuredClone(existing) as Message) : undefined
+      const preserved = args.targetMessageId ? (structuredClone(record) as Message) : undefined
       const sqlite = (db: DatabaseSync): void => {
         if (args.targetMessageId) {
           if (displaced) addAlternateMessage(db, args.chatId, displaced)
+          if (preserved) addAlternateMessage(db, args.chatId, preserved)
         } else {
           clearAlternateMessages(db, args.chatId)
         }
