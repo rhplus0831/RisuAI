@@ -7,6 +7,7 @@ import {
   ensureMessageId,
 } from '../chatCommands'
 import { safeStructuredClone } from '../polyfill'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import type { Chat, Message } from '../storage/database.svelte'
 import { PreUnreroll, Prereroll } from './prereroll'
 
@@ -70,35 +71,68 @@ export function markRerollChar(): void {
   lastCharId = get(selectedCharID)
 }
 
+// ── guard-safe optimistic mutations ─────────────────────────────────────────────
+// In Fastify web mode `DBState.db` is a deep read-only projection proxy; a direct
+// `message.data = …` / `record.message = …` throws. The optimistic local edit must
+// run inside `withTrustedServerProjectionWrite` and RE-READ the record there (the
+// wrapper swaps `DBState.db` for a mutable snapshot for the duration), then persist
+// via the dispatch command. Off Fastify the wrapper is a pass-through, so behaviour
+// is identical. (See the `phase9-guard-optimistic-write-gap` precedent.)
+
+/** Swap just the active tail message's `data` (prefetch reroll), then persist. */
+function applyTailDataSwap(data: string): void {
+  const previous = currentChatStateSnapshot()
+  const messageId = withTrustedServerProjectionWrite(() => {
+    const record = activeChatRecord()
+    const message = record.message[record.message.length - 1]
+    const id = ensureMessageId(message)
+    message.data = data
+    return id
+  })
+  dispatchUpdateMessage(messageId, { data }, previous)
+}
+
+/** Overwrite the last `slice.length` messages with a saved candidate, then persist. */
+function applyTailSlice(slice: Message[]): void {
+  const previous = currentChatStateSnapshot()
+  withTrustedServerProjectionWrite(() => {
+    const msgs = activeChatRecord().message
+    for (let i = 0; i < slice.length; i++) {
+      msgs[msgs.length - slice.length + i] = slice[i]
+    }
+  })
+  const record = activeChatRecord()
+  if (record.id) {
+    dispatchReplaceMessages(record.id, safeStructuredClone(record.message), previous)
+  }
+}
+
+/** Replace the whole active transcript (regenerate prep: the popped tail), then persist. */
+function applyTranscript(messages: Message[]): void {
+  const previous = currentChatStateSnapshot()
+  withTrustedServerProjectionWrite(() => {
+    activeChatRecord().message = messages
+  })
+  const record = activeChatRecord()
+  if (record.id) {
+    dispatchReplaceMessages(record.id, messages, previous)
+  }
+}
+
 export async function reroll(deps: RerollDeps): Promise<void> {
   resetRerollOnCharChange()
   const genId = currentTailGenerationId()
   if (genId) {
     const r = Prereroll(genId)
     if (r) {
-      const previous = currentChatStateSnapshot()
-      const currentChatRecord = activeChatRecord()
-      const message = currentChatRecord.message[currentChatRecord.message.length - 1]
-      const messageId = ensureMessageId(message)
-      message.data = r
-      dispatchUpdateMessage(messageId, { data: r }, previous)
+      applyTailDataSwap(r)
       return
     }
   }
   if (rerollid < rerolls.length - 1) {
     if (Array.isArray(rerolls[rerollid + 1])) {
       rerollid += 1
-      const rerollData = safeStructuredClone(rerolls[rerollid])
-      const msgs = activeChatRecord().message
-      for (let i = 0; i < rerollData.length; i++) {
-        msgs[msgs.length - rerollData.length + i] = rerollData[i]
-      }
-      const previous = currentChatStateSnapshot()
-      const currentChatRecord = activeChatRecord()
-      currentChatRecord.message = msgs
-      if (currentChatRecord.id) {
-        dispatchReplaceMessages(currentChatRecord.id, msgs, previous)
-      }
+      applyTailSlice(safeStructuredClone(rerolls[rerollid]))
     }
     return
   }
@@ -127,12 +161,7 @@ export async function reroll(deps: RerollDeps): Promise<void> {
       return
     }
   }
-  const previous = currentChatStateSnapshot()
-  const currentChatRecord = activeChatRecord()
-  currentChatRecord.message = cha
-  if (currentChatRecord.id) {
-    dispatchReplaceMessages(currentChatRecord.id, cha, previous)
-  }
+  applyTranscript(cha)
   await deps.sendChatMain(false, regenerateMessageId)
 }
 
@@ -142,12 +171,7 @@ export async function unReroll(): Promise<void> {
   if (genId) {
     const r = PreUnreroll(genId)
     if (r) {
-      const previous = currentChatStateSnapshot()
-      const currentChatRecord = activeChatRecord()
-      const message = currentChatRecord.message[currentChatRecord.message.length - 1]
-      const messageId = ensureMessageId(message)
-      message.data = r
-      dispatchUpdateMessage(messageId, { data: r }, previous)
+      applyTailDataSwap(r)
       return
     }
   }
@@ -156,17 +180,7 @@ export async function unReroll(): Promise<void> {
   }
   if (Array.isArray(rerolls[rerollid - 1])) {
     rerollid -= 1
-    const rerollData = safeStructuredClone(rerolls[rerollid])
-    const msgs = activeChatRecord().message
-    for (let i = 0; i < rerollData.length; i++) {
-      msgs[msgs.length - rerollData.length + i] = rerollData[i]
-    }
-    const previous = currentChatStateSnapshot()
-    const currentChatRecord = activeChatRecord()
-    currentChatRecord.message = msgs
-    if (currentChatRecord.id) {
-      dispatchReplaceMessages(currentChatRecord.id, msgs, previous)
-    }
+    applyTailSlice(safeStructuredClone(rerolls[rerollid]))
   }
 }
 
