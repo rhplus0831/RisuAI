@@ -12,7 +12,7 @@
 > effects, B2 orchestration/command-issuance, and renders the projection. Group chat's
 > dead UI branches were removed (`A4R-group-chat-removed`). Remaining decisions and
 > deferrals live in [`../../leftover.md`](../../leftover.md); the current architecture
-> is summarized in [`../../structure/`](../../structure/README.md). These docs are kept
+> is summarized in [`../../../STRUCTURE.md`](../../../STRUCTURE.md). These docs are kept
 > as the design/decision record.
 
 Date: 2026-05-30
@@ -25,13 +25,13 @@ effects, and issues server commands for durable writes.
 
 The folder structure is intentionally sharded so task agents can load only the
 context they need. As of 2026-05-29 the **content was rewritten from scratch**
-around a single spine: the *chat-process ownership blocker classification*. The
+around a single spine: the _chat-process ownership blocker classification_. The
 codebase is the source of truth; these docs route to it.
 
 ## The Spine: Server-Owned Chat Process
 
-The work is organized around one question — *what blocks the server from owning
-the chat process, and which cases are fine to leave in the browser?* The A-item
+The work is organized around one question — _what blocks the server from owning
+the chat process, and which cases are fine to leave in the browser?_ The A-item
 implementation is now landed; closeout work remains.
 
 - **A. Hard blockers** — must move server-side or be explicitly classified
@@ -42,9 +42,9 @@ implementation is now landed; closeout work remains.
   `'output'` trigger, and `editoutput`. A3 provider coverage hard-fails
   unsupported shapes.
 - **B. Fine in the browser** — the browser triggers, plays, orchestrates, or
-  *requests* a write, but never owns durable state. B1 permanent client-owned,
+  _requests_ a write, but never owns durable state. B1 permanent client-owned,
   B2 acceptable-but-optimizable.
-- **Legacy / removed** — no-port *and* to be removed from the client. Group chat
+- **Legacy / removed** — no-port _and_ to be removed from the client. Group chat
   is now in this class; its dead `type === 'group'` UI branches were removed
   2026-05-30 (guarded by `A4R-group-chat-removed`).
 

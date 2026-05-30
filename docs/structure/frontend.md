@@ -25,7 +25,7 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
 | `src/lib/SideBars/`    | Sidebar, character config, lorebook, scripts, and navigation surfaces. |
 | `src/lib/Setting/`     | Settings pages and wrapper controls.                                   |
 | `src/lib/Mobile/`      | Mobile shell components.                                               |
-| `src/lib/LiteUI/`      | Lite UI components.                                                     |
+| `src/lib/LiteUI/`      | Lite UI components.                                                    |
 | `src/lib/Playground/`  | Playground/tooling UI surfaces.                                        |
 | `src/lib/UI/`          | Shared UI primitives, GUI, NewGUI, Realm components.                   |
 | `src/lib/Others/`      | Modals, alerts, welcome, editor, loadout, misc UI pieces.              |
@@ -34,18 +34,34 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
 
 Useful `src/ts` subdirectories:
 
-| Path              | Purpose                                                                            |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| `src/ts/server/`  | Browser adapters for Fastify bootstrap, commands, events, backups, assets.         |
-| `src/ts/storage/` | Client database state, server-backed storage, `.risu` import/export.               |
-| `src/ts/process/` | Request flow (`index.svelte.ts` = `sendChat`), prompt/client-side helpers, memory client adapters, post-generation. |
+| Path                      | Purpose                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/ts/server/`          | Browser adapters for Fastify bootstrap, commands, events, backups, assets.                                                                                                 |
+| `src/ts/storage/`         | Client database state, server-backed storage, `.risu` import/export.                                                                                                       |
+| `src/ts/process/`         | Request flow (`index.svelte.ts` = `sendChat`), prompt/client-side helpers, memory client adapters, post-generation.                                                        |
 | `src/ts/process/request/` | Server-vs-local routing: `serverPromptAssembly.ts` + `durableGeneration.ts` classifiers, the `providerCapability.ts` table, and the `/chat` SSE adapter (`serverChat.ts`). |
-| `src/ts/model/`   | Client model lists and provider-related browser logic.                             |
-| `src/ts/parser/`  | Chat/parser utilities and tests.                                                   |
-| `src/ts/plugins/` | Plugin loading and browser-side plugin runtime.                                    |
-| `src/ts/media/`   | Image/media helpers and compression.                                               |
-| `src/ts/gui/`     | Theme, GUI size, color scheme, and display helpers.                                |
-| `src/ts/kei/`     | Risu-Kei backup integration.                                                       |
+| `src/ts/model/`           | Client model lists and provider-related browser logic.                                                                                                                     |
+| `src/ts/parser/`          | Chat/parser utilities and tests.                                                                                                                                           |
+| `src/ts/plugins/`         | Plugin loading and browser-side plugin runtime.                                                                                                                            |
+| `src/ts/media/`           | Image/media helpers and compression.                                                                                                                                       |
+| `src/ts/gui/`             | Theme, GUI size, color scheme, and display helpers.                                                                                                                        |
+| `src/ts/setting/`         | Data-driven settings metadata and custom setting component helpers.                                                                                                        |
+| `src/ts/translator/`      | Translator presets and browser-side translation helpers.                                                                                                                   |
+| `src/ts/network/`         | Local-network and proxy-stream WebSocket helpers.                                                                                                                          |
+| `src/ts/kei/`             | Risu-Kei backup integration.                                                                                                                                               |
+
+Useful `src/ts/process` subdirectories:
+
+| Path                             | Purpose                                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `src/ts/process/request/`        | Server/local request routing, provider capability checks, server chat/completion/memory adapters, SSE parsing. |
+| `src/ts/process/promptAssembly/` | Browser-side prompt assembly helpers retained for local/non-Fastify paths and parity tests.                    |
+| `src/ts/process/promptBudget/`   | Token-budget preflight/finalization helpers.                                                                   |
+| `src/ts/process/postGeneration/` | Browser-side post-generation helpers used by local paths and tests.                                            |
+| `src/ts/process/mcp/`            | MCP clients, internal MCP tools, and Risu access wrappers.                                                     |
+| `src/ts/process/memory/`         | Browser-side memory engines/helpers retained around Hypa flows and local code paths.                           |
+| `src/ts/process/files/`          | File/inlay/multisend helpers.                                                                                  |
+| `src/ts/process/templates/`      | Prompt/template rendering helpers.                                                                             |
 
 ## Server Projection Flow
 
@@ -59,11 +75,22 @@ Startup is server-backed only when the SPA is served by Fastify and
 5. The projection write guard is enabled so normal browser code cannot mutate
    server-owned state directly.
 6. `src/ts/server/events.ts` subscribes to `/api/v1/events`.
-7. Command events trigger a debounced full bootstrap refresh. Memory events can
-   update Hypa V3 progress UI directly.
+7. Command events enter a serial surgical-sync chain in `src/ts/bootstrap.ts`:
+   own echoes / already-applied revisions are skipped, contiguous foreign events
+   fetch `GET /api/v1/projection/:resource`, and gaps, reconnects, or projection
+   errors fall back to a full bootstrap refresh.
+8. Memory events can update Hypa V3 progress UI directly.
 
 When debugging stale UI, check command success revision, the SSE event stream,
-and the debounced bootstrap refresh before assuming a Svelte rendering problem.
+targeted projection responses, and the full-bootstrap fallback before assuming a
+Svelte rendering problem.
+
+Chat messages are not shipped in normal bootstrap/projection payloads. The open
+chat hydrates through `GET /api/v1/projection/chatMessages?id=...`, including
+per-chat `hypaV3Data` and persisted reroll alternates. If
+`enableLorebookStubs` is on, the open character's `globalLore` hydrates through
+`GET /api/v1/projection/characterLorebook?id=...`; this path is still guarded as
+experimental in the server repository comments.
 
 ## Server-Side Generation Flow
 

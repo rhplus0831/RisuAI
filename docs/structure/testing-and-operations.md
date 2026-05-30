@@ -4,20 +4,21 @@ Use `pnpm` for all package scripts.
 
 ## Scripts
 
-| Command                      | Purpose                                                                   |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| `pnpm dev`                   | Start Vite client dev server on `0.0.0.0:5174`.                           |
-| `pnpm api:dev`               | Start Fastify with `tsx watch server/fastify/src/index.ts`.               |
-| `pnpm api:start`             | Start Fastify once with `tsx server/fastify/src/index.ts`.                |
-| `pnpm build`                 | Vite build with sourcemaps.                                               |
-| `pnpm buildsite`             | Production client build to `dist` with `VITE_RISU_LEGAL_CONFIGURED=TRUE`. |
-| `pnpm check`                 | Run `svelte-check --tsconfig ./tsconfig.json`.                            |
-| `pnpm test`                  | Run root/browser Vitest tests.                                            |
-| `pnpm api:test`              | Run Fastify/server Vitest tests.                                          |
-| `pnpm client-thinning:audit` | Run the ts-morph architecture audit (`util/client-thinning-audit.ts`, 23 AST/invariant checks). Exits non-zero on any finding; regression-tested by `util/client-thinning-audit.test.ts` (58 tests, under the root suite). |
-| `pnpm smoke:fastify-browser` | Build site, then run Playwright Fastify browser smoke.                    |
-| `pnpm format`                | Prettier write.                                                           |
-| `pnpm format:check`          | Prettier check.                                                           |
+| Command                      | Purpose                                                                                                                                                                                                        |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                   | Start Vite client dev server on `0.0.0.0:5174`.                                                                                                                                                                |
+| `pnpm api:dev`               | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                                                                                                                    |
+| `pnpm api:start`             | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                                                                                                                     |
+| `pnpm build`                 | Vite build with sourcemaps.                                                                                                                                                                                    |
+| `pnpm buildsite`             | Production client build to `dist` with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                                                                                                                      |
+| `pnpm preview`               | Vite preview server for a built client bundle.                                                                                                                                                                 |
+| `pnpm check`                 | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                                                 |
+| `pnpm test`                  | Run root/browser Vitest tests.                                                                                                                                                                                 |
+| `pnpm api:test`              | Run Fastify/server Vitest tests.                                                                                                                                                                               |
+| `pnpm client-thinning:audit` | Run the ts-morph architecture audit (`util/client-thinning-audit.ts`, 23 AST/invariant checks). Exits non-zero on any finding; regression-tested by `util/client-thinning-audit.test.ts` under the root suite. |
+| `pnpm smoke:fastify-browser` | Build site, then run Playwright Fastify browser smoke.                                                                                                                                                         |
+| `pnpm format`                | Prettier write.                                                                                                                                                                                                |
+| `pnpm format:check`          | Prettier check.                                                                                                                                                                                                |
 
 There is no ESLint config or `lint` script currently.
 
@@ -47,17 +48,20 @@ flag behavior; Docker currently runs `pnpm build`, so its image build does not s
 
 ## Test Split
 
-| Area                  | Config                               | Environment | Test Locations                                  |
-| --------------------- | ------------------------------------ | ----------- | ----------------------------------------------- |
+| Area                  | Config                               | Environment | Test Locations                                                                 |
+| --------------------- | ------------------------------------ | ----------- | ------------------------------------------------------------------------------ |
 | Browser/client/domain | `vitest.config.ts`                   | `happy-dom` | Root suite outside `server/**`, including `src/ts/**` and `util/**/*.test.ts`. |
-| Fastify/server        | `server/fastify/vitest.config.ts`    | Node        | `server/fastify/__tests__/**/*.test.ts`.        |
-| Browser smoke         | `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`.                |
+| Fastify/server        | `server/fastify/vitest.config.ts`    | Node        | `server/fastify/__tests__/**/*.test.ts`.                                       |
+| Browser smoke         | `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`.                                               |
 
 Root Vitest excludes `server/**`; server Vitest uses `server/fastify` as its
 root. Pick the smallest command that covers the changed area.
 
 Prompt/generation fixture data lives in `src/ts/process/__fixtures__/`. The
 fixture update switch is `UPDATE_FIXTURES=1`.
+
+The architecture audit can be scoped with `CLIENT_THINNING_AUDIT_CHECK_IDS`, a
+comma-separated list of check ids from `util/client-thinning-audit.ts`.
 
 ## TypeScript And Formatting
 
@@ -92,6 +96,12 @@ Client/build:
 | `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables browser smoke hook and auth bypass behavior. |
 | `VITE_RISU_LITE`                                                                 | Enables lite/mobile-ish UI path.                     |
 | `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                 |
+
+Test/audit:
+
+| Variable                          | Notes                                                          |
+| --------------------------------- | -------------------------------------------------------------- |
+| `CLIENT_THINNING_AUDIT_CHECK_IDS` | Optional comma-separated architecture-audit check-id selector. |
 
 ## Docker
 

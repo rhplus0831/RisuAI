@@ -5,8 +5,8 @@ Date: 2026-05-31 · Branch: `fastify` (593 commits ahead of `main`)
 This report documents (1) which responsibilities the Fastify port has **moved to the
 server**, (2) which responsibilities **remain on the client**, and (3) the result of a
 regression + test-coverage audit of the port. It is grounded in the code on the
-`fastify` branch (the source of truth); `docs/structure/` holds the navigation map and
-`docs/leftover.md` the canonical list of intentionally-deferred items.
+`fastify` branch (the source of truth); `STRUCTURE.md` plus `docs/structure/` hold the
+navigation map and `docs/leftover.md` the canonical list of intentionally-deferred items.
 
 ## TL;DR
 
