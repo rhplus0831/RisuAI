@@ -9,6 +9,8 @@ type Route = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; rea
 
 export function resolveServerPromptAssembly(inSubset: boolean): Route {
   if (!isFastifyServer) return { type: 'local' }
-  if (!inSubset) return { type: 'unsupported', reason: 'out of the supported subset' }
+  if (!inSubset) {
+    return { type: 'unsupported', reason: 'model is not supported in Fastify server mode' }
+  }
   return { type: 'server' }
 }

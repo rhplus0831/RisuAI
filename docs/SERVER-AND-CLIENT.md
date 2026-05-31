@@ -28,8 +28,8 @@ plugin/runtime surfaces, MCP/local tool orchestration, and the non-Fastify/local
 compatibility stack.
 
 The main server-owned responsibilities that still leak through the client are
-client-built provider payloads for server completion, browser-local inlay bytes,
-and the closeout path for local prompt assembly/provider dispatch.
+browser-local inlay bytes and the closeout path for local prompt
+assembly/provider dispatch.
 
 ## Current Client Responsibilities
 
@@ -43,7 +43,7 @@ and the closeout path for local prompt assembly/provider dispatch.
 | Bridge watchers                      | Converts UI edits for settings, lorebooks, script definitions, and plugin storage into server commands while maintaining drafts/projections.                                                                            | `src/ts/server/settingsBridge.svelte.ts`, `src/ts/server/lorebookBridge.svelte.ts`, `src/ts/server/scriptDefinitionBridge.svelte.ts`, `src/ts/plugins/plugins.svelte.ts`                                               |
 | Browser auth and storage adapters    | Creates short-lived browser assertion tokens, attaches active-writer headers, calls legacy storage APIs, and adapts asset reads/writes to Fastify routes.                                                               | `src/ts/storage/nodeStorage.ts`, `src/ts/globalApi.svelte.ts`, `src/ts/server/assets.ts`                                                                                                                               |
 | Chat send orchestration              | Chooses server/local routing, manages abort state, sends `/api/v1/generate/chat`, consumes SSE frames, applies terminal patches, uploads browser-local inlay bytes, reattaches active jobs, and issues cancel requests. | `src/ts/process/index.svelte.ts`, `src/ts/process/serverBackedSendChat.ts`, `src/ts/process/request/serverChat.ts`, `src/ts/process/reattach.ts`                                                                       |
-| Lower-level completion routing       | For auxiliary requests, builds client-side provider targets and calls either the server completion route or local provider dispatch depending on capability and mode.                                                   | `src/ts/process/request/request.ts`, `src/ts/process/request/serverCompletion.ts`, `src/ts/process/request/providerCapability.ts`                                                                                      |
+| Lower-level completion routing       | For auxiliary requests, sends already-assembled prompt intent to Fastify in server mode, consumes completion SSE/JSON, and keeps local provider dispatch for non-Fastify mode.                                          | `src/ts/process/request/request.ts`, `src/ts/process/request/serverCompletion.ts`                                                                                                                                      |
 | Local compatibility stack            | Keeps the full in-browser prompt assembler and provider dispatch for non-Fastify mode, tests, unsupported content, and the `useServerPromptAssembly=false` escape hatch.                                                | `src/ts/process/sendChatPromptAssembly.ts`, `src/ts/process/request/serverPromptAssembly.ts`, `src/ts/process/request/dispatchRequest.ts`                                                                              |
 | Browser-only post-generation effects | Runs UI/audio/effect work that is not durable server mutation: notifications, TTS/display effects, emotion fallback, automatic image generation, and inlay rendering.                                                   | `src/ts/process/postGeneration/orchestrateResponse.ts`, `src/ts/process/postGeneration/runStage4.ts`, `src/ts/process/postGeneration/emotionFallbackEmbedding.ts`, `src/ts/process/postGeneration/imggenStableDiff.ts` |
 | Plugins and local tools              | Hosts browser plugin runtime, blocks unsupported server-mode resource keys, reports Plugin V3 runtime capabilities, and runs MCP/local filesystem orchestration from the browser side.                                  | `src/ts/plugins/plugins.svelte.ts`, `src/ts/plugins/pluginSafeClass.ts`, `src/ts/plugins/apiV3/v3.svelte.ts`, `src/ts/process/mcp/*`                                                                                   |
@@ -61,7 +61,7 @@ and the closeout path for local prompt assembly/provider dispatch.
 | Command mutations                       | Validates and applies settings, presets, prompt items, personas, translators, loadouts, characters, chats, folders, script state, messages, generation results, lorebooks, modules, scripts/triggers, plugin storage, assets, and first-run state initialization. | `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/mutations.ts`, `server/fastify/src/commands/events.ts`                                                                                                                               |
 | Prompt assembly                         | Builds the prompt on the server for supported sends, including input triggers, `editinput`, lore/history/memory selection, render sections, token budgeting, and prompt preview.                                                                                  | `server/fastify/src/prompt/assemble.ts`, `server/fastify/src/routes/generationChat.ts`                                                                                                                                                                     |
 | Chat generation                         | Owns `/api/v1/generate/chat`, server-routable provider dispatch, SSE frames, durable generation jobs, reattach, cancel, post-generation derivation, generated message persistence, scriptstate persistence, and reroll alternates.                                | `server/fastify/src/routes/generationChat.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/prompt/chatDispatch.ts`, `server/fastify/src/prompt/providerTransport.ts`                                                                       |
-| Generic completion                      | Provides lower-level completion routing for server-routable providers and streaming/non-streaming provider adapters.                                                                                                                                              | `server/fastify/src/routes/generation.ts`, `server/fastify/src/generation/*`                                                                                                                                                                               |
+| Generic completion                      | Resolves server-owned completion intent into provider/model/options from the unmasked server database, rejects provider-wire fields on intent requests, and keeps the legacy direct-provider envelope for compatibility tests/tools.                              | `server/fastify/src/routes/generation.ts`, `server/fastify/src/prompt/chatDispatch.ts`, `server/fastify/src/generation/*`                                                                                                                                  |
 | Hypa V3 memory                          | Persists memory data, plans jobs, chunks/summarizes/embeds, retries/cancels jobs, emits progress, and selects prompt-time memory.                                                                                                                                 | `server/fastify/src/memoryRepository.ts`, `server/fastify/src/memoryWorker.ts`, `server/fastify/src/memoryPlanner.ts`, `server/fastify/src/routes/memoryJobs.ts`, `server/fastify/src/routes/memoryReads.ts`, `server/fastify/src/prompt/memoryAdapter.ts` |
 | Assets                                  | Stores content-addressed assets, serves immutable bytes, probes existence, emits asset events, tracks revisions, and garbage-collects unreferenced assets.                                                                                                        | `server/fastify/src/routes/assets.ts`, `server/fastify/src/assetGc.ts`                                                                                                                                                                                     |
 | Import/export and backups               | Imports/exports `.risu`, builds export bundles, imports Realm/charx data and assets, and creates/lists/restores/deletes backups covering JSON, SQLite, assets, and legacy save data.                                                                              | `server/fastify/src/routes/save.ts`, `server/fastify/src/risuSave/*`, `server/fastify/src/routes/realmImport.ts`, `server/fastify/src/routes/backups.ts`                                                                                                   |
@@ -98,22 +98,12 @@ and the closeout path for local prompt assembly/provider dispatch.
   browser-provided database payload, server import/default normalization fills the
   durable default shape, and Fastify projections enter the browser without
   `setDatabase()` default shaping.
+- Fastify lower-level completion now uses a `server-intent` payload: the browser
+  sends messages and sampling controls only, while the server resolves the
+  selected provider, wire model, endpoint, provider options, and secrets from the
+  unmasked database.
 
 ## Server-Owned Items Still In The Client
-
-### P2: Client still builds provider wire payloads for server completion
-
-For lower-level completion requests, the browser still resolves model/provider
-targets, builds options, and includes API-key-bearing payload shapes before
-calling server completion. The server owns provider transport and secret masking
-for durable chat generation, so this remains a server-shaped responsibility to
-thin if the goal is to centralize provider policy fully.
-
-Evidence:
-
-- `src/ts/process/request/serverCompletion.ts`
-- `src/ts/process/request/request.ts`
-- `server/fastify/src/routes/generation.ts`
 
 ### P2: Inlay bytes remain browser-local
 
@@ -188,10 +178,11 @@ Evidence:
 
 ## Verification Notes
 
-- Ran `pnpm exec vitest run src/ts/server/commands.test.ts src/ts/bootstrap.test.ts`.
-- Ran `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`.
+- Ran `pnpm exec vitest run src/ts/process/request/tests/serverCompletion.test.ts`.
+- Ran `pnpm exec vitest run src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/process/request/tests/durableGeneration.test.ts src/ts/process/request/tests/serverCompletion.test.ts`.
+- Ran `pnpm exec vitest run src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.
+- Ran `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts`.
+- Ran `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/providerCapabilityRoute.test.ts`.
+- Ran `pnpm exec vitest run util/client-thinning-audit.test.ts`.
 - Ran `pnpm check`.
 - Ran `pnpm client-thinning:audit`.
-- Ran `pnpm api:test`; all API tests passed except the existing large Realm charx
-  import test in `server/fastify/__tests__/realmImport.test.ts`, which timed out
-  at 30000 ms.

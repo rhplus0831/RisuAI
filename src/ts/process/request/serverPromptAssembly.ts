@@ -4,8 +4,12 @@ import type { character, Chat, triggerscript } from '../../storage/database.svel
 import { getModelInfo, LLMFlags } from '../../model/modellist'
 import { getModuleTriggers } from '../modules'
 import { pluginV2 } from '../../plugins/plugins.svelte'
-import { resolveServerCompletionRoute } from './serverCompletion'
 import type { RequestDataArgumentExtended } from './request'
+import {
+  resolveProviderCapability,
+  type CustomModelEntryLike,
+  type ProviderCapabilityInput,
+} from './providerCapability'
 
 /**
  * Three-arm verdict for the `sendChat` prompt-assembly gate, mirroring
@@ -172,10 +176,62 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
   return { aiModel, modelInfo } as RequestDataArgumentExtended
 }
 
+function unsupportedServerGenerationReason(aiModel: string): string {
+  return `Generation for ${aiModel} is not supported in Fastify server mode. Select a server-routed provider or change this model before retrying.`
+}
+
+function buildCapabilityInput(targ: RequestDataArgumentExtended): ProviderCapabilityInput | null {
+  const db = getDatabase()
+  const modelInfo = targ.modelInfo
+  if (!modelInfo) return null
+  return {
+    format: modelInfo.format,
+    aiModel: targ.aiModel ?? modelInfo.id ?? '',
+    endpoint: typeof modelInfo.endpoint === 'string' ? modelInfo.endpoint : undefined,
+    keyIdentifier:
+      typeof modelInfo.keyIdentifier === 'string' ? modelInfo.keyIdentifier : undefined,
+    internalID: typeof modelInfo.internalID === 'string' ? modelInfo.internalID : undefined,
+    config: {
+      forceReplaceUrl: db.forceReplaceUrl,
+      proxyKey: db.proxyKey,
+      oaiCompApiKeys: db.OaiCompAPIKeys,
+      customModels: db.customModels as CustomModelEntryLike[] | undefined,
+      googleProjectId: db.google?.projectId,
+      vertexRegion: db.vertexRegion,
+      vertexClientEmail: db.vertexClientEmail,
+      vertexPrivateKey: db.vertexPrivateKey,
+      claudeAPIKey: db.claudeAPIKey,
+      instructChatTemplate: db.instructChatTemplate,
+      jinjaTemplate: db.JinjaTemplate,
+      ollamaApiKey: db.ollamaApiKey,
+      ollamaRequestFormat: db.ollamaRequestFormat,
+      ollamaURL: db.ollamaURL,
+    },
+  }
+}
+
+function resolveServerProviderPreflight(): ServerPromptAssemblyRoute | null {
+  const targ = buildCompletionTarg()
+  const input = buildCapabilityInput(targ)
+  if (!input) {
+    return {
+      type: 'unsupported',
+      reason: unsupportedServerGenerationReason(targ.aiModel ?? 'the selected model'),
+    }
+  }
+  const verdict = resolveProviderCapability(input)
+  if (verdict.routable) return null
+  return {
+    type: 'unsupported',
+    reason: unsupportedServerGenerationReason(targ.aiModel ?? input.aiModel),
+  }
+}
+
 /**
  * Decide whether `sendChat` must assemble its prompt on the server, hard-fail, or
- * fall back to the in-browser assembler. Mirrors `resolveServerCompletionRoute`'s
- * shape: a pure verdict whose `local` arm is the dev/web/test escape.
+ * fall back to the in-browser assembler. The completion adapter no longer builds
+ * provider wire payloads, but prompt assembly still performs this provider
+ * preflight so unsupported Fastify sends fail before mutating chat state.
  *
  * Decision order (copying the precedent):
  *   1. `!isFastifyServer` → `local` (the precedent's only `local`; dev/web/tests).
@@ -187,7 +243,7 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
  *   2. mode / user-message structural check (subsumes the old, silently-falling
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
  *   3. single, non-group character.
- *   4. server-routable provider (reuse `resolveServerCompletionRoute`).
+ *   4. server-routable provider (shared provider-capability table).
  *   5. no interactive-Lua / pluginV2 content, and no image/asset/inlay content
  *      on a model without image input. Vision-model image/asset/inlay content,
  *      image-gen / emotion view instructions, and non-interactive Lua hooks are
@@ -225,16 +281,8 @@ export function resolveServerPromptAssembly(
     }
   }
 
-  const completionRoute = resolveServerCompletionRoute(buildCompletionTarg())
-  if (completionRoute.type !== 'server') {
-    return {
-      type: 'unsupported',
-      reason:
-        completionRoute.type === 'unsupported'
-          ? completionRoute.reason
-          : 'The selected model is not routable in Fastify server mode.',
-    }
-  }
+  const providerReason = resolveServerProviderPreflight()
+  if (providerReason !== null) return providerReason
 
   const contentReason = sendHasUnsupportedContent(input)
   if (contentReason !== null) {

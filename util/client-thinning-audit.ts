@@ -417,8 +417,7 @@ const MUTATING_ROUTE_RULES: MutatingRouteRule[] = [
     methods: ['DELETE'],
     route: '/api/v1/generate/chat/:id',
     kind: 'active-writer',
-    reason:
-      'durable-generation cancel is authorized by the current active writer (writer handoff)',
+    reason: 'durable-generation cancel is authorized by the current active writer (writer handoff)',
     activeWriterNeedles: ["method === 'DELETE'", '/^\\/api\\/v1\\/generate\\/chat\\/[^/]+$/'],
   },
   {
@@ -1324,7 +1323,6 @@ function checkProviderOwnership(): void {
   for (const needle of [
     "if (!isFastifyServer) return { type: 'local' }",
     'Provider preview bodies are not supported in Fastify server mode',
-    'is not supported in Fastify server mode',
   ]) {
     if (!serverCompletionText.includes(needle)) {
       fail(
@@ -1345,6 +1343,7 @@ function checkProviderOwnership(): void {
   for (const needle of [
     'export function resolveServerPromptAssembly',
     "if (!isFastifyServer) return { type: 'local' }",
+    'is not supported in Fastify server mode',
   ]) {
     if (!serverPromptAssemblyText.includes(needle)) {
       fail(
@@ -3579,10 +3578,10 @@ function runChecks(checks: AuditCheck[]): void {
 // Invariant (closeout decision #5): the server provider-routing decision — which
 // provider dispatches a model, or that it is unsupported — is single-sourced in
 // `resolveProviderCapability` (`src/ts/process/request/providerCapability.ts`).
-// Both the browser completion classifier (serverCompletion.ts) and the server
-// /chat dispatcher (chatDispatch.ts) must consume it, so the two cannot drift
-// (the bug this closed: /chat rejected a reverse_proxy + ooba shape the
-// completion path accepted). AST-derived, two halves:
+// The server /chat dispatcher (chatDispatch.ts) must consume it, and server
+// completion reaches that same dispatcher through its server-intent route. This
+// keeps the old drift bug closed: /chat rejected a reverse_proxy + ooba shape
+// the completion path accepted. AST-derived, two halves:
 //
 //   positive — each consumer that exists must import `resolveProviderCapability`
 //     from a `providerCapability` module and actually call it. Dropping either
@@ -3596,10 +3595,6 @@ function checkProviderCapabilityShared(): void {
   const check = 'A4R-provider-capability shared routing table'
   const providerCapabilitySpecifier = /(?:^|\/)providerCapability$/
   const consumers = [
-    {
-      relPath: 'src/ts/process/request/serverCompletion.ts',
-      label: 'browser completion classifier',
-    },
     { relPath: 'server/fastify/src/prompt/chatDispatch.ts', label: 'server /chat dispatcher' },
   ]
 
@@ -3660,6 +3655,64 @@ function checkProviderCapabilityShared(): void {
   }
 }
 
+// ----- A4R-server-completion-intent: browser does not build provider wire -----
+//
+// Server-owned completion dispatch means the browser may send prompt/control
+// intent to `/generate/completion`, but must not derive provider options,
+// endpoint URLs, or API-key/credential-bearing payload fields.
+function checkBrowserCompletionIntentPayload(): void {
+  const check = 'A4R-server-completion-intent browser payload'
+  const relPath = 'src/ts/process/request/serverCompletion.ts'
+  const abs = path.join(root, relPath)
+  if (!fs.existsSync(abs)) return
+  const sf = project.getSourceFile(abs) ?? project.addSourceFileAtPathIfExists(abs)
+  if (!sf) return
+
+  for (const imp of sf.getImportDeclarations()) {
+    const namedImports = imp.getNamedImports().map((named) => named.getName())
+    for (const name of namedImports) {
+      if (name === 'getDatabase' || name === 'resolveProviderCapability') {
+        fail(
+          check,
+          `${relPath} imports ${name}; browser completion must not resolve provider policy for server dispatch.`,
+          imp,
+        )
+      }
+    }
+  }
+
+  const requestFn = sf.getFunction('requestServerCompletion')
+  if (!requestFn) {
+    fail(check, `${relPath} no longer exports requestServerCompletion`, undefined, sf)
+  } else if (requestFn.getParameters().length !== 2) {
+    fail(
+      check,
+      'requestServerCompletion must accept only the completion target and abort signal; a provider/options parameter would reintroduce client-built provider wire.',
+      requestFn,
+    )
+  }
+
+  const text = sf.getFullText()
+  for (const forbidden of [
+    'buildProviderOptions',
+    'resolveProviderModel',
+    'apiKey',
+    'baseUrl',
+    'credentials',
+    'provider:',
+    'options:',
+  ]) {
+    if (text.includes(forbidden)) {
+      fail(
+        check,
+        `${relPath} contains "${forbidden}"; server completion payloads must stay provider-wire-free.`,
+        undefined,
+        sf,
+      )
+    }
+  }
+}
+
 const auditChecks: AuditCheck[] = [
   { id: 'EC5 active-writer guard', run: checkActiveWriterGuard },
   { id: 'EC4 stable command ids', run: checkStableIdCommandPaths },
@@ -3689,6 +3742,7 @@ const auditChecks: AuditCheck[] = [
     run: checkGroupChatRemoved,
   },
   { id: 'A4R-provider-capability shared routing table', run: checkProviderCapabilityShared },
+  { id: 'A4R-server-completion-intent browser payload', run: checkBrowserCompletionIntentPayload },
 ]
 
 runChecks(selectedChecks(auditChecks))

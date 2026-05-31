@@ -137,8 +137,9 @@ and `routes/legacyStorage.ts` before changing body parser behavior.
 
 Streaming surfaces write directly to raw replies or WebSockets:
 
-- `routes/generation.ts` writes completion SSE (`chunk`, `error`, `done`) for
-  streaming `/api/v1/generate/completion` requests.
+- `routes/generation.ts` resolves browser `server-intent` completion requests
+  into server-owned provider dispatch and writes completion SSE (`chunk`,
+  `error`, `done`) for streaming `/api/v1/generate/completion` requests.
 - `routes/generationChat.ts` writes chat SSE frames. On the **non-durable** (inline)
   path it aborts the provider call on client close. On the **durable** path a client
   close only _detaches_ the viewer — the detached `GenerationJobRegistry` job keeps

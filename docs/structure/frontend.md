@@ -53,20 +53,20 @@ Useful `src/ts` subdirectories:
 
 Useful `src/ts/process` subdirectories:
 
-| Path                             | Purpose                                                                                                        |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `src/ts/process/request/`        | Server/local request routing, provider capability checks, server chat/completion/memory adapters, SSE parsing. |
-| `src/ts/process/dispatch/`       | Local provider dispatch helper used by `sendChat` when the Fastify server path is not selected.                |
-| `src/ts/process/models/`         | Request-time model string and provider-specific prompt string helpers retained for local paths.                |
-| `src/ts/process/embedding/`      | Additional-information embedding helpers retained for local Hypa flows.                                        |
-| `src/ts/process/dynamicutils/`   | Dynamic file utilities such as PDF-to-image/text extraction.                                                   |
-| `src/ts/process/promptAssembly/` | Browser-side prompt assembly helpers retained for local/non-Fastify paths and parity tests.                    |
-| `src/ts/process/promptBudget/`   | Token-budget preflight/finalization helpers.                                                                   |
-| `src/ts/process/postGeneration/` | Browser-side post-generation helpers used by local paths and tests.                                            |
-| `src/ts/process/mcp/`            | MCP clients, internal MCP tools, and Risu access wrappers.                                                     |
-| `src/ts/process/memory/`         | Browser-side memory engines/helpers retained around Hypa flows and local code paths.                           |
-| `src/ts/process/files/`          | File/inlay/multisend helpers.                                                                                  |
-| `src/ts/process/templates/`      | Prompt/template rendering helpers.                                                                             |
+| Path                             | Purpose                                                                                                                |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `src/ts/process/request/`        | Server/local request routing, prompt-assembly provider preflight, server chat/completion/memory adapters, SSE parsing. |
+| `src/ts/process/dispatch/`       | Local provider dispatch helper used by `sendChat` when the Fastify server path is not selected.                        |
+| `src/ts/process/models/`         | Request-time model string and provider-specific prompt string helpers retained for local paths.                        |
+| `src/ts/process/embedding/`      | Additional-information embedding helpers retained for local Hypa flows.                                                |
+| `src/ts/process/dynamicutils/`   | Dynamic file utilities such as PDF-to-image/text extraction.                                                           |
+| `src/ts/process/promptAssembly/` | Browser-side prompt assembly helpers retained for local/non-Fastify paths and parity tests.                            |
+| `src/ts/process/promptBudget/`   | Token-budget preflight/finalization helpers.                                                                           |
+| `src/ts/process/postGeneration/` | Browser-side post-generation helpers used by local paths and tests.                                                    |
+| `src/ts/process/mcp/`            | MCP clients, internal MCP tools, and Risu access wrappers.                                                             |
+| `src/ts/process/memory/`         | Browser-side memory engines/helpers retained around Hypa flows and local code paths.                                   |
+| `src/ts/process/files/`          | File/inlay/multisend helpers.                                                                                          |
+| `src/ts/process/templates/`      | Prompt/template rendering helpers.                                                                                     |
 
 ## Server Projection Flow
 

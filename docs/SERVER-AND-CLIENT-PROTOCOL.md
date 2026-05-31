@@ -80,21 +80,21 @@ storage, generation, chat generation, and memory routes
 
 Important surfaces:
 
-| Surface               | Shape                                                           | Notes                                                                                                                |
-| --------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Auth                  | `/api/v1/auth/status`, `/setup`, `/login`, `/crypto`            | Single-user auth; route-level decisions.                                                                             |
-| Bootstrap             | `GET /api/v1/bootstrap`                                         | Registers writer intent when the browser sends `risu-writer-session`; returns projection and active generation jobs. |
-| Projection            | `GET /api/v1/projection/:resource`                              | Targeted top-level fields, `mode: full` fallback, chat/lorebook hydration modes.                                     |
-| Commands              | `/api/v1/commands/*`                                            | Revision-checked domain mutations and command events.                                                                |
-| Events                | `GET /api/v1/events`                                            | Live SSE fanout for `command` and `memory` events, with heartbeat comments.                                          |
-| Assets                | `POST /api/v1/assets`, `GET/HEAD /api/v1/assets/:id`, `/exists` | Upload is authenticated and writer-gated; reads/existence are intentionally public.                                  |
-| Save/import/backup    | `.risu` import/export, backup create/list/restore/delete        | Import/restore produce state command events.                                                                         |
-| Realm import          | `POST /api/v1/import/realm-character`                           | JSON response or progress SSE depending on `Accept: text/event-stream`.                                              |
-| Proxy                 | `POST /api/v1/proxy/fetch`                                      | Binary passthrough with scoped parser and timeout handling.                                                          |
-| Proxy stream jobs     | `/api/v1/proxy/stream-jobs`, `/:id/ws`                          | Reconnectable local-network stream proxy with bounded job registry.                                                  |
-| Generation completion | `POST /api/v1/generate/completion`                              | Already-assembled provider dispatch; some providers stream, others explicitly reject streaming.                      |
-| Chat generation       | `POST /api/v1/generate/chat`, `GET /:id/stream`, `DELETE /:id`  | Server prompt assembly, provider stream, durable job lifecycle, result persistence.                                  |
-| Memory                | `/api/v1/memory/jobs`, chunks, summaries                        | Jobs are persisted in SQLite and events report progress.                                                             |
+| Surface               | Shape                                                           | Notes                                                                                                                         |
+| --------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Auth                  | `/api/v1/auth/status`, `/setup`, `/login`, `/crypto`            | Single-user auth; route-level decisions.                                                                                      |
+| Bootstrap             | `GET /api/v1/bootstrap`                                         | Registers writer intent when the browser sends `risu-writer-session`; returns projection and active generation jobs.          |
+| Projection            | `GET /api/v1/projection/:resource`                              | Targeted top-level fields, `mode: full` fallback, chat/lorebook hydration modes.                                              |
+| Commands              | `/api/v1/commands/*`                                            | Revision-checked domain mutations and command events.                                                                         |
+| Events                | `GET /api/v1/events`                                            | Live SSE fanout for `command` and `memory` events, with heartbeat comments.                                                   |
+| Assets                | `POST /api/v1/assets`, `GET/HEAD /api/v1/assets/:id`, `/exists` | Upload is authenticated and writer-gated; reads/existence are intentionally public.                                           |
+| Save/import/backup    | `.risu` import/export, backup create/list/restore/delete        | Import/restore produce state command events.                                                                                  |
+| Realm import          | `POST /api/v1/import/realm-character`                           | JSON response or progress SSE depending on `Accept: text/event-stream`.                                                       |
+| Proxy                 | `POST /api/v1/proxy/fetch`                                      | Binary passthrough with scoped parser and timeout handling.                                                                   |
+| Proxy stream jobs     | `/api/v1/proxy/stream-jobs`, `/:id/ws`                          | Reconnectable local-network stream proxy with bounded job registry.                                                           |
+| Generation completion | `POST /api/v1/generate/completion`                              | Browser `server-intent` completion plus legacy direct-provider dispatch; intent requests resolve provider wire on the server. |
+| Chat generation       | `POST /api/v1/generate/chat`, `GET /:id/stream`, `DELETE /:id`  | Server prompt assembly, provider stream, durable job lifecycle, result persistence.                                           |
+| Memory                | `/api/v1/memory/jobs`, chunks, summaries                        | Jobs are persisted in SQLite and events report progress.                                                                      |
 
 The optional static SPA server injects `globalThis.__FASTIFY__ = true`, which is
 the browser-side switch into Fastify-backed mode (`server/fastify/src/app.ts:236`,
@@ -125,8 +125,8 @@ Key client modules:
   responses older than the applied revision.
 - `src/ts/process/request/serverChat.ts` implements chat generation, durable
   reattach, token streaming, terminal handling, and explicit cancel.
-- `src/ts/process/request/serverCompletion.ts` implements completion dispatch
-  for already-assembled prompts.
+- `src/ts/process/request/serverCompletion.ts` sends provider-wire-free
+  completion intent for already-assembled prompts and consumes completion SSE/JSON.
 - `src/ts/process/request/serverMemory.ts`, `src/ts/server/backups.ts`, and
   `src/ts/server/realmImport.ts` wrap memory, backup, and Realm import APIs.
 

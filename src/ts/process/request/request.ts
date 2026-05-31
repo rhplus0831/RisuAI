@@ -515,13 +515,9 @@ export async function requestChatDataMain(
     targ.key = found?.key
   }
 
-  const format = targ.modelInfo.format
-
-  targ.formated = reformater(targ.formated, targ.modelInfo)
-
   const serverRoute = resolveServerCompletionRoute(targ)
   if (serverRoute.type === 'server') {
-    return requestServerCompletion(targ, serverRoute.provider, abortSignal)
+    return requestServerCompletion(targ, abortSignal)
   }
   if (serverRoute.type === 'unsupported') {
     return {
@@ -530,6 +526,10 @@ export async function requestChatDataMain(
       noRetry: true,
     }
   }
+
+  const format = targ.modelInfo.format
+
+  targ.formated = reformater(targ.formated, targ.modelInfo)
 
   switch (format) {
     case LLMFormat.OpenAICompatible:

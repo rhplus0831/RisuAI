@@ -638,7 +638,7 @@ describe('client-thinning audit fixtures', () => {
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetPersistenceCheck}]`)
     expect(result.stderr).toContain(
-      'addAsset must heal missing blobs for existing asset metadata; missing if (!fs.existsSync(file)).',
+      'addAssets must heal missing blobs for existing asset metadata; missing if (!fs.existsSync(file)).',
     )
   })
 

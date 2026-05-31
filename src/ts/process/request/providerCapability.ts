@@ -4,10 +4,10 @@ import { LLMFormat } from '../../model/types'
  * Single source of truth for the server provider-routing **decision** (closeout
  * decision #5). Given a resolved model (`format` + the config fields the gates
  * read), it answers "which server provider dispatches this, or is it unsupported
- * and in which category." Both the browser completion classifier
- * (`resolveServerCompletionRoute`, `serverCompletion.ts`) and the server `/chat`
- * dispatcher (`dispatchChatProvider`, `server/fastify/src/prompt/chatDispatch.ts`)
- * call it, so the routing decision cannot drift between them.
+ * and in which category." The server `/chat` dispatcher
+ * (`dispatchChatProvider`, `server/fastify/src/prompt/chatDispatch.ts`) calls it;
+ * browser server completion now sends only a server-owned intent and reaches this
+ * table through Fastify.
  *
  * This module is pure: no `getDatabase()`, no `isFastifyServer`, no I/O. It reads
  * only its `input`. The `db → modelInfo` derivation (registry on the browser,
@@ -299,11 +299,10 @@ function refineOllama(input: ProviderCapabilityInput): string | null {
 
 /**
  * The capability table. Returns the routed provider or an unsupported category.
- * Faithful to the completion path's `resolveServerCompletionRoute` core
- * (decision order: coarse map → per-provider config refinement), so the browser
- * verdict is byte-identical; the server adopts it (dropping its own
- * `resolveProvider` / `unsupportedChatProviderReason` fork and the stale
- * reverse_proxy + ooba rejection).
+ * Provider dispatch decision table (decision order: coarse map → per-provider
+ * config refinement). Server chat and server-owned completion intent both reach
+ * this table through the Fastify dispatcher; the browser no longer builds
+ * provider wire payloads for server completion.
  */
 export function resolveProviderCapability(
   input: ProviderCapabilityInput,

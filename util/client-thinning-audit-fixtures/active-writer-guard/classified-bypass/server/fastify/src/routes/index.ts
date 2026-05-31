@@ -18,6 +18,7 @@ export function registerRoutes(app: RouteApp): void {
   app.post('/api/v1/import/risusave', noop)
   app.post('/api/v1/import/realm-character', noop)
   app.post('/api/v1/assets', noop)
+  app.post('/api/v1/assets/bulk', noop)
   app.post('/api/v1/backups', noop)
   app.post('/api/v1/generate/chat', noop)
   app.post('/api/v1/generate/preview-prompt', noop)

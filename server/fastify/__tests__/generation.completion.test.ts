@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
@@ -99,6 +99,27 @@ const basePayload = {
   model: 'echo_model',
   messages: [{ role: 'user', content: 'hi' }],
   stream: false,
+}
+
+function writeDatabase(database: Record<string, unknown>): void {
+  writeFileSync(
+    path.join(harness.dataDir, 'db.json'),
+    JSON.stringify({
+      _version: 1,
+      database: {
+        aiModel: 'echo_model',
+        subModel: 'echo_model',
+        echoMessage: 'Echo Message',
+        echoDelay: 0,
+        maxResponse: 200,
+        temperature: 50,
+        useStreaming: false,
+        characters: [],
+        ...database,
+      },
+      assets: [],
+    }),
+  )
 }
 
 describe('Phase 6-1 POST /api/v1/generate/completion', () => {
@@ -211,6 +232,50 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'flow' })}\n\n` +
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
     )
+  })
+
+  it('server-intent completion resolves provider settings from the server database', async () => {
+    writeDatabase({ echoMessage: 'server-owned pong' })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        mode: 'model',
+        maxTokens: 64,
+        temperature: 0.3,
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ type: 'success', result: 'server-owned pong' })
+  })
+
+  it('server-intent completion rejects provider wire fields', async () => {
+    writeDatabase({})
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        provider: 'echo',
+        model: 'echo_model',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        options: { echo: { message: 'client-owned pong' } },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'server-intent completion must not include provider, model, or options',
+    })
   })
 
   it('echo non-streaming honors options.echo.delayMs', async () => {

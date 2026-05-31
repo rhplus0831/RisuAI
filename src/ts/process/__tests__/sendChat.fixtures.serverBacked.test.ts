@@ -101,6 +101,7 @@ import {
   getServerCompletionCalls,
   resetServerCompletionCalls,
   serverCompletionFetch,
+  setEchoResult,
   setAnthropicResult,
   setBedrockResult,
   setCohereResult,
@@ -174,182 +175,27 @@ const ROUTE_BACKED_CHAT_FIXTURES = [
   'preview-prompt',
 ] as const
 
-interface ExpectedCall {
-  provider: string
-  model: string
-  stream: boolean
-  options: unknown
-}
+type DualModeFixture = (typeof DUAL_MODE_FIXTURES)[number]
 
-const EXPECTED_CALL: Record<(typeof DUAL_MODE_FIXTURES)[number], ExpectedCall> = {
-  'echo-basic': {
-    provider: 'echo',
-    model: 'echo_model',
-    stream: false,
-    options: { echo: { message: 'fixture echo reply', delayMs: 0 } },
-  },
-  'openai-basic': {
-    provider: 'openai',
-    model: 'gpt-4o',
-    stream: false,
-    options: { openai: { apiKey: 'sk-fixture', maxTokens: 200 } },
-  },
-  'anthropic-basic': {
-    provider: 'anthropic',
-    model: 'claude-opus-4-7',
-    stream: false,
-    options: { anthropic: { apiKey: 'sk-ant-fixture', maxTokens: 200 } },
-  },
-  'mistral-basic': {
-    provider: 'mistral',
-    model: 'mistral-large-latest',
-    stream: false,
-    options: { mistral: { apiKey: 'mistral-fixture-key', maxTokens: 200 } },
-  },
-  'cohere-basic': {
-    provider: 'cohere',
-    model: 'cohere-command-r-plus-04-2024',
-    stream: false,
-    // newer command-r releases skip safety_mode='NONE' (server adds nothing).
-    options: { cohere: { apiKey: 'cohere-fixture-key' } },
-  },
-  'deepseek-basic': {
-    provider: 'openai',
-    model: 'deepseek-chat',
-    stream: false,
-    // keyIdentifier-keyed deepseek rides the openai variant with a derived
-    // baseUrl (modelInfo.endpoint stripped of /chat/completions) and the
-    // db.OaiCompAPIKeys['deepseek'] lookup as apiKey.
-    options: {
-      openai: {
-        apiKey: 'deepseek-fixture-key',
-        baseUrl: 'https://api.deepseek.com/beta',
-        maxTokens: 200,
-      },
-    },
-  },
-  'gemini-basic': {
-    provider: 'gemini',
-    // Wire-level model derived from modelInfo.internalID, stripped of any
-    // `models/` prefix that dynamic-registered entries carry.
-    model: 'gemini-2.5-flash',
-    stream: false,
-    options: {
-      gemini: {
-        apiKey: 'gemini-fixture-key',
-        maxOutputTokens: 200,
-      },
-    },
-  },
-  'gemini-vertex-basic': {
-    provider: 'gemini',
-    // Vertex-flavored entry: internalID is the bare model name (no `models/`
-    // prefix). The dispatcher swaps Studio key auth for the Vertex bearer block.
-    model: 'gemini-2.5-flash',
-    stream: false,
-    options: {
-      gemini: {
-        vertex: {
-          projectId: 'fixture-project',
-          region: 'us-east5',
-          clientEmail: 'fixture-sa@fixture-project.iam.gserviceaccount.com',
-          privateKey:
-            '-----BEGIN PRIVATE KEY-----\nFIXTURE_PRIVATE_KEY\n-----END PRIVATE KEY-----\n',
-        },
-        maxOutputTokens: 200,
-      },
-    },
-  },
-  'bedrock-basic': {
-    provider: 'bedrock',
-    // claude-sonnet-4-5 + date stamp 20250929 → `global.` prefix per the
-    // resolveBedrockWireModel heuristic.
-    model: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
-    stream: false,
-    options: {
-      bedrock: {
-        credentials: {
-          accessKeyId: 'AKIAFIXTUREFAKEKEY',
-          secretAccessKey: 'fixture-secret-access-key',
-          region: 'us-east-1',
-        },
-        maxTokens: 200,
-      },
-    },
-  },
-  'horde-basic': {
-    provider: 'horde',
-    // Wire model strips the `horde:::` prefix from aiModel.
-    model: 'koboldcpp/Mistral-7B',
-    stream: false,
-    options: {
-      horde: {
-        apiKey: 'horde-fixture-key',
-        maxTokens: 200,
-        // db.maxContext + 100 mirrors the local code at request.ts:1442.
-        maxContextLength: 4100,
-        topP: 0.9,
-        topK: 40,
-      },
-    },
-  },
-  'mistral-reverse-proxy-basic': {
-    provider: 'mistral',
-    // reverse_proxy wire model is db.customProxyRequestModel.
-    model: 'mistral-on-proxy',
-    stream: false,
-    options: {
-      mistral: {
-        apiKey: 'sk-proxy-mistral-fixture',
-        // resolveReverseProxyUrl trims /chat/completions; the server re-appends.
-        baseUrl: 'https://proxy.example.com/v1',
-        maxTokens: 200,
-        additionalParams: [
-          ['header::X-Custom', 'cool'],
-          ['extra.knob', '1'],
-        ],
-      },
-    },
-  },
-  'anthropic-reverse-proxy-basic': {
-    provider: 'anthropic',
-    model: 'claude-on-proxy',
-    stream: false,
-    options: {
-      anthropic: {
-        apiKey: 'sk-proxy-anthropic-fixture',
-        // resolveReverseProxyAnthropicUrl trims /messages.
-        baseUrl: 'https://proxy.example.com/v1',
-        maxTokens: 200,
-        additionalParams: [
-          ['header::anthropic-beta', 'prompt-caching-2024-07-31'],
-          ['extra.flag', 'true'],
-        ],
-      },
-    },
-  },
+const RESULT_SETTERS_BY_FIXTURE: Record<DualModeFixture, (text: string) => void> = {
+  'echo-basic': setEchoResult,
+  'openai-basic': setOpenAIResult,
+  'anthropic-basic': setAnthropicResult,
+  'mistral-basic': setMistralResult,
+  'cohere-basic': setCohereResult,
+  'deepseek-basic': setDeepSeekResult,
+  'gemini-basic': setGeminiResult,
+  'gemini-vertex-basic': setGeminiResult,
+  'bedrock-basic': setBedrockResult,
+  'horde-basic': setHordeResult,
+  'mistral-reverse-proxy-basic': setMistralResult,
+  'anthropic-reverse-proxy-basic': setAnthropicResult,
 }
 
 async function loadExpected(name: string): Promise<FixtureSnapshot> {
   const path = resolve(HERE, '..', '__fixtures__', 'expected', `${name}.json`)
   return JSON.parse(await readFile(path, 'utf8')) as FixtureSnapshot
 }
-
-const RESULT_SETTERS: Record<string, ((text: string) => void) | undefined> = {
-  openai: setOpenAIResult,
-  nanogpt: setOpenAIResult,
-  openrouter: setOpenAIResult,
-  anthropic: setAnthropicResult,
-  mistral: setMistralResult,
-  cohere: setCohereResult,
-  gemini: setGeminiResult,
-  bedrock: setBedrockResult,
-  horde: setHordeResult,
-}
-// Tag deepseek-basic separately since its provider is 'openai' but the stub
-// keys the canned reply on the model prefix; keep the dedicated setter for
-// any future deepseek-specific override.
-void setDeepSeekResult
 
 interface RouteBackedChatCall {
   url: string
@@ -633,8 +479,8 @@ describe('sendChat fixtures (server-backed)', () => {
     // the /chat route-backed (server prompt assembly) path is the next describe.
     DBState.db.useServerPromptAssembly = false
 
-    // Wire the upstream jsonl's reply text into the per-provider setter so the
-    // fetch stub returns the same text the local sweep sees. Without this, the
+    // Wire the upstream jsonl's reply text into the fixture's server-side
+    // resolver so the fetch stub returns the same text the local sweep sees. Without this, the
     // stub falls back to its DEFAULT_*_RESULT, which diverges from the snapshot.
     try {
       const script = await loadProviderScript(name)
@@ -642,8 +488,7 @@ describe('sendChat fixtures (server-backed)', () => {
       if (first && (first.type === 'success' || first.type === 'fail')) {
         const text = typeof first.result === 'string' ? first.result : ''
         if (text.length > 0) {
-          const setter = RESULT_SETTERS[EXPECTED_CALL[name].provider]
-          if (setter) setter(text)
+          RESULT_SETTERS_BY_FIXTURE[name](text)
         }
       }
     } catch (err) {
@@ -668,16 +513,26 @@ describe('sendChat fixtures (server-backed)', () => {
     expect(sharedCaptured).toEqual(sharedExpected)
     expect(capturedPC).toEqual([])
 
-    // Adapter telemetry: one POST to /api/v1/generate/completion. Per-fixture
-    // shape is in EXPECTED_CALL above.
+    // Adapter telemetry: one provider-wire-free POST to
+    // /api/v1/generate/completion. The browser supplies the already-assembled
+    // prompt and completion intent; Fastify owns provider/model/options.
     const calls = getServerCompletionCalls()
+    const expectedFormated = expected.providerCalls[0].formated
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       url: '/api/v1/generate/completion',
       method: 'POST',
       authHeader: 'fixture-auth-token',
-      ...EXPECTED_CALL[name],
+      kind: 'server-intent',
+      stream: false,
+      mode: 'model',
+      maxTokens: 200,
+      currentCharName: 'Tess',
+      messagesLength: Array.isArray(expectedFormated) ? expectedFormated.length : 0,
     })
+    expect(JSON.stringify(calls[0])).not.toMatch(
+      /"(provider|model|options|apiKey|baseUrl|credentials)"\s*:/,
+    )
   })
 })
 

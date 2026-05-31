@@ -7,26 +7,48 @@
  */
 
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
+import { getDatabase } from '../../../storage/database.svelte'
 
-export interface ServerCompletionCall {
+interface ServerCompletionCallBase {
   url: string
   method: string
-  provider: string
-  model: string
   stream: boolean
   messagesLength: number
-  options: unknown
   authHeader: string | null
 }
 
+export interface ServerCompletionIntentCall extends ServerCompletionCallBase {
+  kind: 'server-intent'
+  mode?: unknown
+  staticModel?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+  currentCharName?: unknown
+}
+
+export interface ServerCompletionProviderCall extends ServerCompletionCallBase {
+  provider: string
+  model: string
+  options: unknown
+}
+
+export type ServerCompletionCall = ServerCompletionIntentCall | ServerCompletionProviderCall
+
 interface CompletionPayload {
+  kind?: unknown
   provider?: unknown
   model?: unknown
   messages?: unknown
   stream?: unknown
   options?: unknown
+  mode?: unknown
+  staticModel?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+  currentCharName?: unknown
 }
 
+const DEFAULT_ECHO_RESULT = 'fixture echo reply'
 const DEFAULT_OPENAI_RESULT = 'fixture openai reply'
 const DEFAULT_ANTHROPIC_RESULT = 'fixture claude reply'
 const DEFAULT_MISTRAL_RESULT = 'fixture mistral reply'
@@ -38,6 +60,7 @@ const DEFAULT_HORDE_RESULT = 'fixture horde reply'
 
 interface State {
   calls: ServerCompletionCall[]
+  echoResult: string
   openaiResult: string
   anthropicResult: string
   mistralResult: string
@@ -50,6 +73,7 @@ interface State {
 
 const state: State = {
   calls: [],
+  echoResult: DEFAULT_ECHO_RESULT,
   openaiResult: DEFAULT_OPENAI_RESULT,
   anthropicResult: DEFAULT_ANTHROPIC_RESULT,
   mistralResult: DEFAULT_MISTRAL_RESULT,
@@ -66,6 +90,7 @@ export function getServerCompletionCalls(): ServerCompletionCall[] {
 
 export function resetServerCompletionCalls(): void {
   state.calls = []
+  state.echoResult = DEFAULT_ECHO_RESULT
   state.openaiResult = DEFAULT_OPENAI_RESULT
   state.anthropicResult = DEFAULT_ANTHROPIC_RESULT
   state.mistralResult = DEFAULT_MISTRAL_RESULT
@@ -74,6 +99,10 @@ export function resetServerCompletionCalls(): void {
   state.geminiResult = DEFAULT_GEMINI_RESULT
   state.bedrockResult = DEFAULT_BEDROCK_RESULT
   state.hordeResult = DEFAULT_HORDE_RESULT
+}
+
+export function setEchoResult(text: string): void {
+  state.echoResult = text
 }
 
 export function setOpenAIResult(text: string): void {
@@ -136,39 +165,88 @@ function sseResponse(message: string): Response {
   })
 }
 
-export async function serverCompletionFetch(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> {
-  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-  if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
-  if (!url.endsWith('/api/v1/generate/completion')) {
-    throw new Error(`unexpected fetch in dual-mode fixture: ${url}`)
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function selectedServerIntentModel(body: CompletionPayload): string {
+  const db = getDatabase({ snapshot: true }) as unknown as Record<string, unknown>
+  const staticModel = stringField(body.staticModel)
+  if (staticModel) return staticModel
+
+  const mode = stringField(body.mode) ?? 'model'
+  let aiModel = mode === 'model' ? stringField(db.aiModel) : stringField(db.subModel)
+  if (
+    body.staticModel === undefined &&
+    db.seperateModelsForAxModels === true &&
+    db.seperateModels &&
+    typeof db.seperateModels === 'object'
+  ) {
+    const selected = (db.seperateModels as Record<string, unknown>)[mode]
+    aiModel = stringField(selected) ?? aiModel
+  }
+  return aiModel ?? 'echo_model'
+}
+
+function serverIntentResult(body: CompletionPayload): { result: string; model?: string } {
+  const db = getDatabase({ snapshot: true }) as unknown as Record<string, unknown>
+  const aiModel = selectedServerIntentModel(body)
+
+  if (aiModel === 'echo_model') {
+    const dbEcho = stringField(db.echoMessage)
+    return { result: dbEcho ?? state.echoResult, model: aiModel }
   }
 
-  const method = init?.method ?? 'POST'
-  const auth = (init?.headers as Record<string, string> | undefined)?.['risu-auth'] ?? null
-  const rawBody = typeof init?.body === 'string' ? init.body : ''
-  const body = JSON.parse(rawBody) as CompletionPayload
+  if (aiModel === 'reverse_proxy') {
+    const proxyModel = stringField(db.customProxyRequestModel)
+    if (db.customAPIFormat === 2) {
+      return { result: state.anthropicResult, model: proxyModel }
+    }
+    if (db.customAPIFormat === 4) {
+      return { result: state.mistralResult, model: proxyModel }
+    }
+    return { result: state.openaiResult, model: proxyModel }
+  }
 
-  const provider = typeof body.provider === 'string' ? body.provider : ''
-  const model = typeof body.model === 'string' ? body.model : ''
-  const stream = body.stream === true
-  const messages = Array.isArray(body.messages) ? body.messages : []
+  if (aiModel.startsWith('horde:::')) {
+    return { result: state.hordeResult, model: aiModel.slice('horde:::'.length) }
+  }
 
-  state.calls.push({
-    url,
-    method,
-    provider,
-    model,
-    stream,
-    messagesLength: messages.length,
-    options: body.options ?? {},
-    authHeader: auth,
-  })
+  if (aiModel.startsWith('anthropic.')) {
+    return { result: state.bedrockResult, model: `global.${aiModel}` }
+  }
 
+  if (aiModel.startsWith('deepseek-')) {
+    return { result: state.deepseekResult, model: aiModel }
+  }
+
+  if (aiModel.startsWith('claude-')) {
+    return { result: state.anthropicResult, model: aiModel }
+  }
+
+  if (aiModel.startsWith('mistral-')) {
+    return { result: state.mistralResult, model: aiModel }
+  }
+
+  if (aiModel.startsWith('cohere-')) {
+    return { result: state.cohereResult, model: aiModel }
+  }
+
+  if (aiModel.startsWith('gemini-')) {
+    return { result: state.geminiResult, model: 'gemini-2.5-flash' }
+  }
+
+  return { result: state.openaiResult, model: aiModel }
+}
+
+function respondToProviderPayload(
+  provider: string,
+  model: string,
+  stream: boolean,
+  options: unknown,
+): Response {
   if (provider === 'echo') {
-    const echoOpts = (body.options as { echo?: { message?: string } } | undefined)?.echo
+    const echoOpts = (options as { echo?: { message?: string } } | undefined)?.echo
     const message = typeof echoOpts?.message === 'string' ? echoOpts.message : 'Echo Message'
     if (stream) return sseResponse(message)
     return jsonResponse({ type: 'success', result: message })
@@ -213,4 +291,66 @@ export async function serverCompletionFetch(
   }
 
   return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)
+}
+
+export async function serverCompletionFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const url =
+    typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
+  if (!url.endsWith('/api/v1/generate/completion')) {
+    throw new Error(`unexpected fetch in dual-mode fixture: ${url}`)
+  }
+
+  const method = init?.method ?? 'POST'
+  const auth = (init?.headers as Record<string, string> | undefined)?.['risu-auth'] ?? null
+  const rawBody = typeof init?.body === 'string' ? init.body : ''
+  const body = JSON.parse(rawBody) as CompletionPayload
+
+  const provider = typeof body.provider === 'string' ? body.provider : ''
+  const model = typeof body.model === 'string' ? body.model : ''
+  const stream = body.stream === true
+  const messages = Array.isArray(body.messages) ? body.messages : []
+
+  if (body.kind === 'server-intent') {
+    state.calls.push({
+      url,
+      method,
+      kind: 'server-intent',
+      stream,
+      messagesLength: messages.length,
+      authHeader: auth,
+      mode: body.mode,
+      staticModel: body.staticModel,
+      maxTokens: body.maxTokens,
+      temperature: body.temperature,
+      currentCharName: body.currentCharName,
+    })
+
+    if (body.provider !== undefined || body.model !== undefined || body.options !== undefined) {
+      return jsonResponse(
+        { error: 'server-intent completion must not include provider, model, or options' },
+        400,
+      )
+    }
+
+    const resolved = serverIntentResult(body)
+    if (stream) return sseResponse(resolved.result)
+    return jsonResponse({ type: 'success', result: resolved.result, model: resolved.model })
+  }
+
+  state.calls.push({
+    url,
+    method,
+    provider,
+    model,
+    stream,
+    messagesLength: messages.length,
+    options: body.options ?? {},
+    authHeader: auth,
+  })
+
+  return respondToProviderPayload(provider, model, stream, body.options)
 }

@@ -219,7 +219,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerStreamJobRoutes(app, authState, streamJobRegistry)
   registerHubRoutes(app, authState, config.hubUrl)
   registerLegacyStorageRoutes(app, authState, config.dataDir)
-  registerGenerationRoutes(app, authState)
+  registerGenerationRoutes(app, authState, config.dataDir)
   registerGenerationChatRoutes(
     app,
     db,

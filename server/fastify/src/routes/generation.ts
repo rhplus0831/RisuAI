@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { AuthState } from '../auth.js'
 import {
   resolveAnthropicRequest,
@@ -35,6 +37,8 @@ import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
 import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
 import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import { requireAuth } from '../http.js'
+import { loadPersisted } from '../repository.js'
+import { dispatchChatProvider } from '../prompt/chatDispatch.js'
 
 const SUPPORTED_PROVIDERS = new Set([
   'echo',
@@ -60,12 +64,30 @@ interface ChatMessage {
 }
 
 interface CompletionRequestBody {
+  kind?: unknown
   provider?: unknown
   model?: unknown
   messages?: unknown
   stream?: unknown
   options?: unknown
+  mode?: unknown
+  staticModel?: unknown
+  maxTokens?: unknown
+  temperature?: unknown
+  currentCharName?: unknown
 }
+
+type CompletionModelMode = 'model' | 'submodel' | 'memory' | 'emotion' | 'otherAx' | 'translate'
+
+const SERVER_INTENT_KIND = 'server-intent'
+const COMPLETION_MODEL_MODES = new Set<CompletionModelMode>([
+  'model',
+  'submodel',
+  'memory',
+  'emotion',
+  'otherAx',
+  'translate',
+])
 
 interface EchoOptions {
   message?: unknown
@@ -278,6 +300,52 @@ function validateMessages(messages: unknown): ChatMessage[] | null {
   return messages as ChatMessage[]
 }
 
+function isCompletionModelMode(value: unknown): value is CompletionModelMode {
+  return typeof value === 'string' && COMPLETION_MODEL_MODES.has(value as CompletionModelMode)
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function selectedCompletionModel(db: Database, body: CompletionRequestBody): string {
+  if (typeof body.staticModel === 'string' && body.staticModel.length > 0) {
+    return body.staticModel
+  }
+  const mode = isCompletionModelMode(body.mode) ? body.mode : 'model'
+  let aiModel = mode === 'model' ? db.aiModel : db.subModel
+  if (
+    db.seperateModelsForAxModels === true &&
+    db.seperateModels &&
+    typeof db.seperateModels === 'object'
+  ) {
+    const selected = (db.seperateModels as Record<string, unknown>)[mode]
+    if (typeof selected === 'string' && selected.length > 0) {
+      aiModel = selected
+    }
+  }
+  return typeof aiModel === 'string' && aiModel.length > 0 ? aiModel : 'echo_model'
+}
+
+function buildCompletionDatabase(db: Database, body: CompletionRequestBody): Database {
+  const next = {
+    ...db,
+    aiModel: selectedCompletionModel(db, body),
+    useStreaming: body.stream === true,
+  } as Database
+  const maxTokens = finiteNumber(body.maxTokens)
+  if (maxTokens !== undefined) next.maxResponse = maxTokens
+  const temperature = finiteNumber(body.temperature)
+  if (temperature !== undefined) next.temperature = temperature * 100
+  if (typeof body.currentCharName === 'string' && body.currentCharName.length > 0) {
+    const first = Array.isArray(db.characters) ? db.characters[0] : undefined
+    next.characters = [
+      { ...(first as object), name: body.currentCharName },
+    ] as Database['characters']
+  }
+  return next
+}
+
 function badRequest(reply: FastifyReply, error: string): void {
   reply.code(400).send({ error })
 }
@@ -313,7 +381,7 @@ function attachAbort(req: FastifyRequest): {
 
 async function pipeStream(
   reply: FastifyReply,
-  frames: AsyncGenerator<CompletionStreamFrame, void, void>,
+  frames: AsyncIterable<CompletionStreamFrame>,
 ): Promise<void> {
   reply.raw.writeHead(200, {
     'content-type': 'text/event-stream',
@@ -327,6 +395,25 @@ async function pipeStream(
   } finally {
     reply.raw.end()
   }
+}
+
+async function collectCompletionFrames(
+  frames: AsyncIterable<CompletionStreamFrame>,
+): Promise<{ type: 'success' | 'fail'; result: string; model?: string }> {
+  let result = ''
+  for await (const frame of frames) {
+    if (frame.kind === 'token') {
+      result += frame.content ?? ''
+      continue
+    }
+    if (frame.kind === 'error') {
+      return { type: 'fail', result: frame.error ?? 'provider dispatch failed' }
+    }
+    if (frame.kind === 'done') {
+      return { type: 'success', result }
+    }
+  }
+  return { type: 'success', result }
 }
 
 async function handleEchoStreaming(
@@ -1132,11 +1219,87 @@ async function handleOpenAICompatibleBuffered(
   }
 }
 
-export function registerGenerationRoutes(app: FastifyInstance, authState: AuthState): void {
+async function handleServerIntentCompletion(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  body: CompletionRequestBody,
+  dataDir: string,
+): Promise<void> {
+  if (body.provider !== undefined || body.model !== undefined || body.options !== undefined) {
+    return badRequest(
+      reply,
+      'server-intent completion must not include provider, model, or options',
+    )
+  }
+  const messages = validateMessages(body.messages)
+  if (!messages) {
+    return badRequest(reply, 'messages must be an array of {role, content}')
+  }
+  if (typeof body.stream !== 'boolean') {
+    return badRequest(reply, 'stream must be a boolean')
+  }
+  if (body.mode !== undefined && !isCompletionModelMode(body.mode)) {
+    return badRequest(
+      reply,
+      'mode must be one of: model, submodel, memory, emotion, otherAx, translate',
+    )
+  }
+  if (body.staticModel !== undefined && typeof body.staticModel !== 'string') {
+    return badRequest(reply, 'staticModel must be a string when provided')
+  }
+  if (body.maxTokens !== undefined && finiteNumber(body.maxTokens) === undefined) {
+    return badRequest(reply, 'maxTokens must be a finite number when provided')
+  }
+  if (body.temperature !== undefined && finiteNumber(body.temperature) === undefined) {
+    return badRequest(reply, 'temperature must be a finite number when provided')
+  }
+  if (body.currentCharName !== undefined && typeof body.currentCharName !== 'string') {
+    return badRequest(reply, 'currentCharName must be a string when provided')
+  }
+
+  const persisted = loadPersisted(dataDir)
+  if (!persisted.database) {
+    return badRequest(reply, 'database is not initialized')
+  }
+
+  const { signal, cleanup } = attachAbort(req)
+  try {
+    const database = buildCompletionDatabase(persisted.database as Database, body)
+    const frames = await dispatchChatProvider({
+      database,
+      formated: messages as OpenAIChat[],
+      outputTokens: finiteNumber(body.maxTokens),
+      signal,
+    })
+
+    if (body.stream === true) {
+      await pipeStream(reply, frames)
+      return
+    }
+
+    const result = await collectCompletionFrames(frames)
+    reply.code(200).send(result)
+  } catch (err) {
+    const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
+    reply.code(400).send({ error: message || 'provider dispatch failed' })
+  } finally {
+    cleanup()
+  }
+}
+
+export function registerGenerationRoutes(
+  app: FastifyInstance,
+  authState: AuthState,
+  dataDir: string,
+): void {
   app.post('/api/v1/generate/completion', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
     const body = (req.body ?? {}) as CompletionRequestBody
+    if (body.kind === SERVER_INTENT_KIND) {
+      await handleServerIntentCompletion(req, reply, body, dataDir)
+      return
+    }
 
     const provider = body.provider
     if (typeof provider !== 'string' || provider.length === 0) {

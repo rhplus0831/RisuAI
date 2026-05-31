@@ -70,7 +70,7 @@ against the tree on 2026-05-31 (branch `fastify`).
   `local` verdict in Fastify mode; it is kept because tests / specific cases set it
   `false` to exercise the in-browser assembler. Trigger: when the local in-browser
   assembler path is itself removed, the flag and its `local` return can be deleted.
-  This is the *end* of the prompt-assembly thinning sub-family, not a gap to patch.
+  This is the _end_ of the prompt-assembly thinning sub-family, not a gap to patch.
   Source: `archive/client-thinning/phases/slices/slice-1-a1-foundation-classifier.md`;
   `src/ts/storage/database.svelte.ts:781`.
   - Note: the in-code JSDoc (`database.svelte.ts:~1361`) attributes the default-`true`
@@ -119,10 +119,11 @@ against the tree on 2026-05-31 (branch `fastify`).
 - **pluginV2 edit/replacer hooks are permanently unsupported** (no-port; superseded by
   Plugin V3). `hasPluginV2EditSet` never flips to server; guarded by `A4R-pluginv2`.
   Listed as a standing constraint, not a gap.
-- **Server `/chat` can still hard-fail a provider shape the completion resolver
-  supports** (decision #5 seam). The `db → modelInfo` derivation stays per-side
-  (server uses string-prefix, not the `LLMModels` registry). Closing it would require
-  replicating the model registry on the server; explicitly out of scope for #5.
+- **Server provider dispatch can still hard-fail a provider shape the browser
+  prompt-assembly preflight accepts** (decision #5 seam). The `db → modelInfo`
+  derivation stays per-side (server uses string-prefix, not the `LLMModels`
+  registry). Closing it would require replicating the model registry on the server;
+  explicitly out of scope for #5.
 - **Manual legacy local-client verification** is separate from Fastify projection
   hardening; only opened if a dedicated local-client verification task is created.
 
