@@ -3,6 +3,7 @@
 Last updated: 2026-05-31.
 
 ## Remaining Items
+
 - Direct Transcript Writes During Send
 - Send Result Is Treated As Success
 - Durable Reattach Stop Handle Drift
@@ -28,7 +29,6 @@ Last updated: 2026-05-31.
 - Expanded Plugin State Uses List Indexes
 - Streaming Auto-Toggle Predicate Is Asymmetric
 - WaveSpeed Reference Reset Appears Inverted
-- One-Item Drop Lists Can Corrupt The List
 - Chat Rows Are Manually Mounted And Not Updated
 - Chat Hash Omits Render-Affecting Props
 - Custom HTML Renderer Drops Functional Attributes
@@ -49,5 +49,7 @@ Last updated: 2026-05-31.
 - Chat Format Settings Lack Client Command Mapping
 
 ## Completed Items
+
+- One-Item Drop Lists Can Corrupt The List
 - Realm Upload Mode Buttons Toggle The Wrong State
 - Plugin Select Options Render Literal Text
